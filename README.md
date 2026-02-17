@@ -1,0 +1,3 @@
+# dscli
+
+DeepSeek CLI
