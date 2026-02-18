@@ -24,7 +24,7 @@ var fimCmd = &cobra.Command{
 如果提供了参数，则将所有参数拼接作为 prompt；
 如果没有参数，则从标准输入读取 prompt。`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Fprintf(os.Stderr, "[INFO] 开始FIM代码补全请求\n")
+		log.Info("开始FIM代码补全请求")
 		log.Info("开始FIM代码补全请求")
 		var prompt string
 		if len(args) > 0 {

@@ -13,7 +13,7 @@ var modelsCmd = &cobra.Command{
 	Use:   "models",
 	Short: "列出 DeepSeek 支持的模型",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Fprintf(os.Stderr, "[INFO] 开始获取模型列表\n")
+		log.Info("开始获取模型列表")
 		log.Info("开始获取模型列表")
 		resp, err := client.Models()
 		log.Info("成功获取模型列表，共 %d 个模型", len(resp.Data))

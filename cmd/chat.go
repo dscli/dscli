@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"gitcode.com/nanjunjie/dscli/internal/api"
+	"gitcode.com/nanjunjie/dscli/internal/log"
 	"gitcode.com/nanjunjie/dscli/internal/db"
 	"github.com/spf13/cobra"
 )
@@ -198,7 +199,7 @@ var chatCmd = &cobra.Command{
   echo "把 README.md 添加到 Git 并提交" | dscli chat
   cat prompt.txt | dscli chat --model deepseek-chat`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Fprintf(os.Stderr, "[INFO] 开始处理聊天请求\n")
+	log.Info("开始处理聊天请求")
 		// 1. 读取标准输入
 		reader := bufio.NewReader(os.Stdin)
 		content, err := io.ReadAll(reader)
@@ -207,7 +208,7 @@ var chatCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		userMsg := strings.TrimSpace(string(content))
-	fmt.Fprintf(os.Stderr, "[INFO] 用户输入长度: %d 字符\n", len(userMsg))
+	log.Info("用户输入长度: %d 字符", len(userMsg))
 		if userMsg == "" {
 			fmt.Fprintln(os.Stderr, "错误: 标准输入为空，请通过管道或重定向提供消息内容")
 			os.Exit(1)
@@ -215,7 +216,7 @@ var chatCmd = &cobra.Command{
 
 		// 2. 确定项目根路径
 		projectRoot, err := getProjectRoot()
-	fmt.Fprintf(os.Stderr, "[INFO] 项目根目录: %s\n", projectRoot)
+	log.Info("项目根目录: %s", projectRoot)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "无法确定项目根路径: %v\n", err)
 			os.Exit(1)
@@ -223,6 +224,7 @@ var chatCmd = &cobra.Command{
 
 		// 3. 打开数据库
 		database, err := db.New()
+	log.DatabaseOperation("打开数据库")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "初始化数据库失败: %v\n", err)
 			os.Exit(1)
@@ -231,6 +233,7 @@ var chatCmd = &cobra.Command{
 
 		// 4. 获取会话ID
 		sessionID, err := database.GetOrCreateSession(projectRoot)
+	log.DatabaseOperation("获取或创建会话", "projectRoot", projectRoot, "sessionID", sessionID)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "获取会话失败: %v\n", err)
 			os.Exit(1)
@@ -238,6 +241,7 @@ var chatCmd = &cobra.Command{
 
 		// 5. 加载历史消息
 		history, err := database.LoadHistory(sessionID)
+	log.DatabaseOperation("加载历史消息", "sessionID", sessionID, "消息数量", len(history))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "加载历史消息失败: %v\n", err)
 			os.Exit(1)
@@ -270,7 +274,7 @@ var chatCmd = &cobra.Command{
 		// 工具调用循环
 		for {
 			// 调用 API（带工具）
-	fmt.Fprintf(os.Stderr, "[INFO] 调用大模型API，模型: %s\n", chatModel)
+	log.Info("调用大模型API，模型: %s", chatModel)
 			resp, err := client.ChatWithTools(chatModel, messages, tools)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "聊天请求失败: %v\n", err)
@@ -298,7 +302,7 @@ var chatCmd = &cobra.Command{
 
 			// 检查是否有工具调用
 		if len(assistantMsg.ToolCalls) > 0 {
-			fmt.Fprintf(os.Stderr, "[INFO] 助手请求调用 %d 个工具\n", len(assistantMsg.ToolCalls))
+			log.Info("助手请求调用 %d 个工具", len(assistantMsg.ToolCalls))
 		}
 			if len(assistantMsg.ToolCalls) == 0 {
 				// 没有工具调用，输出最终回复并结束循环
@@ -346,8 +350,11 @@ var chatCmd = &cobra.Command{
 				}
 
 				// 重新编码参数为 JSON 供处理函数使用（保持通用）
+			log.ToolCall(tc.Function.Name, args)
 				argsRaw, _ := json.Marshal(args)
 				result, err := handler(projectRoot, argsRaw)
+			log.ToolResult(tc.Function.Name, result, err)
+			log.ToolResult(tc.Function.Name, result, err)
 				if err != nil {
 					result = fmt.Sprintf("执行失败: %v", err)
 				}
@@ -369,6 +376,7 @@ var chatCmd = &cobra.Command{
 		}
 
 		// 8. 将本轮所有新增的消息存入数据库
+	log.DatabaseOperation("保存消息到数据库", "sessionID", sessionID, "消息数量", len(newMessages))
 		if len(newMessages) > 0 {
 			if err := database.SaveMessagesBatch(sessionID, newMessages); err != nil {
 				fmt.Fprintf(os.Stderr, "保存消息失败: %v\n", err)
@@ -401,10 +409,11 @@ func handleReadFile(projectRoot string, argsRaw json.RawMessage) (string, error)
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
 	fullPath, err := resolvePath(projectRoot, args.Path)
+	log.FileOperation("写入文件", args.Path)
 	if err != nil {
 		return "", err
 	}
-	fmt.Fprintf(os.Stderr, "[INFO] 读取文件: %s\n", args.Path)
+	log.FileOperation("读取文件", args.Path)
 	data, err := os.ReadFile(fullPath)
 	if err != nil {
 		return "", fmt.Errorf("读取文件失败: %w", err)
@@ -421,6 +430,7 @@ func handleWriteFile(projectRoot string, argsRaw json.RawMessage) (string, error
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
 	fullPath, err := resolvePath(projectRoot, args.Path)
+	log.FileOperation("写入文件", args.Path)
 	if err != nil {
 		return "", err
 	}
@@ -443,6 +453,7 @@ func handleSearchFiles(projectRoot string, argsRaw json.RawMessage) (string, err
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
 	var results []string
+	log.Info("搜索文件", "pattern", args.Pattern, "content", args.Content)
 	err := filepath.Walk(projectRoot, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil // 跳过无法访问的路径
@@ -506,6 +517,7 @@ func handleGitAdd(projectRoot string, argsRaw json.RawMessage) (string, error) {
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
 	// 路径相对于项目根目录
+	log.GitOperation("git add", "path", args.Path)
 	out, err := gitCommand(projectRoot, "add", args.Path)
 	if err != nil {
 		return "", err
@@ -523,6 +535,7 @@ func handleGitCommit(projectRoot string, argsRaw json.RawMessage) (string, error
 	if err := json.Unmarshal(argsRaw, &args); err != nil {
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
+	log.GitOperation("git commit", "message", args.Message)
 	out, err := gitCommand(projectRoot, "commit", "-m", args.Message)
 	if err != nil {
 		return "", err
@@ -542,6 +555,7 @@ func handleGitLog(projectRoot string, argsRaw json.RawMessage) (string, error) {
 	if args.MaxCount <= 0 {
 		args.MaxCount = 10
 	}
+	log.GitOperation("git log", "max_count", args.MaxCount)
 	out, err := gitCommand(projectRoot, "log", "-n", fmt.Sprintf("%d", args.MaxCount), "--oneline")
 	if err != nil {
 		return "", err
@@ -558,6 +572,7 @@ func handleGitDiff(projectRoot string, argsRaw json.RawMessage) (string, error) 
 	if args.Path != "" {
 		gitArgs = append(gitArgs, "--", args.Path)
 	}
+	log.GitOperation("git diff", "path", args.Path)
 	out, err := gitCommand(projectRoot, gitArgs...)
 	if err != nil {
 		return "", err
@@ -566,6 +581,7 @@ func handleGitDiff(projectRoot string, argsRaw json.RawMessage) (string, error) 
 }
 
 func handleGitStatus(projectRoot string, argsRaw json.RawMessage) (string, error) {
+	log.GitOperation("git status")
 	out, err := gitCommand(projectRoot, "status", "--short")
 	if err != nil {
 		return "", err
@@ -588,6 +604,7 @@ func handleRunCommand(projectRoot string, argsRaw json.RawMessage) (string, erro
 	}
 
 	// 使用 bash -c 执行，以支持管道和复合命令
+	log.Info("执行命令: %s", args.Command)
 	cmd := exec.Command("bash", "-c", args.Command)
 	cmd.Dir = projectRoot
 
