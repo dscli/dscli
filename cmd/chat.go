@@ -15,9 +15,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	chatModel string
-)
+var chatModel string
 
 // 工具定义
 var tools = []api.Tool{
@@ -156,6 +154,23 @@ var tools = []api.Tool{
 			},
 		},
 	},
+	{
+		Type: "function",
+		Function: api.ToolFunction{
+			Name:        "run_command",
+			Description: "在项目根目录执行任意 shell 命令（支持管道、组合命令）。谨慎使用，避免破坏性操作。",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"command": map[string]interface{}{
+						"type":        "string",
+						"description": "要执行的 shell 命令，如 'git log --oneline | head -5'",
+					},
+				},
+				"required": []string{"command"},
+			},
+		},
+	},
 }
 
 // 工具执行函数映射
@@ -168,6 +183,7 @@ var toolHandlers = map[string]func(projectRoot string, args json.RawMessage) (st
 	"git_log":      handleGitLog,
 	"git_diff":     handleGitDiff,
 	"git_status":   handleGitStatus,
+	"run_command":  handleRunCommand,
 }
 
 var chatCmd = &cobra.Command{
@@ -401,10 +417,10 @@ func handleWriteFile(projectRoot string, argsRaw json.RawMessage) (string, error
 		return "", err
 	}
 	// 确保目录存在
-	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
 		return "", fmt.Errorf("创建目录失败: %w", err)
 	}
-	if err := os.WriteFile(fullPath, []byte(args.Content), 0644); err != nil {
+	if err := os.WriteFile(fullPath, []byte(args.Content), 0o644); err != nil {
 		return "", fmt.Errorf("写入文件失败: %w", err)
 	}
 	return fmt.Sprintf("已成功写入文件: %s", args.Path), nil
@@ -550,6 +566,29 @@ func handleGitStatus(projectRoot string, argsRaw json.RawMessage) (string, error
 		out = "工作区干净，无变更"
 	}
 	return out, nil
+}
+
+func handleRunCommand(projectRoot string, argsRaw json.RawMessage) (string, error) {
+	var args struct {
+		Command string `json:"command"`
+	}
+	if err := json.Unmarshal(argsRaw, &args); err != nil {
+		return "", fmt.Errorf("参数解析失败: %w", err)
+	}
+	if args.Command == "" {
+		return "", fmt.Errorf("命令不能为空")
+	}
+
+	// 使用 bash -c 执行，以支持管道和复合命令
+	cmd := exec.Command("bash", "-c", args.Command)
+	cmd.Dir = projectRoot
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		// 即使命令执行失败，也返回输出内容，便于模型调试
+		return fmt.Sprintf("命令执行失败: %v\n输出:\n%s", err, out), nil
+	}
+	return string(out), nil
 }
 
 // getProjectRoot 获取当前项目根目录（用于会话隔离）

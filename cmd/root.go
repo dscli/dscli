@@ -9,10 +9,10 @@ import (
 )
 
 var (
-	apiKey   string
-	baseURL  string
-	debug    bool
-	client   *api.Client
+	apiKey  string
+	baseURL string
+	debug   bool
+	client  *api.Client
 )
 
 var rootCmd = &cobra.Command{
