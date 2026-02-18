@@ -1,0 +1,130 @@
+#+TITLE: dscli - DeepSeek 命令行工具
+#+DATE: 2025-03-15
+
+* 简介
+=dscli= 是一个用 Go 语言编写的命令行工具，用于与 DeepSeek API 进行交互。它支持以下四个核心功能：
+- 列出模型 (=models=)
+- 查询余额 (=balance=)
+- 对话聊天 (=chat=)
+- FIM 代码补全 (=fim=)
+
+项目地址：[[https://gitcode.com/nanjunjie/dscli][gitcode.com/nanjunjie/dscli]]
+
+* 环境变量
+在使用 =dscli= 之前，需要设置以下环境变量：
+- =DEEPSEEK_API_KEY= ：你的 DeepSeek API 密钥（必填）
+- =DEEPSEEK_BASE_URL= ：API 基础地址（可选，默认为 =https://api.deepseek.com=）
+
+你也可以通过命令行标志 =--api-key= 和 =--base-url= 临时指定，优先级高于环境变量。
+
+* 编译
+** 使用 Go 直接编译
+确保已安装 Go 1.21 或更高版本，然后执行：
+#+begin_src bash
+go mod tidy
+go build -o dscli
+#+end_src
+
+** 使用 Makefile（推荐）
+项目提供了 Makefile，支持常见操作：
+#+begin_src bash
+make build      # 编译到 build/dscli
+make install    # 安装到 $GOPATH/bin
+make clean      # 清理构建产物
+make test       # 运行测试（如果有）
+#+end_src
+
+还支持交叉编译示例：
+#+begin_src bash
+make build-linux   # Linux amd64
+make build-windows # Windows amd64
+make build-macos   # macOS (amd64 + arm64)
+#+end_src
+
+编译后的二进制文件会存放在 =build/= 目录下。
+
+* 使用说明
+** 全局标志
+所有子命令都支持以下全局标志：
+- =--api-key=：指定 API 密钥
+- =--base-url=：指定 API 基础 URL
+- =--debug=：启用调试模式，打印请求和响应详情
+
+** 子命令
+*** =models=
+列出 DeepSeek 支持的所有模型。
+#+begin_src bash
+dscli models
+#+end_src
+
+示例输出：
+#+begin_example
+ID                  对象      拥有者
+deepseek-chat       model    deepseek
+deepseek-coder      model    deepseek
+#+end_example
+
+*** =balance=
+查询账户余额信息。
+#+begin_src bash
+dscli balance
+#+end_src
+
+示例输出：
+#+begin_example
+货币   总余额   赠送余额   充值余额
+CNY    100.00  50.00      50.00
+#+end_example
+
+*** =chat=
+与 DeepSeek 聊天模型对话。可以接收命令行参数或从标准输入读取消息。
+#+begin_src bash
+dscli chat "你好，今天天气怎么样？"
+echo "介绍一下 Go 语言" | dscli chat
+#+end_src
+
+支持 =--model= 标志指定模型（默认 =deepseek-chat=）：
+#+begin_src bash
+dscli chat --model deepseek-chat "你好"
+#+end_src
+
+*** =fim=
+FIM 代码补全，适用于代码生成场景。
+#+begin_src bash
+dscli fim "def hello():" --suffix "    print('world')"
+echo "function add(a, b) {" | dscli fim
+#+end_src
+
+可用标志：
+- =--model=：模型名称（默认 =deepseek-coder=）
+- =--suffix=：补全后缀（可选）
+- =--max-tokens=：最大生成 token 数（默认 1024）
+- =--temperature=：采样温度（默认 0.7）
+
+* 示例汇总
+#+begin_src bash
+# 设置环境变量（建议写入 ~/.bashrc）
+export DEEPSEEK_API_KEY=your_key_here
+export DEEPSEEK_BASE_URL=https://api.deepseek.com
+
+# 查看模型列表
+dscli models
+
+# 查询余额
+dscli balance
+
+# 聊天
+dscli chat "用 Python 写一个快速排序"
+
+# 代码补全
+dscli fim "import numpy as np" --suffix "print(np.array([1,2,3]))"
+
+# 调试模式查看请求
+dscli --debug models
+#+end_src
+
+* 贡献
+欢迎提交 Issue 和 PR。请确保代码符合 Go 标准格式并包含必要的测试。
+
+* 许可证
+[MIT](LICENSE)
