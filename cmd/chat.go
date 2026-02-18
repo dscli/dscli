@@ -2,9 +2,11 @@ package cmd
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -17,17 +19,167 @@ var (
 	chatModel string
 )
 
+// 工具定义
+var tools = []api.Tool{
+	{
+		Type: "function",
+		Function: api.ToolFunction{
+			Name:        "read_file",
+			Description: "读取项目内指定文件的内容",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{
+						"type":        "string",
+						"description": "文件路径（相对于项目根目录或绝对路径）",
+					},
+				},
+				"required": []string{"path"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: api.ToolFunction{
+			Name:        "write_file",
+			Description: "将内容写入文件（覆盖或新建）",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{
+						"type":        "string",
+						"description": "文件路径（相对于项目根目录或绝对路径）",
+					},
+					"content": map[string]interface{}{
+						"type":        "string",
+						"description": "要写入的内容",
+					},
+				},
+				"required": []string{"path", "content"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: api.ToolFunction{
+			Name:        "search_files",
+			Description: "在项目中搜索文件（按文件名模式或文件内容）",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"pattern": map[string]interface{}{
+						"type":        "string",
+						"description": "文件名模式，如 '*.go'，为空则匹配所有文件",
+					},
+					"content": map[string]interface{}{
+						"type":        "string",
+						"description": "要搜索的内容（如果提供则搜索文件内容）",
+					},
+				},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: api.ToolFunction{
+			Name:        "git_add",
+			Description: "将文件添加到 Git 暂存区",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{
+						"type":        "string",
+						"description": "文件路径（相对于项目根目录）",
+					},
+				},
+				"required": []string{"path"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: api.ToolFunction{
+			Name:        "git_commit",
+			Description: "提交暂存区更改",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"message": map[string]interface{}{
+						"type":        "string",
+						"description": "提交信息",
+					},
+				},
+				"required": []string{"message"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: api.ToolFunction{
+			Name:        "git_log",
+			Description: "查看提交历史",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"max_count": map[string]interface{}{
+						"type":        "integer",
+						"description": "最大显示数量，默认10",
+					},
+				},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: api.ToolFunction{
+			Name:        "git_diff",
+			Description: "查看文件或暂存区的差异",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"path": map[string]interface{}{
+						"type":        "string",
+						"description": "指定文件路径，不指定则查看所有变更",
+					},
+				},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: api.ToolFunction{
+			Name:        "git_status",
+			Description: "查看 Git 仓库状态",
+			Parameters: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+	},
+}
+
+// 工具执行函数映射
+var toolHandlers = map[string]func(projectRoot string, args json.RawMessage) (string, error){
+	"read_file":    handleReadFile,
+	"write_file":   handleWriteFile,
+	"search_files": handleSearchFiles,
+	"git_add":      handleGitAdd,
+	"git_commit":   handleGitCommit,
+	"git_log":      handleGitLog,
+	"git_diff":     handleGitDiff,
+	"git_status":   handleGitStatus,
+}
+
 var chatCmd = &cobra.Command{
 	Use:   "chat",
-	Short: "与 DeepSeek 对话（多轮会话，按项目目录自动隔离）",
+	Short: "与 DeepSeek 对话（支持工具调用：文件操作、Git）",
 	Long: `发送一条消息给 DeepSeek 聊天模型并获取回复。
-消息内容必须通过标准输入提供。
-对话历史按项目目录自动隔离：每个 Git 仓库（或当前目录）拥有独立的对话上下文。
-数据库统一存储在 ~/.dscli/sqlite.db 中。
+消息内容通过标准输入提供，自动按项目目录隔离对话历史。
+支持工具调用：文件读写、搜索、Git 操作。
 
 示例：
-  echo "你好" | dscli chat
-  echo "继续刚才的话题" | dscli chat
+  echo "帮我创建一个 main.go 文件" | dscli chat
+  echo "把 README.md 添加到 Git 并提交" | dscli chat
   cat prompt.txt | dscli chat --model deepseek-chat`,
 	Run: func(cmd *cobra.Command, args []string) {
 		// 1. 读取标准输入
@@ -43,14 +195,14 @@ var chatCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// 2. 确定项目根路径（用于隔离会话）
-		projectPath, err := getProjectRoot()
+		// 2. 确定项目根路径
+		projectRoot, err := getProjectRoot()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "无法确定项目根路径: %v\n", err)
 			os.Exit(1)
 		}
 
-		// 3. 打开数据库（统一位置 ~/.dscli/sqlite.db）
+		// 3. 打开数据库
 		database, err := db.New()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "初始化数据库失败: %v\n", err)
@@ -58,8 +210,8 @@ var chatCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		// 4. 获取会话ID（基于项目路径）
-		sessionID, err := database.GetOrCreateSession(projectPath)
+		// 4. 获取会话ID
+		sessionID, err := database.GetOrCreateSession(projectRoot)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "获取会话失败: %v\n", err)
 			os.Exit(1)
@@ -72,61 +224,352 @@ var chatCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// 6. 构造 messages 切片
+		// 6. 构造 messages 切片（包含历史）
 		messages := make([]api.Message, 0, len(history)+1)
 		for _, m := range history {
-			messages = append(messages, api.Message{Role: m.Role, Content: m.Content})
+			apiMsg := api.Message{
+				Role:    m.Role,
+				Content: m.Content,
+			}
+			if m.ToolCallID != "" {
+				apiMsg.ToolCallID = m.ToolCallID
+			}
+			if len(m.ToolCalls) > 0 {
+				var toolCalls []api.ToolCall
+				if err := json.Unmarshal(m.ToolCalls, &toolCalls); err == nil {
+					apiMsg.ToolCalls = toolCalls
+				}
+			}
+			messages = append(messages, apiMsg)
 		}
+		// 添加当前用户消息
 		messages = append(messages, api.Message{Role: "user", Content: userMsg})
 
-		// 7. 调用 API
-		resp, err := client.Chat(chatModel, messages)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "聊天请求失败: %v\n", err)
-			os.Exit(1)
-		}
-		if len(resp.Choices) == 0 {
-			fmt.Fprintln(os.Stderr, "错误: 未收到回复")
-			os.Exit(1)
-		}
-		assistantMsg := resp.Choices[0].Message.Content
+		// 7. 记录本轮新增的消息（用于存储）
+		var newMessages []db.Message // 不包含历史
 
-		// 8. 将本次对话存入数据库
-		if err := database.SaveMessages(sessionID, userMsg, assistantMsg); err != nil {
-			fmt.Fprintf(os.Stderr, "保存消息失败: %v\n", err)
-			os.Exit(1)
+		// 工具调用循环
+		for {
+			// 调用 API（带工具）
+			resp, err := client.ChatWithTools(chatModel, messages, tools)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "聊天请求失败: %v\n", err)
+				os.Exit(1)
+			}
+			if len(resp.Choices) == 0 {
+				fmt.Fprintln(os.Stderr, "错误: 未收到回复")
+				os.Exit(1)
+			}
+			assistantMsg := resp.Choices[0].Message
+
+			// 将助手消息追加到 messages 列表
+			messages = append(messages, assistantMsg)
+
+			// 转换并保存到 newMessages（用于后续存储）
+			dbAssistantMsg := db.Message{
+				Role:    assistantMsg.Role,
+				Content: assistantMsg.Content,
+			}
+			if len(assistantMsg.ToolCalls) > 0 {
+				data, _ := json.Marshal(assistantMsg.ToolCalls)
+				dbAssistantMsg.ToolCalls = data
+			}
+			newMessages = append(newMessages, dbAssistantMsg)
+
+			// 检查是否有工具调用
+			if len(assistantMsg.ToolCalls) == 0 {
+				// 没有工具调用，输出最终回复并结束循环
+				fmt.Println(assistantMsg.Content)
+				break
+			}
+
+			// 处理每个工具调用
+			for _, tc := range assistantMsg.ToolCalls {
+				// 执行工具
+				handler, ok := toolHandlers[tc.Function.Name]
+				if !ok {
+					// 未知工具，返回错误信息
+					result := fmt.Sprintf("错误: 未知工具 '%s'", tc.Function.Name)
+					toolMsg := api.Message{
+						Role:       "tool",
+						ToolCallID: tc.ID,
+						Content:    result,
+					}
+					messages = append(messages, toolMsg)
+					newMessages = append(newMessages, db.Message{
+						Role:       "tool",
+						ToolCallID: tc.ID,
+						Content:    result,
+					})
+					continue
+				}
+
+				// 解析参数
+				var args map[string]interface{}
+				if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+					result := fmt.Sprintf("错误: 解析参数失败: %v", err)
+					toolMsg := api.Message{
+						Role:       "tool",
+						ToolCallID: tc.ID,
+						Content:    result,
+					}
+					messages = append(messages, toolMsg)
+					newMessages = append(newMessages, db.Message{
+						Role:       "tool",
+						ToolCallID: tc.ID,
+						Content:    result,
+					})
+					continue
+				}
+
+				// 重新编码参数为 JSON 供处理函数使用（保持通用）
+				argsRaw, _ := json.Marshal(args)
+				result, err := handler(projectRoot, argsRaw)
+				if err != nil {
+					result = fmt.Sprintf("执行失败: %v", err)
+				}
+
+				// 添加工具响应消息
+				toolMsg := api.Message{
+					Role:       "tool",
+					ToolCallID: tc.ID,
+					Content:    result,
+				}
+				messages = append(messages, toolMsg)
+				newMessages = append(newMessages, db.Message{
+					Role:       "tool",
+					ToolCallID: tc.ID,
+					Content:    result,
+				})
+			}
+			// 继续循环，将工具响应发送给模型
 		}
 
-		// 9. 输出回复
-		fmt.Println(assistantMsg)
+		// 8. 将本轮所有新增的消息存入数据库
+		if len(newMessages) > 0 {
+			if err := database.SaveMessagesBatch(sessionID, newMessages); err != nil {
+				fmt.Fprintf(os.Stderr, "保存消息失败: %v\n", err)
+				os.Exit(1)
+			}
+		}
 	},
 }
 
+// 工具处理函数实现 -------------------------------------------------
+
+// 解析文件路径：如果是相对路径，则拼接项目根目录；否则直接使用（需确保在项目内）
+func resolvePath(projectRoot, path string) (string, error) {
+	if filepath.IsAbs(path) {
+		// 检查是否在项目根目录内
+		rel, err := filepath.Rel(projectRoot, path)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			return "", fmt.Errorf("路径 %q 不在项目根目录内", path)
+		}
+		return path, nil
+	}
+	return filepath.Join(projectRoot, path), nil
+}
+
+func handleReadFile(projectRoot string, argsRaw json.RawMessage) (string, error) {
+	var args struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal(argsRaw, &args); err != nil {
+		return "", fmt.Errorf("参数解析失败: %w", err)
+	}
+	fullPath, err := resolvePath(projectRoot, args.Path)
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		return "", fmt.Errorf("读取文件失败: %w", err)
+	}
+	return string(data), nil
+}
+
+func handleWriteFile(projectRoot string, argsRaw json.RawMessage) (string, error) {
+	var args struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(argsRaw, &args); err != nil {
+		return "", fmt.Errorf("参数解析失败: %w", err)
+	}
+	fullPath, err := resolvePath(projectRoot, args.Path)
+	if err != nil {
+		return "", err
+	}
+	// 确保目录存在
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		return "", fmt.Errorf("创建目录失败: %w", err)
+	}
+	if err := os.WriteFile(fullPath, []byte(args.Content), 0644); err != nil {
+		return "", fmt.Errorf("写入文件失败: %w", err)
+	}
+	return fmt.Sprintf("已成功写入文件: %s", args.Path), nil
+}
+
+func handleSearchFiles(projectRoot string, argsRaw json.RawMessage) (string, error) {
+	var args struct {
+		Pattern string `json:"pattern"`
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(argsRaw, &args); err != nil {
+		return "", fmt.Errorf("参数解析失败: %w", err)
+	}
+	var results []string
+	err := filepath.Walk(projectRoot, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // 跳过无法访问的路径
+		}
+		if info.IsDir() {
+			// 忽略 .git 目录
+			if info.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel, err := filepath.Rel(projectRoot, path)
+		if err != nil {
+			return nil
+		}
+		// 文件名匹配
+		if args.Pattern != "" {
+			matched, _ := filepath.Match(args.Pattern, info.Name())
+			if !matched {
+				return nil
+			}
+		}
+		// 内容匹配
+		if args.Content != "" {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return nil
+			}
+			if !strings.Contains(string(data), args.Content) {
+				return nil
+			}
+		}
+		results = append(results, rel)
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("搜索失败: %w", err)
+	}
+	if len(results) == 0 {
+		return "未找到匹配的文件", nil
+	}
+	return strings.Join(results, "\n"), nil
+}
+
+// Git 操作辅助：在项目根目录执行 git 命令
+func gitCommand(projectRoot string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = projectRoot
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git 命令失败: %s\n输出: %s", err, out)
+	}
+	return string(out), nil
+}
+
+func handleGitAdd(projectRoot string, argsRaw json.RawMessage) (string, error) {
+	var args struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal(argsRaw, &args); err != nil {
+		return "", fmt.Errorf("参数解析失败: %w", err)
+	}
+	// 路径相对于项目根目录
+	out, err := gitCommand(projectRoot, "add", args.Path)
+	if err != nil {
+		return "", err
+	}
+	if out == "" {
+		out = "已添加到暂存区"
+	}
+	return out, nil
+}
+
+func handleGitCommit(projectRoot string, argsRaw json.RawMessage) (string, error) {
+	var args struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(argsRaw, &args); err != nil {
+		return "", fmt.Errorf("参数解析失败: %w", err)
+	}
+	out, err := gitCommand(projectRoot, "commit", "-m", args.Message)
+	if err != nil {
+		return "", err
+	}
+	return out, nil
+}
+
+func handleGitLog(projectRoot string, argsRaw json.RawMessage) (string, error) {
+	var args struct {
+		MaxCount int `json:"max_count"`
+	}
+
+	if err := json.Unmarshal(argsRaw, &args); err != nil {
+		args.MaxCount = 0
+	}
+
+	if args.MaxCount <= 0 {
+		args.MaxCount = 10
+	}
+	out, err := gitCommand(projectRoot, "log", "-n", fmt.Sprintf("%d", args.MaxCount), "--oneline")
+	if err != nil {
+		return "", err
+	}
+	return out, nil
+}
+
+func handleGitDiff(projectRoot string, argsRaw json.RawMessage) (string, error) {
+	var args struct {
+		Path string `json:"path"`
+	}
+	_ = json.Unmarshal(argsRaw, &args) // 忽略错误，path 可选
+	gitArgs := []string{"diff"}
+	if args.Path != "" {
+		gitArgs = append(gitArgs, "--", args.Path)
+	}
+	out, err := gitCommand(projectRoot, gitArgs...)
+	if err != nil {
+		return "", err
+	}
+	return out, nil
+}
+
+func handleGitStatus(projectRoot string, argsRaw json.RawMessage) (string, error) {
+	out, err := gitCommand(projectRoot, "status", "--short")
+	if err != nil {
+		return "", err
+	}
+	if out == "" {
+		out = "工作区干净，无变更"
+	}
+	return out, nil
+}
+
 // getProjectRoot 获取当前项目根目录（用于会话隔离）
-// 如果在 Git 仓库内，返回 Git 根目录；否则返回当前目录的绝对路径。
 func getProjectRoot() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
-
-	// 尝试查找 Git 仓库根目录
 	gitRoot, err := findGitRoot(cwd)
 	if err == nil && gitRoot != "" {
 		return gitRoot, nil
 	}
-
-	// 没有 Git 仓库，返回当前目录的绝对路径
 	return filepath.Abs(cwd)
 }
 
-// findGitRoot 从指定目录向上查找，直到找到包含 .git 的目录
 func findGitRoot(dir string) (string, error) {
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
 		return "", err
 	}
-
 	for {
 		gitPath := filepath.Join(absDir, ".git")
 		if _, err := os.Stat(gitPath); err == nil {
@@ -143,6 +586,5 @@ func findGitRoot(dir string) (string, error) {
 
 func init() {
 	chatCmd.Flags().StringVar(&chatModel, "model", "deepseek-chat", "使用的模型名称")
-	// 注意：已移除 --session 参数
 	rootCmd.AddCommand(chatCmd)
 }

@@ -77,16 +77,34 @@ CNY    100.00  50.00      50.00
 #+end_example
 
 *** =chat=
-与 DeepSeek 聊天模型对话。可以接收命令行参数或从标准输入读取消息。
-#+begin_src bash
-dscli chat "你好，今天天气怎么样？"
-echo "介绍一下 Go 语言" | dscli chat
-#+end_src
+*** =chat=
+与 DeepSeek 聊天模型进行多轮对话，并支持工具调用（文件操作、Git）。
 
-支持 =--model= 标志指定模型（默认 =deepseek-chat=）：
+**消息输入**：通过标准输入提供消息内容。
+
+**会话隔离**：每个项目目录（Git 仓库根或当前目录）拥有独立的对话历史。
+
+**工具列表**：
+- =read_file=：读取文件内容
+- =write_file=：写入文件（自动创建目录）
+- =search_files=：按文件名模式或内容搜索文件
+- =git_add=：将文件添加到 Git 暂存区
+- =git_commit=：提交暂存区更改
+- =git_log=：查看提交历史
+- =git_diff=：查看差异
+- =git_status=：查看仓库状态
+
+**示例**：
 #+begin_src bash
-dscli chat --model deepseek-chat "你好"
-#+end_src
+# 创建文件
+echo "创建一个 main.go 文件，内容为 package main\nfunc main() { println(\"hello\") }" | dscli chat
+
+# 搜索包含 "TODO" 的文件
+echo "在项目中搜索包含 'TODO' 的文件" | dscli chat
+
+# Git 操作
+echo "把当前所有修改添加到 Git 并提交，信息为 'update'" | dscli chat
+#+end_src与 DeepSeek 聊天模型对话。可以接收命令行参数或从标准输入读取消息。
 
 *** =fim=
 FIM 代码补全，适用于代码生成场景。

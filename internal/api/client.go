@@ -90,11 +90,24 @@ func (c *Client) Balance() (*BalanceResponse, error) {
 	return &resp, err
 }
 
-// Chat 发送聊天请求
+// Chat 发送聊天请求（无工具）
 func (c *Client) Chat(model string, messages []Message) (*ChatResponse, error) {
 	req := ChatRequest{
 		Model:    model,
 		Messages: messages,
+		Stream:   false,
+	}
+	var resp ChatResponse
+	err := c.doRequest("POST", "/chat/completions", req, &resp)
+	return &resp, err
+}
+
+// ChatWithTools 发送聊天请求，支持工具调用
+func (c *Client) ChatWithTools(model string, messages []Message, tools []Tool) (*ChatResponse, error) {
+	req := ChatRequest{
+		Model:    model,
+		Messages: messages,
+		Tools:    tools,
 		Stream:   false,
 	}
 	var resp ChatResponse
