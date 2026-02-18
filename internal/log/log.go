@@ -94,10 +94,25 @@ func APIResponse(statusCode int, data interface{}) {
 
 // ToolCall 记录工具调用日志
 func ToolCall(toolName string, args interface{}) {
-	Info("调用工具: %s", toolName)
+	Info("执行工具: %s", toolName)
 	if currentLevel <= DEBUG && args != nil {
 		jsonArgs, _ := json.MarshalIndent(args, "", "  ")
 		Debug("工具参数: %s", string(jsonArgs))
+	} else if currentLevel <= INFO && args != nil {
+		// 在INFO级别显示简化的参数信息
+		if argsMap, ok := args.(map[string]interface{}); ok {
+			var paramStr string
+			for k, v := range argsMap {
+				if strVal, ok := v.(string); ok && len(strVal) > 50 {
+					paramStr += fmt.Sprintf("%s:%.50s... ", k, strVal)
+				} else {
+					paramStr += fmt.Sprintf("%s:%v ", k, v)
+				}
+			}
+			if paramStr != "" {
+				Info("工具参数: %s", paramStr)
+			}
+		}
 	}
 }
 
@@ -106,23 +121,55 @@ func ToolResult(toolName string, result string, err error) {
 	if err != nil {
 		Error("工具执行失败: %s - %v", toolName, err)
 	} else {
-		Info("工具执行成功: %s", toolName)
+		Info("工具执行完成: %s", toolName)
 		if currentLevel <= DEBUG && result != "" {
 			Debug("工具结果: %s", result)
+		} else if currentLevel <= INFO && result != "" {
+			// 在INFO级别显示简化的结果
+			if len(result) > 100 {
+				Info("结果: %.100s...", result)
+			} else {
+				Info("结果: %s", result)
+			}
 		}
 	}
 }
 
 // ChatMessage 记录聊天消息日志
 func ChatMessage(role, content string, toolCalls interface{}) {
-	Info("聊天消息: %s", role)
+	if role == "user" {
+		Info("用户消息")
+		if currentLevel <= INFO && content != "" {
+			if len(content) > 100 {
+				Info("内容: %.100s...", content)
+			} else {
+				Info("内容: %s", content)
+			}
+		}
+	} else if role == "assistant" {
+		if toolCalls != nil {
+			Info("助手回复（包含工具调用）")
+		} else {
+			Info("助手回复")
+			if currentLevel <= INFO && content != "" {
+				if len(content) > 100 {
+					Info("内容: %.100s...", content)
+				} else {
+					Info("内容: %s", content)
+				}
+			}
+		}
+	} else {
+		Info("聊天消息: %s", role)
+	}
+	
 	if currentLevel <= DEBUG {
 		if content != "" {
-			Debug("消息内容: %s", content)
+			Debug("完整内容: %s", content)
 		}
 		if toolCalls != nil {
 			jsonToolCalls, _ := json.MarshalIndent(toolCalls, "", "  ")
-			Debug("工具调用: %s", string(jsonToolCalls))
+			Debug("工具调用详情: %s", string(jsonToolCalls))
 		}
 	}
 }

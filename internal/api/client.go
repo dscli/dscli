@@ -21,7 +21,7 @@ type Client struct {
 func NewClient(apiKey, baseURL string, debug bool) *Client {
 	// 设置日志级别
 	log.SetDebugMode(debug)
-
+	
 	return &Client{
 		apiKey:  apiKey,
 		baseURL: baseURL,
@@ -98,33 +98,31 @@ func (c *Client) doRequest(method, path string, body interface{}, result interfa
 
 // Models 获取模型列表
 func (c *Client) Models() (*ModelsResponse, error) {
-	log.Info("开始获取模型列表")
+	// 只在DEBUG模式下输出开始日志
 	var resp ModelsResponse
 	err := c.doRequest("GET", "/models", nil, &resp)
 	if err != nil {
 		log.Error("获取模型列表失败: %v", err)
 	} else {
-		log.Info("成功获取模型列表，共 %d 个模型", len(resp.Data))
 	}
 	return &resp, err
 }
 
 // Balance 获取余额
 func (c *Client) Balance() (*BalanceResponse, error) {
-	log.Info("开始查询账户余额")
+	// 只在DEBUG模式下输出开始日志
 	var resp BalanceResponse
 	err := c.doRequest("GET", "/user/balance", nil, &resp)
 	if err != nil {
 		log.Error("查询余额失败: %v", err)
 	} else {
-		log.Info("成功查询账户余额")
 	}
 	return &resp, err
 }
 
 // Chat 发送聊天请求（无工具）
 func (c *Client) Chat(model string, messages []Message) (*ChatResponse, error) {
-	log.Info("开始聊天请求，模型: %s，消息数: %d", model, len(messages))
+	log.Debug("开始聊天请求，模型: %s，消息数: %d", model, len(messages))
 	log.ChatMessage("用户", messages[len(messages)-1].Content, nil)
 	
 	req := ChatRequest{
@@ -138,14 +136,14 @@ func (c *Client) Chat(model string, messages []Message) (*ChatResponse, error) {
 		log.Error("聊天请求失败: %v", err)
 	} else if len(resp.Choices) > 0 {
 		log.ChatMessage("助手", resp.Choices[0].Message.Content, resp.Choices[0].Message.ToolCalls)
-		log.Info("聊天请求成功，收到助手回复")
+		log.Info("聊天请求成功")
 	}
 	return &resp, err
 }
 
 // ChatWithTools 发送聊天请求，支持工具调用
 func (c *Client) ChatWithTools(model string, messages []Message, tools []Tool) (*ChatResponse, error) {
-	log.Info("开始聊天请求（支持工具），模型: %s，消息数: %d，工具数: %d", 
+	log.Debug("开始聊天请求（支持工具），模型: %s，消息数: %d，工具数: %d", 
 		model, len(messages), len(tools))
 	
 	// 记录最后一条用户消息
@@ -170,18 +168,14 @@ func (c *Client) ChatWithTools(model string, messages []Message, tools []Tool) (
 		assistantMsg := resp.Choices[0].Message
 		log.ChatMessage("助手", assistantMsg.Content, assistantMsg.ToolCalls)
 		
-		if len(assistantMsg.ToolCalls) > 0 {
-			log.Info("助手请求调用 %d 个工具", len(assistantMsg.ToolCalls))
-		} else {
-			log.Info("聊天请求成功，收到助手回复")
-		}
+		// 工具调用数量日志由命令文件处理
 	}
 	return &resp, err
 }
 
 // FIM 发送 FIM 补全请求
 func (c *Client) FIM(model, prompt, suffix string, maxTokens int, temperature float64) (*FIMResponse, error) {
-	log.Info("开始FIM代码补全请求，模型: %s", model)
+	log.Debug("开始FIM代码补全请求，模型: %s", model)
 	log.Debug("提示: %s", prompt)
 	if suffix != "" {
 		log.Debug("后缀: %s", suffix)

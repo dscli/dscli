@@ -302,9 +302,13 @@ var chatCmd = &cobra.Command{
 
 			// 检查是否有工具调用
 		if len(assistantMsg.ToolCalls) > 0 {
-			log.Info("助手请求调用 %d 个工具", len(assistantMsg.ToolCalls))
+		if len(assistantMsg.ToolCalls) > 0 {
+			if len(assistantMsg.ToolCalls) == 1 {
+				log.Info("助手请求调用工具: %s", assistantMsg.ToolCalls[0].Function.Name)
+			} else {
+				log.Info("助手请求调用 %d 个工具", len(assistantMsg.ToolCalls))
+			}
 		}
-			if len(assistantMsg.ToolCalls) == 0 {
 				// 没有工具调用，输出最终回复并结束循环
 				fmt.Println(assistantMsg.Content)
 				break

@@ -14,7 +14,6 @@ var balanceCmd = &cobra.Command{
 	Short: "查询账户余额",
 	Run: func(cmd *cobra.Command, args []string) {
 		log.Info("开始查询账户余额")
-		log.Info("开始查询账户余额")
 		resp, err := client.Balance()
 		log.Info("成功查询账户余额")
 		if err != nil {
