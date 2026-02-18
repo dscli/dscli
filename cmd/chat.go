@@ -198,6 +198,7 @@ var chatCmd = &cobra.Command{
   echo "把 README.md 添加到 Git 并提交" | dscli chat
   cat prompt.txt | dscli chat --model deepseek-chat`,
 	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Fprintf(os.Stderr, "[INFO] 开始处理聊天请求\n")
 		// 1. 读取标准输入
 		reader := bufio.NewReader(os.Stdin)
 		content, err := io.ReadAll(reader)
@@ -206,6 +207,7 @@ var chatCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		userMsg := strings.TrimSpace(string(content))
+	fmt.Fprintf(os.Stderr, "[INFO] 用户输入长度: %d 字符\n", len(userMsg))
 		if userMsg == "" {
 			fmt.Fprintln(os.Stderr, "错误: 标准输入为空，请通过管道或重定向提供消息内容")
 			os.Exit(1)
@@ -213,6 +215,7 @@ var chatCmd = &cobra.Command{
 
 		// 2. 确定项目根路径
 		projectRoot, err := getProjectRoot()
+	fmt.Fprintf(os.Stderr, "[INFO] 项目根目录: %s\n", projectRoot)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "无法确定项目根路径: %v\n", err)
 			os.Exit(1)
@@ -267,6 +270,7 @@ var chatCmd = &cobra.Command{
 		// 工具调用循环
 		for {
 			// 调用 API（带工具）
+	fmt.Fprintf(os.Stderr, "[INFO] 调用大模型API，模型: %s\n", chatModel)
 			resp, err := client.ChatWithTools(chatModel, messages, tools)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "聊天请求失败: %v\n", err)
@@ -293,6 +297,9 @@ var chatCmd = &cobra.Command{
 			newMessages = append(newMessages, dbAssistantMsg)
 
 			// 检查是否有工具调用
+		if len(assistantMsg.ToolCalls) > 0 {
+			fmt.Fprintf(os.Stderr, "[INFO] 助手请求调用 %d 个工具\n", len(assistantMsg.ToolCalls))
+		}
 			if len(assistantMsg.ToolCalls) == 0 {
 				// 没有工具调用，输出最终回复并结束循环
 				fmt.Println(assistantMsg.Content)
@@ -397,6 +404,7 @@ func handleReadFile(projectRoot string, argsRaw json.RawMessage) (string, error)
 	if err != nil {
 		return "", err
 	}
+	fmt.Fprintf(os.Stderr, "[INFO] 读取文件: %s\n", args.Path)
 	data, err := os.ReadFile(fullPath)
 	if err != nil {
 		return "", fmt.Errorf("读取文件失败: %w", err)
