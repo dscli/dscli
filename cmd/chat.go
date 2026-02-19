@@ -203,20 +203,7 @@ var chatCmd = &cobra.Command{
 
 func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	log.Info("开始处理聊天请求")
-	// 1. 读取标准输入
-	reader := bufio.NewReader(os.Stdin)
-	content, err := io.ReadAll(reader)
-	if err != nil {
-		return
-	}
-	userMsg := strings.TrimSpace(string(content))
-	log.Info("用户输入长度: %d 字符", len(userMsg))
-	if userMsg == "" {
-		err = fmt.Errorf("错误: 标准输入为空，请通过管道或重定向提供消息内容")
-		return
-	}
-
-	// 2. 确定项目根路径
+	// 1. 确定项目根路径
 	projectRoot, err := getProjectRoot()
 	log.Info("项目根目录: %s", projectRoot)
 	if err != nil {
@@ -224,7 +211,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 
-	// 3. 打开数据库
+	// 2. 打开数据库
 	database, err := db.New()
 	log.DatabaseOperation("打开数据库")
 	if err != nil {
@@ -233,31 +220,105 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 	defer database.Close()
 
-	// 4. 获取会话ID
+	// 3. 获取会话ID
 	sessionID, err := database.GetOrCreateSession(projectRoot)
 	if err != nil {
 		err = fmt.Errorf("获取会话失败: %w", err)
 		return
 	}
 
-	message := api.Message{Role: "user", Content: userMsg}
-	return ChatMessage(database, projectRoot, sessionID, message)
+	// 4. 读取标准输入
+	reader := bufio.NewReader(os.Stdin)
+	content, err := io.ReadAll(reader)
+	if err != nil {
+		return
+	}
+	userMsg := strings.TrimSpace(string(content))
+	log.Info("用户输入长度: %d 字符", len(userMsg))
+	if userMsg != "" {
+		return ChatMessage(database, projectRoot, sessionID, api.Message{Role: "user", Content: userMsg})
+	}
+
+	dm, err := database.LoadLastOne(sessionID)
+	if err != nil {
+		return
+	}
+
+	am := ToApiMessage(dm)
+	if am.Role != "assistant" || len(am.ToolCalls) == 0 {
+		fmt.Println("天下本无事")
+		return
+	}
+	return HandleToolCalls(database, projectRoot, sessionID, am)
 }
 
-func ToDBMessage(apim api.Message)(dbm db.Message){
+func ToApiMessage(dm *db.Message) (am *api.Message) {
+	role := dm.Role
+	log.Debug("dm role=%s", role);
+	am = &api.Message{
+		Role:    role,
+		Content: dm.Content,
+		ToolCallID: dm.ToolCallID,
+	}
+	log.Debug("am: %s", am)
+	if len(dm.ToolCalls) != 0 {
+		err := json.Unmarshal(dm.ToolCalls, &am.ToolCalls)
+		if err != nil {
+			log.Error("error: %v", err)
+			return nil
+		}
+	}
+	return
+}
+
+func ToDBMessage(apim api.Message) (dbm db.Message) {
 	role := apim.Role
 	dbm.Content = apim.Content
 	dbm.Role = apim.Role
 	if role == "tool" {
 		dbm.ToolCallID = apim.ToolCallID
 	}
-	if role == "assistant" && len(apim.ToolCalls) > 0{
+	if role == "assistant" && len(apim.ToolCalls) > 0 {
 		data, err := json.Marshal(apim.ToolCalls)
 		if err != nil {
 			log.Error("error: %v", err)
 			return
 		}
 		dbm.ToolCalls = data
+	}
+	return
+}
+
+
+func HandleToolCalls(database *db.DB, projectRoot string, sessionID int64, assistantMsg *api.Message) (err error) {
+	inputs := []api.Message{}
+	// 处理每个工具调用
+	for _, tc := range assistantMsg.ToolCalls {
+		// 执行工具
+		handler, ok := toolHandlers[tc.Function.Name]
+		if !ok {
+			// 未知工具，返回错误信息
+			err = fmt.Errorf("错误: 未知工具 '%s'", tc.Function.Name)
+			return
+		}
+
+		var result string
+		result, err = handler(projectRoot, []byte(tc.Function.Arguments))
+		if err != nil {
+			log.Error("执行%s失败: %v", tc.Function.Name, err)
+			// But we still need to tell the result to assistant
+			result = err.Error()
+		}
+
+		inputs = append(inputs, api.Message{
+			Role:       "tool",
+			ToolCallID: tc.ID,
+			Content:    result,
+		})
+	}
+
+	if len(inputs) > 0 {
+		err = ChatMessage(database, projectRoot, sessionID, inputs...)
 	}
 	return
 }
@@ -301,8 +362,7 @@ func ChatMessage(database *db.DB, projectRoot string, sessionID int64, inputs ..
 		dbmessages = append(dbmessages, ToDBMessage(m))
 	}
 
-	var resp *api.ChatResponse   // resp
-	// 工具调用循环
+	var resp *api.ChatResponse // resp
 	log.Info("调用大模型API，模型: %s", chatModel)
 	resp, err = client.ChatWithTools(chatModel, messages, tools)
 	if err != nil {
@@ -328,36 +388,7 @@ func ChatMessage(database *db.DB, projectRoot string, sessionID int64, inputs ..
 	}
 
 	fmt.Println(assistantMsg.Content)
-	inputs = []api.Message{}
-	// 处理每个工具调用
-	for _, tc := range assistantMsg.ToolCalls {
-		// 执行工具
-		handler, ok := toolHandlers[tc.Function.Name]
-		if !ok {
-			// 未知工具，返回错误信息
-			err = fmt.Errorf("错误: 未知工具 '%s'", tc.Function.Name)
-			return
-		}
-
-		var result string
-		result, err = handler(projectRoot, []byte(tc.Function.Arguments))
-		if err != nil {
-			err = fmt.Errorf("执行%s失败: %w", tc.Function.Name, err)
-			return
-		}
-
-		inputs = append(inputs, api.Message{
-			Role:       "tool",
-			ToolCallID: tc.ID,
-			Content:    result,
-		})
-	}
-
-	if len(inputs) > 0 {
-		err = ChatMessage(database,projectRoot, sessionID, inputs...)
-	}
-
-	return
+	return HandleToolCalls(database, projectRoot, sessionID, &assistantMsg)
 }
 
 // 工具处理函数实现 -------------------------------------------------
@@ -380,6 +411,7 @@ func handleReadFile(projectRoot string, argsRaw json.RawMessage) (string, error)
 		Path string `json:"path"`
 	}
 	if err := json.Unmarshal(argsRaw, &args); err != nil {
+		log.Debug("argsRaw: %s",string(argsRaw))
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
 	fullPath, err := resolvePath(projectRoot, args.Path)
@@ -401,6 +433,7 @@ func handleWriteFile(projectRoot string, argsRaw json.RawMessage) (string, error
 		Content string `json:"content"`
 	}
 	if err := json.Unmarshal(argsRaw, &args); err != nil {
+		log.Debug("argsRaw: %s",string(argsRaw))
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
 	fullPath, err := resolvePath(projectRoot, args.Path)

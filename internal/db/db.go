@@ -43,7 +43,7 @@ func New() (*DB, error) {
 	dbPath := filepath.Join(home, ".dscli", "sqlite.db")
 
 	dir := filepath.Dir(dbPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("创建数据库目录失败: %w", err)
 	}
 
@@ -101,13 +101,41 @@ func (db *DB) GetOrCreateSession(projectPath string) (int64, error) {
 	return id, nil
 }
 
+func (db *DB) LoadLastOne(sessionID int64) (*Message, error) {
+	rows, err := db.Query(`
+        SELECT role, content, tool_call_id, tool_calls, created_at 
+        FROM messages
+        WHERE session_id = ?
+        ORDER BY id DESC 
+        LIMIT 1`, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load last: %w", err)
+	}
+	var m Message
+	if rows.Next() {
+		var toolCallID sql.NullString
+		var toolCalls sql.NullString
+		if err := rows.Scan(&m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan message: %w", err)
+		}
+		if toolCallID.Valid {
+			m.ToolCallID = toolCallID.String
+		}
+		if toolCalls.Valid {
+			m.ToolCalls = json.RawMessage(toolCalls.String)
+		}
+		return &m, nil
+	}
+	return nil, fmt.Errorf("failed to load last message")
+}
+
 // LoadHistory 加载指定会话的所有历史消息，按时间升序返回
 func (db *DB) LoadHistory(sessionID int64) ([]Message, error) {
 	rows, err := db.Query(`
 		SELECT role, content, tool_call_id, tool_calls, created_at
 		FROM messages
 		WHERE session_id = ?
-		ORDER BY created_at ASC`, sessionID)
+		ORDER BY id ASC`, sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("查询历史消息失败: %w", err)
 	}

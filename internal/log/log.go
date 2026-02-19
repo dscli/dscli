@@ -18,7 +18,7 @@ const (
 )
 
 var (
-	currentLevel LogLevel = INFO
+	currentLevel LogLevel = DEBUG
 	debugMode    bool     = false
 )
 
