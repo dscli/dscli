@@ -15,10 +15,11 @@ const (
 	INFO
 	WARN
 	ERROR
+	NONE
 )
 
 var (
-	currentLevel LogLevel = INFO
+	currentLevel LogLevel = NONE
 	debugMode    bool     = false
 )
 
