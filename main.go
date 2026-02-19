@@ -3,11 +3,14 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/joho/godotenv"
 	"gitcode.com/nanjunjie/dscli/cmd"
+	"gitcode.com/nanjunjie/dscli/internal/log"
 )
 
 func init() {
@@ -124,5 +127,23 @@ func loadShellFormatConfig(content []byte, path string) bool {
 }
 
 func main() {
+	// 设置信号处理，确保程序退出时关闭日志文件
+	setupSignalHandler()
+	
+	// 确保程序退出时关闭日志
+	defer log.Close()
+	
 	cmd.Execute()
+}
+
+// setupSignalHandler 设置信号处理器
+func setupSignalHandler() {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	
+	go func() {
+		<-c
+		log.Close()
+		os.Exit(0)
+	}()
 }

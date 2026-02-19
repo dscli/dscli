@@ -3,7 +3,11 @@ package log
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"os"
+	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -15,13 +19,51 @@ const (
 	INFO
 	WARN
 	ERROR
-	NONE
 )
 
 var (
-	currentLevel LogLevel = NONE
+	currentLevel LogLevel = INFO
 	debugMode    bool     = false
+	logFile      *os.File
+	logger       *log.Logger
+	initOnce     sync.Once
 )
+
+// initLogging 初始化日志系统
+func initLogging() {
+	initOnce.Do(func() {
+		// 确保日志目录存在
+		logDir := filepath.Join(os.Getenv("HOME"), ".dscli")
+		if err := os.MkdirAll(logDir, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "创建日志目录失败: %v\n", err)
+			return
+		}
+
+		// 打开日志文件
+		logPath := filepath.Join(logDir, "dscli.log")
+		file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "打开日志文件失败: %v\n", err)
+			return
+		}
+
+		logFile = file
+		
+		// 创建logger，同时输出到文件和控制台（stderr）
+		multiWriter := io.MultiWriter(os.Stderr, logFile)
+		logger = log.New(multiWriter, "", 0) // 不使用前缀，我们自己控制格式
+		
+		// 记录初始化信息
+		logger.Println(formatMessage("INFO", "日志系统初始化完成，日志文件: %s", logPath))
+	})
+}
+
+// Close 关闭日志文件
+func Close() {
+	if logFile != nil {
+		logFile.Close()
+	}
+}
 
 // SetLevel 设置日志级别
 func SetLevel(level LogLevel) {
@@ -43,32 +85,37 @@ func formatMessage(level string, msg string, args ...interface{}) string {
 	return fmt.Sprintf("[%s] [%s] %s", timestamp, level, formattedMsg)
 }
 
+// logMessage 输出日志消息
+func logMessage(level LogLevel, levelStr string, msg string, args ...interface{}) {
+	if currentLevel <= level {
+		initLogging() // 确保日志系统已初始化
+		if logger != nil {
+			logger.Println(formatMessage(levelStr, msg, args...))
+		} else {
+			// 如果logger未初始化，输出到stderr
+			fmt.Fprintln(os.Stderr, formatMessage(levelStr, msg, args...))
+		}
+	}
+}
+
 // Debug 输出调试日志
 func Debug(msg string, args ...interface{}) {
-	if currentLevel <= DEBUG {
-		fmt.Fprintln(os.Stderr, formatMessage("DEBUG", msg, args...))
-	}
+	logMessage(DEBUG, "DEBUG", msg, args...)
 }
 
 // Info 输出信息日志
 func Info(msg string, args ...interface{}) {
-	if currentLevel <= INFO {
-		fmt.Fprintln(os.Stderr, formatMessage("INFO", msg, args...))
-	}
+	logMessage(INFO, "INFO", msg, args...)
 }
 
 // Warn 输出警告日志
 func Warn(msg string, args ...interface{}) {
-	if currentLevel <= WARN {
-		fmt.Fprintln(os.Stderr, formatMessage("WARN", msg, args...))
-	}
+	logMessage(WARN, "WARN", msg, args...)
 }
 
 // Error 输出错误日志
 func Error(msg string, args ...interface{}) {
-	if currentLevel <= ERROR {
-		fmt.Fprintln(os.Stderr, formatMessage("ERROR", msg, args...))
-	}
+	logMessage(ERROR, "ERROR", msg, args...)
 }
 
 // APIRequest 记录API请求日志
