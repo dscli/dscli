@@ -48,12 +48,180 @@ func GetAllTools() []api.Tool {
 }
 
 // getToolParameters 获取工具参数定义
+
+// getToolParameters 获取工具参数定义（strict模式）
 func getToolParameters(toolName string) map[string]interface{} {
-	// 这里可以根据工具名称返回不同的参数定义
-	// 为了简化，我们先返回一个空map，实际实现时会根据具体工具返回
-	return map[string]interface{}{
-		"type":       "object",
-		"properties": map[string]interface{}{},
+	switch toolName {
+	case "read_file":
+		return map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"path": map[string]interface{}{
+					"type":        "string",
+					"description": "文件路径（相对于项目根目录或绝对路径）",
+				},
+			},
+			"required":             []string{"path"},
+			"additionalProperties": false,
+		}
+		
+	case "write_file":
+		return map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"path": map[string]interface{}{
+					"type":        "string",
+					"description": "文件路径（相对于项目根目录或绝对路径）",
+				},
+				"content": map[string]interface{}{
+					"type":        "string",
+					"description": "要写入的内容",
+				},
+			},
+			"required":             []string{"path", "content"},
+			"additionalProperties": false,
+		}
+		
+	case "search_files":
+		return map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"pattern": map[string]interface{}{
+					"type":        "string",
+					"description": "文件名模式，如 '*.go'，为空则匹配所有文件",
+				},
+				"content": map[string]interface{}{
+					"type":        "string",
+					"description": "要搜索的内容（如果提供则搜索文件内容）",
+				},
+			},
+			"required":             []string{},
+			"additionalProperties": false,
+		}
+		
+	case "git_add":
+		return map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"path": map[string]interface{}{
+					"type":        "string",
+					"description": "文件路径（相对于项目根目录）",
+				},
+			},
+			"required":             []string{"path"},
+			"additionalProperties": false,
+		}
+		
+	case "git_commit":
+		return map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"message": map[string]interface{}{
+					"type":        "string",
+					"description": "提交信息",
+				},
+			},
+			"required":             []string{"message"},
+			"additionalProperties": false,
+		}
+		
+	case "git_log":
+		return map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"max_count": map[string]interface{}{
+					"type":        "integer",
+					"description": "最大显示数量，默认10",
+				},
+			},
+			"required":             []string{},
+			"additionalProperties": false,
+		}
+		
+	case "git_diff":
+		return map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"path": map[string]interface{}{
+					"type":        "string",
+					"description": "指定文件路径，不指定则查看所有变更",
+				},
+			},
+			"required":             []string{},
+			"additionalProperties": false,
+		}
+		
+	case "git_status":
+		return map[string]interface{}{
+			"type":                 "object",
+			"properties":           map[string]interface{}{},
+			"required":             []string{},
+			"additionalProperties": false,
+		}
+		
+	case "run_command":
+		return map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"command": map[string]interface{}{
+					"type":        "string",
+					"description": "要执行的 shell 命令，如 'git log --oneline | head -5'",
+				},
+			},
+			"required":             []string{"command"},
+			"additionalProperties": false,
+		}
+		
+	case "manage_skills":
+		return map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"action": map[string]interface{}{
+					"type":        "string",
+					"description": "操作类型：list, enable, disable, create, delete, search",
+					"enum":        []string{"list", "enable", "disable", "create", "delete", "search"},
+				},
+				"skill_name": map[string]interface{}{
+					"type":        "string",
+					"description": "技能名称",
+				},
+				"skill_id": map[string]interface{}{
+					"type":        "integer",
+					"description": "技能ID",
+				},
+				"category": map[string]interface{}{
+					"type":        "string",
+					"description": "技能分类过滤",
+				},
+				"search_term": map[string]interface{}{
+					"type":        "string",
+					"description": "搜索关键词",
+				},
+				"description": map[string]interface{}{
+					"type":        "string",
+					"description": "技能描述",
+				},
+				"content": map[string]interface{}{
+					"type":        "string",
+					"description": "技能内容/规则",
+				},
+				"priority": map[string]interface{}{
+					"type":        "integer",
+					"description": "技能优先级",
+				},
+			},
+			"required":             []string{"action"},
+			"additionalProperties": false,
+		}
+		
+	default:
+		// 默认返回空参数定义
+		return map[string]interface{}{
+			"type":                 "object",
+			"properties":           map[string]interface{}{},
+			"required":             []string{},
+			"additionalProperties": false,
+		}
 	}
 }
 

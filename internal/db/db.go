@@ -643,12 +643,14 @@ func (db *DB) GetToolUsageStats(days int) ([]struct {
 			SuccessRate float64
 			LastUsed   time.Time
 		}
-		var lastUsed sql.NullTime
-		if err := rows.Scan(&stat.Name, &stat.UsageCount, &stat.SuccessRate, &lastUsed); err != nil {
+		var lastUsedStr sql.NullString
+		if err := rows.Scan(&stat.Name, &stat.UsageCount, &stat.SuccessRate, &lastUsedStr); err != nil {
 			return nil, fmt.Errorf("扫描工具统计失败: %w", err)
 		}
-		if lastUsed.Valid {
-			stat.LastUsed = lastUsed.Time
+		if lastUsedStr.Valid && lastUsedStr.String != "" {
+			if t, err := time.Parse("2006-01-02 15:04:05", lastUsedStr.String); err == nil {
+			stat.LastUsed = t
+		}
 		}
 		stats = append(stats, stat)
 	}
@@ -698,12 +700,14 @@ func (db *DB) GetProjectToolUsage(projectHash string, days int) ([]struct {
 			UsageCount int
 			LastUsed   time.Time
 		}
-		var lastUsed sql.NullTime
-		if err := rows.Scan(&stat.Name, &stat.UsageCount, &lastUsed); err != nil {
+		var lastUsedStr sql.NullString
+		if err := rows.Scan(&stat.Name, &stat.UsageCount, &lastUsedStr); err != nil {
 			return nil, fmt.Errorf("扫描项目工具使用失败: %w", err)
 		}
-		if lastUsed.Valid {
-			stat.LastUsed = lastUsed.Time
+		if lastUsedStr.Valid && lastUsedStr.String != "" {
+			if t, err := time.Parse("2006-01-02 15:04:05", lastUsedStr.String); err == nil {
+			stat.LastUsed = t
+		}
 		}
 		stats = append(stats, stat)
 	}
