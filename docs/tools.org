@@ -1,0 +1,278 @@
+#+TITLE: dscli 工具系统设计文档
+#+AUTHOR: dscli 开发团队
+#+DATE: 2026-02-19
+#+OPTIONS: toc:nil num:nil
+
+* 概述
+** 工具系统目标
+   1. **使用统计**：记录每个工具的使用频率和成功率
+   2. **性能分析**：了解哪些工具最常用，哪些很少使用
+   3. **项目分析**：分析不同项目的工具使用模式
+   4. **优化决策**：基于使用数据决定工具的增强或废弃
+
+** 核心功能
+   - 工具使用记录和统计
+   - 工具使用情况可视化
+   - 项目工具使用分析
+   - 工具性能监控
+
+* 数据库设计
+** 工具表 (tools)
+   #+BEGIN_SRC sql
+     CREATE TABLE tools (
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         name TEXT NOT NULL UNIQUE,           -- 工具名称
+         description TEXT NOT NULL,           -- 工具描述
+         category TEXT,                       -- 工具分类
+         usage_count INTEGER DEFAULT 0,       -- 使用次数
+         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+     );
+   #+END_SRC
+
+** 工具使用记录表 (tool_usage)
+   #+BEGIN_SRC sql
+     CREATE TABLE tool_usage (
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         project_hash TEXT NOT NULL,          -- 项目哈希
+         tool_id INTEGER NOT NULL,            -- 工具ID
+         used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+         success BOOLEAN DEFAULT 1,           -- 是否成功
+         error_msg TEXT,                      -- 错误信息（如果失败）
+         FOREIGN KEY (tool_id) REFERENCES tools(id) ON DELETE CASCADE
+     );
+   #+END_SRC
+
+** 索引设计
+   #+BEGIN_SRC sql
+     -- 工具分类索引
+     CREATE INDEX idx_tools_category ON tools(category);
+     
+     -- 工具使用次数索引（用于排序）
+     CREATE INDEX idx_tools_usage ON tools(usage_count DESC);
+     
+     -- 项目工具使用索引
+     CREATE INDEX idx_tool_usage_project ON tool_usage(project_hash);
+     
+     -- 工具使用索引
+     CREATE INDEX idx_tool_usage_tool ON tool_usage(tool_id);
+     
+     -- 时间索引（用于时间范围查询）
+     CREATE INDEX idx_tool_usage_time ON tool_usage(used_at DESC);
+   #+END_SRC
+
+* 代码架构
+** 文件结构
+   #+BEGIN_SRC text
+     cmd/
+     ├── chat.go          # 聊天命令（精简版，只保留聊天逻辑）
+     ├── tools.go         # 工具相关代码（工具定义、处理器、统计）
+     └── root.go          # 根命令和工具子命令
+     
+     internal/db/db.go    # 数据库操作（已添加工具相关方法）
+   #+END_SRC
+
+** 代码重构原则
+   1. **分离关注点**：聊天逻辑与工具逻辑分离
+   2. **统一管理**：所有工具定义和处理器集中管理
+   3. **统计集成**：工具调用自动记录使用数据
+   4. **可扩展性**：方便添加新工具和统计功能
+
+* 工具分类
+** 文件操作类
+   - read_file: 读取文件
+   - write_file: 写入文件
+   - search_files: 搜索文件
+
+** Git 操作类
+   - git_add: 添加到暂存区
+   - git_commit: 提交更改
+   - git_log: 查看提交历史
+   - git_diff: 查看差异
+   - git_status: 查看状态
+
+** 系统操作类
+   - run_command: 执行任意命令
+
+** 技能管理类
+   - manage_skills: 管理技能
+
+* 统计指标
+** 基础指标
+   1. **使用次数**：每个工具被调用的总次数
+   2. **成功率**：工具执行成功的比例
+   3. **使用频率**：单位时间内的使用次数
+   4. **错误类型**：失败的原因分布
+
+** 项目指标
+   1. **项目工具使用分布**：不同项目的工具使用模式
+   2. **项目活跃度**：基于工具使用频率的项目活跃度
+   3. **项目类型识别**：基于工具使用模式识别项目类型
+
+** 时间指标
+   1. **趋势分析**：工具使用随时间的变化趋势
+   2. **峰值识别**：识别工具使用的高峰时段
+   3. **季节性分析**：工具使用的周期性模式
+
+* 命令行接口
+** tools 子命令
+   #+BEGIN_EXAMPLE
+     # 查看所有工具使用统计
+     dscli tools list [--days 30] [--category git]
+     
+     # 查看详细工具信息
+     dscli tools info <tool_name>
+     
+     # 查看项目工具使用
+     dscli tools project [--project /path/to/project] [--days 7]
+     
+     # 导出工具使用数据
+     dscli tools export [--format json|csv] [--output file]
+     
+     # 重置工具统计
+     dscli tools reset [--tool tool_name] [--confirm]
+   #+END_EXAMPLE
+
+** 输出格式
+   #+BEGIN_EXAMPLE
+     # 表格格式（默认）
+     dscli tools list
+     
+     工具名称        使用次数  成功率   最后使用
+     ------------   --------  ------  ----------
+     read_file        152      98.5%   2026-02-19
+     write_file        89      95.2%   2026-02-19
+     git_status        67      100.0%  2026-02-18
+     git_add           45      97.8%   2026-02-18
+     git_commit        32      93.8%   2026-02-17
+     
+     # JSON格式
+     dscli tools list --format json
+     
+     # CSV格式
+     dscli tools list --format csv
+   #+END_EXAMPLE
+
+* 实现细节
+** 工具调用流程
+   #+BEGIN_SRC go
+     func HandleToolCall(toolName string, projectRoot string, args json.RawMessage) (string, error) {
+         // 1. 获取或创建工具记录
+         toolID, err := db.GetOrCreateTool(toolName, description, category)
+         
+         // 2. 执行工具
+         startTime := time.Now()
+         result, err := toolHandlers[toolName](projectRoot, args)
+         duration := time.Since(startTime)
+         
+         // 3. 记录使用情况
+         success := err == nil
+         errorMsg := ""
+         if err != nil {
+             errorMsg = err.Error()
+         }
+         
+         projectHash := db.GetProjectHash(projectRoot)
+         db.RecordToolUsage(toolID, projectHash, success, errorMsg)
+         
+         // 4. 返回结果
+         return result, err
+     }
+   #+END_SRC
+
+** 工具注册机制
+   #+BEGIN_SRC go
+     // 工具定义结构
+     type ToolDef struct {
+         Name        string
+         Description string
+         Category    string
+         Handler     func(projectRoot string, args json.RawMessage) (string, error)
+     }
+     
+     // 工具注册表
+     var toolRegistry = map[string]ToolDef{}
+     
+     // 注册工具
+     func RegisterTool(tool ToolDef) {
+         toolRegistry[tool.Name] = tool
+         
+         // 自动注册到数据库
+         db.GetOrCreateTool(tool.Name, tool.Description, tool.Category)
+     }
+     
+     // 获取所有工具定义（用于API调用）
+     func GetAllTools() []api.Tool {
+         var tools []api.Tool
+         for _, tool := range toolRegistry {
+             tools = append(tools, tool.ToApiTool())
+         }
+         return tools
+     }
+   #+END_SRC
+
+* 使用场景
+** 开发优化
+   1. **识别常用工具**：重点优化使用频率高的工具
+   2. **发现无用工具**：识别很少使用或从未使用的工具
+   3. **错误分析**：分析工具失败的原因，改进错误处理
+   4. **性能优化**：基于使用模式优化工具性能
+
+** 项目管理
+   1. **项目分析**：了解项目的开发活动模式
+   2. **团队协作**：分析团队的工具使用习惯
+   3. **最佳实践**：识别成功的工具使用模式
+   4. **培训指导**：基于数据指导新用户使用工具
+
+** 产品决策
+   1. **功能优先级**：基于使用数据决定功能开发优先级
+   2. **工具淘汰**：基于使用数据决定是否废弃某些工具
+   3. **新工具开发**：基于使用模式识别新工具需求
+   4. **用户体验**：优化常用工具的用户体验
+
+* 可视化选项
+** 控制台输出
+   - 表格：清晰展示统计数据
+   - 图表：使用ASCII艺术展示趋势
+   - 颜色：使用颜色高亮重要信息
+
+** 文件导出
+   - JSON：便于程序处理
+   - CSV：便于电子表格分析
+   - Markdown：便于文档编写
+
+** 图形界面（未来）
+   - Web界面：交互式数据可视化
+   - 仪表盘：实时监控工具使用
+   - 报告生成：自动生成使用报告
+
+* 实施计划
+** 第一阶段：数据库和基础架构
+   1. ✅ 设计数据库表结构
+   2. ✅ 实现数据库操作方法
+   3. 🔄 创建工具相关代码文件
+   4. 🔄 重构工具调用逻辑
+
+** 第二阶段：统计集成
+   1. 🔄 修改工具调用流程，添加统计记录
+   2. 🔄 实现工具注册机制
+   3. 🔄 创建tools子命令
+
+** 第三阶段：可视化和分析
+   1. 🔄 实现丰富的统计输出格式
+   2. 🔄 添加时间范围过滤
+   3. 🔄 实现数据导出功能
+
+** 第四阶段：高级功能
+   1. 🔄 添加趋势分析
+   2. 🔄 实现异常检测
+   3. 🔄 添加报警机制
+
+* 总结
+工具使用统计系统将为dscli提供宝贵的数据洞察，帮助：
+1. **优化现有工具**：基于使用数据改进工具
+2. **指导开发方向**：基于需求开发新功能
+3. **提升用户体验**：了解用户使用模式
+4. **支持决策制定**：数据驱动的产品决策
+
+通过这个系统，我们可以建立一个自我优化的工具生态系统，让dscli不断进化以适应实际使用需求。

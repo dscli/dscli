@@ -43,6 +43,27 @@ type Skill struct {
 }
 
 // ProjectSkill 表示项目与技能的关联
+
+// Tool 表示一个工具
+type Tool struct {
+	ID          int64
+	Name        string
+	Description string
+	Category    string
+	UsageCount  int
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// ToolUsage 表示工具使用记录
+type ToolUsage struct {
+	ID          int64
+	ProjectHash string
+	ToolID      int64
+	UsedAt      time.Time
+	Success     bool
+	ErrorMsg    string
+}
 type ProjectSkill struct {
 	ProjectHash string
 	SkillID     int64
@@ -136,6 +157,35 @@ func createTables(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_skills_category ON skills(category)`,
 		`CREATE INDEX IF NOT EXISTS idx_skills_priority ON skills(priority DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_project_skills_enabled ON project_skills(project_hash, is_enabled)`,
+
+		// 工具表
+		`CREATE TABLE IF NOT EXISTS tools (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			description TEXT NOT NULL,
+			category TEXT,
+			usage_count INTEGER DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+
+		// 工具使用记录表
+		`CREATE TABLE IF NOT EXISTS tool_usage (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			project_hash TEXT NOT NULL,
+			tool_id INTEGER NOT NULL,
+			used_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			success BOOLEAN DEFAULT 1,
+			error_msg TEXT,
+			FOREIGN KEY (tool_id) REFERENCES tools(id) ON DELETE CASCADE
+		)`,
+
+		// 工具相关索引
+		`CREATE INDEX IF NOT EXISTS idx_tools_category ON tools(category)`,
+		`CREATE INDEX IF NOT EXISTS idx_tools_usage ON tools(usage_count DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_tool_usage_project ON tool_usage(project_hash)`,
+		`CREATE INDEX IF NOT EXISTS idx_tool_usage_tool ON tool_usage(tool_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_tool_usage_time ON tool_usage(used_at DESC)`, 
 	}
 
 	for _, query := range queries {
@@ -443,4 +493,219 @@ func (db *DB) RecordSkillUsage(skillID int64, projectHash string) error {
 // Close 关闭数据库连接
 func (db *DB) Close() error {
 	return db.DB.Close()
+}
+
+// ==================== Tools 相关方法 ====================
+
+// GetOrCreateTool 获取或创建工具
+func (db *DB) GetOrCreateTool(name, description, category string) (int64, error) {
+	var id int64
+	err := db.QueryRow("SELECT id FROM tools WHERE name = ?", name).Scan(&id)
+	if err == nil {
+		return id, nil
+	}
+	if err != sql.ErrNoRows {
+		return 0, fmt.Errorf("查询工具失败: %w", err)
+	}
+
+	result, err := db.Exec(`
+		INSERT INTO tools (name, description, category)
+		VALUES (?, ?, ?)`, name, description, category)
+	if err != nil {
+		return 0, fmt.Errorf("创建工具失败: %w", err)
+	}
+	return result.LastInsertId()
+}
+
+// GetTool 根据ID获取工具
+func (db *DB) GetTool(id int64) (*Tool, error) {
+	var tool Tool
+	err := db.QueryRow(`
+		SELECT id, name, description, category, usage_count, created_at, updated_at
+		FROM tools WHERE id = ?`, id).Scan(
+		&tool.ID, &tool.Name, &tool.Description, &tool.Category,
+		&tool.UsageCount, &tool.CreatedAt, &tool.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("获取工具失败: %w", err)
+	}
+	return &tool, nil
+}
+
+// GetToolByName 根据名称获取工具
+func (db *DB) GetToolByName(name string) (*Tool, error) {
+	var tool Tool
+	err := db.QueryRow(`
+		SELECT id, name, description, category, usage_count, created_at, updated_at
+		FROM tools WHERE name = ?`, name).Scan(
+		&tool.ID, &tool.Name, &tool.Description, &tool.Category,
+		&tool.UsageCount, &tool.CreatedAt, &tool.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("获取工具失败: %w", err)
+	}
+	return &tool, nil
+}
+
+// ListTools 列出所有工具（可按分类过滤）
+func (db *DB) ListTools(category string) ([]Tool, error) {
+	var rows *sql.Rows
+	var err error
+
+	if category == "" {
+		rows, err = db.Query(`
+			SELECT id, name, description, category, usage_count, created_at, updated_at
+			FROM tools ORDER BY usage_count DESC, name`)
+	} else {
+		rows, err = db.Query(`
+			SELECT id, name, description, category, usage_count, created_at, updated_at
+			FROM tools WHERE category = ? ORDER BY usage_count DESC, name`, category)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("查询工具失败: %w", err)
+	}
+	defer rows.Close()
+
+	var tools []Tool
+	for rows.Next() {
+		var tool Tool
+		if err := rows.Scan(
+			&tool.ID, &tool.Name, &tool.Description, &tool.Category,
+			&tool.UsageCount, &tool.CreatedAt, &tool.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("扫描工具失败: %w", err)
+		}
+		tools = append(tools, tool)
+	}
+	return tools, nil
+}
+
+// RecordToolUsage 记录工具使用
+func (db *DB) RecordToolUsage(toolID int64, projectHash string, success bool, errorMsg string) error {
+	// 更新工具使用次数
+	_, err := db.Exec("UPDATE tools SET usage_count = usage_count + 1 WHERE id = ?", toolID)
+	if err != nil {
+		return fmt.Errorf("更新工具使用次数失败: %w", err)
+	}
+
+	// 记录使用详情
+	_, err = db.Exec(`
+		INSERT INTO tool_usage (project_hash, tool_id, success, error_msg)
+		VALUES (?, ?, ?, ?)`, projectHash, toolID, success, errorMsg)
+	if err != nil {
+		return fmt.Errorf("记录工具使用详情失败: %w", err)
+	}
+
+	return nil
+}
+
+// GetToolUsageStats 获取工具使用统计
+func (db *DB) GetToolUsageStats(days int) ([]struct {
+	Name       string
+	UsageCount int
+	SuccessRate float64
+	LastUsed   time.Time
+}, error) {
+	var rows *sql.Rows
+	var err error
+
+	query := `
+		SELECT 
+			t.name,
+			t.usage_count,
+			COALESCE(SUM(CASE WHEN tu.success THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 100) as success_rate,
+			MAX(tu.used_at) as last_used
+		FROM tools t
+		LEFT JOIN tool_usage tu ON t.id = tu.tool_id
+	`
+
+	if days > 0 {
+		query += " WHERE tu.used_at >= datetime('now', '-' || ? || ' days')"
+		rows, err = db.Query(query + " GROUP BY t.id ORDER BY t.usage_count DESC", days)
+	} else {
+		rows, err = db.Query(query + " GROUP BY t.id ORDER BY t.usage_count DESC")
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("查询工具统计失败: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []struct {
+		Name       string
+		UsageCount int
+		SuccessRate float64
+		LastUsed   time.Time
+	}
+
+	for rows.Next() {
+		var stat struct {
+			Name       string
+			UsageCount int
+			SuccessRate float64
+			LastUsed   time.Time
+		}
+		var lastUsed sql.NullTime
+		if err := rows.Scan(&stat.Name, &stat.UsageCount, &stat.SuccessRate, &lastUsed); err != nil {
+			return nil, fmt.Errorf("扫描工具统计失败: %w", err)
+		}
+		if lastUsed.Valid {
+			stat.LastUsed = lastUsed.Time
+		}
+		stats = append(stats, stat)
+	}
+	return stats, nil
+}
+
+// GetProjectToolUsage 获取项目工具使用情况
+func (db *DB) GetProjectToolUsage(projectHash string, days int) ([]struct {
+	Name       string
+	UsageCount int
+	LastUsed   time.Time
+}, error) {
+	var rows *sql.Rows
+	var err error
+
+	query := `
+		SELECT 
+			t.name,
+			COUNT(tu.id) as usage_count,
+			MAX(tu.used_at) as last_used
+		FROM tools t
+		JOIN tool_usage tu ON t.id = tu.tool_id
+		WHERE tu.project_hash = ?
+	`
+
+	if days > 0 {
+		query += " AND tu.used_at >= datetime('now', '-' || ? || ' days')"
+		rows, err = db.Query(query + " GROUP BY t.id ORDER BY usage_count DESC", projectHash, days)
+	} else {
+		rows, err = db.Query(query + " GROUP BY t.id ORDER BY usage_count DESC", projectHash)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("查询项目工具使用失败: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []struct {
+		Name       string
+		UsageCount int
+		LastUsed   time.Time
+	}
+
+	for rows.Next() {
+		var stat struct {
+			Name       string
+			UsageCount int
+			LastUsed   time.Time
+		}
+		var lastUsed sql.NullTime
+		if err := rows.Scan(&stat.Name, &stat.UsageCount, &lastUsed); err != nil {
+			return nil, fmt.Errorf("扫描项目工具使用失败: %w", err)
+		}
+		if lastUsed.Valid {
+			stat.LastUsed = lastUsed.Time
+		}
+		stats = append(stats, stat)
+	}
+	return stats, nil
 }
