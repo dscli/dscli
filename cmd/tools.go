@@ -64,7 +64,7 @@ func getToolParameters(toolName string) map[string]interface{} {
 			"required":             []string{"path"},
 			"additionalProperties": false,
 		}
-		
+
 	case "write_file":
 		return map[string]interface{}{
 			"type": "object",
@@ -81,7 +81,7 @@ func getToolParameters(toolName string) map[string]interface{} {
 			"required":             []string{"path", "content"},
 			"additionalProperties": false,
 		}
-		
+
 	case "search_files":
 		return map[string]interface{}{
 			"type": "object",
@@ -98,7 +98,7 @@ func getToolParameters(toolName string) map[string]interface{} {
 			"required":             []string{},
 			"additionalProperties": false,
 		}
-		
+
 	case "git_add":
 		return map[string]interface{}{
 			"type": "object",
@@ -111,7 +111,7 @@ func getToolParameters(toolName string) map[string]interface{} {
 			"required":             []string{"path"},
 			"additionalProperties": false,
 		}
-		
+
 	case "git_commit":
 		return map[string]interface{}{
 			"type": "object",
@@ -124,7 +124,7 @@ func getToolParameters(toolName string) map[string]interface{} {
 			"required":             []string{"message"},
 			"additionalProperties": false,
 		}
-		
+
 	case "git_log":
 		return map[string]interface{}{
 			"type": "object",
@@ -137,7 +137,7 @@ func getToolParameters(toolName string) map[string]interface{} {
 			"required":             []string{},
 			"additionalProperties": false,
 		}
-		
+
 	case "git_diff":
 		return map[string]interface{}{
 			"type": "object",
@@ -150,7 +150,7 @@ func getToolParameters(toolName string) map[string]interface{} {
 			"required":             []string{},
 			"additionalProperties": false,
 		}
-		
+
 	case "git_status":
 		return map[string]interface{}{
 			"type":                 "object",
@@ -158,7 +158,7 @@ func getToolParameters(toolName string) map[string]interface{} {
 			"required":             []string{},
 			"additionalProperties": false,
 		}
-		
+
 	case "run_command":
 		return map[string]interface{}{
 			"type": "object",
@@ -171,7 +171,7 @@ func getToolParameters(toolName string) map[string]interface{} {
 			"required":             []string{"command"},
 			"additionalProperties": false,
 		}
-		
+
 	case "manage_skills":
 		return map[string]interface{}{
 			"type": "object",
@@ -213,7 +213,7 @@ func getToolParameters(toolName string) map[string]interface{} {
 			"required":             []string{"action"},
 			"additionalProperties": false,
 		}
-		
+
 	default:
 		// 默认返回空参数定义
 		return map[string]interface{}{
@@ -267,7 +267,7 @@ func HandleToolCall(toolName string, projectRoot string, args json.RawMessage) (
 	}
 
 	log.Info("工具调用: %s, 耗时: %v, 成功: %v", toolName, duration, success)
-	
+
 	return result, err
 }
 

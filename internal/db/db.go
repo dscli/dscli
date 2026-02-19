@@ -185,7 +185,7 @@ func createTables(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_tools_usage ON tools(usage_count DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_tool_usage_project ON tool_usage(project_hash)`,
 		`CREATE INDEX IF NOT EXISTS idx_tool_usage_tool ON tool_usage(tool_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_tool_usage_time ON tool_usage(used_at DESC)`, 
+		`CREATE INDEX IF NOT EXISTS idx_tool_usage_time ON tool_usage(used_at DESC)`,
 	}
 
 	for _, query := range queries {
@@ -287,7 +287,7 @@ func (db *DB) LoadHistory(sessionID int64) ([]Message, error) {
 	if idx > 0 {
 		for {
 			m := messages[idx]
-			if m.ToolCallID == "" && len(m.ToolCalls) == 0 || idx == 0{
+			if m.ToolCallID == "" && len(m.ToolCalls) == 0 || idx == 0 {
 				break
 			}
 			idx -= 1
@@ -599,11 +599,12 @@ func (db *DB) RecordToolUsage(toolID int64, projectHash string, success bool, er
 
 // GetToolUsageStats 获取工具使用统计
 func (db *DB) GetToolUsageStats(days int) ([]struct {
-	Name       string
-	UsageCount int
+	Name        string
+	UsageCount  int
 	SuccessRate float64
-	LastUsed   time.Time
-}, error) {
+	LastUsed    time.Time
+}, error,
+) {
 	var rows *sql.Rows
 	var err error
 
@@ -619,7 +620,7 @@ func (db *DB) GetToolUsageStats(days int) ([]struct {
 
 	if days > 0 {
 		query += " WHERE tu.used_at >= datetime('now', '-' || ? || ' days')"
-		rows, err = db.Query(query + " GROUP BY t.id ORDER BY t.usage_count DESC", days)
+		rows, err = db.Query(query+" GROUP BY t.id ORDER BY t.usage_count DESC", days)
 	} else {
 		rows, err = db.Query(query + " GROUP BY t.id ORDER BY t.usage_count DESC")
 	}
@@ -630,18 +631,18 @@ func (db *DB) GetToolUsageStats(days int) ([]struct {
 	defer rows.Close()
 
 	var stats []struct {
-		Name       string
-		UsageCount int
+		Name        string
+		UsageCount  int
 		SuccessRate float64
-		LastUsed   time.Time
+		LastUsed    time.Time
 	}
 
 	for rows.Next() {
 		var stat struct {
-			Name       string
-			UsageCount int
+			Name        string
+			UsageCount  int
 			SuccessRate float64
-			LastUsed   time.Time
+			LastUsed    time.Time
 		}
 		var lastUsedStr sql.NullString
 		if err := rows.Scan(&stat.Name, &stat.UsageCount, &stat.SuccessRate, &lastUsedStr); err != nil {
@@ -649,8 +650,8 @@ func (db *DB) GetToolUsageStats(days int) ([]struct {
 		}
 		if lastUsedStr.Valid && lastUsedStr.String != "" {
 			if t, err := time.Parse("2006-01-02 15:04:05", lastUsedStr.String); err == nil {
-			stat.LastUsed = t
-		}
+				stat.LastUsed = t
+			}
 		}
 		stats = append(stats, stat)
 	}
@@ -662,7 +663,8 @@ func (db *DB) GetProjectToolUsage(projectHash string, days int) ([]struct {
 	Name       string
 	UsageCount int
 	LastUsed   time.Time
-}, error) {
+}, error,
+) {
 	var rows *sql.Rows
 	var err error
 
@@ -678,9 +680,9 @@ func (db *DB) GetProjectToolUsage(projectHash string, days int) ([]struct {
 
 	if days > 0 {
 		query += " AND tu.used_at >= datetime('now', '-' || ? || ' days')"
-		rows, err = db.Query(query + " GROUP BY t.id ORDER BY usage_count DESC", projectHash, days)
+		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", projectHash, days)
 	} else {
-		rows, err = db.Query(query + " GROUP BY t.id ORDER BY usage_count DESC", projectHash)
+		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", projectHash)
 	}
 
 	if err != nil {
@@ -706,8 +708,8 @@ func (db *DB) GetProjectToolUsage(projectHash string, days int) ([]struct {
 		}
 		if lastUsedStr.Valid && lastUsedStr.String != "" {
 			if t, err := time.Parse("2006-01-02 15:04:05", lastUsedStr.String); err == nil {
-			stat.LastUsed = t
-		}
+				stat.LastUsed = t
+			}
 		}
 		stats = append(stats, stat)
 	}
