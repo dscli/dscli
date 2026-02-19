@@ -1,6 +1,6 @@
 #+TITLE: dscli Skills 系统设计文档
 #+AUTHOR: dscli 开发团队
-#+DATE: 2025-03-15
+#+DATE: 2026-02-19
 #+OPTIONS: toc:nil num:nil
 
 * 概述
