@@ -20,7 +20,9 @@ type Client struct {
 
 func NewClient(apiKey, baseURL string, debug bool) *Client {
 	// 设置日志级别
-	log.SetDebugMode(debug)
+	if debug {
+		log.SetLevel(log.DEBUG)
+	}
 	
 	return &Client{
 		apiKey:  apiKey,

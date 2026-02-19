@@ -3,10 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/signal"
 	"path/filepath"
-	"strings"
-	"syscall"
 
 	"github.com/joho/godotenv"
 	"gitcode.com/nanjunjie/dscli/cmd"
@@ -18,7 +15,7 @@ func init() {
 	configPaths := []string{
 		// 1. 用户主目录的 .dscli/.env 文件（标准格式，最高优先级）
 		filepath.Join(os.Getenv("HOME"), ".dscli", ".env"),
-		// 2. 用户主目录的 .dscli/dscli.env 文件（兼容旧格式）
+		// 2. 用户主目录的 .dscli/dscli.env 文件（兼容旧格式，但只支持标准.env格式）
 		filepath.Join(os.Getenv("HOME"), ".dscli", "dscli.env"),
 		// 3. 当前目录的 .env 文件
 		".env",
@@ -54,96 +51,19 @@ func loadConfig(path string) bool {
 		return false
 	}
 
-	// 读取文件内容
-	content, err := os.ReadFile(path)
-	if err != nil {
+	// 使用 godotenv 加载标准 .env 格式文件
+	if err := godotenv.Load(path); err != nil {
+		fmt.Fprintf(os.Stderr, "⚠️  警告: 加载配置文件 %s 失败: %v\n", path, err)
 		return false
 	}
-
-	// 判断文件格式
-	lines := strings.Split(string(content), "\n")
-	isShellFormat := false
-	for _, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), "export ") {
-			isShellFormat = true
-			break
-		}
-	}
-
-	if isShellFormat {
-		// Shell格式：需要解析 export KEY=VALUE
-		return loadShellFormatConfig(content, path)
-	} else {
-		// 标准 .env 格式：直接使用 godotenv
-		if err := godotenv.Load(path); err != nil {
-			fmt.Fprintf(os.Stderr, "⚠️  警告: 加载配置文件 %s 失败: %v\n", path, err)
-			return false
-		}
-		fmt.Fprintf(os.Stderr, "✅ 已加载配置文件: %s\n", path)
-		return true
-	}
-}
-
-// loadShellFormatConfig 加载shell格式的配置文件
-func loadShellFormatConfig(content []byte, path string) bool {
-	lines := strings.Split(string(content), "\n")
-	envVars := make(map[string]string)
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		// 移除 export 前缀
-		if strings.HasPrefix(line, "export ") {
-			line = strings.TrimPrefix(line, "export ")
-		}
-
-		// 解析 KEY=VALUE
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
-			continue
-		}
-
-		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
-
-		// 移除引号
-		value = strings.Trim(value, `"'`)
-
-		envVars[key] = value
-	}
-
-	// 设置环境变量
-	for key, value := range envVars {
-		if os.Getenv(key) == "" {
-			os.Setenv(key, value)
-		}
-	}
-
+	
 	fmt.Fprintf(os.Stderr, "✅ 已加载配置文件: %s\n", path)
 	return true
 }
 
 func main() {
-	// 设置信号处理，确保程序退出时关闭日志文件
-	setupSignalHandler()
-	
 	// 确保程序退出时关闭日志
 	defer log.Close()
 	
 	cmd.Execute()
-}
-
-// setupSignalHandler 设置信号处理器
-func setupSignalHandler() {
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	
-	go func() {
-		<-c
-		log.Close()
-		os.Exit(0)
-	}()
 }
