@@ -111,6 +111,7 @@ func (db *DB) LoadLastOne(sessionID int64) (*Message, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load last: %w", err)
 	}
+	defer rows.Close()
 	var m Message
 	if rows.Next() {
 		var toolCallID sql.NullString
@@ -124,9 +125,13 @@ func (db *DB) LoadLastOne(sessionID int64) (*Message, error) {
 		if toolCalls.Valid {
 			m.ToolCalls = json.RawMessage(toolCalls.String)
 		}
-		return &m, nil
 	}
-	return nil, fmt.Errorf("failed to load last message")
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to loop rows: %w", err)
+	}
+
+	return &m, nil
 }
 
 // LoadHistory 加载指定会话的所有历史消息，按时间升序返回
