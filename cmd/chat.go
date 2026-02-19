@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"gitcode.com/nanjunjie/dscli/internal/api"
-	"gitcode.com/nanjunjie/dscli/internal/log"
 	"gitcode.com/nanjunjie/dscli/internal/db"
+	"gitcode.com/nanjunjie/dscli/internal/log"
 	"github.com/spf13/cobra"
 )
 
@@ -198,196 +198,166 @@ var chatCmd = &cobra.Command{
   echo "帮我创建一个 main.go 文件" | dscli chat
   echo "把 README.md 添加到 Git 并提交" | dscli chat
   cat prompt.txt | dscli chat --model deepseek-chat`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: ChatRunE,
+}
+
+func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	log.Info("开始处理聊天请求")
-		// 1. 读取标准输入
-		reader := bufio.NewReader(os.Stdin)
-		content, err := io.ReadAll(reader)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "读取标准输入失败: %v\n", err)
-			os.Exit(1)
-		}
-		userMsg := strings.TrimSpace(string(content))
+	// 1. 读取标准输入
+	reader := bufio.NewReader(os.Stdin)
+	content, err := io.ReadAll(reader)
+	if err != nil {
+		return
+	}
+	userMsg := strings.TrimSpace(string(content))
 	log.Info("用户输入长度: %d 字符", len(userMsg))
-		if userMsg == "" {
-			fmt.Fprintln(os.Stderr, "错误: 标准输入为空，请通过管道或重定向提供消息内容")
-			os.Exit(1)
-		}
+	if userMsg == "" {
+		err = fmt.Errorf("错误: 标准输入为空，请通过管道或重定向提供消息内容")
+		return
+	}
 
-		// 2. 确定项目根路径
-		projectRoot, err := getProjectRoot()
+	// 2. 确定项目根路径
+	projectRoot, err := getProjectRoot()
 	log.Info("项目根目录: %s", projectRoot)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "无法确定项目根路径: %v\n", err)
-			os.Exit(1)
-		}
+	if err != nil {
+		err = fmt.Errorf("无法确定项目根路径: %w", err)
+		return
+	}
 
-		// 3. 打开数据库
-		database, err := db.New()
+	// 3. 打开数据库
+	database, err := db.New()
 	log.DatabaseOperation("打开数据库")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "初始化数据库失败: %v\n", err)
-			os.Exit(1)
-		}
-		defer database.Close()
+	if err != nil {
+		err = fmt.Errorf("初始化数据库失败: %w", err)
+		return
+	}
+	defer database.Close()
 
-		// 4. 获取会话ID
-		sessionID, err := database.GetOrCreateSession(projectRoot)
-	log.DatabaseOperation("获取或创建会话", "projectRoot", projectRoot, "sessionID", sessionID)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "获取会话失败: %v\n", err)
-			os.Exit(1)
-		}
+	// 4. 获取会话ID
+	sessionID, err := database.GetOrCreateSession(projectRoot)
+	if err != nil {
+		err = fmt.Errorf("获取会话失败: %w", err)
+		return
+	}
 
-		// 5. 加载历史消息
-		history, err := database.LoadHistory(sessionID)
+	message := api.Message{Role: "user", Content: userMsg}
+	return ChatMessage(database, projectRoot, sessionID, message)
+}
+
+func ToDBMessage(apim api.Message)(dbm db.Message){
+	role := apim.Role
+	dbm.Content = apim.Content
+	dbm.Role = apim.Role
+	if role == "tool" {
+		dbm.ToolCallID = apim.ToolCallID
+	}
+	if role == "assistant" && len(apim.ToolCalls) > 0{
+		data, err := json.Marshal(apim.ToolCalls)
+		if err != nil {
+			log.Error("error: %v", err)
+			return
+		}
+		dbm.ToolCalls = data
+	}
+	return
+}
+
+func ChatMessage(database *db.DB, projectRoot string, sessionID int64, inputs ...api.Message) (err error) {
+	// 5. 加载历史消息
+	history, err := database.LoadHistory(sessionID)
 	log.DatabaseOperation("加载历史消息", "sessionID", sessionID, "消息数量", len(history))
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "加载历史消息失败: %v\n", err)
-			os.Exit(1)
+	if err != nil {
+		err = fmt.Errorf("加载历史消息失败: %w", err)
+		return
+	}
+
+	// 6. 构造 messages 切片（包含历史）
+	messages := make([]api.Message, 0, len(history)+1)
+	for _, m := range history {
+		apiMsg := api.Message{
+			Role:    m.Role,
+			Content: m.Content,
 		}
-
-		// 6. 构造 messages 切片（包含历史）
-		messages := make([]api.Message, 0, len(history)+1)
-		for _, m := range history {
-			apiMsg := api.Message{
-				Role:    m.Role,
-				Content: m.Content,
-			}
-			if m.ToolCallID != "" {
-				apiMsg.ToolCallID = m.ToolCallID
-			}
-			if len(m.ToolCalls) > 0 {
-				var toolCalls []api.ToolCall
-				if err := json.Unmarshal(m.ToolCalls, &toolCalls); err == nil {
-					apiMsg.ToolCalls = toolCalls
-				}
-			}
-			messages = append(messages, apiMsg)
+		if m.ToolCallID != "" {
+			apiMsg.ToolCallID = m.ToolCallID
 		}
-		// 添加当前用户消息
-		messages = append(messages, api.Message{Role: "user", Content: userMsg})
-
-		// 7. 记录本轮新增的消息（用于存储）
-		var newMessages []db.Message // 不包含历史
-
-		// 工具调用循环
-		for {
-			// 调用 API（带工具）
-	log.Info("调用大模型API，模型: %s", chatModel)
-			resp, err := client.ChatWithTools(chatModel, messages, tools)
+		if len(m.ToolCalls) > 0 {
+			var toolCalls []api.ToolCall
+			err = json.Unmarshal(m.ToolCalls, &toolCalls)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "聊天请求失败: %v\n", err)
-				os.Exit(1)
+				err = fmt.Errorf("反序列化ToolCalls失败: %w", err)
+				return
 			}
-			if len(resp.Choices) == 0 {
-				fmt.Fprintln(os.Stderr, "错误: 未收到回复")
-				os.Exit(1)
-			}
-			assistantMsg := resp.Choices[0].Message
-
-			// 将助手消息追加到 messages 列表
-			messages = append(messages, assistantMsg)
-
-			// 转换并保存到 newMessages（用于后续存储）
-			dbAssistantMsg := db.Message{
-				Role:    assistantMsg.Role,
-				Content: assistantMsg.Content,
-			}
-			if len(assistantMsg.ToolCalls) > 0 {
-				data, _ := json.Marshal(assistantMsg.ToolCalls)
-				dbAssistantMsg.ToolCalls = data
-			}
-			newMessages = append(newMessages, dbAssistantMsg)
-
-			// 检查是否有工具调用
-		if len(assistantMsg.ToolCalls) > 0 {
-		if len(assistantMsg.ToolCalls) > 0 {
-			if len(assistantMsg.ToolCalls) == 1 {
-				log.Info("助手请求调用工具: %s", assistantMsg.ToolCalls[0].Function.Name)
-			} else {
-				log.Info("助手请求调用 %d 个工具", len(assistantMsg.ToolCalls))
-			}
+			apiMsg.ToolCalls = toolCalls
 		}
-				// 没有工具调用，输出最终回复并结束循环
-				fmt.Println(assistantMsg.Content)
-				break
-			}
+		messages = append(messages, apiMsg)
+	}
+	// 添加当前用户消息
+	messages = append(messages, inputs...)
 
-			// 处理每个工具调用
-			for _, tc := range assistantMsg.ToolCalls {
-				// 执行工具
-				handler, ok := toolHandlers[tc.Function.Name]
-				if !ok {
-					// 未知工具，返回错误信息
-					result := fmt.Sprintf("错误: 未知工具 '%s'", tc.Function.Name)
-					toolMsg := api.Message{
-						Role:       "tool",
-						ToolCallID: tc.ID,
-						Content:    result,
-					}
-					messages = append(messages, toolMsg)
-					newMessages = append(newMessages, db.Message{
-						Role:       "tool",
-						ToolCallID: tc.ID,
-						Content:    result,
-					})
-					continue
-				}
+	// 7. 记录本轮新增的消息（用于存储）
+	var dbmessages []db.Message
+	for _, m := range inputs {
+		dbmessages = append(dbmessages, ToDBMessage(m))
+	}
 
-				// 解析参数
-				var args map[string]interface{}
-				if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
-					result := fmt.Sprintf("错误: 解析参数失败: %v", err)
-					toolMsg := api.Message{
-						Role:       "tool",
-						ToolCallID: tc.ID,
-						Content:    result,
-					}
-					messages = append(messages, toolMsg)
-					newMessages = append(newMessages, db.Message{
-						Role:       "tool",
-						ToolCallID: tc.ID,
-						Content:    result,
-					})
-					continue
-				}
+	var resp *api.ChatResponse   // resp
+	// 工具调用循环
+	log.Info("调用大模型API，模型: %s", chatModel)
+	resp, err = client.ChatWithTools(chatModel, messages, tools)
+	if err != nil {
+		err = fmt.Errorf("聊天请求失败: %w", err)
+		return
+	}
 
-				// 重新编码参数为 JSON 供处理函数使用（保持通用）
-			log.ToolCall(tc.Function.Name, args)
-				argsRaw, _ := json.Marshal(args)
-				result, err := handler(projectRoot, argsRaw)
-			log.ToolResult(tc.Function.Name, result, err)
-			log.ToolResult(tc.Function.Name, result, err)
-				if err != nil {
-					result = fmt.Sprintf("执行失败: %v", err)
-				}
+	if len(resp.Choices) == 0 {
+		err = fmt.Errorf("错误: 未收到回复")
+		return
+	}
 
-				// 添加工具响应消息
-				toolMsg := api.Message{
-					Role:       "tool",
-					ToolCallID: tc.ID,
-					Content:    result,
-				}
-				messages = append(messages, toolMsg)
-				newMessages = append(newMessages, db.Message{
-					Role:       "tool",
-					ToolCallID: tc.ID,
-					Content:    result,
-				})
-			}
-			// 继续循环，将工具响应发送给模型
+	assistantMsg := resp.Choices[0].Message
+
+	// 转换并保存到 newMessages（用于后续存储）
+	dbAssistantMsg := ToDBMessage(assistantMsg)
+	dbmessages = append(dbmessages, dbAssistantMsg)
+	if len(dbmessages) > 0 {
+		if err = database.SaveMessagesBatch(sessionID, dbmessages); err != nil {
+			err = fmt.Errorf("保存消息失败: %w", err)
+			return
+		}
+	}
+
+	fmt.Println(assistantMsg.Content)
+	inputs = []api.Message{}
+	// 处理每个工具调用
+	for _, tc := range assistantMsg.ToolCalls {
+		// 执行工具
+		handler, ok := toolHandlers[tc.Function.Name]
+		if !ok {
+			// 未知工具，返回错误信息
+			err = fmt.Errorf("错误: 未知工具 '%s'", tc.Function.Name)
+			return
 		}
 
-		// 8. 将本轮所有新增的消息存入数据库
-	log.DatabaseOperation("保存消息到数据库", "sessionID", sessionID, "消息数量", len(newMessages))
-		if len(newMessages) > 0 {
-			if err := database.SaveMessagesBatch(sessionID, newMessages); err != nil {
-				fmt.Fprintf(os.Stderr, "保存消息失败: %v\n", err)
-				os.Exit(1)
-			}
+		var result string
+		result, err = handler(projectRoot, []byte(tc.Function.Arguments))
+		if err != nil {
+			err = fmt.Errorf("执行%s失败: %w", tc.Function.Name, err)
+			return
 		}
-	},
+
+		inputs = append(inputs, api.Message{
+			Role:       "tool",
+			ToolCallID: tc.ID,
+			Content:    result,
+		})
+	}
+
+	if len(inputs) > 0 {
+		err = ChatMessage(database,projectRoot, sessionID, inputs...)
+	}
+
+	return
 }
 
 // 工具处理函数实现 -------------------------------------------------
