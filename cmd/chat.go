@@ -173,19 +173,91 @@ var tools = []api.Tool{
 			},
 		},
 	},
+	{
+		Type: "function",
+		Function: api.ToolFunction{
+			Name:        "manage_skills",
+			Description: "管理项目的技能（最佳实践规则）",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"action": map[string]interface{}{
+						"type":        "string",
+						"description": "操作类型：list, enable, disable, create, delete, search",
+						"enum":        []string{"list", "enable", "disable", "create", "delete", "search"},
+					},
+					"skill_name":  map[string]string{"type": "string", "description": "技能名称"},
+					"skill_id":    map[string]string{"type": "integer", "description": "技能ID"},
+					"category":    map[string]string{"type": "string", "description": "技能分类过滤"},
+					"search_term": map[string]string{"type": "string", "description": "搜索关键词"},
+					"description": map[string]string{"type": "string", "description": "技能描述"},
+					"content":     map[string]string{"type": "string", "description": "技能内容/规则"},
+					"priority":    map[string]string{"type": "integer", "description": "技能优先级"},
+				},
+				"required": []string{"action"},
+			},
+		},
+	},
+	{
+		Type: "function",
+		Function: api.ToolFunction{
+			Name:        "manage_skills",
+			Description: "管理项目的技能（最佳实践规则）",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"action": map[string]interface{}{
+						"type":        "string",
+						"description": "操作类型：list, enable, disable, create, delete, search",
+						"enum": []string{"list", "enable", "disable", "create", "delete", "search"},
+					},
+					"skill_name": map[string]interface{}{
+						"type":        "string",
+						"description": "技能名称",
+					},
+					"skill_id": map[string]interface{}{
+						"type":        "integer",
+						"description": "技能ID",
+					},
+					"category": map[string]interface{}{
+						"type":        "string",
+						"description": "技能分类过滤",
+					},
+					"search_term": map[string]interface{}{
+						"type":        "string",
+						"description": "搜索关键词",
+					},
+					"description": map[string]interface{}{
+						"type":        "string",
+						"description": "技能描述",
+					},
+					"content": map[string]interface{}{
+						"type":        "string",
+						"description": "技能内容/规则",
+					},
+					"priority": map[string]interface{}{
+						"type":        "integer",
+						"description": "技能优先级",
+					},
+				},
+				"required": []string{"action"},
+			},
+		},
+	},
 }
 
 // 工具执行函数映射
 var toolHandlers = map[string]func(projectRoot string, args json.RawMessage) (string, error){
-	"read_file":    handleReadFile,
-	"write_file":   handleWriteFile,
-	"search_files": handleSearchFiles,
-	"git_add":      handleGitAdd,
-	"git_commit":   handleGitCommit,
-	"git_log":      handleGitLog,
-	"git_diff":     handleGitDiff,
-	"git_status":   handleGitStatus,
-	"run_command":  handleRunCommand,
+	"read_file":     handleReadFile,
+	"write_file":    handleWriteFile,
+	"search_files":  handleSearchFiles,
+	"git_add":       handleGitAdd,
+	"git_commit":    handleGitCommit,
+	"git_log":       handleGitLog,
+	"git_diff":      handleGitDiff,
+	"git_status":    handleGitStatus,
+	"run_command":   handleRunCommand,
+	"manage_skills": handleManageSkills,
 }
 
 var chatCmd = &cobra.Command{
@@ -255,10 +327,10 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 
 func ToApiMessage(dm *db.Message) (am *api.Message) {
 	role := dm.Role
-	log.Debug("dm role=%s", role);
+	log.Debug("dm role=%s", role)
 	am = &api.Message{
-		Role:    role,
-		Content: dm.Content,
+		Role:       role,
+		Content:    dm.Content,
 		ToolCallID: dm.ToolCallID,
 	}
 	log.Debug("am: %s", am)
@@ -289,7 +361,6 @@ func ToDBMessage(apim api.Message) (dbm db.Message) {
 	}
 	return
 }
-
 
 func HandleToolCalls(database *db.DB, projectRoot string, sessionID int64, assistantMsg *api.Message) (err error) {
 	inputs := []api.Message{}
@@ -336,7 +407,7 @@ func ChatMessage(database *db.DB, projectRoot string, sessionID int64, inputs ..
 	// 添加系统提示（包含当前日期）
 	currentDate := time.Now().Format("2006-01-02")
 	systemMessage := api.Message{
-		Role: "system",
+		Role:    "system",
 		Content: fmt.Sprintf("当前日期：%s\\n你是一个编程助手，可以读写文件、执行Git操作、搜索文件等。请根据用户请求提供帮助。", currentDate),
 	}
 	// 6. 构造 messages 切片（包含历史）
@@ -419,7 +490,7 @@ func handleReadFile(projectRoot string, argsRaw json.RawMessage) (string, error)
 		Path string `json:"path"`
 	}
 	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		log.Debug("argsRaw: %s",string(argsRaw))
+		log.Debug("argsRaw: %s", string(argsRaw))
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
 	fullPath, err := resolvePath(projectRoot, args.Path)
@@ -441,7 +512,7 @@ func handleWriteFile(projectRoot string, argsRaw json.RawMessage) (string, error
 		Content string `json:"content"`
 	}
 	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		log.Debug("argsRaw: %s",string(argsRaw))
+		log.Debug("argsRaw: %s", string(argsRaw))
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
 	fullPath, err := resolvePath(projectRoot, args.Path)
@@ -631,6 +702,11 @@ func handleRunCommand(projectRoot string, argsRaw json.RawMessage) (string, erro
 	return string(out), nil
 }
 
+func handleManageSkills(projectRoot string, argsRaw json.RawMessage) (string, error) {
+	log.Info("%s : %s", projectRoot, argsRaw)
+	return "", nil
+}
+
 // getProjectRoot 获取当前项目根目录（用于会话隔离）
 func getProjectRoot() (string, error) {
 	cwd, err := os.Getwd()
@@ -661,8 +737,9 @@ func findGitRoot(dir string) (string, error) {
 		absDir = parent
 	}
 	return "", fmt.Errorf("未找到 Git 仓库根目录")
-}
 
+
+}
 func init() {
 	chatCmd.Flags().StringVar(&chatModel, "model", "deepseek-chat", "使用的模型名称")
 	rootCmd.AddCommand(chatCmd)
