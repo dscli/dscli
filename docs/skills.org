@@ -1,0 +1,434 @@
+#+TITLE: dscli Skills 系统设计文档
+#+AUTHOR: dscli 开发团队
+#+DATE: 2025-03-15
+#+OPTIONS: toc:nil num:nil
+
+* 概述
+** 什么是 Skills 系统？
+Skills 系统是 dscli 的一个核心特性，它允许用户定义、管理和应用最佳实践规则（称为"技能"）。这些技能会在与 DeepSeek AI 对话时自动注入到系统提示中，从而影响 AI 的行为和决策。
+
+** 核心理念
+- **动态组合**：不同于传统的静态系统提示，Skills 系统支持按项目动态组合技能
+- **用户驱动**：用户可以根据自己的需求创建和管理技能
+- **自我优化**：AI 可以通过工具调用管理自己的技能库
+- **上下文感知**：技能可以根据项目类型和上下文条件化启用
+
+* 架构设计
+** 数据库设计
+#+BEGIN_SRC sql
+-- 技能主表
+CREATE TABLE skills (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,           -- 技能名称
+    description TEXT NOT NULL,           -- 技能描述
+    content TEXT NOT NULL,               -- 技能内容/规则
+    category TEXT,                       -- 分类：git, file_ops, code_quality 等
+    priority INTEGER DEFAULT 50,         -- 优先级 (0-100)
+    is_global BOOLEAN DEFAULT 0,         -- 是否全局技能
+    usage_count INTEGER DEFAULT 0,       -- 使用次数统计
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 项目技能关联表
+CREATE TABLE project_skills (
+    project_hash TEXT NOT NULL,          -- 项目路径哈希
+    skill_id INTEGER NOT NULL,
+    is_enabled BOOLEAN DEFAULT 1,        -- 在该项目中是否启用
+    enabled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_used TIMESTAMP,                 -- 最后使用时间
+    PRIMARY KEY (project_hash, skill_id),
+    FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
+);
+#+END_SRC
+
+** 与系统提示的关系
+#+BEGIN_SRC go
+// 传统系统提示（静态）
+systemPrompt := "你是一个编程助手，帮助用户完成各种任务..."
+
+// Skills 增强的系统提示（动态）
+func buildSystemPrompt(projectRoot string) string {
+    basePrompt := "你是一个编程助手..."
+    skills := db.GetEnabledSkills(projectRoot)  // 从数据库查询
+    return basePrompt + "\n\n当前项目启用的最佳实践：\n" + joinSkills(skills)
+}
+#+END_SRC
+
+* 核心功能
+** 1. 技能管理工具
+AI 可以通过 function call 管理技能，实现自我优化。
+
+*** 工具定义
+#+BEGIN_SRC go
+{
+    Type: "function",
+    Function: api.ToolFunction{
+        Name:        "manage_skills",
+        Description: "管理项目的技能（最佳实践规则）",
+        Parameters: map[string]interface{}{
+            "type": "object",
+            "properties": map[string]interface{}{
+                "action": {
+                    "type": "string",
+                    "description": "操作类型：list, enable, disable, create, delete, search",
+                    "enum": []string{"list", "enable", "disable", "create", "delete", "search"},
+                },
+                "skill_name": {"type": "string", "description": "技能名称"},
+                "skill_id": {"type": "integer", "description": "技能ID"},
+                "category": {"type": "string", "description": "技能分类过滤"},
+                "search_term": {"type": "string", "description": "搜索关键词"},
+                "description": {"type": "string", "description": "技能描述"},
+                "content": {"type": "string", "description": "技能内容/规则"},
+                "priority": {"type": "integer", "description": "技能优先级"},
+            },
+            "required": []string{"action"},
+        },
+    },
+}
+#+END_SRC
+
+*** 支持的操作
+- =list= :: 列出技能（可按分类过滤）
+- =enable= :: 启用技能
+- =disable= :: 禁用技能  
+- =create= :: 创建新技能
+- =delete= :: 删除技能
+- =search= :: 搜索技能
+
+** 2. 智能技能推荐
+*** 工具定义
+#+BEGIN_SRC go
+{
+    Type: "function",
+    Function: api.ToolFunction{
+        Name:        "recommend_skills",
+        Description: "基于当前项目上下文推荐相关技能",
+        Parameters: map[string]interface{}{
+            "type": "object",
+            "properties": {
+                "context": {"type": "string", "description": "当前上下文描述"},
+                "max_recommendations": {"type": "integer", "description": "最大推荐数量"},
+            },
+        },
+    },
+}
+#+END_SRC
+
+*** 推荐逻辑
+1. 分析项目类型（Go、Python、Web 等）
+2. 检测常见问题（缺少 .gitignore、大文件等）
+3. 查询相关技能（按分类、优先级、使用次数排序）
+4. 生成个性化推荐
+
+** 3. 技能使用统计
+*** 使用记录
+#+BEGIN_SRC go
+func recordSkillUsage(projectRoot string, skillName string) {
+    // 更新使用次数
+    db.Exec("UPDATE skills SET usage_count = usage_count + 1 WHERE name = ?", skillName)
+    
+    // 更新最后使用时间
+    db.Exec(`
+        UPDATE project_skills 
+        SET last_used = CURRENT_TIMESTAMP 
+        WHERE project_hash = ? AND skill_id = (SELECT id FROM skills WHERE name = ?)
+    `, projectHash, skillName)
+}
+#+END_SRC
+
+*** 技能评分
+#+BEGIN_SRC go
+{
+    Type: "function",
+    Function: api.ToolFunction{
+        Name:        "rate_skill",
+        Description: "对技能效果进行评分",
+        Parameters: {
+            "type": "object",
+            "properties": {
+                "skill_name": {"type": "string", "description": "技能名称"},
+                "rating": {"type": "integer", "description": "评分 (1-5)", "minimum": 1, "maximum": 5},
+                "feedback": {"type": "string", "description": "详细反馈"},
+            },
+            "required": []string{"skill_name", "rating"},
+        },
+    },
+}
+#+END_SRC
+
+* 使用场景示例
+** 场景1：AI 自我优化工作流
+#+BEGIN_EXAMPLE
+用户：我觉得每次都要提醒清理临时文件很麻烦
+
+AI 可以：
+1. 检查当前项目是否有相关技能
+2. 如果没有，创建并启用 "auto_clean_temp_files" 技能
+3. 以后自动应用这个最佳实践
+#+END_EXAMPLE
+
+** 场景2：项目规范化
+#+BEGIN_EXAMPLE
+用户：我想规范这个项目的 Git 提交
+
+AI 可以：
+1. 搜索现有的 Git 相关技能
+2. 推荐并启用合适的技能
+3. 创建项目特定的提交规范
+#+END_EXAMPLE
+
+** 场景3：团队协作
+#+BEGIN_EXAMPLE
+用户：我们团队有新成员，如何快速让他了解项目规范？
+
+AI 可以：
+1. 导出当前项目的所有启用技能
+2. 生成规范文档
+3. 为新成员自动启用这些技能
+#+END_EXAMPLE
+
+* 技能示例
+** Git 相关技能
+*** git_clean_before_commit
+#+BEGIN_EXAMPLE
+名称：git_clean_before_commit
+描述：提交前清理临时文件和二进制文件
+分类：git
+优先级：20
+内容：
+在 Git 提交前，请务必：
+1. 检查 .gitignore 是否包含所有临时文件、编译产物、IDE 配置文件
+2. 运行 `git status` 查看是否有不应提交的文件
+3. 使用 `git clean -fd` 清理未跟踪的文件（谨慎使用）
+4. 确保不提交二进制文件到代码仓库
+5. 提交前运行 `git add .` 后检查暂存区内容
+#+END_EXAMPLE
+
+*** commit_message_convention
+#+BEGIN_EXAMPLE
+名称：commit_message_convention
+描述：Git 提交信息规范
+分类：git  
+优先级：15
+内容：
+提交信息格式：
+<type>(<scope>): <subject>
+
+类型（type）：
+- feat: 新功能
+- fix: 修复 bug
+- docs: 文档更新
+- style: 代码格式调整
+- refactor: 代码重构
+- test: 测试相关
+- chore: 构建过程或辅助工具变动
+
+示例：
+feat(auth): 添加用户登录功能
+fix(api): 修复分页查询参数错误
+#+END_EXAMPLE
+
+** 代码质量技能
+*** go_best_practices
+#+BEGIN_EXAMPLE
+名称：go_best_practices
+描述：Go 语言最佳实践
+分类：code_quality
+优先级：30
+内容：
+Go 项目最佳实践：
+1. 错误处理：始终检查错误返回值
+2. 包组织：按功能而非类型组织包
+3. 接口设计：接口应该小巧，由消费者定义
+4. 测试：为公开的 API 编写测试
+5. 文档：为公开的函数和类型编写文档注释
+6. 并发：使用 sync 包和 channel 进行安全并发
+#+END_EXAMPLE
+
+* 命令行接口设计
+** 技能管理命令
+#+BEGIN_EXAMPLE
+# 创建技能
+dscli skill create git_clean_commit \
+  --description "提交前清理临时文件" \
+  --category git \
+  --priority 20 \
+  --content "在 Git 操作中，务必先检查 .gitignore..."
+
+# 列出技能
+dscli skill list [--category git] [--enabled-only]
+
+# 启用/禁用技能
+dscli skill enable git_clean_commit [--project /path/to/project]
+dscli skill disable git_clean_commit [--project /path/to/project]
+
+# 搜索技能
+dscli skill search "git best practices"
+
+# 导入/导出技能
+dscli skill export --category git > git_skills.json
+dscli skill import git_skills.json
+#+END_EXAMPLE
+
+** 项目技能管理
+#+BEGIN_EXAMPLE
+# 查看项目启用的技能
+dscli skill project-list /path/to/project
+
+# 批量启用技能组
+dscli skill enable-group "go_best_practices" --project /path/to/project
+
+# 生成技能报告
+dscli skill report /path/to/project --format markdown
+#+END_EXAMPLE
+
+* 技术实现细节
+** 项目标识
+使用项目路径的哈希值作为项目标识，确保同一项目在不同环境中的一致性。
+
+#+BEGIN_SRC go
+func getProjectHash(projectRoot string) string {
+    hash := sha256.Sum256([]byte(projectRoot))
+    return hex.EncodeToString(hash[:16])  // 取前16字节作为短哈希
+}
+#+END_SRC
+
+** 技能注入机制
+在每次聊天请求时，动态构建系统提示：
+
+#+BEGIN_SRC go
+func getChatMessagesWithSkills(projectRoot string, userMessage string) []api.Message {
+    // 获取启用的技能内容
+    skillsContent := getEnabledSkillsContent(projectRoot)
+    
+    // 构建系统提示
+    systemPrompt := fmt.Sprintf(`%s
+
+当前项目启用的最佳实践：
+%s
+
+请根据这些最佳实践来协助用户。`, baseSystemPrompt, skillsContent)
+    
+    return []api.Message{
+        {Role: "system", Content: systemPrompt},
+        // ... 历史消息
+        {Role: "user", Content: userMessage},
+    }
+}
+#+END_SRC
+
+** 技能触发检测
+检测工具调用是否触发了某个技能：
+
+#+BEGIN_SRC go
+func detectSkillTriggers(toolName string, args map[string]interface{}) []string {
+    var triggeredSkills []string
+    
+    for _, skill := range enabledSkills {
+        if skill.isTriggeredBy(toolName, args) {
+            triggeredSkills = append(triggeredSkills, skill.Name)
+            
+            // 条件性技能可能需要用户确认
+            if skill.requiresConfirmation {
+                askForConfirmation(skill, toolName, args)
+            }
+        }
+    }
+    
+    return triggeredSkills
+}
+#+END_SRC
+
+* 设计哲学
+** Skills 与系统提示的区别
+| 维度 | 传统系统提示 | Skills 系统 |
+|------|-------------|------------|
+| 存储方式 | 硬编码在代码中 | SQLite 数据库表 |
+| 修改方式 | 需要改代码、重新编译 | 运行时 CRUD 操作 |
+| 作用范围 | 全局统一 | 可按项目配置 |
+| 个性化 | 无 | 每个项目不同技能集 |
+| 条件启用 | 很难实现 | 基于项目类型、文件存在等条件 |
+
+** 本质区别
+- **系统提示**：定义 AI 的**能力**（你能做什么）
+- **Skills**：定义 AI 的**行为偏好**（你该如何做）
+
+** 类比
+- **系统提示** = 操作系统的内核（提供基础能力）
+- **Skills** = 用户安装的应用程序（定义如何使用这些能力）
+
+* 路线图
+** 阶段1：基础功能（MVP）
+1. 技能表的 CRUD 操作
+2. 项目技能启用/禁用
+3. 聊天时技能注入
+4. 基本的技能管理工具
+
+** 阶段2：增强功能
+1. 技能分类和优先级
+2. 技能冲突检测
+3. 技能导入/导出
+4. 智能技能推荐
+
+** 阶段3：高级功能
+1. 条件化技能（基于文件存在、项目类型等）
+2. 技能模板和变量
+3. 使用统计和反馈系统
+4. 技能评分和优化
+
+** 阶段4：智能功能
+1. AI 驱动的技能生成
+2. 技能市场/共享社区
+3. 自适应技能优化
+4. 技能工作流定义
+
+* 扩展可能性
+** 技能市场
+#+BEGIN_EXAMPLE
+# 搜索社区技能
+dscli skill search community "git best practices"
+
+# 安装社区技能
+dscli skill install community/git-cleanup
+
+# 分享自己的技能
+dscli skill share my-git-workflow --public
+#+END_EXAMPLE
+
+** AI 生成技能
+#+BEGIN_EXAMPLE
+# 基于问题描述生成技能
+dscli skill generate --from-issue "修复 Git 提交问题"
+
+# 基于代码分析生成技能
+dscli skill generate --analyze /path/to/project
+#+END_EXAMPLE
+
+** 技能工作流
+定义技能执行顺序和工作流：
+
+#+BEGIN_SRC yaml
+workflow:
+  - skill: check_git_status
+  - skill: clean_temp_files
+  - skill: validate_commit_message
+  - skill: run_tests
+  - skill: create_changelog_entry
+#+END_SRC
+
+* 总结
+Skills 系统代表了 AI 助手设计的一个范式转变：
+
+1. **从静态到动态**：从固定的系统提示到可动态组合的技能
+2. **从通用到个性化**：从一刀切的方案到项目特定的最佳实践
+3. **从被动到主动**：AI 可以主动管理自己的技能库
+4. **从孤立到生态**：支持技能共享和社区协作
+
+这个系统的真正创新在于它承认：
+- 没有一套规则适合所有项目和所有人
+- 最佳实践是动态发展的
+- 用户最了解自己的需求
+- 系统应该适应用户，而不是反过来
+
+通过将技能管理作为 AI 的工具能力，我们实现了**元认知**和**自我优化**，让 AI 助手能够不断学习和改进，更好地服务于用户的具体需求。
