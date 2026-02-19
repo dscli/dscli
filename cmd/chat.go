@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gitcode.com/nanjunjie/dscli/internal/api"
 	"gitcode.com/nanjunjie/dscli/internal/db"
@@ -332,8 +333,15 @@ func ChatMessage(database *db.DB, projectRoot string, sessionID int64, inputs ..
 		return
 	}
 
+	// 添加系统提示（包含当前日期）
+	currentDate := time.Now().Format("2006-01-02")
+	systemMessage := api.Message{
+		Role: "system",
+		Content: fmt.Sprintf("当前日期：%s\\n你是一个编程助手，可以读写文件、执行Git操作、搜索文件等。请根据用户请求提供帮助。", currentDate),
+	}
 	// 6. 构造 messages 切片（包含历史）
-	messages := make([]api.Message, 0, len(history)+1)
+	messages := make([]api.Message, 0, len(history)+2)
+	messages = append(messages, systemMessage)
 	for _, m := range history {
 		apiMsg := api.Message{
 			Role:    m.Role,
