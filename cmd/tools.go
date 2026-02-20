@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,7 +11,6 @@ import (
 
 	"gitcode.com/nanjunjie/dscli/internal/api"
 	"gitcode.com/nanjunjie/dscli/internal/db"
-	"log"
 )
 
 // ToolDef 工具定义
@@ -224,20 +224,12 @@ func getToolParameters(toolName string) map[string]interface{} {
 }
 
 // HandleToolCall 处理工具调用（带统计）
-func HandleToolCall(toolName string, projectRoot string, args json.RawMessage) (string, error) {
+func HandleToolCall(database *db.DB, toolName string, projectRoot string, args json.RawMessage) (string, error) {
 	// 获取工具处理器
 	tool, ok := toolRegistry[toolName]
 	if !ok {
 		return "", fmt.Errorf("未知工具: %s", toolName)
 	}
-
-	// 获取或创建工具记录
-	database, err := db.New()
-	if err != nil {
-		// 继续执行工具，但不记录统计
-		return tool.Handler(projectRoot, args)
-	}
-	defer database.Close()
 
 	toolID, err := database.GetOrCreateTool(tool.Name, tool.Description, tool.Category)
 	if err != nil {
@@ -263,11 +255,28 @@ func HandleToolCall(toolName string, projectRoot string, args json.RawMessage) (
 	return result, err
 }
 
-// GetToolHandler 获取工具处理器（兼容旧代码）
-func GetToolHandler(toolName string) func(projectRoot string, args json.RawMessage) (string, error) {
-	return func(projectRoot string, args json.RawMessage) (string, error) {
-		return HandleToolCall(toolName, projectRoot, args)
+func HandleToolCalls(database *db.DB, projectRoot string, sessionID int64, assistantMsg *api.Message) (err error) {
+	inputs := []api.Message{}
+	// 处理每个工具调用
+	for _, tc := range assistantMsg.ToolCalls {
+		// 使用新的工具调用处理器
+		result, err := HandleToolCall(database, tc.Function.Name, projectRoot, []byte(tc.Function.Arguments))
+		if err != nil {
+			// But we still need to tell the result to assistant
+			result = err.Error()
+		}
+
+		inputs = append(inputs, api.Message{
+			Role:       "tool",
+			ToolCallID: tc.ID,
+			Content:    result,
+		})
 	}
+
+	if len(inputs) > 0 {
+		err = ChatMessage(database, projectRoot, sessionID, inputs...)
+	}
+	return
 }
 
 // ==================== 工具处理器实现 ====================

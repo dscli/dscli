@@ -7,7 +7,7 @@ GOFLAGS = -trimpath
 SOURCE_DIR = .
 BUILD_DIR = build
 
-.PHONY: all build clean install test
+.PHONY: all build clean install test fmt
 
 all: clean build
 
@@ -22,6 +22,10 @@ install:
 
 clean:
 	rm -rf $(BUILD_DIR)
+
+fmt:
+	find . -type f -name '*.go' -exec goimports -w {} \;
+	find . -type f -name '*.go' -exec gofumpt -w {} \;
 
 test:
 	go test ./...

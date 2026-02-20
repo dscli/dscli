@@ -3,9 +3,9 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
-	"log"
 
 	"github.com/spf13/cobra"
 )

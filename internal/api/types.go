@@ -2,8 +2,8 @@ package api
 
 // Tool 定义可调用的工具
 type Tool struct {
-	Type     string          `json:"type"`
-	Function ToolFunction    `json:"function"`
+	Type     string       `json:"type"`
+	Function ToolFunction `json:"function"`
 }
 
 type ToolFunction struct {
@@ -22,10 +22,10 @@ type ChatRequest struct {
 
 // Message 扩展，支持工具调用（注意：Content 字段不再使用 omitempty）
 type Message struct {
-	Role       string      `json:"role"`
-	Content    string      `json:"content"`                 // 始终输出，即使为空字符串
-	ToolCalls  []ToolCall  `json:"tool_calls,omitempty"`    // 仅当有工具调用时输出
-	ToolCallID string      `json:"tool_call_id,omitempty"`  // 仅当 role="tool" 时输出
+	Role       string     `json:"role"`
+	Content    string     `json:"content"`                // 始终输出，即使为空字符串
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`   // 仅当有工具调用时输出
+	ToolCallID string     `json:"tool_call_id,omitempty"` // 仅当 role="tool" 时输出
 }
 
 type ToolCall struct {
@@ -53,7 +53,7 @@ type Model struct {
 
 // Balance 响应
 type BalanceResponse struct {
-	IsAvailable bool           `json:"is_available"`
+	IsAvailable  bool          `json:"is_available"`
 	BalanceInfos []BalanceInfo `json:"balance_infos"`
 }
 
@@ -76,15 +76,15 @@ type Choice struct {
 
 // FIM 请求/响应
 type FIMRequest struct {
-	Model       string `json:"model"`
-	Prompt      string `json:"prompt"`
-	Suffix      string `json:"suffix,omitempty"`
-	MaxTokens   int    `json:"max_tokens,omitempty"`
+	Model       string  `json:"model"`
+	Prompt      string  `json:"prompt"`
+	Suffix      string  `json:"suffix,omitempty"`
+	MaxTokens   int     `json:"max_tokens,omitempty"`
 	Temperature float64 `json:"temperature,omitempty"`
 }
 
 type FIMResponse struct {
-	ID      string       `json:"id"`
+	ID      string      `json:"id"`
 	Choices []FIMChoice `json:"choices"`
 }
 

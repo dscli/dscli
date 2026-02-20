@@ -111,30 +111,6 @@ func ToDBMessage(apim api.Message) (dbm db.Message) {
 	return
 }
 
-func HandleToolCalls(database *db.DB, projectRoot string, sessionID int64, assistantMsg *api.Message) (err error) {
-	inputs := []api.Message{}
-	// 处理每个工具调用
-	for _, tc := range assistantMsg.ToolCalls {
-		// 使用新的工具调用处理器
-		result, err := HandleToolCall(tc.Function.Name, projectRoot, []byte(tc.Function.Arguments))
-		if err != nil {
-			// But we still need to tell the result to assistant
-			result = err.Error()
-		}
-
-		inputs = append(inputs, api.Message{
-			Role:       "tool",
-			ToolCallID: tc.ID,
-			Content:    result,
-		})
-	}
-
-	if len(inputs) > 0 {
-		err = ChatMessage(database, projectRoot, sessionID, inputs...)
-	}
-	return
-}
-
 func ChatMessage(database *db.DB, projectRoot string, sessionID int64, inputs ...api.Message) (err error) {
 	// 5. 加载历史消息
 	history, err := database.LoadHistory(sessionID)
@@ -145,10 +121,13 @@ func ChatMessage(database *db.DB, projectRoot string, sessionID int64, inputs ..
 
 	// 添加系统提示（包含当前日期）
 	currentDate := time.Now().Format("2006-01-02")
+	// 计算一个相对日期（比如一年前）
+	oneYearAgo := time.Now().AddDate(-1, 0, 0).Format("2006年1月2日")
+
 	systemMessage := api.Message{
-		Role:    "system",
+		Role: "system",
 		Content: fmt.Sprintf(`你是一个专业的编程助手。
-当前日期：%s，注意你的知识截至于当前日期之前，比如2025年3月25日，请基于当前日期处理与时间相关的需求。
+当前日期：%s，注意你的知识截至于当前日期之前，比如%s，请基于当前日期处理与时间相关的需求。
 当前工作目录：%s ，你可以操作（增删改查）当前工作目录下的所有文件和目录，注意当前工作目录由版本控制系统Git管控，你最好不要直接读写.git目录下的文件，但你可以通过git操作。
 配置目录：~/.dscli，你可操作配置目录下的任何文件，但不能删除以下文件 1) sqlite.db，2) dscli.env，你可以通过数据库接口如sqlite3操作数据库文件。
 你的工作流程：
@@ -158,7 +137,7 @@ func ChatMessage(database *db.DB, projectRoot string, sessionID int64, inputs ..
 4. 当工具返回结果后，分析结果并决定下一步的行动，直至任务完成，
 5. 最终给出清晰，准确的答案。
 
-请保持逻辑严谨，逐步推进。`, currentDate, projectRoot),
+请保持逻辑严谨，逐步推进。`, currentDate, oneYearAgo, projectRoot),
 	}
 	// 6. 构造 messages 切片（包含历史）
 	messages := make([]api.Message, 0, len(history)+2)
@@ -191,7 +170,7 @@ func ChatMessage(database *db.DB, projectRoot string, sessionID int64, inputs ..
 		dbmessages = append(dbmessages, ToDBMessage(m))
 	}
 
-	var resp *api.ChatResponse // resp
+	var resp *api.ChatResponse
 	resp, err = client.Chat(chatModel, messages, GetAllTools())
 	if err != nil {
 		err = fmt.Errorf("聊天请求失败: %w", err)
@@ -254,7 +233,7 @@ func findGitRoot(dir string) (string, error) {
 func init() {
 	// 初始化工具系统
 	InitTools()
-	
+
 	chatCmd.Flags().StringVar(&chatModel, "model", "deepseek-chat", "使用的模型名称")
 	rootCmd.AddCommand(chatCmd)
 }
