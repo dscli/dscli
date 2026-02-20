@@ -5,9 +5,9 @@ import (
 	"io"
 	"os"
 	"strings"
+	"log"
 
 	"github.com/spf13/cobra"
-	"gitcode.com/nanjunjie/dscli/internal/log"
 )
 
 var (
@@ -24,8 +24,6 @@ var fimCmd = &cobra.Command{
 如果提供了参数，则将所有参数拼接作为 prompt；
 如果没有参数，则从标准输入读取 prompt。`,
 	Run: func(cmd *cobra.Command, args []string) {
-		log.Info("开始FIM代码补全请求")
-		log.Info("开始FIM代码补全请求")
 		var prompt string
 		if len(args) > 0 {
 			prompt = strings.Join(args, " ")
@@ -43,7 +41,7 @@ var fimCmd = &cobra.Command{
 		}
 
 		resp, err := client.FIM(fimModel, prompt, fimSuffix, fimMaxTokens, fimTemp)
-		log.Info("FIM请求成功，生成 %d 个补全结果", len(resp.Choices))
+		log.Printf("FIM请求成功，生成 %d 个补全结果", len(resp.Choices))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "FIM 请求失败: %v\n", err)
 			os.Exit(1)

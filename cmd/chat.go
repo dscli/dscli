@@ -12,7 +12,6 @@ import (
 
 	"gitcode.com/nanjunjie/dscli/internal/api"
 	"gitcode.com/nanjunjie/dscli/internal/db"
-	"gitcode.com/nanjunjie/dscli/internal/log"
 	"github.com/spf13/cobra"
 )
 
@@ -33,10 +32,8 @@ var chatCmd = &cobra.Command{
 }
 
 func ChatRunE(cmd *cobra.Command, args []string) (err error) {
-	log.Info("开始处理聊天请求")
 	// 1. 确定项目根路径
 	projectRoot, err := getProjectRoot()
-	log.Info("项目根目录: %s", projectRoot)
 	if err != nil {
 		err = fmt.Errorf("无法确定项目根路径: %w", err)
 		return
@@ -44,7 +41,6 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 
 	// 2. 打开数据库
 	database, err := db.New()
-	log.DatabaseOperation("打开数据库")
 	if err != nil {
 		err = fmt.Errorf("初始化数据库失败: %w", err)
 		return
@@ -65,7 +61,6 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 	userMsg := strings.TrimSpace(string(content))
-	log.Info("用户输入长度: %d 字符", len(userMsg))
 	if userMsg != "" {
 		return ChatMessage(database, projectRoot, sessionID, api.Message{Role: "user", Content: userMsg})
 	}
@@ -85,17 +80,14 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 
 func ToApiMessage(dm *db.Message) (am *api.Message) {
 	role := dm.Role
-	log.Debug("dm role=%s", role)
 	am = &api.Message{
 		Role:       role,
 		Content:    dm.Content,
 		ToolCallID: dm.ToolCallID,
 	}
-	log.Debug("am: %s", am)
 	if len(dm.ToolCalls) != 0 {
 		err := json.Unmarshal(dm.ToolCalls, &am.ToolCalls)
 		if err != nil {
-			log.Error("error: %v", err)
 			return nil
 		}
 	}
@@ -112,7 +104,6 @@ func ToDBMessage(apim api.Message) (dbm db.Message) {
 	if role == "assistant" && len(apim.ToolCalls) > 0 {
 		data, err := json.Marshal(apim.ToolCalls)
 		if err != nil {
-			log.Error("error: %v", err)
 			return
 		}
 		dbm.ToolCalls = data
@@ -127,7 +118,6 @@ func HandleToolCalls(database *db.DB, projectRoot string, sessionID int64, assis
 		// 使用新的工具调用处理器
 		result, err := HandleToolCall(tc.Function.Name, projectRoot, []byte(tc.Function.Arguments))
 		if err != nil {
-			log.Error("执行%s失败: %v", tc.Function.Name, err)
 			// But we still need to tell the result to assistant
 			result = err.Error()
 		}
@@ -148,7 +138,6 @@ func HandleToolCalls(database *db.DB, projectRoot string, sessionID int64, assis
 func ChatMessage(database *db.DB, projectRoot string, sessionID int64, inputs ...api.Message) (err error) {
 	// 5. 加载历史消息
 	history, err := database.LoadHistory(sessionID)
-	log.DatabaseOperation("加载历史消息", "sessionID", sessionID, "消息数量", len(history))
 	if err != nil {
 		err = fmt.Errorf("加载历史消息失败: %w", err)
 		return
@@ -192,8 +181,7 @@ func ChatMessage(database *db.DB, projectRoot string, sessionID int64, inputs ..
 	}
 
 	var resp *api.ChatResponse // resp
-	log.Info("调用大模型API，模型: %s", chatModel)
-	resp, err = client.ChatWithTools(chatModel, messages, GetAllTools())
+	resp, err = client.Chat(chatModel, messages, GetAllTools())
 	if err != nil {
 		err = fmt.Errorf("聊天请求失败: %w", err)
 		return

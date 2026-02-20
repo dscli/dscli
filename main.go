@@ -7,7 +7,6 @@ import (
 
 	"github.com/joho/godotenv"
 	"gitcode.com/nanjunjie/dscli/cmd"
-	"gitcode.com/nanjunjie/dscli/internal/log"
 )
 
 func init() {
@@ -63,7 +62,5 @@ func loadConfig(path string) bool {
 
 func main() {
 	// 确保程序退出时关闭日志
-	defer log.Close()
-	
 	cmd.Execute()
 }

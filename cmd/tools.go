@@ -7,11 +7,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"gitcode.com/nanjunjie/dscli/internal/api"
 	"gitcode.com/nanjunjie/dscli/internal/db"
-	"gitcode.com/nanjunjie/dscli/internal/log"
+	"log"
 )
 
 // ToolDef 工具定义
@@ -28,7 +27,6 @@ var toolRegistry = map[string]ToolDef{}
 // RegisterTool 注册工具
 func RegisterTool(tool ToolDef) {
 	toolRegistry[tool.Name] = tool
-	log.Info("注册工具: %s (%s)", tool.Name, tool.Category)
 }
 
 // GetAllTools 获取所有工具定义（用于API调用）
@@ -236,7 +234,6 @@ func HandleToolCall(toolName string, projectRoot string, args json.RawMessage) (
 	// 获取或创建工具记录
 	database, err := db.New()
 	if err != nil {
-		log.Error("初始化数据库失败: %v", err)
 		// 继续执行工具，但不记录统计
 		return tool.Handler(projectRoot, args)
 	}
@@ -244,15 +241,12 @@ func HandleToolCall(toolName string, projectRoot string, args json.RawMessage) (
 
 	toolID, err := database.GetOrCreateTool(tool.Name, tool.Description, tool.Category)
 	if err != nil {
-		log.Error("获取或创建工具记录失败: %v", err)
 		// 继续执行工具，但不记录统计
 		return tool.Handler(projectRoot, args)
 	}
 
 	// 执行工具
-	startTime := time.Now()
 	result, err := tool.Handler(projectRoot, args)
-	duration := time.Since(startTime)
 
 	// 记录使用情况
 	success := err == nil
@@ -263,10 +257,8 @@ func HandleToolCall(toolName string, projectRoot string, args json.RawMessage) (
 
 	projectHash := db.GetProjectHash(projectRoot)
 	if err := database.RecordToolUsage(toolID, projectHash, success, errorMsg); err != nil {
-		log.Error("记录工具使用失败: %v", err)
+		log.Printf("记录工具使用失败: %v", err)
 	}
-
-	log.Info("工具调用: %s, 耗时: %v, 成功: %v", toolName, duration, success)
 
 	return result, err
 }
@@ -299,14 +291,13 @@ func handleReadFile(projectRoot string, argsRaw json.RawMessage) (string, error)
 		Path string `json:"path"`
 	}
 	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		log.Debug("argsRaw: %s", string(argsRaw))
+		log.Printf("argsRaw: %s", string(argsRaw))
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
 	fullPath, err := resolvePath(projectRoot, args.Path)
 	if err != nil {
 		return "", err
 	}
-	log.FileOperation("读取文件", args.Path)
 	data, err := os.ReadFile(fullPath)
 	if err != nil {
 		return "", fmt.Errorf("读取文件失败: %w", err)
@@ -321,7 +312,7 @@ func handleWriteFile(projectRoot string, argsRaw json.RawMessage) (string, error
 		Content string `json:"content"`
 	}
 	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		log.Debug("argsRaw: %s", string(argsRaw))
+		log.Printf("argsRaw: %s", string(argsRaw))
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
 	fullPath, err := resolvePath(projectRoot, args.Path)
@@ -332,7 +323,6 @@ func handleWriteFile(projectRoot string, argsRaw json.RawMessage) (string, error
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
 		return "", fmt.Errorf("创建目录失败: %w", err)
 	}
-	log.FileOperation("写入文件", args.Path)
 	if err := os.WriteFile(fullPath, []byte(args.Content), 0o644); err != nil {
 		return "", fmt.Errorf("写入文件失败: %w", err)
 	}
@@ -349,7 +339,6 @@ func handleSearchFiles(projectRoot string, argsRaw json.RawMessage) (string, err
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
 	var results []string
-	log.Info("搜索文件", "pattern", args.Pattern, "content", args.Content)
 	err := filepath.Walk(projectRoot, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil // 跳过无法访问的路径
@@ -413,7 +402,6 @@ func handleGitAdd(projectRoot string, argsRaw json.RawMessage) (string, error) {
 	if err := json.Unmarshal(argsRaw, &args); err != nil {
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
-	log.GitOperation("git add", "path", args.Path)
 	out, err := gitCommand(projectRoot, "add", args.Path)
 	if err != nil {
 		return "", err
@@ -432,7 +420,6 @@ func handleGitCommit(projectRoot string, argsRaw json.RawMessage) (string, error
 	if err := json.Unmarshal(argsRaw, &args); err != nil {
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
-	log.GitOperation("git commit", "message", args.Message)
 	out, err := gitCommand(projectRoot, "commit", "-m", args.Message)
 	if err != nil {
 		return "", err
@@ -453,7 +440,6 @@ func handleGitLog(projectRoot string, argsRaw json.RawMessage) (string, error) {
 	if args.MaxCount <= 0 {
 		args.MaxCount = 10
 	}
-	log.GitOperation("git log", "max_count", args.MaxCount)
 	out, err := gitCommand(projectRoot, "log", "-n", fmt.Sprintf("%d", args.MaxCount), "--oneline")
 	if err != nil {
 		return "", err
@@ -471,7 +457,6 @@ func handleGitDiff(projectRoot string, argsRaw json.RawMessage) (string, error) 
 	if args.Path != "" {
 		gitArgs = append(gitArgs, "--", args.Path)
 	}
-	log.GitOperation("git diff", "path", args.Path)
 	out, err := gitCommand(projectRoot, gitArgs...)
 	if err != nil {
 		return "", err
@@ -481,7 +466,6 @@ func handleGitDiff(projectRoot string, argsRaw json.RawMessage) (string, error) 
 
 // handleGitStatus git状态
 func handleGitStatus(projectRoot string, argsRaw json.RawMessage) (string, error) {
-	log.GitOperation("git status")
 	out, err := gitCommand(projectRoot, "status", "--short")
 	if err != nil {
 		return "", err
@@ -504,7 +488,7 @@ func handleRunCommand(projectRoot string, argsRaw json.RawMessage) (string, erro
 		return "", fmt.Errorf("命令不能为空")
 	}
 
-	log.Info("执行命令: %s", args.Command)
+	log.Printf("执行命令: %s", args.Command)
 	cmd := exec.Command("bash", "-c", args.Command)
 	cmd.Dir = projectRoot
 
@@ -517,8 +501,8 @@ func handleRunCommand(projectRoot string, argsRaw json.RawMessage) (string, erro
 
 // handleManageSkills 管理技能
 func handleManageSkills(projectRoot string, argsRaw json.RawMessage) (string, error) {
-	log.Info("manage_skills called for project: %s", projectRoot)
-	log.Info("args: %s", string(argsRaw))
+	log.Printf("manage_skills called for project: %s", projectRoot)
+	log.Printf("args: %s", string(argsRaw))
 	return "Skills management is under development", nil
 }
 
@@ -598,5 +582,5 @@ func InitTools() {
 		Handler:     handleManageSkills,
 	})
 
-	log.Info("工具系统初始化完成，共注册 %d 个工具", len(toolRegistry))
+	log.Printf("工具系统初始化完成，共注册 %d 个工具", len(toolRegistry))
 }
