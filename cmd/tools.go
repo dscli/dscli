@@ -180,7 +180,7 @@ func getToolParameters(toolName string) map[string]interface{} {
 			"properties": map[string]interface{}{
 				"script": map[string]interface{}{
 					"type":        "string",
-					"description": "要执行的脚本内容。支持shebang指定解释器（如#!/usr/bin/env bash, #!/usr/bin/env python）。示例：\n1. Bash脚本：echo \"Hello\"\n2. Python脚本：#!/usr/bin/env python\nprint(\"Hello\")\n3. 文件操作：cat file.txt\n4. Git操作：git status",
+					"description": "要执行的脚本内容。支持shebang指定解释器（如#!/usr/bin/env bash, #!/usr/bin/env python）。脚本执行结果会以格式化文本返回，包含执行统计信息。示例：\n1. Bash脚本：echo \"Hello\"\n2. Python脚本：#!/usr/bin/env python\nprint(\"Hello\")\n3. 文件操作：cat file.txt\n4. Git操作：git status",
 				},
 			},
 			"required":             []string{"script"},
@@ -583,15 +583,40 @@ func handleBash(projectRoot string, argsRaw json.RawMessage) (out string, err er
 	}
 
 	err = subproc.Wait()
-	out = buf.String()
+	scriptOutput := buf.String()
+	executionTime := time.Since(startTime)
+
 	if err != nil {
 		log.Printf("执行失败: %v", err)
-		out = fmt.Sprintf("执行失败: %v\n输出:\n%s", err, out)
-		err = nil
-	}
-	fmt.Printf("执行结果:\n%s\n", out)
-	fmt.Printf("执行耗时:%v\n", time.Since(startTime))
+		// 构建包含执行统计的失败结果
+		result := fmt.Sprintf(`=== 执行失败 ===
+错误: %v
 
+=== 输出内容 ===
+%s
+
+=== 执行统计 ===
+执行时间: %v
+状态: 失败`,
+			err, scriptOutput, executionTime)
+		fmt.Printf("执行结果:\n#+begin_example\n%s\n#+end_example\n", result)
+		fmt.Printf("执行耗时:%v\n", executionTime)
+		out = result
+		return out, nil
+	}
+
+	// 构建包含执行统计的成功结果
+	result := fmt.Sprintf(`=== 执行结果 ===
+%s
+
+=== 执行统计 ===
+执行时间: %v
+状态: 成功`,
+		scriptOutput, executionTime)
+	fmt.Printf("执行结果:\n#+begin_example\n%s\n#+end_example\n", result)
+	fmt.Printf("执行耗时:%v\n", executionTime)
+
+	out = result
 	return out, nil
 }
 
@@ -671,7 +696,7 @@ func InitTools() {
 	// 注册Bash脚本工具
 	RegisterTool(ToolDef{
 		Name:        "bash",
-		Description: "在项目根目录执行脚本。支持shebang指定解释器（如bash、python等）。脚本通过标准输入传递，避免命令行长度限制。\n\n示例：\n1. Bash脚本：echo \"Hello\"\n2. Python脚本：#!/usr/bin/env python\nprint(\"Hello\")\n3. 文件操作：cat file.txt\n4. Git操作：git status\n\n注意：谨慎使用，避免破坏性操作。确保脚本在项目目录内执行。",
+		Description: "在项目根目录执行脚本。支持shebang指定解释器（如bash、python等）。脚本通过标准输入传递，避免命令行长度限制。\n\n输出格式：\n- 成功时：返回包含执行结果和执行统计的格式化文本\n- 失败时：返回包含错误信息、输出内容和执行统计的格式化文本\n\n示例：\n1. Bash脚本：echo \"Hello\"\n2. Python脚本：#!/usr/bin/env python\nprint(\"Hello\")\n3. 文件操作：cat file.txt\n4. Git操作：git status\n\n注意：谨慎使用，避免破坏性操作。确保脚本在项目目录内执行。",
 		Category:    "system",
 		Handler:     handleBash,
 	})
