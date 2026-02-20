@@ -599,8 +599,7 @@ func handleBash(projectRoot string, argsRaw json.RawMessage) (out string, err er
 执行时间: %v
 状态: 失败`,
 			err, scriptOutput, executionTime)
-		fmt.Printf("执行结果:\n#+begin_example\n%s\n#+end_example\n", result)
-		fmt.Printf("执行耗时:%v\n", executionTime)
+		fmt.Printf("\n#+begin_example\n%s\n#+end_example\n", result)
 		out = result
 		return out, nil
 	}
@@ -613,8 +612,7 @@ func handleBash(projectRoot string, argsRaw json.RawMessage) (out string, err er
 执行时间: %v
 状态: 成功`,
 		scriptOutput, executionTime)
-	fmt.Printf("执行结果:\n#+begin_example\n%s\n#+end_example\n", result)
-	fmt.Printf("执行耗时:%v\n", executionTime)
+	fmt.Printf("\n#+begin_example\n%s\n#+end_example\n", result)
 
 	out = result
 	return out, nil
