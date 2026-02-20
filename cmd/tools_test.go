@@ -6,20 +6,20 @@ import (
 	"testing"
 )
 
-func TestShebang(t *testing.T){
-	tcs := []struct{
+func TestShebang(t *testing.T) {
+	tcs := []struct {
 		script string
-		name string
-		arg []string
+		name   string
+		arg    []string
 	}{
 		{"", "/usr/bin/env", []string{"bash"}},
 		{"#!/bin/bash\necho OK", "/bin/bash", []string{}},
 		{"#!/bin/bash \necho OK", "/bin/bash", []string{}},
 	}
-	for _, tc  := range tcs {
-		t.Run("", func(t *testing.T){
+	for _, tc := range tcs {
+		t.Run("", func(t *testing.T) {
 			name, arg := Shebang(tc.script)
-			if name != tc.name || !reflect.DeepEqual(arg, tc.arg){
+			if name != tc.name || !reflect.DeepEqual(arg, tc.arg) {
 				t.Fatal(name, arg, tc)
 			}
 		})
@@ -51,9 +51,9 @@ func TestHandleBash(t *testing.T) {
 		{"", ""},
 		{`#!/usr/bin/env bash
 echo -n OK
-`,"OK"},
+`, "OK"},
 		{`#!/usr/bin/env python
-print("OK")`,"OK\n"},
+print("OK")`, "OK\n"},
 		{`zzzzzzzz`, "执行失败: exit status 127\n输出:\nbash:行1: zzzzzzzz：未找到命令\n"},
 	}
 

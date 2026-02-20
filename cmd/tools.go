@@ -8,8 +8,10 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gitcode.com/nanjunjie/dscli/internal/api"
 	"gitcode.com/nanjunjie/dscli/internal/db"
@@ -549,9 +551,11 @@ func handleBash(projectRoot string, argsRaw json.RawMessage) (out string, err er
 	}
 
 	script := args.Script
-	log.Printf("执行Bash脚本: %s", script)
+	log.Printf("执行脚本: %s", script)
 	buf := bytes.NewBuffer([]byte{})
 	name, arg := Shebang(script)
+	startTime := time.Now()
+	fmt.Printf("执行脚本：\n#+begin_src %s\n%s\n#+end_src\n", path.Base(name), script)
 	subproc := exec.Command(name, arg...)
 	subproc.Dir = projectRoot
 	subproc.Stdout = buf
@@ -572,7 +576,12 @@ func handleBash(projectRoot string, argsRaw json.RawMessage) (out string, err er
 		err = fmt.Errorf("failed to write string at %d: %w", n, err)
 		return
 	}
-	stdin.Close()
+	err = stdin.Close()
+	if err != nil {
+		err = fmt.Errorf("failed to close stdin: %w", err)
+		return
+	}
+
 	err = subproc.Wait()
 	out = buf.String()
 	if err != nil {
@@ -580,6 +589,9 @@ func handleBash(projectRoot string, argsRaw json.RawMessage) (out string, err er
 		out = fmt.Sprintf("执行失败: %v\n输出:\n%s", err, out)
 		err = nil
 	}
+	fmt.Printf("执行结果:\n%s\n", out)
+	fmt.Printf("执行耗时:%v\n", time.Since(startTime))
+
 	return out, nil
 }
 
