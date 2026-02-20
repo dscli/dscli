@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -167,6 +169,19 @@ func getToolParameters(toolName string) map[string]interface{} {
 				},
 			},
 			"required":             []string{"command"},
+			"additionalProperties": false,
+		}
+
+	case "bash":
+		return map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"script": map[string]interface{}{
+					"type":        "string",
+					"description": "要执行的脚本内容。支持shebang指定解释器（如#!/usr/bin/env bash, #!/usr/bin/env python）。示例：\n1. Bash脚本：echo \"Hello\"\n2. Python脚本：#!/usr/bin/env python\nprint(\"Hello\")\n3. 文件操作：cat file.txt\n4. Git操作：git status",
+				},
+			},
+			"required":             []string{"script"},
 			"additionalProperties": false,
 		}
 
@@ -508,7 +523,66 @@ func handleRunCommand(projectRoot string, argsRaw json.RawMessage) (string, erro
 	return string(out), nil
 }
 
-// handleManageSkills 管理技能
+func Shebang(script string) (name string, arg []string) {
+	shebang := []string{"/usr/bin/env", "bash"}
+	idx := strings.Index(script, "\n")
+	if idx != -1 {
+		line1 := script[0:idx]
+		if strings.HasPrefix(line1, "#!") {
+			shebang = strings.Fields(line1[2:])
+		}
+	}
+	name = shebang[0]
+	arg = shebang[1:]
+	return
+}
+
+// handleBash 执行Bash脚本（使用echo script | bash方式）
+func handleBash(projectRoot string, argsRaw json.RawMessage) (out string, err error) {
+	var args struct {
+		Script string `json:"script"`
+	}
+	if err = json.Unmarshal(argsRaw, &args); err != nil {
+		err = fmt.Errorf("参数解析失败: %w", err)
+		log.Printf("%v", err)
+		return
+	}
+
+	script := args.Script
+	log.Printf("执行Bash脚本: %s", script)
+	buf := bytes.NewBuffer([]byte{})
+	name, arg := Shebang(script)
+	subproc := exec.Command(name, arg...)
+	subproc.Dir = projectRoot
+	subproc.Stdout = buf
+	subproc.Stderr = buf
+	stdin, err := subproc.StdinPipe()
+	if err != nil {
+		err = fmt.Errorf("failed to get stdin pipe: %w", err)
+		log.Printf("%v", err)
+		return
+	}
+	err = subproc.Start()
+	if err != nil {
+		err = fmt.Errorf("failed to start %s: %w", name, err)
+		return
+	}
+	n, err := io.WriteString(stdin, fmt.Sprintf("%s\n", script))
+	if err != nil {
+		err = fmt.Errorf("failed to write string at %d: %w", n, err)
+		return
+	}
+	stdin.Close()
+	err = subproc.Wait()
+	out = buf.String()
+	if err != nil {
+		log.Printf("执行失败: %v", err)
+		out = fmt.Sprintf("执行失败: %v\n输出:\n%s", err, out)
+		err = nil
+	}
+	return out, nil
+}
+
 func handleManageSkills(projectRoot string, argsRaw json.RawMessage) (string, error) {
 	log.Printf("manage_skills called for project: %s", projectRoot)
 	log.Printf("args: %s", string(argsRaw))
@@ -581,6 +655,13 @@ func InitTools() {
 		Description: "在项目根目录执行任意 shell 命令（支持管道、组合命令）。谨慎使用，避免破坏性操作。",
 		Category:    "system",
 		Handler:     handleRunCommand,
+	})
+	// 注册Bash脚本工具
+	RegisterTool(ToolDef{
+		Name:        "bash",
+		Description: "在项目根目录执行脚本。支持shebang指定解释器（如bash、python等）。脚本通过标准输入传递，避免命令行长度限制。\n\n示例：\n1. Bash脚本：echo \"Hello\"\n2. Python脚本：#!/usr/bin/env python\nprint(\"Hello\")\n3. 文件操作：cat file.txt\n4. Git操作：git status\n\n注意：谨慎使用，避免破坏性操作。确保脚本在项目目录内执行。",
+		Category:    "system",
+		Handler:     handleBash,
 	})
 
 	// 注册技能管理工具
