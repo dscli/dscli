@@ -6,13 +6,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"gitcode.com/nanjunjie/dscli/internal/api"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
 
 var (
-	client  *api.Client
+	client  *Client
 	logfile *os.File
 	rootCmd = &cobra.Command{
 		Use:   "dscli",
@@ -62,7 +61,7 @@ func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 	log.SetOutput(logfile)
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
-	client = api.NewClient(key, url, false)
+	client = NewClient(key, url, false)
 	return nil
 }
 

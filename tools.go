@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"gitcode.com/nanjunjie/dscli/internal/api"
 	"gitcode.com/nanjunjie/dscli/internal/db"
 )
 
@@ -38,12 +37,12 @@ func RegisterTool(tool ToolDef) {
 }
 
 // GetAllTools 获取所有工具定义（用于API调用）
-func GetAllTools() []api.Tool {
-	var tools []api.Tool
+func GetAllTools() []Tool {
+	var tools []Tool
 	for _, tool := range toolRegistry {
-		tools = append(tools, api.Tool{
+		tools = append(tools, Tool{
 			Type: "function",
-			Function: api.ToolFunction{
+			Function: ToolFunction{
 				Name:        tool.Name,
 				Description: tool.Description,
 				Parameters:  getToolParameters(tool.Name),
@@ -263,8 +262,8 @@ func HandleToolCall(database *db.DB, toolName string, projectRoot string, args j
 	return result, err
 }
 
-func HandleToolCalls(database *db.DB, projectRoot string, sessionID int64, assistantMsg *api.Message) (err error) {
-	inputs := []api.Message{}
+func HandleToolCalls(database *db.DB, projectRoot string, sessionID int64, assistantMsg *Message) (err error) {
+	inputs := []Message{}
 	// 处理每个工具调用
 	for _, tc := range assistantMsg.ToolCalls {
 		// 使用新的工具调用处理器
@@ -274,7 +273,7 @@ func HandleToolCalls(database *db.DB, projectRoot string, sessionID int64, assis
 			result = err.Error()
 		}
 
-		inputs = append(inputs, api.Message{
+		inputs = append(inputs, Message{
 			Role:       "tool",
 			ToolCallID: tc.ID,
 			Content:    result,

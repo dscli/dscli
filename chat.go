@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"gitcode.com/nanjunjie/dscli/internal/api"
 	"gitcode.com/nanjunjie/dscli/internal/db"
 	"github.com/spf13/cobra"
 )
@@ -62,7 +61,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 	userMsg := strings.TrimSpace(string(content))
 	if userMsg != "" {
-		return ChatMessage(database, projectRoot, sessionID, api.Message{Role: "user", Content: userMsg})
+		return ChatMessage(database, projectRoot, sessionID, Message{Role: "user", Content: userMsg})
 	}
 
 	dm, err := database.LoadLastOne(sessionID)
@@ -78,9 +77,9 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	return HandleToolCalls(database, projectRoot, sessionID, am)
 }
 
-func ToApiMessage(dm *db.Message) (am *api.Message) {
+func ToApiMessage(dm *db.Message) (am *Message) {
 	role := dm.Role
-	am = &api.Message{
+	am = &Message{
 		Role:       role,
 		Content:    dm.Content,
 		ToolCallID: dm.ToolCallID,
@@ -94,7 +93,7 @@ func ToApiMessage(dm *db.Message) (am *api.Message) {
 	return
 }
 
-func ToDBMessage(apim api.Message) (dbm db.Message) {
+func ToDBMessage(apim Message) (dbm db.Message) {
 	role := apim.Role
 	dbm.Content = apim.Content
 	dbm.Role = apim.Role
@@ -111,7 +110,7 @@ func ToDBMessage(apim api.Message) (dbm db.Message) {
 	return
 }
 
-func ChatMessage(database *db.DB, projectRoot string, sessionID int64, inputs ...api.Message) (err error) {
+func ChatMessage(database *db.DB, projectRoot string, sessionID int64, inputs ...Message) (err error) {
 	// 5. 加载历史消息
 	history, err := database.LoadHistory(sessionID)
 	if err != nil {
@@ -124,7 +123,7 @@ func ChatMessage(database *db.DB, projectRoot string, sessionID int64, inputs ..
 	// 计算一个相对日期（比如一年前）
 	oneYearAgo := time.Now().AddDate(-1, 0, 0).Format("2006年1月2日")
 
-	systemMessage := api.Message{
+	systemMessage := Message{
 		Role: "system",
 		Content: fmt.Sprintf(`你是一个专业的编程助手。
 当前日期：%s，注意你的知识截至于当前日期之前，比如%s，请基于当前日期处理与时间相关的需求。
@@ -140,10 +139,10 @@ func ChatMessage(database *db.DB, projectRoot string, sessionID int64, inputs ..
 请保持逻辑严谨，逐步推进。`, currentDate, oneYearAgo, projectRoot),
 	}
 	// 6. 构造 messages 切片（包含历史）
-	messages := make([]api.Message, 0, len(history)+2)
+	messages := make([]Message, 0, len(history)+2)
 	messages = append(messages, systemMessage)
 	for _, m := range history {
-		apiMsg := api.Message{
+		apiMsg := Message{
 			Role:    m.Role,
 			Content: m.Content,
 		}
@@ -151,7 +150,7 @@ func ChatMessage(database *db.DB, projectRoot string, sessionID int64, inputs ..
 			apiMsg.ToolCallID = m.ToolCallID
 		}
 		if len(m.ToolCalls) > 0 {
-			var toolCalls []api.ToolCall
+			var toolCalls []ToolCall
 			err = json.Unmarshal(m.ToolCalls, &toolCalls)
 			if err != nil {
 				err = fmt.Errorf("反序列化ToolCalls失败: %w", err)
@@ -170,7 +169,7 @@ func ChatMessage(database *db.DB, projectRoot string, sessionID int64, inputs ..
 		dbmessages = append(dbmessages, ToDBMessage(m))
 	}
 
-	var resp *api.ChatResponse
+	var resp *ChatResponse
 	resp, err = client.Chat(chatModel, messages, GetAllTools())
 	if err != nil {
 		err = fmt.Errorf("聊天请求失败: %w", err)

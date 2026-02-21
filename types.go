@@ -1,4 +1,4 @@
-package api
+package main
 
 // Tool 定义可调用的工具
 type Tool struct {
