@@ -24,19 +24,7 @@ clean:
 	rm -rf $(BUILD_DIR)
 
 fmt:
-	find . -type f -name '*.go' -exec goimports -w {} \;
-	find . -type f -name '*.go' -exec gofumpt -w {} \;
+	find . -type f -name '*.go' -exec goimports -w {} \; -exec gofumpt -w {} \;
 
 test:
 	go test ./...
-
-# 交叉编译示例（可选）
-build-linux:
-	GOOS=linux GOARCH=amd64 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 $(SOURCE_DIR)
-
-build-windows:
-	GOOS=windows GOARCH=amd64 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe $(SOURCE_DIR)
-
-build-macos:
-	GOOS=darwin GOARCH=amd64 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 $(SOURCE_DIR)
-	GOOS=darwin GOARCH=arm64 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 $(SOURCE_DIR)
