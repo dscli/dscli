@@ -315,7 +315,7 @@ func handleReadFile(projectRoot string, argsRaw json.RawMessage) (string, error)
 	if err != nil {
 		return "", err
 	}
-	return runBash(projectRoot, fmt.Sprintf("cat %s", fullPath))
+	return runBash(projectRoot, fmt.Sprintf(`cat "%s"`, fullPath))
 }
 
 func Shuffle(in string) (out string) {
@@ -348,11 +348,11 @@ func handleWriteFile(projectRoot string, argsRaw json.RawMessage) (string, error
 	for strings.Contains(content, dsctmpeof) {
 		dsctmpeof = Shuffle(dsctmpeof)
 	}
-	script := fmt.Sprintf(`mkdir -p %s
+	script := fmt.Sprintf(`mkdir -p "%s"
 cat > %s <<'%s'
 %s
 %s
-echo 已成功写入文件: %s
+echo 已成功写入文件: "%s"
 `, filepath.Dir(fullPath), fullPath, dsctmpeof, content, dsctmpeof, args.Path)
 	return runBash(projectRoot, script)
 }
@@ -376,7 +376,9 @@ func handleSearchFiles(projectRoot string, argsRaw json.RawMessage) (string, err
 		// 将Go的glob模式转换为find的-name模式
 		// 注意：这里简化处理，复杂的glob模式可能需要转换
 		pattern := args.Pattern
-		script += fmt.Sprintf(` -name '%s'`, pattern)
+		// 转义单引号：将'替换为'\''
+		escapedPattern := strings.ReplaceAll(pattern, "'", "'\"'\"'")
+		script += fmt.Sprintf(` -name '%s'`, escapedPattern)
 	}
 
 	// 添加内容匹配
@@ -384,7 +386,9 @@ func handleSearchFiles(projectRoot string, argsRaw json.RawMessage) (string, err
 		// 使用-exec和grep进行内容搜索
 		// -l: 只显示包含匹配内容的文件名
 		// -q: 安静模式，只返回退出状态
-		script += fmt.Sprintf(` -exec grep -lq '%s' {} \\;`, args.Content)
+		// 转义单引号：将'替换为'\''
+		escapedContent := strings.ReplaceAll(args.Content, "'", "'\"'\"'")
+		script += fmt.Sprintf(` -exec grep -lq '%s' {} \\;`, escapedContent)
 	}
 
 	// 输出结果并限制数量
@@ -398,8 +402,19 @@ func handleSearchFiles(projectRoot string, argsRaw json.RawMessage) (string, err
 
 // gitCommand 执行git命令
 func gitCommand(projectRoot string, args ...string) (string, error) {
-	script := "git " + strings.Join(args, " ")
-	return runBash(projectRoot, script)
+	// 手动构建git命令字符串，正确处理参数中的空格
+	cmdStr := "git"
+	for _, arg := range args {
+		// 如果参数包含空格或特殊字符，需要加引号
+		if strings.ContainsAny(arg, " \t\n\"'") {
+			// 转义单引号：将'替换为'\''
+			arg = strings.ReplaceAll(arg, "'", "'\"'\"'")
+			cmdStr += fmt.Sprintf(" '%s'", arg)
+		} else {
+			cmdStr += " " + arg
+		}
+	}
+	return runBash(projectRoot, cmdStr)
 }
 
 // handleGitAdd git添加
