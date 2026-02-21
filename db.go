@@ -342,13 +342,6 @@ func (db *DB) SaveMessagesBatch(sessionID int64, msgs []RawMessage) error {
 
 // ==================== Skills 相关方法 ====================
 
-// GetProjectHash 获取项目路径的哈希值
-func GetProjectHash(projectPath string) string {
-	// 简单实现：使用路径作为哈希（实际可以使用MD5等）
-	// 这里为了简单，直接使用路径，实际应该使用哈希函数
-	return projectPath
-}
-
 // CreateSkill 创建新技能
 func (db *DB) CreateSkill(name, description, content, category string, priority int, isGlobal bool) (int64, error) {
 	result, err := db.Exec(`

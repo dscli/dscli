@@ -20,7 +20,7 @@ type ToolDef struct {
 	Name        string
 	Description string
 	Category    string
-	Handler     func(projectRoot string, args json.RawMessage) (string, error)
+	Handler     func(args json.RawMessage) (string, error)
 }
 
 // toolRegistry 工具注册表
@@ -230,21 +230,21 @@ func getToolParameters(toolName string) map[string]interface{} {
 }
 
 // HandleToolCall 处理工具调用（带统计）
-func HandleToolCall(database *DB, toolName string, projectRoot string, args json.RawMessage) (string, error) {
+func HandleToolCall(toolName string, args json.RawMessage) (string, error) {
 	// 获取工具处理器
 	tool, ok := toolRegistry[toolName]
 	if !ok {
 		return "", fmt.Errorf("未知工具: %s", toolName)
 	}
 
-	toolID, err := database.GetOrCreateTool(tool.Name, tool.Description, tool.Category)
+	toolID, err := SqliteDB.GetOrCreateTool(tool.Name, tool.Description, tool.Category)
 	if err != nil {
 		// 继续执行工具，但不记录统计
-		return tool.Handler(projectRoot, args)
+		return tool.Handler(args)
 	}
 
 	// 执行工具
-	result, err := tool.Handler(projectRoot, args)
+	result, err := tool.Handler(args)
 
 	// 记录使用情况
 	success := err == nil
@@ -253,20 +253,19 @@ func HandleToolCall(database *DB, toolName string, projectRoot string, args json
 		errorMsg = err.Error()
 	}
 
-	projectHash := GetProjectHash(projectRoot)
-	if err := database.RecordToolUsage(toolID, projectHash, success, errorMsg); err != nil {
+	if err := SqliteDB.RecordToolUsage(toolID, ProjectHash, success, errorMsg); err != nil {
 		log.Printf("记录工具使用失败: %v", err)
 	}
 
 	return result, err
 }
 
-func HandleToolCalls(database *DB, projectRoot string, sessionID int64, assistantMsg *Message) (err error) {
+func HandleToolCalls(assistantMsg *Message) (err error) {
 	inputs := []Message{}
 	// 处理每个工具调用
 	for _, tc := range assistantMsg.ToolCalls {
 		// 使用新的工具调用处理器
-		result, err := HandleToolCall(database, tc.Function.Name, projectRoot, []byte(tc.Function.Arguments))
+		result, err := HandleToolCall(tc.Function.Name, []byte(tc.Function.Arguments))
 		if err != nil {
 			// But we still need to tell the result to assistant
 			result = err.Error()
@@ -280,7 +279,7 @@ func HandleToolCalls(database *DB, projectRoot string, sessionID int64, assistan
 	}
 
 	if len(inputs) > 0 {
-		err = ChatMessage(database, projectRoot, sessionID, inputs...)
+		err = ChatMessage(inputs...)
 	}
 	return
 }
@@ -288,20 +287,20 @@ func HandleToolCalls(database *DB, projectRoot string, sessionID int64, assistan
 // ==================== 工具处理器实现 ====================
 
 // 解析文件路径：如果是相对路径，则拼接项目根目录；否则直接使用（需确保在项目内）
-func resolvePath(projectRoot, path string) (string, error) {
+func resolvePath(path string) (string, error) {
 	if filepath.IsAbs(path) {
 		// 检查是否在项目根目录内
-		rel, err := filepath.Rel(projectRoot, path)
+		rel, err := filepath.Rel(ProjectRoot, path)
 		if err != nil || strings.HasPrefix(rel, "..") {
 			return "", fmt.Errorf("路径 %q 不在项目根目录内", path)
 		}
 		return path, nil
 	}
-	return filepath.Join(projectRoot, path), nil
+	return filepath.Join(ProjectRoot, path), nil
 }
 
 // handleReadFile 读取文件
-func handleReadFile(projectRoot string, argsRaw json.RawMessage) (string, error) {
+func handleReadFile(argsRaw json.RawMessage) (string, error) {
 	var args struct {
 		Path string `json:"path"`
 	}
@@ -309,11 +308,11 @@ func handleReadFile(projectRoot string, argsRaw json.RawMessage) (string, error)
 		log.Printf("argsRaw: %s", string(argsRaw))
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
-	fullPath, err := resolvePath(projectRoot, args.Path)
+	fullPath, err := resolvePath(args.Path)
 	if err != nil {
 		return "", err
 	}
-	return runBash(projectRoot, fmt.Sprintf(`cat "%s"`, fullPath))
+	return runBash(fmt.Sprintf(`cat "%s"`, fullPath))
 }
 
 func Shuffle(in string) (out string) {
@@ -326,7 +325,7 @@ func Shuffle(in string) (out string) {
 }
 
 // handleWriteFile 写入文件
-func handleWriteFile(projectRoot string, argsRaw json.RawMessage) (string, error) {
+func handleWriteFile(argsRaw json.RawMessage) (string, error) {
 	var args struct {
 		Path    string `json:"path"`
 		Content string `json:"content"`
@@ -336,7 +335,7 @@ func handleWriteFile(projectRoot string, argsRaw json.RawMessage) (string, error
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
 
-	fullPath, err := resolvePath(projectRoot, args.Path)
+	fullPath, err := resolvePath(args.Path)
 	if err != nil {
 		return "", err
 	}
@@ -352,11 +351,11 @@ cat > %s <<'%s'
 %s
 echo 已成功写入文件: "%s"
 `, filepath.Dir(fullPath), fullPath, dsctmpeof, content, dsctmpeof, args.Path)
-	return runBash(projectRoot, script)
+	return runBash(script)
 }
 
 // handleSearchFiles 搜索文件
-func handleSearchFiles(projectRoot string, argsRaw json.RawMessage) (string, error) {
+func handleSearchFiles(argsRaw json.RawMessage) (string, error) {
 	var args struct {
 		Pattern string `json:"pattern"`
 		Content string `json:"content"`
@@ -395,11 +394,11 @@ func handleSearchFiles(projectRoot string, argsRaw json.RawMessage) (string, err
 	// 处理空结果
 	script += ` || echo "未找到匹配的文件"`
 
-	return runBash(projectRoot, script)
+	return runBash(script)
 }
 
 // gitCommand 执行git命令
-func gitCommand(projectRoot string, args ...string) (string, error) {
+func gitCommand(args ...string) (string, error) {
 	// 手动构建git命令字符串，正确处理参数中的空格
 	cmdStr := "git"
 	for _, arg := range args {
@@ -412,18 +411,18 @@ func gitCommand(projectRoot string, args ...string) (string, error) {
 			cmdStr += " " + arg
 		}
 	}
-	return runBash(projectRoot, cmdStr)
+	return runBash(cmdStr)
 }
 
 // handleGitAdd git添加
-func handleGitAdd(projectRoot string, argsRaw json.RawMessage) (string, error) {
+func handleGitAdd(argsRaw json.RawMessage) (string, error) {
 	var args struct {
 		Path string `json:"path"`
 	}
 	if err := json.Unmarshal(argsRaw, &args); err != nil {
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
-	out, err := gitCommand(projectRoot, "add", args.Path)
+	out, err := gitCommand("add", args.Path)
 	if err != nil {
 		return "", err
 	}
@@ -434,14 +433,14 @@ func handleGitAdd(projectRoot string, argsRaw json.RawMessage) (string, error) {
 }
 
 // handleGitCommit git提交
-func handleGitCommit(projectRoot string, argsRaw json.RawMessage) (string, error) {
+func handleGitCommit(argsRaw json.RawMessage) (string, error) {
 	var args struct {
 		Message string `json:"message"`
 	}
 	if err := json.Unmarshal(argsRaw, &args); err != nil {
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
-	out, err := gitCommand(projectRoot, "commit", "-m", args.Message)
+	out, err := gitCommand("commit", "-m", args.Message)
 	if err != nil {
 		return "", err
 	}
@@ -449,7 +448,7 @@ func handleGitCommit(projectRoot string, argsRaw json.RawMessage) (string, error
 }
 
 // handleGitLog git日志
-func handleGitLog(projectRoot string, argsRaw json.RawMessage) (string, error) {
+func handleGitLog(argsRaw json.RawMessage) (string, error) {
 	var args struct {
 		MaxCount int `json:"max_count"`
 	}
@@ -461,7 +460,7 @@ func handleGitLog(projectRoot string, argsRaw json.RawMessage) (string, error) {
 	if args.MaxCount <= 0 {
 		args.MaxCount = 10
 	}
-	out, err := gitCommand(projectRoot, "log", "-n", fmt.Sprintf("%d", args.MaxCount), "--oneline")
+	out, err := gitCommand("log", "-n", fmt.Sprintf("%d", args.MaxCount), "--oneline")
 	if err != nil {
 		return "", err
 	}
@@ -469,7 +468,7 @@ func handleGitLog(projectRoot string, argsRaw json.RawMessage) (string, error) {
 }
 
 // handleGitDiff git差异
-func handleGitDiff(projectRoot string, argsRaw json.RawMessage) (string, error) {
+func handleGitDiff(argsRaw json.RawMessage) (string, error) {
 	var args struct {
 		Path string `json:"path"`
 	}
@@ -478,7 +477,7 @@ func handleGitDiff(projectRoot string, argsRaw json.RawMessage) (string, error) 
 	if args.Path != "" {
 		gitArgs = append(gitArgs, "--", args.Path)
 	}
-	out, err := gitCommand(projectRoot, gitArgs...)
+	out, err := gitCommand(gitArgs...)
 	if err != nil {
 		return "", err
 	}
@@ -486,8 +485,8 @@ func handleGitDiff(projectRoot string, argsRaw json.RawMessage) (string, error) 
 }
 
 // handleGitStatus git状态
-func handleGitStatus(projectRoot string, argsRaw json.RawMessage) (string, error) {
-	out, err := gitCommand(projectRoot, "status", "--short")
+func handleGitStatus(argsRaw json.RawMessage) (string, error) {
+	out, err := gitCommand("status", "--short")
 	if err != nil {
 		return "", err
 	}
@@ -512,7 +511,7 @@ func Shebang(script string) (name string, arg []string) {
 }
 
 // handleBash 执行Bash脚本（使用echo script | bash方式）
-func handleBash(projectRoot string, argsRaw json.RawMessage) (out string, err error) {
+func handleBash(argsRaw json.RawMessage) (out string, err error) {
 	var args struct {
 		Script string `json:"script"`
 	}
@@ -522,11 +521,11 @@ func handleBash(projectRoot string, argsRaw json.RawMessage) (out string, err er
 		return
 	}
 
-	out, err = runBash(projectRoot, args.Script)
+	out, err = runBash(args.Script)
 	return
 }
 
-func runScriptShebang(projectRoot string, script string, name string, arg []string) (out string, err error) {
+func runScriptShebang(script string, name string, arg []string) (out string, err error) {
 	startTime := time.Now()
 	log.Printf("执行脚本: %s %s %v", script, name, arg)
 	buf := bytes.NewBuffer([]byte{})
@@ -546,7 +545,7 @@ func runScriptShebang(projectRoot string, script string, name string, arg []stri
 		}
 	}()
 	subproc := exec.Command(name, arg...)
-	subproc.Dir = projectRoot
+	subproc.Dir = ProjectRoot
 	subproc.Stdout = buf
 	subproc.Stderr = buf
 	stdin, err := subproc.StdinPipe()
@@ -580,12 +579,12 @@ func runScriptShebang(projectRoot string, script string, name string, arg []stri
 	return out, nil
 }
 
-func runBash(projectRoot string, script string) (result string, err error) {
+func runBash(script string) (result string, err error) {
 	log.Printf("执行脚本: %s", script)
 	startTime := time.Now()
 	name, arg := Shebang(script)
 
-	out, err := runScriptShebang(projectRoot, script, name, arg)
+	out, err := runScriptShebang(script, name, arg)
 	executionTime := time.Since(startTime)
 	if err != nil {
 		log.Printf("执行失败: %v", err)
@@ -611,13 +610,12 @@ func runBash(projectRoot string, script string) (result string, err error) {
 执行时间: %v
 状态: 成功`,
 		out, executionTime)
-	fmt.Printf("\n#+begin_example\n%s\n#+end_example\n", result)
 
 	return
 }
 
-func handleManageSkills(projectRoot string, argsRaw json.RawMessage) (string, error) {
-	log.Printf("manage_skills called for project: %s", projectRoot)
+func handleManageSkills(argsRaw json.RawMessage) (string, error) {
+	log.Printf("manage_skills called for project: %s", ProjectRoot)
 	log.Printf("args: %s", string(argsRaw))
 	return "Skills management is under development", nil
 }

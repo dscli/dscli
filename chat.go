@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -30,29 +28,7 @@ var chatCmd = &cobra.Command{
 }
 
 func ChatRunE(cmd *cobra.Command, args []string) (err error) {
-	// 1. 确定项目根路径
-	projectRoot, err := getProjectRoot()
-	if err != nil {
-		err = fmt.Errorf("无法确定项目根路径: %w", err)
-		return
-	}
-
-	// 2. 打开数据库
-	database, err := New()
-	if err != nil {
-		err = fmt.Errorf("初始化数据库失败: %w", err)
-		return
-	}
-	defer database.Close()
-
-	// 3. 获取会话ID
-	sessionID, err := database.GetOrCreateSession(projectRoot)
-	if err != nil {
-		err = fmt.Errorf("获取会话失败: %w", err)
-		return
-	}
-
-	// 4. 读取标准输入
+	// 1. 读取标准输入
 	reader := bufio.NewReader(os.Stdin)
 	content, err := io.ReadAll(reader)
 	if err != nil {
@@ -60,10 +36,10 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 	userMsg := strings.TrimSpace(string(content))
 	if userMsg != "" {
-		return ChatMessage(database, projectRoot, sessionID, Message{Role: "user", Content: userMsg})
+		return ChatMessage(Message{Role: "user", Content: userMsg})
 	}
 
-	dm, err := database.LoadLastOne(sessionID)
+	dm, err := SqliteDB.LoadLastOne(SessionID)
 	if err != nil {
 		return
 	}
@@ -73,7 +49,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		fmt.Println("天下本无事")
 		return
 	}
-	return HandleToolCalls(database, projectRoot, sessionID, am)
+	return HandleToolCalls(am)
 }
 
 func ToApiMessage(dm *RawMessage) (am *Message) {
@@ -109,25 +85,25 @@ func ToDBMessage(apim Message) (dbm RawMessage) {
 	return
 }
 
-func ChatMessage(database *DB, projectRoot string, sessionID int64, inputs ...Message) (err error) {
+func ChatMessage(inputs ...Message) (err error) {
 	// 5. 加载历史消息
-	history, err := database.LoadHistory(sessionID)
+	history, err := SqliteDB.LoadHistory(SessionID)
 	if err != nil {
 		err = fmt.Errorf("加载历史消息失败: %w", err)
 		return
 	}
 
-	// 添加系统提示（包含当前日期）
-	currentDate := time.Now().Format("2006-01-02")
-	// 计算一个相对日期（比如一年前）
-	oneYearAgo := time.Now().AddDate(-1, 0, 0).Format("2006年1月2日")
-
 	systemMessage := Message{
 		Role: "system",
 		Content: fmt.Sprintf(`你是一个专业的编程助手。
-当前日期：%s，注意你的知识截至于当前日期之前，比如%s，请基于当前日期处理与时间相关的需求。
+当前日期：请基于当前日期处理与时间相关的需求，如不知道当前日期，可通过 date 命令获得当前时间与日期。
+
 当前工作目录：%s ，你可以操作（增删改查）当前工作目录下的所有文件和目录，注意当前工作目录由版本控制系统Git管控，你最好不要直接读写.git目录下的文件，但你可以通过git操作。
+
 配置目录：~/.dscli，你可操作配置目录下的任何文件，但不能删除以下文件 1) sqlite.db，2) dscli.env，你可以通过数据库接口如sqlite3操作数据库文件。
+
+版权信息：据人类法律版权归人类所有。可通过 git config user.name 获取版权所有者名字，通过 git config user.email 获取版权所有者邮箱。
+
 你的工作流程：
 1. 仔细分析用户的问题，拆解出需要完成的步骤，
 2. 如果需要运行修改代码，搜索信息，文件读写，Git操作或执行其他操作，请调用相应的工具（工具列表已通过API工具参数提供），
@@ -135,7 +111,7 @@ func ChatMessage(database *DB, projectRoot string, sessionID int64, inputs ...Me
 4. 当工具返回结果后，分析结果并决定下一步的行动，直至任务完成，
 5. 最终给出清晰，准确的答案。
 
-请保持逻辑严谨，逐步推进。`, currentDate, oneYearAgo, projectRoot),
+请保持逻辑严谨，逐步推进。`, ProjectRoot),
 	}
 	// 6. 构造 messages 切片（包含历史）
 	messages := make([]Message, 0, len(history)+2)
@@ -186,46 +162,14 @@ func ChatMessage(database *DB, projectRoot string, sessionID int64, inputs ...Me
 	dbAssistantMsg := ToDBMessage(assistantMsg)
 	dbmessages = append(dbmessages, dbAssistantMsg)
 	if len(dbmessages) > 0 {
-		if err = database.SaveMessagesBatch(sessionID, dbmessages); err != nil {
+		if err = SqliteDB.SaveMessagesBatch(SessionID, dbmessages); err != nil {
 			err = fmt.Errorf("保存消息失败: %w", err)
 			return
 		}
 	}
 
 	fmt.Println(assistantMsg.Content)
-	return HandleToolCalls(database, projectRoot, sessionID, &assistantMsg)
-}
-
-// getProjectRoot 获取当前项目根目录（用于会话隔离）
-func getProjectRoot() (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	gitRoot, err := findGitRoot(cwd)
-	if err == nil && gitRoot != "" {
-		return gitRoot, nil
-	}
-	return filepath.Abs(cwd)
-}
-
-func findGitRoot(dir string) (string, error) {
-	absDir, err := filepath.Abs(dir)
-	if err != nil {
-		return "", err
-	}
-	for {
-		gitPath := filepath.Join(absDir, ".git")
-		if _, err := os.Stat(gitPath); err == nil {
-			return absDir, nil
-		}
-		parent := filepath.Dir(absDir)
-		if parent == absDir {
-			break
-		}
-		absDir = parent
-	}
-	return "", fmt.Errorf("未找到 Git 仓库根目录")
+	return HandleToolCalls(&assistantMsg)
 }
 
 func init() {

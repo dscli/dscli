@@ -51,9 +51,9 @@
      systemPrompt := "你是一个编程助手，帮助用户完成各种任务..."
 
      // Skills 增强的系统提示（动态）
-     func buildSystemPrompt(projectRoot string) string {
+     func buildSystemPrompt() string {
          basePrompt := "你是一个编程助手..."
-         skills := db.GetEnabledSkills(projectRoot)  // 从数据库查询
+         skills := db.GetEnabledSkills(ProjectRoot)  // 从数据库查询
          return basePrompt + "\n\n当前项目启用的最佳实践：\n" + joinSkills(skills)
      }
    #+END_SRC
@@ -127,7 +127,7 @@
 ** 3. 技能使用统计
 *** 使用记录
     #+BEGIN_SRC go
-      func recordSkillUsage(projectRoot string, skillName string) {
+      func recordSkillUsage(skillName string) {
           // 更新使用次数
           db.Exec("UPDATE skills SET usage_count = usage_count + 1 WHERE name = ?", skillName)
           
@@ -136,7 +136,7 @@
               UPDATE project_skills 
               SET last_used = CURRENT_TIMESTAMP 
               WHERE project_hash = ? AND skill_id = (SELECT id FROM skills WHERE name = ?)
-          `, projectHash, skillName)
+          `, ProjectHash, skillName)
       }
     #+END_SRC
 
@@ -301,9 +301,9 @@
    在每次聊天请求时，动态构建系统提示：
 
    #+BEGIN_SRC go
-     func getChatMessagesWithSkills(projectRoot string, userMessage string) []api.Message {
+     func getChatMessagesWithSkills(userMessage string) []api.Message {
          // 获取启用的技能内容
-         skillsContent := getEnabledSkillsContent(projectRoot)
+         skillsContent := getEnabledSkillsContent()
          
          // 构建系统提示
          systemPrompt := fmt.Sprintf(`%s

@@ -51,7 +51,7 @@ print("OK")`, "OK\n", nil},
 	for _, tc := range tcs {
 		t.Run("", func(t *testing.T) {
 			name, arg := Shebang(tc.script)
-			out, err := runScriptShebang(".", tc.script, name, arg)
+			out, err := runScriptShebang(tc.script, name, arg)
 
 			if tc.checkErr == nil {
 				if err != nil {

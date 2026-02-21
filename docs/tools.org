@@ -148,13 +148,13 @@
 * 实现细节
 ** 工具调用流程
    #+BEGIN_SRC go
-     func HandleToolCall(toolName string, projectRoot string, args json.RawMessage) (string, error) {
+     func HandleToolCall(toolName string, args json.RawMessage) (string, error) {
          // 1. 获取或创建工具记录
          toolID, err := db.GetOrCreateTool(toolName, description, category)
          
          // 2. 执行工具
          startTime := time.Now()
-         result, err := toolHandlers[toolName](projectRoot, args)
+         result, err := toolHandlers[toolName](ProjectRoot, args)
          duration := time.Since(startTime)
          
          // 3. 记录使用情况
@@ -164,8 +164,7 @@
              errorMsg = err.Error()
          }
          
-         projectHash := db.GetProjectHash(projectRoot)
-         db.RecordToolUsage(toolID, projectHash, success, errorMsg)
+         db.RecordToolUsage(toolID, ProjectHash, success, errorMsg)
          
          // 4. 返回结果
          return result, err
@@ -179,7 +178,7 @@
          Name        string
          Description string
          Category    string
-         Handler     func(projectRoot string, args json.RawMessage) (string, error)
+         Handler     func(args json.RawMessage) (string, error)
      }
      
      // 工具注册表
