@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"math/rand"
+	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
@@ -218,6 +219,18 @@ func getToolParameters(toolName string) map[string]interface{} {
 			"additionalProperties": false,
 		}
 
+	case "sqlite":
+		return map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"script": map[string]interface{}{
+					"type":        "string",
+					"description": "SQL脚本内容。支持shebang指定sqlite3命令",
+				},
+			},
+			"required":             []string{"script"},
+			"additionalProperties": false,
+		}
 	default:
 		// 默认返回空参数定义
 		return map[string]interface{}{
@@ -621,6 +634,35 @@ func handleManageSkills(argsRaw json.RawMessage) (string, error) {
 }
 
 // InitTools 初始化工具系统
+
+// handleSqlite 执行SQLite数据库查询和操作
+func handleSqlite(argsRaw json.RawMessage) (string, error) {
+	// 解析参数
+	var args struct {
+		Script string `json:"script"`
+	}
+	if err := json.Unmarshal(argsRaw, &args); err != nil {
+		return "", fmt.Errorf("解析参数失败: %w", err)
+	}
+	
+	if args.Script == "" {
+		return "", fmt.Errorf("SQL脚本不能为空")
+	}
+	
+	// 获取数据库路径
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("获取用户主目录失败: %w", err)
+	}
+	dbPath := filepath.Join(home, ".dscli", "sqlite.db")
+	
+	// 构建完整的shebang脚本
+	fullScript := fmt.Sprintf("#!/usr/bin/env sqlite3 %s\n%s", dbPath, args.Script)
+	
+	// 使用现有的runBash执行
+	return runBash(fullScript)
+}
+
 func InitTools() {
 	// 注册文件操作工具
 	RegisterTool(ToolDef{
@@ -694,5 +736,13 @@ func InitTools() {
 		Description: "管理项目的技能（最佳实践规则）",
 		Category:    "skills",
 		Handler:     handleManageSkills,
+	})
+
+	// 注册SQLite数据库工具
+	RegisterTool(ToolDef{
+		Name:        "sqlite",
+		Description: "执行SQLite数据库查询和操作。支持shebang指定sqlite3命令，脚本内容为SQL语句。",
+		Category:    "database",
+		Handler:     handleSqlite,
 	})
 }
