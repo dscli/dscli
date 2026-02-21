@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"reflect"
 	"testing"
 )
@@ -26,44 +25,42 @@ func TestShebang(t *testing.T) {
 	}
 }
 
-func TestHandleBash(t *testing.T) {
-	type Args struct {
-		Script string `json:"script"`
-	}
-
-	jsonRawMessage := func(s string) (raw json.RawMessage) {
-		v := &Args{
-			Script: s,
-		}
-		b, err := json.Marshal(v)
-		if err != nil {
-			b = []byte{}
-		}
-		raw = b
-		return
-	}
-
+func TestRunScriptShebang(t *testing.T) {
 	tcs := []struct {
-		script string
-		out    string
+		script   string
+		out      string
+		checkErr func(t *testing.T, err error)
 	}{
-		{"echo -n hi", "hi"},
-		{"", ""},
+		{"echo -n hi", "hi", nil},
+		{"", "", nil},
 		{`#!/usr/bin/env bash
 echo -n OK
-`, "OK"},
+`, "OK", nil},
 		{`#!/usr/bin/env python
-print("OK")`, "OK\n"},
-		{`zzzzzzzz`, "执行失败: exit status 127\n输出:\nbash:行1: zzzzzzzz：未找到命令\n"},
+print("OK")`, "OK\n", nil},
+		{`zzzzzzzz`, "bash:行1: zzzzzzzz：未找到命令\n", func(t *testing.T, err error) {
+			if err == nil {
+				t.Fatal(err)
+			}
+			if err.Error() != "exit status 127" {
+				t.Fatal(err)
+			}
+		}},
 	}
 
 	for _, tc := range tcs {
 		t.Run("", func(t *testing.T) {
-			raw := jsonRawMessage(tc.script)
-			out, err := handleBash(".", raw)
-			if err != nil {
-				t.Fatal(err)
+			name, arg := Shebang(tc.script)
+			out, err := runScriptShebang(".", tc.script, name, arg)
+
+			if tc.checkErr == nil {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				tc.checkErr(t, err)
 			}
+
 			if out != tc.out {
 				t.Fatal(out, tc.out)
 			}

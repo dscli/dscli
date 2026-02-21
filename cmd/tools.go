@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
+	"math/rand"
 	"os/exec"
 	"path"
 	"path/filepath"
@@ -27,6 +27,10 @@ type ToolDef struct {
 
 // toolRegistry 工具注册表
 var toolRegistry = map[string]ToolDef{}
+
+func init() {
+	rand.Seed(time.Now().Unix())
+}
 
 // RegisterTool 注册工具
 func RegisterTool(tool ToolDef) {
@@ -161,20 +165,7 @@ func getToolParameters(toolName string) map[string]interface{} {
 			"additionalProperties": false,
 		}
 
-	case "run_command":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"command": map[string]interface{}{
-					"type":        "string",
-					"description": "要执行的 shell 命令，如 'git log --oneline | head -5'",
-				},
-			},
-			"required":             []string{"command"},
-			"additionalProperties": false,
-		}
-
-	case "bash":
+	case "execute_script":
 		return map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -324,11 +315,16 @@ func handleReadFile(projectRoot string, argsRaw json.RawMessage) (string, error)
 	if err != nil {
 		return "", err
 	}
-	data, err := os.ReadFile(fullPath)
-	if err != nil {
-		return "", fmt.Errorf("读取文件失败: %w", err)
-	}
-	return string(data), nil
+	return runBash(projectRoot, fmt.Sprintf("cat %s", fullPath))
+}
+
+func Shuffle(in string) (out string) {
+	runes := []rune(in)
+	rand.Shuffle(len(runes), func(i, j int) {
+		runes[i], runes[j] = runes[j], runes[i]
+	})
+	out = string(runes)
+	return
 }
 
 // handleWriteFile 写入文件
@@ -341,18 +337,24 @@ func handleWriteFile(projectRoot string, argsRaw json.RawMessage) (string, error
 		log.Printf("argsRaw: %s", string(argsRaw))
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
+
 	fullPath, err := resolvePath(projectRoot, args.Path)
 	if err != nil {
 		return "", err
 	}
-	// 确保目录存在
-	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
-		return "", fmt.Errorf("创建目录失败: %w", err)
+
+	dsctmpeof := "DSCTMPEOF"
+	content := args.Content
+	for strings.Contains(content, dsctmpeof) {
+		dsctmpeof = Shuffle(dsctmpeof)
 	}
-	if err := os.WriteFile(fullPath, []byte(args.Content), 0o644); err != nil {
-		return "", fmt.Errorf("写入文件失败: %w", err)
-	}
-	return fmt.Sprintf("已成功写入文件: %s", args.Path), nil
+	script := fmt.Sprintf(`mkdir -p %s
+cat > %s <<'%s'
+%s
+%s
+echo 已成功写入文件: %s
+`, filepath.Dir(fullPath), fullPath, dsctmpeof, content, dsctmpeof, args.Path)
+	return runBash(projectRoot, script)
 }
 
 // handleSearchFiles 搜索文件
@@ -364,60 +366,40 @@ func handleSearchFiles(projectRoot string, argsRaw json.RawMessage) (string, err
 	if err := json.Unmarshal(argsRaw, &args); err != nil {
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
-	var results []string
-	err := filepath.Walk(projectRoot, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil // 跳过无法访问的路径
-		}
-		if info.IsDir() {
-			// 忽略 .git 目录
-			if info.Name() == ".git" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		rel, err := filepath.Rel(projectRoot, path)
-		if err != nil {
-			return nil
-		}
-		// 文件名匹配
-		if args.Pattern != "" {
-			matched, _ := filepath.Match(args.Pattern, info.Name())
-			if !matched {
-				return nil
-			}
-		}
-		// 内容匹配
-		if args.Content != "" {
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return nil
-			}
-			if !strings.Contains(string(data), args.Content) {
-				return nil
-			}
-		}
-		results = append(results, rel)
-		return nil
-	})
-	if err != nil {
-		return "", fmt.Errorf("搜索失败: %w", err)
+
+	// 使用find和grep命令实现搜索
+	// 基础find命令：从当前目录开始，排除.git目录，只搜索文件
+	script := `find . -type f -not -path "./.git/*"`
+
+	// 添加文件名模式匹配
+	if args.Pattern != "" {
+		// 将Go的glob模式转换为find的-name模式
+		// 注意：这里简化处理，复杂的glob模式可能需要转换
+		pattern := args.Pattern
+		script += fmt.Sprintf(` -name '%s'`, pattern)
 	}
-	if len(results) == 0 {
-		return "未找到匹配的文件", nil
+
+	// 添加内容匹配
+	if args.Content != "" {
+		// 使用-exec和grep进行内容搜索
+		// -l: 只显示包含匹配内容的文件名
+		// -q: 安静模式，只返回退出状态
+		script += fmt.Sprintf(` -exec grep -lq '%s' {} \\;`, args.Content)
 	}
-	return strings.Join(results, "\n"), nil
+
+	// 输出结果并限制数量
+	script += ` -print 2>/dev/null | head -50`
+
+	// 处理空结果
+	script += ` || echo "未找到匹配的文件"`
+
+	return runBash(projectRoot, script)
 }
 
 // gitCommand 执行git命令
 func gitCommand(projectRoot string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = projectRoot
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("git 命令失败: %s\n输出: %s", err, out)
-	}
-	return string(out), nil
+	script := "git " + strings.Join(args, " ")
+	return runBash(projectRoot, script)
 }
 
 // handleGitAdd git添加
@@ -502,29 +484,6 @@ func handleGitStatus(projectRoot string, argsRaw json.RawMessage) (string, error
 	return out, nil
 }
 
-// handleRunCommand 执行命令
-func handleRunCommand(projectRoot string, argsRaw json.RawMessage) (string, error) {
-	var args struct {
-		Command string `json:"command"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return "", fmt.Errorf("参数解析失败: %w", err)
-	}
-	if args.Command == "" {
-		return "", fmt.Errorf("命令不能为空")
-	}
-
-	log.Printf("执行命令: %s", args.Command)
-	cmd := exec.Command("bash", "-c", args.Command)
-	cmd.Dir = projectRoot
-
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Sprintf("命令执行失败: %v\n输出:\n%s", err, out), nil
-	}
-	return string(out), nil
-}
-
 func Shebang(script string) (name string, arg []string) {
 	shebang := []string{"/usr/bin/env", "bash"}
 	idx := strings.Index(script, "\n")
@@ -550,11 +509,13 @@ func handleBash(projectRoot string, argsRaw json.RawMessage) (out string, err er
 		return
 	}
 
-	script := args.Script
-	log.Printf("执行脚本: %s", script)
+	out, err = runBash(projectRoot, args.Script)
+	return
+}
+
+func runScriptShebang(projectRoot string, script string, name string, arg []string) (out string, err error) {
+	log.Printf("执行脚本: %s %s %v", script, name, arg)
 	buf := bytes.NewBuffer([]byte{})
-	name, arg := Shebang(script)
-	startTime := time.Now()
 	fmt.Printf("执行脚本：\n#+begin_src %s\n%s\n#+end_src\n", path.Base(name), script)
 	subproc := exec.Command(name, arg...)
 	subproc.Dir = projectRoot
@@ -583,9 +544,21 @@ func handleBash(projectRoot string, argsRaw json.RawMessage) (out string, err er
 	}
 
 	err = subproc.Wait()
-	scriptOutput := buf.String()
-	executionTime := time.Since(startTime)
+	out = buf.String()
+	if err != nil {
+		log.Printf("执行失败: %v", err)
+		return out, err
+	}
+	return out, nil
+}
 
+func runBash(projectRoot string, script string) (result string, err error) {
+	log.Printf("执行脚本: %s", script)
+	startTime := time.Now()
+	name, arg := Shebang(script)
+
+	out, err := runScriptShebang(projectRoot, script, name, arg)
+	executionTime := time.Since(startTime)
 	if err != nil {
 		log.Printf("执行失败: %v", err)
 		// 构建包含执行统计的失败结果
@@ -598,24 +571,22 @@ func handleBash(projectRoot string, argsRaw json.RawMessage) (out string, err er
 === 执行统计 ===
 执行时间: %v
 状态: 失败`,
-			err, scriptOutput, executionTime)
+			err, out, executionTime)
 		fmt.Printf("\n#+begin_example\n%s\n#+end_example\n", result)
-		out = result
-		return out, nil
+		return result, nil
 	}
 
 	// 构建包含执行统计的成功结果
-	result := fmt.Sprintf(`=== 执行结果 ===
+	result = fmt.Sprintf(`=== 执行结果 ===
 %s
 
 === 执行统计 ===
 执行时间: %v
 状态: 成功`,
-		scriptOutput, executionTime)
+		out, executionTime)
 	fmt.Printf("\n#+begin_example\n%s\n#+end_example\n", result)
 
-	out = result
-	return out, nil
+	return
 }
 
 func handleManageSkills(projectRoot string, argsRaw json.RawMessage) (string, error) {
@@ -684,16 +655,9 @@ func InitTools() {
 		Handler:     handleGitStatus,
 	})
 
-	// 注册系统操作工具
-	RegisterTool(ToolDef{
-		Name:        "run_command",
-		Description: "在项目根目录执行任意 shell 命令（支持管道、组合命令）。谨慎使用，避免破坏性操作。",
-		Category:    "system",
-		Handler:     handleRunCommand,
-	})
 	// 注册Bash脚本工具
 	RegisterTool(ToolDef{
-		Name:        "bash",
+		Name:        "execute_script",
 		Description: "在项目根目录执行脚本。支持shebang指定解释器（如bash、python等）。脚本通过标准输入传递，避免命令行长度限制。\n\n输出格式：\n- 成功时：返回包含执行结果和执行统计的格式化文本\n- 失败时：返回包含错误信息、输出内容和执行统计的格式化文本\n\n示例：\n1. Bash脚本：echo \"Hello\"\n2. Python脚本：#!/usr/bin/env python\nprint(\"Hello\")\n3. 文件操作：cat file.txt\n4. Git操作：git status\n\n注意：谨慎使用，避免破坏性操作。确保脚本在项目目录内执行。",
 		Category:    "system",
 		Handler:     handleBash,
