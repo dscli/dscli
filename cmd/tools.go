@@ -529,9 +529,24 @@ func handleBash(projectRoot string, argsRaw json.RawMessage) (out string, err er
 }
 
 func runScriptShebang(projectRoot string, script string, name string, arg []string) (out string, err error) {
+	startTime := time.Now()
 	log.Printf("执行脚本: %s %s %v", script, name, arg)
 	buf := bytes.NewBuffer([]byte{})
-	fmt.Printf("执行脚本：\n#+begin_src %s\n%s\n#+end_src\n", path.Base(name), script)
+	lang := path.Base(name)
+	if len(arg) > 0 {
+		lang = arg[0]
+	}
+	fmt.Printf("执行脚本：\n#+begin_src %s\n%s\n#+end_src\n", lang, script)
+	defer func(){
+		spend := time.Since(startTime)
+		if err == nil {
+			fmt.Printf("\n执行成功（%v）：\n#+begin_example\n%s\n#+end_example\n",
+				spend, out)
+		}else{
+			fmt.Printf("\n执行失败（%v）：\n#+begin_example\n%s\n#+end_example\n\n出错信息：\n#+begin_example\n%s\n#+end_example\n",
+				spend, out, err.Error())
+		}
+	}()
 	subproc := exec.Command(name, arg...)
 	subproc.Dir = projectRoot
 	subproc.Stdout = buf
@@ -587,8 +602,7 @@ func runBash(projectRoot string, script string) (result string, err error) {
 执行时间: %v
 状态: 失败`,
 			err, out, executionTime)
-		fmt.Printf("\n#+begin_example\n%s\n#+end_example\n", result)
-		return result, nil
+			return result, nil
 	}
 
 	// 构建包含执行统计的成功结果
@@ -686,5 +700,4 @@ func InitTools() {
 		Handler:     handleManageSkills,
 	})
 
-	log.Printf("工具系统初始化完成，共注册 %d 个工具", len(toolRegistry))
 }
