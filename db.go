@@ -1,4 +1,4 @@
-package db
+package main
 
 import (
 	"database/sql"
@@ -11,8 +11,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// Message 表示一条对话消息，支持工具调用
-type Message struct {
+// RawMessage 表示一条对话消息，支持工具调用
+type RawMessage struct {
 	Role       string
 	Content    string
 	ToolCallID string          // 仅当 role="tool" 时有效
@@ -44,8 +44,8 @@ type Skill struct {
 
 // ProjectSkill 表示项目与技能的关联
 
-// Tool 表示一个工具
-type Tool struct {
+// ToolDesc 表示一个工具
+type ToolDesc struct {
 	ID          int64
 	Name        string
 	Description string
@@ -218,7 +218,7 @@ func (db *DB) GetOrCreateSession(projectPath string) (int64, error) {
 	return id, nil
 }
 
-func (db *DB) LoadLastOne(sessionID int64) (*Message, error) {
+func (db *DB) LoadLastOne(sessionID int64) (*RawMessage, error) {
 	rows, err := db.Query(`
         SELECT role, content, tool_call_id, tool_calls, created_at 
         FROM messages
@@ -229,7 +229,7 @@ func (db *DB) LoadLastOne(sessionID int64) (*Message, error) {
 		return nil, fmt.Errorf("failed to load last: %w", err)
 	}
 	defer rows.Close()
-	var m Message
+	var m RawMessage
 	if rows.Next() {
 		var toolCallID sql.NullString
 		var toolCalls sql.NullString
@@ -252,7 +252,7 @@ func (db *DB) LoadLastOne(sessionID int64) (*Message, error) {
 }
 
 // LoadHistory 加载指定会话的所有历史消息，按时间升序返回
-func (db *DB) LoadHistory(sessionID int64) ([]Message, error) {
+func (db *DB) LoadHistory(sessionID int64) ([]RawMessage, error) {
 	rows, err := db.Query(`
 		SELECT role, content, tool_call_id, tool_calls, created_at
 		FROM messages
@@ -263,9 +263,9 @@ func (db *DB) LoadHistory(sessionID int64) ([]Message, error) {
 	}
 	defer rows.Close()
 
-	var messages []Message
+	var messages []RawMessage
 	for rows.Next() {
-		var m Message
+		var m RawMessage
 		var toolCallID sql.NullString
 		var toolCalls sql.NullString
 		if err := rows.Scan(&m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt); err != nil {
@@ -299,7 +299,7 @@ func (db *DB) LoadHistory(sessionID int64) ([]Message, error) {
 }
 
 // SaveMessagesBatch 批量保存消息（事务）
-func (db *DB) SaveMessagesBatch(sessionID int64, msgs []Message) error {
+func (db *DB) SaveMessagesBatch(sessionID int64, msgs []RawMessage) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return fmt.Errorf("开始事务失败: %w", err)
@@ -518,8 +518,8 @@ func (db *DB) GetOrCreateTool(name, description, category string) (int64, error)
 }
 
 // GetTool 根据ID获取工具
-func (db *DB) GetTool(id int64) (*Tool, error) {
-	var tool Tool
+func (db *DB) GetTool(id int64) (*ToolDesc, error) {
+	var tool ToolDesc
 	err := db.QueryRow(`
 		SELECT id, name, description, category, usage_count, created_at, updated_at
 		FROM tools WHERE id = ?`, id).Scan(
@@ -532,8 +532,8 @@ func (db *DB) GetTool(id int64) (*Tool, error) {
 }
 
 // GetToolByName 根据名称获取工具
-func (db *DB) GetToolByName(name string) (*Tool, error) {
-	var tool Tool
+func (db *DB) GetToolByName(name string) (*ToolDesc, error) {
+	var tool ToolDesc
 	err := db.QueryRow(`
 		SELECT id, name, description, category, usage_count, created_at, updated_at
 		FROM tools WHERE name = ?`, name).Scan(
@@ -546,7 +546,7 @@ func (db *DB) GetToolByName(name string) (*Tool, error) {
 }
 
 // ListTools 列出所有工具（可按分类过滤）
-func (db *DB) ListTools(category string) ([]Tool, error) {
+func (db *DB) ListTools(category string) ([]ToolDesc, error) {
 	var rows *sql.Rows
 	var err error
 
@@ -565,9 +565,9 @@ func (db *DB) ListTools(category string) ([]Tool, error) {
 	}
 	defer rows.Close()
 
-	var tools []Tool
+	var tools []ToolDesc
 	for rows.Next() {
-		var tool Tool
+		var tool ToolDesc
 		if err := rows.Scan(
 			&tool.ID, &tool.Name, &tool.Description, &tool.Category,
 			&tool.UsageCount, &tool.CreatedAt, &tool.UpdatedAt); err != nil {

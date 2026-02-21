@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"gitcode.com/nanjunjie/dscli/internal/db"
 )
 
 // ToolDef 工具定义
@@ -231,7 +230,7 @@ func getToolParameters(toolName string) map[string]interface{} {
 }
 
 // HandleToolCall 处理工具调用（带统计）
-func HandleToolCall(database *db.DB, toolName string, projectRoot string, args json.RawMessage) (string, error) {
+func HandleToolCall(database *DB, toolName string, projectRoot string, args json.RawMessage) (string, error) {
 	// 获取工具处理器
 	tool, ok := toolRegistry[toolName]
 	if !ok {
@@ -254,7 +253,7 @@ func HandleToolCall(database *db.DB, toolName string, projectRoot string, args j
 		errorMsg = err.Error()
 	}
 
-	projectHash := db.GetProjectHash(projectRoot)
+	projectHash := GetProjectHash(projectRoot)
 	if err := database.RecordToolUsage(toolID, projectHash, success, errorMsg); err != nil {
 		log.Printf("记录工具使用失败: %v", err)
 	}
@@ -262,7 +261,7 @@ func HandleToolCall(database *db.DB, toolName string, projectRoot string, args j
 	return result, err
 }
 
-func HandleToolCalls(database *db.DB, projectRoot string, sessionID int64, assistantMsg *Message) (err error) {
+func HandleToolCalls(database *DB, projectRoot string, sessionID int64, assistantMsg *Message) (err error) {
 	inputs := []Message{}
 	// 处理每个工具调用
 	for _, tc := range assistantMsg.ToolCalls {

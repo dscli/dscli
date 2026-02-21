@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"gitcode.com/nanjunjie/dscli/internal/db"
 	"github.com/spf13/cobra"
 )
 
@@ -39,7 +38,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	// 2. 打开数据库
-	database, err := db.New()
+	database, err := New()
 	if err != nil {
 		err = fmt.Errorf("初始化数据库失败: %w", err)
 		return
@@ -77,7 +76,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	return HandleToolCalls(database, projectRoot, sessionID, am)
 }
 
-func ToApiMessage(dm *db.Message) (am *Message) {
+func ToApiMessage(dm *RawMessage) (am *Message) {
 	role := dm.Role
 	am = &Message{
 		Role:       role,
@@ -93,7 +92,7 @@ func ToApiMessage(dm *db.Message) (am *Message) {
 	return
 }
 
-func ToDBMessage(apim Message) (dbm db.Message) {
+func ToDBMessage(apim Message) (dbm RawMessage) {
 	role := apim.Role
 	dbm.Content = apim.Content
 	dbm.Role = apim.Role
@@ -110,7 +109,7 @@ func ToDBMessage(apim Message) (dbm db.Message) {
 	return
 }
 
-func ChatMessage(database *db.DB, projectRoot string, sessionID int64, inputs ...Message) (err error) {
+func ChatMessage(database *DB, projectRoot string, sessionID int64, inputs ...Message) (err error) {
 	// 5. 加载历史消息
 	history, err := database.LoadHistory(sessionID)
 	if err != nil {
@@ -164,7 +163,7 @@ func ChatMessage(database *db.DB, projectRoot string, sessionID int64, inputs ..
 	messages = append(messages, inputs...)
 
 	// 7. 记录本轮新增的消息（用于存储）
-	var dbmessages []db.Message
+	var dbmessages []RawMessage
 	for _, m := range inputs {
 		dbmessages = append(dbmessages, ToDBMessage(m))
 	}
