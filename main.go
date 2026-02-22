@@ -51,8 +51,7 @@ var (
 		return projectRoot
 	}()
 
-	ProjectHash = func() string { return ProjectRoot }()
-	ConfigDir   = func() (configDir string) {
+	ConfigDir = func() (configDir string) {
 		configDir = filepath.Join(os.Getenv("HOME"), ".dscli")
 		err := os.MkdirAll(configDir, 0o644)
 		if err != nil {

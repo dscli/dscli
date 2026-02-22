@@ -12,8 +12,9 @@ import (
 )
 
 var (
-	DBPath    = filepath.Join(ConfigDir, "sqlite.db")
-	SessionID = func(projectPath string) (sessionID int64) {
+	DBPath      = filepath.Join(ConfigDir, "sqlite.db")
+	ProjectHash = func() string { return ProjectRoot }()
+	SessionID   = func() (sessionID int64) {
 		db, err := OpenDB()
 		if err != nil {
 			log.Fatalln(err)
@@ -27,7 +28,7 @@ var (
 		}
 		var id int64
 		err = db.QueryRow("SELECT id FROM sessions WHERE project_path = ?",
-			projectPath).Scan(&id)
+			ProjectRoot).Scan(&id)
 		if err != nil {
 			if err != sql.ErrNoRows {
 				log.Fatalln(err)
@@ -39,7 +40,7 @@ var (
 		}
 
 		result, err := db.Exec("INSERT INTO sessions (project_path) VALUES (?)",
-			projectPath)
+			ProjectRoot)
 		if err != nil {
 			log.Fatalln(err)
 			return
@@ -235,7 +236,7 @@ func LoadLastOne() (*RawMessage, error) {
         FROM messages
         WHERE session_id = ?
         ORDER BY id DESC 
-        LIMIT 1`, SessionID())
+        LIMIT 1`, SessionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load last: %w", err)
 	}
@@ -273,7 +274,7 @@ func LoadHistory() ([]RawMessage, error) {
 		SELECT role, content, tool_call_id, tool_calls, created_at
 		FROM messages
 		WHERE session_id = ?
-		ORDER BY id ASC`, SessionID())
+		ORDER BY id ASC`, SessionID)
 	if err != nil {
 		return nil, fmt.Errorf("查询历史消息失败: %w", err)
 	}
@@ -346,13 +347,13 @@ func SaveMessagesBatch(msgs []RawMessage) error {
 			toolCalls.String = string(m.ToolCalls)
 			toolCalls.Valid = true
 		}
-		if _, err := stmt.Exec(SessionID(), m.Role, m.Content, toolCallID, toolCalls); err != nil {
+		if _, err := stmt.Exec(SessionID, m.Role, m.Content, toolCallID, toolCalls); err != nil {
 			return fmt.Errorf("插入消息失败: %w", err)
 		}
 	}
 
 	// 更新会话的更新时间
-	if _, err := tx.Exec("UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", SessionID()); err != nil {
+	if _, err := tx.Exec("UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", SessionID); err != nil {
 		return fmt.Errorf("更新会话时间失败: %w", err)
 	}
 
@@ -663,7 +664,7 @@ func RecordToolUsage(toolID int64, success bool, errorMsg string) error {
 	// 记录使用详情
 	_, err = db.Exec(`
 		INSERT INTO tool_usage (project_hash, tool_id, success, error_msg)
-		VALUES (?, ?, ?, ?)`, ProjectHash(), toolID, success, errorMsg)
+		VALUES (?, ?, ?, ?)`, ProjectHash, toolID, success, errorMsg)
 	if err != nil {
 		return fmt.Errorf("记录工具使用详情失败: %w", err)
 	}
@@ -742,9 +743,9 @@ func GetProjectToolUsage(days int) ([]ToolUsageStat, error,
 
 	if days > 0 {
 		query += " AND tu.used_at >= datetime('now', '-' || ? || ' days')"
-		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", ProjectHash(), days)
+		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", ProjectHash, days)
 	} else {
-		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", ProjectHash())
+		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", ProjectHash)
 	}
 
 	if err != nil {
