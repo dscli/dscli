@@ -176,7 +176,6 @@ func createTables(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_skills_category ON skills(category)`,
 		`CREATE INDEX IF NOT EXISTS idx_skills_priority ON skills(priority DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_project_skills_enabled ON project_skills(project_hash, is_enabled)`,
 
 		// 工具表
 		`CREATE TABLE IF NOT EXISTS tools (
@@ -203,7 +202,6 @@ func createTables(db *sql.DB) error {
 		// 工具相关索引
 		`CREATE INDEX IF NOT EXISTS idx_tools_category ON tools(category)`,
 		`CREATE INDEX IF NOT EXISTS idx_tools_usage ON tools(usage_count DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_tool_usage_project ON tool_usage(project_hash)`,
 		`CREATE INDEX IF NOT EXISTS idx_tool_usage_tool ON tool_usage(tool_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_tool_usage_time ON tool_usage(used_at DESC)`,
 	}
@@ -465,7 +463,7 @@ func EnableSkill(skillID int64) error {
 	}
 	defer db.Close()
 	_, err = db.Exec(`
-		INSERT OR REPLACE INTO project_skills (project_hash, skill_id, is_enabled, enabled_at)
+		INSERT OR REPLACE INTO project_skills (project_path, skill_id, is_enabled, enabled_at)
 		VALUES (?, ?, 1, CURRENT_TIMESTAMP)`, ProjectRoot, skillID)
 	if err != nil {
 		return fmt.Errorf("启用技能失败: %w", err)
@@ -481,7 +479,7 @@ func DisableSkill(skillID int64) error {
 	}
 	defer db.Close()
 	_, err = db.Exec(`
-		UPDATE project_skills SET is_enabled = 0 WHERE project_hash = ? AND skill_id = ?`,
+		UPDATE project_skills SET is_enabled = 0 WHERE project_path = ? AND skill_id = ?`,
 		ProjectRoot, skillID)
 	if err != nil {
 		return fmt.Errorf("禁用技能失败: %w", err)
@@ -501,7 +499,7 @@ func GetEnabledSkills() ([]Skill, error) {
 		       s.is_global, s.usage_count, s.created_at, s.updated_at
 		FROM skills s
 		JOIN project_skills ps ON s.id = ps.skill_id
-		WHERE ps.project_hash = ? AND ps.is_enabled = 1
+		WHERE ps.project_path = ? AND ps.is_enabled = 1
 		ORDER BY s.priority DESC, s.name`, ProjectRoot)
 	if err != nil {
 		return nil, fmt.Errorf("查询启用技能失败: %w", err)
@@ -522,7 +520,7 @@ func GetEnabledSkills() ([]Skill, error) {
 }
 
 // RecordSkillUsage 记录技能使用
-func RecordSkillUsage(skillID int64, projectHash string) error {
+func RecordSkillUsage(skillID int64, projectPath string) error {
 	db, err := OpenDB()
 	if err != nil {
 		return err
@@ -537,7 +535,7 @@ func RecordSkillUsage(skillID int64, projectHash string) error {
 	// 更新最后使用时间
 	_, err = db.Exec(`
 		UPDATE project_skills SET last_used = CURRENT_TIMESTAMP 
-		WHERE project_hash = ? AND skill_id = ?`, projectHash, skillID)
+		WHERE project_path = ? AND skill_id = ?`, projectPath, skillID)
 	if err != nil {
 		return fmt.Errorf("更新最后使用时间失败: %w", err)
 	}
@@ -662,7 +660,7 @@ func RecordToolUsage(toolID int64, success bool, errorMsg string) error {
 
 	// 记录使用详情
 	_, err = db.Exec(`
-		INSERT INTO tool_usage (project_hash, tool_id, success, error_msg)
+		INSERT INTO tool_usage (project_path, tool_id, success, error_msg)
 		VALUES (?, ?, ?, ?)`, ProjectRoot, toolID, success, errorMsg)
 	if err != nil {
 		return fmt.Errorf("记录工具使用详情失败: %w", err)
@@ -737,7 +735,7 @@ func GetProjectToolUsage(days int) ([]ToolUsageStat, error,
 			MAX(tu.used_at) as last_used
 		FROM tools t
 		JOIN tool_usage tu ON t.id = tu.tool_id
-		WHERE tu.project_hash = ?
+		WHERE tu.project_path = ?
 	`
 
 	if days > 0 {
