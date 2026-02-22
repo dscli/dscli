@@ -90,7 +90,7 @@ func TestMarkdownToOrgConverter_ConvertLine(t *testing.T) {
 		{
 			name:     "代码块开始（无语言）",
 			input:    "```\n",
-			expected: "#+begin_src \n",
+			expected: "#+begin_src text\n",
 		},
 		// 空行测试
 		{
@@ -243,7 +243,7 @@ func TestMarkdownToOrgConverter_EdgeCases(t *testing.T) {
 		{
 			name:     "代码块无语言",
 			input:    "```\n",
-			expected: "#+begin_src \n",
+			expected: "#+begin_src text\n",
 		},
 		{
 			name:     "代码块带语言",

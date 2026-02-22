@@ -68,6 +68,9 @@ func (c *MarkdownToOrgConverter) ConvertLine(line string) string {
 			c.inCodeBlock = true
 			lang := strings.TrimPrefix(trimmedLine, "```")
 			lang = strings.TrimSpace(lang)
+			if lang == "" {
+				lang = "text"
+			}
 			return fmt.Sprintf("#+begin_src %s\n", lang)
 		} else {
 			// Code block end
