@@ -13,12 +13,58 @@ import (
 var (
 	client      *Client
 	logfile     *os.File
-	ProjectRoot string
-	ProjectHash string
-	SqliteDB    *DB
-	SessionID   int64
+	ProjectRoot = func() (projectRoot string) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			log.Fatalln(err)
+			return
+		}
+		gitRoot, err := findGitRoot(cwd)
+		if err != nil {
+			gitRoot = cwd
+		}
+		projectRoot, err = filepath.Abs(gitRoot)
+		if err != nil {
+			log.Fatalln(err)
+			return
+		}
 
-	rootCmd     = &cobra.Command{
+		if cwd != projectRoot {
+			err = os.Chdir(projectRoot)
+			if err != nil {
+				log.Fatalln(err)
+				return
+			}
+		}
+
+		cwd, err = os.Getwd()
+		if err != nil {
+			log.Fatalln(err)
+			return
+		}
+
+		if cwd != projectRoot {
+			err = fmt.Errorf("cwd(%s) != ProjectRoot(%s)", cwd, projectRoot)
+			log.Fatalln(err)
+			return
+		}
+		return projectRoot
+	}()
+
+	ProjectHash = func() string { return ProjectRoot }()
+	ConfigDir   = func() (configDir string) {
+		configDir = filepath.Join(os.Getenv("HOME"), ".dscli")
+		err := os.MkdirAll(configDir, 0o644)
+		if err != nil {
+			log.Fatalln(err)
+			return
+		}
+		return
+	}()
+	EnvPath = filepath.Join(ConfigDir, "dscli.env")
+	LogPath = filepath.Join(ConfigDir, "dscli.log")
+
+	rootCmd = &cobra.Command{
 		Use:   "dscli",
 		Short: "DeepSeek CLI - 与 DeepSeek API 交互",
 		Long: `dscli 是一个命令行工具，用于调用 DeepSeek 的 API。
@@ -27,26 +73,6 @@ var (
 		PersistentPostRunE: RootPreRunE,
 	}
 )
-
-// GetProjectHash 获取项目路径的哈希值
-func getProjectHash(projectPath string) string {
-	// 简单实现：使用路径作为哈希（实际可以使用MD5等）
-	// 这里为了简单，直接使用路径，实际应该使用哈希函数
-	return projectPath
-}
-
-// getProjectRoot 获取当前项目根目录（用于会话隔离）
-func getProjectRoot() (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	gitRoot, err := findGitRoot(cwd)
-	if err == nil && gitRoot != "" {
-		return gitRoot, nil
-	}
-	return filepath.Abs(cwd)
-}
 
 func findGitRoot(dir string) (string, error) {
 	absDir, err := filepath.Abs(dir)
@@ -68,13 +94,6 @@ func findGitRoot(dir string) (string, error) {
 }
 
 func RootPostRunE(cmd *cobra.Command, args []string) (err error) {
-	if SqliteDB != nil {
-		err = SqliteDB.Close()
-		if err != nil {
-			return
-		}
-	}
-
 	if logfile != nil {
 		err = logfile.Close()
 		if err != nil {
@@ -86,58 +105,9 @@ func RootPostRunE(cmd *cobra.Command, args []string) (err error) {
 
 func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 	// change cwd if needed
-	ProjectRoot, err = getProjectRoot()
-	if err != nil {
-		return
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return
-	}
-
-	if cwd != ProjectRoot {
-		err = os.Chdir(ProjectRoot)
-		if err != nil {
-			return
-		}
-	}
-
-	cwd, err = os.Getwd()
-	if err != nil {
-		return
-	}
-
-	if cwd != ProjectRoot {
-		err = fmt.Errorf("cwd(%s) != ProjectRoot(%s)", cwd, ProjectRoot)
-		return
-	}
-
-     ProjectHash = getProjectHash(ProjectRoot)
-	// 2. 打开数据库
-	SqliteDB, err = New()
-	if err != nil {
-		err = fmt.Errorf("初始化数据库失败: %w", err)
-		return
-	}
-
-	// 3. 获取会话ID
-	SessionID, err = SqliteDB.GetOrCreateSession(ProjectRoot)
-	if err != nil {
-		err = fmt.Errorf("获取会话失败: %w", err)
-		return
-	}
-
-	// 初始化 API 客户端
-	confdir := filepath.Join(os.Getenv("HOME"), ".dscli")
-	err = os.MkdirAll(confdir, 0o644)
-	if err != nil {
-		return
-	}
-	envpath := filepath.Join(confdir, "dscli.env")
-	logpath := filepath.Join(confdir, "dscli.log")
 	key := os.Getenv("DEEPSEEK_API_KEY")
 	if key == "" {
-		if err = godotenv.Load(envpath); err != nil {
+		if err = godotenv.Load(EnvPath); err != nil {
 			return
 		}
 	}
@@ -151,11 +121,14 @@ func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 	if url == "" {
 		url = "https://api.deepseek.com" // 默认值
 	}
-	logfile, err = os.OpenFile(logpath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+
+	logfile, err = os.OpenFile(LogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return
 	}
+
 	log.SetOutput(logfile)
+
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 	client = NewClient(key, url, false)
 	return nil

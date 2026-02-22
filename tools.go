@@ -7,13 +7,11 @@ import (
 	"io"
 	"log"
 	"math/rand"
-	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
 	"time"
-
 )
 
 // ToolDef 工具定义
@@ -250,7 +248,7 @@ func HandleToolCall(toolName string, args json.RawMessage) (string, error) {
 		return "", fmt.Errorf("未知工具: %s", toolName)
 	}
 
-	toolID, err := SqliteDB.GetOrCreateTool(tool.Name, tool.Description, tool.Category)
+	toolID, err := GetOrCreateTool(tool.Name, tool.Description, tool.Category)
 	if err != nil {
 		// 继续执行工具，但不记录统计
 		return tool.Handler(args)
@@ -266,7 +264,7 @@ func HandleToolCall(toolName string, args json.RawMessage) (string, error) {
 		errorMsg = err.Error()
 	}
 
-	if err := SqliteDB.RecordToolUsage(toolID, ProjectHash, success, errorMsg); err != nil {
+	if err := RecordToolUsage(toolID, success, errorMsg); err != nil {
 		log.Printf("记录工具使用失败: %v", err)
 	}
 
@@ -644,21 +642,14 @@ func handleSqlite(argsRaw json.RawMessage) (string, error) {
 	if err := json.Unmarshal(argsRaw, &args); err != nil {
 		return "", fmt.Errorf("解析参数失败: %w", err)
 	}
-	
+
 	if args.Script == "" {
 		return "", fmt.Errorf("SQL脚本不能为空")
 	}
-	
-	// 获取数据库路径
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("获取用户主目录失败: %w", err)
-	}
-	dbPath := filepath.Join(home, ".dscli", "sqlite.db")
-	
+
 	// 构建完整的shebang脚本
-	fullScript := fmt.Sprintf("#!/usr/bin/env sqlite3 %s\n%s", dbPath, args.Script)
-	
+	fullScript := fmt.Sprintf("#!/usr/bin/env sqlite3 %s\n%s", DBPath, args.Script)
+
 	// 使用现有的runBash执行
 	return runBash(fullScript)
 }

@@ -39,7 +39,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		return ChatMessage(Message{Role: "user", Content: userMsg})
 	}
 
-	dm, err := SqliteDB.LoadLastOne(SessionID)
+	dm, err := LoadLastOne()
 	if err != nil {
 		return
 	}
@@ -87,7 +87,7 @@ func ToDBMessage(apim Message) (dbm RawMessage) {
 
 func ChatMessage(inputs ...Message) (err error) {
 	// 5. 加载历史消息
-	history, err := SqliteDB.LoadHistory(SessionID)
+	history, err := LoadHistory()
 	if err != nil {
 		err = fmt.Errorf("加载历史消息失败: %w", err)
 		return
@@ -162,7 +162,7 @@ func ChatMessage(inputs ...Message) (err error) {
 	dbAssistantMsg := ToDBMessage(assistantMsg)
 	dbmessages = append(dbmessages, dbAssistantMsg)
 	if len(dbmessages) > 0 {
-		if err = SqliteDB.SaveMessagesBatch(SessionID, dbmessages); err != nil {
+		if err = SaveMessagesBatch(dbmessages); err != nil {
 			err = fmt.Errorf("保存消息失败: %w", err)
 			return
 		}

@@ -4,11 +4,55 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"os"
+	"log"
 	"path/filepath"
 	"time"
 
 	_ "modernc.org/sqlite"
+)
+
+var (
+	DBPath    = filepath.Join(ConfigDir, "sqlite.db")
+	SessionID = func(projectPath string) (sessionID int64) {
+		db, err := OpenDB()
+		if err != nil {
+			log.Fatalln(err)
+			return
+		}
+		defer db.Close()
+		err = createTables(db)
+		if err != nil {
+			log.Fatalln(err)
+			return
+		}
+		var id int64
+		err = db.QueryRow("SELECT id FROM sessions WHERE project_path = ?",
+			projectPath).Scan(&id)
+		if err != nil {
+			if err != sql.ErrNoRows {
+				log.Fatalln(err)
+				return
+			}
+		} else if id > 0 {
+			sessionID = id
+			return
+		}
+
+		result, err := db.Exec("INSERT INTO sessions (project_path) VALUES (?)",
+			projectPath)
+		if err != nil {
+			log.Fatalln(err)
+			return
+		}
+
+		id, err = result.LastInsertId()
+		if err != nil {
+			log.Fatalln(err)
+			return
+		}
+		sessionID = id
+		return
+	}()
 )
 
 // RawMessage 表示一条对话消息，支持工具调用
@@ -64,44 +108,20 @@ type ToolUsage struct {
 	Success     bool
 	ErrorMsg    string
 }
+
+type ToolUsageStat struct {
+	Name        string
+	UsageCount  int
+	SuccessRate float64
+	LastUsed    time.Time
+}
+
 type ProjectSkill struct {
 	ProjectHash string
 	SkillID     int64
 	IsEnabled   bool
 	EnabledAt   time.Time
 	LastUsed    sql.NullTime
-}
-
-// DB 封装数据库操作
-type DB struct {
-	*sql.DB
-	path string
-}
-
-// New 创建或打开数据库（统一位置 ~/.dscli/sqlite.db）
-func New() (*DB, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("获取用户主目录失败: %w", err)
-	}
-	dbPath := filepath.Join(home, ".dscli", "sqlite.db")
-
-	dir := filepath.Dir(dbPath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("创建数据库目录失败: %w", err)
-	}
-
-	db, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		return nil, fmt.Errorf("打开数据库失败: %w", err)
-	}
-
-	// 创建表
-	if err := createTables(db); err != nil {
-		return nil, fmt.Errorf("创建表失败: %w", err)
-	}
-
-	return &DB{DB: db, path: dbPath}, nil
 }
 
 // createTables 创建所有需要的表
@@ -196,35 +216,26 @@ func createTables(db *sql.DB) error {
 	return nil
 }
 
-// GetOrCreateSession 根据项目路径获取或创建会话
-func (db *DB) GetOrCreateSession(projectPath string) (int64, error) {
-	var id int64
-	err := db.QueryRow("SELECT id FROM sessions WHERE project_path = ?", projectPath).Scan(&id)
-	if err == nil {
-		return id, nil
+func OpenDB(elem ...string) (db *sql.DB, err error) {
+	dbPath := DBPath
+	if len(elem) != 0 {
+		dbPath = filepath.Join(elem...)
 	}
-	if err != sql.ErrNoRows {
-		return 0, fmt.Errorf("查询会话失败: %w", err)
-	}
-
-	result, err := db.Exec("INSERT INTO sessions (project_path) VALUES (?)", projectPath)
-	if err != nil {
-		return 0, fmt.Errorf("创建会话失败: %w", err)
-	}
-	id, err = result.LastInsertId()
-	if err != nil {
-		return 0, fmt.Errorf("获取新会话ID失败: %w", err)
-	}
-	return id, nil
+	return sql.Open("sqlite", dbPath)
 }
 
-func (db *DB) LoadLastOne(sessionID int64) (*RawMessage, error) {
+func LoadLastOne() (*RawMessage, error) {
+	db, err := OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
 	rows, err := db.Query(`
         SELECT role, content, tool_call_id, tool_calls, created_at 
         FROM messages
         WHERE session_id = ?
         ORDER BY id DESC 
-        LIMIT 1`, sessionID)
+        LIMIT 1`, SessionID())
 	if err != nil {
 		return nil, fmt.Errorf("failed to load last: %w", err)
 	}
@@ -252,12 +263,17 @@ func (db *DB) LoadLastOne(sessionID int64) (*RawMessage, error) {
 }
 
 // LoadHistory 加载指定会话的所有历史消息，按时间升序返回
-func (db *DB) LoadHistory(sessionID int64) ([]RawMessage, error) {
+func LoadHistory() ([]RawMessage, error) {
+	db, err := OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
 	rows, err := db.Query(`
 		SELECT role, content, tool_call_id, tool_calls, created_at
 		FROM messages
 		WHERE session_id = ?
-		ORDER BY id ASC`, sessionID)
+		ORDER BY id ASC`, SessionID())
 	if err != nil {
 		return nil, fmt.Errorf("查询历史消息失败: %w", err)
 	}
@@ -299,7 +315,13 @@ func (db *DB) LoadHistory(sessionID int64) ([]RawMessage, error) {
 }
 
 // SaveMessagesBatch 批量保存消息（事务）
-func (db *DB) SaveMessagesBatch(sessionID int64, msgs []RawMessage) error {
+func SaveMessagesBatch(msgs []RawMessage) error {
+	db, err := OpenDB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
 	tx, err := db.Begin()
 	if err != nil {
 		return fmt.Errorf("开始事务失败: %w", err)
@@ -324,13 +346,13 @@ func (db *DB) SaveMessagesBatch(sessionID int64, msgs []RawMessage) error {
 			toolCalls.String = string(m.ToolCalls)
 			toolCalls.Valid = true
 		}
-		if _, err := stmt.Exec(sessionID, m.Role, m.Content, toolCallID, toolCalls); err != nil {
+		if _, err := stmt.Exec(SessionID(), m.Role, m.Content, toolCallID, toolCalls); err != nil {
 			return fmt.Errorf("插入消息失败: %w", err)
 		}
 	}
 
 	// 更新会话的更新时间
-	if _, err := tx.Exec("UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", sessionID); err != nil {
+	if _, err := tx.Exec("UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", SessionID()); err != nil {
 		return fmt.Errorf("更新会话时间失败: %w", err)
 	}
 
@@ -343,7 +365,12 @@ func (db *DB) SaveMessagesBatch(sessionID int64, msgs []RawMessage) error {
 // ==================== Skills 相关方法 ====================
 
 // CreateSkill 创建新技能
-func (db *DB) CreateSkill(name, description, content, category string, priority int, isGlobal bool) (int64, error) {
+func CreateSkill(name, description, content, category string, priority int, isGlobal bool) (int64, error) {
+	db, err := OpenDB()
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
 	result, err := db.Exec(`
 		INSERT INTO skills (name, description, content, category, priority, is_global)
 		VALUES (?, ?, ?, ?, ?, ?)`,
@@ -355,9 +382,15 @@ func (db *DB) CreateSkill(name, description, content, category string, priority 
 }
 
 // GetSkill 根据ID获取技能
-func (db *DB) GetSkill(id int64) (*Skill, error) {
+func GetSkill(id int64) (*Skill, error) {
+	db, err := OpenDB()
+	if err != nil {
+		return nil, err
+	}
+
+	defer db.Close()
 	var skill Skill
-	err := db.QueryRow(`
+	err = db.QueryRow(`
 		SELECT id, name, description, content, category, priority, is_global, usage_count, created_at, updated_at
 		FROM skills WHERE id = ?`, id).Scan(
 		&skill.ID, &skill.Name, &skill.Description, &skill.Content, &skill.Category,
@@ -369,9 +402,14 @@ func (db *DB) GetSkill(id int64) (*Skill, error) {
 }
 
 // GetSkillByName 根据名称获取技能
-func (db *DB) GetSkillByName(name string) (*Skill, error) {
+func GetSkillByName(name string) (*Skill, error) {
+	db, err := OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
 	var skill Skill
-	err := db.QueryRow(`
+	err = db.QueryRow(`
 		SELECT id, name, description, content, category, priority, is_global, usage_count, created_at, updated_at
 		FROM skills WHERE name = ?`, name).Scan(
 		&skill.ID, &skill.Name, &skill.Description, &skill.Content, &skill.Category,
@@ -383,9 +421,13 @@ func (db *DB) GetSkillByName(name string) (*Skill, error) {
 }
 
 // ListSkills 列出所有技能（可按分类过滤）
-func (db *DB) ListSkills(category string) ([]Skill, error) {
+func ListSkills(category string) ([]Skill, error) {
+	db, err := OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
 	var rows *sql.Rows
-	var err error
 
 	if category == "" {
 		rows, err = db.Query(`
@@ -416,8 +458,13 @@ func (db *DB) ListSkills(category string) ([]Skill, error) {
 }
 
 // EnableSkill 为项目启用技能
-func (db *DB) EnableSkill(projectHash string, skillID int64) error {
-	_, err := db.Exec(`
+func EnableSkill(projectHash string, skillID int64) error {
+	db, err := OpenDB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	_, err = db.Exec(`
 		INSERT OR REPLACE INTO project_skills (project_hash, skill_id, is_enabled, enabled_at)
 		VALUES (?, ?, 1, CURRENT_TIMESTAMP)`, projectHash, skillID)
 	if err != nil {
@@ -427,8 +474,13 @@ func (db *DB) EnableSkill(projectHash string, skillID int64) error {
 }
 
 // DisableSkill 为项目禁用技能
-func (db *DB) DisableSkill(projectHash string, skillID int64) error {
-	_, err := db.Exec(`
+func DisableSkill(projectHash string, skillID int64) error {
+	db, err := OpenDB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	_, err = db.Exec(`
 		UPDATE project_skills SET is_enabled = 0 WHERE project_hash = ? AND skill_id = ?`,
 		projectHash, skillID)
 	if err != nil {
@@ -438,7 +490,12 @@ func (db *DB) DisableSkill(projectHash string, skillID int64) error {
 }
 
 // GetEnabledSkills 获取项目启用的技能
-func (db *DB) GetEnabledSkills(projectHash string) ([]Skill, error) {
+func GetEnabledSkills(projectHash string) ([]Skill, error) {
+	db, err := OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
 	rows, err := db.Query(`
 		SELECT s.id, s.name, s.description, s.content, s.category, s.priority, 
 		       s.is_global, s.usage_count, s.created_at, s.updated_at
@@ -465,9 +522,14 @@ func (db *DB) GetEnabledSkills(projectHash string) ([]Skill, error) {
 }
 
 // RecordSkillUsage 记录技能使用
-func (db *DB) RecordSkillUsage(skillID int64, projectHash string) error {
+func RecordSkillUsage(skillID int64, projectHash string) error {
+	db, err := OpenDB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
 	// 更新技能使用次数
-	_, err := db.Exec("UPDATE skills SET usage_count = usage_count + 1 WHERE id = ?", skillID)
+	_, err = db.Exec("UPDATE skills SET usage_count = usage_count + 1 WHERE id = ?", skillID)
 	if err != nil {
 		return fmt.Errorf("更新技能使用次数失败: %w", err)
 	}
@@ -483,17 +545,17 @@ func (db *DB) RecordSkillUsage(skillID int64, projectHash string) error {
 	return nil
 }
 
-// Close 关闭数据库连接
-func (db *DB) Close() error {
-	return db.DB.Close()
-}
-
 // ==================== Tools 相关方法 ====================
 
 // GetOrCreateTool 获取或创建工具
-func (db *DB) GetOrCreateTool(name, description, category string) (int64, error) {
+func GetOrCreateTool(name, description, category string) (int64, error) {
+	db, err := OpenDB()
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
 	var id int64
-	err := db.QueryRow("SELECT id FROM tools WHERE name = ?", name).Scan(&id)
+	err = db.QueryRow("SELECT id FROM tools WHERE name = ?", name).Scan(&id)
 	if err == nil {
 		return id, nil
 	}
@@ -511,9 +573,14 @@ func (db *DB) GetOrCreateTool(name, description, category string) (int64, error)
 }
 
 // GetTool 根据ID获取工具
-func (db *DB) GetTool(id int64) (*ToolDesc, error) {
+func GetTool(id int64) (*ToolDesc, error) {
+	db, err := OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
 	var tool ToolDesc
-	err := db.QueryRow(`
+	err = db.QueryRow(`
 		SELECT id, name, description, category, usage_count, created_at, updated_at
 		FROM tools WHERE id = ?`, id).Scan(
 		&tool.ID, &tool.Name, &tool.Description, &tool.Category,
@@ -525,9 +592,14 @@ func (db *DB) GetTool(id int64) (*ToolDesc, error) {
 }
 
 // GetToolByName 根据名称获取工具
-func (db *DB) GetToolByName(name string) (*ToolDesc, error) {
+func GetToolByName(name string) (*ToolDesc, error) {
+	db, err := OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
 	var tool ToolDesc
-	err := db.QueryRow(`
+	err = db.QueryRow(`
 		SELECT id, name, description, category, usage_count, created_at, updated_at
 		FROM tools WHERE name = ?`, name).Scan(
 		&tool.ID, &tool.Name, &tool.Description, &tool.Category,
@@ -539,9 +611,13 @@ func (db *DB) GetToolByName(name string) (*ToolDesc, error) {
 }
 
 // ListTools 列出所有工具（可按分类过滤）
-func (db *DB) ListTools(category string) ([]ToolDesc, error) {
+func ListTools(category string) ([]ToolDesc, error) {
+	db, err := OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
 	var rows *sql.Rows
-	var err error
 
 	if category == "" {
 		rows, err = db.Query(`
@@ -572,9 +648,14 @@ func (db *DB) ListTools(category string) ([]ToolDesc, error) {
 }
 
 // RecordToolUsage 记录工具使用
-func (db *DB) RecordToolUsage(toolID int64, projectHash string, success bool, errorMsg string) error {
+func RecordToolUsage(toolID int64, success bool, errorMsg string) error {
+	db, err := OpenDB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
 	// 更新工具使用次数
-	_, err := db.Exec("UPDATE tools SET usage_count = usage_count + 1 WHERE id = ?", toolID)
+	_, err = db.Exec("UPDATE tools SET usage_count = usage_count + 1 WHERE id = ?", toolID)
 	if err != nil {
 		return fmt.Errorf("更新工具使用次数失败: %w", err)
 	}
@@ -582,7 +663,7 @@ func (db *DB) RecordToolUsage(toolID int64, projectHash string, success bool, er
 	// 记录使用详情
 	_, err = db.Exec(`
 		INSERT INTO tool_usage (project_hash, tool_id, success, error_msg)
-		VALUES (?, ?, ?, ?)`, projectHash, toolID, success, errorMsg)
+		VALUES (?, ?, ?, ?)`, ProjectHash(), toolID, success, errorMsg)
 	if err != nil {
 		return fmt.Errorf("记录工具使用详情失败: %w", err)
 	}
@@ -591,15 +672,13 @@ func (db *DB) RecordToolUsage(toolID int64, projectHash string, success bool, er
 }
 
 // GetToolUsageStats 获取工具使用统计
-func (db *DB) GetToolUsageStats(days int) ([]struct {
-	Name        string
-	UsageCount  int
-	SuccessRate float64
-	LastUsed    time.Time
-}, error,
-) {
+func GetToolUsageStats(days int) ([]ToolUsageStat, error) {
+	db, err := OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
 	var rows *sql.Rows
-	var err error
 
 	query := `
 		SELECT 
@@ -623,20 +702,10 @@ func (db *DB) GetToolUsageStats(days int) ([]struct {
 	}
 	defer rows.Close()
 
-	var stats []struct {
-		Name        string
-		UsageCount  int
-		SuccessRate float64
-		LastUsed    time.Time
-	}
+	var stats []ToolUsageStat
 
 	for rows.Next() {
-		var stat struct {
-			Name        string
-			UsageCount  int
-			SuccessRate float64
-			LastUsed    time.Time
-		}
+		var stat ToolUsageStat
 		var lastUsedStr sql.NullString
 		if err := rows.Scan(&stat.Name, &stat.UsageCount, &stat.SuccessRate, &lastUsedStr); err != nil {
 			return nil, fmt.Errorf("扫描工具统计失败: %w", err)
@@ -652,14 +721,14 @@ func (db *DB) GetToolUsageStats(days int) ([]struct {
 }
 
 // GetProjectToolUsage 获取项目工具使用情况
-func (db *DB) GetProjectToolUsage(projectHash string, days int) ([]struct {
-	Name       string
-	UsageCount int
-	LastUsed   time.Time
-}, error,
+func GetProjectToolUsage(days int) ([]ToolUsageStat, error,
 ) {
+	db, err := OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
 	var rows *sql.Rows
-	var err error
 
 	query := `
 		SELECT 
@@ -673,9 +742,9 @@ func (db *DB) GetProjectToolUsage(projectHash string, days int) ([]struct {
 
 	if days > 0 {
 		query += " AND tu.used_at >= datetime('now', '-' || ? || ' days')"
-		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", projectHash, days)
+		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", ProjectHash(), days)
 	} else {
-		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", projectHash)
+		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", ProjectHash())
 	}
 
 	if err != nil {
@@ -683,18 +752,10 @@ func (db *DB) GetProjectToolUsage(projectHash string, days int) ([]struct {
 	}
 	defer rows.Close()
 
-	var stats []struct {
-		Name       string
-		UsageCount int
-		LastUsed   time.Time
-	}
+	var stats []ToolUsageStat
 
 	for rows.Next() {
-		var stat struct {
-			Name       string
-			UsageCount int
-			LastUsed   time.Time
-		}
+		var stat ToolUsageStat
 		var lastUsedStr sql.NullString
 		if err := rows.Scan(&stat.Name, &stat.UsageCount, &lastUsedStr); err != nil {
 			return nil, fmt.Errorf("扫描项目工具使用失败: %w", err)
@@ -707,4 +768,11 @@ func (db *DB) GetProjectToolUsage(projectHash string, days int) ([]struct {
 		stats = append(stats, stat)
 	}
 	return stats, nil
+}
+
+// GetProjectHash 获取项目哈希值
+func GetProjectHash(projectPath string) string {
+	// 简单实现：直接使用项目路径作为哈希
+	// 实际可以使用更复杂的哈希算法
+	return projectPath
 }
