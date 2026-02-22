@@ -13,7 +13,6 @@ import (
 
 var (
 	DBPath      = filepath.Join(ConfigDir, "sqlite.db")
-	ProjectHash = func() string { return ProjectRoot }()
 	SessionID   = func() (sessionID int64) {
 		db, err := OpenDB()
 		if err != nil {
@@ -103,7 +102,7 @@ type ToolDesc struct {
 // ToolUsage 表示工具使用记录
 type ToolUsage struct {
 	ID          int64
-	ProjectHash string
+	ProjectPath string
 	ToolID      int64
 	UsedAt      time.Time
 	Success     bool
@@ -118,7 +117,7 @@ type ToolUsageStat struct {
 }
 
 type ProjectSkill struct {
-	ProjectHash string
+	ProjectPath string
 	SkillID     int64
 	IsEnabled   bool
 	EnabledAt   time.Time
@@ -164,12 +163,12 @@ func createTables(db *sql.DB) error {
 
 		// 项目技能关联表
 		`CREATE TABLE IF NOT EXISTS project_skills (
-			project_hash TEXT NOT NULL,
+			project_path TEXT NOT NULL,
 			skill_id INTEGER NOT NULL,
 			is_enabled BOOLEAN DEFAULT 1,
 			enabled_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			last_used DATETIME,
-			PRIMARY KEY (project_hash, skill_id),
+			PRIMARY KEY (project_path, skill_id),
 			FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
 		)`,
 
@@ -193,7 +192,7 @@ func createTables(db *sql.DB) error {
 		// 工具使用记录表
 		`CREATE TABLE IF NOT EXISTS tool_usage (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			project_hash TEXT NOT NULL,
+			project_path TEXT NOT NULL,
 			tool_id INTEGER NOT NULL,
 			used_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			success BOOLEAN DEFAULT 1,
@@ -459,7 +458,7 @@ func ListSkills(category string) ([]Skill, error) {
 }
 
 // EnableSkill 为项目启用技能
-func EnableSkill(projectHash string, skillID int64) error {
+func EnableSkill(projectPath string, skillID int64) error {
 	db, err := OpenDB()
 	if err != nil {
 		return err
@@ -467,7 +466,7 @@ func EnableSkill(projectHash string, skillID int64) error {
 	defer db.Close()
 	_, err = db.Exec(`
 		INSERT OR REPLACE INTO project_skills (project_hash, skill_id, is_enabled, enabled_at)
-		VALUES (?, ?, 1, CURRENT_TIMESTAMP)`, projectHash, skillID)
+		VALUES (?, ?, 1, CURRENT_TIMESTAMP)`, projectPath, skillID)
 	if err != nil {
 		return fmt.Errorf("启用技能失败: %w", err)
 	}
@@ -475,7 +474,7 @@ func EnableSkill(projectHash string, skillID int64) error {
 }
 
 // DisableSkill 为项目禁用技能
-func DisableSkill(projectHash string, skillID int64) error {
+func DisableSkill(projectPath string, skillID int64) error {
 	db, err := OpenDB()
 	if err != nil {
 		return err
@@ -483,7 +482,7 @@ func DisableSkill(projectHash string, skillID int64) error {
 	defer db.Close()
 	_, err = db.Exec(`
 		UPDATE project_skills SET is_enabled = 0 WHERE project_hash = ? AND skill_id = ?`,
-		projectHash, skillID)
+		projectPath, skillID)
 	if err != nil {
 		return fmt.Errorf("禁用技能失败: %w", err)
 	}
@@ -491,7 +490,7 @@ func DisableSkill(projectHash string, skillID int64) error {
 }
 
 // GetEnabledSkills 获取项目启用的技能
-func GetEnabledSkills(projectHash string) ([]Skill, error) {
+func GetEnabledSkills(projectPath string) ([]Skill, error) {
 	db, err := OpenDB()
 	if err != nil {
 		return nil, err
@@ -503,7 +502,7 @@ func GetEnabledSkills(projectHash string) ([]Skill, error) {
 		FROM skills s
 		JOIN project_skills ps ON s.id = ps.skill_id
 		WHERE ps.project_hash = ? AND ps.is_enabled = 1
-		ORDER BY s.priority DESC, s.name`, projectHash)
+		ORDER BY s.priority DESC, s.name`, projectPath)
 	if err != nil {
 		return nil, fmt.Errorf("查询启用技能失败: %w", err)
 	}
@@ -649,7 +648,7 @@ func ListTools(category string) ([]ToolDesc, error) {
 }
 
 // RecordToolUsage 记录工具使用
-func RecordToolUsage(toolID int64, success bool, errorMsg string) error {
+func RecordToolUsage(projectPath string, toolID int64, success bool, errorMsg string) error {
 	db, err := OpenDB()
 	if err != nil {
 		return err
@@ -664,7 +663,7 @@ func RecordToolUsage(toolID int64, success bool, errorMsg string) error {
 	// 记录使用详情
 	_, err = db.Exec(`
 		INSERT INTO tool_usage (project_hash, tool_id, success, error_msg)
-		VALUES (?, ?, ?, ?)`, ProjectHash, toolID, success, errorMsg)
+		VALUES (?, ?, ?, ?)`, projectPath, toolID, success, errorMsg)
 	if err != nil {
 		return fmt.Errorf("记录工具使用详情失败: %w", err)
 	}
@@ -722,7 +721,7 @@ func GetToolUsageStats(days int) ([]ToolUsageStat, error) {
 }
 
 // GetProjectToolUsage 获取项目工具使用情况
-func GetProjectToolUsage(days int) ([]ToolUsageStat, error,
+func GetProjectToolUsage(projectPath string, days int) ([]ToolUsageStat, error,
 ) {
 	db, err := OpenDB()
 	if err != nil {
@@ -743,9 +742,9 @@ func GetProjectToolUsage(days int) ([]ToolUsageStat, error,
 
 	if days > 0 {
 		query += " AND tu.used_at >= datetime('now', '-' || ? || ' days')"
-		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", ProjectHash, days)
+		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", projectPath, days)
 	} else {
-		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", ProjectHash)
+		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", projectPath)
 	}
 
 	if err != nil {
@@ -771,9 +770,3 @@ func GetProjectToolUsage(days int) ([]ToolUsageStat, error,
 	return stats, nil
 }
 
-// GetProjectHash 获取项目哈希值
-func GetProjectHash(projectPath string) string {
-	// 简单实现：直接使用项目路径作为哈希
-	// 实际可以使用更复杂的哈希算法
-	return projectPath
-}

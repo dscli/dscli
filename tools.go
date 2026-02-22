@@ -264,7 +264,7 @@ func HandleToolCall(toolName string, args json.RawMessage) (string, error) {
 		errorMsg = err.Error()
 	}
 
-	if err := RecordToolUsage(toolID, success, errorMsg); err != nil {
+	if err := RecordToolUsage(ProjectRoot, toolID, success, errorMsg); err != nil {
 		log.Printf("记录工具使用失败: %v", err)
 	}
 
