@@ -42,6 +42,7 @@ func Markdown2OrgRunE(cmd *cobra.Command, args []string) error {
 // MarkdownToOrgConverter converts Markdown to Org mode
 type MarkdownToOrgConverter struct {
 	inCodeBlock     bool
+	inOrgCodeBlock  bool
 	currentCodeLang string
 }
 
@@ -56,7 +57,7 @@ func NewMarkdownToOrgConverter() *MarkdownToOrgConverter {
 // ConvertLine converts a single line of Markdown to Org mode
 func (c *MarkdownToOrgConverter) ConvertLine(line string) string {
 	trimmedLine := strings.TrimSpace(line)
-	
+
 	// Handle code blocks
 	if strings.HasPrefix(trimmedLine, "```") {
 		if !c.inCodeBlock {
@@ -72,8 +73,23 @@ func (c *MarkdownToOrgConverter) ConvertLine(line string) string {
 		}
 	}
 
+	// handle org code blocks
+	if strings.HasPrefix(trimmedLine, "#+begin_src") {
+		if !c.inOrgCodeBlock {
+			c.inOrgCodeBlock = true
+		}
+		return line // Return original line with newline
+	}
+
+	if strings.HasPrefix(trimmedLine, "#+end_src") {
+		if c.inOrgCodeBlock {
+			c.inOrgCodeBlock = false
+		}
+		return line // Return original line with newline
+	}
+
 	// If in code block, return as-is
-	if c.inCodeBlock {
+	if c.inCodeBlock || c.inOrgCodeBlock {
 		return line
 	}
 
@@ -108,7 +124,7 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 	var result strings.Builder
 	i := 0
 	n := len(text)
-	
+
 	for i < n {
 		// Check for bold **
 		if i+1 < n && text[i] == '*' && text[i+1] == '*' {
@@ -117,7 +133,7 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 			for j < n {
 				if j+1 < n && text[j] == '*' && text[j+1] == '*' {
 					// Found closing **
-					boldText := text[i+2:j]
+					boldText := text[i+2 : j]
 					result.WriteString("*")
 					result.WriteString(boldText)
 					result.WriteString("*")
@@ -133,7 +149,7 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 			}
 			continue
 		}
-		
+
 		// Check for italic * (but not part of **)
 		if text[i] == '*' && (i == 0 || text[i-1] != '*') && (i+1 >= n || text[i+1] != '*') {
 			// Find closing *
@@ -141,7 +157,7 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 			for j < n {
 				if text[j] == '*' && (j+1 >= n || text[j+1] != '*') {
 					// Found closing *
-					italicText := text[i+1:j]
+					italicText := text[i+1 : j]
 					result.WriteString("/")
 					result.WriteString(italicText)
 					result.WriteString("/")
@@ -157,13 +173,13 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 			}
 			continue
 		}
-		
+
 		// Check for strikethrough ~~
 		if i+1 < n && text[i] == '~' && text[i+1] == '~' {
 			j := i + 2
 			for j < n {
 				if j+1 < n && text[j] == '~' && text[j+1] == '~' {
-					strikeText := text[i+2:j]
+					strikeText := text[i+2 : j]
 					result.WriteString("+")
 					result.WriteString(strikeText)
 					result.WriteString("+")
@@ -178,7 +194,7 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 			}
 			continue
 		}
-		
+
 		// Check for inline code `
 		if text[i] == '`' {
 			j := i + 1
@@ -186,7 +202,7 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 				j++
 			}
 			if j < n {
-				codeText := text[i+1:j]
+				codeText := text[i+1 : j]
 				result.WriteString("=")
 				result.WriteString(codeText)
 				result.WriteString("=")
@@ -197,7 +213,7 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 			}
 			continue
 		}
-		
+
 		// Check for links [text](url)
 		if text[i] == '[' {
 			// Find closing ]
@@ -218,8 +234,8 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 					}
 				}
 				if parenEnd != -1 {
-					linkText := text[i+1:bracketEnd]
-					url := text[bracketEnd+2:parenEnd]
+					linkText := text[i+1 : bracketEnd]
+					url := text[bracketEnd+2 : parenEnd]
 					result.WriteString("[[")
 					result.WriteString(url)
 					result.WriteString("][")
@@ -230,12 +246,12 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 				}
 			}
 		}
-		
+
 		// Default: copy character
 		result.WriteByte(text[i])
 		i++
 	}
-	
+
 	return result.String()
 }
 
@@ -247,7 +263,7 @@ func (c *MarkdownToOrgConverter) ConvertStream(input io.Reader, output io.Writer
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		converted := c.ConvertLine(line + "\n")  // Add newline for processing
+		converted := c.ConvertLine(line + "\n") // Add newline for processing
 		if _, err := writer.WriteString(converted); err != nil {
 			return fmt.Errorf("failed to write output: %w", err)
 		}
