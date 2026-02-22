@@ -88,9 +88,9 @@ func TestMarkdownToOrgConverter_ConvertLine(t *testing.T) {
 			expected: "#+begin_src go\n",
 		},
 		{
-			name:     "代码块结束",
+			name:     "代码块开始（无语言）",
 			input:    "```\n",
-			expected: "#+end_src\n",
+			expected: "#+begin_src \n",
 		},
 		// 空行测试
 		{
@@ -175,7 +175,8 @@ func main() {
 }
 ` + "```" + `
 
-More text after code.`,
+More text after code.
+`,
 			expected: `* Main Title
 
 This is a *bold* statement with /italic/ text.
@@ -194,7 +195,8 @@ func main() {
 }
 #+end_src
 
-More text after code.`,
+More text after code.
+`,
 		},
 		{
 			name:     "流式输入",

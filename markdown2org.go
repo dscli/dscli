@@ -42,7 +42,7 @@ func Markdown2OrgRunE(cmd *cobra.Command, args []string) error {
 // MarkdownToOrgConverter converts Markdown to Org mode
 type MarkdownToOrgConverter struct {
 	inCodeBlock     bool
-	inOrgCodeBlock  bool
+	inOrgBlock      bool
 	currentCodeLang string
 }
 
@@ -50,15 +50,18 @@ type MarkdownToOrgConverter struct {
 func NewMarkdownToOrgConverter() *MarkdownToOrgConverter {
 	return &MarkdownToOrgConverter{
 		inCodeBlock:     false,
+		inOrgBlock:      false,
 		currentCodeLang: "",
 	}
 }
 
 // ConvertLine converts a single line of Markdown to Org mode
 func (c *MarkdownToOrgConverter) ConvertLine(line string) string {
+	// 保存原始行是否有换行符
+	hasNewline := strings.HasSuffix(line, "\n")
 	trimmedLine := strings.TrimSpace(line)
 
-	// Handle code blocks
+	// Handle code blocks - 必须放在最前面
 	if strings.HasPrefix(trimmedLine, "```") {
 		if !c.inCodeBlock {
 			// Code block start
@@ -73,23 +76,35 @@ func (c *MarkdownToOrgConverter) ConvertLine(line string) string {
 		}
 	}
 
-	// handle org code blocks
-	if strings.HasPrefix(trimmedLine, "#+begin_src") {
-		if !c.inOrgCodeBlock {
-			c.inOrgCodeBlock = true
+	// handle org blocks - 需要精确匹配
+	if strings.HasPrefix(trimmedLine, "#+begin_src") || strings.HasPrefix(trimmedLine, "#+begin_example") {
+		if !c.inOrgBlock {
+			c.inOrgBlock = true
 		}
-		return line // Return original line with newline
+		// 保持原始行的换行符
+		if hasNewline && !strings.HasSuffix(line, "\n") {
+			return line + "\n"
+		}
+		return line
 	}
 
-	if strings.HasPrefix(trimmedLine, "#+end_src") {
-		if c.inOrgCodeBlock {
-			c.inOrgCodeBlock = false
+	if strings.HasPrefix(trimmedLine, "#+end_src") || strings.HasPrefix(trimmedLine, "#+end_example") {
+		if c.inOrgBlock {
+			c.inOrgBlock = false
 		}
-		return line // Return original line with newline
+		// 保持原始行的换行符
+		if hasNewline && !strings.HasSuffix(line, "\n") {
+			return line + "\n"
+		}
+		return line
 	}
 
 	// If in code block, return as-is
-	if c.inCodeBlock || c.inOrgCodeBlock {
+	if c.inCodeBlock || c.inOrgBlock {
+		// 保持原始行的换行符
+		if hasNewline && !strings.HasSuffix(line, "\n") {
+			return line + "\n"
+		}
 		return line
 	}
 
@@ -101,6 +116,8 @@ func (c *MarkdownToOrgConverter) ConvertLine(line string) string {
 		}
 		if level > 0 && level <= 6 {
 			text := strings.TrimSpace(line[level:])
+			// 对标题文本应用格式转换
+			text = c.convertMarkdownSimple(text)
 			stars := strings.Repeat("*", level)
 			return fmt.Sprintf("%s %s\n", stars, text)
 		}
@@ -111,8 +128,8 @@ func (c *MarkdownToOrgConverter) ConvertLine(line string) string {
 	// Use simple string processing
 	result = c.convertMarkdownSimple(result)
 
-	// Ensure we keep the newline
-	if strings.HasSuffix(line, "\n") && !strings.HasSuffix(result, "\n") {
+	// 确保有换行符
+	if !strings.HasSuffix(result, "\n") {
 		result += "\n"
 	}
 
@@ -134,6 +151,8 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 				if j+1 < n && text[j] == '*' && text[j+1] == '*' {
 					// Found closing **
 					boldText := text[i+2 : j]
+					// 递归处理粗体中的斜体
+					boldText = c.convertItalicInBold(boldText)
 					result.WriteString("*")
 					result.WriteString(boldText)
 					result.WriteString("*")
@@ -255,6 +274,45 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 	return result.String()
 }
 
+// convertItalicInBold converts italic text inside bold text
+func (c *MarkdownToOrgConverter) convertItalicInBold(text string) string {
+	var result strings.Builder
+	i := 0
+	n := len(text)
+
+	for i < n {
+		// Check for italic * inside bold
+		if text[i] == '*' && (i == 0 || text[i-1] != '*') && (i+1 >= n || text[i+1] != '*') {
+			// Find closing *
+			j := i + 1
+			for j < n {
+				if text[j] == '*' && (j+1 >= n || text[j+1] != '*') {
+					// Found closing *
+					italicText := text[i+1 : j]
+					result.WriteString("/")
+					result.WriteString(italicText)
+					result.WriteString("/")
+					i = j + 1
+					break
+				}
+				j++
+			}
+			if j >= n {
+				// No closing * found
+				result.WriteByte(text[i])
+				i++
+			}
+			continue
+		}
+
+		// Default: copy character
+		result.WriteByte(text[i])
+		i++
+	}
+
+	return result.String()
+}
+
 // ConvertStream converts input to output with streaming
 func (c *MarkdownToOrgConverter) ConvertStream(input io.Reader, output io.Writer) error {
 	scanner := bufio.NewScanner(input)
@@ -263,7 +321,8 @@ func (c *MarkdownToOrgConverter) ConvertStream(input io.Reader, output io.Writer
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		converted := c.ConvertLine(line + "\n") // Add newline for processing
+		// 添加换行符，因为scanner.Text()不包含换行符
+		converted := c.ConvertLine(line + "\n")
 		if _, err := writer.WriteString(converted); err != nil {
 			return fmt.Errorf("failed to write output: %w", err)
 		}
