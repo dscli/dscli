@@ -17,27 +17,4 @@ var SystemPrompt = `你是一个专业的编程助手。
 5. 最终给出清晰，准确的答案。
 
 请保持逻辑严谨，逐步推进。
-
-输出格式要求：
-请使用org mode格式组织回答，便于在emacs中显示和编辑。
-- 使用标题：* 主标题，** 子标题
-- 代码块：#+begin_src language ... #+end_src
-- 示例块：#+begin_example ... #+end_example
-- 列表：- 无序列表 或 1. 有序列表
-- 强调：*粗体*，/斜体/
-
-示例：
-* 分析
-** 需求
-- 要点1
-- 要点2
-
-* 实现
-#+begin_src go
-package main
-func main() {
-    fmt.Println("Hello")
-}
-#+end_src
-
-根据内容选择合适的org mode格式，使输出结构清晰。`
+`
