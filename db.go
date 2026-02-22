@@ -458,7 +458,7 @@ func ListSkills(category string) ([]Skill, error) {
 }
 
 // EnableSkill 为项目启用技能
-func EnableSkill(projectPath string, skillID int64) error {
+func EnableSkill(skillID int64) error {
 	db, err := OpenDB()
 	if err != nil {
 		return err
@@ -466,7 +466,7 @@ func EnableSkill(projectPath string, skillID int64) error {
 	defer db.Close()
 	_, err = db.Exec(`
 		INSERT OR REPLACE INTO project_skills (project_hash, skill_id, is_enabled, enabled_at)
-		VALUES (?, ?, 1, CURRENT_TIMESTAMP)`, projectPath, skillID)
+		VALUES (?, ?, 1, CURRENT_TIMESTAMP)`, ProjectRoot, skillID)
 	if err != nil {
 		return fmt.Errorf("启用技能失败: %w", err)
 	}
@@ -474,7 +474,7 @@ func EnableSkill(projectPath string, skillID int64) error {
 }
 
 // DisableSkill 为项目禁用技能
-func DisableSkill(projectPath string, skillID int64) error {
+func DisableSkill(skillID int64) error {
 	db, err := OpenDB()
 	if err != nil {
 		return err
@@ -482,7 +482,7 @@ func DisableSkill(projectPath string, skillID int64) error {
 	defer db.Close()
 	_, err = db.Exec(`
 		UPDATE project_skills SET is_enabled = 0 WHERE project_hash = ? AND skill_id = ?`,
-		projectPath, skillID)
+		ProjectRoot, skillID)
 	if err != nil {
 		return fmt.Errorf("禁用技能失败: %w", err)
 	}
@@ -490,7 +490,7 @@ func DisableSkill(projectPath string, skillID int64) error {
 }
 
 // GetEnabledSkills 获取项目启用的技能
-func GetEnabledSkills(projectPath string) ([]Skill, error) {
+func GetEnabledSkills() ([]Skill, error) {
 	db, err := OpenDB()
 	if err != nil {
 		return nil, err
@@ -502,7 +502,7 @@ func GetEnabledSkills(projectPath string) ([]Skill, error) {
 		FROM skills s
 		JOIN project_skills ps ON s.id = ps.skill_id
 		WHERE ps.project_hash = ? AND ps.is_enabled = 1
-		ORDER BY s.priority DESC, s.name`, projectPath)
+		ORDER BY s.priority DESC, s.name`, ProjectRoot)
 	if err != nil {
 		return nil, fmt.Errorf("查询启用技能失败: %w", err)
 	}
@@ -648,7 +648,7 @@ func ListTools(category string) ([]ToolDesc, error) {
 }
 
 // RecordToolUsage 记录工具使用
-func RecordToolUsage(projectPath string, toolID int64, success bool, errorMsg string) error {
+func RecordToolUsage(toolID int64, success bool, errorMsg string) error {
 	db, err := OpenDB()
 	if err != nil {
 		return err
@@ -663,7 +663,7 @@ func RecordToolUsage(projectPath string, toolID int64, success bool, errorMsg st
 	// 记录使用详情
 	_, err = db.Exec(`
 		INSERT INTO tool_usage (project_hash, tool_id, success, error_msg)
-		VALUES (?, ?, ?, ?)`, projectPath, toolID, success, errorMsg)
+		VALUES (?, ?, ?, ?)`, ProjectRoot, toolID, success, errorMsg)
 	if err != nil {
 		return fmt.Errorf("记录工具使用详情失败: %w", err)
 	}
@@ -721,7 +721,7 @@ func GetToolUsageStats(days int) ([]ToolUsageStat, error) {
 }
 
 // GetProjectToolUsage 获取项目工具使用情况
-func GetProjectToolUsage(projectPath string, days int) ([]ToolUsageStat, error,
+func GetProjectToolUsage(days int) ([]ToolUsageStat, error,
 ) {
 	db, err := OpenDB()
 	if err != nil {
@@ -742,9 +742,9 @@ func GetProjectToolUsage(projectPath string, days int) ([]ToolUsageStat, error,
 
 	if days > 0 {
 		query += " AND tu.used_at >= datetime('now', '-' || ? || ' days')"
-		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", projectPath, days)
+		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", ProjectRoot, days)
 	} else {
-		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", projectPath)
+		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", ProjectRoot)
 	}
 
 	if err != nil {

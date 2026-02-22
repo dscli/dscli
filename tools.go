@@ -61,7 +61,7 @@ func getToolParameters(toolName string) map[string]interface{} {
 			"properties": map[string]interface{}{
 				"path": map[string]interface{}{
 					"type":        "string",
-					"description": "文件路径（相对于项目根目录或绝对路径）",
+					"description": "文件路径（相对于项目根目录），多个文件用空格分隔",
 				},
 			},
 			"required":             []string{"path"},
@@ -74,7 +74,7 @@ func getToolParameters(toolName string) map[string]interface{} {
 			"properties": map[string]interface{}{
 				"path": map[string]interface{}{
 					"type":        "string",
-					"description": "文件路径（相对于项目根目录或绝对路径）",
+					"description": "文件路径（相对于项目根目录），多个文件用空格分隔",
 				},
 				"content": map[string]interface{}{
 					"type":        "string",
@@ -108,7 +108,7 @@ func getToolParameters(toolName string) map[string]interface{} {
 			"properties": map[string]interface{}{
 				"path": map[string]interface{}{
 					"type":        "string",
-					"description": "文件路径（相对于项目根目录）",
+					"description": "文件路径（相对于项目根目录），多个文件用空格分隔",
 				},
 			},
 			"required":             []string{"path"},
@@ -147,7 +147,7 @@ func getToolParameters(toolName string) map[string]interface{} {
 			"properties": map[string]interface{}{
 				"path": map[string]interface{}{
 					"type":        "string",
-					"description": "指定文件路径，不指定则查看所有变更",
+					"description": "文件路径（相对于项目根目录），多个文件用空格分隔",
 				},
 			},
 			"required":             []string{},
@@ -264,7 +264,7 @@ func HandleToolCall(toolName string, args json.RawMessage) (string, error) {
 		errorMsg = err.Error()
 	}
 
-	if err := RecordToolUsage(ProjectRoot, toolID, success, errorMsg); err != nil {
+	if err := RecordToolUsage(toolID, success, errorMsg); err != nil {
 		log.Printf("记录工具使用失败: %v", err)
 	}
 
@@ -433,7 +433,9 @@ func handleGitAdd(argsRaw json.RawMessage) (string, error) {
 	if err := json.Unmarshal(argsRaw, &args); err != nil {
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
-	out, err := gitCommand("add", args.Path)
+	gitArgs := []string{"add"}
+    gitArgs = append(gitArgs, strings.Fields(args.Path)...)
+	out, err := gitCommand(gitArgs...)
 	if err != nil {
 		return "", err
 	}
