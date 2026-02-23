@@ -106,9 +106,9 @@ func (c *MarkdownToOrgConverter) ConvertLine(line string) string {
 	if c.inCodeBlock || c.inOrgBlock {
 		// 保持原始行的换行符
 		if hasNewline && !strings.HasSuffix(line, "\n") {
-			return line + "\n"
+			return strings.ReplaceAll(line, "_", "_\u200b") + "\n"
 		}
-		return line
+		return strings.ReplaceAll(line, "_", "_\u200b")
 	}
 
 	// Convert headers (# -> *, ## -> **, etc.)
