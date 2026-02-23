@@ -156,9 +156,9 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 					boldText := text[i+2 : j]
 					// 递归处理粗体中的斜体
 					boldText = c.convertItalicInBold(boldText)
-					result.WriteString("*")
+					result.WriteString("\u200b*")
 					result.WriteString(boldText)
-					result.WriteString("*")
+					result.WriteString("*\u200b")
 					i = j + 2
 					break
 				}
@@ -180,9 +180,9 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 				if text[j] == '*' && (j+1 >= n || text[j+1] != '*') {
 					// Found closing *
 					italicText := text[i+1 : j]
-					result.WriteString("/")
+					result.WriteString("\u200b/")
 					result.WriteString(italicText)
-					result.WriteString("/")
+					result.WriteString("/\u200b")
 					i = j + 1
 					break
 				}
@@ -202,9 +202,9 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 			for j < n {
 				if j+1 < n && text[j] == '~' && text[j+1] == '~' {
 					strikeText := text[i+2 : j]
-					result.WriteString("+")
+					result.WriteString("\u200b+")
 					result.WriteString(strikeText)
-					result.WriteString("+")
+					result.WriteString("+\u200b")
 					i = j + 2
 					break
 				}

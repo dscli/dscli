@@ -33,24 +33,24 @@ func TestMarkdownToOrgConverter_ConvertLine(t *testing.T) {
 		{
 			name:     "粗体文本",
 			input:    "This is **bold** text\n",
-			expected: "This is *bold* text\n",
+			expected: "This is ​*bold*​ text\n",
 		},
 		{
 			name:     "多个粗体",
 			input:    "**bold1** and **bold2**\n",
-			expected: "*bold1* and *bold2*\n",
+			expected: "​*bold1*​ and ​*bold2*​\n",
 		},
 		// 斜体测试
 		{
 			name:     "斜体文本",
 			input:    "This is *italic* text\n",
-			expected: "This is /italic/ text\n",
+			expected: "This is ​/italic/​ text\n",
 		},
 		// 删除线测试
 		{
 			name:     "删除线文本",
 			input:    "This is ~~strikethrough~~ text\n",
-			expected: "This is +strikethrough+ text\n",
+			expected: "This is ​+strikethrough+​ text\n",
 		},
 		// 内联代码测试
 		{
@@ -68,7 +68,7 @@ func TestMarkdownToOrgConverter_ConvertLine(t *testing.T) {
 		{
 			name:     "混合格式",
 			input:    "# Title with **bold** and *italic*\n",
-			expected: "* Title with *bold* and /italic/\n",
+			expected: "* Title with ​*bold*​ and ​/italic/​\n",
 		},
 		// 列表测试（保持不变）
 		{
@@ -179,7 +179,7 @@ More text after code.
 `,
 			expected: `* Main Title
 
-This is a *bold* statement with /italic/ text.
+This is a ​*bold*​ statement with ​/italic/​ text.
 
 ** Subsection
 
@@ -238,7 +238,7 @@ func TestMarkdownToOrgConverter_EdgeCases(t *testing.T) {
 		{
 			name:     "嵌套格式",
 			input:    "**bold *italic* bold**\n",
-			expected: "*bold /italic/ bold*\n",
+			expected: "​*bold /italic/ bold*​\n",
 		},
 		{
 			name:     "代码块无语言",
@@ -277,7 +277,7 @@ func TestMarkdownToOrgConverter_BoldItalicOrder(t *testing.T) {
 	
 	// 测试粗体和斜体的顺序
 	input := "**bold** and *italic* and **bold with *nested* italic**\n"
-	expected := "*bold* and /italic/ and *bold with /nested/ italic*\n"
+	expected := "​*bold*​ and ​/italic/​ and ​*bold with /nested/ italic*​\n"
 	
 	result := converter.ConvertLine(input)
 	if result != expected {
