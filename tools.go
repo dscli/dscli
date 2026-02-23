@@ -550,10 +550,10 @@ func runScriptShebang(script string, name string, arg []string) (out string, err
 	defer func() {
 		spend := time.Since(startTime)
 		if err == nil {
-			fmt.Printf("\n执行成功（%v）：\n#+begin_example\n%s\n#+end_example\n",
+			fmt.Printf("\n执行成功（%v）：\n#+begin_src text\n%s\n#+end_src\n",
 				spend, out)
 		} else {
-			fmt.Printf("\n执行失败（%v）：\n#+begin_example\n%s\n#+end_example\n\n出错信息：\n#+begin_example\n%s\n#+end_example\n",
+			fmt.Printf("\n执行失败（%v）：\n#+begin_src text\n%s\n#+end_src\n\n出错信息：\n#+begin_src text\n%s\n#+end_src\n",
 				spend, out, err.Error())
 		}
 	}()
