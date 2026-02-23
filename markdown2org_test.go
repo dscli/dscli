@@ -238,7 +238,7 @@ func TestMarkdownToOrgConverter_EdgeCases(t *testing.T) {
 		{
 			name:     "嵌套格式",
 			input:    "**bold *italic* bold**\n",
-			expected: "​*bold /italic/ bold*​\n",
+			expected: "​*bold ​/italic/​ bold*​\n",
 		},
 		{
 			name:     "代码块无语言",
@@ -277,7 +277,7 @@ func TestMarkdownToOrgConverter_BoldItalicOrder(t *testing.T) {
 	
 	// 测试粗体和斜体的顺序
 	input := "**bold** and *italic* and **bold with *nested* italic**\n"
-	expected := "​*bold*​ and ​/italic/​ and ​*bold with /nested/ italic*​\n"
+	expected := "​*bold*​ and ​/italic/​ and ​*bold with ​/nested/​ italic*​\n"
 	
 	result := converter.ConvertLine(input)
 	if result != expected {

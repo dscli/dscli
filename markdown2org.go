@@ -292,9 +292,9 @@ func (c *MarkdownToOrgConverter) convertItalicInBold(text string) string {
 				if text[j] == '*' && (j+1 >= n || text[j+1] != '*') {
 					// Found closing *
 					italicText := text[i+1 : j]
-					result.WriteString("/")
+					result.WriteString("\u200b/")
 					result.WriteString(italicText)
-					result.WriteString("/")
+					result.WriteString("/\u200b")
 					i = j + 1
 					break
 				}
