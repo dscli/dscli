@@ -56,7 +56,7 @@ func TestMarkdownToOrgConverter_ConvertLine(t *testing.T) {
 		{
 			name:     "内联代码",
 			input:    "Use `fmt.Println` function\n",
-			expected: "Use =fmt.Println= function\n",
+			expected: "Use ​=fmt.Println=​ function\n",
 		},
 		// 链接测试
 		{
@@ -183,7 +183,7 @@ This is a *bold* statement with /italic/ text.
 
 ** Subsection
 
-Here's some =inline code= and a [[https://example.com][link]].
+Here's some ​=inline code=​ and a [[https://example.com][link]].
 
 *** Code Example
 

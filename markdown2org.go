@@ -225,9 +225,9 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 			}
 			if j < n {
 				codeText := text[i+1 : j]
-				result.WriteString("=")
+				result.WriteString("\u200b=")
 				result.WriteString(codeText)
-				result.WriteString("=")
+				result.WriteString("=\u200b")
 				i = j + 1
 			} else {
 				result.WriteByte(text[i])
