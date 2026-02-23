@@ -33,30 +33,30 @@ func TestMarkdownToOrgConverter_ConvertLine(t *testing.T) {
 		{
 			name:     "粗体文本",
 			input:    "This is **bold** text\n",
-			expected: "This is ​*bold*​ text\n",
+			expected: "This is \u200b*bold*\u200b text\n",
 		},
 		{
 			name:     "多个粗体",
 			input:    "**bold1** and **bold2**\n",
-			expected: "​*bold1*​ and ​*bold2*​\n",
+			expected: "\u200b*bold1*\u200b and \u200b*bold2*\u200b\n",
 		},
 		// 斜体测试
 		{
 			name:     "斜体文本",
 			input:    "This is *italic* text\n",
-			expected: "This is ​/italic/​ text\n",
+			expected: "This is \u200b/italic/\u200b text\n",
 		},
 		// 删除线测试
 		{
 			name:     "删除线文本",
 			input:    "This is ~~strikethrough~~ text\n",
-			expected: "This is ​+strikethrough+​ text\n",
+			expected: "This is \u200b+strikethrough+\u200b text\n",
 		},
 		// 内联代码测试
 		{
 			name:     "内联代码",
 			input:    "Use `fmt.Println` function\n",
-			expected: "Use ​=fmt.Println=​ function\n",
+			expected: "Use \u200b=fmt.Println=\u200b function\n",
 		},
 		// 链接测试
 		{
@@ -68,7 +68,7 @@ func TestMarkdownToOrgConverter_ConvertLine(t *testing.T) {
 		{
 			name:     "混合格式",
 			input:    "# Title with **bold** and *italic*\n",
-			expected: "* Title with ​*bold*​ and ​/italic/​\n",
+			expected: "* Title with \u200b*bold*\u200b and \u200b/italic/\u200b\n",
 		},
 		// 列表测试（保持不变）
 		{
@@ -107,7 +107,7 @@ func TestMarkdownToOrgConverter_ConvertLine(t *testing.T) {
 			// 重置转换器状态
 			converter.inCodeBlock = false
 			converter.currentCodeLang = ""
-			
+
 			result := converter.ConvertLine(tt.input)
 			if result != tt.expected {
 				t.Errorf("ConvertLine() = %q, want %q", result, tt.expected)
@@ -179,11 +179,11 @@ More text after code.
 `,
 			expected: `* Main Title
 
-This is a ​*bold*​ statement with ​/italic/​ text.
+` + "This is a \u200b*bold*\u200b statement with \u200b/italic/\u200b text." + `
 
 ** Subsection
 
-Here's some ​=inline code=​ and a [[https://example.com][link]].
+` + "Here's some \u200b=inline code=\u200b and a [[https://example.com][link]]." + `
 
 *** Code Example
 
@@ -238,7 +238,7 @@ func TestMarkdownToOrgConverter_EdgeCases(t *testing.T) {
 		{
 			name:     "嵌套格式",
 			input:    "**bold *italic* bold**\n",
-			expected: "​*bold ​/italic/​ bold*​\n",
+			expected: "\u200b*bold \u200b/italic/\u200b bold*\u200b\n",
 		},
 		{
 			name:     "代码块无语言",
@@ -263,7 +263,7 @@ func TestMarkdownToOrgConverter_EdgeCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			converter.inCodeBlock = false
 			converter.currentCodeLang = ""
-			
+
 			result := converter.ConvertLine(tt.input)
 			if result != tt.expected {
 				t.Errorf("ConvertLine() = %q, want %q", result, tt.expected)
@@ -274,11 +274,11 @@ func TestMarkdownToOrgConverter_EdgeCases(t *testing.T) {
 
 func TestMarkdownToOrgConverter_BoldItalicOrder(t *testing.T) {
 	converter := NewMarkdownToOrgConverter()
-	
+
 	// 测试粗体和斜体的顺序
 	input := "**bold** and *italic* and **bold with *nested* italic**\n"
-	expected := "​*bold*​ and ​/italic/​ and ​*bold with ​/nested/​ italic*​\n"
-	
+	expected := "\u200b*bold*\u200b and \u200b/italic/\u200b and \u200b*bold with \u200b/nested/\u200b italic*\u200b\n"
+
 	result := converter.ConvertLine(input)
 	if result != expected {
 		t.Errorf("BoldItalicOrder: ConvertLine() = %q, want %q", result, expected)
@@ -313,7 +313,7 @@ func BenchmarkMarkdownToOrgConverter_ConvertLine(b *testing.B) {
 
 func BenchmarkMarkdownToOrgConverter_ConvertStream(b *testing.B) {
 	converter := NewMarkdownToOrgConverter()
-	
+
 	// 创建测试数据
 	var builder strings.Builder
 	for i := 0; i < 1000; i++ {
