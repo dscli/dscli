@@ -12,8 +12,8 @@ import (
 )
 
 var (
-	DBPath      = filepath.Join(ConfigDir, "sqlite.db")
-	SessionID   = func() (sessionID int64) {
+	DBPath    = filepath.Join(ConfigDir, "sqlite.db")
+	SessionID = func() (sessionID int64) {
 		db, err := OpenDB()
 		if err != nil {
 			log.Fatalln(err)
@@ -767,4 +767,3 @@ func GetProjectToolUsage(days int) ([]ToolUsageStat, error,
 	}
 	return stats, nil
 }
-

@@ -434,7 +434,7 @@ func handleGitAdd(argsRaw json.RawMessage) (string, error) {
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
 	gitArgs := []string{"add"}
-    gitArgs = append(gitArgs, strings.Fields(args.Path)...)
+	gitArgs = append(gitArgs, strings.Fields(args.Path)...)
 	out, err := gitCommand(gitArgs...)
 	if err != nil {
 		return "", err

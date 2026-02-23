@@ -94,7 +94,7 @@ func ChatMessage(inputs ...Message) (err error) {
 	}
 
 	systemMessage := Message{
-		Role: "system",
+		Role:    "system",
 		Content: SystemPrompt,
 	}
 	// 6. 构造 messages 切片（包含历史）
