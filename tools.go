@@ -165,26 +165,20 @@ func getToolParameters(toolName string) map[string]interface{} {
 			"additionalProperties": false,
 		}
 
-	case "git_push_force":
+	case "git_push":
 		return map[string]interface{}{
 			"type":                 "object",
-			"properties":           map[string]interface{}{},
+			"properties":           map[string]interface{}{
+				"options": map[string]interface{}{
+					"type":        "string",
+					"description": "选项，例如：--force-with-lease，多个选项用空格分隔，例如：origin main --force，可为空",
+				},
+			},
 			"required":             []string{},
 			"additionalProperties": false,
 		}
 
 	case "execute_script":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"script": map[string]interface{}{
-					"type":        "string",
-					"description": "要执行的脚本内容。支持shebang指定解释器（如#!/usr/bin/env bash, #!/usr/bin/env python）。脚本执行结果会以格式化文本返回，包含执行统计信息。示例：\n1. Bash脚本：echo \"Hello\"\n2. Python脚本：#!/usr/bin/env python\nprint(\"Hello\")\n3. 文件操作：cat file.txt\n4. Git操作：git status",
-				},
-			},
-			"required":             []string{"script"},
-			"additionalProperties": false,
-		}
 		return map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -490,9 +484,17 @@ func handleGitStatus(argsRaw json.RawMessage) (string, error) {
 	return out, nil
 }
 
-// handleGitPushForce git push --force
-func handleGitPushForce(argsRaw json.RawMessage)(string, error){
-	out, err := gitCommand("push", "--force")
+// handleGitPush git push [options...]
+func handleGitPush(argsRaw json.RawMessage) (string, error) {
+	var args struct {
+		Options string `json:"options"`
+	}
+	_ = json.Unmarshal(argsRaw, &args) // 忽略错误，options 可选
+	gitArgs := []string{"push"}
+	if args.Options != "" {
+		gitArgs = append(gitArgs, strings.Fields(args.Options)...)
+	}
+	out, err := gitCommand(gitArgs...)
 	if err != nil {
 		return "", err
 	}
@@ -697,6 +699,13 @@ func InitTools() {
 		Description: "查看 Git 仓库状态",
 		Category:    "git",
 		Handler:     handleGitStatus,
+	})
+
+	RegisterTool(ToolDef{
+		Name:        "git_push",
+		Description: "推送 Git 分支到远程",
+		Category:    "git",
+		Handler:     handleGitPush,
 	})
 
 	// 注册脚本执行工具
