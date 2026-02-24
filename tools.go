@@ -433,7 +433,7 @@ func handleGitCommit(argsRaw json.RawMessage) (string, error) {
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
 	options := strings.TrimSpace(args.Options)
-	
+
 	// 更健壮的-m参数检查
 	// 检查 -m、-m[空格]、--message 等变体
 	optionWords := strings.Fields(options)
@@ -442,7 +442,7 @@ func handleGitCommit(argsRaw json.RawMessage) (string, error) {
 			return "", fmt.Errorf("message参数已通过message字段提供，不要在options中包含-m或--message")
 		}
 	}
-	
+
 	gitArgs := []string{"commit", "-m", args.Message}
 	if options != "" {
 		gitArgs = append(gitArgs, strings.Fields(options)...)
