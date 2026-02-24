@@ -101,13 +101,7 @@ func (c *Client) Balance() (*BalanceResponse, error) {
 	return &resp, err
 }
 
-// Chat 发送聊天请求（无工具）
-
-// 注意：这里清除了历史消息中的ReasoningContent
-// 设计考虑：
-// 1. 减少请求数据量，避免重复发送推理内容
-// 2. 推理内容主要用于实时展示，历史中不需要保存
-// 3. 如果需要保存推理历史，可以修改此逻辑
+// Chat 发送聊天请求
 func (c *Client) Chat(model string, messages []Message, tools []Tool) (*ChatResponse, error) {
 	for i, m := range messages {
 		if m.ReasoningContent != "" {

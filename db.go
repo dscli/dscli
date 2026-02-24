@@ -38,6 +38,7 @@ func createTables(db *sql.DB) error {
 			tool_calls TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             model_id INTEGER NOT NULL DEFAULT 0,
+		reasoning_content TEXT,
 			FOREIGN KEY (session_id) REFERENCES sessions(id)
 		)`,
 
@@ -53,6 +54,7 @@ func createTables(db *sql.DB) error {
 			usage_count INTEGER DEFAULT 0,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             model_id INTEGER NOT NULL DEFAULT 0,
+		reasoning_content TEXT,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 
@@ -110,6 +112,7 @@ func createTables(db *sql.DB) error {
 	migrateQueries := []string{
 		// 增加model_id到消息表（兼容已存在的数据库）
 		`ALTER TABLE messages ADD COLUMN model_id INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE messages ADD COLUMN reasoning_content TEXT`,
 	}
 
 	for _, query := range migrateQueries {
@@ -281,8 +284,8 @@ func SaveMessagesBatch(msgs []Message) error {
 	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(`
-		INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, model_id)
-		VALUES (?, ?, ?, ?, ?, ?)`)
+		INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, model_id, reasoning_content)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return fmt.Errorf("准备语句失败: %w", err)
 	}
@@ -303,7 +306,7 @@ func SaveMessagesBatch(msgs []Message) error {
 			toolCalls.String = string(data)
 			toolCalls.Valid = true
 		}
-		if _, err := stmt.Exec(SessionID, m.Role, m.Content, toolCallID, toolCalls, ModelID); err != nil {
+		if _, err := stmt.Exec(SessionID, m.Role, m.Content, toolCallID, toolCalls, ModelID, m.ReasoningContent); err != nil {
 			return fmt.Errorf("插入消息失败: %w", err)
 		}
 	}
@@ -330,7 +333,7 @@ func CreateSkill(name, description, content, category string, priority int, isGl
 	defer db.Close()
 	result, err := db.Exec(`
 		INSERT INTO skills (name, description, content, category, priority, is_global)
-		VALUES (?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		name, description, content, category, priority, isGlobal)
 	if err != nil {
 		return 0, fmt.Errorf("创建技能失败: %w", err)
