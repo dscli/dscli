@@ -133,6 +133,7 @@ func createTables(db *sql.DB) error {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			project_path TEXT UNIQUE NOT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            model_id INTEGER NOT NULL DEFAULT 0,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 
@@ -145,10 +146,13 @@ func createTables(db *sql.DB) error {
 			tool_call_id TEXT,
 			tool_calls TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            model_id INTEGER NOT NULL DEFAULT 0,
 			FOREIGN KEY (session_id) REFERENCES sessions(id)
 		)`,
 
 		// 技能表
+		// 增加model_id到消息表（兼容已存在的数据库）
+		`ALTER TABLE messages ADD COLUMN model_id INTEGER NOT NULL DEFAULT 0`,
 		`CREATE TABLE IF NOT EXISTS skills (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL UNIQUE,
@@ -159,6 +163,7 @@ func createTables(db *sql.DB) error {
 			is_global BOOLEAN DEFAULT 0,
 			usage_count INTEGER DEFAULT 0,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            model_id INTEGER NOT NULL DEFAULT 0,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 
@@ -186,6 +191,7 @@ func createTables(db *sql.DB) error {
 			category TEXT,
 			usage_count INTEGER DEFAULT 0,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            model_id INTEGER NOT NULL DEFAULT 0,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 
@@ -223,6 +229,54 @@ func OpenDB(elem ...string) (db *sql.DB, err error) {
 	return sql.Open("sqlite", dbPath)
 }
 
+
+// GetSessionID 获取或创建会话ID
+func GetSessionID() int64 {
+	if SessionID > 0 {
+		return SessionID
+	}
+	
+	db, err := OpenDB()
+	if err != nil {
+		log.Fatalln(err)
+		return 0
+	}
+	defer db.Close()
+	
+	err = createTables(db)
+	if err != nil {
+		log.Fatalln(err)
+		return 0
+	}
+	
+	var id int64
+	err = db.QueryRow("SELECT id FROM sessions WHERE project_path = ?",
+		ProjectRoot).Scan(&id)
+	if err != nil {
+		if err != sql.ErrNoRows {
+			log.Fatalln(err)
+			return 0
+		}
+	} else if id > 0 {
+		SessionID = id
+		return SessionID
+	}
+
+	result, err := db.Exec("INSERT INTO sessions (project_path) VALUES (?)",
+		ProjectRoot)
+	if err != nil {
+		log.Fatalln(err)
+		return 0
+	}
+
+	id, err = result.LastInsertId()
+	if err != nil {
+		log.Fatalln(err)
+		return 0
+	}
+	SessionID = id
+	return SessionID
+}
 func LoadLastOne() (*RawMessage, error) {
 	db, err := OpenDB()
 	if err != nil {
@@ -232,7 +286,7 @@ func LoadLastOne() (*RawMessage, error) {
 	rows, err := db.Query(`
         SELECT role, content, tool_call_id, tool_calls, created_at 
         FROM messages
-        WHERE session_id = ?
+        WHERE session_id = ? AND model_id = ?
         ORDER BY id DESC 
         LIMIT 1`, SessionID)
 	if err != nil {
@@ -271,7 +325,7 @@ func LoadHistory() ([]RawMessage, error) {
 	rows, err := db.Query(`
 		SELECT role, content, tool_call_id, tool_calls, created_at
 		FROM messages
-		WHERE session_id = ?
+		WHERE session_id = ? AND model_id = ?
 		ORDER BY id ASC`, SessionID)
 	if err != nil {
 		return nil, fmt.Errorf("查询历史消息失败: %w", err)
@@ -328,8 +382,8 @@ func SaveMessagesBatch(msgs []RawMessage) error {
 	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(`
-		INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls)
-		VALUES (?, ?, ?, ?, ?)`)
+		INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, model_id)
+		VALUES (?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return fmt.Errorf("准备语句失败: %w", err)
 	}
@@ -345,7 +399,7 @@ func SaveMessagesBatch(msgs []RawMessage) error {
 			toolCalls.String = string(m.ToolCalls)
 			toolCalls.Valid = true
 		}
-		if _, err := stmt.Exec(SessionID, m.Role, m.Content, toolCallID, toolCalls); err != nil {
+		if _, err := stmt.Exec(GetSessionID(), m.Role, m.Content, toolCallID, toolCalls, ModelID); err != nil {
 			return fmt.Errorf("插入消息失败: %w", err)
 		}
 	}
