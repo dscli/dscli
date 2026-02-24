@@ -109,13 +109,14 @@ func createTables(db *sql.DB) error {
 		}
 	}
 
-	migrateQueries := []string{
+	queries = []string{
 		// 增加model_id到消息表（兼容已存在的数据库）
 		`ALTER TABLE messages ADD COLUMN model_id INTEGER NOT NULL DEFAULT 0`,
+		// 增加reasoning_content到消息表（兼容已存在的数据库）
 		`ALTER TABLE messages ADD COLUMN reasoning_content TEXT`,
 	}
 
-	for _, query := range migrateQueries {
+	for _, query := range queries {
 		if _, err := db.Exec(query); err == nil {
 			log.Printf("migrate %s done", query)
 		}
