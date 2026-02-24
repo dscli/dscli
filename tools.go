@@ -126,6 +126,10 @@ func getToolParameters(toolName string) map[string]interface{} {
 					"type":        "string",
 					"description": "提交信息",
 				},
+				"options": map[string]interface{}{
+					"type":        "string",
+					"description": "其他git commit选项，例如：-a（提交所有更改）、--amend（修改上次提交）、--no-edit（使用原提交信息）、--allow-empty（允许空提交）。多个选项用空格分隔，例如：-a --amend --no-edit",
+				},
 			},
 			"required":             []string{"message"},
 			"additionalProperties": false,
@@ -167,8 +171,8 @@ func getToolParameters(toolName string) map[string]interface{} {
 
 	case "git_push":
 		return map[string]interface{}{
-			"type":                 "object",
-			"properties":           map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
 				"options": map[string]interface{}{
 					"type":        "string",
 					"description": "选项，例如：--force-with-lease，多个选项用空格分隔，例如：origin main --force，可为空",
@@ -423,15 +427,27 @@ func handleGitAdd(argsRaw json.RawMessage) (string, error) {
 func handleGitCommit(argsRaw json.RawMessage) (string, error) {
 	var args struct {
 		Message string `json:"message"`
+		Options string `json:"options,omitempty"`
 	}
 	if err := json.Unmarshal(argsRaw, &args); err != nil {
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
-	out, err := gitCommand("commit", "-m", args.Message)
-	if err != nil {
-		return "", err
+	options := strings.TrimSpace(args.Options)
+	
+	// 更健壮的-m参数检查
+	// 检查 -m、-m[空格]、--message 等变体
+	optionWords := strings.Fields(options)
+	for _, word := range optionWords {
+		if word == "-m" || word == "--message" || strings.HasPrefix(word, "-m") {
+			return "", fmt.Errorf("message参数已通过message字段提供，不要在options中包含-m或--message")
+		}
 	}
-	return out, nil
+	
+	gitArgs := []string{"commit", "-m", args.Message}
+	if options != "" {
+		gitArgs = append(gitArgs, strings.Fields(options)...)
+	}
+	return gitCommand(gitArgs...)
 }
 
 // handleGitLog git日志
@@ -487,9 +503,12 @@ func handleGitStatus(argsRaw json.RawMessage) (string, error) {
 // handleGitPush git push [options...]
 func handleGitPush(argsRaw json.RawMessage) (string, error) {
 	var args struct {
-		Options string `json:"options"`
+		Options string `json:"options,omitempty"`
 	}
-	_ = json.Unmarshal(argsRaw, &args) // 忽略错误，options 可选
+	// 直接解析，json.Unmarshal能处理空JSON
+	if err := json.Unmarshal(argsRaw, &args); err != nil {
+		return "", fmt.Errorf("参数解析失败: %w", err)
+	}
 	gitArgs := []string{"push"}
 	if args.Options != "" {
 		gitArgs = append(gitArgs, strings.Fields(args.Options)...)
