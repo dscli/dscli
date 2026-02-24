@@ -17,75 +17,6 @@ var (
 	SessionID = int64(0)
 )
 
-// RawMessage 表示一条对话消息，支持工具调用
-type RawMessage struct {
-	Role       string
-	Content    string
-	ToolCallID string          // 仅当 role="tool" 时有效
-	ToolCalls  json.RawMessage // 仅当 role="assistant" 且包含工具调用时有效，存储 ToolCall 数组的 JSON
-	CreatedAt  time.Time
-}
-
-// Session 表示一个对话会话
-type Session struct {
-	ID          int64
-	ProjectPath string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-}
-
-// Skill 表示一个技能
-type Skill struct {
-	ID          int64
-	Name        string
-	Description string
-	Content     string
-	Category    string
-	Priority    int
-	IsGlobal    bool
-	UsageCount  int
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-}
-
-// ProjectSkill 表示项目与技能的关联
-
-// ToolDesc 表示一个工具
-type ToolDesc struct {
-	ID          int64
-	Name        string
-	Description string
-	Category    string
-	UsageCount  int
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-}
-
-// ToolUsage 表示工具使用记录
-type ToolUsage struct {
-	ID          int64
-	ProjectPath string
-	ToolID      int64
-	UsedAt      time.Time
-	Success     bool
-	ErrorMsg    string
-}
-
-type ToolUsageStat struct {
-	Name        string
-	UsageCount  int
-	SuccessRate float64
-	LastUsed    time.Time
-}
-
-type ProjectSkill struct {
-	ProjectPath string
-	SkillID     int64
-	IsEnabled   bool
-	EnabledAt   time.Time
-	LastUsed    sql.NullTime
-}
-
 // createTables 创建所有需要的表
 func createTables(db *sql.DB) error {
 	queries := []string{
@@ -237,7 +168,7 @@ func CreateOrGetSessionID() (sessionID int64, err error) {
 	return
 }
 
-func LoadLastOne() (*RawMessage, error) {
+func LoadLastOne() (*Message, error) {
 	db, err := OpenDB()
 	if err != nil {
 		return nil, err
@@ -253,7 +184,7 @@ func LoadLastOne() (*RawMessage, error) {
 		return nil, fmt.Errorf("failed to load last: %w", err)
 	}
 	defer rows.Close()
-	var m RawMessage
+	var m Message
 	if rows.Next() {
 		var toolCallID sql.NullString
 		var toolCalls sql.NullString
@@ -264,7 +195,11 @@ func LoadLastOne() (*RawMessage, error) {
 			m.ToolCallID = toolCallID.String
 		}
 		if toolCalls.Valid {
-			m.ToolCalls = json.RawMessage(toolCalls.String)
+			data := json.RawMessage(toolCalls.String)
+			err = json.Unmarshal(data, &m.ToolCalls)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -276,7 +211,7 @@ func LoadLastOne() (*RawMessage, error) {
 }
 
 // LoadHistory 加载指定会话的所有历史消息，按时间升序返回
-func LoadHistory() ([]RawMessage, error) {
+func LoadHistory() ([]Message, error) {
 	db, err := OpenDB()
 	if err != nil {
 		return nil, err
@@ -292,9 +227,9 @@ func LoadHistory() ([]RawMessage, error) {
 	}
 	defer rows.Close()
 
-	var messages []RawMessage
+	var messages []Message
 	for rows.Next() {
-		var m RawMessage
+		var m Message
 		var toolCallID sql.NullString
 		var toolCalls sql.NullString
 		if err := rows.Scan(&m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt); err != nil {
@@ -304,7 +239,11 @@ func LoadHistory() ([]RawMessage, error) {
 			m.ToolCallID = toolCallID.String
 		}
 		if toolCalls.Valid {
-			m.ToolCalls = json.RawMessage(toolCalls.String)
+			data := json.RawMessage(toolCalls.String)
+			err = json.Unmarshal(data, &m.ToolCalls)
+			if err != nil {
+				return nil, err
+			}
 		}
 		messages = append(messages, m)
 	}
@@ -328,7 +267,7 @@ func LoadHistory() ([]RawMessage, error) {
 }
 
 // SaveMessagesBatch 批量保存消息（事务）
-func SaveMessagesBatch(msgs []RawMessage) error {
+func SaveMessagesBatch(msgs []Message) error {
 	db, err := OpenDB()
 	if err != nil {
 		return err
@@ -356,7 +295,12 @@ func SaveMessagesBatch(msgs []RawMessage) error {
 			toolCallID.Valid = true
 		}
 		if len(m.ToolCalls) > 0 {
-			toolCalls.String = string(m.ToolCalls)
+			var data json.RawMessage
+			data, err = json.Marshal(&m.ToolCalls)
+			if err != nil {
+				return err
+			}
+			toolCalls.String = string(data)
 			toolCalls.Valid = true
 		}
 		if _, err := stmt.Exec(SessionID, m.Role, m.Content, toolCallID, toolCalls, ModelID); err != nil {

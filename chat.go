@@ -2,11 +2,11 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -68,50 +68,16 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		return ChatMessage(Message{Role: "user", Content: userMsg})
 	}
 
-	dm, err := LoadLastOne()
+	am, err := LoadLastOne()
 	if err != nil {
 		return
 	}
 
-	am := ToApiMessage(dm)
 	if am.Role != "assistant" || len(am.ToolCalls) == 0 {
 		fmt.Println("天下本无事")
 		return
 	}
 	return HandleToolCalls(am)
-}
-
-func ToApiMessage(dm *RawMessage) (am *Message) {
-	role := dm.Role
-	am = &Message{
-		Role:       role,
-		Content:    dm.Content,
-		ToolCallID: dm.ToolCallID,
-	}
-	if len(dm.ToolCalls) != 0 {
-		err := json.Unmarshal(dm.ToolCalls, &am.ToolCalls)
-		if err != nil {
-			return nil
-		}
-	}
-	return
-}
-
-func ToDBMessage(apim Message) (dbm RawMessage) {
-	role := apim.Role
-	dbm.Content = apim.Content
-	dbm.Role = apim.Role
-	if role == "tool" {
-		dbm.ToolCallID = apim.ToolCallID
-	}
-	if role == "assistant" && len(apim.ToolCalls) > 0 {
-		data, err := json.Marshal(apim.ToolCalls)
-		if err != nil {
-			return
-		}
-		dbm.ToolCalls = data
-	}
-	return
 }
 
 func ChatMessage(inputs ...Message) (err error) {
@@ -130,35 +96,16 @@ func ChatMessage(inputs ...Message) (err error) {
 	// 3. 构造 messages 切片（包含历史）
 	messages := make([]Message, 0, len(history)+2)
 	messages = append(messages, systemMessage)
-	for _, m := range history {
-		apiMsg := Message{
-			Role:    m.Role,
-			Content: m.Content,
-		}
-		if m.ToolCallID != "" {
-			apiMsg.ToolCallID = m.ToolCallID
-		}
-		if len(m.ToolCalls) > 0 {
-			var toolCalls []ToolCall
-			err = json.Unmarshal(m.ToolCalls, &toolCalls)
-			if err != nil {
-				err = fmt.Errorf("反序列化ToolCalls失败: %w", err)
-				return
-			}
-			apiMsg.ToolCalls = toolCalls
-		}
-		messages = append(messages, apiMsg)
-	}
+	messages = append(messages, history...)
 	// 4. 添加当前用户消息
 	messages = append(messages, inputs...)
 
 	// 5. 记录本轮新增的消息（用于存储）
-	var dbmessages []RawMessage
-	for _, m := range inputs {
-		dbmessages = append(dbmessages, ToDBMessage(m))
-	}
+	news := make([]Message, 0, len(inputs)+1)
+	news = append(news, inputs...)
 
 	var resp *ChatResponse
+	startTime := time.Now()
 	resp, err = client.Chat(chatModel, messages, GetAllTools())
 	if err != nil {
 		err = fmt.Errorf("聊天请求失败: %w", err)
@@ -173,17 +120,18 @@ func ChatMessage(inputs ...Message) (err error) {
 	assistantMsg := resp.Choices[0].Message
 
 	// 转换并保存到 newMessages（用于后续存储）
-	dbAssistantMsg := ToDBMessage(assistantMsg)
-	dbmessages = append(dbmessages, dbAssistantMsg)
-	if len(dbmessages) > 0 {
-		if err = SaveMessagesBatch(dbmessages); err != nil {
+	news = append(news, assistantMsg)
+	if len(news) > 0 {
+		if err = SaveMessagesBatch(news); err != nil {
 			err = fmt.Errorf("保存消息失败: %w", err)
 			return
 		}
 	}
 
 	if ModelID == DEEPSEEK_REASONER && assistantMsg.ReasoningContent != "" {
+		fmt.Printf("已思考(用时%v)\n\n", time.Since(startTime))
 		fmt.Println(assistantMsg.ReasoningContent)
+		fmt.Println("\n------")
 	}
 
 	fmt.Println(assistantMsg.Content)

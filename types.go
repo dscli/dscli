@@ -1,5 +1,10 @@
 package main
 
+import (
+	"database/sql"
+	"time"
+)
+
 // Tool 定义可调用的工具
 type Tool struct {
 	Type     string       `json:"type"`
@@ -27,6 +32,66 @@ type Message struct {
 	Content          string     `json:"content"`                // 始终输出，即使为空字符串
 	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`   // 仅当有工具调用时输出
 	ToolCallID       string     `json:"tool_call_id,omitempty"` // 仅当 role="tool" 时输出
+	CreatedAt        time.Time  `json:"-"`
+}
+
+// Session 表示一个对话会话
+type Session struct {
+	ID          int64
+	ProjectPath string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// Skill 表示一个技能
+type Skill struct {
+	ID          int64
+	Name        string
+	Description string
+	Content     string
+	Category    string
+	Priority    int
+	IsGlobal    bool
+	UsageCount  int
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// ToolDesc 表示一个工具
+type ToolDesc struct {
+	ID          int64
+	Name        string
+	Description string
+	Category    string
+	UsageCount  int
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// ToolUsage 表示工具使用记录
+type ToolUsage struct {
+	ID          int64
+	ProjectPath string
+	ToolID      int64
+	UsedAt      time.Time
+	Success     bool
+	ErrorMsg    string
+}
+
+type ToolUsageStat struct {
+	Name        string
+	UsageCount  int
+	SuccessRate float64
+	LastUsed    time.Time
+}
+
+// ProjectSkill 表示项目与技能的关联
+type ProjectSkill struct {
+	ProjectPath string
+	SkillID     int64
+	IsEnabled   bool
+	EnabledAt   time.Time
+	LastUsed    sql.NullTime
 }
 
 type ToolCall struct {
