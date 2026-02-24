@@ -5,13 +5,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 )
 
-var chatModel string
+const (
+	DEEPSEEK_CHAT     = 0
+	DEEPSEEK_REASONER = 1
+)
+
+var (
+	ModelIDFunc func() int
+	chatModel   string
+)
 
 var chatCmd = &cobra.Command{
 	Use:   "chat",
@@ -86,18 +95,19 @@ func ToDBMessage(apim Message) (dbm RawMessage) {
 }
 
 func ChatMessage(inputs ...Message) (err error) {
-	// 5. 加载历史消息
+	// 1. 加载历史消息
 	history, err := LoadHistory()
 	if err != nil {
 		err = fmt.Errorf("加载历史消息失败: %w", err)
 		return
 	}
 
+	// 2. 系统prompt
 	systemMessage := Message{
 		Role:    "system",
-		Content: SystemPrompt,
+		Content: GetSystemPrompt(),
 	}
-	// 6. 构造 messages 切片（包含历史）
+	// 3. 构造 messages 切片（包含历史）
 	messages := make([]Message, 0, len(history)+2)
 	messages = append(messages, systemMessage)
 	for _, m := range history {
@@ -119,10 +129,10 @@ func ChatMessage(inputs ...Message) (err error) {
 		}
 		messages = append(messages, apiMsg)
 	}
-	// 添加当前用户消息
+	// 4. 添加当前用户消息
 	messages = append(messages, inputs...)
 
-	// 7. 记录本轮新增的消息（用于存储）
+	// 5. 记录本轮新增的消息（用于存储）
 	var dbmessages []RawMessage
 	for _, m := range inputs {
 		dbmessages = append(dbmessages, ToDBMessage(m))
@@ -152,7 +162,14 @@ func ChatMessage(inputs ...Message) (err error) {
 		}
 	}
 
+	if ModelIDFunc() == DEEPSEEK_REASONER {
+		fmt.Println(assistantMsg.ReasoningContent)
+	}
+
 	fmt.Println(assistantMsg.Content)
+	if ModelIDFunc() == DEEPSEEK_REASONER {
+		return nil
+	}
 	return HandleToolCalls(&assistantMsg)
 }
 
@@ -162,4 +179,23 @@ func init() {
 
 	chatCmd.Flags().StringVar(&chatModel, "model", "deepseek-chat", "使用的模型名称")
 	rootCmd.AddCommand(chatCmd)
+
+	// 设置ModelID
+	var modelID int
+	switch chatModel {
+	case "deepseek-chat":
+		modelID = DEEPSEEK_CHAT
+	case "deepseek-reasoner":
+		modelID = DEEPSEEK_REASONER
+	default:
+		log.Fatalf("do not support %s", chatModel)
+	}
+
+	// 设置全局ModelID
+	ModelID = modelID
+
+	// ModelID函数返回当前模型ID
+	ModelIDFunc = func() int {
+		return modelID
+	}
 }

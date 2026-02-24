@@ -22,10 +22,11 @@ type ChatRequest struct {
 
 // Message 扩展，支持工具调用（注意：Content 字段不再使用 omitempty）
 type Message struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content"`                // 始终输出，即使为空字符串
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`   // 仅当有工具调用时输出
-	ToolCallID string     `json:"tool_call_id,omitempty"` // 仅当 role="tool" 时输出
+	Role             string     `json:"role"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"`
+	Content          string     `json:"content"`                // 始终输出，即使为空字符串
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`   // 仅当有工具调用时输出
+	ToolCallID       string     `json:"tool_call_id,omitempty"` // 仅当 role="tool" 时输出
 }
 
 type ToolCall struct {

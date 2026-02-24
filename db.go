@@ -12,6 +12,7 @@ import (
 )
 
 var (
+	ModelID   int
 	DBPath    = filepath.Join(ConfigDir, "sqlite.db")
 	SessionID = func() (sessionID int64) {
 		db, err := OpenDB()
