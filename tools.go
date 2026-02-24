@@ -178,48 +178,6 @@ func getToolParameters(toolName string) map[string]interface{} {
 			"additionalProperties": false,
 		}
 
-	case "manage_skills":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"action": map[string]interface{}{
-					"type":        "string",
-					"description": "操作类型：list, enable, disable, create, delete, search",
-					"enum":        []string{"list", "enable", "disable", "create", "delete", "search"},
-				},
-				"skill_name": map[string]interface{}{
-					"type":        "string",
-					"description": "技能名称",
-				},
-				"skill_id": map[string]interface{}{
-					"type":        "integer",
-					"description": "技能ID",
-				},
-				"category": map[string]interface{}{
-					"type":        "string",
-					"description": "技能分类过滤",
-				},
-				"search_term": map[string]interface{}{
-					"type":        "string",
-					"description": "搜索关键词",
-				},
-				"description": map[string]interface{}{
-					"type":        "string",
-					"description": "技能描述",
-				},
-				"content": map[string]interface{}{
-					"type":        "string",
-					"description": "技能内容/规则",
-				},
-				"priority": map[string]interface{}{
-					"type":        "integer",
-					"description": "技能优先级",
-				},
-			},
-			"required":             []string{"action"},
-			"additionalProperties": false,
-		}
-
 	case "sqlite":
 		return map[string]interface{}{
 			"type": "object",
@@ -631,12 +589,6 @@ func runBash(script string) (result string, err error) {
 	return
 }
 
-func handleManageSkills(argsRaw json.RawMessage) (string, error) {
-	log.Printf("manage_skills called for project: %s", ProjectRoot)
-	log.Printf("args: %s", string(argsRaw))
-	return "Skills management is under development", nil
-}
-
 // InitTools 初始化工具系统
 
 // handleSqlite 执行SQLite数据库查询和操作
@@ -725,14 +677,6 @@ func InitTools() {
 		Description: "在项目根目录执行脚本。支持shebang指定解释器（如bash、python等）。脚本通过标准输入传递，避免命令行长度限制。\n\n输出格式：\n- 成功时：返回包含执行结果和执行统计的格式化文本\n- 失败时：返回包含错误信息、输出内容和执行统计的格式化文本\n\n示例：\n1. Bash脚本：echo \"Hello\"\n2. Python脚本：#!/usr/bin/env python\nprint(\"Hello\")\n3. 文件操作：cat file.txt\n4. Git操作：git status\n\n注意：谨慎使用，避免破坏性操作。确保脚本在项目目录内执行。",
 		Category:    "system",
 		Handler:     handleExecuteScript,
-	})
-
-	// 注册技能管理工具
-	RegisterTool(ToolDef{
-		Name:        "manage_skills",
-		Description: "管理项目的技能（最佳实践规则）",
-		Category:    "skills",
-		Handler:     handleManageSkills,
 	})
 
 	// 注册SQLite数据库工具
