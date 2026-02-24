@@ -36,10 +36,11 @@ func RegisterTool(tool ToolDef) {
 
 // GetAllTools 获取所有工具定义（用于API调用）
 func GetAllTools() []Tool {
-	var tools []Tool
-	if ModelIDFunc() == DEEPSEEK_REASONER {
-		return tools
+	if ModelID == DEEPSEEK_REASONER {
+		return nil
 	}
+
+	var tools []Tool
 	for _, tool := range toolRegistry {
 		tools = append(tools, Tool{
 			Type: "function",

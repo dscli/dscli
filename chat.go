@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"strings"
 
@@ -13,13 +12,13 @@ import (
 )
 
 const (
-	DEEPSEEK_CHAT     = 0
-	DEEPSEEK_REASONER = 1
+	DEEPSEEK_CHAT     = int64(0)
+	DEEPSEEK_REASONER = int64(1)
 )
 
 var (
-	ModelIDFunc func() int
-	chatModel   string
+	chatModel string
+	reasoner  bool
 )
 
 var chatCmd = &cobra.Command{
@@ -33,7 +32,27 @@ var chatCmd = &cobra.Command{
   echo "帮我创建一个 main.go 文件" | dscli chat
   echo "把 README.md 添加到 Git 并提交" | dscli chat
   cat prompt.txt | dscli chat --model deepseek-chat`,
-	RunE: ChatRunE,
+	PreRunE: ChatPreRunE,
+	RunE:    ChatRunE,
+}
+
+func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
+	// 设置ModelID
+	var modelID int64
+	switch chatModel {
+	case "deepseek-chat":
+		modelID = DEEPSEEK_CHAT
+	case "deepseek-reasoner":
+		modelID = DEEPSEEK_REASONER
+	default:
+		err = fmt.Errorf("do not support %s", chatModel)
+		return
+	}
+
+	// 设置全局ModelID
+	ModelID = modelID
+
+	return
 }
 
 func ChatRunE(cmd *cobra.Command, args []string) (err error) {
@@ -162,40 +181,18 @@ func ChatMessage(inputs ...Message) (err error) {
 		}
 	}
 
-	if ModelIDFunc() == DEEPSEEK_REASONER {
+	if ModelID == DEEPSEEK_REASONER && assistantMsg.ReasoningContent != "" {
 		fmt.Println(assistantMsg.ReasoningContent)
 	}
 
 	fmt.Println(assistantMsg.Content)
-	if ModelIDFunc() == DEEPSEEK_REASONER {
-		return nil
-	}
 	return HandleToolCalls(&assistantMsg)
 }
 
 func init() {
-	// 初始化工具系统
-	InitTools()
-
 	chatCmd.Flags().StringVar(&chatModel, "model", "deepseek-chat", "使用的模型名称")
 	rootCmd.AddCommand(chatCmd)
 
-	// 设置ModelID
-	var modelID int
-	switch chatModel {
-	case "deepseek-chat":
-		modelID = DEEPSEEK_CHAT
-	case "deepseek-reasoner":
-		modelID = DEEPSEEK_REASONER
-	default:
-		log.Fatalf("do not support %s", chatModel)
-	}
-
-	// 设置全局ModelID
-	ModelID = modelID
-
-	// ModelID函数返回当前模型ID
-	ModelIDFunc = func() int {
-		return modelID
-	}
+	// 初始化工具系统
+	InitTools()
 }

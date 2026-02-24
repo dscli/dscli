@@ -12,48 +12,9 @@ import (
 )
 
 var (
-	ModelID   int
+	ModelID   = int64(0)
 	DBPath    = filepath.Join(ConfigDir, "sqlite.db")
-	SessionID = func() (sessionID int64) {
-		db, err := OpenDB()
-		if err != nil {
-			log.Fatalln(err)
-			return
-		}
-		defer db.Close()
-		err = createTables(db)
-		if err != nil {
-			log.Fatalln(err)
-			return
-		}
-		var id int64
-		err = db.QueryRow("SELECT id FROM sessions WHERE project_path = ?",
-			ProjectRoot).Scan(&id)
-		if err != nil {
-			if err != sql.ErrNoRows {
-				log.Fatalln(err)
-				return
-			}
-		} else if id > 0 {
-			sessionID = id
-			return
-		}
-
-		result, err := db.Exec("INSERT INTO sessions (project_path) VALUES (?)",
-			ProjectRoot)
-		if err != nil {
-			log.Fatalln(err)
-			return
-		}
-
-		id, err = result.LastInsertId()
-		if err != nil {
-			log.Fatalln(err)
-			return
-		}
-		sessionID = id
-		return
-	}()
+	SessionID = GetSessionID()
 )
 
 // RawMessage 表示一条对话消息，支持工具调用
@@ -133,7 +94,6 @@ func createTables(db *sql.DB) error {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			project_path TEXT UNIQUE NOT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            model_id INTEGER NOT NULL DEFAULT 0,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 
@@ -151,8 +111,6 @@ func createTables(db *sql.DB) error {
 		)`,
 
 		// 技能表
-		// 增加model_id到消息表（兼容已存在的数据库）
-		`ALTER TABLE messages ADD COLUMN model_id INTEGER NOT NULL DEFAULT 0`,
 		`CREATE TABLE IF NOT EXISTS skills (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL UNIQUE,
@@ -191,7 +149,6 @@ func createTables(db *sql.DB) error {
 			category TEXT,
 			usage_count INTEGER DEFAULT 0,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            model_id INTEGER NOT NULL DEFAULT 0,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 
@@ -218,6 +175,18 @@ func createTables(db *sql.DB) error {
 			return fmt.Errorf("执行SQL失败: %v\nSQL: %s", err, query)
 		}
 	}
+
+	migrateQueries := []string{
+		// 增加model_id到消息表（兼容已存在的数据库）
+		`ALTER TABLE messages ADD COLUMN model_id INTEGER NOT NULL DEFAULT 0`,
+	}
+
+	for _, query := range migrateQueries {
+		if _, err := db.Exec(query); err == nil {
+			log.Printf("migrate %s done", query)
+		}
+	}
+
 	return nil
 }
 
@@ -229,26 +198,21 @@ func OpenDB(elem ...string) (db *sql.DB, err error) {
 	return sql.Open("sqlite", dbPath)
 }
 
-
 // GetSessionID 获取或创建会话ID
-func GetSessionID() int64 {
-	if SessionID > 0 {
-		return SessionID
-	}
-	
+func GetSessionID() (sessionID int64) {
 	db, err := OpenDB()
 	if err != nil {
 		log.Fatalln(err)
 		return 0
 	}
 	defer db.Close()
-	
+
 	err = createTables(db)
 	if err != nil {
 		log.Fatalln(err)
 		return 0
 	}
-	
+
 	var id int64
 	err = db.QueryRow("SELECT id FROM sessions WHERE project_path = ?",
 		ProjectRoot).Scan(&id)
@@ -258,8 +222,8 @@ func GetSessionID() int64 {
 			return 0
 		}
 	} else if id > 0 {
-		SessionID = id
-		return SessionID
+		sessionID = id
+		return sessionID
 	}
 
 	result, err := db.Exec("INSERT INTO sessions (project_path) VALUES (?)",
@@ -274,9 +238,10 @@ func GetSessionID() int64 {
 		log.Fatalln(err)
 		return 0
 	}
-	SessionID = id
-	return SessionID
+	sessionID = id
+	return sessionID
 }
+
 func LoadLastOne() (*RawMessage, error) {
 	db, err := OpenDB()
 	if err != nil {
@@ -288,7 +253,7 @@ func LoadLastOne() (*RawMessage, error) {
         FROM messages
         WHERE session_id = ? AND model_id = ?
         ORDER BY id DESC 
-        LIMIT 1`, SessionID)
+        LIMIT 1`, SessionID, ModelID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load last: %w", err)
 	}
@@ -326,7 +291,7 @@ func LoadHistory() ([]RawMessage, error) {
 		SELECT role, content, tool_call_id, tool_calls, created_at
 		FROM messages
 		WHERE session_id = ? AND model_id = ?
-		ORDER BY id ASC`, SessionID)
+		ORDER BY id ASC`, SessionID, ModelID)
 	if err != nil {
 		return nil, fmt.Errorf("查询历史消息失败: %w", err)
 	}
@@ -399,7 +364,7 @@ func SaveMessagesBatch(msgs []RawMessage) error {
 			toolCalls.String = string(m.ToolCalls)
 			toolCalls.Valid = true
 		}
-		if _, err := stmt.Exec(GetSessionID(), m.Role, m.Content, toolCallID, toolCalls, ModelID); err != nil {
+		if _, err := stmt.Exec(SessionID, m.Role, m.Content, toolCallID, toolCalls, ModelID); err != nil {
 			return fmt.Errorf("插入消息失败: %w", err)
 		}
 	}

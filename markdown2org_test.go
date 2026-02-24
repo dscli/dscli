@@ -334,6 +334,7 @@ func TestMarkdownToOrgConverter_UnderscoreInText(t *testing.T) {
 		t.Errorf("Underscore in text: ConvertLine() = %q, want %q", result, expected)
 	}
 }
+
 func BenchmarkMarkdownToOrgConverter_ConvertLine(b *testing.B) {
 	converter := NewMarkdownToOrgConverter()
 	lines := []string{

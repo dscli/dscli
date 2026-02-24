@@ -37,7 +37,7 @@ var reasonerSystemPrompt = `你是编程领域一个深入思考者。
 `
 
 func GetSystemPrompt() (prompt string) {
-	id := ModelIDFunc()
+	id := ModelID
 	switch id {
 	case DEEPSEEK_CHAT:
 		prompt = chatSystemPrompt
