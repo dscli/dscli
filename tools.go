@@ -165,7 +165,26 @@ func getToolParameters(toolName string) map[string]interface{} {
 			"additionalProperties": false,
 		}
 
+	case "git_push_force":
+		return map[string]interface{}{
+			"type":                 "object",
+			"properties":           map[string]interface{}{},
+			"required":             []string{},
+			"additionalProperties": false,
+		}
+
 	case "execute_script":
+		return map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"script": map[string]interface{}{
+					"type":        "string",
+					"description": "要执行的脚本内容。支持shebang指定解释器（如#!/usr/bin/env bash, #!/usr/bin/env python）。脚本执行结果会以格式化文本返回，包含执行统计信息。示例：\n1. Bash脚本：echo \"Hello\"\n2. Python脚本：#!/usr/bin/env python\nprint(\"Hello\")\n3. 文件操作：cat file.txt\n4. Git操作：git status",
+				},
+			},
+			"required":             []string{"script"},
+			"additionalProperties": false,
+		}
 		return map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -467,6 +486,15 @@ func handleGitStatus(argsRaw json.RawMessage) (string, error) {
 	}
 	if out == "" {
 		out = "工作区干净，无变更"
+	}
+	return out, nil
+}
+
+// handleGitPushForce git push --force
+func handleGitPushForce(argsRaw json.RawMessage)(string, error){
+	out, err := gitCommand("push", "--force")
+	if err != nil {
+		return "", err
 	}
 	return out, nil
 }
