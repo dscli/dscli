@@ -18,7 +18,6 @@ const (
 
 var (
 	chatModel string
-	reasoner  bool
 )
 
 var chatCmd = &cobra.Command{
