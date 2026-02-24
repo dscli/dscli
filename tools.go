@@ -491,7 +491,8 @@ func handleGitDiff(argsRaw json.RawMessage) (string, error) {
 	_ = json.Unmarshal(argsRaw, &args) // 忽略错误，path 可选
 	gitArgs := []string{"diff"}
 	if args.Path != "" {
-		gitArgs = append(gitArgs, "--", args.Path)
+		gitArgs = append(gitArgs, "HEAD", "--")
+		gitArgs = append(gitArgs, strings.Fields(args.Path)...)
 	}
 	out, err := gitCommand(gitArgs...)
 	if err != nil {

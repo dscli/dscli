@@ -14,7 +14,7 @@ import (
 var (
 	ModelID   = int64(0)
 	DBPath    = filepath.Join(ConfigDir, "sqlite.db")
-	SessionID = GetSessionID()
+	SessionID = int64(0)
 )
 
 // RawMessage 表示一条对话消息，支持工具调用
@@ -198,19 +198,17 @@ func OpenDB(elem ...string) (db *sql.DB, err error) {
 	return sql.Open("sqlite", dbPath)
 }
 
-// GetSessionID 获取或创建会话ID
-func GetSessionID() (sessionID int64) {
+// CreateOrGetSessionID 获取或创建会话ID
+func CreateOrGetSessionID() (sessionID int64, err error) {
 	db, err := OpenDB()
 	if err != nil {
-		log.Fatalln(err)
-		return 0
+		return
 	}
 	defer db.Close()
 
 	err = createTables(db)
 	if err != nil {
-		log.Fatalln(err)
-		return 0
+		return
 	}
 
 	var id int64
@@ -218,28 +216,25 @@ func GetSessionID() (sessionID int64) {
 		ProjectRoot).Scan(&id)
 	if err != nil {
 		if err != sql.ErrNoRows {
-			log.Fatalln(err)
-			return 0
+			return
 		}
 	} else if id > 0 {
 		sessionID = id
-		return sessionID
+		return
 	}
 
 	result, err := db.Exec("INSERT INTO sessions (project_path) VALUES (?)",
 		ProjectRoot)
 	if err != nil {
-		log.Fatalln(err)
-		return 0
+		return
 	}
 
 	id, err = result.LastInsertId()
 	if err != nil {
-		log.Fatalln(err)
-		return 0
+		return
 	}
 	sessionID = id
-	return sessionID
+	return
 }
 
 func LoadLastOne() (*RawMessage, error) {

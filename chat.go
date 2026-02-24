@@ -16,9 +16,7 @@ const (
 	DEEPSEEK_REASONER = int64(1)
 )
 
-var (
-	chatModel string
-)
+var chatModel string
 
 var chatCmd = &cobra.Command{
 	Use:   "chat",
@@ -50,7 +48,11 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 
 	// 设置全局ModelID
 	ModelID = modelID
-
+	// 设置全局SessionID
+	SessionID, err = CreateOrGetSessionID()
+	if err != nil {
+		return
+	}
 	return
 }
 
