@@ -285,26 +285,25 @@ func TestMarkdownToOrgConverter_BoldItalicOrder(t *testing.T) {
 	}
 }
 
-
 // TestMarkdownToOrgConverter_CodeBlockUnderscore 测试代码块中的下划线处理
 func TestMarkdownToOrgConverter_CodeBlockUnderscore(t *testing.T) {
 	converter := NewMarkdownToOrgConverter()
-	
+
 	// 测试1: Python代码块
 	input1 := "```python\ndef test_function():\n    my_variable = \"test\"\n    another_var = 123\n    print(my_variable)\n```\n"
-	
+
 	lines1 := strings.Split(input1, "\n")
 	var result1 strings.Builder
 	for _, line := range lines1 {
 		result1.WriteString(converter.ConvertLine(line + "\n"))
 	}
-	
+
 	// 检查是否包含零宽度空格
 	output1 := result1.String()
 	if !strings.Contains(output1, "\u200b") {
 		t.Error("Python代码块输出中应该包含零宽度空格")
 	}
-	
+
 	// 测试2: 普通文本中的下划线（不应该添加零宽度空格）
 	input2 := "This is normal_text with underscores.\n"
 	expected2 := "This is normal_text with underscores.\n"
@@ -312,7 +311,7 @@ func TestMarkdownToOrgConverter_CodeBlockUnderscore(t *testing.T) {
 	if result2 != expected2 {
 		t.Errorf("普通文本下划线处理错误: got %q, want %q", result2, expected2)
 	}
-	
+
 	// 测试3: 格式化文本中的下划线
 	input3 := "**bold_text** and `code_with_underscores`\n"
 	expected3 := "\u200b*bold_text*\u200b and \u200b=code_with_underscores=\u200b\n"
@@ -325,11 +324,11 @@ func TestMarkdownToOrgConverter_CodeBlockUnderscore(t *testing.T) {
 // TestMarkdownToOrgConverter_UnderscoreInText 测试普通文本中的下划线
 func TestMarkdownToOrgConverter_UnderscoreInText(t *testing.T) {
 	converter := NewMarkdownToOrgConverter()
-	
+
 	// 普通文本中的下划线应该保持不变
 	input := "This is normal_text with underscores_and_more.\n"
 	expected := "This is normal_text with underscores_and_more.\n"
-	
+
 	result := converter.ConvertLine(input)
 	if result != expected {
 		t.Errorf("Underscore in text: ConvertLine() = %q, want %q", result, expected)
