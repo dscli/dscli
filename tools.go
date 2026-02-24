@@ -52,7 +52,6 @@ func GetAllTools() []Tool {
 
 // getToolParameters 获取工具参数定义
 
-// getToolParameters 获取工具参数定义（strict模式）
 func getToolParameters(toolName string) map[string]interface{} {
 	switch toolName {
 	case "read_file":
@@ -523,8 +522,8 @@ func Shebang(script string) (name string, arg []string) {
 	return
 }
 
-// handleBash 执行Bash脚本（使用echo script | bash方式）
-func handleBash(argsRaw json.RawMessage) (out string, err error) {
+// handleExecuteScript 执行脚本（支持多种解释器，通过shebang指定）
+func handleExecuteScript(argsRaw json.RawMessage) (out string, err error) {
 	var args struct {
 		Script string `json:"script"`
 	}
@@ -715,12 +714,12 @@ func InitTools() {
 		Handler:     handleGitStatus,
 	})
 
-	// 注册Bash脚本工具
+	// 注册脚本执行工具
 	RegisterTool(ToolDef{
 		Name:        "execute_script",
 		Description: "在项目根目录执行脚本。支持shebang指定解释器（如bash、python等）。脚本通过标准输入传递，避免命令行长度限制。\n\n输出格式：\n- 成功时：返回包含执行结果和执行统计的格式化文本\n- 失败时：返回包含错误信息、输出内容和执行统计的格式化文本\n\n示例：\n1. Bash脚本：echo \"Hello\"\n2. Python脚本：#!/usr/bin/env python\nprint(\"Hello\")\n3. 文件操作：cat file.txt\n4. Git操作：git status\n\n注意：谨慎使用，避免破坏性操作。确保脚本在项目目录内执行。",
 		Category:    "system",
-		Handler:     handleBash,
+		Handler:     handleExecuteScript,
 	})
 
 	// 注册技能管理工具
