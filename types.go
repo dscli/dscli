@@ -2,19 +2,29 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"time"
 )
 
 // Tool 定义可调用的工具
 type Tool struct {
-	Type     string       `json:"type"`
-	Function ToolFunction `json:"function"`
+	Type     string   `json:"type"`
+	Function Function `json:"function"`
 }
 
-type ToolFunction struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Parameters  map[string]interface{} `json:"parameters"` // JSON Schema 对象
+// ToolDef 工具定义
+type ToolDef struct {
+	Name        string
+	Description string
+	Parameters  map[string]any
+	Category    string
+	Handler     func(args json.RawMessage) (string, error)
+}
+
+type Function struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Parameters  map[string]any `json:"parameters"` // JSON Schema 对象
 }
 
 // ChatRequest 扩展，支持 tools

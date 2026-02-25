@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"math/rand"
 	"os/exec"
 	"path"
@@ -14,20 +15,8 @@ import (
 	"time"
 )
 
-// ToolDef 工具定义
-type ToolDef struct {
-	Name        string
-	Description string
-	Category    string
-	Handler     func(args json.RawMessage) (string, error)
-}
-
 // toolRegistry 工具注册表
 var toolRegistry = map[string]ToolDef{}
-
-func init() {
-	rand.Seed(time.Now().Unix())
-}
 
 // RegisterTool 注册工具
 func RegisterTool(tool ToolDef) {
@@ -41,181 +30,17 @@ func GetAllTools() []Tool {
 	}
 
 	var tools []Tool
-	for _, tool := range toolRegistry {
+	for name, def := range toolRegistry {
 		tools = append(tools, Tool{
 			Type: "function",
-			Function: ToolFunction{
-				Name:        tool.Name,
-				Description: tool.Description,
-				Parameters:  getToolParameters(tool.Name),
+			Function: Function{
+				Name:        name,
+				Description: def.Description,
+				Parameters:  def.Parameters,
 			},
 		})
 	}
 	return tools
-}
-
-// getToolParameters 获取工具参数定义
-
-func getToolParameters(toolName string) map[string]interface{} {
-	switch toolName {
-	case "read_file":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"path": map[string]interface{}{
-					"type":        "string",
-					"description": "文件路径（相对于项目根目录），多个文件用空格分隔",
-				},
-			},
-			"required":             []string{"path"},
-			"additionalProperties": false,
-		}
-
-	case "write_file":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"path": map[string]interface{}{
-					"type":        "string",
-					"description": "文件路径（相对于项目根目录），多个文件用空格分隔",
-				},
-				"content": map[string]interface{}{
-					"type":        "string",
-					"description": "要写入的内容",
-				},
-			},
-			"required":             []string{"path", "content"},
-			"additionalProperties": false,
-		}
-
-	case "search_files":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"pattern": map[string]interface{}{
-					"type":        "string",
-					"description": "文件名模式，如 '*.go'，为空则匹配所有文件",
-				},
-				"content": map[string]interface{}{
-					"type":        "string",
-					"description": "要搜索的内容（如果提供则搜索文件内容）",
-				},
-			},
-			"required":             []string{},
-			"additionalProperties": false,
-		}
-
-	case "git_add":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"path": map[string]interface{}{
-					"type":        "string",
-					"description": "文件路径（相对于项目根目录），多个文件用空格分隔",
-				},
-			},
-			"required":             []string{"path"},
-			"additionalProperties": false,
-		}
-
-	case "git_commit":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"message": map[string]interface{}{
-					"type":        "string",
-					"description": "提交信息",
-				},
-				"options": map[string]interface{}{
-					"type":        "string",
-					"description": "其他git commit选项，例如：-a（提交所有更改）、--amend（修改上次提交）、--no-edit（使用原提交信息）、--allow-empty（允许空提交）。多个选项用空格分隔，例如：-a --amend --no-edit",
-				},
-			},
-			"required":             []string{"message"},
-			"additionalProperties": false,
-		}
-
-	case "git_log":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"max_count": map[string]interface{}{
-					"type":        "integer",
-					"description": "最大显示数量，默认10",
-				},
-			},
-			"required":             []string{},
-			"additionalProperties": false,
-		}
-
-	case "git_diff":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"path": map[string]interface{}{
-					"type":        "string",
-					"description": "文件路径（相对于项目根目录），多个文件用空格分隔",
-				},
-			},
-			"required":             []string{},
-			"additionalProperties": false,
-		}
-
-	case "git_status":
-		return map[string]interface{}{
-			"type":                 "object",
-			"properties":           map[string]interface{}{},
-			"required":             []string{},
-			"additionalProperties": false,
-		}
-
-	case "git_push":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"options": map[string]interface{}{
-					"type":        "string",
-					"description": "选项，例如：--force-with-lease，多个选项用空格分隔，例如：origin main --force，可为空",
-				},
-			},
-			"required":             []string{},
-			"additionalProperties": false,
-		}
-
-	case "execute_script":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"script": map[string]interface{}{
-					"type":        "string",
-					"description": "要执行的脚本内容。支持shebang指定解释器（如#!/usr/bin/env bash, #!/usr/bin/env python）。脚本执行结果会以格式化文本返回，包含执行统计信息。示例：\n1. Bash脚本：echo \"Hello\"\n2. Python脚本：#!/usr/bin/env python\nprint(\"Hello\")\n3. 文件操作：cat file.txt\n4. Git操作：git status",
-				},
-			},
-			"required":             []string{"script"},
-			"additionalProperties": false,
-		}
-
-	case "sqlite":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"script": map[string]interface{}{
-					"type":        "string",
-					"description": "SQL脚本内容。支持shebang指定sqlite3命令",
-				},
-			},
-			"required":             []string{"script"},
-			"additionalProperties": false,
-		}
-	default:
-		// 默认返回空参数定义
-		return map[string]interface{}{
-			"type":                 "object",
-			"properties":           map[string]interface{}{},
-			"required":             []string{},
-			"additionalProperties": false,
-		}
-	}
 }
 
 // HandleToolCall 处理工具调用（带统计）
@@ -225,9 +50,10 @@ func HandleToolCall(toolName string, args json.RawMessage) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("未知工具: %s", toolName)
 	}
-
+	fmt.Printf(" `%s` \n", toolName)
 	toolID, err := GetOrCreateTool(tool.Name, tool.Description, tool.Category)
 	if err != nil {
+		slog.Error(err.Error(), "name", tool.Name)
 		// 继续执行工具，但不记录统计
 		return tool.Handler(args)
 	}
@@ -334,12 +160,13 @@ func handleWriteFile(argsRaw json.RawMessage) (string, error) {
 	for strings.Contains(content, dsctmpeof) {
 		dsctmpeof = Shuffle(dsctmpeof)
 	}
-	script := fmt.Sprintf(`mkdir -p "%s"
-cat > %s <<'%s'
-%s
-%s
-echo 已成功写入文件: "%s"
-`, filepath.Dir(fullPath), fullPath, dsctmpeof, content, dsctmpeof, args.Path)
+	dir := filepath.Dir(fullPath)
+	script := `test -d "` + dir + `" || mkdir -p "` + dir + `"
+cat > ` + fullPath + ` <<'` + dsctmpeof + `'
+` + content + `
+` + dsctmpeof + `
+echo 已成功写入文件: "` + args.Path + `"
+`
 	return runBash(script)
 }
 
@@ -638,8 +465,6 @@ func runBash(script string) (result string, err error) {
 	return
 }
 
-// InitTools 初始化工具系统
-
 // handleSqlite 执行SQLite数据库查询和操作
 func handleSqlite(argsRaw json.RawMessage) (string, error) {
 	// 解析参数
@@ -661,85 +486,246 @@ func handleSqlite(argsRaw json.RawMessage) (string, error) {
 	return runBash(fullScript)
 }
 
-func InitTools() {
+func init() {
 	// 注册文件操作工具
 	RegisterTool(ToolDef{
 		Name:        "read_file",
 		Description: "读取项目内指定文件的内容",
-		Category:    "file_ops",
-		Handler:     handleReadFile,
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path": map[string]any{
+					"type":        "string",
+					"description": "文件路径，如main.go",
+				},
+			},
+			"required":             []string{"path"},
+			"additionalProperties": false,
+		},
+		Category: "file_ops",
+		Handler:  handleReadFile,
 	})
 
 	RegisterTool(ToolDef{
 		Name:        "write_file",
 		Description: "将内容写入文件（覆盖或新建）",
-		Category:    "file_ops",
-		Handler:     handleWriteFile,
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path": map[string]any{
+					"type":        "string",
+					"description": "文件路径，如main.go",
+				},
+				"content": map[string]any{
+					"type":        "string",
+					"description": "要写入的内容",
+				},
+			},
+			"required":             []string{"path", "content"},
+			"additionalProperties": false,
+		},
+		Category: "file_ops",
+		Handler:  handleWriteFile,
 	})
 
 	RegisterTool(ToolDef{
 		Name:        "search_files",
 		Description: "在项目中搜索文件（按文件名模式或文件内容）",
-		Category:    "file_ops",
-		Handler:     handleSearchFiles,
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"pattern": map[string]any{
+					"type":        "string",
+					"description": "文件名模式，如 '*.go'，为空则匹配所有文件",
+				},
+				"content": map[string]any{
+					"type":        "string",
+					"description": "要搜索的内容（如果提供则搜索文件内容）",
+				},
+			},
+			"required":             []string{},
+			"additionalProperties": false,
+		},
+		Category: "file_ops",
+		Handler:  handleSearchFiles,
 	})
 
 	// 注册Git操作工具
 	RegisterTool(ToolDef{
 		Name:        "git_add",
 		Description: "将文件添加到 Git 暂存区",
-		Category:    "git",
-		Handler:     handleGitAdd,
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path": map[string]any{
+					"type":        "string",
+					"description": "文件路径（相对于项目根目录），多个文件用空格分隔",
+				},
+			},
+			"required":             []string{"path"},
+			"additionalProperties": false,
+		},
+		Category: "git",
+		Handler:  handleGitAdd,
 	})
 
 	RegisterTool(ToolDef{
 		Name:        "git_commit",
 		Description: "提交暂存区更改",
-		Category:    "git",
-		Handler:     handleGitCommit,
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"message": map[string]any{
+					"type":        "string",
+					"description": "提交信息",
+				},
+				"options": map[string]any{
+					"type": "string",
+					"description": `其他git commit选项，例如：-a（提交所有更改）、
+--amend（修改上次提交）、--no-edit（使用原提交信息）、
+--allow-empty（允许空提交）。
+多个选项用空格分隔，例如：-a --amend --no-edit`,
+				},
+			},
+			"required":             []string{"message"},
+			"additionalProperties": false,
+		},
+		Category: "git",
+		Handler:  handleGitCommit,
 	})
 
 	RegisterTool(ToolDef{
 		Name:        "git_log",
 		Description: "查看提交历史",
-		Category:    "git",
-		Handler:     handleGitLog,
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"max_count": map[string]any{
+					"type":        "integer",
+					"description": "最大显示数量，默认10",
+				},
+			},
+			"required":             []string{},
+			"additionalProperties": false,
+		},
+		Category: "git",
+		Handler:  handleGitLog,
 	})
 
 	RegisterTool(ToolDef{
 		Name:        "git_diff",
 		Description: "查看文件或暂存区的差异",
-		Category:    "git",
-		Handler:     handleGitDiff,
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path": map[string]any{
+					"type":        "string",
+					"description": "文件路径（相对于项目根目录），多个文件用空格分隔",
+				},
+			},
+			"required":             []string{},
+			"additionalProperties": false,
+		},
+		Category: "git",
+		Handler:  handleGitDiff,
 	})
 
 	RegisterTool(ToolDef{
 		Name:        "git_status",
 		Description: "查看 Git 仓库状态",
-		Category:    "git",
-		Handler:     handleGitStatus,
+		Parameters: map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{},
+			"required":             []string{},
+			"additionalProperties": false,
+		},
+		Category: "git",
+		Handler:  handleGitStatus,
 	})
 
 	RegisterTool(ToolDef{
 		Name:        "git_push",
 		Description: "推送 Git 分支到远程",
-		Category:    "git",
-		Handler:     handleGitPush,
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"options": map[string]any{
+					"type":        "string",
+					"description": "选项，例如：--force-with-lease，多个选项用空格分隔，例如：origin main --force，可为空",
+				},
+			},
+			"required":             []string{},
+			"additionalProperties": false,
+		},
+		Category: "git",
+		Handler:  handleGitPush,
 	})
 
 	// 注册脚本执行工具
 	RegisterTool(ToolDef{
-		Name:        "execute_script",
-		Description: "在项目根目录执行脚本。支持shebang指定解释器（如bash、python等）。脚本通过标准输入传递，避免命令行长度限制。\n\n输出格式：\n- 成功时：返回包含执行结果和执行统计的格式化文本\n- 失败时：返回包含错误信息、输出内容和执行统计的格式化文本\n\n示例：\n1. Bash脚本：echo \"Hello\"\n2. Python脚本：#!/usr/bin/env python\nprint(\"Hello\")\n3. 文件操作：cat file.txt\n4. Git操作：git status\n\n注意：谨慎使用，避免破坏性操作。确保脚本在项目目录内执行。",
-		Category:    "system",
-		Handler:     handleExecuteScript,
+		Name: "execute_script",
+		Description: `在项目根目录执行脚本。
+支持shebang指定解释器（如bash、python等）。
+脚本通过标准输入传递，避免命令行长度限制。
+
+输出格式：
+- 成功时：返回包含执行结果和执行统计的格式化文本
+- 失败时：返回包含错误信息、输出内容和执行统计的格式化文本
+
+示例：
+1. Bash脚本：echo "Hello"
+2. Python脚本：
+#!/usr/bin/env python
+print("Hello")
+3. 文件操作：cat file.txt
+4. Git操作：git status
+
+注意：谨慎使用，避免破坏性操作。确保脚本在项目目录内执行。`,
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"script": map[string]any{
+					"type": "string",
+					"description": `要执行的脚本内容。
+支持shebang指定解释器（如#!/usr/bin/env bash, #!/usr/bin/env python）。
+脚本执行结果会以格式化文本返回，包含执行统计信息。
+
+示例：
+1. Bash脚本：echo "Hello"
+2. Python脚本：
+#!/usr/bin/env python
+print("Hello")
+3. 文件操作：cat file.txt
+4. Git操作：git status
+`,
+				},
+			},
+			"required":             []string{"script"},
+			"additionalProperties": false,
+		},
+		Category: "system",
+		Handler:  handleExecuteScript,
 	})
 
 	// 注册SQLite数据库工具
 	RegisterTool(ToolDef{
 		Name:        "sqlite",
-		Description: "执行SQLite数据库查询和操作。支持shebang指定sqlite3命令，脚本内容为SQL语句。",
-		Category:    "database",
-		Handler:     handleSqlite,
+		Description: "执行SQLite数据库查询和操作。脚本内容为SQL语句。",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"script": map[string]any{
+					"type": "string",
+					"description": `sqlite SQL脚本内容。
+例如：
+1. .schema messages      Show the CREATE statements matching PATTERN
+2. select id, role from messages where id > 1000 order by created_at desc;`,
+				},
+			},
+			"required":             []string{"script"},
+			"additionalProperties": false,
+		},
+		Category: "database",
+		Handler:  handleSqlite,
 	})
 }

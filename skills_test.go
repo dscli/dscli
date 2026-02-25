@@ -60,7 +60,7 @@ func TestSkillsDatabase(t *testing.T) {
 	}
 
 	// 测试1: 插入技能数据
-	skillContent := map[string]interface{}{
+	skillContent := map[string]any{
 		"trigger":  []string{"test", "测试"},
 		"rules":    []string{"规则1", "规则2"},
 		"examples": []string{"示例1", "示例2"},
@@ -154,7 +154,7 @@ func TestSkillsDatabase(t *testing.T) {
 // TestSkillContentFormat 测试技能内容格式
 func TestSkillContentFormat(t *testing.T) {
 	// 测试JSON格式的技能内容
-	skillContent := map[string]interface{}{
+	skillContent := map[string]any{
 		"trigger": []string{"go", "test", "测试"},
 		"rules": []string{
 			"测试文件应以_test.go结尾",
@@ -173,14 +173,14 @@ func TestSkillContentFormat(t *testing.T) {
 	}
 
 	// 反序列化验证
-	var decodedContent map[string]interface{}
+	var decodedContent map[string]any
 	err = json.Unmarshal(contentJSON, &decodedContent)
 	if err != nil {
 		t.Fatalf("无法反序列化技能内容: %v", err)
 	}
 
 	// 验证结构
-	if triggers, ok := decodedContent["trigger"].([]interface{}); ok {
+	if triggers, ok := decodedContent["trigger"].([]any); ok {
 		if len(triggers) != 3 {
 			t.Errorf("触发词数量不匹配: 期望=3, 实际=%d", len(triggers))
 		}
@@ -188,7 +188,7 @@ func TestSkillContentFormat(t *testing.T) {
 		t.Error("触发词字段格式错误")
 	}
 
-	if rules, ok := decodedContent["rules"].([]interface{}); ok {
+	if rules, ok := decodedContent["rules"].([]any); ok {
 		if len(rules) != 3 {
 			t.Errorf("规则数量不匹配: 期望=3, 实际=%d", len(rules))
 		}
@@ -232,7 +232,7 @@ func TestSkillMatcherLogic(t *testing.T) {
 	queryLower := strings.ToLower(userQuery)
 
 	for _, skill := range skills {
-		var content map[string]interface{}
+		var content map[string]any
 		err := json.Unmarshal([]byte(skill.content), &content)
 		if err != nil {
 			t.Errorf("无法解析技能内容: %v", err)
@@ -241,7 +241,7 @@ func TestSkillMatcherLogic(t *testing.T) {
 
 		// 简单的匹配逻辑
 		matched := false
-		if triggers, ok := content["trigger"].([]interface{}); ok {
+		if triggers, ok := content["trigger"].([]any); ok {
 			for _, trigger := range triggers {
 				if triggerStr, ok := trigger.(string); ok {
 					if strings.Contains(queryLower, strings.ToLower(triggerStr)) {
@@ -389,9 +389,9 @@ func TestSkillPrioritySystem(t *testing.T) {
 // BenchmarkSkillMatching 性能测试：技能匹配
 func BenchmarkSkillMatching(b *testing.B) {
 	// 准备测试数据
-	skills := make([]map[string]interface{}, 100)
-	for i := 0; i < 100; i++ {
-		skills[i] = map[string]interface{}{
+	skills := make([]map[string]any, 100)
+	for i := range 100 {
+		skills[i] = map[string]any{
 			"trigger": []string{fmt.Sprintf("keyword%d", i), "test", "example"},
 			"rules":   []string{fmt.Sprintf("规则%d", i)},
 		}
@@ -400,7 +400,6 @@ func BenchmarkSkillMatching(b *testing.B) {
 	userQuery := "这是一个测试查询，包含test关键字"
 	queryLower := strings.ToLower(userQuery)
 
-	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		matchedSkills := 0
 		for _, skill := range skills {

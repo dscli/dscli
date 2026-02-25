@@ -141,7 +141,4 @@ func ChatMessage(inputs ...Message) (err error) {
 func init() {
 	chatCmd.Flags().StringVar(&chatModel, "model", "deepseek-chat", "使用的模型名称")
 	rootCmd.AddCommand(chatCmd)
-
-	// 初始化工具系统
-	InitTools()
 }
