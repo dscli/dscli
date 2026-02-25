@@ -129,7 +129,7 @@ func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 	log.SetOutput(logfile)
 
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
-	client = NewClient(key, url, false)
+	client = NewClient(key, url)
 	return nil
 }
 

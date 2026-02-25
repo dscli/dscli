@@ -5,83 +5,81 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
-	"os"
 )
 
 type Client struct {
 	apiKey  string
 	baseURL string
-	debug   bool
 	http    *http.Client
 }
 
-func NewClient(apiKey, baseURL string, debug bool) *Client {
+func NewClient(apiKey, baseURL string) *Client {
 	return &Client{
 		apiKey:  apiKey,
 		baseURL: baseURL,
-		debug:   debug,
 		http:    &http.Client{},
 	}
 }
 
-func (c *Client) doRequest(method, path string, body interface{}, result interface{}) error {
+func (c *Client) doRequest(method, path string, body any, result any) (err error) {
 	url := c.baseURL + path
 
 	var reqBody io.Reader
+	var data []byte
 	if body != nil {
-		data, err := json.Marshal(body)
+		data, err = json.Marshal(body)
 		if err != nil {
-			return fmt.Errorf("序列化请求失败: %w", err)
+			err = fmt.Errorf("序列化请求失败: %w", err)
+			slog.Error(err.Error(), "body", body)
+			return
 		}
 		reqBody = bytes.NewReader(data)
-		if c.debug {
-			fmt.Fprintf(os.Stderr, "请求体: %s\n", string(data))
-		}
 	}
 
 	req, err := http.NewRequest(method, url, reqBody)
 	if err != nil {
-		return fmt.Errorf("创建请求失败: %w", err)
+		err = fmt.Errorf("创建请求失败: %w", err)
+		slog.Error(err.Error(), "method", method, "data", string(data))
+		return
 	}
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	if c.debug {
-		fmt.Fprintf(os.Stderr, "请求: %s %s\n", method, url)
-	}
-
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("请求失败: %w", err)
+		err = fmt.Errorf("请求失败: %w", err)
+		slog.Error(err.Error(), "req", req)
+		return
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("读取响应失败: %w", err)
-	}
-
-	if c.debug {
-		fmt.Fprintf(os.Stderr, "响应状态: %s\n", resp.Status)
-		fmt.Fprintf(os.Stderr, "响应体: %s\n", string(respBody))
+		err = fmt.Errorf("读取响应失败: %w", err)
+		slog.Error(err.Error(), "data", string(data))
+		return
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("API 返回错误状态码 %d: %s", resp.StatusCode, string(respBody))
+		err = fmt.Errorf("API 返回错误状态码 %d: %s", resp.StatusCode, string(respBody))
+		slog.Error(err.Error(), "data", string(data))
+		return
 	}
 
 	if result != nil {
-		if err := json.Unmarshal(respBody, result); err != nil {
-			return fmt.Errorf("解析响应失败: %w", err)
+		if err = json.Unmarshal(respBody, result); err != nil {
+			err = fmt.Errorf("解析响应失败: %w", err)
+			slog.Error(err.Error(), "respBody", string(respBody))
+			return
 		}
 	}
-	return nil
+	return
 }
 
 // Models 获取模型列表
 func (c *Client) Models() (*ModelsResponse, error) {
-	// 只在DEBUG模式下输出开始日志
 	var resp ModelsResponse
 	err := c.doRequest("GET", "/models", nil, &resp)
 	if err != nil {
@@ -92,7 +90,6 @@ func (c *Client) Models() (*ModelsResponse, error) {
 
 // Balance 获取余额
 func (c *Client) Balance() (*BalanceResponse, error) {
-	// 只在DEBUG模式下输出开始日志
 	var resp BalanceResponse
 	err := c.doRequest("GET", "/user/balance", nil, &resp)
 	if err != nil {
@@ -109,6 +106,7 @@ func (c *Client) Chat(model string, messages []Message, tools []Tool) (*ChatResp
 			messages[i] = m
 		}
 	}
+
 	req := ChatRequest{
 		Model:    model,
 		Messages: messages,
@@ -118,6 +116,7 @@ func (c *Client) Chat(model string, messages []Message, tools []Tool) (*ChatResp
 	var resp ChatResponse
 	err := c.doRequest("POST", "/chat/completions", req, &resp)
 	if err != nil {
+		slog.Error(err.Error(), "req", req)
 		return nil, err
 	}
 	return &resp, err

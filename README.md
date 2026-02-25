@@ -2,7 +2,9 @@
 2025-03-15
 
 ## 简介
-dscli 是一个命令行编程助手，后接DeepSeek API，帮助您开发代码，也有一定的设计能力。你可以直接在命令行终端使用，也可以集成到Emacs使用（通过dscli.el，或自己集成）。
+dscli 是一个命令行编程助手，后接DeepSeek API，帮助您开发代码，也有一定
+的设计能力。你可以直接在命令行终端使用，也可以集成到Emacs使用（通过
+dscli.el，或自己集成）。
 
 项目地址：[gitcode.com/dscli/dscli](https://gitcode.com/dscli/dscli)
 
@@ -24,7 +26,7 @@ make install    # 安装到 $GOPATH/bin
 export DEEPSEEK_API_KEY="your-api-key-here"
 ```
 
-## 核心功能：```dscli chat```
+## 核心功能：`dscli chat`
 dscli chat 是主要功能，用于与 DeepSeek 编程助手对话。
 
 ### 基本使用
@@ -85,9 +87,9 @@ deepseek-reasoner    # 复杂推理
    ```
 
 2. 基本使用：
-   - ```M-x dscli-chat``` 启动聊天
+   - `M-x dscli-chat` 启动聊天
    - 在临时缓冲区输入问题
-   - 按 ```C-c C-c``` 发送
+   - 按 `C-c C-c` 发送
    - 查看 org mode 格式的回答
 
 ## 其他功能
@@ -105,14 +107,14 @@ echo "def fibonacci(n):" | dscli fim
 
 ## 高级配置
 ### 环境变量
-- ```DEEPSEEK_API_KEY```：API 密钥（必需）
-- ```DEEPSEEK_BASE_URL```：API 地址（可选，默认 https://api.deepseek.com）
+- `DEEPSEEK_API_KEY`：API 密钥（必需）
+- `DEEPSEEK_BASE_URL`：API 地址（可选，默认 https://api.deepseek.com）
 
 ## 命令行参数
 所有命令支持：
-- ```--api-ke```：指定 API 密钥
-- ```--base-ur```：指定 API 地址
-- ```--debu```：调试模式
+- `--api-ke`：指定 API 密钥
+- `--base-ur`：指定 API 地址
+- `--debu`：调试模式
 
 ## 常见问题
 ### 如何获得 DeepSeek API 密钥？
