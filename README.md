@@ -4,16 +4,16 @@
 ## 简介
 dscli 是一个命令行编程助手，后接DeepSeek API，帮助您开发代码，也有一定的设计能力。你可以直接在命令行终端使用，也可以集成到Emacs使用（通过dscli.el，或自己集成）。
 
-项目地址：[gitcode.com/nanjunjie/dscli](https://gitcode.com/nanjunjie/dscli)
+项目地址：[gitcode.com/dscli/dscli](https://gitcode.com/dscli/dscli)
 
 ## 快速开始
 ### 安装
 ```bash
-go install gitcode.com/nanjunjie/dscli@latest
+go install gitcode.com/dscli/dscli@latest
    ```
 或使用 Makefile：
 ```bash
-git clone https://gitcode.com/nanjunjie/dscli.git
+git clone https://gitcode.com/dscli/dscli.git
 cd dscli
 make install    # 安装到 $GOPATH/bin
 ``` 

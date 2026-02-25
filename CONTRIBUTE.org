@@ -77,7 +77,7 @@ feat: 添加 deepseek-reasoner 模型支持
 * 开发流程
 
 ** 1. 环境设置
-1. 克隆仓库：=git clone https://gitcode.com/nanjunjie/dscli.git=
+1. 克隆仓库：=git clone https://gitcode.com/dscli/dscli.git=
 2. 安装 Go 开发环境
 3. 配置开发环境
 
@@ -203,5 +203,5 @@ feat: 添加 deepseek-reasoner 模型支持
 * 联系方式
 
 - 项目维护者：Nan Jun Jie <nanjunjie@139.com>
-- 项目仓库：https://gitcode.com/nanjunjie/dscli
-- 问题跟踪：https://gitcode.com/nanjunjie/dscli/issues
+- 项目仓库：https://gitcode.com/dscli/dscli
+- 问题跟踪：https://gitcode.com/dscli/dscli/issues

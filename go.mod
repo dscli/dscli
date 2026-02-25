@@ -1,4 +1,4 @@
-module gitcode.com/nanjunjie/dscli
+module gitcode.com/dscli/dscli
 
 go 1.21
 
