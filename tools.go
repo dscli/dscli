@@ -161,7 +161,7 @@ func handleWriteFile(argsRaw json.RawMessage) (string, error) {
 		dsctmpeof = Shuffle(dsctmpeof)
 	}
 	dir := filepath.Dir(fullPath)
-	script := `test -d "` + dir + `" || mkdir -p "` + dir + `"
+	script := `test -d "` + dir + `" || mkdir -p -m 0755 "` + dir + `"
 cat > ` + fullPath + ` <<'` + dsctmpeof + `'
 ` + content + `
 ` + dsctmpeof + `

@@ -53,7 +53,7 @@ var (
 
 	ConfigDir = func() (configDir string) {
 		configDir = filepath.Join(os.Getenv("HOME"), ".dscli")
-		err := os.MkdirAll(configDir, 0o644)
+		err := os.MkdirAll(configDir, 0o755)
 		if err != nil {
 			log.Fatalln(err)
 			return
