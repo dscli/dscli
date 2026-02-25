@@ -14,3 +14,8 @@ dscli
 dscli.org
 # Build directory
 build/
+
+# Org-mode files (migrated to Markdown)
+
+# Org-mode files in root directory (migrated to Markdown)
+*.org
