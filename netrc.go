@@ -14,7 +14,7 @@ type NetrcEntry struct {
 	Password string
 }
 
-// ParseNetrc 解析.netrc文件，返回所有条目
+// ParseNetrc 解析.netrc文件，支持单行格式：machine host login user password token
 func ParseNetrc(path string) ([]NetrcEntry, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -23,7 +23,6 @@ func ParseNetrc(path string) ([]NetrcEntry, error) {
 	defer file.Close()
 
 	var entries []NetrcEntry
-	var current *NetrcEntry
 	scanner := bufio.NewScanner(file)
 
 	for scanner.Scan() {
@@ -34,48 +33,44 @@ func ParseNetrc(path string) ([]NetrcEntry, error) {
 			continue
 		}
 
+		// 分割所有字段
 		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			// 无效行，重置current
-			current = nil
+		if len(fields) < 4 { // 至少需要: machine host login user password token
 			continue
 		}
 
-		keyword := fields[0]
-		value := fields[1]
+		var entry NetrcEntry
+		// 解析字段：machine host login user password token
+		// 格式：machine <host> login <username> password <token>
+		for i := 0; i < len(fields); i++ {
+			keyword := strings.ToLower(fields[i])
 
-		switch keyword {
-		case "machine":
-			// 保存前一个完整的条目
-			if current != nil && current.Machine != "" {
-				entries = append(entries, *current)
+			switch keyword {
+			case "machine":
+				if i+1 < len(fields) {
+					entry.Machine = fields[i+1]
+					i++ // 跳过主机名
+				}
+			case "login":
+				if i+1 < len(fields) {
+					entry.Login = fields[i+1]
+					i++ // 跳过用户名
+				}
+			case "password":
+				if i+1 < len(fields) {
+					entry.Password = fields[i+1]
+					i++ // 跳过密码/token
+				}
+			case "default":
+				// 忽略default条目
+				return entries, nil
 			}
-			// 开始新条目
-			current = &NetrcEntry{Machine: value}
-		case "login":
-			if current != nil {
-				current.Login = value
-			}
-		case "password":
-			if current != nil {
-				current.Password = value
-			}
-		case "default":
-			// 遇到default，保存前一个完整的条目
-			if current != nil && current.Machine != "" {
-				entries = append(entries, *current)
-			}
-			// 完全忽略default条目
-			current = nil
-		default:
-			// 未知关键字，重置current
-			current = nil
 		}
-	}
 
-	// 添加最后一个完整的条目
-	if current != nil && current.Machine != "" {
-		entries = append(entries, *current)
+		// 只有包含Machine和Password的条目才有效
+		if entry.Machine != "" && entry.Password != "" {
+			entries = append(entries, entry)
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
