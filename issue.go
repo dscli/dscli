@@ -7,16 +7,224 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
 
+// RawIssue 用于接收原始JSON数据
+type RawIssue struct {
+	ID        json.RawMessage `json:"id"`
+	Number    string          `json:"number"`
+	State     string          `json:"state"`
+	Title     string          `json:"title"`
+	Body      string          `json:"body"`
+	CreatedAt string          `json:"created_at"`
+	UpdatedAt string          `json:"updated_at"`
+	ClosedAt  string          `json:"closed_at"`
+	Labels    []Label         `json:"labels"`
+	Assignee  *RawUser        `json:"assignee"`
+	User      RawUser         `json:"user"`
+}
+
+// RawUser 原始用户数据
+type RawUser struct {
+	ID        json.RawMessage `json:"id"`
+	Login     string          `json:"login"`
+	Name      string          `json:"name"`
+	AvatarURL string          `json:"avatar_url"`
+}
+
+// Label 表示issue的标签
+type Label struct {
+	ID          int    `json:"id"`
+	Name        string `json:"name"`
+	Color       string `json:"color"`
+	Description string `json:"description"`
+}
+
+// Issue 处理后的issue数据结构
 type Issue struct {
-	ID     int    `json:"id"`
-	Number string `json:"number"`
-	State  string `json:"state"`
-	Title  string `json:"title"`
-	Body   string `json:"body"`
+	ID        int
+	Number    string
+	State     string
+	Title     string
+	Body      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	ClosedAt  time.Time
+	Labels    []Label
+	Assignee  *User
+	User      User
+}
+
+// User 处理后的用户信息
+type User struct {
+	ID        int
+	Login     string
+	Name      string
+	AvatarURL string
+}
+
+// parseRawIssue 将RawIssue转换为Issue
+func parseRawIssue(raw RawIssue) (Issue, error) {
+	var issue Issue
+
+	// 解析ID
+	if idStr := string(raw.ID); idStr != "" && idStr != "null" {
+		if id, err := strconv.Atoi(strings.Trim(idStr, `"`)); err == nil {
+			issue.ID = id
+		}
+	}
+
+	issue.Number = raw.Number
+	issue.State = raw.State
+	issue.Title = raw.Title
+	issue.Body = raw.Body
+
+	// 解析时间
+	if raw.CreatedAt != "" {
+		if t, err := time.Parse(time.RFC3339, raw.CreatedAt); err == nil {
+			issue.CreatedAt = t
+		}
+	}
+	if raw.UpdatedAt != "" {
+		if t, err := time.Parse(time.RFC3339, raw.UpdatedAt); err == nil {
+			issue.UpdatedAt = t
+		}
+	}
+	if raw.ClosedAt != "" {
+		if t, err := time.Parse(time.RFC3339, raw.ClosedAt); err == nil {
+			issue.ClosedAt = t
+		}
+	}
+
+	// 复制标签
+	issue.Labels = raw.Labels
+
+	// 解析用户
+	if raw.User.ID != nil {
+		if idStr := string(raw.User.ID); idStr != "" && idStr != "null" {
+			if id, err := strconv.Atoi(strings.Trim(idStr, `"`)); err == nil {
+				issue.User.ID = id
+			}
+		}
+	}
+	issue.User.Login = raw.User.Login
+	issue.User.Name = raw.User.Name
+	issue.User.AvatarURL = raw.User.AvatarURL
+
+	// 解析负责人
+	if raw.Assignee != nil {
+		assignee := &User{}
+		if raw.Assignee.ID != nil {
+			if idStr := string(raw.Assignee.ID); idStr != "" && idStr != "null" {
+				if id, err := strconv.Atoi(strings.Trim(idStr, `"`)); err == nil {
+					assignee.ID = id
+				}
+			}
+		}
+		assignee.Login = raw.Assignee.Login
+		assignee.Name = raw.Assignee.Name
+		assignee.AvatarURL = raw.Assignee.AvatarURL
+		issue.Assignee = assignee
+	}
+
+	return issue, nil
+}
+
+// parseRawIssues 解析多个RawIssue
+func parseRawIssues(raws []RawIssue) ([]Issue, error) {
+	var issues []Issue
+	for _, raw := range raws {
+		issue, err := parseRawIssue(raw)
+		if err != nil {
+			return nil, err
+		}
+		issues = append(issues, issue)
+	}
+	return issues, nil
+}
+
+// formatTime 格式化时间显示
+func formatTime(t time.Time) string {
+	if t.IsZero() {
+		return "-"
+	}
+	return t.Format("2006-01-02 15:04:05")
+}
+
+// formatAssignee 格式化负责人显示
+func formatAssignee(assignee *User) string {
+	if assignee == nil {
+		return "-"
+	}
+	if assignee.Name != "" {
+		return fmt.Sprintf("%s (%s)", assignee.Name, assignee.Login)
+	}
+	return assignee.Login
+}
+
+// formatLabels 格式化标签显示
+func formatLabels(labels []Label) string {
+	if len(labels) == 0 {
+		return "-"
+	}
+	var labelNames []string
+	for _, label := range labels {
+		labelNames = append(labelNames, label.Name)
+	}
+	return strings.Join(labelNames, ", ")
+}
+
+// printIssue 统一打印issue信息
+func printIssue(issue Issue, detailed bool) {
+	if detailed {
+		// 详细显示模式（用于show命令）
+		fmt.Println(strings.Repeat("=", 80))
+		fmt.Printf("Issue #%s: %s\n", issue.Number, issue.Title)
+		fmt.Println(strings.Repeat("=", 80))
+
+		fmt.Printf("ID:         %d\n", issue.ID)
+		fmt.Printf("Number:     %s\n", issue.Number)
+		fmt.Printf("State:      %s\n", issue.State)
+		fmt.Printf("Created:    %s\n", formatTime(issue.CreatedAt))
+		fmt.Printf("Updated:    %s\n", formatTime(issue.UpdatedAt))
+		fmt.Printf("Closed:     %s\n", formatTime(issue.ClosedAt))
+		fmt.Printf("Author:     %s (%s)\n", issue.User.Name, issue.User.Login)
+		fmt.Printf("Assignee:   %s\n", formatAssignee(issue.Assignee))
+		fmt.Printf("Labels:     %s\n", formatLabels(issue.Labels))
+
+		fmt.Println(strings.Repeat("-", 80))
+		fmt.Println("内容:")
+		fmt.Println(strings.Repeat("-", 80))
+		if issue.Body != "" {
+			fmt.Println(issue.Body)
+		} else {
+			fmt.Println("（无内容）")
+		}
+		fmt.Println(strings.Repeat("=", 80))
+	} else {
+		// 简洁显示模式（用于list命令）
+		assigneeInfo := formatAssignee(issue.Assignee)
+		labelsInfo := formatLabels(issue.Labels)
+
+		fmt.Printf("#%s [%s] %s\n", issue.Number, issue.State, issue.Title)
+		fmt.Printf("  ID: %d | Author: %s | Assignee: %s\n",
+			issue.ID, issue.User.Login, assigneeInfo)
+		fmt.Printf("  Created: %s | Updated: %s\n",
+			formatTime(issue.CreatedAt), formatTime(issue.UpdatedAt))
+		fmt.Printf("  Labels: %s\n", labelsInfo)
+		if issue.Body != "" {
+			// 显示内容的前100个字符
+			preview := issue.Body
+			if len(preview) > 100 {
+				preview = preview[:100] + "..."
+			}
+			fmt.Printf("  Preview: %s\n", preview)
+		}
+		fmt.Println()
+	}
 }
 
 func init() {
@@ -47,21 +255,33 @@ func init() {
 				return err
 			}
 			defer resp.Body.Close()
+
+			// 检查HTTP状态码
+			if resp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(resp.Body)
+				return fmt.Errorf("API请求失败 (状态码: %d): %s", resp.StatusCode, string(body))
+			}
+
 			b, err := io.ReadAll(resp.Body)
 			if err != nil {
 				return err
 			}
-			issues := []Issue{}
-			err = json.Unmarshal(b, &issues)
+
+			// 先解析为RawIssue数组
+			var rawIssues []RawIssue
+			err = json.Unmarshal(b, &rawIssues)
 			if err != nil {
-				return err
+				return fmt.Errorf("解析issue列表失败: %w", err)
 			}
+
+			// 转换为Issue数组
+			issues, err := parseRawIssues(rawIssues)
+			if err != nil {
+				return fmt.Errorf("处理issue数据失败: %w", err)
+			}
+
 			for _, issue := range issues {
-				fmt.Printf("# %s\n", issue.Title)
-				fmt.Printf("- id: %d\n", issue.ID)
-				fmt.Printf("- number: %s\n", issue.Number)
-				fmt.Printf("- state: %s\n", issue.State)
-				fmt.Printf("\n%s\n\n", issue.Body)
+				printIssue(issue, false)
 			}
 			return nil
 		},
@@ -111,25 +331,20 @@ func init() {
 				return fmt.Errorf("读取响应失败: %w", err)
 			}
 
-			var issue Issue
-			err = json.Unmarshal(b, &issue)
+			// 先解析为RawIssue
+			var rawIssue RawIssue
+			err = json.Unmarshal(b, &rawIssue)
 			if err != nil {
 				return fmt.Errorf("解析issue数据失败: %w", err)
 			}
 
-			// 格式化输出issue详情
-			fmt.Println(strings.Repeat("=", 60))
-			fmt.Printf("Issue #%s: %s\n", issue.Number, issue.Title)
-			fmt.Println(strings.Repeat("=", 60))
-			fmt.Printf("ID:     %d\n", issue.ID)
-			fmt.Printf("Number: %s\n", issue.Number)
-			fmt.Printf("State:  %s\n", issue.State)
-			fmt.Println(strings.Repeat("-", 60))
-			fmt.Println("内容:")
-			fmt.Println(strings.Repeat("-", 60))
-			fmt.Println(issue.Body)
-			fmt.Println(strings.Repeat("=", 60))
+			// 转换为Issue
+			issue, err := parseRawIssue(rawIssue)
+			if err != nil {
+				return fmt.Errorf("处理issue数据失败: %w", err)
+			}
 
+			printIssue(issue, true)
 			return nil
 		},
 	}
