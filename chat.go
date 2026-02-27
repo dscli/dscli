@@ -76,7 +76,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	if am.Role != "assistant" || len(am.ToolCalls) == 0 {
-		fmt.Println("天下本无事")
+		Println("天下本无事")
 		return
 	}
 	return HandleToolCalls(ctx, am)
@@ -131,12 +131,12 @@ func ChatMessage(ctx context.Context, inputs ...Message) (err error) {
 	}
 
 	if ModelID == DEEPSEEK_REASONER && assistantMsg.ReasoningContent != "" {
-		fmt.Printf("已思考(用时%v)\n\n", time.Since(startTime))
-		fmt.Println(assistantMsg.ReasoningContent)
-		fmt.Println("\n------")
+		Printf("已思考(用时%v)\n\n", time.Since(startTime))
+		Println(assistantMsg.ReasoningContent)
+		Println("\n------")
 	}
 
-	fmt.Println(assistantMsg.Content)
+	Println(assistantMsg.Content)
 	return HandleToolCalls(ctx, &assistantMsg)
 }
 

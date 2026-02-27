@@ -50,7 +50,7 @@ var fimCmd = &cobra.Command{
 			fmt.Fprintln(os.Stderr, "错误: 未收到回复")
 			os.Exit(1)
 		}
-		fmt.Println(resp.Choices[0].Text)
+		Println(resp.Choices[0].Text)
 	},
 }
 

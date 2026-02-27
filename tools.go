@@ -490,14 +490,14 @@ func runScript(ctx context.Context, script string, name string, arg []string) (o
 	if len(arg) > 0 {
 		lang = arg[0]
 	}
-	fmt.Printf("执行脚本（%s）：\n```%s\n%s\n```\n", toolName, lang, script)
+	Printf("执行脚本（%s）：\n```%s\n%s\n```\n", toolName, lang, script)
 	defer func() {
 		spend := time.Since(startTime)
 		if err == nil {
-			fmt.Printf("\n执行成功（%v）：\n```\n%s\n```\n",
+			Printf("\n执行成功（%v）：\n```\n%s\n```\n",
 				spend, out)
 		} else {
-			fmt.Printf("\n执行失败（%v）：\n```\n%s\n```\n\n出错信息：\n```\n%s\n```\n",
+			Printf("\n执行失败（%v）：\n```\n%s\n```\n\n出错信息：\n```\n%s\n```\n",
 				spend, out, err.Error())
 		}
 	}()

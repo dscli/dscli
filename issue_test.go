@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -346,6 +347,126 @@ func TestURLParsingLogic(t *testing.T) {
 			}
 			if repo != tc.expectRepo {
 				t.Errorf("repo不匹配: 期望=%s, 实际=%s", tc.expectRepo, repo)
+			}
+		})
+	}
+}
+
+// TestParseRawIssue 测试parseRawIssue函数
+func TestParseRawIssue(t *testing.T) {
+	testCases := []struct {
+		name        string
+		rawIssue    RawIssue
+		expectError bool
+		checkFunc   func(Issue) bool
+	}{
+		{
+			name: "正常Issue解析",
+			rawIssue: RawIssue{
+				ID:        json.RawMessage(`"12345"`),
+				Number:    "42",
+				State:     "open",
+				Title:     "测试Issue",
+				Body:      "测试内容",
+				CreatedAt: "2024-01-01T12:00:00Z",
+				UpdatedAt: "2024-01-02T12:00:00Z",
+				ClosedAt:  "",
+				User: RawUser{
+					ID:        json.RawMessage(`"67890"`),
+					Login:     "testuser",
+					Name:      "测试用户",
+					AvatarURL: "https://avatar.url/test.png",
+				},
+				Labels: []Label{
+					{ID: 1, Name: "bug", Color: "red", Description: "Bug报告"},
+				},
+			},
+			expectError: false,
+			checkFunc: func(issue Issue) bool {
+				return issue.ID == 12345 &&
+					issue.Number == "42" &&
+					issue.State == "open" &&
+					issue.Title == "测试Issue" &&
+					len(issue.Labels) == 1
+			},
+		},
+		{
+			name: "有负责人的Issue",
+			rawIssue: RawIssue{
+				ID:     json.RawMessage(`"100"`),
+				Number: "1",
+				State:  "closed",
+				Title:  "已关闭的Issue",
+				User: RawUser{
+					ID:    json.RawMessage(`"200"`),
+					Login: "author",
+				},
+				Assignee: &RawUser{
+					ID:    json.RawMessage(`"300"`),
+					Login: "assignee",
+					Name:  "负责人",
+				},
+			},
+			expectError: false,
+			checkFunc: func(issue Issue) bool {
+				return issue.Assignee != nil &&
+					issue.Assignee.Login == "assignee" &&
+					issue.Assignee.Name == "负责人"
+			},
+		},
+		{
+			name: "无效ID格式",
+			rawIssue: RawIssue{
+				ID:     json.RawMessage(`"not-a-number"`),
+				Number: "1",
+				State:  "open",
+				User: RawUser{
+					ID:    json.RawMessage(`"200"`),
+					Login: "user",
+				},
+			},
+			expectError: false, // 函数应该处理错误，不返回错误
+			checkFunc: func(issue Issue) bool {
+				return issue.ID == 0 // ID应该为0，因为解析失败
+			},
+		},
+		{
+			name: "无效时间格式",
+			rawIssue: RawIssue{
+				ID:        json.RawMessage(`"100"`),
+				Number:    "1",
+				State:     "open",
+				CreatedAt: "invalid-time",
+				User: RawUser{
+					ID:    json.RawMessage(`"200"`),
+					Login: "user",
+				},
+			},
+			expectError: false, // 时间解析失败不应该导致整个函数失败
+			checkFunc: func(issue Issue) bool {
+				return issue.CreatedAt.IsZero() // 时间应该为零值
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			issue, err := parseRawIssue(tc.rawIssue)
+
+			if tc.expectError {
+				if err == nil {
+					t.Errorf("期望错误但得到成功")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("不期望的错误: %v", err)
+				return
+			}
+
+			if !tc.checkFunc(issue) {
+				t.Errorf("检查函数返回false")
 			}
 		})
 	}
