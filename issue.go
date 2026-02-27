@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -66,9 +67,69 @@ func init() {
 		},
 	}
 	listCmd.Flags().StringVar(&state, "state", "open", "issue state in open, closed and all, default open")
+
 	showCmd := &cobra.Command{
-		Use: "show",
+		Use:   "show <number>",
+		Short: "显示指定编号的issue详情",
+		Long: `显示指定编号的issue详情。
+
+示例:
+  dscli issue show 123   # 显示编号为123的issue
+  dscli issue show 45    # 显示编号为45的issue`,
+		Args: cobra.ExactArgs(1), // 必须且只能有一个参数
+		PreRunE: func(cmd *cobra.Command, args []string) (err error) {
+			// 验证参数是否为有效的数字
+			issueNumber := args[0]
+			if _, err := strconv.Atoi(issueNumber); err != nil {
+				return fmt.Errorf("issue编号必须是数字，收到: %s", issueNumber)
+			}
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
+			issueNumber := args[0]
+			baseURL, token, err := IssueAPIBaseURL()
+			if err != nil {
+				return err
+			}
+
+			// 构建单个issue的API URL
+			url := fmt.Sprintf("%s/%s?access_token=%s", baseURL, issueNumber, token)
+			resp, err := http.Get(url)
+			if err != nil {
+				return fmt.Errorf("请求issue失败: %w", err)
+			}
+			defer resp.Body.Close()
+
+			// 检查HTTP状态码
+			if resp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(resp.Body)
+				return fmt.Errorf("API请求失败 (状态码: %d): %s", resp.StatusCode, string(body))
+			}
+
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return fmt.Errorf("读取响应失败: %w", err)
+			}
+
+			var issue Issue
+			err = json.Unmarshal(b, &issue)
+			if err != nil {
+				return fmt.Errorf("解析issue数据失败: %w", err)
+			}
+
+			// 格式化输出issue详情
+			fmt.Println(strings.Repeat("=", 60))
+			fmt.Printf("Issue #%s: %s\n", issue.Number, issue.Title)
+			fmt.Println(strings.Repeat("=", 60))
+			fmt.Printf("ID:     %d\n", issue.ID)
+			fmt.Printf("Number: %s\n", issue.Number)
+			fmt.Printf("State:  %s\n", issue.State)
+			fmt.Println(strings.Repeat("-", 60))
+			fmt.Println("内容:")
+			fmt.Println(strings.Repeat("-", 60))
+			fmt.Println(issue.Body)
+			fmt.Println(strings.Repeat("=", 60))
+
 			return nil
 		},
 	}
