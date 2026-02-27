@@ -16,6 +16,7 @@ type Tool struct {
 // ToolDef 工具定义
 type ToolDef struct {
 	Name        string
+	DisplayName string
 	Description string
 	Parameters  map[string]any
 	Category    string
@@ -116,7 +117,6 @@ type ToolCallFunction struct {
 	Arguments string `json:"arguments"` // JSON 字符串
 }
 
-// Models 响应
 type ModelsResponse struct {
 	Object string  `json:"object"`
 	Data   []Model `json:"data"`
@@ -128,7 +128,6 @@ type Model struct {
 	OwnedBy string `json:"owned_by"`
 }
 
-// Balance 响应
 type BalanceResponse struct {
 	IsAvailable  bool          `json:"is_available"`
 	BalanceInfos []BalanceInfo `json:"balance_infos"`
@@ -151,7 +150,6 @@ type Choice struct {
 	Message Message `json:"message"`
 }
 
-// FIM 请求/响应
 type FIMRequest struct {
 	Model       string  `json:"model"`
 	Prompt      string  `json:"prompt"`

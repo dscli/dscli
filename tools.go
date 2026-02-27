@@ -16,13 +16,23 @@ import (
 	"time"
 )
 
-var ToolName = &struct{}{}
+var ToolDisplayName = &struct{}{}
 
 // toolRegistry 工具注册表
 var toolRegistry = map[string]ToolDef{}
 
 // RegisterTool 注册工具
 func RegisterTool(tool ToolDef) {
+	displayName := func() string {
+		name := tool.Name
+		words := strings.Split(name, "_")
+		for i, word := range words {
+			word = strings.ToUpper(word[0:1]) + word[1:]
+			words[i] = word
+		}
+		return strings.Join(words, "")
+	}
+	tool.DisplayName = displayName()
 	toolRegistry[tool.Name] = tool
 }
 
@@ -48,13 +58,12 @@ func GetAllTools() []Tool {
 
 // HandleToolCall 处理工具调用（带统计）
 func HandleToolCall(ctx context.Context, toolName string, args json.RawMessage) (string, error) {
-	ctx = context.WithValue(ctx, ToolName, toolName)
 	// 获取工具处理器
 	tool, ok := toolRegistry[toolName]
 	if !ok {
 		return "", fmt.Errorf("未知工具: %s", toolName)
 	}
-
+	ctx = context.WithValue(ctx, ToolDisplayName, tool.DisplayName)
 	toolID, err := GetOrCreateTool(tool.Name, tool.Description, tool.Category)
 	if err != nil {
 		slog.Error(err.Error(), "name", tool.Name)
@@ -381,7 +390,12 @@ func handleExecuteScript(ctx context.Context, argsRaw json.RawMessage) (out stri
 }
 
 func runScript(ctx context.Context, script string, name string, arg []string) (out string, err error) {
-	toolName := ctx.Value(ToolName).(string)
+	toolName := "unknown"
+	if val := ctx.Value(ToolDisplayName); val != nil {
+		if nameStr, ok := val.(string); ok {
+			toolName = nameStr
+		}
+	}
 	startTime := time.Now()
 	log.Printf("执行脚本（%s）: %s %s %v", toolName, script, name, arg)
 	lang := path.Base(name)

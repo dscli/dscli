@@ -15,7 +15,7 @@ func TestShebang(t *testing.T) {
 		{"echo hi", "/usr/bin/env", []string{"bash"}},
 		{"#!/usr/bin/env bash\necho hi", "/usr/bin/env", []string{"bash"}},
 		{"#!/usr/bin/env python\nprint('hi')", "/usr/bin/env", []string{"python"}},
-		{"#!/bin/bash\necho hi", "/bin/bash", nil},
+		{"#!/bin/bash\necho hi", "/bin/bash", []string{}},
 		{"# comment\necho hi", "/usr/bin/env", []string{"bash"}},
 	}
 	for _, tc := range tcs {
@@ -47,8 +47,8 @@ print("OK")`, "OK\n", nil},
 	for _, tc := range tcs {
 		t.Run("", func(t *testing.T) {
 			name, arg := Shebang(tc.script)
-			// 创建包含ToolName的context
-			ctx := context.WithValue(context.Background(), ToolName, "test-tool")
+			// 创建包含ToolDisplayName的context
+			ctx := context.WithValue(context.Background(), ToolDisplayName, "test-tool")
 			out, err := runScript(ctx, tc.script, name, arg)
 
 			if tc.checkErr == nil {
