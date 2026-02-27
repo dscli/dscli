@@ -9,6 +9,7 @@ import (
 	"log"
 	"log/slog"
 	"math/rand"
+	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
@@ -123,6 +124,7 @@ func Shuffle(in string) (out string) {
 }
 
 // handleWriteFile 写入文件
+// handleWriteFile 写入文件（纯Go实现）
 func handleWriteFile(ctx context.Context, argsRaw json.RawMessage) (string, error) {
 	var args struct {
 		Path    string `json:"path"`
@@ -138,19 +140,42 @@ func handleWriteFile(ctx context.Context, argsRaw json.RawMessage) (string, erro
 		return "", err
 	}
 
-	dsctmpeof := "DSCTMPEOF"
-	content := args.Content
-	for strings.Contains(content, dsctmpeof) {
-		dsctmpeof = Shuffle(dsctmpeof)
-	}
+	// 确保目录存在
 	dir := filepath.Dir(fullPath)
-	script := `test -d "` + dir + `" || mkdir -p -m 0755 "` + dir + `"
-cat > ` + fullPath + ` <<'` + dsctmpeof + `'
-` + content + `
-` + dsctmpeof + `
-echo 已成功写入文件: "` + args.Path + `"
-`
-	return runBash(ctx, script)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("创建目录失败: %w", err)
+	}
+
+	// 写入文件
+	startTime := time.Now()
+	if err := os.WriteFile(fullPath, []byte(args.Content), 0o644); err != nil {
+		return "", fmt.Errorf("写入文件失败: %w", err)
+	}
+
+	// 获取文件信息用于统计
+	fileInfo, err := os.Stat(fullPath)
+	if err != nil {
+		return "", fmt.Errorf("获取文件信息失败: %w", err)
+	}
+
+	// 构建成功响应
+	executionTime := time.Since(startTime)
+	result := fmt.Sprintf(`=== 执行结果 ===
+已成功写入文件: \"%s\"
+文件大小: %d 字节
+权限: %s
+路径: %s
+
+=== 执行统计 ===
+执行时间: %v
+状态: 成功`,
+		args.Path,
+		fileInfo.Size(),
+		fileInfo.Mode().String(),
+		fullPath,
+		executionTime)
+
+	return result, nil
 }
 
 // handleSearchFiles 搜索文件
