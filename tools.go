@@ -222,20 +222,76 @@ func handleSearchFiles(ctx context.Context, argsRaw json.RawMessage) (string, er
 }
 
 // gitCommand 执行git命令
+// gitCommand 执行git命令（直接使用exec.Command）
 func gitCommand(ctx context.Context, args ...string) (string, error) {
-	// 手动构建git命令字符串，正确处理参数中的空格
-	cmdStr := "git"
-	for _, arg := range args {
-		// 如果参数包含空格或特殊字符，需要加引号
-		if strings.ContainsAny(arg, " \t\n\"'") {
-			// 转义单引号：将'替换为'\''
-			arg = strings.ReplaceAll(arg, "'", "'\"'\"'")
-			cmdStr += fmt.Sprintf(" '%s'", arg)
-		} else {
-			cmdStr += " " + arg
-		}
+	// 检查context是否已经取消
+	if ctx.Err() != nil {
+		return "", ctx.Err()
 	}
-	return runBash(ctx, cmdStr)
+
+	// 创建命令
+	cmd := exec.Command("git", args...)
+	cmd.Dir = ProjectRoot
+
+	// 设置输出缓冲区
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	// 启动命令
+	startTime := time.Now()
+	err := cmd.Start()
+	if err != nil {
+		return "", fmt.Errorf("启动git命令失败: %w", err)
+	}
+
+	// 创建完成通道
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	// 等待命令完成或context取消
+	select {
+	case <-ctx.Done():
+		// context被取消或超时，终止进程
+		cmd.Process.Kill()
+		<-done // 等待进程完全终止
+		err = ctx.Err()
+		if err == context.DeadlineExceeded {
+			return stderrBuf.String(), fmt.Errorf("git命令执行超时: %w", err)
+		}
+		return stderrBuf.String(), fmt.Errorf("git命令被取消: %w", err)
+	case err = <-done:
+		// 命令执行完成
+		stdout := stdoutBuf.String()
+		stderr := stderrBuf.String()
+
+		if err != nil {
+			// 命令执行失败
+			errorMsg := stderr
+			if errorMsg == "" {
+				errorMsg = err.Error()
+			}
+			return stdout, fmt.Errorf("git命令执行失败: %s", errorMsg)
+		}
+
+		// 命令执行成功
+		executionTime := time.Since(startTime)
+		if stdout == "" && stderr == "" {
+			stdout = "命令执行成功（无输出）"
+		}
+
+		// 构建包含执行统计的结果
+		result := fmt.Sprintf(`=== 执行结果 ===
+%s
+
+=== 执行统计 ===
+执行时间: %v
+状态: 成功`, stdout, executionTime)
+
+		return result, nil
+	}
 }
 
 // handleGitAdd git添加
@@ -271,8 +327,8 @@ func handleGitCommit(ctx context.Context, argsRaw json.RawMessage) (string, erro
 
 	// 更健壮的-m参数检查
 	// 检查 -m、-m[空格]、--message 等变体
-	optionWords := strings.Fields(options)
-	for _, word := range optionWords {
+	optionWords := strings.FieldsSeq(options)
+	for word := range optionWords {
 		if word == "-m" || word == "--message" || strings.HasPrefix(word, "-m") {
 			return "", fmt.Errorf("message参数已通过message字段提供，不要在options中包含-m或--message")
 		}
