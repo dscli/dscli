@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"time"
@@ -18,7 +19,7 @@ type ToolDef struct {
 	Description string
 	Parameters  map[string]any
 	Category    string
-	Handler     func(args json.RawMessage) (string, error)
+	Handler     func(ctx context.Context, args json.RawMessage) (string, error)
 }
 
 type Function struct {

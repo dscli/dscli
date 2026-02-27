@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,8 @@ import (
 	"strings"
 	"time"
 )
+
+var ToolName = &struct{}{}
 
 // toolRegistry 工具注册表
 var toolRegistry = map[string]ToolDef{}
@@ -44,22 +47,23 @@ func GetAllTools() []Tool {
 }
 
 // HandleToolCall 处理工具调用（带统计）
-func HandleToolCall(toolName string, args json.RawMessage) (string, error) {
+func HandleToolCall(ctx context.Context, toolName string, args json.RawMessage) (string, error) {
+	ctx = context.WithValue(ctx, ToolName, toolName)
 	// 获取工具处理器
 	tool, ok := toolRegistry[toolName]
 	if !ok {
 		return "", fmt.Errorf("未知工具: %s", toolName)
 	}
-	fmt.Printf(" `%s` \n", toolName)
+
 	toolID, err := GetOrCreateTool(tool.Name, tool.Description, tool.Category)
 	if err != nil {
 		slog.Error(err.Error(), "name", tool.Name)
 		// 继续执行工具，但不记录统计
-		return tool.Handler(args)
+		return tool.Handler(ctx, args)
 	}
 
 	// 执行工具
-	result, err := tool.Handler(args)
+	result, err := tool.Handler(ctx, args)
 
 	// 记录使用情况
 	success := err == nil
@@ -75,12 +79,12 @@ func HandleToolCall(toolName string, args json.RawMessage) (string, error) {
 	return result, err
 }
 
-func HandleToolCalls(assistantMsg *Message) (err error) {
+func HandleToolCalls(ctx context.Context, assistantMsg *Message) (err error) {
 	inputs := []Message{}
 	// 处理每个工具调用
 	for _, tc := range assistantMsg.ToolCalls {
 		// 使用新的工具调用处理器
-		result, err := HandleToolCall(tc.Function.Name, []byte(tc.Function.Arguments))
+		result, err := HandleToolCall(ctx, tc.Function.Name, []byte(tc.Function.Arguments))
 		if err != nil {
 			// But we still need to tell the result to assistant
 			result = err.Error()
@@ -94,7 +98,7 @@ func HandleToolCalls(assistantMsg *Message) (err error) {
 	}
 
 	if len(inputs) > 0 {
-		err = ChatMessage(inputs...)
+		err = ChatMessage(ctx, inputs...)
 	}
 	return
 }
@@ -115,7 +119,7 @@ func resolvePath(path string) (string, error) {
 }
 
 // handleReadFile 读取文件
-func handleReadFile(argsRaw json.RawMessage) (string, error) {
+func handleReadFile(ctx context.Context, argsRaw json.RawMessage) (string, error) {
 	var args struct {
 		Path string `json:"path"`
 	}
@@ -127,7 +131,7 @@ func handleReadFile(argsRaw json.RawMessage) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return runBash(fmt.Sprintf(`cat "%s"`, fullPath))
+	return runBash(ctx, fmt.Sprintf(`cat "%s"`, fullPath))
 }
 
 func Shuffle(in string) (out string) {
@@ -140,7 +144,7 @@ func Shuffle(in string) (out string) {
 }
 
 // handleWriteFile 写入文件
-func handleWriteFile(argsRaw json.RawMessage) (string, error) {
+func handleWriteFile(ctx context.Context, argsRaw json.RawMessage) (string, error) {
 	var args struct {
 		Path    string `json:"path"`
 		Content string `json:"content"`
@@ -167,11 +171,11 @@ cat > ` + fullPath + ` <<'` + dsctmpeof + `'
 ` + dsctmpeof + `
 echo 已成功写入文件: "` + args.Path + `"
 `
-	return runBash(script)
+	return runBash(ctx, script)
 }
 
 // handleSearchFiles 搜索文件
-func handleSearchFiles(argsRaw json.RawMessage) (string, error) {
+func handleSearchFiles(ctx context.Context, argsRaw json.RawMessage) (string, error) {
 	var args struct {
 		Pattern string `json:"pattern"`
 		Content string `json:"content"`
@@ -210,11 +214,11 @@ func handleSearchFiles(argsRaw json.RawMessage) (string, error) {
 	// 处理空结果
 	script += ` || echo "未找到匹配的文件"`
 
-	return runBash(script)
+	return runBash(ctx, script)
 }
 
 // gitCommand 执行git命令
-func gitCommand(args ...string) (string, error) {
+func gitCommand(ctx context.Context, args ...string) (string, error) {
 	// 手动构建git命令字符串，正确处理参数中的空格
 	cmdStr := "git"
 	for _, arg := range args {
@@ -227,11 +231,11 @@ func gitCommand(args ...string) (string, error) {
 			cmdStr += " " + arg
 		}
 	}
-	return runBash(cmdStr)
+	return runBash(ctx, cmdStr)
 }
 
 // handleGitAdd git添加
-func handleGitAdd(argsRaw json.RawMessage) (string, error) {
+func handleGitAdd(ctx context.Context, argsRaw json.RawMessage) (string, error) {
 	var args struct {
 		Path string `json:"path"`
 	}
@@ -240,7 +244,7 @@ func handleGitAdd(argsRaw json.RawMessage) (string, error) {
 	}
 	gitArgs := []string{"add"}
 	gitArgs = append(gitArgs, strings.Fields(args.Path)...)
-	out, err := gitCommand(gitArgs...)
+	out, err := gitCommand(ctx, gitArgs...)
 	if err != nil {
 		return "", err
 	}
@@ -251,7 +255,7 @@ func handleGitAdd(argsRaw json.RawMessage) (string, error) {
 }
 
 // handleGitCommit git提交
-func handleGitCommit(argsRaw json.RawMessage) (string, error) {
+func handleGitCommit(ctx context.Context, argsRaw json.RawMessage) (string, error) {
 	var args struct {
 		Message string `json:"message"`
 		Options string `json:"options,omitempty"`
@@ -274,11 +278,11 @@ func handleGitCommit(argsRaw json.RawMessage) (string, error) {
 	if options != "" {
 		gitArgs = append(gitArgs, strings.Fields(options)...)
 	}
-	return gitCommand(gitArgs...)
+	return gitCommand(ctx, gitArgs...)
 }
 
 // handleGitLog git日志
-func handleGitLog(argsRaw json.RawMessage) (string, error) {
+func handleGitLog(ctx context.Context, argsRaw json.RawMessage) (string, error) {
 	var args struct {
 		MaxCount int `json:"max_count"`
 	}
@@ -290,7 +294,7 @@ func handleGitLog(argsRaw json.RawMessage) (string, error) {
 	if args.MaxCount <= 0 {
 		args.MaxCount = 10
 	}
-	out, err := gitCommand("log", "-n", fmt.Sprintf("%d", args.MaxCount), "--oneline")
+	out, err := gitCommand(ctx, "log", "-n", fmt.Sprintf("%d", args.MaxCount), "--oneline")
 	if err != nil {
 		return "", err
 	}
@@ -298,7 +302,7 @@ func handleGitLog(argsRaw json.RawMessage) (string, error) {
 }
 
 // handleGitDiff git差异
-func handleGitDiff(argsRaw json.RawMessage) (string, error) {
+func handleGitDiff(ctx context.Context, argsRaw json.RawMessage) (string, error) {
 	var args struct {
 		Path string `json:"path"`
 	}
@@ -308,7 +312,7 @@ func handleGitDiff(argsRaw json.RawMessage) (string, error) {
 		gitArgs = append(gitArgs, "HEAD", "--")
 		gitArgs = append(gitArgs, strings.Fields(args.Path)...)
 	}
-	out, err := gitCommand(gitArgs...)
+	out, err := gitCommand(ctx, gitArgs...)
 	if err != nil {
 		return "", err
 	}
@@ -316,8 +320,8 @@ func handleGitDiff(argsRaw json.RawMessage) (string, error) {
 }
 
 // handleGitStatus git状态
-func handleGitStatus(argsRaw json.RawMessage) (string, error) {
-	out, err := gitCommand("status", "--short")
+func handleGitStatus(ctx context.Context, argsRaw json.RawMessage) (string, error) {
+	out, err := gitCommand(ctx, "status", "--short")
 	if err != nil {
 		return "", err
 	}
@@ -328,7 +332,7 @@ func handleGitStatus(argsRaw json.RawMessage) (string, error) {
 }
 
 // handleGitPush git push [options...]
-func handleGitPush(argsRaw json.RawMessage) (string, error) {
+func handleGitPush(ctx context.Context, argsRaw json.RawMessage) (string, error) {
 	var args struct {
 		Options string `json:"options,omitempty"`
 	}
@@ -340,7 +344,7 @@ func handleGitPush(argsRaw json.RawMessage) (string, error) {
 	if args.Options != "" {
 		gitArgs = append(gitArgs, strings.Fields(args.Options)...)
 	}
-	out, err := gitCommand(gitArgs...)
+	out, err := gitCommand(ctx, gitArgs...)
 	if err != nil {
 		return "", err
 	}
@@ -362,7 +366,7 @@ func Shebang(script string) (name string, arg []string) {
 }
 
 // handleExecuteScript 执行脚本（支持多种解释器，通过shebang指定）
-func handleExecuteScript(argsRaw json.RawMessage) (out string, err error) {
+func handleExecuteScript(ctx context.Context, argsRaw json.RawMessage) (out string, err error) {
 	var args struct {
 		Script string `json:"script"`
 	}
@@ -372,25 +376,26 @@ func handleExecuteScript(argsRaw json.RawMessage) (out string, err error) {
 		return
 	}
 
-	out, err = runBash(args.Script)
+	out, err = runBash(ctx, args.Script)
 	return
 }
 
-func runScriptShebang(script string, name string, arg []string) (out string, err error) {
+func runScript(ctx context.Context, script string, name string, arg []string) (out string, err error) {
+	toolName := ctx.Value(ToolName).(string)
 	startTime := time.Now()
-	log.Printf("执行脚本: %s %s %v", script, name, arg)
+	log.Printf("执行脚本（%s）: %s %s %v", toolName, script, name, arg)
 	lang := path.Base(name)
 	if len(arg) > 0 {
 		lang = arg[0]
 	}
-	fmt.Printf("执行脚本：\n#+begin_src %s\n%s\n#+end_src\n", lang, script)
+	fmt.Printf("执行脚本（%s）：\n```%s\n%s\n```\n", toolName, lang, script)
 	defer func() {
 		spend := time.Since(startTime)
 		if err == nil {
-			fmt.Printf("\n执行成功（%v）：\n#+begin_src text\n%s\n#+end_src\n",
+			fmt.Printf("\n执行成功（%v）：\n```\n%s\n```\n",
 				spend, out)
 		} else {
-			fmt.Printf("\n执行失败（%v）：\n#+begin_src text\n%s\n#+end_src\n\n出错信息：\n#+begin_src text\n%s\n#+end_src\n",
+			fmt.Printf("\n执行失败（%v）：\n```\n%s\n```\n\n出错信息：\n```\n%s\n```\n",
 				spend, out, err.Error())
 		}
 	}()
@@ -440,12 +445,12 @@ func shellExec(script string, name string, arg []string) (out string, err error)
 	return out, nil
 }
 
-func runBash(script string) (result string, err error) {
+func runBash(ctx context.Context, script string) (result string, err error) {
 	log.Printf("执行脚本: %s", script)
 	startTime := time.Now()
 	name, arg := Shebang(script)
 
-	out, err := runScriptShebang(script, name, arg)
+	out, err := runScript(ctx, script, name, arg)
 	executionTime := time.Since(startTime)
 	if err != nil {
 		log.Printf("执行失败: %v", err)
@@ -476,7 +481,7 @@ func runBash(script string) (result string, err error) {
 }
 
 // handleSqlite 执行SQLite数据库查询和操作
-func handleSqlite(argsRaw json.RawMessage) (string, error) {
+func handleSqlite(ctx context.Context, argsRaw json.RawMessage) (string, error) {
 	// 解析参数
 	var args struct {
 		Script string `json:"script"`
@@ -493,7 +498,7 @@ func handleSqlite(argsRaw json.RawMessage) (string, error) {
 	fullScript := fmt.Sprintf("#!/usr/bin/env sqlite3 %s\n%s", DBPath, args.Script)
 
 	// 使用现有的runBash执行
-	return runBash(fullScript)
+	return runBash(ctx, fullScript)
 }
 
 func init() {

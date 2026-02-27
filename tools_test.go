@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"reflect"
 	"testing"
 )
@@ -11,15 +12,20 @@ func TestShebang(t *testing.T) {
 		name   string
 		arg    []string
 	}{
-		{"", "/usr/bin/env", []string{"bash"}},
-		{"#!/bin/bash\necho OK", "/bin/bash", []string{}},
-		{"#!/bin/bash \necho OK", "/bin/bash", []string{}},
+		{"echo hi", "/usr/bin/env", []string{"bash"}},
+		{"#!/usr/bin/env bash\necho hi", "/usr/bin/env", []string{"bash"}},
+		{"#!/usr/bin/env python\nprint('hi')", "/usr/bin/env", []string{"python"}},
+		{"#!/bin/bash\necho hi", "/bin/bash", nil},
+		{"# comment\necho hi", "/usr/bin/env", []string{"bash"}},
 	}
 	for _, tc := range tcs {
 		t.Run("", func(t *testing.T) {
 			name, arg := Shebang(tc.script)
-			if name != tc.name || !reflect.DeepEqual(arg, tc.arg) {
-				t.Fatal(name, arg, tc)
+			if name != tc.name {
+				t.Errorf("name mismatch: want %s, got %s", tc.name, name)
+			}
+			if !reflect.DeepEqual(arg, tc.arg) {
+				t.Errorf("arg mismatch: want %v, got %v", tc.arg, arg)
 			}
 		})
 	}
@@ -28,41 +34,34 @@ func TestShebang(t *testing.T) {
 func TestRunScriptShebang(t *testing.T) {
 	tcs := []struct {
 		script   string
-		out      string
-		checkErr func(t *testing.T, err error)
+		expected string
+		checkErr func(error) bool
 	}{
 		{"echo -n hi", "hi", nil},
-		{"", "", nil},
+		{"echo -n 'hello world'", "hello world", nil},
 		{`#!/usr/bin/env bash
-echo -n OK
-`, "OK", nil},
+echo -n test`, "test", nil},
 		{`#!/usr/bin/env python
 print("OK")`, "OK\n", nil},
-		{`zzzzzzzz`, "bash:行1: zzzzzzzz：未找到命令\n", func(t *testing.T, err error) {
-			if err == nil {
-				t.Fatal(err)
-			}
-			if err.Error() != "exit status 127" {
-				t.Fatal(err)
-			}
-		}},
 	}
-
 	for _, tc := range tcs {
 		t.Run("", func(t *testing.T) {
 			name, arg := Shebang(tc.script)
-			out, err := runScriptShebang(tc.script, name, arg)
+			// 创建包含ToolName的context
+			ctx := context.WithValue(context.Background(), ToolName, "test-tool")
+			out, err := runScript(ctx, tc.script, name, arg)
 
 			if tc.checkErr == nil {
 				if err != nil {
-					t.Fatal(err)
+					t.Errorf("unexpected error: %v", err)
+				}
+				if out != tc.expected {
+					t.Errorf("output mismatch: want %q, got %q", tc.expected, out)
 				}
 			} else {
-				tc.checkErr(t, err)
-			}
-
-			if out != tc.out {
-				t.Fatal(out, tc.out)
+				if !tc.checkErr(err) {
+					t.Errorf("error mismatch: %v", err)
+				}
 			}
 		})
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -60,12 +61,13 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	// 1. 读取标准输入
 	reader := bufio.NewReader(os.Stdin)
 	content, err := io.ReadAll(reader)
+	ctx := cmd.Context()
 	if err != nil {
 		return
 	}
 	userMsg := strings.TrimSpace(string(content))
 	if userMsg != "" {
-		return ChatMessage(Message{Role: "user", Content: userMsg})
+		return ChatMessage(ctx, Message{Role: "user", Content: userMsg})
 	}
 
 	am, err := LoadLastOne()
@@ -77,10 +79,10 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		fmt.Println("天下本无事")
 		return
 	}
-	return HandleToolCalls(am)
+	return HandleToolCalls(ctx, am)
 }
 
-func ChatMessage(inputs ...Message) (err error) {
+func ChatMessage(ctx context.Context, inputs ...Message) (err error) {
 	// 1. 加载历史消息
 	history, err := LoadHistory()
 	if err != nil {
@@ -135,7 +137,7 @@ func ChatMessage(inputs ...Message) (err error) {
 	}
 
 	fmt.Println(assistantMsg.Content)
-	return HandleToolCalls(&assistantMsg)
+	return HandleToolCalls(ctx, &assistantMsg)
 }
 
 func init() {
