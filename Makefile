@@ -3,7 +3,7 @@
 BINARY_NAME = dscli
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS = -ldflags "-X main.version=$(VERSION)"
-GOFLAGS = -trimpath
+GOFLAGS = -trimpath -tags netgo
 SOURCE_DIR = .
 BUILD_DIR = build
 
@@ -15,7 +15,7 @@ build: $(BUILD_DIR)/$(BINARY_NAME)
 
 $(BUILD_DIR)/$(BINARY_NAME): $(shell find . -name "*.go")
 	@mkdir -p $(BUILD_DIR)
-	go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(SOURCE_DIR)
+	CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(SOURCE_DIR)
 
 install:
 	go install $(GOFLAGS) $(LDFLAGS) $(SOURCE_DIR)

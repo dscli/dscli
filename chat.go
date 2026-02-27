@@ -37,9 +37,9 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 	// 设置ModelID
 	var modelID int64
 	switch chatModel {
-	case "deepseek-chat":
+	case ModelDeepseekChat:
 		modelID = DEEPSEEK_CHAT
-	case "deepseek-reasoner":
+	case ModelDeepseekReasoner:
 		modelID = DEEPSEEK_REASONER
 	default:
 		err = fmt.Errorf("do not support %s", chatModel)
@@ -139,6 +139,6 @@ func ChatMessage(inputs ...Message) (err error) {
 }
 
 func init() {
-	chatCmd.Flags().StringVar(&chatModel, "model", "deepseek-chat", "使用的模型名称")
+	chatCmd.Flags().StringVar(&chatModel, "model", ModelDeepseekChat, "使用的模型名称")
 	rootCmd.AddCommand(chatCmd)
 }

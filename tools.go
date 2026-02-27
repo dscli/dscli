@@ -379,7 +379,6 @@ func handleExecuteScript(argsRaw json.RawMessage) (out string, err error) {
 func runScriptShebang(script string, name string, arg []string) (out string, err error) {
 	startTime := time.Now()
 	log.Printf("执行脚本: %s %s %v", script, name, arg)
-	buf := bytes.NewBuffer([]byte{})
 	lang := path.Base(name)
 	if len(arg) > 0 {
 		lang = arg[0]
@@ -395,6 +394,17 @@ func runScriptShebang(script string, name string, arg []string) (out string, err
 				spend, out, err.Error())
 		}
 	}()
+	return shellExec(script, name, arg)
+}
+
+func ShellExec(script string) (out string, err error) {
+	name, arg := Shebang(script)
+	out, err = shellExec(script, name, arg)
+	return
+}
+
+func shellExec(script string, name string, arg []string) (out string, err error) {
+	buf := bytes.NewBuffer([]byte{})
 	subproc := exec.Command(name, arg...)
 	subproc.Dir = ProjectRoot
 	subproc.Stdout = buf

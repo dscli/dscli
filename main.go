@@ -11,6 +11,23 @@ import (
 )
 
 var (
+	_ = func() error {
+		return godotenv.Load(EnvPath)
+	}()
+
+	ModelDeepseekChat, ModelDeepseekReasoner = func() (modelChat string, modelReasoner string) {
+		osGetenv := func(k, dv string) string {
+			v := os.Getenv(k)
+			if v == "" {
+				v = dv
+			}
+			return v
+		}
+		modelChat = osGetenv("MODEL_DEEPSEEK_CHAT", "deepseek-chat")
+		modelReasoner = osGetenv("MODEL_DEEPSEEK_REASONER", "deepseek-reasoner")
+		return
+	}()
+
 	client      *Client
 	logfile     *os.File
 	ProjectRoot = func() (projectRoot string) {
@@ -105,13 +122,8 @@ func RootPostRunE(cmd *cobra.Command, args []string) (err error) {
 func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 	// change cwd if needed
 	key := os.Getenv("DEEPSEEK_API_KEY")
-	if key == "" {
-		if err = godotenv.Load(EnvPath); err != nil {
-			return
-		}
-	}
 
-	if key = os.Getenv("DEEPSEEK_API_KEY"); key == "" {
+	if key == "" {
 		err = fmt.Errorf("no api key specified")
 		return
 	}
