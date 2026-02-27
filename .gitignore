@@ -63,3 +63,10 @@ Thumbs.db
 
 # 测试相关
 _test.go
+
+# 项目二进制文件
+dscli
+*.sqlite
+*.db
+*.sqlite3
+*.db3
