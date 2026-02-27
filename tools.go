@@ -99,6 +99,7 @@ func resolvePath(path string) (string, error) {
 }
 
 // handleReadFile 读取文件
+// handleReadFile 读取文件（纯Go实现）
 func handleReadFile(ctx context.Context, argsRaw json.RawMessage) (string, error) {
 	var args struct {
 		Path string `json:"path"`
@@ -107,11 +108,48 @@ func handleReadFile(ctx context.Context, argsRaw json.RawMessage) (string, error
 		log.Printf("argsRaw: %s", string(argsRaw))
 		return "", fmt.Errorf("参数解析失败: %w", err)
 	}
+
 	fullPath, err := resolvePath(args.Path)
 	if err != nil {
 		return "", err
 	}
-	return runBash(ctx, fmt.Sprintf(`cat "%s"`, fullPath))
+
+	// 读取文件
+	startTime := time.Now()
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
+		return "", fmt.Errorf("读取文件失败: %w", err)
+	}
+
+	// 获取文件信息
+	fileInfo, err := os.Stat(fullPath)
+	if err != nil {
+		return "", fmt.Errorf("获取文件信息失败: %w", err)
+	}
+
+	// 构建结果
+	executionTime := time.Since(startTime)
+	result := fmt.Sprintf(`=== 执行结果 ===
+文件内容:
+%s
+
+文件信息:
+- 路径: %s
+- 大小: %d 字节
+- 权限: %s
+- 修改时间: %s
+
+=== 执行统计 ===
+执行时间: %v
+状态: 成功`,
+		string(content),
+		fullPath,
+		fileInfo.Size(),
+		fileInfo.Mode().String(),
+		fileInfo.ModTime().Format("2006-01-02 15:04:05"),
+		executionTime)
+
+	return result, nil
 }
 
 func Shuffle(in string) (out string) {
@@ -123,7 +161,6 @@ func Shuffle(in string) (out string) {
 	return
 }
 
-// handleWriteFile 写入文件
 // handleWriteFile 写入文件（纯Go实现）
 func handleWriteFile(ctx context.Context, argsRaw json.RawMessage) (string, error) {
 	var args struct {
