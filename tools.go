@@ -57,36 +57,6 @@ func GetAllTools() []Tool {
 }
 
 // HandleToolCall 处理工具调用（带统计）
-func HandleToolCall(ctx context.Context, toolName string, args json.RawMessage) (string, error) {
-	// 获取工具处理器
-	tool, ok := toolRegistry[toolName]
-	if !ok {
-		return "", fmt.Errorf("未知工具: %s", toolName)
-	}
-	ctx = context.WithValue(ctx, ToolDisplayName, tool.DisplayName)
-	toolID, err := GetOrCreateTool(tool.Name, tool.Description, tool.Category)
-	if err != nil {
-		slog.Error(err.Error(), "name", tool.Name)
-		// 继续执行工具，但不记录统计
-		return tool.Handler(ctx, args)
-	}
-
-	// 执行工具
-	result, err := tool.Handler(ctx, args)
-
-	// 记录使用情况
-	success := err == nil
-	errorMsg := ""
-	if err != nil {
-		errorMsg = err.Error()
-	}
-
-	if err := RecordToolUsage(toolID, success, errorMsg); err != nil {
-		log.Printf("记录工具使用失败: %v", err)
-	}
-
-	return result, err
-}
 
 func HandleToolCalls(ctx context.Context, assistantMsg *Message) (err error) {
 	inputs := []Message{}
@@ -757,4 +727,51 @@ print("Hello")
 		Category: "database",
 		Handler:  handleSqlite,
 	})
+}
+
+// HandleToolCall 处理工具调用（带统计和超时）
+
+// HandleToolCall 处理工具调用（带统计和超时）
+func HandleToolCall(ctx context.Context, toolName string, args json.RawMessage) (string, error) {
+	// 获取工具处理器
+	tool, ok := toolRegistry[toolName]
+	if !ok {
+		return "", fmt.Errorf("未知工具: %s", toolName)
+	}
+
+	// 创建带超时的context（如果工具设置了超时）
+	var cancel context.CancelFunc
+	if tool.Timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, tool.Timeout)
+		defer cancel()
+	}
+
+	ctx = context.WithValue(ctx, ToolDisplayName, tool.DisplayName)
+	toolID, err := GetOrCreateTool(tool.Name, tool.Description, tool.Category)
+	if err != nil {
+		slog.Error(err.Error(), "name", tool.Name)
+		// 继续执行工具，但不记录统计
+		return tool.Handler(ctx, args)
+	}
+
+	// 执行工具
+	result, err := tool.Handler(ctx, args)
+
+	// 检查是否超时
+	if ctx.Err() == context.DeadlineExceeded {
+		err = fmt.Errorf("工具执行超时（%v）", tool.Timeout)
+	}
+
+	// 记录使用情况
+	success := err == nil
+	errorMsg := ""
+	if err != nil {
+		errorMsg = err.Error()
+	}
+
+	if err := RecordToolUsage(toolID, success, errorMsg); err != nil {
+		log.Printf("记录工具使用失败: %v", err)
+	}
+
+	return result, err
 }

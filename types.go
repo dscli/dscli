@@ -20,6 +20,7 @@ type ToolDef struct {
 	Description string
 	Parameters  map[string]any
 	Category    string
+	Timeout     time.Duration // 工具执行超时时间
 	Handler     func(ctx context.Context, args json.RawMessage) (string, error)
 }
 
