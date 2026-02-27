@@ -1,23 +1,65 @@
-# Binaries for programs and plugins
+# 二进制文件
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
 
-# Test binary, build with `go test -c`
+# 测试二进制文件
 *.test
 
-# Output of the go coverage tool, specifically when used with LiteIDE
-*.out
-dscli
-dscli.org
-# Build directory
+# 输出目录
 build/
+dist/
+out/
+bin/
 
-# Org-mode files (migrated to Markdown)
+# 覆盖率文件
+coverage.out
+coverage.html
+test-output.txt
 
-# Org-mode files in root directory (migrated to Markdown)
+# 环境文件
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
-# Org-mode files in root directory (migrated to Markdown)
-*.org
+# 日志文件
+*.log
+logs/
+
+# 运行时数据
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# 临时文件
+*.tmp
+*.temp
+tmp/
+temp/
+
+# 开发工具文件
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Go相关
+# 依赖目录
+vendor/
+
+# Go工作空间文件
+go.work
+go.work.sum
+
+# 项目特定
+.DS_Store
+Thumbs.db
+
+# 测试相关
+_test.go
