@@ -177,8 +177,8 @@ func formatLabels(labels []Label) string {
 	return strings.Join(labelNames, ", ")
 }
 
-// printIssue 统一打印issue信息
-func printIssue(issue Issue, detailed bool) {
+// PrintIssue 统一打印issue信息
+func PrintIssue(issue Issue, detailed bool) {
 	if detailed {
 		// 详细显示模式（用于show命令）
 		Println(strings.Repeat("=", 80))
@@ -281,7 +281,7 @@ func init() {
 			}
 
 			for _, issue := range issues {
-				printIssue(issue, false)
+				PrintIssue(issue, false)
 			}
 			return nil
 		},
@@ -344,7 +344,7 @@ func init() {
 				return fmt.Errorf("处理issue数据失败: %w", err)
 			}
 
-			printIssue(issue, true)
+			PrintIssue(issue, true)
 			return nil
 		},
 	}
