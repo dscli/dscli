@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -16,6 +19,106 @@ type Issue struct {
 	State  string `json:"state"`
 	Title  string `json:"title"`
 	Body   string `json:"body"`
+}
+
+// NetrcEntry 表示.netrc文件中的一个条目
+type NetrcEntry struct {
+	Machine  string
+	Login    string
+	Password string
+}
+
+// ParseNetrc 解析.netrc文件，返回所有条目
+func ParseNetrc(path string) ([]NetrcEntry, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var entries []NetrcEntry
+	var current *NetrcEntry
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// 跳过空行和注释
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+
+		keyword := fields[0]
+		value := fields[1]
+
+		switch keyword {
+		case "machine":
+			// 保存前一个条目（如果有）
+			if current != nil {
+				entries = append(entries, *current)
+			}
+			// 开始新条目
+			current = &NetrcEntry{Machine: value}
+		case "login":
+			if current != nil {
+				current.Login = value
+			}
+		case "password":
+			if current != nil {
+				current.Password = value
+			}
+		case "default":
+			// default条目，我们暂时不处理
+			if current != nil {
+				entries = append(entries, *current)
+			}
+			current = &NetrcEntry{Machine: "default"}
+		}
+	}
+
+	// 添加最后一个条目
+	if current != nil {
+		entries = append(entries, *current)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return entries, nil
+}
+
+// GetTokenFromNetrc 从.netrc文件获取指定主机的token
+func GetTokenFromNetrc(host string) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+
+	netrcPath := filepath.Join(home, ".netrc")
+	entries, err := ParseNetrc(netrcPath)
+	if err != nil {
+		// 文件不存在或无法读取，返回空但不报错
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+
+	// 查找匹配的条目
+	for _, entry := range entries {
+		if entry.Machine == host && entry.Password != "" {
+			return entry.Password, nil
+		}
+	}
+
+	// 没有找到匹配的条目
+	return "", nil
 }
 
 func init() {
@@ -37,20 +140,23 @@ func init() {
 		},
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			baseURL, token, err := IssueAPIBaseURL()
+			if err != nil {
+				return err
+			}
 			url := fmt.Sprintf("%s?access_token=%s&state=%s", baseURL, token, state)
 			resp, err := http.Get(url)
 			if err != nil {
-				return
+				return err
 			}
 			defer resp.Body.Close()
 			b, err := io.ReadAll(resp.Body)
 			if err != nil {
-				return
+				return err
 			}
 			issues := []Issue{}
 			err = json.Unmarshal(b, &issues)
 			if err != nil {
-				return
+				return err
 			}
 			for _, issue := range issues {
 				fmt.Printf("# %s\n", issue.Title)
@@ -59,14 +165,14 @@ func init() {
 				fmt.Printf("- state: %s\n", issue.State)
 				fmt.Printf("\n%s\n\n", issue.Body)
 			}
-			return
+			return nil
 		},
 	}
 	listCmd.Flags().StringVar(&state, "state", "open", "issue state in open, closed and all, default open")
 	showCmd := &cobra.Command{
 		Use: "show",
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
-			return
+			return nil
 		},
 	}
 
@@ -138,16 +244,11 @@ func IssueAPIBaseURL() (baseURL string, token string, err error) {
 		return
 	}
 
-	// 从.netrc获取token
-	token, err = ShellExec(fmt.Sprintf(`
-cat ~/.netrc 2>/dev/null |
-grep %s |
-awk '{print $6}'
-`, host))
+	// 使用纯Go实现从.netrc获取token
+	token, err = GetTokenFromNetrc(host)
 	if err != nil {
 		return
 	}
-	token = strings.TrimSpace(token)
 	if token == "" {
 		err = fmt.Errorf("no token found for %s in ~/.netrc", host)
 		return
