@@ -25,7 +25,7 @@ var (
 	ModelDeepseekReasoner = Getenv("MODEL_DEEPSEEK_REASONER", "deepseek-reasoner")
 
 	DeepseekClient Client
-	close          func() error
+	closeAll       func() error
 	ProjectRoot    = GetProjectRoot()
 
 	ConfigDir = GetConfigDir()
@@ -123,23 +123,23 @@ func findGitRoot(dir string) (string, error) {
 }
 
 func RootPostRunE(cmd *cobra.Command, args []string) (err error) {
-	if close != nil {
-		err = close()
+	if closeAll != nil {
+		err = closeAll()
 	}
 	return
 }
 
 func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
-	var w *os.File
+	var output *os.File
 	switch mode {
 	case "markdown":
 	case "org":
 		var r *os.File
-		r, w, err = os.Pipe()
+		r, output, err = os.Pipe()
 		if err != nil {
 			return err
 		}
-		SetOutputWriter(w)
+		SetOutputWriter(output)
 		go func(input io.Reader) error {
 			converter := NewMarkdownToOrgConverter()
 			return converter.ConvertStream(input, os.Stdout)
@@ -166,12 +166,16 @@ func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 	log.SetOutput(logfile)
 
-	close = func() (err error) {
+	closeAll = func() (err error) {
 		var errs []error
 
 		// 关闭 w（如果存在）
-		if w != nil {
-			if err := w.Close(); err != nil {
+		if output != nil {
+			// flush output - 写入一个换行符确保缓冲区被刷新
+			if _, err := output.Write([]byte("\n")); err != nil {
+				errs = append(errs, err)
+			}
+			if err := output.Close(); err != nil {
 				errs = append(errs, err)
 			}
 		}

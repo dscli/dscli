@@ -290,6 +290,7 @@ func (c *MarkdownToOrgConverter) ConvertStream(input io.Reader, output io.Writer
 	writer := bufio.NewWriter(output)
 	defer writer.Flush()
 
+	lineCount := 0
 	for scanner.Scan() {
 		line := scanner.Text()
 		// 添加换行符，因为scanner.Text()不包含换行符
@@ -297,8 +298,11 @@ func (c *MarkdownToOrgConverter) ConvertStream(input io.Reader, output io.Writer
 		if _, err := writer.WriteString(converted); err != nil {
 			return fmt.Errorf("failed to write output: %w", err)
 		}
-		// Flush immediately to maintain streaming
-		writer.Flush()
+		// 每10行flush一次，平衡性能和实时性
+		lineCount++
+		if lineCount%10 == 0 {
+			writer.Flush()
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
