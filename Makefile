@@ -183,13 +183,3 @@ release-info:
 	@echo ""
 	@echo "构建命令: make release"
 	@echo "安装命令: make install 或 go install gitcode.com/dscli/dscli@v$(VERSION)"
-
-文件信息:
-- 路径: /home/nanjj/src/gitcode.com/dscli/dscli/Makefile
-- 大小: 6096 字节
-权限: -rw-r--r--
-修改时间: 2026-02-28 15:57:47
-
-=== 执行统计 ===
-执行时间: 101.46µs
-状态: 成功
