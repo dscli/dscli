@@ -524,3 +524,481 @@ func TestParseRawIssue(t *testing.T) {
 		})
 	}
 }
+
+// TestParseRawIssues 测试批量解析功能
+func TestParseRawIssues(t *testing.T) {
+	// 测试用例1: 空数组
+	t.Run("空数组", func(t *testing.T) {
+		issues, err := parseRawIssues([]RawIssue{})
+		if err != nil {
+			t.Errorf("空数组应该返回nil错误，但得到: %v", err)
+		}
+		if len(issues) != 0 {
+			t.Errorf("空数组应该返回空切片，但得到长度: %d", len(issues))
+		}
+	})
+
+	// 测试用例2: 单个RawIssue
+	t.Run("单个RawIssue", func(t *testing.T) {
+		raw := RawIssue{
+			ID:        json.RawMessage(`"123"`),
+			Number:    "456",
+			State:     "open",
+			Title:     "测试Issue",
+			Body:      "测试内容",
+			CreatedAt: "2024-01-01T00:00:00Z",
+			UpdatedAt: "2024-01-02T00:00:00Z",
+			User: RawUser{
+				Login: "testuser",
+				Name:  "测试用户",
+			},
+		}
+
+		issues, err := parseRawIssues([]RawIssue{raw})
+		if err != nil {
+			t.Fatalf("解析单个RawIssue失败: %v", err)
+		}
+		if len(issues) != 1 {
+			t.Fatalf("应该返回1个Issue，但得到: %d", len(issues))
+		}
+
+		issue := issues[0]
+		if issue.ID != 123 {
+			t.Errorf("ID错误: 期望=123, 实际=%d", issue.ID)
+		}
+		if issue.Number != "456" {
+			t.Errorf("Number错误: 期望=456, 实际=%s", issue.Number)
+		}
+		if issue.Title != "测试Issue" {
+			t.Errorf("Title错误: 期望=测试Issue, 实际=%s", issue.Title)
+		}
+		if issue.User.Login != "testuser" {
+			t.Errorf("User.Login错误: 期望=testuser, 实际=%s", issue.User.Login)
+		}
+	})
+
+	// 测试用例3: 多个RawIssue
+	t.Run("多个RawIssue", func(t *testing.T) {
+		raws := []RawIssue{
+			{
+				ID:     json.RawMessage(`"1"`),
+				Number: "1",
+				State:  "open",
+				Title:  "Issue 1",
+				User:   RawUser{Login: "user1"},
+			},
+			{
+				ID:     json.RawMessage(`"2"`),
+				Number: "2",
+				State:  "closed",
+				Title:  "Issue 2",
+				User:   RawUser{Login: "user2"},
+			},
+		}
+
+		issues, err := parseRawIssues(raws)
+		if err != nil {
+			t.Fatalf("解析多个RawIssue失败: %v", err)
+		}
+		if len(issues) != 2 {
+			t.Fatalf("应该返回2个Issue，但得到: %d", len(issues))
+		}
+
+		// 验证顺序和内容
+		if issues[0].Number != "1" {
+			t.Errorf("第一个Issue的Number错误: 期望=1, 实际=%s", issues[0].Number)
+		}
+		if issues[0].State != "open" {
+			t.Errorf("第一个Issue的State错误: 期望=open, 实际=%s", issues[0].State)
+		}
+		if issues[0].User.Login != "user1" {
+			t.Errorf("第一个Issue的User.Login错误: 期望=user1, 实际=%s", issues[0].User.Login)
+		}
+
+		if issues[1].Number != "2" {
+			t.Errorf("第二个Issue的Number错误: 期望=2, 实际=%s", issues[1].Number)
+		}
+		if issues[1].State != "closed" {
+			t.Errorf("第二个Issue的State错误: 期望=closed, 实际=%s", issues[1].State)
+		}
+		if issues[1].User.Login != "user2" {
+			t.Errorf("第二个Issue的User.Login错误: 期望=user2, 实际=%s", issues[1].User.Login)
+		}
+	})
+
+	// 测试用例4: 包含错误ID的RawIssue
+	t.Run("包含错误ID", func(t *testing.T) {
+		raw := RawIssue{
+			ID:     json.RawMessage(`"invalid"`), // 非数字ID
+			Number: "999",
+			State:  "open",
+			Title:  "测试",
+			User:   RawUser{Login: "test"},
+		}
+
+		// 注意：parseRawIssue 目前不会因为ID解析失败而返回错误
+		// 所以这个测试可能不会失败
+		issues, err := parseRawIssues([]RawIssue{raw})
+		if err != nil {
+			t.Fatalf("不应该返回错误，但得到: %v", err)
+		}
+		if len(issues) != 1 {
+			t.Fatalf("应该返回1个Issue，但得到: %d", len(issues))
+		}
+		// ID应该为0（默认值）
+		if issues[0].ID != 0 {
+			t.Errorf("无效ID应该解析为0，但得到: %d", issues[0].ID)
+		}
+	})
+
+	// 测试用例5: 重用TestParseRawIssue的测试数据
+	t.Run("重用现有测试数据", func(t *testing.T) {
+		// 创建一个正常的RawIssue
+		raw := RawIssue{
+			ID:        json.RawMessage(`"12345"`),
+			Number:    "42",
+			State:     "open",
+			Title:     "测试Issue",
+			Body:      "测试内容",
+			CreatedAt: "2024-01-01T12:00:00Z",
+			UpdatedAt: "2024-01-02T12:00:00Z",
+			User: RawUser{
+				ID:        json.RawMessage(`"67890"`),
+				Login:     "testuser",
+				Name:      "测试用户",
+				AvatarURL: "https://avatar.url/test.png",
+			},
+			Labels: []Label{
+				{ID: 1, Name: "bug", Color: "red", Description: "Bug报告"},
+			},
+		}
+
+		issues, err := parseRawIssues([]RawIssue{raw})
+		if err != nil {
+			t.Fatalf("解析失败: %v", err)
+		}
+		if len(issues) != 1 {
+			t.Fatalf("应该返回1个Issue，但得到: %d", len(issues))
+		}
+
+		issue := issues[0]
+		// 验证关键字段
+		if issue.ID != 12345 {
+			t.Errorf("ID错误: 期望=12345, 实际=%d", issue.ID)
+		}
+		if issue.Number != "42" {
+			t.Errorf("Number错误: 期望=42, 实际=%s", issue.Number)
+		}
+		if len(issue.Labels) != 1 {
+			t.Errorf("Labels长度错误: 期望=1, 实际=%d", len(issue.Labels))
+		}
+		if issue.Labels[0].Name != "bug" {
+			t.Errorf("标签名称错误: 期望=bug, 实际=%s", issue.Labels[0].Name)
+		}
+	})
+}
+
+// TestParseRawIssuesError 测试错误处理
+func TestParseRawIssuesError(t *testing.T) {
+	// 注意：目前 parseRawIssue 函数不会返回错误
+	// 即使解析失败，它也会返回一个部分解析的 Issue
+	// 所以 parseRawIssues 实际上永远不会返回错误
+
+	// 为了测试错误处理，我们需要模拟 parseRawIssue 返回错误的情况
+	// 但这需要修改 parseRawIssue 的行为，或者使用接口和依赖注入
+	// 目前我们先保留这个测试框架
+
+	t.Run("理论上应该处理错误", func(t *testing.T) {
+		// 这个测试目前不会触发错误
+		// 但我们可以验证函数的行为
+		raws := []RawIssue{
+			{
+				ID:     json.RawMessage(`"invalid"`),
+				Number: "1",
+				State:  "open",
+				User:   RawUser{Login: "test"},
+			},
+		}
+
+		issues, err := parseRawIssues(raws)
+		if err != nil {
+			t.Errorf("当前实现不应该返回错误，但得到: %v", err)
+		}
+		if len(issues) != 1 {
+			t.Errorf("应该返回1个Issue，但得到: %d", len(issues))
+		}
+		// 验证ID为0（解析失败）
+		if issues[0].ID != 0 {
+			t.Errorf("无效ID应该解析为0，但得到: %d", issues[0].ID)
+		}
+	})
+}
+
+// tokenGetter 定义token获取接口
+type tokenGetter interface {
+	GetToken(host string) (string, error)
+}
+
+// defaultTokenGetter 默认实现
+type defaultTokenGetter struct{}
+
+func (g *defaultTokenGetter) GetToken(host string) (string, error) {
+	return GetTokenFromNetrc(host)
+}
+
+// issueAPIBaseURLWithDeps 可测试的版本，接受依赖注入
+func issueAPIBaseURLWithDeps(originURL string, getter tokenGetter) (baseURL string, token string, err error) {
+	originURL = strings.TrimSpace(originURL)
+
+	// 移除.git后缀
+	originURL = strings.TrimSuffix(originURL, ".git")
+
+	// 解析URL，支持SSH和HTTPS格式
+	var host, owner, repo string
+
+	if strings.HasPrefix(originURL, "git@") {
+		// SSH格式: git@gitcode.com:dscli/dscli
+		parts := strings.Split(originURL, ":")
+		if len(parts) != 2 {
+			err = fmt.Errorf("invalid SSH URL format: %s", originURL)
+			return
+		}
+		host = strings.TrimPrefix(parts[0], "git@")
+		path := parts[1]
+		pathParts := strings.Split(path, "/")
+		if len(pathParts) != 2 {
+			err = fmt.Errorf("invalid path in SSH URL: %s", path)
+			return
+		}
+		owner, repo = pathParts[0], pathParts[1]
+	} else if strings.HasPrefix(originURL, "http") {
+		// HTTPS格式: https://gitcode.com/dscli/dscli
+		// 移除协议前缀
+		urlWithoutProtocol := strings.TrimPrefix(originURL, "https://")
+		urlWithoutProtocol = strings.TrimPrefix(urlWithoutProtocol, "http://")
+
+		parts := strings.Split(urlWithoutProtocol, "/")
+		if len(parts) < 3 {
+			err = fmt.Errorf("invalid HTTPS URL format: %s", originURL)
+			return
+		}
+		host = parts[0]
+		owner, repo = parts[1], parts[2]
+	} else {
+		err = fmt.Errorf("unsupported URL format: %s", originURL)
+		return
+	}
+
+	apiHost := map[string]string{
+		"gitcode.com": "api.gitcode.com/api/v5",
+	}[host]
+
+	if apiHost == "" {
+		err = fmt.Errorf("%s not support yet", host)
+		return
+	}
+
+	// 使用注入的token获取器
+	token, err = getter.GetToken(host)
+	if err != nil {
+		return
+	}
+	if token == "" {
+		err = fmt.Errorf("no token found for %s in ~/.netrc", host)
+		return
+	}
+
+	baseURL = fmt.Sprintf("https://%s/repos/%s/%s/issues",
+		apiHost, owner, repo)
+	return
+}
+
+// mockTokenGetter 模拟token获取器
+type mockTokenGetter struct {
+	tokenMap map[string]string
+	errMap   map[string]error
+}
+
+func (m *mockTokenGetter) GetToken(host string) (string, error) {
+	if err, ok := m.errMap[host]; ok {
+		return "", err
+	}
+	if token, ok := m.tokenMap[host]; ok {
+		return token, nil
+	}
+	return "", nil
+}
+
+// TestIssueAPIBaseURLWithDeps 测试可测试版本
+func TestIssueAPIBaseURLWithDeps(t *testing.T) {
+	testCases := []struct {
+		name          string
+		originURL     string
+		tokenMap      map[string]string
+		errMap        map[string]error
+		expectBaseURL string
+		expectToken   string
+		expectErr     bool
+		expectErrMsg  string
+	}{
+		{
+			name:          "SSH格式-gitcode.com-成功",
+			originURL:     "git@gitcode.com:owner/repo.git",
+			tokenMap:      map[string]string{"gitcode.com": "test-token-123"},
+			expectBaseURL: "https://api.gitcode.com/api/v5/repos/owner/repo/issues",
+			expectToken:   "test-token-123",
+			expectErr:     false,
+		},
+		{
+			name:          "HTTPS格式-gitcode.com-成功",
+			originURL:     "https://gitcode.com/owner/repo.git",
+			tokenMap:      map[string]string{"gitcode.com": "test-token-456"},
+			expectBaseURL: "https://api.gitcode.com/api/v5/repos/owner/repo/issues",
+			expectToken:   "test-token-456",
+			expectErr:     false,
+		},
+		{
+			name:          "无.git后缀",
+			originURL:     "https://gitcode.com/owner/repo",
+			tokenMap:      map[string]string{"gitcode.com": "test-token-789"},
+			expectBaseURL: "https://api.gitcode.com/api/v5/repos/owner/repo/issues",
+			expectToken:   "test-token-789",
+			expectErr:     false,
+		},
+		{
+			name:          "HTTP格式",
+			originURL:     "http://gitcode.com/owner/repo.git",
+			tokenMap:      map[string]string{"gitcode.com": "test-token-http"},
+			expectBaseURL: "https://api.gitcode.com/api/v5/repos/owner/repo/issues",
+			expectToken:   "test-token-http",
+			expectErr:     false,
+		},
+		{
+			name:         "无效SSH格式-缺少路径",
+			originURL:    "git@gitcode.com",
+			tokenMap:     map[string]string{"gitcode.com": "token"},
+			expectErr:    true,
+			expectErrMsg: "invalid SSH URL format",
+		},
+		{
+			name:         "无效SSH格式-路径格式错误",
+			originURL:    "git@gitcode.com:owner",
+			tokenMap:     map[string]string{"gitcode.com": "token"},
+			expectErr:    true,
+			expectErrMsg: "invalid path in SSH URL",
+		},
+		{
+			name:         "无效HTTPS格式",
+			originURL:    "https://gitcode.com",
+			tokenMap:     map[string]string{"gitcode.com": "token"},
+			expectErr:    true,
+			expectErrMsg: "invalid HTTPS URL format",
+		},
+		{
+			name:         "不支持的主机",
+			originURL:    "git@github.com:owner/repo.git",
+			tokenMap:     map[string]string{"github.com": "github-token"},
+			expectErr:    true,
+			expectErrMsg: "not support yet",
+		},
+		{
+			name:         "不支持的URL格式",
+			originURL:    "invalid-url-format",
+			expectErr:    true,
+			expectErrMsg: "unsupported URL format",
+		},
+		{
+			name:         "token获取失败-错误",
+			originURL:    "git@gitcode.com:owner/repo.git",
+			errMap:       map[string]error{"gitcode.com": fmt.Errorf("netrc文件读取失败")},
+			expectErr:    true,
+			expectErrMsg: "netrc文件读取失败",
+		},
+		{
+			name:         "token获取失败-空token",
+			originURL:    "git@gitcode.com:owner/repo.git",
+			tokenMap:     map[string]string{"gitcode.com": ""}, // 空token
+			expectErr:    true,
+			expectErrMsg: "no token found",
+		},
+		{
+			name:         "token获取失败-无token",
+			originURL:    "git@gitcode.com:owner/repo.git",
+			tokenMap:     map[string]string{}, // 无token
+			expectErr:    true,
+			expectErrMsg: "no token found",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// 创建模拟token获取器
+			getter := &mockTokenGetter{
+				tokenMap: tc.tokenMap,
+				errMap:   tc.errMap,
+			}
+
+			// 执行测试
+			baseURL, token, err := issueAPIBaseURLWithDeps(tc.originURL, getter)
+
+			// 验证错误
+			if tc.expectErr {
+				if err == nil {
+					t.Errorf("期望错误但得到成功")
+					return
+				}
+				if tc.expectErrMsg != "" && !strings.Contains(err.Error(), tc.expectErrMsg) {
+					t.Errorf("错误消息不匹配: 期望包含='%s', 实际='%s'", tc.expectErrMsg, err.Error())
+				}
+				return
+			}
+
+			// 验证成功情况
+			if err != nil {
+				t.Errorf("不期望的错误: %v", err)
+				return
+			}
+
+			if baseURL != tc.expectBaseURL {
+				t.Errorf("baseURL不匹配: 期望='%s', 实际='%s'", tc.expectBaseURL, baseURL)
+			}
+
+			if token != tc.expectToken {
+				t.Errorf("token不匹配: 期望='%s', 实际='%s'", tc.expectToken, token)
+			}
+		})
+	}
+}
+
+// TestIssueAPIBaseURLCompatibility 测试与原始函数的兼容性
+// TestIssueAPIBaseURLCompatibility 测试与原始函数的兼容性
+func TestIssueAPIBaseURLCompatibility(t *testing.T) {
+	// 这个测试验证 issueAPIBaseURLWithDeps 与 IssueAPIBaseURL 行为一致
+	// 使用默认的token获取器
+	getter := &defaultTokenGetter{}
+
+	testURLs := []string{
+		"git@gitcode.com:test/owner.git",
+		"https://gitcode.com/test/owner.git",
+		"http://gitcode.com/test/owner.git",
+	}
+
+	for _, url := range testURLs {
+		t.Run(url, func(t *testing.T) {
+			// 由于 GetTokenFromNetrc 可能失败（没有 .netrc 文件）
+			// 我们只测试URL解析部分，忽略token错误
+			_, _, err1 := IssueAPIBaseURL(url)
+			_, _, err2 := issueAPIBaseURLWithDeps(url, getter)
+
+			// 如果两个都成功或都失败（且错误类型相同），则通过
+			if (err1 == nil && err2 == nil) ||
+				(err1 != nil && err2 != nil &&
+					strings.Contains(err1.Error(), "no token found") &&
+					strings.Contains(err2.Error(), "no token found")) {
+				return
+			}
+
+			t.Errorf("行为不一致: IssueAPIBaseURL错误=%v, issueAPIBaseURLWithDeps错误=%v", err1, err2)
+		})
+	}
+}

@@ -245,7 +245,12 @@ func init() {
 			return
 		},
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
-			baseURL, token, err := IssueAPIBaseURL()
+			originURL, err := ShellExec(`git remote get-url origin`)
+			if err != nil {
+				return
+			}
+
+			baseURL, token, err := IssueAPIBaseURL(originURL)
 			if err != nil {
 				return err
 			}
@@ -307,7 +312,12 @@ func init() {
 		},
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			issueNumber := args[0]
-			baseURL, token, err := IssueAPIBaseURL()
+			originURL, err := ShellExec(`git remote get-url origin`)
+			if err != nil {
+				return
+			}
+
+			baseURL, token, err := IssueAPIBaseURL(originURL)
 			if err != nil {
 				return err
 			}
@@ -362,11 +372,7 @@ func init() {
 	issueCmd.AddCommand(listCmd, showCmd, updateCmd, createCmd)
 }
 
-func IssueAPIBaseURL() (baseURL string, token string, err error) {
-	originURL, err := ShellExec(`git remote get-url origin`)
-	if err != nil {
-		return
-	}
+func IssueAPIBaseURL(originURL string) (baseURL string, token string, err error) {
 	originURL = strings.TrimSpace(originURL)
 
 	// 移除.git后缀
