@@ -21,7 +21,7 @@ var (
 
 			// 使用新的格式化接口
 			headers := []string{"货币", "总余额", "赠送余额", "充值余额"}
-			rowFunc := func(data interface{}) []string {
+			rowFunc := func(data any) []string {
 				switch info := data.(type) {
 				case BalanceInfo:
 					return []string{info.Currency, info.TotalBalance, info.GrantedBalance, info.ToppedUpBalance}

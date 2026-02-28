@@ -10,7 +10,7 @@ import (
 
 func TestTableFormatter(t *testing.T) {
 	headers := []string{"Name", "Age", "City"}
-	rowFunc := func(data interface{}) []string {
+	rowFunc := func(data any) []string {
 		switch p := data.(type) {
 		case Person:
 			return []string{p.Name, fmt.Sprintf("%d", p.Age), p.City}
@@ -70,7 +70,7 @@ func TestJSONFormatter(t *testing.T) {
 
 func TestFormatOutput(t *testing.T) {
 	headers := []string{"Name", "Age"}
-	rowFunc := func(data interface{}) []string {
+	rowFunc := func(data any) []string {
 		switch p := data.(type) {
 		case Person:
 			return []string{p.Name, fmt.Sprintf("%d", p.Age)}
@@ -102,7 +102,7 @@ func TestFormatOutput(t *testing.T) {
 
 func TestFormatOutputToWriter(t *testing.T) {
 	headers := []string{"Name", "Age", "City"}
-	rowFunc := func(data interface{}) []string {
+	rowFunc := func(data any) []string {
 		switch p := data.(type) {
 		case Person:
 			return []string{p.Name, fmt.Sprintf("%d", p.Age), p.City}

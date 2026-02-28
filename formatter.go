@@ -13,18 +13,18 @@ import (
 
 // Formatter 定义输出格式化接口
 type Formatter interface {
-	Format(data interface{}) (string, error)
+	Format(data any) (string, error)
 }
 
 // TableFormatter 表格格式化器
 type TableFormatter struct {
 	headers []string
-	rowFunc func(interface{}) []string
+	rowFunc func(any) []string
 	writer  io.Writer
 }
 
 // NewTableFormatter 创建表格格式化器
-func NewTableFormatter(headers []string, rowFunc func(interface{}) []string) *TableFormatter {
+func NewTableFormatter(headers []string, rowFunc func(any) []string) *TableFormatter {
 	return &TableFormatter{
 		headers: headers,
 		rowFunc: rowFunc,
@@ -39,7 +39,7 @@ func (f *TableFormatter) WithWriter(w io.Writer) *TableFormatter {
 }
 
 // Format 实现表格格式化
-func (f *TableFormatter) Format(data interface{}) (string, error) {
+func (f *TableFormatter) Format(data any) (string, error) {
 	w := tabwriter.NewWriter(f.writer, 0, 0, 3, ' ', 0)
 
 	// 写入表头
@@ -86,7 +86,7 @@ func (f *TableFormatter) Format(data interface{}) (string, error) {
 type JSONFormatter struct{}
 
 // Format 实现JSON格式化
-func (f *JSONFormatter) Format(data interface{}) (string, error) {
+func (f *JSONFormatter) Format(data any) (string, error) {
 	output, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return "", err
@@ -109,7 +109,7 @@ func NewTemplateFormatter(tmplStr string) (*TemplateFormatter, error) {
 }
 
 // Format 实现模板格式化
-func (f *TemplateFormatter) Format(data interface{}) (string, error) {
+func (f *TemplateFormatter) Format(data any) (string, error) {
 	var buf strings.Builder
 	err := f.tmpl.Execute(&buf, data)
 	if err != nil {
@@ -119,7 +119,7 @@ func (f *TemplateFormatter) Format(data interface{}) (string, error) {
 }
 
 // FormatOutput 根据格式类型格式化输出
-func FormatOutput(data interface{}, format string, headers []string, rowFunc func(interface{}) []string) error {
+func FormatOutput(data any, format string, headers []string, rowFunc func(any) []string) error {
 	var formatter Formatter
 	var err error
 
@@ -146,7 +146,7 @@ func FormatOutput(data interface{}, format string, headers []string, rowFunc fun
 }
 
 // FormatOutputToWriter 格式化输出到指定的写入器
-func FormatOutputToWriter(w io.Writer, data interface{}, format string, headers []string, rowFunc func(interface{}) []string) error {
+func FormatOutputToWriter(w io.Writer, data any, format string, headers []string, rowFunc func(any) []string) error {
 	var formatter Formatter
 
 	switch format {

@@ -21,7 +21,7 @@ var (
 
 			// 使用新的格式化接口
 			headers := []string{"ID", "对象", "拥有者"}
-			rowFunc := func(data interface{}) []string {
+			rowFunc := func(data any) []string {
 				switch m := data.(type) {
 				case Model:
 					return []string{m.ID, m.Object, m.OwnedBy}

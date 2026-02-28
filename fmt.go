@@ -16,7 +16,7 @@ var (
 )
 
 // Println 根据当前模式输出
-func Println(a ...interface{}) (n int, err error) {
+func Println(a ...any) (n int, err error) {
 	text := fmt.Sprint(a...)
 	if OutputMode == "org" {
 		text = convertMarkdownToOrg(text)
@@ -25,7 +25,7 @@ func Println(a ...interface{}) (n int, err error) {
 }
 
 // Printf 根据当前模式输出
-func Printf(format string, a ...interface{}) (n int, err error) {
+func Printf(format string, a ...any) (n int, err error) {
 	text := fmt.Sprintf(format, a...)
 	if OutputMode == "org" {
 		text = convertMarkdownToOrg(text)
