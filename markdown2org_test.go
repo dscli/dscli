@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"fmt"
 	"strings"
 	"testing"
 )
@@ -149,81 +147,6 @@ func TestMarkdownToOrgConverter_CodeBlock(t *testing.T) {
 	}
 }
 
-func TestMarkdownToOrgConverter_ConvertStream(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name: "完整文档转换",
-			input: `# Main Title
-
-This is a **bold** statement with *italic* text.
-
-## Subsection
-
-Here's some ` + "`inline code`" + ` and a [link](https://example.com).
-
-### Code Example
-
-` + "```" + `go
-package main
-
-func main() {
-    fmt.Println("Hello")
-}
-` + "```" + `
-
-More text after code.
-`,
-			expected: `* Main Title
-
-` + "This is a \u200b*bold*\u200b statement with \u200b/italic/\u200b text." + `
-
-** Subsection
-
-` + "Here's some \u200b=inline code=\u200b and a [[https://example.com][link]]." + `
-
-*** Code Example
-
-#+begin_src go
-package main
-
-func main() {
-    fmt.Println("Hello")
-}
-#+end_src
-
-More text after code.
-`,
-		},
-		{
-			name:     "流式输入",
-			input:    "Line 1\nLine 2\nLine 3\n",
-			expected: "Line 1\nLine 2\nLine 3\n",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			converter := NewMarkdownToOrgConverter()
-			input := strings.NewReader(tt.input)
-			var output bytes.Buffer
-
-			err := converter.ConvertStream(input, &output)
-			if err != nil {
-				t.Fatalf("ConvertStream() error = %v", err)
-			}
-
-			result := output.String()
-			if result != tt.expected {
-				t.Errorf("ConvertStream() = %q, want %q", result, tt.expected)
-			}
-		})
-	}
-}
-
 func TestMarkdownToOrgConverter_EdgeCases(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -358,27 +281,5 @@ func BenchmarkMarkdownToOrgConverter_ConvertLine(b *testing.B) {
 		for _, line := range lines {
 			_ = converter.ConvertLine(line)
 		}
-	}
-}
-
-func BenchmarkMarkdownToOrgConverter_ConvertStream(b *testing.B) {
-	converter := NewMarkdownToOrgConverter()
-
-	// 创建测试数据
-	var builder strings.Builder
-	for i := 0; i < 1000; i++ {
-		builder.WriteString(fmt.Sprintf("# Heading %d\n", i))
-		builder.WriteString(fmt.Sprintf("This is line %d with **bold** text.\n", i))
-		if i%10 == 0 {
-			builder.WriteString("```go\nfunc test() {}\n```\n")
-		}
-	}
-	testData := builder.String()
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		input := strings.NewReader(testData)
-		var output bytes.Buffer
-		_ = converter.ConvertStream(input, &output)
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"time"
 )
 
 // MarkdownToOrgConverter converts Markdown to Org mode
@@ -285,21 +284,11 @@ func (c *MarkdownToOrgConverter) convertItalicInBold(text string) string {
 	return result.String()
 }
 
-// ConvertStream converts input to output with streaming
-func (c *MarkdownToOrgConverter) ConvertStream(input io.Reader, output io.Writer) error {
+// ConvertLines converts input to output line by line (simpler, more reliable)
+func (c *MarkdownToOrgConverter) ConvertLines(input io.Reader, output io.Writer) error {
 	scanner := bufio.NewScanner(input)
 	writer := bufio.NewWriter(output)
-	defer writer.Flush()
-	ticker := time.NewTicker(time.Second)
-	go func() {
-		for {
-			<-ticker.C
-			// flush every second
-			writer.Flush()
-		}
-	}()
-	defer ticker.Stop()
-	lineCount := 0
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		// 添加换行符，因为scanner.Text()不包含换行符
@@ -307,16 +296,12 @@ func (c *MarkdownToOrgConverter) ConvertStream(input io.Reader, output io.Writer
 		if _, err := writer.WriteString(converted); err != nil {
 			return fmt.Errorf("failed to write output: %w", err)
 		}
-		// 每2行flush一次，平衡性能和实时性
-		lineCount++
-		if lineCount%2 == 0 {
-			writer.Flush()
-		}
 	}
 
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("failed to read input: %w", err)
 	}
 
-	return nil
+	// 确保所有数据都写入
+	return writer.Flush()
 }

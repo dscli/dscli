@@ -158,7 +158,8 @@ func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 		SetOutputWriter(output)
 		go func(input io.Reader) error {
 			converter := NewMarkdownToOrgConverter()
-			return converter.ConvertStream(input, os.Stdout)
+			// 使用 ConvertLines 而不是 ConvertStream，更可靠
+			return converter.ConvertLines(input, os.Stdout)
 		}(r)
 	default:
 		err = fmt.Errorf("do not support %s", mode)
@@ -187,10 +188,7 @@ func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 
 		// 关闭 w（如果存在）
 		if output != nil {
-			// flush output - 写入一个换行符确保缓冲区被刷新
-			if _, err := output.Write([]byte("\n")); err != nil {
-				errs = append(errs, err)
-			}
+			// 关闭输出管道，这会使得读取端的 scanner.Scan() 返回 false
 			if err := output.Close(); err != nil {
 				errs = append(errs, err)
 			}
