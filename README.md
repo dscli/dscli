@@ -15,7 +15,7 @@ dscli     | > dscli issue - Git管理   |
 **dscli** 是一个 AI 增强的命令行开发者工具箱，它结合了：
 
 1. **AI 编程助手** - 基于 DeepSeek API 的智能对话和代码补全
-2. **开发工具** - Git issue 管理、技能管理、文件操作等实用功能
+2. **开发工具** - Git issue 管理、文件操作等实用功能
 3. **集成环境** - 支持 Emacs 集成，提供流畅的开发体验
 
 简单说：dscli = AI助手 + 开发工具 + 命令行效率
@@ -45,13 +45,11 @@ dscli     | > dscli issue - Git管理   |
   - `show <number>` - 查看 issue 详情
   - `create` - 创建新 issue
   - `update` - 更新 issue
-- **技能管理** - 保存和复用常用 prompt，提高工作效率
-- **对话历史** - 基于项目的对话历史存储，支持上下文记忆
 
-### 🛠️ 实用工具
-- **`markdown2org`** - Markdown 转 Org 格式
-- **数据库支持** - SQLite 存储对话历史、技能、配置等
-- **Emacs 集成** - 通过 dscli.el 在 Emacs 中使用所有功能
+### 🛠️ 实用特性
+- **多格式输出** - 支持 `--mode markdown`（默认）和 `--mode org` 输出格式
+- **数据库支持** - SQLite 存储对话历史、配置等
+- **项目感知** - 自动识别 Git 仓库根目录，按项目隔离对话历史
 - **`dscli version`** - 查看版本信息
 
 ## 🚀 快速开始
@@ -82,11 +80,14 @@ export DEEPSEEK_API_KEY="your-api-key-here"
 
 ### 1. AI 编程助手
 ```bash
-# 基本对话
+# 基本对话（Markdown格式输出）
 echo "如何用Go实现HTTP服务器？" | dscli chat
 
+# Org模式输出
+echo "解释这个算法的时间复杂度" | dscli chat --mode org
+
 # 使用推理模型
-echo "解释这个算法的时间复杂度" | dscli chat --model deepseek-reasoner
+echo "分析这个代码的性能问题" | dscli chat --model deepseek-reasoner
 
 # 代码补全
 echo "def fibonacci(n):" | dscli fim
@@ -97,37 +98,36 @@ echo "def fibonacci(n):" | dscli fim
 # 列出所有打开的 issue
 dscli issue list
 
+# 列出已关闭的 issue
+dscli issue list --state closed
+
 # 查看特定 issue 详情
 dscli issue show 123
 
-# 列出已关闭的 issue
-dscli issue list --state closed
+# 创建新 issue
+dscli issue create
+
+# 更新 issue
+dscli issue update
 ```
 
-### 3. 技能管理
+### 3. 查看模型和余额
 ```bash
-# 通过 chat 命令使用技能
-echo "使用代码审查技能" | dscli chat
+# 查看可用模型
+dscli models
+
+# 查看账户余额
+dscli balance
+
+# JSON格式输出
+dscli models --format json
+dscli balance --format json
 ```
 
 ### 4. 查看版本信息
 ```bash
 dscli version
 ```
-
-## 🔌 Emacs 集成
-
-### 安装 dscli.el
-```emacs-lisp
-(add-to-list 'load-path "/path/to/dscli.el")
-(require 'dscli)
-```
-
-### 基本使用
-- `M-x dscli-chat` - 启动 AI 对话
-- 在临时缓冲区输入问题
-- 按 `C-c C-c` 发送
-- 查看 org mode 格式的回答
 
 ## ⚙️ 高级配置
 
@@ -164,7 +164,10 @@ dscli/
 ├── db.go                # 数据库操作
 ├── tools.go             # 工具调用
 ├── prompt.go            # 系统提示词
-└── markdown2org.go      # 格式转换
+├── formatter.go         # 格式化器
+├── fmt.go               # 格式化工具
+├── markdown2org.go      # Markdown到Org转换器
+└── client.go            # API客户端
 ```
 
 ## 🔄 工作流程
@@ -172,7 +175,7 @@ dscli/
 1. **项目感知** - 自动识别 Git 仓库根目录
 2. **上下文隔离** - 每个项目有独立的对话历史
 3. **工具集成** - AI 可以直接操作文件、执行 Git 命令
-4. **技能复用** - 保存常用 prompt，提高效率
+4. **多格式输出** - 支持 Markdown 和 Org 模式输出
 
 ## 🤝 贡献
 
