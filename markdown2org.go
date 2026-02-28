@@ -10,29 +10,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var markdown2orgCmd = &cobra.Command{
-	Use:   "markdown2org",
-	Short: "Convert Markdown to Org mode format (streaming)",
-	Long: `Convert Markdown from stdin to Org mode format with streaming support.
-Perfect for piping with dscli chat command.
-
-Conversion rules:
-- Headers: # -> *, ## -> **, ### -> *** etc.
-- Bold: **text** -> *text*
-- Italic: *text* -> /text/
-- Strikethrough: ~~text~~ -> +text+
-- Inline code: 'code' -> =code=
-- Code blocks: '''lang -> #+begin_src lang
-- Links: [text](url) -> [[url][text]]
-- Lists: - item -> - item (unchanged)
-
-Examples:
-  echo "# Heading\n**bold** text" | dscli markdown2org
-  dscli chat < input.txt | dscli markdown2org
-  cat document.md | dscli markdown2org`,
-	RunE: Markdown2OrgRunE,
-}
-
 // Markdown2OrgRunE executes streaming Markdown to Org conversion
 func Markdown2OrgRunE(cmd *cobra.Command, args []string) error {
 	converter := NewMarkdownToOrgConverter()
@@ -62,11 +39,11 @@ func (c *MarkdownToOrgConverter) ConvertLine(line string) string {
 	trimmedLine := strings.TrimSpace(line)
 
 	// Handle code blocks - 必须放在最前面
-	if strings.HasPrefix(trimmedLine, "```") {
+	if after, ok := strings.CutPrefix(trimmedLine, "```"); ok {
 		if !c.inCodeBlock {
 			// Code block start
 			c.inCodeBlock = true
-			lang := strings.TrimPrefix(trimmedLine, "```")
+			lang := after
 			lang = strings.TrimSpace(lang)
 			if lang == "" {
 				lang = "text"
@@ -341,5 +318,27 @@ func (c *MarkdownToOrgConverter) ConvertStream(input io.Reader, output io.Writer
 }
 
 func init() {
+	markdown2orgCmd := &cobra.Command{
+		Use:   "markdown2org",
+		Short: "Convert Markdown to Org mode format (streaming)",
+		Long: `Convert Markdown from stdin to Org mode format with streaming support.
+Perfect for piping with dscli chat command.
+
+Conversion rules:
+- Headers: # -> *, ## -> **, ### -> *** etc.
+- Bold: **text** -> *text*
+- Italic: *text* -> /text/
+- Strikethrough: ~~text~~ -> +text+
+- Inline code: 'code' -> =code=
+- Code blocks: '''lang -> #+begin_src lang
+- Links: [text](url) -> [[url][text]]
+- Lists: - item -> - item (unchanged)
+
+Examples:
+  echo "# Heading\n**bold** text" | dscli markdown2org
+  dscli chat < input.txt | dscli markdown2org
+  cat document.md | dscli markdown2org`,
+		RunE: Markdown2OrgRunE,
+	}
 	rootCmd.AddCommand(markdown2orgCmd)
 }

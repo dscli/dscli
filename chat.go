@@ -13,35 +13,20 @@ import (
 )
 
 const (
-	DEEPSEEK_CHAT     = int64(0)
-	DEEPSEEK_REASONER = int64(1)
+	DeepseekChat     = int64(0)
+	DeepseekReasoner = int64(1)
 )
 
 var chatModel string
-
-var chatCmd = &cobra.Command{
-	Use:   "chat",
-	Short: "与 DeepSeek 对话（支持工具调用：文件操作、Git）",
-	Long: `发送一条消息给 DeepSeek 聊天模型并获取回复。
-消息内容通过标准输入提供，自动按项目目录隔离对话历史。
-支持工具调用：文件读写、搜索、Git 操作。
-
-示例：
-  echo "帮我创建一个 main.go 文件" | dscli chat
-  echo "把 README.md 添加到 Git 并提交" | dscli chat
-  cat prompt.txt | dscli chat --model deepseek-chat`,
-	PreRunE: ChatPreRunE,
-	RunE:    ChatRunE,
-}
 
 func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 	// 设置ModelID
 	var modelID int64
 	switch chatModel {
 	case ModelDeepseekChat:
-		modelID = DEEPSEEK_CHAT
+		modelID = DeepseekChat
 	case ModelDeepseekReasoner:
-		modelID = DEEPSEEK_REASONER
+		modelID = DeepseekReasoner
 	default:
 		err = fmt.Errorf("do not support %s", chatModel)
 		return
@@ -130,7 +115,7 @@ func ChatMessage(ctx context.Context, inputs ...Message) (err error) {
 		}
 	}
 
-	if ModelID == DEEPSEEK_REASONER && assistantMsg.ReasoningContent != "" {
+	if ModelID == DeepseekReasoner && assistantMsg.ReasoningContent != "" {
 		Printf("已思考(用时%v)\n\n", time.Since(startTime))
 		Println(assistantMsg.ReasoningContent)
 		Println("\n------")
@@ -141,6 +126,20 @@ func ChatMessage(ctx context.Context, inputs ...Message) (err error) {
 }
 
 func init() {
+	chatCmd := &cobra.Command{
+		Use:   "chat",
+		Short: "与 DeepSeek 对话（支持工具调用：文件操作、Git）",
+		Long: `发送一条消息给 DeepSeek 聊天模型并获取回复。
+消息内容通过标准输入提供，自动按项目目录隔离对话历史。
+支持工具调用：文件读写、搜索、Git 操作。
+
+示例：
+  echo "帮我创建一个 main.go 文件" | dscli chat
+  echo "把 README.md 添加到 Git 并提交" | dscli chat
+  cat prompt.txt | dscli chat --model deepseek-chat`,
+		PreRunE: ChatPreRunE,
+		RunE:    ChatRunE,
+	}
 	chatCmd.Flags().StringVar(&chatModel, "model", ModelDeepseekChat, "使用的模型名称")
 	rootCmd.AddCommand(chatCmd)
 }

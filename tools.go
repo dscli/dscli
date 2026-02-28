@@ -39,7 +39,7 @@ func RegisterTool(tool ToolDef) {
 
 // GetAllTools 获取所有工具定义（用于API调用）
 func GetAllTools() []Tool {
-	if ModelID == DEEPSEEK_REASONER {
+	if ModelID == DeepseekReasoner {
 		return nil
 	}
 

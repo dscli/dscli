@@ -39,9 +39,9 @@ var reasonerSystemPrompt = `你是编程领域一个深入思考者。
 func GetSystemPrompt() (prompt string) {
 	id := ModelID
 	switch id {
-	case DEEPSEEK_CHAT:
+	case DeepseekChat:
 		prompt = chatSystemPrompt
-	case DEEPSEEK_REASONER:
+	case DeepseekReasoner:
 		prompt = reasonerSystemPrompt
 	default:
 		log.Fatalf("do not support %s", chatModel)

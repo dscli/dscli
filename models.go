@@ -3,29 +3,43 @@ package main
 import (
 	"fmt"
 	"os"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 )
 
-var modelsCmd = &cobra.Command{
-	Use:   "models",
-	Short: "列出 DeepSeek 支持的模型",
-	Run: func(cmd *cobra.Command, args []string) {
-		resp, err := client.Models()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "获取模型列表失败: %v\n", err)
-			os.Exit(1)
-		}
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-		fmt.Fprintln(w, "ID\t对象\t拥有者")
-		for _, m := range resp.Data {
-			fmt.Fprintf(w, "%s\t%s\t%s\n", m.ID, m.Object, m.OwnedBy)
-		}
-		w.Flush()
-	},
-}
+var (
+	modelsFormat string
+	modelsCmd    = &cobra.Command{
+		Use:   "models",
+		Short: "列出 DeepSeek 支持的模型",
+		Run: func(cmd *cobra.Command, args []string) {
+			resp, err := client.Models()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "获取模型列表失败: %v\n", err)
+				os.Exit(1)
+			}
+
+			// 使用新的格式化接口
+			headers := []string{"ID", "对象", "拥有者"}
+			rowFunc := func(data interface{}) []string {
+				switch m := data.(type) {
+				case Model:
+					return []string{m.ID, m.Object, m.OwnedBy}
+				default:
+					return []string{"", "", ""}
+				}
+			}
+
+			err = FormatOutput(resp.Data, modelsFormat, headers, rowFunc)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "格式化输出失败: %v\n", err)
+				os.Exit(1)
+			}
+		},
+	}
+)
 
 func init() {
+	modelsCmd.Flags().StringVarP(&modelsFormat, "format", "f", "table", "输出格式：table（表格）、json（JSON）")
 	rootCmd.AddCommand(modelsCmd)
 }
