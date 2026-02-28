@@ -145,7 +145,7 @@ func RootPostRunE(cmd *cobra.Command, args []string) (err error) {
 func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 	// 配置输出系统
 	configureOutput()
-
+	SetOutputWriter(cmd.OutOrStdout())
 	var output *os.File
 	switch mode {
 	case "markdown":

@@ -57,7 +57,6 @@ func GetAllTools() []Tool {
 }
 
 // HandleToolCall 处理工具调用（带统计）
-
 func HandleToolCalls(ctx context.Context, assistantMsg *Message) (err error) {
 	inputs := []Message{}
 	// 处理每个工具调用
@@ -97,7 +96,6 @@ func resolvePath(path string) (string, error) {
 	return filepath.Join(ProjectRoot, path), nil
 }
 
-// handleReadFile 读取文件
 // handleReadFile 读取文件（纯Go实现）
 func handleReadFile(ctx context.Context, argsRaw json.RawMessage) (string, error) {
 	var args struct {
@@ -246,7 +244,7 @@ func handleSearchFiles(ctx context.Context, argsRaw json.RawMessage) (string, er
 		// -q: 安静模式，只返回退出状态
 		// 转义单引号：将'替换为'\''
 		escapedContent := strings.ReplaceAll(args.Content, "'", "'\"'\"'")
-		script += fmt.Sprintf(` -exec grep -lq '%s' {} \\;`, escapedContent)
+		script += fmt.Sprintf(` -exec grep -lq '%s' {} \;`, escapedContent)
 	}
 
 	// 输出结果并限制数量
