@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 )
 
 // MarkdownToOrgConverter converts Markdown to Org mode
@@ -289,7 +290,15 @@ func (c *MarkdownToOrgConverter) ConvertStream(input io.Reader, output io.Writer
 	scanner := bufio.NewScanner(input)
 	writer := bufio.NewWriter(output)
 	defer writer.Flush()
-
+	ticker := time.NewTicker(time.Second)
+	go func() {
+		for {
+			<-ticker.C
+			// flush every second
+			writer.Flush()
+		}
+	}()
+	defer ticker.Stop()
 	lineCount := 0
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -298,9 +307,9 @@ func (c *MarkdownToOrgConverter) ConvertStream(input io.Reader, output io.Writer
 		if _, err := writer.WriteString(converted); err != nil {
 			return fmt.Errorf("failed to write output: %w", err)
 		}
-		// 每10行flush一次，平衡性能和实时性
+		// 每2行flush一次，平衡性能和实时性
 		lineCount++
-		if lineCount%10 == 0 {
+		if lineCount%2 == 0 {
 			writer.Flush()
 		}
 	}

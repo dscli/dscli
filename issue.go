@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -228,6 +229,13 @@ func PrintIssue(issue Issue, detailed bool) {
 }
 
 func init() {
+	// create命令的变量定义
+	var (
+		title    string
+		bodyFlag string
+		fileFlag string
+	)
+
 	issueCmd := &cobra.Command{
 		Use: "issue",
 	}
@@ -360,10 +368,127 @@ func init() {
 	}
 
 	createCmd := &cobra.Command{
-		Use:  "create",
-		RunE: func(cmd *cobra.Command, args []string) error { return nil },
-	}
+		Use:   "create",
+		Short: "创建新的issue",
+		Long: `创建新的issue。
 
+可以通过以下方式提供内容：
+1. 使用 --title 和 --body 参数
+2. 使用 --title 参数，内容从标准输入读取
+3. 使用 --file 参数从文件读取内容
+
+示例:
+  dscli issue create --title "Bug报告" --body "发现了一个bug..."
+  echo "详细描述" | dscli issue create --title "功能请求"
+  dscli issue create --title "文档更新" --file README.md`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// 获取标题
+			if title == "" {
+				return fmt.Errorf("必须提供标题，使用 --title 参数")
+			}
+
+			// 获取内容
+			var body string
+			if bodyFlag != "" {
+				// 从 --body 参数获取
+				body = bodyFlag
+			} else if fileFlag != "" {
+				// 从文件读取
+				content, err := os.ReadFile(fileFlag)
+				if err != nil {
+					return fmt.Errorf("读取文件失败: %w", err)
+				}
+				body = string(content)
+			} else {
+				// 从标准输入读取
+				stat, _ := os.Stdin.Stat()
+				if (stat.Mode() & os.ModeCharDevice) == 0 {
+					// 有标准输入数据
+					data, err := io.ReadAll(os.Stdin)
+					if err != nil {
+						return fmt.Errorf("读取标准输入失败: %w", err)
+					}
+					body = string(data)
+				}
+			}
+
+			// 获取API信息
+			originURL, err := ShellExec(`git remote get-url origin`)
+			if err != nil {
+				return err
+			}
+
+			baseURL, token, err := IssueAPIBaseURL(originURL)
+			if err != nil {
+				return err
+			}
+
+			// 准备请求数据
+			requestData := map[string]interface{}{
+				"title": title,
+			}
+			if body != "" {
+				requestData["body"] = body
+			}
+
+			// 转换为JSON
+			jsonData, err := json.Marshal(requestData)
+			if err != nil {
+				return fmt.Errorf("序列化请求数据失败: %w", err)
+			}
+
+			// 发送POST请求
+			url := fmt.Sprintf("%s?access_token=%s", baseURL, token)
+			req, err := http.NewRequest("POST", url, strings.NewReader(string(jsonData)))
+			if err != nil {
+				return fmt.Errorf("创建请求失败: %w", err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				return fmt.Errorf("发送请求失败: %w", err)
+			}
+			defer resp.Body.Close()
+
+			// 检查HTTP状态码
+			if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+				body, _ := io.ReadAll(resp.Body)
+				return fmt.Errorf("创建issue失败 (状态码: %d): %s", resp.StatusCode, string(body))
+			}
+
+			// 解析响应
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return fmt.Errorf("读取响应失败: %w", err)
+			}
+
+			// 解析为RawIssue
+			var rawIssue RawIssue
+			err = json.Unmarshal(b, &rawIssue)
+			if err != nil {
+				return fmt.Errorf("解析响应数据失败: %w", err)
+			}
+
+			// 转换为Issue
+			issue, err := parseRawIssue(rawIssue)
+			if err != nil {
+				return fmt.Errorf("处理issue数据失败: %w", err)
+			}
+
+			// 显示创建结果
+			Println("✅ Issue 创建成功!")
+			Println()
+			PrintIssue(issue, true)
+			return nil
+		},
+	}
+	// 绑定create命令的flags
+	createCmd.Flags().StringVarP(&title, "title", "t", "", "issue标题（必需）")
+	createCmd.Flags().StringVarP(&bodyFlag, "body", "b", "", "issue内容")
+	createCmd.Flags().StringVarP(&fileFlag, "file", "f", "", "从文件读取内容")
+	createCmd.MarkFlagRequired("title")
 	updateCmd := &cobra.Command{
 		Use:  "update",
 		RunE: func(cmd *cobra.Command, args []string) error { return nil },
