@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -146,21 +145,10 @@ func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 	// 配置输出系统
 	configureOutput()
 	SetOutputWriter(cmd.OutOrStdout())
-	var output *os.File
 	switch mode {
 	case "markdown":
 	case "org":
-		var r *os.File
-		r, output, err = os.Pipe()
-		if err != nil {
-			return err
-		}
-		SetOutputWriter(output)
-		go func(input io.Reader) error {
-			converter := NewMarkdownToOrgConverter()
-			// 使用 ConvertLines 而不是 ConvertStream，更可靠
-			return converter.ConvertLines(input, os.Stdout)
-		}(r)
+		SetOutputMode(mode)
 	default:
 		err = fmt.Errorf("do not support %s", mode)
 		return
@@ -184,26 +172,8 @@ func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 	log.SetOutput(logfile)
 
 	closeAll = func() (err error) {
-		var errs []error
-
-		// 关闭 w（如果存在）
-		if output != nil {
-			// 关闭输出管道，这会使得读取端的 scanner.Scan() 返回 false
-			if err := output.Close(); err != nil {
-				errs = append(errs, err)
-			}
-		}
-
 		// 关闭 logfile
-		if err := logfile.Close(); err != nil {
-			errs = append(errs, err)
-		}
-
-		// 如果有错误，返回第一个错误
-		if len(errs) > 0 {
-			return errs[0]
-		}
-		return nil
+		return logfile.Close()
 	}
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 	DeepseekClient = NewClient(key, url)

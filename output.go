@@ -39,8 +39,14 @@ var (
 	// 输出写入器
 	outputWriter io.Writer = os.Stdout
 
+	// 输出格式
+	outputMode = "markdown"
+
 	// 错误输出写入器
 	outputErrorWriter io.Writer = os.Stderr
+
+	//
+	markdown = NewMarkdownToOrgConverter()
 )
 
 // Color 定义颜色常量
@@ -67,17 +73,31 @@ const (
 
 // Println 输出一行文本（保持向后兼容）
 func Println(a ...any) (n int, err error) {
+	if outputMode == "org" {
+		input := fmt.Sprintln(a...)
+		err = markdown.ConvertLines(input, outputWriter)
+		return
+	}
 	return fmt.Fprintln(outputWriter, a...)
 }
 
 // Printf 输出格式化文本（保持向后兼容）
 func Printf(format string, a ...any) (n int, err error) {
+	if outputMode == "org" {
+		input := fmt.Sprintf(format, a...)
+		err = markdown.ConvertLines(input, outputWriter)
+		return
+	}
 	return fmt.Fprintf(outputWriter, format, a...)
 }
 
 // SetOutputWriter 设置输出写入器
 func SetOutputWriter(w io.Writer) {
 	outputWriter = w
+}
+
+func SetOutputMode(mode string) {
+	outputMode = mode
 }
 
 // SetLogLevel 设置日志级别
@@ -137,7 +157,7 @@ func Debug(format string, a ...any) {
 	if outputCurrentLogLevel <= LogLevelDebug {
 		message := fmt.Sprintf(format, a...)
 		formatted := formatMessage("DEBUG", ColorGray, message)
-		fmt.Fprintln(outputWriter, formatted)
+		Println(formatted)
 	}
 }
 
@@ -146,7 +166,7 @@ func Info(format string, a ...any) {
 	if outputCurrentLogLevel <= LogLevelInfo {
 		message := fmt.Sprintf(format, a...)
 		formatted := formatMessage("INFO", ColorGreen, message)
-		fmt.Fprintln(outputWriter, formatted)
+		Println(formatted)
 	}
 }
 
@@ -155,7 +175,7 @@ func Warn(format string, a ...any) {
 	if outputCurrentLogLevel <= LogLevelWarn {
 		message := fmt.Sprintf(format, a...)
 		formatted := formatMessage("WARN", ColorYellow, message)
-		fmt.Fprintln(outputErrorWriter, formatted)
+		Println(outputErrorWriter, formatted)
 	}
 }
 
@@ -164,7 +184,7 @@ func Error(format string, a ...any) {
 	if outputCurrentLogLevel <= LogLevelError {
 		message := fmt.Sprintf(format, a...)
 		formatted := formatMessage("ERROR", ColorRed, message)
-		fmt.Fprintln(outputErrorWriter, formatted)
+		Println(outputErrorWriter, formatted)
 	}
 }
 
@@ -173,7 +193,7 @@ func Fatal(format string, a ...any) {
 	if outputCurrentLogLevel <= LogLevelFatal {
 		message := fmt.Sprintf(format, a...)
 		formatted := formatMessage("FATAL", ColorBoldRed, message)
-		fmt.Fprintln(outputErrorWriter, formatted)
+		Println(outputErrorWriter, formatted)
 		os.Exit(1)
 	}
 }
@@ -182,45 +202,45 @@ func Fatal(format string, a ...any) {
 func Success(format string, a ...any) {
 	message := fmt.Sprintf(format, a...)
 	formatted := colorize(ColorBoldGreen, "✓ "+message)
-	fmt.Fprintln(outputWriter, formatted)
+	Println(formatted)
 }
 
 // Notice 输出注意信息
 func Notice(format string, a ...any) {
 	message := fmt.Sprintf(format, a...)
 	formatted := colorize(ColorBoldCyan, "→ "+message)
-	fmt.Fprintln(outputWriter, formatted)
+	Println(formatted)
 }
 
 // PrintHeader 输出标题
 func PrintHeader(title string) {
 	line := strings.Repeat("=", len(title)+4)
-	fmt.Fprintln(outputWriter, colorize(ColorBoldCyan, line))
-	fmt.Fprintln(outputWriter, colorize(ColorBoldCyan, "  "+title+"  "))
-	fmt.Fprintln(outputWriter, colorize(ColorBoldCyan, line))
+	Println(colorize(ColorBoldCyan, line))
+	Println(colorize(ColorBoldCyan, "  "+title+"  "))
+	Println(colorize(ColorBoldCyan, line))
 }
 
 // PrintSection 输出章节标题
 func PrintSection(title string) {
-	fmt.Fprintln(outputWriter)
-	fmt.Fprintln(outputWriter, colorize(ColorBoldBlue, "▶ "+title))
-	fmt.Fprintln(outputWriter, colorize(ColorGray, strings.Repeat("─", len(title)+2)))
+	Println(outputWriter)
+	Println(colorize(ColorBoldBlue, "▶ "+title))
+	Println(colorize(ColorGray, strings.Repeat("─", len(title)+2)))
 }
 
 // PrintSubSection 输出子章节标题
 func PrintSubSection(title string) {
-	fmt.Fprintln(outputWriter)
-	fmt.Fprintln(outputWriter, colorize(ColorBoldPurple, "  • "+title))
+	Println()
+	Println(colorize(ColorBoldPurple, "  • "+title))
 }
 
 // PrintBullet 输出项目符号
 func PrintBullet(text string) {
-	fmt.Fprintln(outputWriter, colorize(ColorWhite, "  ◦ "+text))
+	Println(colorize(ColorWhite, "  ◦ "+text))
 }
 
 // PrintKeyValue 输出键值对
 func PrintKeyValue(key, value string) {
-	fmt.Fprintf(outputWriter, "%s: %s\n",
+	Printf("%s: %s\n",
 		colorize(ColorBoldWhite, key),
 		colorize(ColorCyan, value))
 }
@@ -231,7 +251,7 @@ func PrintJSON(data any) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(outputWriter, colorize(ColorGray, string(jsonStr)))
+	Println(colorize(ColorGray, string(jsonStr)))
 	return nil
 }
 
@@ -306,11 +326,11 @@ func (pb *ProgressBar) render() {
 	info += fmt.Sprintf(" [%v]", elapsed.Round(time.Second))
 
 	// 输出进度条（使用回车符覆盖上一行）
-	fmt.Fprintf(outputWriter, "\r%s %s", bar, info)
+	Printf("\r%s %s", bar, info)
 
 	// 如果完成，输出换行
 	if pb.current >= pb.total {
-		fmt.Fprintln(outputWriter)
+		Println(outputWriter)
 	}
 }
 
@@ -359,7 +379,7 @@ func (s *Spinner) run() {
 		default:
 			frame := s.frames[i%len(s.frames)]
 			elapsed := time.Since(s.startTime).Round(time.Second)
-			fmt.Fprintf(outputWriter, "\r%s %s [%v]",
+			Printf("\r%s %s [%v]",
 				colorize(ColorYellow, frame),
 				s.message,
 				elapsed)
@@ -377,7 +397,7 @@ func (s *Spinner) Stop() {
 	s.stopped = true
 	s.stopChan <- true
 	// 清除动画行
-	fmt.Fprintf(outputWriter, "\r%s\r", strings.Repeat(" ", 80))
+	Printf("\r%s\r", strings.Repeat(" ", 80))
 }
 
 // StopWithMessage 停止加载动画并显示消息
