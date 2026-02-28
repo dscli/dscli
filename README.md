@@ -20,6 +20,17 @@ dscli     | > dscli issue - Git管理   |
 
 简单说：dscli = AI助手 + 开发工具 + 命令行效率
 
+## 📦 版本信息
+
+**当前版本：v0.5.0**
+
+### 版本历史
+- v0.5.0 (2026-02-28) - 功能完备版本，包含43个迭代
+- v0.4.0 - 格式化系统重构，支持多种输出模式
+- v0.3.0 - 添加Git issue管理功能
+- v0.2.0 - 增强AI工具调用能力
+- v0.1.0 - 初始版本发布
+
 ## ✨ 核心功能
 
 ### 🤖 AI 功能
@@ -41,18 +52,23 @@ dscli     | > dscli issue - Git管理   |
 - **`markdown2org`** - Markdown 转 Org 格式
 - **数据库支持** - SQLite 存储对话历史、技能、配置等
 - **Emacs 集成** - 通过 dscli.el 在 Emacs 中使用所有功能
+- **`dscli version`** - 查看版本信息
 
 ## 🚀 快速开始
 
 ### 安装
 ```bash
-# 方式1：使用 go install
-go install gitcode.com/dscli/dscli@latest
+# 方式1：使用 go install（推荐）
+go install gitcode.com/dscli/dscli@v0.5.0
 
 # 方式2：从源码构建
 git clone https://gitcode.com/dscli/dscli.git
 cd dscli
+git checkout v0.5.0
 make install    # 安装到 $GOPATH/bin
+
+# 方式3：下载预编译二进制
+# 查看 Releases 页面获取最新版本
 ```
 
 ### 配置
@@ -92,6 +108,11 @@ dscli issue list --state closed
 ```bash
 # 通过 chat 命令使用技能
 echo "使用代码审查技能" | dscli chat
+```
+
+### 4. 查看版本信息
+```bash
+dscli version
 ```
 
 ## 🔌 Emacs 集成
@@ -134,6 +155,7 @@ export MODEL_DEEPSEEK_REASONER="deepseek-reasoner"
 ```
 dscli/
 ├── main.go              # 主入口
+├── version.go           # 版本信息
 ├── chat.go              # AI 对话功能
 ├── issue.go             # Git issue 管理
 ├── fim.go               # 代码补全
@@ -173,4 +195,4 @@ Apache License 2.0
 
 ---
 
-**dscli** - 让命令行开发更智能、更高效！
+**dscli v0.5.0** - 让命令行开发更智能、更高效！

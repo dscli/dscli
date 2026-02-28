@@ -16,6 +16,10 @@ var (
 		return godotenv.Load(EnvPath)
 	}()
 
+	// Version information
+	Version = "0.5.0"
+	Build   = ""
+
 	mode                  string
 	ModelDeepseekChat     = Getenv("MODEL_DEEPSEEK_CHAT", "deepseek-chat")
 	ModelDeepseekReasoner = Getenv("MODEL_DEEPSEEK_REASONER", "deepseek-reasoner")
@@ -35,6 +39,7 @@ var (
 支持 models、balance、chat 和 fim 四个子命令。`,
 		PersistentPreRunE:  RootPreRunE,
 		PersistentPostRunE: RootPostRunE,
+		Version:            Version,
 	}
 )
 
