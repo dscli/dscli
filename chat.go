@@ -133,8 +133,9 @@ func ChatMessage(ctx context.Context, inputs ...Message) (err error) {
 		Println(assistantMsg.ReasoningContent)
 		Println("\n------")
 	}
-
+	Printf("用时%v\n\n", time.Since(startTime))
 	Println(assistantMsg.Content)
+	Println("\n------")
 	return HandleToolCalls(ctx, &assistantMsg)
 }
 

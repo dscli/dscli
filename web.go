@@ -10,6 +10,14 @@ import (
 	"time"
 )
 
+// 创建HTTP客户端，设置超时
+var webClient = &http.Client{
+	Timeout: 30 * time.Second,
+	Transport: &http.Transport{
+		DisableKeepAlives: true,
+	},
+}
+
 // handleWebReader 读取网页内容
 func handleWebReader(ctx context.Context, argsRaw json.RawMessage) (string, error) {
 	var args struct {
@@ -28,15 +36,11 @@ func handleWebReader(ctx context.Context, argsRaw json.RawMessage) (string, erro
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 		url = "https://" + url
 	}
+	return Web2Markdown(ctx, url)
+}
 
-	// 创建HTTP客户端，设置超时
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-		Transport: &http.Transport{
-			DisableKeepAlives: true,
-		},
-	}
-
+// Web2Markdown fetch web page and convert it to markdown
+func Web2Markdown(ctx context.Context, url string) (string, error) {
 	// 创建请求
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -54,7 +58,7 @@ func handleWebReader(ctx context.Context, argsRaw json.RawMessage) (string, erro
 	startTime := time.Now()
 
 	// 发送请求
-	resp, err := client.Do(req)
+	resp, err := webClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("请求失败: %w", err)
 	}
