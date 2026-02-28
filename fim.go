@@ -40,7 +40,7 @@ var fimCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		resp, err := client.FIM(fimModel, prompt, fimSuffix, fimMaxTokens, fimTemp)
+		resp, err := DeepseekClient.FIM(fimModel, prompt, fimSuffix, fimMaxTokens, fimTemp)
 		log.Printf("FIM请求成功，生成 %d 个补全结果", len(resp.Choices))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "FIM 请求失败: %v\n", err)
@@ -59,5 +59,5 @@ func init() {
 	fimCmd.Flags().StringVar(&fimSuffix, "suffix", "", "补全后缀 (可选)")
 	fimCmd.Flags().IntVar(&fimMaxTokens, "max-tokens", 1024, "最大生成 token 数")
 	fimCmd.Flags().Float64Var(&fimTemp, "temperature", 0.7, "采样温度")
-	rootCmd.AddCommand(fimCmd)
+	RootCmd.AddCommand(fimCmd)
 }

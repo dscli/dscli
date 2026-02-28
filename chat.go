@@ -93,7 +93,7 @@ func ChatMessage(ctx context.Context, inputs ...Message) (err error) {
 
 	var resp *ChatResponse
 	startTime := time.Now()
-	resp, err = client.Chat(chatModel, messages, GetAllTools())
+	resp, err = DeepseekClient.Chat(chatModel, messages, GetAllTools())
 	if err != nil {
 		err = fmt.Errorf("聊天请求失败: %w", err)
 		return
@@ -141,5 +141,5 @@ func init() {
 		RunE:    ChatRunE,
 	}
 	chatCmd.Flags().StringVar(&chatModel, "model", ModelDeepseekChat, "使用的模型名称")
-	rootCmd.AddCommand(chatCmd)
+	RootCmd.AddCommand(chatCmd)
 }

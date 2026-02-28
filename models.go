@@ -13,7 +13,7 @@ var (
 		Use:   "models",
 		Short: "列出 DeepSeek 支持的模型",
 		Run: func(cmd *cobra.Command, args []string) {
-			resp, err := client.Models()
+			resp, err := DeepseekClient.Models()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "获取模型列表失败: %v\n", err)
 				os.Exit(1)
@@ -41,5 +41,5 @@ var (
 
 func init() {
 	modelsCmd.Flags().StringVarP(&modelsFormat, "format", "f", "table", "输出格式：table（表格）、json（JSON）")
-	rootCmd.AddCommand(modelsCmd)
+	RootCmd.AddCommand(modelsCmd)
 }

@@ -15,80 +15,87 @@ var (
 		return godotenv.Load(EnvPath)
 	}()
 
-	ModelDeepseekChat, ModelDeepseekReasoner = func() (modelChat string, modelReasoner string) {
-		osGetenv := func(k, dv string) string {
-			v := os.Getenv(k)
-			if v == "" {
-				v = dv
-			}
-			return v
-		}
-		modelChat = osGetenv("MODEL_DEEPSEEK_CHAT", "deepseek-chat")
-		modelReasoner = osGetenv("MODEL_DEEPSEEK_REASONER", "deepseek-reasoner")
-		return
-	}()
+	Mode                  string
+	ModelDeepseekChat     = Getenv("MODEL_DEEPSEEK_CHAT", "deepseek-chat")
+	ModelDeepseekReasoner = Getenv("MODEL_DEEPSEEK_REASONER", "deepseek-reasoner")
 
-	client      *Client
-	logfile     *os.File
-	ProjectRoot = func() (projectRoot string) {
-		cwd, err := os.Getwd()
-		if err != nil {
-			log.Fatalln(err)
-			return
-		}
-		gitRoot, err := findGitRoot(cwd)
-		if err != nil {
-			gitRoot = cwd
-		}
-		projectRoot, err = filepath.Abs(gitRoot)
-		if err != nil {
-			log.Fatalln(err)
-			return
-		}
+	DeepseekClient Client
+	logfile        *os.File
+	ProjectRoot    = GetProjectRoot()
 
-		if cwd != projectRoot {
-			err = os.Chdir(projectRoot)
-			if err != nil {
-				log.Fatalln(err)
-				return
-			}
-		}
+	ConfigDir = GetConfigDir()
+	EnvPath   = filepath.Join(ConfigDir, "dscli.env")
+	LogPath   = filepath.Join(ConfigDir, "dscli.log")
 
-		cwd, err = os.Getwd()
-		if err != nil {
-			log.Fatalln(err)
-			return
-		}
-
-		if cwd != projectRoot {
-			err = fmt.Errorf("cwd(%s) != ProjectRoot(%s)", cwd, projectRoot)
-			log.Fatalln(err)
-			return
-		}
-		return projectRoot
-	}()
-
-	ConfigDir = func() (configDir string) {
-		configDir = filepath.Join(os.Getenv("HOME"), ".dscli")
-		err := os.MkdirAll(configDir, 0o755)
-		if err != nil {
-			log.Fatalln(err)
-			return
-		}
-		return
-	}()
-	EnvPath = filepath.Join(ConfigDir, "dscli.env")
-	LogPath = filepath.Join(ConfigDir, "dscli.log")
-
-	rootCmd = &cobra.Command{
+	RootCmd = &cobra.Command{
 		Use:   "dscli",
 		Short: "DeepSeek CLI - 与 DeepSeek API 交互",
 		Long: `dscli 是一个命令行工具，用于调用 DeepSeek 的 API。
 支持 models、balance、chat 和 fim 四个子命令。`,
 		PersistentPreRunE:  RootPreRunE,
-		PersistentPostRunE: RootPreRunE,
+		PersistentPostRunE: RootPostRunE,
 	}
 )
+
+func init() {
+	RootCmd.PersistentFlags().StringVar(&Mode, "mode", "markdown", "输出模式：markdown（Markdown格式）、org（Org模式格式）")
+}
+
+func GetConfigDir() (configDir string) {
+	configDir = filepath.Join(os.Getenv("HOME"), ".dscli")
+	err := os.MkdirAll(configDir, 0o755)
+	if err != nil {
+		log.Fatalln(err)
+		return
+	}
+	return
+}
+
+func GetProjectRoot() (projectRoot string) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Fatalln(err)
+		return
+	}
+	gitRoot, err := findGitRoot(cwd)
+	if err != nil {
+		gitRoot = cwd
+	}
+	projectRoot, err = filepath.Abs(gitRoot)
+	if err != nil {
+		log.Fatalln(err)
+		return
+	}
+
+	if cwd != projectRoot {
+		err = os.Chdir(projectRoot)
+		if err != nil {
+			log.Fatalln(err)
+			return
+		}
+	}
+
+	cwd, err = os.Getwd()
+	if err != nil {
+		log.Fatalln(err)
+		return
+	}
+
+	if cwd != projectRoot {
+		err = fmt.Errorf("cwd(%s) != ProjectRoot(%s)", cwd, projectRoot)
+		log.Fatalln(err)
+		return
+	}
+	return projectRoot
+}
+
+func Getenv(key, dvalue string) (value string) {
+	value = os.Getenv(key)
+	if value == "" {
+		value = dvalue
+	}
+	return
+}
 
 func findGitRoot(dir string) (string, error) {
 	absDir, err := filepath.Abs(dir)
@@ -120,6 +127,9 @@ func RootPostRunE(cmd *cobra.Command, args []string) (err error) {
 }
 
 func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
+	// 设置输出模式
+	SetOutputMode(Mode)
+
 	// change cwd if needed
 	key := os.Getenv("DEEPSEEK_API_KEY")
 
@@ -141,12 +151,12 @@ func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 	log.SetOutput(logfile)
 
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
-	client = NewClient(key, url)
+	DeepseekClient = NewClient(key, url)
 	return nil
 }
 
 func main() {
-	if err := rootCmd.Execute(); err != nil {
+	if err := RootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

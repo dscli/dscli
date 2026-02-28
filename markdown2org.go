@@ -340,5 +340,5 @@ Examples:
   cat document.md | dscli markdown2org`,
 		RunE: Markdown2OrgRunE,
 	}
-	rootCmd.AddCommand(markdown2orgCmd)
+	RootCmd.AddCommand(markdown2orgCmd)
 }

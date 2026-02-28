@@ -232,7 +232,7 @@ func init() {
 		Use: "issue",
 	}
 
-	rootCmd.AddCommand(issueCmd)
+	RootCmd.AddCommand(issueCmd)
 	var state string
 	listCmd := &cobra.Command{
 		Use: "list",

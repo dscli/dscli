@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"reflect"
 	"strings"
 	"text/tabwriter"
 	"text/template"
@@ -18,6 +20,7 @@ type Formatter interface {
 type TableFormatter struct {
 	headers []string
 	rowFunc func(interface{}) []string
+	writer  io.Writer
 }
 
 // NewTableFormatter 创建表格格式化器
@@ -25,12 +28,19 @@ func NewTableFormatter(headers []string, rowFunc func(interface{}) []string) *Ta
 	return &TableFormatter{
 		headers: headers,
 		rowFunc: rowFunc,
+		writer:  os.Stdout,
 	}
+}
+
+// WithWriter 设置输出写入器
+func (f *TableFormatter) WithWriter(w io.Writer) *TableFormatter {
+	f.writer = w
+	return f
 }
 
 // Format 实现表格格式化
 func (f *TableFormatter) Format(data interface{}) (string, error) {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
+	w := tabwriter.NewWriter(f.writer, 0, 0, 3, ' ', 0)
 
 	// 写入表头
 	for i, h := range f.headers {
@@ -41,32 +51,23 @@ func (f *TableFormatter) Format(data interface{}) (string, error) {
 	}
 	fmt.Fprintln(w)
 
-	// 写入数据行
-	switch d := data.(type) {
-	case []Model:
-		for _, item := range d {
+	// 处理数据
+	value := reflect.ValueOf(data)
+	if value.Kind() == reflect.Slice {
+		// 处理切片
+		for i := 0; i < value.Len(); i++ {
+			item := value.Index(i).Interface()
 			row := f.rowFunc(item)
-			for i, cell := range row {
-				if i > 0 {
+			for j, cell := range row {
+				if j > 0 {
 					fmt.Fprint(w, "\t")
 				}
 				fmt.Fprint(w, cell)
 			}
 			fmt.Fprintln(w)
 		}
-	case []BalanceInfo:
-		for _, item := range d {
-			row := f.rowFunc(item)
-			for i, cell := range row {
-				if i > 0 {
-					fmt.Fprint(w, "\t")
-				}
-				fmt.Fprint(w, cell)
-			}
-			fmt.Fprintln(w)
-		}
-	default:
-		// 单个对象
+	} else {
+		// 处理单个对象
 		row := f.rowFunc(data)
 		for i, cell := range row {
 			if i > 0 {
@@ -139,6 +140,31 @@ func FormatOutput(data interface{}, format string, headers []string, rowFunc fun
 
 	if output != "" {
 		fmt.Println(output)
+	}
+
+	return nil
+}
+
+// FormatOutputToWriter 格式化输出到指定的写入器
+func FormatOutputToWriter(w io.Writer, data interface{}, format string, headers []string, rowFunc func(interface{}) []string) error {
+	var formatter Formatter
+
+	switch format {
+	case "json":
+		formatter = &JSONFormatter{}
+	case "table":
+		formatter = NewTableFormatter(headers, rowFunc).WithWriter(w)
+	default:
+		formatter = NewTableFormatter(headers, rowFunc).WithWriter(w)
+	}
+
+	output, err := formatter.Format(data)
+	if err != nil {
+		return err
+	}
+
+	if output != "" {
+		fmt.Fprintln(w, output)
 	}
 
 	return nil

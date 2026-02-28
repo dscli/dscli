@@ -13,7 +13,7 @@ var (
 		Use:   "balance",
 		Short: "查询账户余额",
 		Run: func(cmd *cobra.Command, args []string) {
-			resp, err := client.Balance()
+			resp, err := DeepseekClient.Balance()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "查询余额失败: %v\n", err)
 				os.Exit(1)
@@ -45,5 +45,5 @@ var (
 
 func init() {
 	balanceCmd.Flags().StringVarP(&balanceFormat, "format", "f", "table", "输出格式：table（表格）、json（JSON）")
-	rootCmd.AddCommand(balanceCmd)
+	RootCmd.AddCommand(balanceCmd)
 }

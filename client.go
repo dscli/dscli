@@ -9,21 +9,28 @@ import (
 	"net/http"
 )
 
-type Client struct {
-	apiKey  string
-	baseURL string
-	http    *http.Client
+type Deepseek struct {
+	apiKey     string
+	baseURL    string
+	httpClient *http.Client
 }
 
-func NewClient(apiKey, baseURL string) *Client {
-	return &Client{
-		apiKey:  apiKey,
-		baseURL: baseURL,
-		http:    &http.Client{},
+type Client interface {
+	Models() (*ModelsResponse, error)
+	Balance() (*BalanceResponse, error)
+	FIM(model, prompt, suffix string, maxTokens int, temperature float64) (*FIMResponse, error)
+	Chat(model string, messages []Message, tools []Tool) (*ChatResponse, error)
+}
+
+func NewClient(apiKey, baseURL string) Client {
+	return &Deepseek{
+		apiKey:     apiKey,
+		baseURL:    baseURL,
+		httpClient: &http.Client{},
 	}
 }
 
-func (c *Client) doRequest(method, path string, body any, result any) (err error) {
+func (c *Deepseek) doRequest(method, path string, body any, result any) (err error) {
 	url := c.baseURL + path
 
 	var reqBody io.Reader
@@ -47,7 +54,7 @@ func (c *Client) doRequest(method, path string, body any, result any) (err error
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.http.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		err = fmt.Errorf("请求失败: %w", err)
 		slog.Error(err.Error(), "req", req)
@@ -79,7 +86,7 @@ func (c *Client) doRequest(method, path string, body any, result any) (err error
 }
 
 // Models 获取模型列表
-func (c *Client) Models() (*ModelsResponse, error) {
+func (c *Deepseek) Models() (*ModelsResponse, error) {
 	var resp ModelsResponse
 	err := c.doRequest("GET", "/models", nil, &resp)
 	if err != nil {
@@ -89,7 +96,7 @@ func (c *Client) Models() (*ModelsResponse, error) {
 }
 
 // Balance 获取余额
-func (c *Client) Balance() (*BalanceResponse, error) {
+func (c *Deepseek) Balance() (*BalanceResponse, error) {
 	var resp BalanceResponse
 	err := c.doRequest("GET", "/user/balance", nil, &resp)
 	if err != nil {
@@ -99,7 +106,7 @@ func (c *Client) Balance() (*BalanceResponse, error) {
 }
 
 // Chat 发送聊天请求
-func (c *Client) Chat(model string, messages []Message, tools []Tool) (*ChatResponse, error) {
+func (c *Deepseek) Chat(model string, messages []Message, tools []Tool) (*ChatResponse, error) {
 	for i, m := range messages {
 		if m.ReasoningContent != "" {
 			m.ReasoningContent = ""
@@ -123,7 +130,7 @@ func (c *Client) Chat(model string, messages []Message, tools []Tool) (*ChatResp
 }
 
 // FIM 发送 FIM 补全请求
-func (c *Client) FIM(model, prompt, suffix string, maxTokens int, temperature float64) (*FIMResponse, error) {
+func (c *Deepseek) FIM(model, prompt, suffix string, maxTokens int, temperature float64) (*FIMResponse, error) {
 	req := FIMRequest{
 		Model:       model,
 		Prompt:      prompt,

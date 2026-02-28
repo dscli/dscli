@@ -184,111 +184,6 @@ func TestTimeParsing(t *testing.T) {
 }
 
 // TestPrintIssue 间接测试printIssue函数的相关逻辑
-func TestPrintIssue(t *testing.T) {
-	// 创建测试Issue
-	issue := Issue{
-		ID:        999,
-		Number:    "99",
-		State:     "closed",
-		Title:     "已关闭的Issue",
-		Body:      "这个Issue已经被关闭",
-		CreatedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-		UpdatedAt: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
-		ClosedAt:  time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC),
-		User: User{
-			ID:    888,
-			Login: "closer",
-			Name:  "关闭者",
-		},
-		Labels: []Label{
-			{ID: 1, Name: "bug", Color: "red", Description: ""},
-			{ID: 2, Name: "fixed", Color: "green", Description: ""},
-		},
-	}
-	tcs := []struct {
-		issue    Issue
-		detailed bool
-		result   string
-	}{
-		{issue, true, `================================================================================
-Issue #99: 已关闭的Issue
-================================================================================
-ID:         999
-Number:     99
-State:      closed
-Created:    2024-01-01 00:00:00
-Updated:    2024-01-02 00:00:00
-Closed:     2024-01-03 00:00:00
-Author:     关闭者 (closer)
-Assignee:   -
-Labels:     bug, fixed
---------------------------------------------------------------------------------
-内容:
---------------------------------------------------------------------------------
-这个Issue已经被关闭
-================================================================================`},
-		{issue, false, `#99 [closed] 已关闭的Issue
-  ID: 999 | Author: closer | Assignee: -
-  Created: 2024-01-01 00:00:00 | Updated: 2024-01-02 00:00:00
-  Labels: bug, fixed
-  Preview: 这个Issue已经被关闭`},
-	}
-
-	for _, tc := range tcs {
-		t.Run("", func(t *testing.T) {
-			buf := bytes.NewBuffer([]byte{})
-			defer func() {
-				Println = fmt.Println
-				Printf = fmt.Printf
-			}()
-
-			Println = func(a ...any) (n int, err error) {
-				return fmt.Fprintln(buf, a...)
-			}
-			Printf = func(format string, a ...any) (n int, err error) {
-				return fmt.Fprintf(buf, format, a...)
-			}
-			PrintIssue(tc.issue, tc.detailed)
-			result := strings.TrimSpace(buf.String())
-			if result != tc.result {
-				t.Log(result)
-				t.Log(tc.result)
-				t.Fatal()
-			}
-		})
-	}
-	// // 测试各个格式化函数
-	// createdStr := formatTime(issue.CreatedAt)
-	// if !strings.Contains(createdStr, "2024-01-01") {
-	// 	t.Errorf("创建时间格式化错误: %s", createdStr)
-	// }
-
-	// updatedStr := formatTime(issue.UpdatedAt)
-	// if !strings.Contains(updatedStr, "2024-01-02") {
-	// 	t.Errorf("更新时间格式化错误: %s", updatedStr)
-	// }
-
-	// closedStr := formatTime(issue.ClosedAt)
-	// if !strings.Contains(closedStr, "2024-01-03") {
-	// 	t.Errorf("关闭时间格式化错误: %s", closedStr)
-	// }
-
-	// labelsStr := formatLabels(issue.Labels)
-	// if labelsStr != "bug, fixed" {
-	// 	t.Errorf("标签格式化错误: 期望=bug, fixed, 实际=%s", labelsStr)
-	// }
-
-	// // 验证Issue的基本信息
-	// if issue.ID != 999 {
-	// 	t.Errorf("Issue.ID错误: 期望=999, 实际=%d", issue.ID)
-	// }
-	// if issue.Number != "99" {
-	// 	t.Errorf("Issue.Number错误: 期望=99, 实际=%s", issue.Number)
-	// }
-	// if issue.State != "closed" {
-	// 	t.Errorf("Issue.State错误: 期望=closed, 实际=%s", issue.State)
-	// }
-}
 
 // TestURLParsingLogic 测试URL解析逻辑
 func TestURLParsingLogic(t *testing.T) {
@@ -999,6 +894,85 @@ func TestIssueAPIBaseURLCompatibility(t *testing.T) {
 			}
 
 			t.Errorf("行为不一致: IssueAPIBaseURL错误=%v, issueAPIBaseURLWithDeps错误=%v", err1, err2)
+		})
+	}
+}
+
+// TestPrintIssue 间接测试printIssue函数的相关逻辑
+func TestPrintIssue(t *testing.T) {
+	// 创建测试Issue
+	issue := Issue{
+		ID:        999,
+		Number:    "99",
+		State:     "closed",
+		Title:     "已关闭的Issue",
+		Body:      "这个Issue已经被关闭",
+		CreatedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		UpdatedAt: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+		ClosedAt:  time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC),
+		User: User{
+			ID:    888,
+			Login: "closer",
+			Name:  "关闭者",
+		},
+		Labels: []Label{
+			{ID: 1, Name: "bug", Color: "red", Description: ""},
+			{ID: 2, Name: "fixed", Color: "green", Description: ""},
+		},
+	}
+	tcs := []struct {
+		issue    Issue
+		detailed bool
+		result   string
+	}{
+		{issue, true, `================================================================================
+Issue #99: 已关闭的Issue
+================================================================================
+ID:         999
+Number:     99
+State:      closed
+Created:    2024-01-01 00:00:00
+Updated:    2024-01-02 00:00:00
+Closed:     2024-01-03 00:00:00
+Author:     关闭者 (closer)
+Assignee:   -
+Labels:     bug, fixed
+--------------------------------------------------------------------------------
+内容:
+--------------------------------------------------------------------------------
+这个Issue已经被关闭
+================================================================================`},
+		{issue, false, `#99 [closed] 已关闭的Issue
+  ID: 999 | Author: closer | Assignee: -
+  Created: 2024-01-01 00:00:00 | Updated: 2024-01-02 00:00:00
+  Labels: bug, fixed
+  Preview: 这个Issue已经被关闭`},
+	}
+
+	for _, tc := range tcs {
+		t.Run("", func(t *testing.T) {
+			buf := bytes.NewBuffer([]byte{})
+
+			// 保存原始设置
+			oldMode := OutputMode
+			oldWriter := outputWriter
+
+			// 设置测试环境
+			SetOutputWriter(buf)
+			SetOutputMode("markdown")
+
+			PrintIssue(tc.issue, tc.detailed)
+
+			result := strings.TrimSpace(buf.String())
+			if result != tc.result {
+				t.Log(result)
+				t.Log(tc.result)
+				t.Fatal()
+			}
+
+			// 恢复原始设置
+			SetOutputMode(oldMode)
+			SetOutputWriter(oldWriter)
 		})
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 )
@@ -20,22 +19,18 @@ func TestTableFormatter(t *testing.T) {
 		}
 	}
 
-	formatter := NewTableFormatter(headers, rowFunc)
-
 	// 测试单个对象
 	person := Person{Name: "Alice", Age: 30, City: "New York"}
 
-	// 重定向输出
+	// 使用 WithWriter 重定向输出
 	var buf bytes.Buffer
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
+	formatter := NewTableFormatter(headers, rowFunc).WithWriter(&buf)
 
-	formatter.Format(person)
+	_, err := formatter.Format(person)
+	if err != nil {
+		t.Fatalf("TableFormatter.Format 失败: %v", err)
+	}
 
-	w.Close()
-	os.Stdout = oldStdout
-	buf.ReadFrom(r)
 	output := buf.String()
 
 	// tabwriter 使用空格对齐，而不是制表符
@@ -102,6 +97,50 @@ func TestFormatOutput(t *testing.T) {
 	err = FormatOutput(person, "", headers, rowFunc)
 	if err != nil {
 		t.Errorf("FormatOutput 默认格式失败: %v", err)
+	}
+}
+
+func TestFormatOutputToWriter(t *testing.T) {
+	headers := []string{"Name", "Age", "City"}
+	rowFunc := func(data interface{}) []string {
+		switch p := data.(type) {
+		case Person:
+			return []string{p.Name, fmt.Sprintf("%d", p.Age), p.City}
+		default:
+			return []string{"", "", ""}
+		}
+	}
+
+	person := Person{Name: "David", Age: 40, City: "Paris"}
+
+	// 测试表格格式
+	var buf1 bytes.Buffer
+	err := FormatOutputToWriter(&buf1, person, "table", headers, rowFunc)
+	if err != nil {
+		t.Errorf("FormatOutputToWriter 表格格式失败: %v", err)
+	}
+
+	output1 := buf1.String()
+	if !strings.Contains(output1, "David") || !strings.Contains(output1, "40") || !strings.Contains(output1, "Paris") {
+		t.Errorf("FormatOutputToWriter 表格格式输出不正确: %q", output1)
+	}
+
+	// 测试JSON格式
+	var buf2 bytes.Buffer
+	err = FormatOutputToWriter(&buf2, person, "json", headers, rowFunc)
+	if err != nil {
+		t.Errorf("FormatOutputToWriter JSON格式失败: %v", err)
+	}
+
+	output2 := buf2.String()
+	var decoded Person
+	err = json.Unmarshal([]byte(output2), &decoded)
+	if err != nil {
+		t.Errorf("FormatOutputToWriter JSON格式输出不是有效的JSON: %v\noutput: %s", err, output2)
+	}
+
+	if decoded != person {
+		t.Errorf("FormatOutputToWriter JSON格式输出不匹配\ngot: %+v\nwant: %+v", decoded, person)
 	}
 }
 
