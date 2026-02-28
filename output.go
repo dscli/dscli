@@ -37,7 +37,7 @@ var (
 	outputShowTimestamp bool = true
 
 	// 输出写入器
-	outputWriterVar io.Writer = os.Stdout
+	outputWriter io.Writer = os.Stdout
 
 	// 错误输出写入器
 	outputErrorWriter io.Writer = os.Stderr
@@ -122,7 +122,7 @@ func Debug(format string, a ...any) {
 	if outputCurrentLogLevel <= LogLevelDebug {
 		message := fmt.Sprintf(format, a...)
 		formatted := formatMessage("DEBUG", ColorGray, message)
-		fmt.Fprintln(outputWriterVar, formatted)
+		fmt.Fprintln(outputWriter, formatted)
 	}
 }
 
@@ -131,7 +131,7 @@ func Info(format string, a ...any) {
 	if outputCurrentLogLevel <= LogLevelInfo {
 		message := fmt.Sprintf(format, a...)
 		formatted := formatMessage("INFO", ColorGreen, message)
-		fmt.Fprintln(outputWriterVar, formatted)
+		fmt.Fprintln(outputWriter, formatted)
 	}
 }
 
@@ -167,45 +167,45 @@ func Fatal(format string, a ...any) {
 func Success(format string, a ...any) {
 	message := fmt.Sprintf(format, a...)
 	formatted := colorize(ColorBoldGreen, "✓ "+message)
-	fmt.Fprintln(outputWriterVar, formatted)
+	fmt.Fprintln(outputWriter, formatted)
 }
 
 // Notice 输出注意信息
 func Notice(format string, a ...any) {
 	message := fmt.Sprintf(format, a...)
 	formatted := colorize(ColorBoldCyan, "→ "+message)
-	fmt.Fprintln(outputWriterVar, formatted)
+	fmt.Fprintln(outputWriter, formatted)
 }
 
 // PrintHeader 输出标题
 func PrintHeader(title string) {
 	line := strings.Repeat("=", len(title)+4)
-	fmt.Fprintln(outputWriterVar, colorize(ColorBoldCyan, line))
-	fmt.Fprintln(outputWriterVar, colorize(ColorBoldCyan, "  "+title+"  "))
-	fmt.Fprintln(outputWriterVar, colorize(ColorBoldCyan, line))
+	fmt.Fprintln(outputWriter, colorize(ColorBoldCyan, line))
+	fmt.Fprintln(outputWriter, colorize(ColorBoldCyan, "  "+title+"  "))
+	fmt.Fprintln(outputWriter, colorize(ColorBoldCyan, line))
 }
 
 // PrintSection 输出章节标题
 func PrintSection(title string) {
-	fmt.Fprintln(outputWriterVar)
-	fmt.Fprintln(outputWriterVar, colorize(ColorBoldBlue, "▶ "+title))
-	fmt.Fprintln(outputWriterVar, colorize(ColorGray, strings.Repeat("─", len(title)+2)))
+	fmt.Fprintln(outputWriter)
+	fmt.Fprintln(outputWriter, colorize(ColorBoldBlue, "▶ "+title))
+	fmt.Fprintln(outputWriter, colorize(ColorGray, strings.Repeat("─", len(title)+2)))
 }
 
 // PrintSubSection 输出子章节标题
 func PrintSubSection(title string) {
-	fmt.Fprintln(outputWriterVar)
-	fmt.Fprintln(outputWriterVar, colorize(ColorBoldPurple, "  • "+title))
+	fmt.Fprintln(outputWriter)
+	fmt.Fprintln(outputWriter, colorize(ColorBoldPurple, "  • "+title))
 }
 
 // PrintBullet 输出项目符号
 func PrintBullet(text string) {
-	fmt.Fprintln(outputWriterVar, colorize(ColorWhite, "  ◦ "+text))
+	fmt.Fprintln(outputWriter, colorize(ColorWhite, "  ◦ "+text))
 }
 
 // PrintKeyValue 输出键值对
 func PrintKeyValue(key, value string) {
-	fmt.Fprintf(outputWriterVar, "%s: %s\n",
+	fmt.Fprintf(outputWriter, "%s: %s\n",
 		colorize(ColorBoldWhite, key),
 		colorize(ColorCyan, value))
 }
@@ -216,7 +216,7 @@ func PrintJSON(data any) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(outputWriterVar, colorize(ColorGray, string(jsonStr)))
+	fmt.Fprintln(outputWriter, colorize(ColorGray, string(jsonStr)))
 	return nil
 }
 
@@ -291,11 +291,11 @@ func (pb *ProgressBar) render() {
 	info += fmt.Sprintf(" [%v]", elapsed.Round(time.Second))
 
 	// 输出进度条（使用回车符覆盖上一行）
-	fmt.Fprintf(outputWriterVar, "\r%s %s", bar, info)
+	fmt.Fprintf(outputWriter, "\r%s %s", bar, info)
 
 	// 如果完成，输出换行
 	if pb.current >= pb.total {
-		fmt.Fprintln(outputWriterVar)
+		fmt.Fprintln(outputWriter)
 	}
 }
 
@@ -344,7 +344,7 @@ func (s *Spinner) run() {
 		default:
 			frame := s.frames[i%len(s.frames)]
 			elapsed := time.Since(s.startTime).Round(time.Second)
-			fmt.Fprintf(outputWriterVar, "\r%s %s [%v]",
+			fmt.Fprintf(outputWriter, "\r%s %s [%v]",
 				colorize(ColorYellow, frame),
 				s.message,
 				elapsed)
@@ -362,15 +362,15 @@ func (s *Spinner) Stop() {
 	s.stopped = true
 	s.stopChan <- true
 	// 清除动画行
-	fmt.Fprintf(outputWriterVar, "\r%s\r", strings.Repeat(" ", 80))
+	fmt.Fprintf(outputWriter, "\r%s\r", strings.Repeat(" ", 80))
 }
 
 // StopWithMessage 停止加载动画并显示消息
 func (s *Spinner) StopWithMessage(message string, success bool) {
 	s.Stop()
 	if success {
-		Success(message)
+		Success("%s", message)
 	} else {
-		Error(message)
+		Error("%s", message)
 	}
 }

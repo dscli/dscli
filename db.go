@@ -174,7 +174,7 @@ func CreateOrGetSessionID() (sessionID int64, err error) {
 	return
 }
 
-func LoadLastOne() (*Message, error) {
+func LoadLastOne(ctx context.Context) (*Message, error) {
 	db, err := OpenDB()
 	if err != nil {
 		return nil, err

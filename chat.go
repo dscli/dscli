@@ -17,7 +17,10 @@ const (
 	DeepseekReasoner = int64(1)
 )
 
-var chatModel string
+var (
+	chatModel string
+	tobecont  bool
+)
 
 func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 	// 设置ModelID
@@ -43,19 +46,19 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 }
 
 func ChatRunE(cmd *cobra.Command, args []string) (err error) {
-	// 1. 读取标准输入
-	reader := bufio.NewReader(os.Stdin)
-	content, err := io.ReadAll(reader)
-	ctx := cmd.Context()
-	if err != nil {
-		return
+	userMsg := ""
+	if !tobecont {
+		userMsg, err = ReadContent()
+		if err != nil {
+			return
+		}
 	}
-	userMsg := strings.TrimSpace(string(content))
+	ctx := cmd.Context()
 	if userMsg != "" {
 		return ChatMessage(ctx, Message{Role: "user", Content: userMsg})
 	}
 
-	am, err := LoadLastOne()
+	am, err := LoadLastOne(ctx)
 	if err != nil {
 		return
 	}
@@ -65,6 +68,16 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 	return HandleToolCalls(ctx, am)
+}
+
+func ReadContent() (content string, err error) {
+	reader := bufio.NewReader(os.Stdin)
+	b, err := io.ReadAll(reader)
+	if err != nil {
+		return
+	}
+	content = strings.TrimSpace(string(b))
+	return
 }
 
 func ChatMessage(ctx context.Context, inputs ...Message) (err error) {
@@ -141,5 +154,6 @@ func init() {
 		RunE:    ChatRunE,
 	}
 	chatCmd.Flags().StringVar(&chatModel, "model", ModelDeepseekChat, "使用的模型名称")
+	chatCmd.Flags().BoolVar(&tobecont, "continue", false, "继续")
 	RootCmd.AddCommand(chatCmd)
 }
