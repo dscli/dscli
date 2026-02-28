@@ -3,23 +3,19 @@ package main
 import (
 	"fmt"
 	"io"
-	"os"
 )
 
-// 输出写入器
-var outputWriter io.Writer = os.Stdout
-
-// Println 根据当前模式输出
+// Println 输出一行文本（保持向后兼容）
 func Println(a ...any) (n int, err error) {
-	return fmt.Fprintln(outputWriter, a...)
+	return fmt.Fprintln(outputWriterVar, a...)
 }
 
-// Printf 根据当前模式输出
+// Printf 输出格式化文本（保持向后兼容）
 func Printf(format string, a ...any) (n int, err error) {
-	return fmt.Fprintf(outputWriter, format, a...)
+	return fmt.Fprintf(outputWriterVar, format, a...)
 }
 
 // SetOutputWriter 设置输出写入器
 func SetOutputWriter(w io.Writer) {
-	outputWriter = w
+	outputWriterVar = w
 }

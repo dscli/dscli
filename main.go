@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
@@ -21,6 +22,9 @@ var (
 	Build   = ""
 
 	mode                  string
+	logLevel              string
+	colorEnabled          bool
+	showTimestamp         bool
 	ModelDeepseekChat     = Getenv("MODEL_DEEPSEEK_CHAT", "deepseek-chat")
 	ModelDeepseekReasoner = Getenv("MODEL_DEEPSEEK_REASONER", "deepseek-reasoner")
 
@@ -36,7 +40,13 @@ var (
 		Use:   "dscli",
 		Short: "DeepSeek CLI - 与 DeepSeek API 交互",
 		Long: `dscli 是一个命令行工具，用于调用 DeepSeek 的 API。
-支持 models、balance、chat 和 fim 四个子命令。`,
+支持 models、balance、chat 和 fim 四个子命令。
+
+输出选项：
+  --mode          输出模式：markdown（Markdown格式）、org（Org模式格式）
+  --log-level     日志级别：debug、info、warn、error、fatal
+  --no-color      禁用颜色输出
+  --no-timestamp  禁用时间戳显示`,
 		PersistentPreRunE:  RootPreRunE,
 		PersistentPostRunE: RootPostRunE,
 		Version:            Version,
@@ -45,6 +55,9 @@ var (
 
 func init() {
 	RootCmd.PersistentFlags().StringVar(&mode, "mode", "markdown", "输出模式：markdown（Markdown格式）、org（Org模式格式）")
+	RootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "日志级别：debug、info、warn、error、fatal")
+	RootCmd.PersistentFlags().BoolVar(&colorEnabled, "no-color", false, "禁用颜色输出")
+	RootCmd.PersistentFlags().BoolVar(&showTimestamp, "no-timestamp", false, "禁用时间戳显示")
 }
 
 func GetConfigDir() (configDir string) {
@@ -130,6 +143,9 @@ func RootPostRunE(cmd *cobra.Command, args []string) (err error) {
 }
 
 func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
+	// 配置输出系统
+	configureOutput()
+
 	var output *os.File
 	switch mode {
 	case "markdown":
@@ -194,6 +210,31 @@ func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 	DeepseekClient = NewClient(key, url)
 	return nil
+}
+
+// configureOutput 配置输出系统
+func configureOutput() {
+	// 设置日志级别
+	switch strings.ToLower(logLevel) {
+	case "debug":
+		SetLogLevel(LogLevelDebug)
+	case "info":
+		SetLogLevel(LogLevelInfo)
+	case "warn":
+		SetLogLevel(LogLevelWarn)
+	case "error":
+		SetLogLevel(LogLevelError)
+	case "fatal":
+		SetLogLevel(LogLevelFatal)
+	default:
+		SetLogLevel(LogLevelInfo)
+	}
+
+	// 设置颜色输出
+	SetColorEnabled(!colorEnabled) // 注意：--no-color 为 true 时禁用颜色
+
+	// 设置时间戳显示
+	SetShowTimestamp(!showTimestamp) // 注意：--no-timestamp 为 true 时禁用时间戳
 }
 
 func main() {

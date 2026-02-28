@@ -61,7 +61,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	if am.Role != "assistant" || len(am.ToolCalls) == 0 {
-		Println("天下本无事")
+		Info("天下本无事")
 		return
 	}
 	return HandleToolCalls(ctx, am)
