@@ -22,9 +22,10 @@ dscli     |                            |
 
 ## 📦 版本信息
 
-**当前版本：v0.5.0**
+**当前版本：v0.5.1**
 
 ### 版本历史
+- v0.5.1 (2026-02-28) - 版本更新发布
 - v0.5.0 (2026-02-28) - 功能完备版本，包含43个迭代
 - v0.4.0 - 格式化系统重构，支持多种输出模式
 - v0.3.0 - 添加Git issue管理功能
@@ -50,12 +51,12 @@ dscli     |                            |
 ### 安装
 ```bash
 # 方式1：使用 go install（推荐）
-go install gitcode.com/dscli/dscli@v0.5.0
+go install gitcode.com/dscli/dscli@v0.5.1
 
 # 方式2：从源码构建
 git clone https://gitcode.com/dscli/dscli.git
 cd dscli
-git checkout v0.5.0
+git checkout v0.5.1
 make install    # 安装到 $GOPATH/bin
 
 # 方式3：下载预编译二进制
@@ -172,4 +173,4 @@ Apache License 2.0
 
 ---
 
-**dscli v0.5.0** - 让命令行开发更智能、更高效！
+**dscli v0.5.1** - 让命令行开发更智能、更高效！

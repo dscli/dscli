@@ -1,7 +1,7 @@
 # Makefile for dscli
 
 BINARY_NAME = dscli
-VERSION ?= 0.5.0
+VERSION ?= 0.5.1
 BUILD_DATE ?= $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
 GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 LDFLAGS = -ldflags "-X main.Version=$(VERSION) -X main.Build=$(BUILD_DATE)-$(GIT_COMMIT)"
@@ -183,3 +183,13 @@ release-info:
 	@echo ""
 	@echo "构建命令: make release"
 	@echo "安装命令: make install 或 go install gitcode.com/dscli/dscli@v$(VERSION)"
+
+文件信息:
+- 路径: /home/nanjj/src/gitcode.com/dscli/dscli/Makefile
+- 大小: 6096 字节
+权限: -rw-r--r--
+修改时间: 2026-02-28 15:57:47
+
+=== 执行统计 ===
+执行时间: 101.46µs
+状态: 成功

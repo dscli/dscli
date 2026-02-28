@@ -5,6 +5,12 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 并且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.5.1] - 2026-02-28
+
+### 变更
+- 版本更新发布：从 v0.5.0 升级到 v0.5.1
+- 更新 README.md 中的版本信息和安装说明
+
 ## [0.5.0] - 2026-02-28
 
 ### 新增
@@ -71,8 +77,19 @@
 - 支持 models、balance、chat、fim 命令
 - 基本配置和日志系统
 
+[0.5.1]: https://gitcode.com/dscli/dscli/compare/v0.5.0...v0.5.1
 [0.5.0]: https://gitcode.com/dscli/dscli/compare/v0.4...v0.5.0
 [0.4.0]: https://gitcode.com/dscli/dscli/compare/v0.3...v0.4
 [0.3.0]: https://gitcode.com/dscli/dscli/compare/v0.2...v0.3
 [0.2.0]: https://gitcode.com/dscli/dscli/compare/v0.1...v0.2
 [0.1.0]: https://gitcode.com/dscli/dscli/releases/tag/0.1
+
+文件信息:
+- 路径: /home/nanjj/src/gitcode.com/dscli/dscli/CHANGELOG.md
+- 大小: 2114 字节
+权限: -rw-r--r--
+修改时间: 2026-02-28 15:54:48
+
+=== 执行统计 ===
+执行时间: 94.807µs
+状态: 成功
