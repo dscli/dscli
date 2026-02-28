@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -15,7 +16,7 @@ var (
 		return godotenv.Load(EnvPath)
 	}()
 
-	Mode                  string
+	mode                  string
 	ModelDeepseekChat     = Getenv("MODEL_DEEPSEEK_CHAT", "deepseek-chat")
 	ModelDeepseekReasoner = Getenv("MODEL_DEEPSEEK_REASONER", "deepseek-reasoner")
 
@@ -38,7 +39,7 @@ var (
 )
 
 func init() {
-	RootCmd.PersistentFlags().StringVar(&Mode, "mode", "markdown", "输出模式：markdown（Markdown格式）、org（Org模式格式）")
+	RootCmd.PersistentFlags().StringVar(&mode, "mode", "markdown", "输出模式：markdown（Markdown格式）、org（Org模式格式）")
 }
 
 func GetConfigDir() (configDir string) {
@@ -127,12 +128,26 @@ func RootPostRunE(cmd *cobra.Command, args []string) (err error) {
 }
 
 func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
-	// 设置输出模式
-	SetOutputMode(Mode)
+	switch mode {
+	case "markdown":
+	case "org":
+		var r *os.File
+		var w *os.File
+		r, w, err = os.Pipe()
+		if err != nil {
+			return err
+		}
+		SetOutputWriter(w)
+		go func(input io.Reader) error {
+			converter := NewMarkdownToOrgConverter()
+			return converter.ConvertStream(input, os.Stdout)
+		}(r)
+	default:
+		err = fmt.Errorf("do not support %s", mode)
+		return
+	}
 
-	// change cwd if needed
-	key := os.Getenv("DEEPSEEK_API_KEY")
-
+	key := Getenv("DEEPSEEK_API_KEY", "")
 	if key == "" {
 		err = fmt.Errorf("no api key specified")
 		return

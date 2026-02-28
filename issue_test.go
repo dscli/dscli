@@ -954,12 +954,10 @@ Labels:     bug, fixed
 			buf := bytes.NewBuffer([]byte{})
 
 			// 保存原始设置
-			oldMode := OutputMode
 			oldWriter := outputWriter
 
 			// 设置测试环境
 			SetOutputWriter(buf)
-			SetOutputMode("markdown")
 
 			PrintIssue(tc.issue, tc.detailed)
 
@@ -970,8 +968,6 @@ Labels:     bug, fixed
 				t.Fatal()
 			}
 
-			// 恢复原始设置
-			SetOutputMode(oldMode)
 			SetOutputWriter(oldWriter)
 		})
 	}
