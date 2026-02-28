@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -12,9 +13,10 @@ import (
 )
 
 var (
-	ModelID   = int64(0)
-	DBPath    = filepath.Join(ConfigDir, "sqlite.db")
-	SessionID = int64(0)
+	HistoryLimit = &struct{}{}
+	ModelID      = int64(0)
+	DBPath       = filepath.Join(ConfigDir, "sqlite.db")
+	SessionID    = int64(0)
 )
 
 // createTables 创建所有需要的表
@@ -215,7 +217,12 @@ func LoadLastOne() (*Message, error) {
 }
 
 // LoadHistory 加载指定会话的所有历史消息，按时间升序返回
-func LoadHistory() ([]Message, error) {
+func LoadHistory(ctx context.Context) ([]Message, error) {
+	limit := 8
+	if v, ok := ctx.Value(HistoryLimit).(int); ok {
+		limit = v
+	}
+
 	db, err := OpenDB()
 	if err != nil {
 		return nil, err
@@ -255,7 +262,7 @@ func LoadHistory() ([]Message, error) {
 		return nil, fmt.Errorf("遍历消息失败: %w", err)
 	}
 	n := len(messages)
-	idx := n - 128
+	idx := n - limit
 	if idx > 0 {
 		for {
 			m := messages[idx]

@@ -84,7 +84,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 
 func ChatMessage(ctx context.Context, inputs ...Message) (err error) {
 	// 1. 加载历史消息
-	history, err := LoadHistory()
+	history, err := LoadHistory(ctx)
 	if err != nil {
 		err = fmt.Errorf("加载历史消息失败: %w", err)
 		return
