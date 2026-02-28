@@ -25,7 +25,7 @@ var (
 	ModelDeepseekReasoner = Getenv("MODEL_DEEPSEEK_REASONER", "deepseek-reasoner")
 
 	DeepseekClient Client
-	logfile        *os.File
+	close          func() error
 	ProjectRoot    = GetProjectRoot()
 
 	ConfigDir = GetConfigDir()
@@ -123,21 +123,18 @@ func findGitRoot(dir string) (string, error) {
 }
 
 func RootPostRunE(cmd *cobra.Command, args []string) (err error) {
-	if logfile != nil {
-		err = logfile.Close()
-		if err != nil {
-			return
-		}
+	if close != nil {
+		err = close()
 	}
 	return
 }
 
 func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
+	var w *os.File
 	switch mode {
 	case "markdown":
 	case "org":
 		var r *os.File
-		var w *os.File
 		r, w, err = os.Pipe()
 		if err != nil {
 			return err
@@ -162,14 +159,34 @@ func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 	if url == "" {
 		url = "https://api.deepseek.com" // 默认值
 	}
-
+	var logfile *os.File
 	logfile, err = os.OpenFile(LogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return
 	}
-
 	log.SetOutput(logfile)
 
+	close = func() (err error) {
+		var errs []error
+
+		// 关闭 w（如果存在）
+		if w != nil {
+			if err := w.Close(); err != nil {
+				errs = append(errs, err)
+			}
+		}
+
+		// 关闭 logfile
+		if err := logfile.Close(); err != nil {
+			errs = append(errs, err)
+		}
+
+		// 如果有错误，返回第一个错误
+		if len(errs) > 0 {
+			return errs[0]
+		}
+		return nil
+	}
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 	DeepseekClient = NewClient(key, url)
 	return nil
