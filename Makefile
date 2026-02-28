@@ -1,13 +1,15 @@
 # Makefile for dscli
 
 BINARY_NAME = dscli
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-LDFLAGS = -ldflags "-X main.version=$(VERSION)"
+VERSION ?= 0.5.0
+BUILD_DATE ?= $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
+GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+LDFLAGS = -ldflags "-X main.Version=$(VERSION) -X main.Build=$(BUILD_DATE)-$(GIT_COMMIT)"
 GOFLAGS = -trimpath -tags netgo
 SOURCE_DIR = .
 BUILD_DIR = build
 
-.PHONY: all build clean install test fmt test-coverage coverage coverage-html clean-coverage test-all dev-test watch-test
+.PHONY: all build clean install test fmt test-coverage coverage coverage-html clean-coverage test-all dev-test watch-test release
 
 all: clean build
 
@@ -15,9 +17,11 @@ build: $(BUILD_DIR)/$(BINARY_NAME)
 
 $(BUILD_DIR)/$(BINARY_NAME): $(shell find . -name "*.go")
 	@mkdir -p $(BUILD_DIR)
+	@echo "构建 dscli v$(VERSION) (commit: $(GIT_COMMIT), date: $(BUILD_DATE))"
 	CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(SOURCE_DIR)
 
 install:
+	@echo "安装 dscli v$(VERSION)"
 	go install $(GOFLAGS) $(LDFLAGS) $(SOURCE_DIR)
 
 clean:
@@ -124,3 +128,58 @@ watch-test:
 	else \
 		echo "❌ 未找到文件监控工具，请安装 fswatch 或 inotify-tools"; \
 	fi
+
+# ==================== 发布相关 ====================
+
+# release: 构建发布版本
+release: clean
+	@echo "构建 dscli v$(VERSION) 发布版本..."
+	@echo "构建时间: $(BUILD_DATE)"
+	@echo "Git提交: $(GIT_COMMIT)"
+	@echo ""
+	
+	# 构建Linux版本
+	@echo "=== 构建Linux版本 ==="
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 $(SOURCE_DIR)
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 $(SOURCE_DIR)
+	
+	# 构建macOS版本
+	@echo "=== 构建macOS版本 ==="
+	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 $(SOURCE_DIR)
+	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 $(SOURCE_DIR)
+	
+	# 构建Windows版本
+	@echo "=== 构建Windows版本 ==="
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe $(SOURCE_DIR)
+	
+	@echo ""
+	@echo "✅ 发布版本构建完成！"
+	@echo "输出目录: $(BUILD_DIR)/"
+	@ls -lh $(BUILD_DIR)/*
+	
+	@echo ""
+	@echo "版本信息验证:"
+	@for binary in $(BUILD_DIR)/*; do \
+		if [ -x $$binary ] || [[ $$binary == *.exe ]]; then \
+			echo -n "$$binary: "; \
+			if [[ $$binary == *.exe ]]; then \
+				wine $$binary version 2>/dev/null | head -1 || echo "无法执行"; \
+			else \
+				$$binary version 2>/dev/null | head -1 || echo "无法执行"; \
+			fi; \
+		fi; \
+	done
+
+# release-info: 显示发布信息
+release-info:
+	@echo "=== dscli v$(VERSION) 发布信息 ==="
+	@echo "版本号: $(VERSION)"
+	@echo "构建时间: $(BUILD_DATE)"
+	@echo "Git提交: $(GIT_COMMIT)"
+	@echo "支持的平台:"
+	@echo "  - Linux (amd64, arm64)"
+	@echo "  - macOS (amd64, arm64)"
+	@echo "  - Windows (amd64)"
+	@echo ""
+	@echo "构建命令: make release"
+	@echo "安装命令: make install 或 go install gitcode.com/dscli/dscli@v$(VERSION)"

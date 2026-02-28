@@ -16,7 +16,7 @@ var (
 		return godotenv.Load(EnvPath)
 	}()
 
-	// Version information
+	// Version information - set via ldflags during build
 	Version = "0.5.0"
 	Build   = ""
 

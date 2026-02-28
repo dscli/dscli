@@ -14,11 +14,12 @@ var versionCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("dscli 版本: %s\n", Version)
 		if Build != "" {
-			fmt.Printf("构建标识: %s\n", Build)
+			fmt.Printf("构建信息: %s\n", Build)
 		}
 		fmt.Printf("Go 版本: %s\n", runtime.Version())
 		fmt.Printf("操作系统: %s\n", runtime.GOOS)
 		fmt.Printf("处理器架构: %s\n", runtime.GOARCH)
+		fmt.Printf("编译器: %s\n", runtime.Compiler)
 	},
 }
 
