@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"log/slog"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -148,7 +147,7 @@ func handleReadFile(ctx context.Context, argsRaw json.RawMessage) (string, error
 		fileInfo.Mode().String(),
 		fileInfo.ModTime().Format("2006-01-02 15:04:05"),
 		executionTime)
-
+	Notice("读取文件: \"%s\"（%d字节）", fullPath, fileInfo.Size())
 	return result, nil
 }
 
@@ -212,6 +211,7 @@ func handleWriteFile(ctx context.Context, argsRaw json.RawMessage) (string, erro
 		fullPath,
 		executionTime)
 
+	Notice("写入文件: \"%s\"（%d字节）", fullPath, fileInfo.Size())
 	return result, nil
 }
 
@@ -450,9 +450,9 @@ func handleGitPush(ctx context.Context, argsRaw json.RawMessage) (string, error)
 
 func Shebang(script string) (name string, arg []string) {
 	shebang := []string{"/usr/bin/env", "bash"}
-	idx := strings.Index(script, "\n")
-	if idx != -1 {
-		line1 := script[0:idx]
+	before, _, ok := strings.Cut(script, "\n")
+	if ok {
+		line1 := before
 		if strings.HasPrefix(line1, "#!") {
 			shebang = strings.Fields(line1[2:])
 		}
@@ -485,19 +485,19 @@ func runScript(ctx context.Context, script string, name string, arg []string) (o
 		}
 	}
 	startTime := time.Now()
-	log.Printf("执行脚本（%s）: %s %s %v", toolName, script, name, arg)
+	Notice("执行脚本（%s）: %s %s %v", toolName, script, name, arg)
 	lang := path.Base(name)
 	if len(arg) > 0 {
 		lang = arg[0]
 	}
-	Printf("执行脚本（%s）：\n```%s\n%s\n```\n", toolName, lang, script)
+	Notice("执行脚本（%s）：\n```%s\n%s\n```\n", toolName, lang, script)
 	defer func() {
 		spend := time.Since(startTime)
 		if err == nil {
-			Printf("\n执行成功（%v）：\n```\n%s\n```\n",
+			Info("\n执行成功（%v）：\n```\n%s\n```\n",
 				spend, out)
 		} else {
-			Printf("\n执行失败（%v）：\n```\n%s\n```\n\n出错信息：\n```\n%s\n```\n",
+			Error("\n执行失败（%v）：\n```\n%s\n```\n\n出错信息：\n```\n%s\n```\n",
 				spend, out, err.Error())
 		}
 	}()
@@ -867,7 +867,7 @@ func HandleToolCall(ctx context.Context, toolName string, args json.RawMessage) 
 	ctx = context.WithValue(ctx, ToolDisplayName, tool.DisplayName)
 	toolID, err := GetOrCreateTool(tool.Name, tool.Description, tool.Category)
 	if err != nil {
-		slog.Error(err.Error(), "name", tool.Name)
+		Error(err.Error(), "name", tool.Name)
 		// 继续执行工具，但不记录统计
 		return tool.Handler(ctx, args)
 	}
