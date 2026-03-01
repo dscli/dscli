@@ -24,11 +24,11 @@ var (
 )
 
 var (
-	Abortion       = &struct{}{}
-	Continue       = &struct{}{}
-	StartTime      = &struct{}{}
-	CurrentModel   = &struct{}{}
-	CurrentContent = &struct{}{}
+	Abortion       = "abortion"
+	Continue       = "continue"
+	StartTime      = "start_time"
+	CurrentModel   = "current_model"
+	CurrentContent = "current_content"
 )
 
 func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
@@ -67,9 +67,12 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		cont = true
 	}
 
-	ctx := context.WithValue(context.WithValue(context.WithValue(context.WithValue(context.WithValue(
-		cmd.Context(), StartTime, time.Now()), CurrentModel, chatModel), Continue, cont),
-		Abortion, abort), CurrentContent, content)
+	ctx := cmd.Context()
+	ctx = context.WithValue(ctx, StartTime, time.Now())
+	ctx = context.WithValue(ctx, CurrentModel, chatModel)
+	ctx = context.WithValue(ctx, Continue, cont)
+	ctx = context.WithValue(ctx, Abortion, abort)
+	ctx = context.WithValue(ctx, CurrentContent, content)
 
 	prompts, err := LoadPrompts(ctx)
 	if err != nil {
