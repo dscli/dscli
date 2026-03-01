@@ -87,7 +87,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	if !cont && !abort {
-		return ChatMessage(ctx, prompts, skills, history,
+		return ChatRound(ctx, prompts, skills, history,
 			Message{Role: "user", Content: content})
 	}
 
@@ -107,7 +107,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 
 	// handle abortion first
 	if abort {
-		return ChatMessage(ctx, prompts, skills, history,
+		return ChatRound(ctx, prompts, skills, history,
 			Message{
 				Role:       "tool",
 				ToolCallID: cts[0].ID,
@@ -122,7 +122,7 @@ LEAVE THINGS TO HUMAN TO HANDLE!!!`, cts[0].Function.Name),
 			Warn("inputs should not be empty!")
 			return
 		}
-		return ChatMessage(ctx, prompts, skills, history, inputs...)
+		return ChatRound(ctx, prompts, skills, history, inputs...)
 	}
 	return
 }
@@ -164,7 +164,7 @@ func PrintContent(ctx context.Context, content string) {
 	Println(content)
 }
 
-func ChatMessage(ctx context.Context, prompts []Message, skills []Message, history []Message, inputs ...Message) (err error) {
+func ChatRound(ctx context.Context, prompts []Message, skills []Message, history []Message, inputs ...Message) (err error) {
 	// 1. 构造 messages 切片（包含历史）
 	messages := make([]Message, 0, len(history)+len(prompts)+len(skills))
 	messages = append(messages, prompts...)
@@ -209,7 +209,7 @@ func ChatMessage(ctx context.Context, prompts []Message, skills []Message, histo
 		history = append(history, inputs...) // put inputs in history
 		story.ReasoningContent = ""          // reset reasoning content
 		history = append(history, story)     // put story in history
-		return ChatMessage(ctx, prompts, skills, history, toolInputs...)
+		return ChatRound(ctx, prompts, skills, history, toolInputs...)
 	}
 	return
 }
