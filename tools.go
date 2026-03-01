@@ -606,6 +606,29 @@ func handleDscliChatReload(ctx context.Context, args map[string]string) (result 
 
 	Info("🔄 检测到重载命令，正在重启进程...")
 
+	// 获取命令行参数
+	var cmdArgs []string
+	if v, ok := ctx.Value(CommandLineArgs).([]string); ok && len(v) > 0 {
+		// 使用原始命令行参数
+		cmdArgs = make([]string, len(v))
+		copy(cmdArgs, v)
+
+		// 确保有 --reload 标志
+		hasReload := false
+		for _, arg := range cmdArgs {
+			if arg == "--reload" {
+				hasReload = true
+				break
+			}
+		}
+		if !hasReload {
+			cmdArgs = append(cmdArgs, "--reload")
+		}
+	} else {
+		// 如果没有命令行参数，使用默认参数
+		cmdArgs = []string{"chat", "--reload"}
+	}
+
 	// 构建 exec 命令 - 使用绝对路径避免递归
 	dscliPath, err := exec.LookPath("dscli")
 	if err != nil {
@@ -614,7 +637,7 @@ func handleDscliChatReload(ctx context.Context, args map[string]string) (result 
 	}
 
 	// 使用绝对路径执行，避免递归
-	cmd := exec.Command(dscliPath, "chat", "--reload")
+	cmd := exec.Command(dscliPath, cmdArgs...)
 	cmd.Dir = ProjectRoot
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout

@@ -25,12 +25,13 @@ var (
 )
 
 var (
-	Abortion       = ContextKeyType("Abortion")
-	Continue       = ContextKeyType("Continue")
-	StartTime      = ContextKeyType("StartTime")
-	CurrentModel   = ContextKeyType("CurrentModel")
-	CurrentContent = ContextKeyType("CurrentContent")
-	IsReload       = ContextKeyType("IsReload")
+	Abortion        = ContextKeyType("Abortion")
+	Continue        = ContextKeyType("Continue")
+	StartTime       = ContextKeyType("StartTime")
+	CurrentModel    = ContextKeyType("CurrentModel")
+	CurrentContent  = ContextKeyType("CurrentContent")
+	IsReload        = ContextKeyType("IsReload")
+	CommandLineArgs = ContextKeyType("CommandLineArgs")
 )
 
 func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
@@ -76,6 +77,8 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx = context.WithValue(ctx, Abortion, abort)
 	ctx = context.WithValue(ctx, CurrentContent, content)
 	ctx = context.WithValue(ctx, IsReload, reload)
+	// 存储命令行参数
+	ctx = context.WithValue(ctx, CommandLineArgs, os.Args)
 
 	prompts, err := LoadPrompts(ctx)
 	if err != nil {
