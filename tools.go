@@ -58,6 +58,7 @@ func GetAllTools() []Tool {
 }
 
 // HandleToolCalls 处理工具调用（带统计）
+// HandleToolCalls 处理工具调用（带统计）
 func HandleToolCalls(ctx context.Context, tcs []ToolCall) []Message {
 	inputs := []Message{}
 	// 处理每个工具调用
@@ -67,6 +68,29 @@ func HandleToolCalls(ctx context.Context, tcs []ToolCall) []Message {
 		if err != nil {
 			// But we still need to tell the result to assistant
 			result = err.Error()
+		}
+
+		// 检查是否是重载命令
+		if strings.Contains(result, "exec dscli chat --reload") {
+			// 重载命令，执行 exec 替换当前进程
+			Info("🔄 检测到重载命令，正在重启进程...")
+
+			// 构建 exec 命令
+			cmd := exec.Command("bash", "-c", "exec dscli chat --reload")
+			cmd.Dir = ProjectRoot
+			cmd.Stdin = os.Stdin
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+
+			// 执行 exec（这会替换当前进程）
+			if err := cmd.Run(); err != nil {
+				Error("重载失败: %v", err)
+				// 如果 exec 失败，返回错误信息
+				result = fmt.Sprintf("重载失败: %v", err)
+			} else {
+				// exec 成功，进程已被替换，这里不会执行
+				os.Exit(0)
+			}
 		}
 
 		inputs = append(inputs, Message{
