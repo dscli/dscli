@@ -200,7 +200,9 @@ func PrintReasoningContent(ctx context.Context, reasoning string) {
 	if v, ok := ctx.Value(StartTime).(time.Time); ok {
 		startTime = v
 	}
-	Printf("已思考用时%v\n\n", time.Since(startTime))
+	duration := time.Since(startTime)
+	seconds := duration.Seconds()
+	Printf("已思考用时%.2fs\n\n", seconds)
 	Println(reasoning)
 }
 
@@ -213,7 +215,9 @@ func PrintContent(ctx context.Context, content string) {
 	if v, ok := ctx.Value(StartTime).(time.Time); ok {
 		startTime = v
 	}
-	Printf("用时%v\n\n", time.Since(startTime))
+	duration := time.Since(startTime)
+	seconds := duration.Seconds()
+	Printf("用时%.2fs\n\n", seconds)
 	content = strings.TrimSpace(content)
 	Println(content)
 }
