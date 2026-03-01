@@ -56,11 +56,24 @@ func GetAllTools() []Tool {
 	return tools
 }
 
-// HandleToolCall 处理工具调用（带统计）
-func HandleToolCalls(ctx context.Context, assistantMsg *Message) (err error) {
+func GetToolCallsInputs(ctx context.Context, assistantMsg *Message) []Message {
 	inputs := []Message{}
+	abort := false
+	tcs := assistantMsg.ToolCalls
+	if v, ok := ctx.Value(Abortion).(bool); ok {
+		abort = v
+	}
+	if abort && len(tcs) == 1 {
+		inputs = append(inputs, Message{
+			Role:       "tool",
+			ToolCallID: tcs[0].ID,
+			Content:    "工具调用失败，后续任务放弃",
+		})
+		return inputs
+	}
+
 	// 处理每个工具调用
-	for _, tc := range assistantMsg.ToolCalls {
+	for _, tc := range tcs {
 		// 使用新的工具调用处理器
 		result, err := HandleToolCall(ctx, tc.Function.Name, []byte(tc.Function.Arguments))
 		if err != nil {
@@ -74,7 +87,12 @@ func HandleToolCalls(ctx context.Context, assistantMsg *Message) (err error) {
 			Content:    result,
 		})
 	}
+	return inputs
+}
 
+// HandleToolCalls 处理工具调用（带统计）
+func HandleToolCalls(ctx context.Context, assistantMsg *Message) (err error) {
+	inputs := GetToolCallsInputs(ctx, assistantMsg)
 	if len(inputs) > 0 {
 		err = ChatMessage(ctx, inputs...)
 	}
@@ -844,8 +862,6 @@ print("Hello")
 		Handler:  handleSqlite,
 	})
 }
-
-// HandleToolCall 处理工具调用（带统计和超时）
 
 // HandleToolCall 处理工具调用（带统计和超时）
 func HandleToolCall(ctx context.Context, toolName string, args json.RawMessage) (string, error) {

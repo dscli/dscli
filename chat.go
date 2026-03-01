@@ -19,7 +19,9 @@ const (
 
 var (
 	chatModel string
-	tobecont  bool
+	cont      bool
+	abort     bool
+	Abortion  = &struct{}{}
 )
 
 func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
@@ -47,7 +49,7 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 
 func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	userMsg := ""
-	if !tobecont {
+	if !cont {
 		userMsg, err = ReadContent()
 		if err != nil {
 			return
@@ -134,8 +136,23 @@ func ChatMessage(ctx context.Context, inputs ...Message) (err error) {
 		Println("\n------")
 	}
 
-	Println(assistantMsg.Content)
-	Println()
+	printContent := func() {
+		content := strings.TrimSpace(assistantMsg.Content)
+		if content != "" {
+			Println(content)
+			Println()
+		}
+	}
+	printContent()
+	if len(assistantMsg.ToolCalls) > 0 {
+		Println("调用", len(assistantMsg.ToolCalls), "个工具...")
+	} else {
+		Println()
+		return
+	}
+	if abort {
+		ctx = context.WithValue(ctx, Abortion, true)
+	}
 	return HandleToolCalls(ctx, &assistantMsg)
 }
 
@@ -155,6 +172,7 @@ func init() {
 		RunE:    ChatRunE,
 	}
 	chatCmd.Flags().StringVar(&chatModel, "model", ModelDeepseekChat, "使用的模型名称")
-	chatCmd.Flags().BoolVar(&tobecont, "continue", false, "继续")
+	chatCmd.Flags().BoolVar(&cont, "continue", false, "继续")
+	chatCmd.Flags().BoolVar(&abort, "abort", false, "放弃")
 	RootCmd.AddCommand(chatCmd)
 }

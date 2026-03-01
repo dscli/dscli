@@ -24,7 +24,17 @@ func handleWebReader(ctx context.Context, argsRaw json.RawMessage) (string, erro
 		URL string `json:"url"`
 	}
 	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return "", fmt.Errorf("参数解析失败: %w", err)
+		n := len(argsRaw)
+		if n > 40 {
+			err = fmt.Errorf(`参数解析失败: %w, 以下详细出错信息
+- 参数字符串长度：%d
+- 参数字符串后40字节：%q`, err, n, string(argsRaw[n-40:]))
+		} else {
+			err = fmt.Errorf(`参数解析失败: %w, 以下详细出错信息
+- 参数字符串长度：%d
+- 参数字符串：%q`, err, n, string(argsRaw))
+		}
+		return "", err
 	}
 
 	if args.URL == "" {
@@ -91,7 +101,16 @@ func Web2Markdown(ctx context.Context, url string) (string, error) {
 		}
 	} else if strings.Contains(contentType, "application/json") {
 		// 如果是JSON，格式化输出
-		var jsonData interface{}
+		var jsonData any
+		content = string(body)
+		body = []byte(strings.TrimSpace(content))
+		if len(body) > 0 {
+			if body[0] == '[' {
+				jsonData = []map[string]any{}
+			} else {
+				jsonData = map[string]any{}
+			}
+		}
 		if err := json.Unmarshal(body, &jsonData); err == nil {
 			formatted, _ := json.MarshalIndent(jsonData, "", "  ")
 			content = string(formatted)
