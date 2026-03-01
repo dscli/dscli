@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"time"
 )
 
@@ -21,7 +20,7 @@ type ToolDef struct {
 	Parameters  map[string]any
 	Category    string
 	Timeout     time.Duration // 工具执行超时时间
-	Handler     func(ctx context.Context, args json.RawMessage) (string, error)
+	Handler     func(ctx context.Context, args map[string]string) (string, error)
 }
 
 type Function struct {

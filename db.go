@@ -174,46 +174,15 @@ func CreateOrGetSessionID() (sessionID int64, err error) {
 	return
 }
 
-func LoadLastOne(ctx context.Context) (*Message, error) {
-	db, err := OpenDB()
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-	rows, err := db.Query(`
-        SELECT role, content, tool_call_id, tool_calls, created_at 
-        FROM messages
-        WHERE session_id = ? AND model_id = ?
-        ORDER BY id DESC 
-        LIMIT 1`, SessionID, ModelID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load last: %w", err)
-	}
-	defer rows.Close()
-	var m Message
-	if rows.Next() {
-		var toolCallID sql.NullString
-		var toolCalls sql.NullString
-		if err := rows.Scan(&m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt); err != nil {
-			return nil, fmt.Errorf("failed to scan message: %w", err)
-		}
-		if toolCallID.Valid {
-			m.ToolCallID = toolCallID.String
-		}
-		if toolCalls.Valid {
-			data := json.RawMessage(toolCalls.String)
-			err = json.Unmarshal(data, &m.ToolCalls)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
+func LoadPrompts(ctx context.Context) ([]Message, error) {
+	return []Message{{
+		Role:    "system",
+		Content: GetSystemPrompt(),
+	}}, nil
+}
 
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to loop rows: %w", err)
-	}
-
-	return &m, nil
+func LoadSkills(ctx context.Context) ([]Message, error) {
+	return []Message{}, nil
 }
 
 // LoadHistory 加载指定会话的所有历史消息，按时间升序返回

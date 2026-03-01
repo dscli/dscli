@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -56,22 +57,9 @@ func GetAllTools() []Tool {
 	return tools
 }
 
-func GetToolCallsInputs(ctx context.Context, assistantMsg *Message) []Message {
+// HandleToolCalls 处理工具调用（带统计）
+func HandleToolCalls(ctx context.Context, tcs []ToolCall) []Message {
 	inputs := []Message{}
-	abort := false
-	tcs := assistantMsg.ToolCalls
-	if v, ok := ctx.Value(Abortion).(bool); ok {
-		abort = v
-	}
-	if abort && len(tcs) == 1 {
-		inputs = append(inputs, Message{
-			Role:       "tool",
-			ToolCallID: tcs[0].ID,
-			Content:    "工具调用失败，后续任务放弃",
-		})
-		return inputs
-	}
-
 	// 处理每个工具调用
 	for _, tc := range tcs {
 		// 使用新的工具调用处理器
@@ -90,56 +78,36 @@ func GetToolCallsInputs(ctx context.Context, assistantMsg *Message) []Message {
 	return inputs
 }
 
-// HandleToolCalls 处理工具调用（带统计）
-func HandleToolCalls(ctx context.Context, assistantMsg *Message) (err error) {
-	inputs := GetToolCallsInputs(ctx, assistantMsg)
-	if len(inputs) > 0 {
-		err = ChatMessage(ctx, inputs...)
-	}
-	return
-}
-
 // ==================== 工具处理器实现 ====================
 
-// 解析文件路径：如果是相对路径，则拼接项目根目录；否则直接使用（需确保在项目内）
-func resolvePath(path string) (string, error) {
+// 解析文件路径：如果是相对路径，则拼接项目根目录；否则直接使用
+func resolvePath(path string) string {
 	if filepath.IsAbs(path) {
-		// 检查是否在项目根目录内
-		rel, err := filepath.Rel(ProjectRoot, path)
-		if err != nil || strings.HasPrefix(rel, "..") {
-			return "", fmt.Errorf("路径 %q 不在项目根目录内", path)
-		}
-		return path, nil
+		return path
 	}
-	return filepath.Join(ProjectRoot, path), nil
+	return filepath.Join(ProjectRoot, path)
 }
 
 // handleReadFile 读取文件（纯Go实现）
-func handleReadFile(ctx context.Context, argsRaw json.RawMessage) (string, error) {
-	var args struct {
-		Path string `json:"path"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		log.Printf("argsRaw: %s", string(argsRaw))
-		return "", fmt.Errorf("参数解析失败: %w", err)
+func handleReadFile(ctx context.Context, args map[string]string) (string, error) {
+	path, ok := args["path"]
+	if !ok || path == "" {
+		return "", fmt.Errorf("parameter error: no path specified")
 	}
 
-	fullPath, err := resolvePath(args.Path)
-	if err != nil {
-		return "", err
-	}
+	fullPath := resolvePath(path)
 
 	// 读取文件
 	startTime := time.Now()
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
-		return "", fmt.Errorf("读取文件失败: %w", err)
+		return "", fmt.Errorf("failed to read file: %w", err)
 	}
 
 	// 获取文件信息
 	fileInfo, err := os.Stat(fullPath)
 	if err != nil {
-		return "", fmt.Errorf("获取文件信息失败: %w", err)
+		return "", fmt.Errorf("failed to fetch file information: %w", err)
 	}
 
 	// 构建结果
@@ -177,30 +145,27 @@ func Shuffle(in string) (out string) {
 }
 
 // handleWriteFile 写入文件（纯Go实现）
-func handleWriteFile(ctx context.Context, argsRaw json.RawMessage) (string, error) {
-	var args struct {
-		Path    string `json:"path"`
-		Content string `json:"content"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		log.Printf("argsRaw: %s", string(argsRaw))
-		return "", fmt.Errorf("参数解析失败: %w", err)
+func handleWriteFile(ctx context.Context, args map[string]string) (string, error) {
+	path, ok := args["path"]
+	if !ok || path == "" {
+		return "", fmt.Errorf("参数错误: 缺少path参数")
 	}
 
-	fullPath, err := resolvePath(args.Path)
-	if err != nil {
-		return "", err
-	}
+	fullPath := resolvePath(path)
 
 	// 确保目录存在
 	dir := filepath.Dir(fullPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("创建目录失败: %w", err)
+		return "", fmt.Errorf("创建目录%q失败: %w", dir, err)
 	}
 
+	content, ok := args["content"]
+	if !ok { // no content specified means touch
+		content = ""
+	}
 	// 写入文件
 	startTime := time.Now()
-	if err := os.WriteFile(fullPath, []byte(args.Content), 0o644); err != nil {
+	if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
 		return "", fmt.Errorf("写入文件失败: %w", err)
 	}
 
@@ -221,7 +186,7 @@ func handleWriteFile(ctx context.Context, argsRaw json.RawMessage) (string, erro
 === 执行统计 ===
 执行时间: %v
 状态: 成功`,
-		args.Path,
+		path,
 		fileInfo.Size(),
 		fileInfo.Mode().String(),
 		fullPath,
@@ -232,36 +197,35 @@ func handleWriteFile(ctx context.Context, argsRaw json.RawMessage) (string, erro
 }
 
 // handleSearchFiles 搜索文件
-func handleSearchFiles(ctx context.Context, argsRaw json.RawMessage) (string, error) {
-	var args struct {
-		Pattern string `json:"pattern"`
-		Content string `json:"content"`
+func handleSearchFiles(ctx context.Context, args map[string]string) (string, error) {
+	pattern, ok := args["pattern"]
+	if !ok {
+		pattern = ""
 	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return "", fmt.Errorf("参数解析失败: %w", err)
+	content, ok := args["content"]
+	if !ok {
+		content = ""
 	}
-
 	// 使用find和grep命令实现搜索
 	// 基础find命令：从当前目录开始，排除.git目录，只搜索文件
 	script := `find . -type f -not -path "./.git/*"`
 
 	// 添加文件名模式匹配
-	if args.Pattern != "" {
+	if pattern != "" {
 		// 将Go的glob模式转换为find的-name模式
 		// 注意：这里简化处理，复杂的glob模式可能需要转换
-		pattern := args.Pattern
 		// 转义单引号：将'替换为'\''
 		escapedPattern := strings.ReplaceAll(pattern, "'", "'\"'\"'")
 		script += fmt.Sprintf(` -name '%s'`, escapedPattern)
 	}
 
 	// 添加内容匹配
-	if args.Content != "" {
+	if content != "" {
 		// 使用-exec和grep进行内容搜索
 		// -l: 只显示包含匹配内容的文件名
 		// -q: 安静模式，只返回退出状态
 		// 转义单引号：将'替换为'\''
-		escapedContent := strings.ReplaceAll(args.Content, "'", "'\"'\"'")
+		escapedContent := strings.ReplaceAll(content, "'", "'\"'\"'")
 		script += fmt.Sprintf(` -exec grep -lq '%s' {} \;`, escapedContent)
 	}
 
@@ -274,12 +238,11 @@ func handleSearchFiles(ctx context.Context, argsRaw json.RawMessage) (string, er
 	return runBash(ctx, script)
 }
 
-// gitCommand 执行git命令
 // gitCommand 执行git命令（直接使用exec.Command）
 func gitCommand(ctx context.Context, args ...string) (string, error) {
 	// 检查context是否已经取消
 	if ctx.Err() != nil {
-		return "", ctx.Err()
+		return "", fmt.Errorf("the context has been cancelled: %w", ctx.Err())
 	}
 
 	// 创建命令
@@ -295,7 +258,7 @@ func gitCommand(ctx context.Context, args ...string) (string, error) {
 	startTime := time.Now()
 	err := cmd.Start()
 	if err != nil {
-		return "", fmt.Errorf("启动git命令失败: %w", err)
+		return "", fmt.Errorf("failed to start git command: %w", err)
 	}
 
 	// 创建完成通道
@@ -326,7 +289,7 @@ func gitCommand(ctx context.Context, args ...string) (string, error) {
 			if errorMsg == "" {
 				errorMsg = err.Error()
 			}
-			return stdout, fmt.Errorf("git命令执行失败: %s", errorMsg)
+			return stdout, fmt.Errorf("failed to execute git command: %s", errorMsg)
 		}
 
 		// 命令执行成功
@@ -348,35 +311,38 @@ func gitCommand(ctx context.Context, args ...string) (string, error) {
 }
 
 // handleGitAdd git添加
-func handleGitAdd(ctx context.Context, argsRaw json.RawMessage) (string, error) {
-	var args struct {
-		Path string `json:"path"`
+func handleGitAdd(ctx context.Context, args map[string]string) (string, error) {
+	path, ok := args["path"]
+	if !ok {
+		path = ""
 	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return "", fmt.Errorf("参数解析失败: %w", err)
-	}
+	path = strings.TrimSpace(path)
+	names := strings.Fields(path)
 	gitArgs := []string{"add"}
-	gitArgs = append(gitArgs, strings.Fields(args.Path)...)
+	gitArgs = append(gitArgs, names...)
 	out, err := gitCommand(ctx, gitArgs...)
 	if err != nil {
 		return "", err
 	}
 	if out == "" {
-		out = "已添加到暂存区"
+		out = fmt.Sprintf("(%s)已添加到暂存区", strings.Join(names, " "))
 	}
 	return out, nil
 }
 
 // handleGitCommit git提交
-func handleGitCommit(ctx context.Context, argsRaw json.RawMessage) (string, error) {
-	var args struct {
-		Message string `json:"message"`
-		Options string `json:"options,omitempty"`
+func handleGitCommit(ctx context.Context, args map[string]string) (string, error) {
+	message, ok := args["message"]
+	if !ok {
+		return "", fmt.Errorf("no message specified")
 	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return "", fmt.Errorf("参数解析失败: %w", err)
+
+	options, ok := args["options"]
+	if !ok {
+		options = ""
 	}
-	options := strings.TrimSpace(args.Options)
+
+	options = strings.TrimSpace(options)
 
 	// 更健壮的-m参数检查
 	// 检查 -m、-m[空格]、--message 等变体
@@ -387,43 +353,56 @@ func handleGitCommit(ctx context.Context, argsRaw json.RawMessage) (string, erro
 		}
 	}
 
-	gitArgs := []string{"commit", "-m", args.Message}
+	gitArgs := []string{"commit", "-m", message}
 	if options != "" {
 		gitArgs = append(gitArgs, strings.Fields(options)...)
 	}
-	return gitCommand(ctx, gitArgs...)
+
+	out, err := gitCommand(ctx, gitArgs...)
+	if err != nil {
+		return "", err
+	}
+	if out == "" {
+		out = "Git has commited"
+	}
+	return out, nil
 }
 
 // handleGitLog git日志
-func handleGitLog(ctx context.Context, argsRaw json.RawMessage) (string, error) {
-	var args struct {
-		MaxCount int `json:"max_count"`
+func handleGitLog(ctx context.Context, args map[string]string) (string, error) {
+	maxCountRaw, ok := args["max_count"]
+	if !ok || maxCountRaw == "" {
+		maxCountRaw = "10"
+	}
+	_, err := strconv.Atoi(maxCountRaw)
+	if err != nil {
+		err = fmt.Errorf("%q is not integer in string: %w", maxCountRaw, err)
+		return "", err
 	}
 
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		args.MaxCount = 0
-	}
-
-	if args.MaxCount <= 0 {
-		args.MaxCount = 10
-	}
-	out, err := gitCommand(ctx, "log", "-n", fmt.Sprintf("%d", args.MaxCount), "--oneline")
+	out, err := gitCommand(ctx, "log", "-n", maxCountRaw, "--oneline")
 	if err != nil {
 		return "", err
+	}
+
+	if out == "" {
+		out = "git log succeed without output"
 	}
 	return out, nil
 }
 
 // handleGitDiff git差异
-func handleGitDiff(ctx context.Context, argsRaw json.RawMessage) (string, error) {
-	var args struct {
-		Path string `json:"path"`
+func handleGitDiff(ctx context.Context, args map[string]string) (string, error) {
+	path, ok := args["path"]
+	if !ok {
+		path = ""
 	}
-	_ = json.Unmarshal(argsRaw, &args) // 忽略错误，path 可选
+	path = strings.TrimSpace(path)
 	gitArgs := []string{"diff"}
-	if args.Path != "" {
+	if path != "" {
+		names := strings.Fields(path)
 		gitArgs = append(gitArgs, "HEAD", "--")
-		gitArgs = append(gitArgs, strings.Fields(args.Path)...)
+		gitArgs = append(gitArgs, names...)
 	}
 	out, err := gitCommand(ctx, gitArgs...)
 	if err != nil {
@@ -433,7 +412,7 @@ func handleGitDiff(ctx context.Context, argsRaw json.RawMessage) (string, error)
 }
 
 // handleGitStatus git状态
-func handleGitStatus(ctx context.Context, argsRaw json.RawMessage) (string, error) {
+func handleGitStatus(ctx context.Context, args map[string]string) (string, error) {
 	out, err := gitCommand(ctx, "status", "--short")
 	if err != nil {
 		return "", err
@@ -445,17 +424,16 @@ func handleGitStatus(ctx context.Context, argsRaw json.RawMessage) (string, erro
 }
 
 // handleGitPush git push [options...]
-func handleGitPush(ctx context.Context, argsRaw json.RawMessage) (string, error) {
-	var args struct {
-		Options string `json:"options,omitempty"`
+func handleGitPush(ctx context.Context, args map[string]string) (string, error) {
+	options, ok := args["options"]
+	if !ok {
+		options = ""
 	}
-	// 直接解析，json.Unmarshal能处理空JSON
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return "", fmt.Errorf("参数解析失败: %w", err)
-	}
+	options = strings.TrimSpace(options)
+	names := strings.Fields(options)
 	gitArgs := []string{"push"}
-	if args.Options != "" {
-		gitArgs = append(gitArgs, strings.Fields(args.Options)...)
+	if options != "" {
+		gitArgs = append(gitArgs, names...)
 	}
 	out, err := gitCommand(ctx, gitArgs...)
 	if err != nil {
@@ -479,17 +457,12 @@ func Shebang(script string) (name string, arg []string) {
 }
 
 // handleExecuteScript 执行脚本（支持多种解释器，通过shebang指定）
-func handleExecuteScript(ctx context.Context, argsRaw json.RawMessage) (out string, err error) {
-	var args struct {
-		Script string `json:"script"`
+func handleExecuteScript(ctx context.Context, args map[string]string) (out string, err error) {
+	script, ok := args["script"]
+	if !ok {
+		script = ""
 	}
-	if err = json.Unmarshal(argsRaw, &args); err != nil {
-		err = fmt.Errorf("参数解析失败: %w", err)
-		log.Printf("%v", err)
-		return
-	}
-
-	out, err = runBash(ctx, args.Script)
+	out, err = runBash(ctx, script)
 	return
 }
 
@@ -599,21 +572,13 @@ func runBash(ctx context.Context, script string) (result string, err error) {
 }
 
 // handleSqlite 执行SQLite数据库查询和操作
-func handleSqlite(ctx context.Context, argsRaw json.RawMessage) (string, error) {
-	// 解析参数
-	var args struct {
-		Script string `json:"script"`
+func handleSqlite(ctx context.Context, args map[string]string) (string, error) {
+	script, ok := args["script"]
+	if !ok || script == "" {
+		return "", fmt.Errorf("sql script can not be empty")
 	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		return "", fmt.Errorf("解析参数失败: %w", err)
-	}
-
-	if args.Script == "" {
-		return "", fmt.Errorf("SQL脚本不能为空")
-	}
-
 	// 构建完整的shebang脚本
-	fullScript := fmt.Sprintf("#!/usr/bin/env sqlite3 %s\n%s", DBPath, args.Script)
+	fullScript := fmt.Sprintf("#!/usr/bin/env sqlite3 %s\n%s", DBPath, script)
 
 	// 使用现有的runBash执行
 	return runBash(ctx, fullScript)
@@ -734,8 +699,8 @@ func init() {
 			"type": "object",
 			"properties": map[string]any{
 				"max_count": map[string]any{
-					"type":        "integer",
-					"description": "最大显示数量，默认10",
+					"type":        "string",
+					"description": `最大显示数量，默认"10"`,
 				},
 			},
 			"required":             []string{},
@@ -864,11 +829,31 @@ print("Hello")
 }
 
 // HandleToolCall 处理工具调用（带统计和超时）
-func HandleToolCall(ctx context.Context, toolName string, args json.RawMessage) (string, error) {
+func HandleToolCall(ctx context.Context, toolName string, argsRaw json.RawMessage) (string, error) {
 	// 获取工具处理器
 	tool, ok := toolRegistry[toolName]
 	if !ok {
 		return "", fmt.Errorf("未知工具: %s", toolName)
+	}
+	args := map[string]string{}
+	if err := json.Unmarshal(argsRaw, &args); err != nil {
+		n := len(argsRaw)
+		if n > 80 {
+			err = fmt.Errorf(`failed to unmarshal arguments: %w, below `+
+				`is the details about raw argument tool %q received`+
+				` which lead error:
+- the length of the argument string: %d
+- the last 40 bytes of the argument string: %q
+- the first 40 bytes of the argument string: %q`, err, toolName, n,
+				string(argsRaw[n-40:]), string(argsRaw[0:40]))
+		} else {
+			err = fmt.Errorf(`failed to unmarshal arguments: %w, below `+
+				`is the details about the raw argument tool %q received, 
+which lead to the error:
+- the length of the argument string：%d
+- the argument raw：%q`, err, toolName, n, string(argsRaw))
+		}
+		return "", err
 	}
 
 	// 创建带超时的context（如果工具设置了超时）

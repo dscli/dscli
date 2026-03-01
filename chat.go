@@ -21,7 +21,14 @@ var (
 	chatModel string
 	cont      bool
 	abort     bool
-	Abortion  = &struct{}{}
+)
+
+var (
+	Abortion       = &struct{}{}
+	Continue       = &struct{}{}
+	StartTime      = &struct{}{}
+	CurrentModel   = &struct{}{}
+	CurrentContent = &struct{}{}
 )
 
 func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
@@ -48,28 +55,76 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 }
 
 func ChatRunE(cmd *cobra.Command, args []string) (err error) {
-	userMsg := ""
+	content := ""
 	if !cont {
-		userMsg, err = ReadContent()
+		content, err = ReadContent()
 		if err != nil {
 			return
 		}
 	}
-	ctx := cmd.Context()
-	if userMsg != "" {
-		return ChatMessage(ctx, Message{Role: "user", Content: userMsg})
+	content = strings.TrimSpace(content)
+	if content == "" {
+		cont = true
 	}
 
-	am, err := LoadLastOne(ctx)
+	ctx := context.WithValue(context.WithValue(context.WithValue(context.WithValue(context.WithValue(
+		cmd.Context(), StartTime, time.Now()), CurrentModel, chatModel), Continue, cont),
+		Abortion, abort), CurrentContent, content)
+
+	prompts, err := LoadPrompts(ctx)
 	if err != nil {
 		return
 	}
 
-	if am.Role != "assistant" || len(am.ToolCalls) == 0 {
+	skills, err := LoadSkills(ctx)
+	if err != nil {
+		return
+	}
+
+	history, err := LoadHistory(ctx)
+	if err != nil {
+		return
+	}
+
+	if !cont && !abort {
+		return ChatMessage(ctx, prompts, skills, history,
+			Message{Role: "user", Content: content})
+	}
+
+	histsize := len(history)
+	if histsize == 0 {
+		Info("天下无事")
+		return
+	}
+
+	last := history[histsize-1]
+	cts := last.ToolCalls
+	if last.Role != "assistant" || len(cts) == 0 {
 		Info("天下本无事")
 		return
 	}
-	return HandleToolCalls(ctx, am)
+	history = history[0 : histsize-1]
+
+	// handle abortion first
+	if abort {
+		return ChatMessage(ctx, prompts, skills, history,
+			Message{
+				Role:       "tool",
+				ToolCallID: cts[0].ID,
+				Content: fmt.Sprintf(`TOOL %s FATAL ERROR!!!
+NO NEED TO RETRY!!!
+LEAVE THINGS TO HUMAN TO HANDLE!!!`, cts[0].Function.Name),
+			})
+	}
+	if cont {
+		inputs := HandleToolCalls(ctx, cts)
+		if len(inputs) == 0 {
+			Warn("inputs should not be empty!")
+			return
+		}
+		return ChatMessage(ctx, prompts, skills, history, inputs...)
+	}
+	return
 }
 
 func ReadContent() (content string, err error) {
@@ -82,32 +137,46 @@ func ReadContent() (content string, err error) {
 	return
 }
 
-func ChatMessage(ctx context.Context, inputs ...Message) (err error) {
-	// 1. 加载历史消息
-	history, err := LoadHistory(ctx)
-	if err != nil {
-		err = fmt.Errorf("加载历史消息失败: %w", err)
+func PrintReasoningContent(ctx context.Context, reasoning string) {
+	reasoning = strings.TrimSpace(reasoning)
+	if reasoning == "" {
 		return
 	}
-
-	// 2. 系统prompt
-	systemMessage := Message{
-		Role:    "system",
-		Content: GetSystemPrompt(),
+	var startTime time.Time
+	if v, ok := ctx.Value(StartTime).(time.Time); ok {
+		startTime = v
 	}
-	// 3. 构造 messages 切片（包含历史）
-	messages := make([]Message, 0, len(history)+2)
-	messages = append(messages, systemMessage)
+	Printf("已思考用时%v\n\n", time.Since(startTime))
+	Println(reasoning)
+}
+
+func PrintContent(ctx context.Context, content string) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return
+	}
+	var startTime time.Time
+	if v, ok := ctx.Value(StartTime).(time.Time); ok {
+		startTime = v
+	}
+	Printf("用时%v\n\n", time.Since(startTime))
+	content = strings.TrimSpace(content)
+	Println(content)
+}
+
+func ChatMessage(ctx context.Context, prompts []Message, skills []Message, history []Message, inputs ...Message) (err error) {
+	// 1. 构造 messages 切片（包含历史）
+	messages := make([]Message, 0, len(history)+len(prompts)+len(skills))
+	messages = append(messages, prompts...)
 	messages = append(messages, history...)
-	// 4. 添加当前用户消息
+	// 2. 添加当前用户消息
 	messages = append(messages, inputs...)
 
-	// 5. 记录本轮新增的消息（用于存储）
-	news := make([]Message, 0, len(inputs)+1)
-	news = append(news, inputs...)
+	// 3. 记录本轮新增的消息（用于存储）
+	stories := make([]Message, 0, len(inputs)+1)
+	stories = append(stories, inputs...)
 
 	var resp *ChatResponse
-	startTime := time.Now()
 	resp, err = DeepseekClient.Chat(chatModel, messages, GetAllTools())
 	if err != nil {
 		err = fmt.Errorf("聊天请求失败: %w", err)
@@ -119,41 +188,30 @@ func ChatMessage(ctx context.Context, inputs ...Message) (err error) {
 		return
 	}
 
-	assistantMsg := resp.Choices[0].Message
-
+	story := resp.Choices[0].Message
+	PrintReasoningContent(ctx, story.ReasoningContent)
+	PrintContent(ctx, story.Content)
 	// 转换并保存到 newMessages（用于后续存储）
-	news = append(news, assistantMsg)
-	if len(news) > 0 {
-		if err = SaveMessagesBatch(news); err != nil {
+	stories = append(stories, story)
+	if len(stories) > 0 {
+		if err = SaveMessagesBatch(stories); err != nil {
 			err = fmt.Errorf("保存消息失败: %w", err)
 			return
 		}
 	}
-
-	if ModelID == DeepseekReasoner && assistantMsg.ReasoningContent != "" {
-		Printf("已思考(用时%v)\n\n", time.Since(startTime))
-		Println(assistantMsg.ReasoningContent)
-		Println("\n------")
-	}
-
-	printContent := func() {
-		content := strings.TrimSpace(assistantMsg.Content)
-		if content != "" {
-			Println(content)
-			Println()
-		}
-	}
-	printContent()
-	if len(assistantMsg.ToolCalls) > 0 {
-		Println("调用", len(assistantMsg.ToolCalls), "个工具...")
-	} else {
-		Println()
+	tcs := story.ToolCalls
+	if len(tcs) == 0 {
 		return
 	}
-	if abort {
-		ctx = context.WithValue(ctx, Abortion, true)
+	Println("调用", len(story.ToolCalls), "个工具...")
+	toolInputs := HandleToolCalls(ctx, tcs)
+	if len(toolInputs) > 0 {
+		history = append(history, inputs...) // put inputs in history
+		story.ReasoningContent = ""          // reset reasoning content
+		history = append(history, story)     // put story in history
+		return ChatMessage(ctx, prompts, skills, history, toolInputs...)
 	}
-	return HandleToolCalls(ctx, &assistantMsg)
+	return
 }
 
 func init() {

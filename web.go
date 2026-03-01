@@ -19,30 +19,13 @@ var webClient = &http.Client{
 }
 
 // handleWebReader 读取网页内容
-func handleWebReader(ctx context.Context, argsRaw json.RawMessage) (string, error) {
-	var args struct {
-		URL string `json:"url"`
-	}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		n := len(argsRaw)
-		if n > 40 {
-			err = fmt.Errorf(`参数解析失败: %w, 以下详细出错信息
-- 参数字符串长度：%d
-- 参数字符串后40字节：%q`, err, n, string(argsRaw[n-40:]))
-		} else {
-			err = fmt.Errorf(`参数解析失败: %w, 以下详细出错信息
-- 参数字符串长度：%d
-- 参数字符串：%q`, err, n, string(argsRaw))
-		}
-		return "", err
-	}
-
-	if args.URL == "" {
-		return "", fmt.Errorf("URL不能为空")
+func handleWebReader(ctx context.Context, args map[string]string) (string, error) {
+	url, ok := args["url"]
+	if !ok || url == "" {
+		return "", fmt.Errorf("no URL or empty URL specified")
 	}
 
 	// 确保URL以http://或https://开头
-	url := args.URL
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 		url = "https://" + url
 	}
