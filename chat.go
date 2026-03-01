@@ -24,11 +24,11 @@ var (
 )
 
 var (
-	Abortion       = abortionKey{}
-	Continue       = continueKey{}
-	StartTime      = startTimeKey{}
-	CurrentModel   = currentModelKey{}
-	CurrentContent = currentContentKey{}
+	Abortion       = ContextKeyType("Abortion")
+	Continue       = ContextKeyType("Continue")
+	StartTime      = ContextKeyType("StartTime")
+	CurrentModel   = ContextKeyType("CurrentModel")
+	CurrentContent = ContextKeyType("CurrentContent")
 )
 
 func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
