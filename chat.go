@@ -206,7 +206,21 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 	if len(tcs) == 0 {
 		return
 	}
-	Println("调用", len(story.ToolCalls), "个工具...")
+
+	// 检查是否是工具调用的结果（递归调用）
+	isToolResult := len(inputs) > 0 && inputs[0].Role == "tool"
+
+	if !isToolResult {
+		// 第一次调用，打印详细信息
+		Println("调用", len(tcs), "个工具：")
+		for i, tc := range tcs {
+			Printf("  %d. %s\n", i+1, tc.Function.Name)
+		}
+	} else {
+		// 递归调用，只打印简单信息
+		Println("继续调用", len(tcs), "个工具...")
+	}
+
 	toolInputs := HandleToolCalls(ctx, tcs)
 	if len(toolInputs) > 0 {
 		history = append(history, inputs...) // put inputs in history
