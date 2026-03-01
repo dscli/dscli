@@ -166,3 +166,14 @@ type FIMResponse struct {
 type FIMChoice struct {
 	Text string `json:"text"`
 }
+
+type ContextKeyType struct{}
+
+// Context key types - 每个 key 使用不同的类型以确保唯一性
+type (
+	abortionKey       struct{}
+	continueKey       struct{}
+	startTimeKey      struct{}
+	currentModelKey   struct{}
+	currentContentKey struct{}
+)
