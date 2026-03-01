@@ -24,6 +24,7 @@ var (
 	logLevel              string
 	colorEnabled          bool
 	showTimestamp         bool
+	verbose               bool
 	ModelDeepseekChat     = Getenv("MODEL_DEEPSEEK_CHAT", "deepseek-chat")
 	ModelDeepseekReasoner = Getenv("MODEL_DEEPSEEK_REASONER", "deepseek-reasoner")
 
@@ -45,7 +46,8 @@ var (
   --mode          输出模式：markdown（Markdown格式）、org（Org模式格式）
   --log-level     日志级别：debug、info、warn、error、fatal
   --no-color      禁用颜色输出
-  --no-timestamp  禁用时间戳显示`,
+  --no-timestamp  禁用时间戳显示
+  --verbose       显示详细输出`,
 		PersistentPreRunE:  RootPreRunE,
 		PersistentPostRunE: RootPostRunE,
 		Version:            Version,
@@ -57,6 +59,7 @@ func init() {
 	RootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "日志级别：debug、info、warn、error、fatal")
 	RootCmd.PersistentFlags().BoolVar(&colorEnabled, "no-color", false, "禁用颜色输出")
 	RootCmd.PersistentFlags().BoolVar(&showTimestamp, "no-timestamp", false, "禁用时间戳显示")
+	RootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "显示详细输出")
 }
 
 func GetConfigDir() (configDir string) {
@@ -203,6 +206,9 @@ func configureOutput() {
 
 	// 设置时间戳显示
 	SetShowTimestamp(!showTimestamp) // 注意：--no-timestamp 为 true 时禁用时间戳
+
+	// 设置详细输出
+	SetVerbose(verbose)
 }
 
 func main() {

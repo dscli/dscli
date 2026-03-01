@@ -36,6 +36,9 @@ var (
 	// 是否显示时间戳
 	outputShowTimestamp bool = true
 
+	// 是否显示详细输出
+	outputVerbose bool = false
+
 	// 输出写入器
 	outputWriter io.Writer = os.Stdout
 
@@ -113,6 +116,11 @@ func SetColorEnabled(enabled bool) {
 // SetShowTimestamp 设置是否显示时间戳
 func SetShowTimestamp(show bool) {
 	outputShowTimestamp = show
+}
+
+// SetVerbose 设置是否显示详细输出
+func SetVerbose(verbose bool) {
+	outputVerbose = verbose
 }
 
 // SetOutputWriter 设置输出写入器
@@ -408,4 +416,9 @@ func (s *Spinner) StopWithMessage(message string, success bool) {
 	} else {
 		Error("%s", message)
 	}
+}
+
+// IsVerbose 检查是否启用详细输出
+func IsVerbose() bool {
+	return outputVerbose
 }
