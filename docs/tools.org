@@ -91,10 +91,7 @@
    - git_status: 查看状态
 
 ** 系统操作类
-   - run_command: 执行任意命令
-
-** 技能管理类
-   - manage_skills: 管理技能
+   - exec_script: 执行任意命令
 
 * 统计指标
 ** 基础指标

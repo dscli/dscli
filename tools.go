@@ -470,9 +470,13 @@ func runScript(ctx context.Context, script string, name string, arg []string) (o
 }
 
 func Shorten(script string) any {
-	n := len(script)
+	if r[0] == '#' {
+		idx := strings.Index(script, " ")
+	}
+	r := []rune(script)
+	n := len(r)
 	if n > 36 {
-		return script[0:17] + ".." + script[n-17:n]
+		return string(r[0:17]) + ".." + string(r[n-17:n])
 	}
 	return script
 }

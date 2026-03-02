@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -30,6 +31,68 @@ func handleWebReader(ctx context.Context, args map[string]string) (string, error
 		url = "https://" + url
 	}
 	return Web2Markdown(ctx, url)
+}
+
+// htmlToMarkdown 将HTML转换为简化的Markdown格式
+func htmlToMarkdown(html string) string {
+	// 移除脚本和样式标签
+	html = regexp.MustCompile(`(?is)<script.*?>.*?</script>`).ReplaceAllString(html, "")
+	html = regexp.MustCompile(`(?is)<style.*?>.*?</style>`).ReplaceAllString(html, "")
+
+	// 处理标题
+	html = regexp.MustCompile(`(?is)<h1.*?>(.*?)</h1>`).ReplaceAllString(html, "# $1\n\n")
+	html = regexp.MustCompile(`(?is)<h2.*?>(.*?)</h2>`).ReplaceAllString(html, "## $1\n\n")
+	html = regexp.MustCompile(`(?is)<h3.*?>(.*?)</h3>`).ReplaceAllString(html, "### $1\n\n")
+	html = regexp.MustCompile(`(?is)<h4.*?>(.*?)</h4>`).ReplaceAllString(html, "#### $1\n\n")
+	html = regexp.MustCompile(`(?is)<h5.*?>(.*?)</h5>`).ReplaceAllString(html, "##### $1\n\n")
+	html = regexp.MustCompile(`(?is)<h6.*?>(.*?)</h6>`).ReplaceAllString(html, "###### $1\n\n")
+
+	// 处理段落
+	html = regexp.MustCompile(`(?is)<p.*?>(.*?)</p>`).ReplaceAllString(html, "$1\n\n")
+
+	// 处理链接 [text](url)
+	html = regexp.MustCompile(`(?is)<a.*?href="(.*?)".*?>(.*?)</a>`).ReplaceAllString(html, "[$2]($1)")
+
+	// 处理图片 ![alt](src)
+	html = regexp.MustCompile(`(?is)<img.*?src="(.*?)".*?alt="(.*?)".*?>`).ReplaceAllString(html, "![$2]($1)")
+	html = regexp.MustCompile(`(?is)<img.*?src="(.*?)".*?>`).ReplaceAllString(html, "![]($1)")
+
+	// 处理列表项
+	html = regexp.MustCompile(`(?is)<li.*?>(.*?)</li>`).ReplaceAllString(html, "- $1\n")
+
+	// 处理代码块
+	html = regexp.MustCompile(`(?is)<pre.*?>(.*?)</pre>`).ReplaceAllString(html, "```\n$1\n```\n\n")
+	html = regexp.MustCompile(`(?is)<code.*?>(.*?)</code>`).ReplaceAllString(html, "`$1`")
+
+	// 处理加粗和斜体
+	html = regexp.MustCompile(`(?is)<strong.*?>(.*?)</strong>`).ReplaceAllString(html, "**$1**")
+	html = regexp.MustCompile(`(?is)<b.*?>(.*?)</b>`).ReplaceAllString(html, "**$1**")
+	html = regexp.MustCompile(`(?is)<em.*?>(.*?)</em>`).ReplaceAllString(html, "*$1*")
+	html = regexp.MustCompile(`(?is)<i.*?>(.*?)</i>`).ReplaceAllString(html, "*$1*")
+
+	// 移除所有HTML标签
+	html = regexp.MustCompile(`(?is)<.*?>`).ReplaceAllString(html, "")
+
+	// 处理HTML实体
+	html = strings.ReplaceAll(html, "&lt;", "<")
+	html = strings.ReplaceAll(html, "&gt;", ">")
+	html = strings.ReplaceAll(html, "&amp;", "&")
+	html = strings.ReplaceAll(html, "&quot;", "\"")
+	html = strings.ReplaceAll(html, "&#39;", "'")
+	html = strings.ReplaceAll(html, "&nbsp;", " ")
+
+	// 清理多余的空行
+	html = regexp.MustCompile(`\n{3,}`).ReplaceAllString(html, "\n\n")
+	html = strings.TrimSpace(html)
+
+	return html
+}
+
+// extractMainContent 尝试提取网页主要内容
+func extractMainContent(html string) string {
+	// 简单的启发式方法：找到包含最多文本的div
+	// 这里先使用简单的实现，后续可以改进
+	return html
 }
 
 // Web2Markdown fetch web page and convert it to markdown
@@ -72,50 +135,70 @@ func Web2Markdown(ctx context.Context, url string) (string, error) {
 	contentType := resp.Header.Get("Content-Type")
 	contentLength := len(body)
 
-	// 如果是HTML，尝试提取文本内容
+	// 处理不同类型的内容
 	var content string
+	var isMarkdown bool
+
 	if strings.Contains(contentType, "text/html") {
-		// 这里可以添加HTML解析逻辑，提取纯文本
-		// 目前先返回原始HTML，但限制长度
-		content = string(body)
+		// HTML转Markdown
+		htmlContent := string(body)
+		// 提取主要内容
+		mainContent := extractMainContent(htmlContent)
+		// 转换为Markdown
+		markdownContent := htmlToMarkdown(mainContent)
+
 		// 如果内容太长，截取前一部分
-		if len(content) > 10000 {
-			content = content[:10000] + "\n\n...（内容已截断，只显示前10000字符）"
+		if len(markdownContent) > 8000 {
+			markdownContent = markdownContent[:8000] + "\n\n...（内容已截断，只显示前8000字符）"
 		}
+
+		content = markdownContent
+		isMarkdown = true
+
 	} else if strings.Contains(contentType, "application/json") {
 		// 如果是JSON，格式化输出
 		var jsonData any
-		content = string(body)
-		body = []byte(strings.TrimSpace(content))
-		if len(body) > 0 {
-			if body[0] == '[' {
+		rawContent := string(body)
+		trimmedBody := []byte(strings.TrimSpace(rawContent))
+		if len(trimmedBody) > 0 {
+			if trimmedBody[0] == '[' {
 				jsonData = []map[string]any{}
 			} else {
 				jsonData = map[string]any{}
 			}
 		}
-		if err := json.Unmarshal(body, &jsonData); err == nil {
+		if err := json.Unmarshal(trimmedBody, &jsonData); err == nil {
 			formatted, _ := json.MarshalIndent(jsonData, "", "  ")
 			content = string(formatted)
 		} else {
-			content = string(body)
+			content = rawContent
 		}
+		isMarkdown = false
+
 	} else if strings.Contains(contentType, "text/plain") {
 		content = string(body)
 		// 如果内容太长，截取前一部分
 		if len(content) > 10000 {
 			content = content[:10000] + "\n\n...（内容已截断，只显示前10000字符）"
 		}
+		isMarkdown = strings.Contains(contentType, "markdown") || strings.HasSuffix(url, ".md")
+
 	} else {
 		content = fmt.Sprintf("二进制内容（Content-Type: %s，大小: %d 字节）", contentType, contentLength)
+		isMarkdown = false
 	}
 
 	// 计算执行时间
 	executionTime := time.Since(startTime)
 
 	// 构建结果
+	formatInfo := "原始格式"
+	if isMarkdown {
+		formatInfo = "Markdown格式"
+	}
+
 	result := fmt.Sprintf(`=== 执行结果 ===
-网页内容:
+网页内容（%s）:
 %s
 
 网页信息:
@@ -124,19 +207,22 @@ func Web2Markdown(ctx context.Context, url string) (string, error) {
 - 内容类型: %s
 - 内容大小: %d 字节
 - 响应时间: %v
+- 输出格式: %s
 
 === 执行统计 ===
 执行时间: %v
 状态: 成功`,
+		formatInfo,
 		content,
 		url,
 		resp.StatusCode,
 		contentType,
 		contentLength,
 		executionTime,
+		formatInfo,
 		executionTime)
 
-	Notice("读取网页: \"%s\"（%d字节）", url, contentLength)
+	Notice("读取网页: \"%s\"（%d字节，转换为%s）", url, contentLength, formatInfo)
 	return result, nil
 }
 
@@ -144,13 +230,13 @@ func init() {
 	// 注册网页读取工具
 	RegisterTool(ToolDef{
 		Name:        "web_reader",
-		Description: "读取网页内容，支持HTTP/HTTPS URL",
+		Description: "从互联网获取网页内容并智能转换为Markdown格式。支持HTTP/HTTPS URL，特别适合技术文档阅读和整理。",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"url": map[string]any{
 					"type":        "string",
-					"description": "网页URL，如 https://example.com",
+					"description": "网页URL，如 https://www.baidu.com/s?wd=Golang+教程 或 https://github.com/golang/go",
 				},
 			},
 			"required":             []string{"url"},
