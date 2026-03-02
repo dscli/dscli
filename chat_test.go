@@ -8,11 +8,14 @@ import (
 	"time"
 )
 
-func TestPrintContent(t *testing.T) {
-	ctx := context.WithValue(context.Background(), StartTime, time.Now())
+func TestPrintReasoningContent(t *testing.T) {
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, StartTime, time.Now())
+	// make sure two keys  no overlap
+	ctx = context.WithValue(ctx, CurrentModel, chatModel)
 	buf := bytes.NewBuffer([]byte{})
 	SetOutputWriter(buf)
-	PrintContent(ctx, "yes")
+	PrintReasoningContent(ctx, "reasoning", "content")
 	s := buf.String()
 	tag := "用时"
 	idx := strings.Index(s, tag)

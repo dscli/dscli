@@ -194,35 +194,28 @@ func ReadContent() (content string, err error) {
 	return
 }
 
-func PrintReasoningContent(ctx context.Context, reasoning string) {
-	reasoning = strings.TrimSpace(reasoning)
-	if reasoning == "" {
-		return
-	}
+func PrintReasoningContent(ctx context.Context, reasoning string, content string) {
 	var startTime time.Time
 	if v, ok := ctx.Value(StartTime).(time.Time); ok {
 		startTime = v
 	}
-	duration := time.Since(startTime)
-	seconds := duration.Seconds()
-	Printf("已思考用时%.2fs\n\n", seconds)
-	Println(reasoning)
-}
 
-func PrintContent(ctx context.Context, content string) {
-	content = strings.TrimSpace(content)
-	if content == "" {
-		return
+	reasoning = strings.TrimSpace(reasoning)
+	if reasoning != "" {
+		duration := time.Since(startTime)
+		seconds := duration.Seconds()
+		Printf("已思考用时%.2fs\n\n", seconds)
+		Println(reasoning)
 	}
-	var startTime time.Time
-	if v, ok := ctx.Value(StartTime).(time.Time); ok {
-		startTime = v
-	}
-	duration := time.Since(startTime)
-	seconds := duration.Seconds()
-	Printf("用时%.2fs\n\n", seconds)
+
 	content = strings.TrimSpace(content)
-	Println(content)
+	if content != "" {
+		duration := time.Since(startTime)
+		seconds := duration.Seconds()
+		Printf("用时%.2fs\n\n", seconds)
+		content = strings.TrimSpace(content)
+		Println(content)
+	}
 }
 
 func ChatRound(ctx context.Context, prompts []Message, skills []Message, history []Message, inputs ...Message) (err error) {
@@ -253,8 +246,7 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 	}
 
 	story := resp.Choices[0].Message
-	PrintReasoningContent(ctx, story.ReasoningContent)
-	PrintContent(ctx, story.Content)
+	PrintReasoningContent(ctx, story.ReasoningContent, story.Content)
 	// 转换并保存到 newMessages（用于后续存储）
 	stories = append(stories, story)
 	if len(stories) > 0 {
