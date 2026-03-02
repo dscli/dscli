@@ -226,6 +226,9 @@ func PrintContent(ctx context.Context, content string) {
 }
 
 func ChatRound(ctx context.Context, prompts []Message, skills []Message, history []Message, inputs ...Message) (err error) {
+	// 在每次 ChatRound 开始时更新 StartTime
+	ctx = context.WithValue(ctx, StartTime, time.Now())
+
 	// 1. 构造 messages 切片（包含历史）
 	messages := make([]Message, 0, len(history)+len(prompts)+len(skills))
 	messages = append(messages, prompts...)
