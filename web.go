@@ -197,7 +197,7 @@ func Web2Markdown(ctx context.Context, url string) (string, error) {
 		formatInfo = "Markdown格式"
 	}
 
-	result := fmt.Sprintf(`=== 执行结果 ===
+	result := fmt.Sprintf(`📝 执行结果:
 网页内容（%s）:
 %s
 
@@ -209,7 +209,7 @@ func Web2Markdown(ctx context.Context, url string) (string, error) {
 - 响应时间: %v
 - 输出格式: %s
 
-=== 执行统计 ===
+📊 执行统计:
 执行时间: %v
 状态: 成功`,
 		formatInfo,

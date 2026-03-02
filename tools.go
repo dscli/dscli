@@ -470,8 +470,9 @@ func runScript(ctx context.Context, script string, name string, arg []string) (o
 }
 
 func Shorten(script string) any {
-	if r[0] == '#' {
+	if script[0] == '#' {
 		idx := strings.Index(script, " ")
+		script = strings.TrimSpace(script[idx:])
 	}
 	r := []rune(script)
 	n := len(r)
