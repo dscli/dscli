@@ -19,17 +19,12 @@ const (
 
 var (
 	chatModel string
-	cont      bool
-	abort     bool
 	reload    bool
 )
 
 var (
-	Abortion        = ContextKeyType("Abortion")
-	Continue        = ContextKeyType("Continue")
 	StartTime       = ContextKeyType("StartTime")
 	CurrentModel    = ContextKeyType("CurrentModel")
-	CurrentContent  = ContextKeyType("CurrentContent")
 	IsReload        = ContextKeyType("IsReload")
 	CommandLineArgs = ContextKeyType("CommandLineArgs")
 )
@@ -58,24 +53,14 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 }
 
 func ChatRunE(cmd *cobra.Command, args []string) (err error) {
-	content := ""
-	if !cont {
-		content, err = ReadContent()
-		if err != nil {
-			return
-		}
-	}
-	content = strings.TrimSpace(content)
-	if content == "" {
-		cont = true
+	content, err := ReadContent()
+	if err != nil {
+		return
 	}
 
 	ctx := cmd.Context()
 	ctx = context.WithValue(ctx, StartTime, time.Now())
 	ctx = context.WithValue(ctx, CurrentModel, chatModel)
-	ctx = context.WithValue(ctx, Continue, cont)
-	ctx = context.WithValue(ctx, Abortion, abort)
-	ctx = context.WithValue(ctx, CurrentContent, content)
 	ctx = context.WithValue(ctx, IsReload, reload)
 	// 存储命令行参数
 	ctx = context.WithValue(ctx, CommandLineArgs, os.Args)
@@ -100,45 +85,8 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		return handleReload(ctx, prompts, skills, history)
 	}
 
-	if !cont && !abort {
-		return ChatRound(ctx, prompts, skills, history,
-			Message{Role: "user", Content: content})
-	}
-
-	histsize := len(history)
-	if histsize == 0 {
-		Info("天下无事")
-		return
-	}
-
-	last := history[histsize-1]
-	cts := last.ToolCalls
-	if last.Role != "assistant" || len(cts) == 0 {
-		Info("天下本无事")
-		return
-	}
-	history = history[0 : histsize-1]
-
-	// handle abortion first
-	if abort {
-		return ChatRound(ctx, prompts, skills, history,
-			Message{
-				Role:       "tool",
-				ToolCallID: cts[0].ID,
-				Content: fmt.Sprintf(`TOOL %s FATAL ERROR!!!
-NO NEED TO RETRY!!!
-LEAVE THINGS TO HUMAN TO HANDLE!!!`, cts[0].Function.Name),
-			})
-	}
-	if cont {
-		inputs := HandleToolCalls(ctx, cts)
-		if len(inputs) == 0 {
-			Warn("inputs should not be empty!")
-			return
-		}
-		return ChatRound(ctx, prompts, skills, history, inputs...)
-	}
-	return
+	return ChatRound(ctx, prompts, skills, history,
+		Message{Role: "user", Content: content})
 }
 
 // handleReload 处理重载逻辑
@@ -300,8 +248,6 @@ func init() {
 		RunE:    ChatRunE,
 	}
 	chatCmd.Flags().StringVar(&chatModel, "model", ModelDeepseekChat, "使用的模型名称")
-	chatCmd.Flags().BoolVar(&cont, "continue", false, "继续")
-	chatCmd.Flags().BoolVar(&abort, "abort", false, "放弃")
 	chatCmd.Flags().BoolVar(&reload, "reload", false, "重载进程（内部使用）")
 	RootCmd.AddCommand(chatCmd)
 }
