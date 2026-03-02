@@ -200,8 +200,8 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 	rows, err := db.Query(`
 		SELECT role, content, created_at
 		FROM messages
-		WHERE session_id = ? AND model_id = ? AND tool_call_id = ? AND tool_calls is NULL
-		ORDER BY id ASC`, SessionID, ModelID, "")
+		WHERE session_id = ? AND model_id = ? AND tool_call_id IS NULL AND tool_calls is NULL
+		ORDER BY id ASC`, SessionID, ModelID)
 	if err != nil {
 		return nil, fmt.Errorf("查询历史消息失败: %w", err)
 	}
@@ -234,8 +234,8 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 	return messages[idx:], nil
 }
 
-// SaveMessagesBatch 批量保存消息（事务）
-func SaveMessagesBatch(msgs []Message) error {
+// SaveMessages 保存消息（事务）
+func SaveMessages(msgs []Message) error {
 	db, err := OpenDB()
 	if err != nil {
 		return err

@@ -9,7 +9,6 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -466,30 +465,16 @@ func handleExecuteScript(ctx context.Context, args map[string]string) (out strin
 }
 
 func runScript(ctx context.Context, script string, name string, arg []string) (out string, err error) {
-	toolName := "unknown"
-	if val := ctx.Value(ToolDisplayName); val != nil {
-		if nameStr, ok := val.(string); ok {
-			toolName = nameStr
-		}
-	}
-	startTime := time.Now()
-	Notice("执行脚本（%s）: %s %s %v", toolName, script, name, arg)
-	lang := path.Base(name)
-	if len(arg) > 0 {
-		lang = arg[0]
-	}
-	Notice("执行脚本（%s）：\n```%s\n%s\n```\n", toolName, lang, script)
-	defer func() {
-		spend := time.Since(startTime)
-		if err == nil {
-			Info("\n执行成功（%v）：\n```\n%s\n```\n",
-				spend, out)
-		} else {
-			Error("\n执行失败（%v）：\n```\n%s\n```\n\n出错信息：\n```\n%s\n```\n",
-				spend, out, err.Error())
-		}
-	}()
+	Notice("执行脚本: %s", Shorten(script))
 	return shellExec(script, name, arg)
+}
+
+func Shorten(script string) any {
+	n := len(script)
+	if n > 36 {
+		return script[0:17] + ".." + script[n-17:n]
+	}
+	return script
 }
 
 func ShellExec(script string) (out string, err error) {

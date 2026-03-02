@@ -194,10 +194,14 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 
 	story := resp.Choices[0].Message
 	PrintContent(ctx, story.ReasoningContent, story.Content)
-	story.ReasoningContent = "" // reset reasoning content
 	stories = append(stories, story)
 	// save stories here
-	_ = SaveMessagesBatch(stories)
+	err = SaveMessages(stories)
+	story.ReasoningContent = "" // reset reasoning content
+
+	if err != nil {
+		Error("%v", err)
+	}
 	if len(stories) > 0 {
 		history = append(history, stories...)
 	}
