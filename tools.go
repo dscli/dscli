@@ -112,8 +112,8 @@ func handleReadFile(ctx context.Context, args map[string]string) (string, error)
 
 	// 构建结果
 	executionTime := time.Since(startTime)
-	result := fmt.Sprintf(`=== 执行结果 ===
-文件内容:
+	result := fmt.Sprintf(`📄 文件内容:
+内容:
 %s
 
 文件信息:
@@ -122,7 +122,7 @@ func handleReadFile(ctx context.Context, args map[string]string) (string, error)
 - 权限: %s
 - 修改时间: %s
 
-=== 执行统计 ===
+📊 执行统计:
 执行时间: %v
 状态: 成功`,
 		string(content),
@@ -177,13 +177,13 @@ func handleWriteFile(ctx context.Context, args map[string]string) (string, error
 
 	// 构建成功响应
 	executionTime := time.Since(startTime)
-	result := fmt.Sprintf(`=== 执行结果 ===
+	result := fmt.Sprintf(`✅ 写入成功:
 已成功写入文件: \"%s\"
 文件大小: %d 字节
 权限: %s
 路径: %s
 
-=== 执行统计 ===
+📊 执行统计:
 执行时间: %v
 状态: 成功`,
 		path,
@@ -299,10 +299,10 @@ func gitCommand(ctx context.Context, args ...string) (string, error) {
 		}
 
 		// 构建包含执行统计的结果
-		result := fmt.Sprintf(`=== 执行结果 ===
+		result := fmt.Sprintf(`📝 执行结果:
 %s
 
-=== 执行统计 ===
+📊 执行统计:
 执行时间: %v
 状态: 成功`, stdout, executionTime)
 
@@ -546,13 +546,13 @@ func runBash(ctx context.Context, script string) (result string, err error) {
 	if err != nil {
 		log.Printf("执行失败: %v", err)
 		// 构建包含执行统计的失败结果
-		result := fmt.Sprintf(`=== 执行失败 ===
+		result := fmt.Sprintf(`❌ 执行失败:
 错误: %v
 
-=== 输出内容 ===
+输出内容:
 %s
 
-=== 执行统计 ===
+📊 执行统计:
 执行时间: %v
 状态: 失败`,
 			err, out, executionTime)
@@ -560,10 +560,10 @@ func runBash(ctx context.Context, script string) (result string, err error) {
 	}
 
 	// 构建包含执行统计的成功结果
-	result = fmt.Sprintf(`=== 执行结果 ===
+	result = fmt.Sprintf(`📝 执行结果:
 %s
 
-=== 执行统计 ===
+📊 执行统计:
 执行时间: %v
 状态: 成功`,
 		out, executionTime)
