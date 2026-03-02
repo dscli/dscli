@@ -218,7 +218,7 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 func PrintToolCalls(ctx context.Context, tcs []ToolCall) {
 	names := []string{}
 	for _, tc := range tcs {
-		names = append(names, tc.Function.Name)
+		names = append(names, GetToolDisplayName(tc.Function.Name))
 	}
 	Printf("Running Tool Calls: %v\n", names)
 }
