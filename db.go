@@ -11,10 +11,9 @@ import (
 )
 
 var (
-	HistoryLimit = &struct{}{}
-	ModelID      = int64(0)
-	DBPath       = filepath.Join(ConfigDir, "sqlite.db")
-	SessionID    = int64(0)
+	ModelID   = int64(0)
+	DBPath    = filepath.Join(ConfigDir, "sqlite.db")
+	SessionID = int64(0)
 )
 
 // createTables 创建所有需要的表
@@ -26,20 +25,6 @@ func createTables(db *sql.DB) error {
 			project_path TEXT UNIQUE NOT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)`,
-
-		// 消息表
-		`CREATE TABLE IF NOT EXISTS messages (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			session_id INTEGER NOT NULL,
-			role TEXT NOT NULL,
-			content TEXT NOT NULL,
-			tool_call_id TEXT,
-			tool_calls TEXT,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            model_id INTEGER NOT NULL DEFAULT 0,
-		reasoning_content TEXT,
-			FOREIGN KEY (session_id) REFERENCES sessions(id)
 		)`,
 
 		// 技能表
@@ -70,7 +55,6 @@ func createTables(db *sql.DB) error {
 		)`,
 
 		// 创建索引
-		`CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_skills_category ON skills(category)`,
 		`CREATE INDEX IF NOT EXISTS idx_skills_priority ON skills(priority DESC)`,
 
@@ -111,9 +95,7 @@ func createTables(db *sql.DB) error {
 
 	queries = []string{
 		// 增加model_id到消息表（兼容已存在的数据库）
-		`ALTER TABLE messages ADD COLUMN model_id INTEGER NOT NULL DEFAULT 0`,
 		// 增加reasoning_content到消息表（兼容已存在的数据库）
-		`ALTER TABLE messages ADD COLUMN reasoning_content TEXT`,
 	}
 
 	for _, query := range queries {
