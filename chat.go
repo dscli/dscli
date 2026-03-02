@@ -180,7 +180,6 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 	// 3. 记录本轮新增的消息（用于存储）
 	stories := make([]Message, 0, len(inputs)+1)
 	stories = append(stories, inputs...)
-
 	var resp *ChatResponse
 	resp, err = DeepseekClient.Chat(chatModel, messages, GetAllTools())
 	if err != nil {
@@ -196,8 +195,9 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 	story := resp.Choices[0].Message
 	PrintContent(ctx, story.ReasoningContent, story.Content)
 	story.ReasoningContent = "" // reset reasoning content
-	// 转换并保存到 newMessages（用于后续存储）
 	stories = append(stories, story)
+	// save stories here
+	_ = SaveMessagesBatch(stories)
 	if len(stories) > 0 {
 		history = append(history, stories...)
 	}

@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"log"
 	"path/filepath"
 	"time"
 
@@ -11,9 +13,10 @@ import (
 )
 
 var (
-	ModelID   = int64(0)
-	DBPath    = filepath.Join(ConfigDir, "sqlite.db")
-	SessionID = int64(0)
+	HistoryLimit = &struct{}{}
+	ModelID      = int64(0)
+	DBPath       = filepath.Join(ConfigDir, "sqlite.db")
+	SessionID    = int64(0)
 )
 
 // createTables 创建所有需要的表
@@ -25,6 +28,20 @@ func createTables(db *sql.DB) error {
 			project_path TEXT UNIQUE NOT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+
+		// 消息表
+		`CREATE TABLE IF NOT EXISTS messages (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			session_id INTEGER NOT NULL,
+			role TEXT NOT NULL,
+			content TEXT NOT NULL,
+			tool_call_id TEXT,
+			tool_calls TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            model_id INTEGER NOT NULL DEFAULT 0,
+		reasoning_content TEXT,
+			FOREIGN KEY (session_id) REFERENCES sessions(id)
 		)`,
 
 		// 技能表
@@ -55,6 +72,7 @@ func createTables(db *sql.DB) error {
 		)`,
 
 		// 创建索引
+		`CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_skills_category ON skills(category)`,
 		`CREATE INDEX IF NOT EXISTS idx_skills_priority ON skills(priority DESC)`,
 
@@ -95,11 +113,15 @@ func createTables(db *sql.DB) error {
 
 	queries = []string{
 		// 增加model_id到消息表（兼容已存在的数据库）
+		`ALTER TABLE messages ADD COLUMN model_id INTEGER NOT NULL DEFAULT 0`,
 		// 增加reasoning_content到消息表（兼容已存在的数据库）
+		`ALTER TABLE messages ADD COLUMN reasoning_content TEXT`,
 	}
 
 	for _, query := range queries {
-		_, _ = db.Exec(query) // it's OK err != nil
+		if _, err := db.Exec(query); err == nil {
+			log.Printf("migrate %s done", query)
+		}
 	}
 
 	return nil
@@ -152,8 +174,6 @@ func CreateOrGetSessionID() (sessionID int64, err error) {
 	return
 }
 
-// LoadPrompts load the prompts
-// prompts are system messages - they are the rule
 func LoadPrompts(ctx context.Context) ([]Message, error) {
 	return []Message{{
 		Role:    "system",
@@ -161,16 +181,110 @@ func LoadPrompts(ctx context.Context) ([]Message, error) {
 	}}, nil
 }
 
-// LoadSkills Load the skills.
-// Skills is like the knowledge.
 func LoadSkills(ctx context.Context) ([]Message, error) {
 	return []Message{}, nil
 }
 
-// LoadHistory Load the history.
-// History is not messages but the messages enhanced. History is like experiences.
+// LoadHistory 加载指定会话的所有历史消息，按时间升序返回
 func LoadHistory(ctx context.Context) ([]Message, error) {
-	return []Message{}, nil
+	limit := 8
+	if v, ok := ctx.Value(HistoryLimit).(int); ok {
+		limit = v
+	}
+
+	db, err := OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	rows, err := db.Query(`
+		SELECT role, content, created_at
+		FROM messages
+		WHERE session_id = ? AND model_id = ? AND tool_call_id = ? AND tool_calls is NULL
+		ORDER BY id ASC`, SessionID, ModelID, "")
+	if err != nil {
+		return nil, fmt.Errorf("查询历史消息失败: %w", err)
+	}
+	defer rows.Close()
+
+	var messages []Message
+	for rows.Next() {
+		var m Message
+		if err := rows.Scan(&m.Role, &m.Content, &m.CreatedAt); err != nil {
+			return nil, fmt.Errorf("扫描消息失败: %w", err)
+		}
+		messages = append(messages, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("遍历消息失败: %w", err)
+	}
+	n := len(messages)
+	idx := n - limit
+	if idx > 0 {
+		for {
+			m := messages[idx]
+			if m.ToolCallID == "" && len(m.ToolCalls) == 0 || idx == 0 {
+				break
+			}
+			idx -= 1
+		}
+	} else {
+		idx = 0
+	}
+	return messages[idx:], nil
+}
+
+// SaveMessagesBatch 批量保存消息（事务）
+func SaveMessagesBatch(msgs []Message) error {
+	db, err := OpenDB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("开始事务失败: %w", err)
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(`
+		INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, model_id, reasoning_content)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return fmt.Errorf("准备语句失败: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, m := range msgs {
+		var toolCallID, toolCalls sql.NullString
+		if m.ToolCallID != "" {
+			toolCallID.String = m.ToolCallID
+			toolCallID.Valid = true
+		}
+		if len(m.ToolCalls) > 0 {
+			var data json.RawMessage
+			data, err = json.Marshal(&m.ToolCalls)
+			if err != nil {
+				return err
+			}
+			toolCalls.String = string(data)
+			toolCalls.Valid = true
+		}
+		if _, err := stmt.Exec(SessionID, m.Role, m.Content, toolCallID, toolCalls, ModelID, m.ReasoningContent); err != nil {
+			return fmt.Errorf("插入消息失败: %w", err)
+		}
+	}
+
+	// 更新会话的更新时间
+	if _, err := tx.Exec("UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", SessionID); err != nil {
+		return fmt.Errorf("更新会话时间失败: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("提交事务失败: %w", err)
+	}
+	return nil
 }
 
 // ==================== Skills 相关方法 ====================
