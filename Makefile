@@ -1,7 +1,7 @@
 # Makefile for dscli
 
 BINARY_NAME = dscli
-VERSION ?= 0.5.1
+VERSION ?= 0.5.2
 BUILD_DATE ?= $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
 GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 LDFLAGS = -ldflags "-X main.Version=$(VERSION) -X main.Build=$(BUILD_DATE)-$(GIT_COMMIT)"
