@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,7 +65,7 @@ func GetConfigDir() (configDir string) {
 	configDir = filepath.Join(os.Getenv("HOME"), ".dscli")
 	err := os.MkdirAll(configDir, 0o755)
 	if err != nil {
-		log.Fatalln(err)
+		panic(err)
 		return
 	}
 	return
@@ -75,7 +74,7 @@ func GetConfigDir() (configDir string) {
 func GetProjectRoot() (projectRoot string) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		log.Fatalln(err)
+		panic(err)
 		return
 	}
 	gitRoot, err := findGitRoot(cwd)
@@ -84,27 +83,27 @@ func GetProjectRoot() (projectRoot string) {
 	}
 	projectRoot, err = filepath.Abs(gitRoot)
 	if err != nil {
-		log.Fatalln(err)
+		panic(err)
 		return
 	}
 
 	if cwd != projectRoot {
 		err = os.Chdir(projectRoot)
 		if err != nil {
-			log.Fatalln(err)
+			panic(err)
 			return
 		}
 	}
 
 	cwd, err = os.Getwd()
 	if err != nil {
-		log.Fatalln(err)
+		panic(err)
 		return
 	}
 
 	if cwd != projectRoot {
 		err = fmt.Errorf("cwd(%s) != ProjectRoot(%s)", cwd, projectRoot)
-		log.Fatalln(err)
+		panic(err)
 		return
 	}
 	return projectRoot
@@ -167,18 +166,7 @@ func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 	if url == "" {
 		url = "https://api.deepseek.com" // 默认值
 	}
-	var logfile *os.File
-	logfile, err = os.OpenFile(LogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return
-	}
-	log.SetOutput(logfile)
 
-	closeAll = func() (err error) {
-		// 关闭 logfile
-		return logfile.Close()
-	}
-	log.SetFlags(log.Lshortfile | log.LstdFlags)
 	DeepseekClient = NewClient(key, url)
 	return nil
 }

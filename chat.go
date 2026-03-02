@@ -142,7 +142,7 @@ func ReadContent() (content string, err error) {
 	return
 }
 
-func PrintReasoningContent(ctx context.Context, reasoning string, content string) {
+func PrintContent(ctx context.Context, reasoning string, content string) {
 	var startTime time.Time
 	if v, ok := ctx.Value(StartTime).(time.Time); ok {
 		startTime = v
@@ -194,42 +194,33 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 	}
 
 	story := resp.Choices[0].Message
-	PrintReasoningContent(ctx, story.ReasoningContent, story.Content)
+	PrintContent(ctx, story.ReasoningContent, story.Content)
+	story.ReasoningContent = "" // reset reasoning content
 	// 转换并保存到 newMessages（用于后续存储）
 	stories = append(stories, story)
 	if len(stories) > 0 {
-		if err = SaveMessagesBatch(stories); err != nil {
-			err = fmt.Errorf("保存消息失败: %w", err)
-			return
-		}
+		history = append(history, stories...)
 	}
+
 	tcs := story.ToolCalls
 	if len(tcs) == 0 {
 		return
 	}
 
-	// 检查是否是工具调用的结果（递归调用）
-	isToolResult := len(inputs) > 0 && inputs[0].Role == "tool"
-
-	if !isToolResult {
-		// 第一次调用，打印详细信息
-		Println("调用", len(tcs), "个工具：")
-		for i, tc := range tcs {
-			Printf("  %d. %s\n", i+1, tc.Function.Name)
-		}
-	} else {
-		// 递归调用，只打印简单信息
-		Println("继续调用", len(tcs), "个工具...")
-	}
-
+	PrintToolCalls(ctx, tcs)
 	toolInputs := HandleToolCalls(ctx, tcs)
 	if len(toolInputs) > 0 {
-		history = append(history, inputs...) // put inputs in history
-		story.ReasoningContent = ""          // reset reasoning content
-		history = append(history, story)     // put story in history
 		return ChatRound(ctx, prompts, skills, history, toolInputs...)
 	}
 	return
+}
+
+func PrintToolCalls(ctx context.Context, tcs []ToolCall) {
+	names := []string{}
+	for _, tc := range tcs {
+		names = append(names, tc.Function.Name)
+	}
+	Printf("Running Tool Calls: %v\n", names)
 }
 
 func init() {

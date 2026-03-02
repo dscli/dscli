@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -22,18 +21,18 @@ var ToolDisplayName = &struct{}{}
 // toolRegistry 工具注册表
 var toolRegistry = map[string]ToolDef{}
 
+func GetToolDisplayName(name string) string {
+	words := strings.Split(name, "_")
+	for i, word := range words {
+		word = strings.ToUpper(word[0:1]) + word[1:]
+		words[i] = word
+	}
+	return strings.Join(words, "")
+}
+
 // RegisterTool 注册工具
 func RegisterTool(tool ToolDef) {
-	displayName := func() string {
-		name := tool.Name
-		words := strings.Split(name, "_")
-		for i, word := range words {
-			word = strings.ToUpper(word[0:1]) + word[1:]
-			words[i] = word
-		}
-		return strings.Join(words, "")
-	}
-	tool.DisplayName = displayName()
+	tool.DisplayName = GetToolDisplayName(tool.Name)
 	toolRegistry[tool.Name] = tool
 }
 
@@ -508,7 +507,6 @@ func shellExec(script string, name string, arg []string) (out string, err error)
 	stdin, err := subproc.StdinPipe()
 	if err != nil {
 		err = fmt.Errorf("failed to get stdin pipe: %w", err)
-		log.Printf("%v", err)
 		return
 	}
 	err = subproc.Start()
@@ -530,21 +528,18 @@ func shellExec(script string, name string, arg []string) (out string, err error)
 	err = subproc.Wait()
 	out = buf.String()
 	if err != nil {
-		log.Printf("执行失败: %v", err)
 		return out, err
 	}
 	return out, nil
 }
 
 func runBash(ctx context.Context, script string) (result string, err error) {
-	log.Printf("执行脚本: %s", script)
 	startTime := time.Now()
 	name, arg := Shebang(script)
 
 	out, err := runScript(ctx, script, name, arg)
 	executionTime := time.Since(startTime)
 	if err != nil {
-		log.Printf("执行失败: %v", err)
 		// 构建包含执行统计的失败结果
 		result := fmt.Sprintf(`❌ 执行失败:
 错误: %v
@@ -978,7 +973,7 @@ which lead to the error:
 	}
 
 	if err := RecordToolUsage(toolID, success, errorMsg); err != nil {
-		log.Printf("记录工具使用失败: %v", err)
+		return "", err
 	}
 
 	return result, err

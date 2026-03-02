@@ -8,14 +8,14 @@ import (
 	"time"
 )
 
-func TestPrintReasoningContent(t *testing.T) {
+func TestPrintContent(t *testing.T) {
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, StartTime, time.Now())
 	// make sure two keys  no overlap
 	ctx = context.WithValue(ctx, CurrentModel, chatModel)
 	buf := bytes.NewBuffer([]byte{})
 	SetOutputWriter(buf)
-	PrintReasoningContent(ctx, "reasoning", "content")
+	PrintContent(ctx, "reasoning", "content")
 	s := buf.String()
 	tag := "用时"
 	idx := strings.Index(s, tag)
@@ -31,4 +31,7 @@ func TestPrintReasoningContent(t *testing.T) {
 	if d > time.Minute {
 		t.Fatal(d)
 	}
+}
+
+func TestPrintToolCalls(t *testing.T) {
 }
