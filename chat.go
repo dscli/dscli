@@ -15,7 +15,6 @@ import (
 const (
 	DeepseekChat     = int64(0)
 	DeepseekReasoner = int64(1)
-	MaxToolDepth     = 10 // 最大工具调用深度
 )
 
 var (
@@ -33,7 +32,6 @@ var (
 	CurrentContent  = ContextKeyType("CurrentContent")
 	IsReload        = ContextKeyType("IsReload")
 	CommandLineArgs = ContextKeyType("CommandLineArgs")
-	ToolDepth       = ContextKeyType("ToolDepth") // 工具调用深度
 )
 
 func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
@@ -79,7 +77,6 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx = context.WithValue(ctx, Abortion, abort)
 	ctx = context.WithValue(ctx, CurrentContent, content)
 	ctx = context.WithValue(ctx, IsReload, reload)
-	ctx = context.WithValue(ctx, ToolDepth, 0) // 初始化工具调用深度
 	// 存储命令行参数
 	ctx = context.WithValue(ctx, CommandLineArgs, os.Args)
 
@@ -231,22 +228,6 @@ func PrintContent(ctx context.Context, content string) {
 func ChatRound(ctx context.Context, prompts []Message, skills []Message, history []Message, inputs ...Message) (err error) {
 	// 在每次 ChatRound 开始时更新 StartTime
 	ctx = context.WithValue(ctx, StartTime, time.Now())
-
-	// 检查工具调用深度
-	var depth int
-	if v, ok := ctx.Value(ToolDepth).(int); ok {
-		depth = v
-	}
-
-	// 如果达到最大深度，返回错误
-	if depth >= MaxToolDepth {
-		err = fmt.Errorf("工具调用深度达到上限（%d），可能陷入无限循环。请检查工具调用逻辑。", MaxToolDepth)
-		Error(err.Error())
-		return
-	}
-
-	// 增加深度计数
-	ctx = context.WithValue(ctx, ToolDepth, depth+1)
 
 	// 1. 构造 messages 切片（包含历史）
 	messages := make([]Message, 0, len(history)+len(prompts)+len(skills))
