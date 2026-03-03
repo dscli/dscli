@@ -36,6 +36,13 @@ func RegisterTool(tool ToolDef) {
 	toolRegistry[tool.Name] = tool
 }
 
+// RegisterToolAlias 注册工具别名
+func RegisterToolAlias(alias, target string) {
+	if tool, ok := toolRegistry[target]; ok {
+		toolRegistry[alias] = tool
+	}
+}
+
 // GetAllTools 获取所有工具定义（用于API调用）
 func GetAllTools() []Tool {
 	if ModelID == DeepseekReasoner {
@@ -456,11 +463,34 @@ func Shebang(script string) (name string, arg []string) {
 }
 
 // handleExecuteScript 执行脚本（支持多种解释器，通过shebang指定）
+// handleExecuteScript 执行脚本（保持向后兼容性，实际调用handleShell）
 func handleExecuteScript(ctx context.Context, args map[string]string) (out string, err error) {
+	// 保持向后兼容性，实际调用handleShell
+	return handleShell(ctx, args)
+}
+
+// handleShell 执行Shell脚本
+func handleShell(ctx context.Context, args map[string]string) (out string, err error) {
 	script, ok := args["script"]
 	if !ok {
 		script = ""
 	}
+	out, err = runBash(ctx, script)
+	return
+}
+
+// handlePython 执行Python脚本
+func handlePython(ctx context.Context, args map[string]string) (out string, err error) {
+	script, ok := args["script"]
+	if !ok {
+		script = ""
+	}
+
+	// 如果没有shebang，添加默认的python shebang
+	if !strings.HasPrefix(strings.TrimSpace(script), "#!") {
+		script = "#!/usr/bin/env python3\n" + script
+	}
+
 	out, err = runBash(ctx, script)
 	return
 }
@@ -658,8 +688,8 @@ func handleDscliChatReload(ctx context.Context, args map[string]string) (result 
 	return
 }
 
-func init() {
-	// 注册文件操作工具
+// registerFileTools 注册文件操作工具
+func registerFileTools() {
 	RegisterTool(ToolDef{
 		Name:        "read_file",
 		Description: "读取项目内指定文件的内容",
@@ -721,8 +751,10 @@ func init() {
 		Category: "file_ops",
 		Handler:  handleSearchFiles,
 	})
+}
 
-	// 注册Git操作工具
+// registerGitTools 注册Git操作工具
+func registerGitTools() {
 	RegisterTool(ToolDef{
 		Name:        "git_add",
 		Description: "将文件添加到 Git 暂存区",
@@ -832,12 +864,15 @@ func init() {
 		Category: "git",
 		Handler:  handleGitPush,
 	})
+}
 
-	// 注册脚本执行工具
+// registerScriptTools 注册脚本执行工具
+func registerScriptTools() {
+	// 注册shell工具
 	RegisterTool(ToolDef{
-		Name: "execute_script",
-		Description: `在项目根目录执行脚本。
-支持shebang指定解释器（如bash、python等）。
+		Name: "shell",
+		Description: `在项目根目录执行Shell脚本。
+支持shebang指定解释器（如bash、sh等）。
 脚本通过标准输入传递，避免命令行长度限制。
 
 输出格式：
@@ -846,9 +881,7 @@ func init() {
 
 示例：
 1. Bash脚本：echo "Hello"
-2. Python脚本：
-#!/usr/bin/env python
-print("Hello")
+2. Shell脚本：ls -la
 3. 文件操作：cat file.txt
 4. Git操作：git status
 
@@ -858,15 +891,12 @@ print("Hello")
 			"properties": map[string]any{
 				"script": map[string]any{
 					"type": "string",
-					"description": `要执行的脚本内容。
-支持shebang指定解释器（如#!/usr/bin/env bash, #!/usr/bin/env python）。
+					"description": `要执行的Shell脚本内容。
 脚本执行结果会以格式化文本返回，包含执行统计信息。
 
 示例：
 1. Bash脚本：echo "Hello"
-2. Python脚本：
-#!/usr/bin/env python
-print("Hello")
+2. Shell脚本：ls -la
 3. 文件操作：cat file.txt
 4. Git操作：git status
 `,
@@ -876,10 +906,54 @@ print("Hello")
 			"additionalProperties": false,
 		},
 		Category: "system",
-		Handler:  handleExecuteScript,
+		Handler:  handleShell,
 	})
 
-	// 注册SQLite数据库工具
+	// 注册python工具
+	RegisterTool(ToolDef{
+		Name: "python",
+		Description: `在项目根目录执行Python脚本。
+脚本通过标准输入传递，避免命令行长度限制。
+
+输出格式：
+- 成功时：返回包含执行结果和执行统计的格式化文本
+- 失败时：返回包含错误信息、输出内容和执行统计的格式化文本
+
+示例：
+1. Python脚本：print("Hello")
+2. 数据处理：import json; print(json.dumps({"key": "value"}))
+3. 文件操作：with open("file.txt", "r") as f: print(f.read())
+
+注意：谨慎使用，避免破坏性操作。确保脚本在项目目录内执行。`,
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"script": map[string]any{
+					"type": "string",
+					"description": `要执行的Python脚本内容。
+支持shebang指定解释器（如#!/usr/bin/env python, #!/usr/bin/env python3）。
+脚本执行结果会以格式化文本返回，包含执行统计信息。
+
+示例：
+1. Python脚本：print("Hello")
+2. 数据处理：import json; print(json.dumps({"key": "value"}))
+3. 文件操作：with open("file.txt", "r") as f: print(f.read())
+`,
+				},
+			},
+			"required":             []string{"script"},
+			"additionalProperties": false,
+		},
+		Category: "system",
+		Handler:  handlePython,
+	})
+
+	// 注册execute_script作为shell的别名（保持向后兼容性）
+	RegisterToolAlias("execute_script", "shell")
+}
+
+// registerDatabaseTools 注册数据库工具
+func registerDatabaseTools() {
 	RegisterTool(ToolDef{
 		Name:        "sqlite",
 		Description: "执行SQLite数据库查询和操作。脚本内容为SQL语句。",
@@ -900,8 +974,10 @@ print("Hello")
 		Category: "database",
 		Handler:  handleSqlite,
 	})
+}
 
-	// 注册SQLite数据库工具
+// registerSystemTools 注册系统工具
+func registerSystemTools() {
 	RegisterTool(ToolDef{
 		Name:        "dscli_chat_reload",
 		Description: `perform dscli chat reload.`,
@@ -919,6 +995,15 @@ print("Hello")
 		Category: "system",
 		Handler:  handleDscliChatReload,
 	})
+}
+
+func init() {
+	// 注册所有工具
+	registerFileTools()
+	registerGitTools()
+	registerScriptTools()
+	registerDatabaseTools()
+	registerSystemTools()
 }
 
 // HandleToolCall 处理工具调用（带统计和超时）

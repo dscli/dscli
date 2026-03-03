@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 )
 
@@ -39,7 +38,6 @@ func (c *Deepseek) doRequest(method, path string, body any, result any) (err err
 		data, err = json.Marshal(body)
 		if err != nil {
 			err = fmt.Errorf("序列化请求失败: %w", err)
-			slog.Error(err.Error(), "body", body)
 			return
 		}
 		reqBody = bytes.NewReader(data)
@@ -48,7 +46,6 @@ func (c *Deepseek) doRequest(method, path string, body any, result any) (err err
 	req, err := http.NewRequest(method, url, reqBody)
 	if err != nil {
 		err = fmt.Errorf("创建请求失败: %w", err)
-		slog.Error(err.Error(), "method", method, "data", string(data))
 		return
 	}
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
@@ -57,7 +54,6 @@ func (c *Deepseek) doRequest(method, path string, body any, result any) (err err
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		err = fmt.Errorf("请求失败: %w", err)
-		slog.Error(err.Error(), "req", req)
 		return
 	}
 	defer resp.Body.Close()
@@ -65,20 +61,17 @@ func (c *Deepseek) doRequest(method, path string, body any, result any) (err err
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		err = fmt.Errorf("读取响应失败: %w", err)
-		slog.Error(err.Error(), "data", string(data))
 		return
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		err = fmt.Errorf("API 返回错误状态码 %d: %s", resp.StatusCode, string(respBody))
-		slog.Error(err.Error(), "data", string(data))
 		return
 	}
 
 	if result != nil {
 		if err = json.Unmarshal(respBody, result); err != nil {
 			err = fmt.Errorf("解析响应失败: %w", err)
-			slog.Error(err.Error(), "respBody", string(respBody))
 			return
 		}
 	}
@@ -123,7 +116,6 @@ func (c *Deepseek) Chat(model string, messages []Message, tools []Tool) (*ChatRe
 	var resp ChatResponse
 	err := c.doRequest("POST", "/chat/completions", req, &resp)
 	if err != nil {
-		slog.Error(err.Error(), "req", req)
 		return nil, err
 	}
 	return &resp, err
