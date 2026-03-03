@@ -1,3 +1,5 @@
+// Package main 文件操作工具实现
+// 包含 read_file 和 read_file_with_line_range 工具的实现
 package main
 
 import (
