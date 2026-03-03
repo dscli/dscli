@@ -223,17 +223,18 @@
 
 ### 工具重命名和功能拆分
 
-- [ ] **任务1.14：execute_script 工具重命名和功能拆分**
+- [x] **任务1.14：execute_script 工具重命名和功能拆分** ✅ **已完成**
   - 文件：`tools.go`
-  - 描述：将现有的 execute_script 工具拆分为更专业的工具
-  - 功能：
+  - 描述：已将现有的 execute_script 工具拆分为更专业的工具
+  - 已完成功能：
     - ✅ `shell`：专门执行Shell脚本（重命名 execute_script）
     - ✅ `python`：专门执行Python脚本（从 execute_script 拆分）
     - ✅ 保持向后兼容性，execute_script 作为别名
     - ✅ 为每个工具提供专门的参数验证和错误处理
-  - 相关函数：需要创建新的处理函数
-  - 难度：中等
-  - 优先级：高
+    - ✅ 重构工具注册逻辑，按类别分组注册
+  - 相关函数：已实现新的处理函数 `handleShell` 和 `handlePython`
+  - 状态：已完成并测试通过
+  - 完成日期：2026-03-04
 
 ### 高级功能增强
 
