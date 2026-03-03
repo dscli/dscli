@@ -253,7 +253,7 @@ func init() {
 			return
 		},
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
-			originURL, err := ShellExec(`git remote get-url origin`)
+			originURL, err := ShellExec(cmd.Context(), `git remote get-url origin`)
 			if err != nil {
 				return
 			}
@@ -320,7 +320,7 @@ func init() {
 		},
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			issueNumber := args[0]
-			originURL, err := ShellExec(`git remote get-url origin`)
+			originURL, err := ShellExec(cmd.Context(), `git remote get-url origin`)
 			if err != nil {
 				return
 			}
@@ -413,7 +413,7 @@ func init() {
 			}
 
 			// 获取API信息
-			originURL, err := ShellExec(`git remote get-url origin`)
+			originURL, err := ShellExec(cmd.Context(), `git remote get-url origin`)
 			if err != nil {
 				return err
 			}

@@ -462,19 +462,13 @@ func Shebang(script string) (name string, arg []string) {
 	return
 }
 
-// handleExecuteScript 执行脚本（支持多种解释器，通过shebang指定）
-// handleExecuteScript 执行脚本（保持向后兼容性，实际调用handleShell）
-func handleExecuteScript(ctx context.Context, args map[string]string) (out string, err error) {
-	// 保持向后兼容性，实际调用handleShell
-	return handleShell(ctx, args)
-}
-
 // handleShell 执行Shell脚本
 func handleShell(ctx context.Context, args map[string]string) (out string, err error) {
 	script, ok := args["script"]
 	if !ok {
 		script = ""
 	}
+	Notice("Shell: %s", ShortenScript(script))
 	out, err = runBash(ctx, script)
 	return
 }
@@ -493,11 +487,6 @@ func handlePython(ctx context.Context, args map[string]string) (out string, err 
 
 	out, err = runBash(ctx, script)
 	return
-}
-
-func runScript(ctx context.Context, script string, name string, arg []string) (out string, err error) {
-	Notice("执行脚本: %s", ShortenScript(script))
-	return shellExec(script, name, arg)
 }
 
 func ShortenScript(script string) string {
@@ -535,13 +524,13 @@ func ShortenScript(script string) string {
 	return script
 }
 
-func ShellExec(script string) (out string, err error) {
+func ShellExec(ctx context.Context, script string) (out string, err error) {
 	name, arg := Shebang(script)
-	out, err = shellExec(script, name, arg)
+	out, err = shellExec(ctx, script, name, arg)
 	return
 }
 
-func shellExec(script string, name string, arg []string) (out string, err error) {
+func shellExec(cxt context.Context, script string, name string, arg []string) (out string, err error) {
 	buf := bytes.NewBuffer([]byte{})
 	subproc := exec.Command(name, arg...)
 	subproc.Dir = ProjectRoot
@@ -580,7 +569,7 @@ func runBash(ctx context.Context, script string) (result string, err error) {
 	startTime := time.Now()
 	name, arg := Shebang(script)
 
-	out, err := runScript(ctx, script, name, arg)
+	out, err := shellExec(ctx, script, name, arg)
 	executionTime := time.Since(startTime)
 	if err != nil {
 		// 构建包含执行统计的失败结果

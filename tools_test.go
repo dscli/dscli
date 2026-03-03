@@ -50,7 +50,7 @@ print("OK")`, "OK\n", nil},
 			name, arg := Shebang(tc.script)
 			// 创建包含ToolDisplayName的context
 			ctx := context.WithValue(context.Background(), ToolDisplayName, "test-tool")
-			out, err := runScript(ctx, tc.script, name, arg)
+			out, err := shellExec(ctx, tc.script, name, arg)
 
 			if tc.checkErr == nil {
 				if err != nil {
