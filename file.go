@@ -13,7 +13,7 @@ import (
 )
 
 // handleReadFileWithLineRange 读取文件指定行范围的内容
-func handleReadFileWithLineRange(ctx context.Context, args map[string]string) (string, error) {
+func handleReadFileWithLineRange(_ context.Context, args map[string]string) (string, error) {
 	path, ok := args["path"]
 	if !ok || path == "" {
 		return "", fmt.Errorf("parameter error: no path specified")
@@ -22,7 +22,7 @@ func handleReadFileWithLineRange(ctx context.Context, args map[string]string) (s
 	fullPath := resolvePath(path)
 
 	// 解析行范围参数
-	var startLine, endLine int = 1, -1 // 默认从第1行开始，-1表示到文件末尾
+	startLine, endLine := 1, -1 // 默认从第1行开始，-1表示到文件末尾
 	var err error
 
 	if startStr, ok := args["start_line"]; ok && startStr != "" {
@@ -62,8 +62,8 @@ func handleReadFileWithLineRange(ctx context.Context, args map[string]string) (s
 	// 逐行读取并过滤
 	scanner := bufio.NewScanner(file)
 	var lines []string
-	var lineNum int = 0
-	var totalLines int = 0
+	lineNum := 0
+	totalLines := 0
 
 	for scanner.Scan() {
 		totalLines++
@@ -93,7 +93,7 @@ func handleReadFileWithLineRange(ctx context.Context, args map[string]string) (s
 	} else {
 		for i, line := range lines {
 			actualLineNum := startLine + i
-			contentBuilder.WriteString(fmt.Sprintf("%4d: %s\n", actualLineNum, line))
+			fmt.Fprintf(&contentBuilder, "%4d: %s\n", actualLineNum, line)
 		}
 		// 移除最后一个换行符
 		contentStr := contentBuilder.String()

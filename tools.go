@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -614,13 +615,7 @@ func handleDscliChatReload(ctx context.Context, args map[string]string) (result 
 		copy(cmdArgs, v)
 
 		// 确保有 --reload 标志
-		hasReload := false
-		for _, arg := range cmdArgs {
-			if arg == "--reload" {
-				hasReload = true
-				break
-			}
-		}
+		hasReload := slices.Contains(cmdArgs, "--reload")
 		if !hasReload {
 			cmdArgs = append(cmdArgs, "--reload")
 		}

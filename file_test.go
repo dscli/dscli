@@ -15,11 +15,11 @@ func TestHandleReadFileWithLineRange(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.txt")
 
 	// 写入测试内容（10行）
-	content := ""
+	var content strings.Builder
 	for i := 1; i <= 10; i++ {
-		content += fmt.Sprintf("Line %d\n", i)
+		fmt.Fprintf(&content, "Line %d\n", i)
 	}
-	if err := os.WriteFile(testFile, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(testFile, []byte(content.String()), 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -180,11 +180,11 @@ func TestHandleReadFileWithLineRange_EdgeCases(t *testing.T) {
 
 	// 测试大文件（模拟）
 	bigFile := filepath.Join(tmpDir, "big.txt")
-	bigContent := ""
+	var bigContent strings.Builder
 	for i := 1; i <= 1000; i++ {
-		bigContent += fmt.Sprintf("Line %04d\n", i)
+		fmt.Fprintf(&bigContent, "Line %04d\n", i)
 	}
-	if err := os.WriteFile(bigFile, []byte(bigContent), 0o644); err != nil {
+	if err := os.WriteFile(bigFile, []byte(bigContent.String()), 0o644); err != nil {
 		t.Fatalf("Failed to create big file: %v", err)
 	}
 
