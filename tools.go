@@ -465,19 +465,34 @@ func handleExecuteScript(ctx context.Context, args map[string]string) (out strin
 }
 
 func runScript(ctx context.Context, script string, name string, arg []string) (out string, err error) {
-	Notice("执行脚本: %s", Shorten(script))
+	Notice("执行脚本: %s", ShortenScript(script))
 	return shellExec(script, name, arg)
 }
 
-func Shorten(script string) any {
-	if script[0] == '#' {
-		idx := strings.Index(script, " ")
-		script = strings.TrimSpace(script[idx:])
+func ShortenScript(script string) string {
+	// 处理空字符串
+	if script == "" {
+		return ""
 	}
+
+	// 跳过 shebang 行
+	if strings.HasPrefix(script, "#!") {
+		// 找到第一个换行符
+		if idx := strings.Index(script, "\n"); idx != -1 {
+			script = strings.TrimSpace(script[idx+1:])
+		} else {
+			// 如果只有 shebang 没有内容
+			return ""
+		}
+	}
+
+	// 处理长度
 	r := []rune(script)
 	n := len(r)
-	if n > 36 {
-		return string(r[0:17]) + ".." + string(r[n-17:n])
+	if n > 72 {
+		first := strings.Fields(string(r[0:36]))
+		last := strings.Fields(string(r[n-36 : n]))
+		return strings.Join(first, " ") + ".." + strings.Join(last, " ")
 	}
 	return script
 }

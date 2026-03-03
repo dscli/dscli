@@ -27,6 +27,7 @@ var (
 	CurrentModel    = ContextKeyType("CurrentModel")
 	IsReload        = ContextKeyType("IsReload")
 	CommandLineArgs = ContextKeyType("CommandLineArgs")
+	ToolCallsName   = ContextKeyType("ToolCallsName")
 )
 
 func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
@@ -211,7 +212,7 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 		return
 	}
 
-	PrintToolCalls(ctx, tcs)
+	ctx = WithToolCallNames(ctx, tcs)
 	toolInputs := HandleToolCalls(ctx, tcs)
 	if len(toolInputs) > 0 {
 		return ChatRound(ctx, prompts, skills, history, toolInputs...)
@@ -219,12 +220,12 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 	return
 }
 
-func PrintToolCalls(ctx context.Context, tcs []ToolCall) {
+func WithToolCallNames(ctx context.Context, tcs []ToolCall) context.Context {
 	names := []string{}
 	for _, tc := range tcs {
 		names = append(names, GetToolDisplayName(tc.Function.Name))
 	}
-	Printf("Running Tool Calls: %v\n", names)
+	return context.WithValue(ctx, ToolCallsName, strings.Join(names, " "))
 }
 
 func init() {
