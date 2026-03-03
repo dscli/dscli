@@ -2,10 +2,19 @@ package main
 
 import (
 	"log"
+	"time"
 )
 
-var chatSystemPrompt = `你是一个专业的编程助手。
-当前日期：请基于当前日期处理与日期相关的需求，当前日期可通过 ` + "`date`" + `命令获得。
+func GetSystemPrompt() (prompt string) {
+	id := ModelID
+
+	// 获取当前日期
+	currentDate := time.Now().Format("2006年01月02日")
+
+	switch id {
+	case DeepseekChat:
+		prompt = `你是一个专业的编程助手。
+当前日期：` + currentDate + `，请基于当前日期处理与日期相关的需求。
 
 当前工作目录：` + ProjectRoot + ` ，你可以增删改查当前工作目录下的任何文件。
 
@@ -23,26 +32,16 @@ var chatSystemPrompt = `你是一个专业的编程助手。
 4. 当工具返回结果后，分析结果并决定下一步的行动，直至任务完成，
 5. 最终给出清晰，准确的答案。
 
-请保持逻辑严谨，逐步推进。
-`
-
-var reasonerSystemPrompt = `你是编程领域一个深入思考者。
+请保持逻辑严谨，逐步推进。`
+	case DeepseekReasoner:
+		prompt = `你是编程领域一个深入思考者。
 
 你的工作流程：
 1. 全面地理解问题，
 2. 深入地思考问题，
 3. 给出深刻地洞察。
 
-请保持逻辑严谨，有条不紊，滴水不漏。
-`
-
-func GetSystemPrompt() (prompt string) {
-	id := ModelID
-	switch id {
-	case DeepseekChat:
-		prompt = chatSystemPrompt
-	case DeepseekReasoner:
-		prompt = reasonerSystemPrompt
+请保持逻辑严谨，有条不紊，滴水不漏。`
 	default:
 		log.Fatalf("do not support %s", chatModel)
 	}
