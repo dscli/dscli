@@ -476,24 +476,30 @@ func ShortenScript(script string) string {
 		return ""
 	}
 
-	// 跳过 shebang 行
-	if strings.HasPrefix(script, "#!") {
-		// 找到第一个换行符
-		if idx := strings.Index(script, "\n"); idx != -1 {
-			script = strings.TrimSpace(script[idx+1:])
-		} else {
-			// 如果只有 shebang 没有内容
-			return ""
+	lines := []string{}
+	n := 0
+	for line := range strings.Lines(script) {
+		line = strings.TrimSpace(line)
+		line = strings.Map(func(r rune) rune {
+			if r > 127 {
+				return -1
+			}
+			return r
+		}, line)
+		if strings.HasPrefix(line, "#") ||
+			strings.HasPrefix(line, "//") {
+			continue
+		}
+		lines = append(lines, line)
+		n += len(line)
+		if n > 50 { // we need 50 most
+			break
 		}
 	}
 
-	// 处理长度
-	r := []rune(script)
-	n := len(r)
-	if n > 72 {
-		first := strings.Fields(string(r[0:36]))
-		last := strings.Fields(string(r[n-36 : n]))
-		return strings.Join(first, " ") + ".." + strings.Join(last, " ")
+	script = strings.Join(lines, "; ")
+	if len(script) > 50 {
+		return script[0:50]
 	}
 	return script
 }
