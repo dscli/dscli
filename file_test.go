@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -37,9 +38,9 @@ func TestHandleReadFileWithLineRange(t *testing.T) {
 			name: "读取完整文件",
 			args: map[string]string{"path": "test.txt"},
 			checkFunc: func(result string) bool {
-				return contains(result, "完整文件") &&
-					contains(result, "Line 1") &&
-					contains(result, "Line 10")
+				return strings.Contains(result, "完整文件") &&
+					strings.Contains(result, "Line 1") &&
+					strings.Contains(result, "Line 10")
 			},
 		},
 		{
@@ -50,11 +51,11 @@ func TestHandleReadFileWithLineRange(t *testing.T) {
 				"end_line":   "7",
 			},
 			checkFunc: func(result string) bool {
-				return contains(result, "第 3-7 行") &&
-					contains(result, "Line 3") &&
-					contains(result, "Line 7") &&
-					!contains(result, "Line 1") &&
-					!contains(result, "Line 10")
+				return strings.Contains(result, "第 3-7 行") &&
+					strings.Contains(result, "Line 3") &&
+					strings.Contains(result, "Line 7") &&
+					!strings.Contains(result, "   1: Line 1") && // 精确匹配行号
+					!strings.Contains(result, "  10: Line 10") // 精确匹配行号
 			},
 		},
 		{
@@ -64,10 +65,10 @@ func TestHandleReadFileWithLineRange(t *testing.T) {
 				"start_line": "8",
 			},
 			checkFunc: func(result string) bool {
-				return contains(result, "第 8 行到文件末尾") &&
-					contains(result, "Line 8") &&
-					contains(result, "Line 10") &&
-					!contains(result, "Line 1")
+				return strings.Contains(result, "第 8 行到文件末尾") &&
+					strings.Contains(result, "   8: Line 8") && // 精确匹配行号
+					strings.Contains(result, "  10: Line 10") && // 精确匹配行号
+					!strings.Contains(result, "   1: Line 1") // 精确匹配行号
 			},
 		},
 		{
@@ -110,7 +111,7 @@ func TestHandleReadFileWithLineRange(t *testing.T) {
 				"end_line":   "30",
 			},
 			checkFunc: func(result string) bool {
-				return contains(result, "指定行范围内无内容")
+				return strings.Contains(result, "指定行范围内无内容")
 			},
 		},
 		{
@@ -121,10 +122,10 @@ func TestHandleReadFileWithLineRange(t *testing.T) {
 				"end_line":   "5",
 			},
 			checkFunc: func(result string) bool {
-				return contains(result, "第 5-5 行") &&
-					contains(result, "Line 5") &&
-					!contains(result, "Line 4") &&
-					!contains(result, "Line 6")
+				return strings.Contains(result, "第 5-5 行") &&
+					strings.Contains(result, "   5: Line 5") && // 精确匹配行号
+					!strings.Contains(result, "   4: Line 4") && // 精确匹配行号
+					!strings.Contains(result, "   6: Line 6") // 精确匹配行号
 			},
 		},
 	}
@@ -152,10 +153,10 @@ func TestHandleReadFileWithLineRange(t *testing.T) {
 			}
 
 			// 验证结果包含必要的统计信息
-			if !contains(result, "文件信息:") {
+			if !strings.Contains(result, "文件信息:") {
 				t.Errorf("Result missing file information")
 			}
-			if !contains(result, "执行统计:") {
+			if !strings.Contains(result, "执行统计:") {
 				t.Errorf("Result missing execution statistics")
 			}
 		})
@@ -245,28 +246,15 @@ func TestHandleReadFileWithLineRange_EdgeCases(t *testing.T) {
 			}
 
 			// 验证基本输出格式
-			if !contains(result, "📄 文件内容") {
+			if !strings.Contains(result, "📄 文件内容") {
 				t.Errorf("Result missing header")
 			}
-			if !contains(result, "文件信息:") {
+			if !strings.Contains(result, "文件信息:") {
 				t.Errorf("Result missing file info")
 			}
-			if !contains(result, "执行统计:") {
+			if !strings.Contains(result, "执行统计:") {
 				t.Errorf("Result missing execution stats")
 			}
 		})
 	}
-}
-
-// 辅助函数：检查字符串是否包含子串
-func contains(s, substr string) bool {
-	return len(s) > 0 && len(substr) > 0 && (len(s) >= len(substr)) &&
-		(s == substr || (len(s) > len(substr) && (s[:len(substr)] == substr ||
-			contains(s[1:], substr))))
-}
-
-// 由于测试中使用了 fmt，需要导入
-func init() {
-	// 确保 fmt 包在测试中可用
-	_ = fmt.Sprintf
 }
