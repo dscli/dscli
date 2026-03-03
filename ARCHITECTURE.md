@@ -249,6 +249,115 @@ $ ls *.go | grep -v _test.go | wc -l  # 源文件数
 
 ---
 
+## 🛠️ 工具可靠性规范
+
+### 1. 工具调用可靠性原则
+工具调用必须遵循以下可靠性原则：
+
+#### 1.1 重试机制
+所有工具调用必须实现智能重试机制：
+```go
+type RetryConfig struct {
+    MaxAttempts     int           // 最大重试次数（默认3）
+    InitialDelay    time.Duration // 初始延迟（默认100ms）
+    MaxDelay        time.Duration // 最大延迟（默认5s）
+    BackoffFactor   float64       // 退避因子（默认2.0）
+    RetryableErrors []error       // 可重试的错误类型
+}
+
+func RetryToolCall(toolFunc func() error, config RetryConfig) error {
+    // 指数退避重试实现
+}
+```
+
+#### 1.2 超时控制
+每个工具必须设置合理的超时时间：
+```go
+type ToolDef struct {
+    Name        string
+    Description string
+    Timeout     time.Duration  // 必须设置超时时间
+    // ... 其他字段
+}
+```
+
+#### 1.3 结果验证
+工具调用后必须验证结果完整性：
+```go
+func VerifyWriteFile(path, expectedContent string) error {
+    // 1. 验证文件存在
+    // 2. 验证文件内容
+    // 3. 验证文件权限
+    // 4. 返回验证结果
+}
+```
+
+### 2. 错误处理最佳实践
+
+#### 2.1 错误分类
+```go
+type ToolError struct {
+    Type     ErrorType  // 错误类型：网络错误、参数错误、权限错误等
+    ToolName string     // 工具名称
+    Message  string     // 错误信息
+    Retryable bool      // 是否可重试
+}
+```
+
+#### 2.2 优雅降级
+关键工具必须有降级方案：
+```go
+func CreateToolFallback(toolName string) FallbackFunc {
+    switch toolName {
+    case "write_file":
+        return func(params map[string]interface{}) (interface{}, error) {
+            // 降级方案：写入临时文件或返回错误信息
+        }
+    // ... 其他工具
+    }
+}
+```
+
+### 3. 监控和告警规范
+
+#### 3.1 监控指标
+必须监控以下指标：
+- 工具调用成功率
+- 平均响应时间
+- 错误率分布
+- 重试成功率
+- 降级触发率
+
+#### 3.2 告警规则
+```go
+type AlertRule struct {
+    MetricName string
+    Threshold  float64
+    Duration   time.Duration
+    Severity   AlertSeverity
+}
+```
+
+### 4. 工具开发要求
+
+#### 4.1 新工具开发规范
+开发新工具时必须：
+1. 实现完整的错误处理
+2. 设置合理的超时时间
+3. 提供结果验证方法
+4. 实现降级策略
+5. 添加监控指标
+
+#### 4.2 工具测试要求
+工具测试必须包含：
+1. 正常路径测试
+2. 错误路径测试
+3. 超时测试
+4. 重试测试
+5. 降级测试
+
+---
+
 ## 📅 日期处理规范
 
 ### 1. 系统提示词中的日期
@@ -294,6 +403,81 @@ func TestDateRelatedFunction(t *testing.T) {
     // 测试逻辑...
 }
 ```
+
+---
+
+## 🧪 单元测试规范
+
+### 1. 测试文件命名
+测试文件必须与源文件一一对应：
+```
+[功能].go          ← 源文件
+[功能]_test.go     ← 测试文件
+```
+
+### 2. 测试函数命名
+测试函数使用 `Test` 前缀，描述性名称：
+```go
+func TestFunctionName(t *testing.T) {
+    // 测试逻辑
+}
+
+func TestFunctionName_EdgeCase(t *testing.T) {
+    // 边界条件测试
+}
+
+func TestFunctionName_ErrorHandling(t *testing.T) {
+    // 错误处理测试
+}
+```
+
+### 3. 测试用例组织
+使用表格驱动测试：
+```go
+func TestFunctionName(t *testing.T) {
+    testCases := []struct {
+        name     string
+        input    string
+        expected string
+        wantErr  bool
+    }{
+        // 正常路径
+        {"normal case", "input", "expected", false},
+        // 边界条件
+        {"empty string", "", "", false},
+        {"exact boundary", strings.Repeat("a", 72), strings.Repeat("a", 72), false},
+        // 错误路径
+        {"invalid input", "invalid", "", true},
+    }
+    
+    for _, tc := range testCases {
+        t.Run(tc.name, func(t *testing.T) {
+            // 测试逻辑
+        })
+    }
+}
+```
+
+### 4. 必须包含的测试类型
+1. **正常路径测试**：基本功能验证
+2. **边界条件测试**：空值、最大值、最小值等
+3. **错误路径测试**：无效输入、异常情况
+4. **并发安全测试**：涉及并发的函数
+5. **性能基准测试**：关键性能路径
+
+### 5. 测试覆盖率要求
+- 总体覆盖率不低于80%
+- 关键功能覆盖率不低于90%
+- 错误处理路径必须覆盖
+
+### 6. 测试质量指标
+| 指标 | 要求 | 检查方式 |
+|------|------|----------|
+| **测试覆盖率** | ≥80% | `go test -cover` |
+| **边界测试** | 必须包含 | 代码审查 |
+| **错误测试** | 必须包含 | 代码审查 |
+| **测试可读性** | 清晰易懂 | 代码审查 |
+| **测试独立性** | 不依赖外部 | 独立运行 |
 
 ---
 

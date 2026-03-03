@@ -133,6 +133,132 @@ feat: 添加 deepseek-reasoner 模型支持
 - 测试与数据库的集成
 - 确保向后兼容性
 
+## 工具开发规范
+
+### 1. 工具可靠性要求
+开发新工具时必须遵循以下可靠性要求：
+
+#### 1.1 错误处理
+- 必须实现完整的错误处理
+- 错误信息必须清晰、可操作
+- 区分可重试错误和不可重试错误
+
+#### 1.2 超时控制
+- 每个工具必须设置合理的超时时间
+- 超时后必须进行优雅降级
+- 超时时间必须可配置
+
+#### 1.3 重试机制
+- 必须实现智能重试机制
+- 使用指数退避策略
+- 区分网络错误和参数错误
+
+#### 1.4 结果验证
+- 工具调用后必须验证结果完整性
+- 实现原子操作（如文件写入先写临时文件）
+- 提供验证失败后的修复机制
+
+### 2. 工具接口设计
+```go
+type ToolDef struct {
+    Name        string        // 工具名称
+    Description string        // 工具描述
+    Timeout     time.Duration // 超时时间（必须设置）
+    RetryConfig RetryConfig   // 重试配置
+    Validate    ValidateFunc  // 结果验证函数
+    Fallback    FallbackFunc  // 降级函数
+}
+```
+
+### 3. 工具测试要求
+工具测试必须包含以下测试类型：
+
+#### 3.1 功能测试
+- 正常路径测试
+- 边界条件测试
+- 错误路径测试
+
+#### 3.2 可靠性测试
+- 超时测试
+- 重试测试
+- 降级测试
+- 并发测试
+
+#### 3.3 性能测试
+- 响应时间测试
+- 资源使用测试
+- 并发性能测试
+
+### 4. 监控和告警
+- 必须记录工具调用指标
+- 实现异常检测和告警
+- 提供健康检查接口
+
+## 测试开发规范
+
+### 1. 测试文件结构
+测试文件必须与源文件一一对应：
+```go
+// 源文件：tools.go
+// 测试文件：tools_test.go
+```
+
+### 2. 测试函数命名
+使用描述性测试函数名：
+```go
+func TestFunctionName(t *testing.T) {
+    // 基本功能测试
+}
+
+func TestFunctionName_EdgeCase(t *testing.T) {
+    // 边界条件测试
+}
+
+func TestFunctionName_ErrorHandling(t *testing.T) {
+    // 错误处理测试
+}
+```
+
+### 3. 测试用例组织
+使用表格驱动测试：
+```go
+func TestFunctionName(t *testing.T) {
+    testCases := []struct {
+        name     string
+        input    string
+        expected string
+        wantErr  bool
+    }{
+        // 正常路径
+        {"normal case", "input", "expected", false},
+        // 边界条件
+        {"empty string", "", "", false},
+        // 错误路径
+        {"invalid input", "invalid", "", true},
+    }
+    
+    for _, tc := range testCases {
+        t.Run(tc.name, func(t *testing.T) {
+            // 测试逻辑
+        })
+    }
+}
+```
+
+### 4. 测试覆盖率要求
+- 总体覆盖率不低于80%
+- 关键功能覆盖率不低于90%
+- 错误处理路径必须覆盖
+
+### 5. 测试质量指标
+| 指标 | 要求 | 检查方式 |
+|------|------|----------|
+| **测试覆盖率** | ≥80% | `go test -cover` |
+| **边界测试** | 必须包含 | 代码审查 |
+| **错误测试** | 必须包含 | 代码审查 |
+| **测试可读性** | 清晰易懂 | 代码审查 |
+| **测试独立性** | 不依赖外部 | 独立运行 |
+
 ## 代码审查
 
 ### 审查要点
