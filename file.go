@@ -104,7 +104,7 @@ func handleReadFileWithLineRange(_ context.Context, args map[string]string) (str
 			rangeDesc = fmt.Sprintf("第 %d 行到文件末尾", startLine)
 		}
 	}
-	Notice("读取文件: \"%s\" (%s, %d行)", fullPath, rangeDesc, len(lines))
+	Notice("读取文件: \"%s\" (%s, %d行)", path, rangeDesc, len(lines))
 
 	return result, nil
 }
@@ -201,7 +201,7 @@ func handleSearchFileWithPattern(_ context.Context, args map[string]string) (str
 
 	// 如果没有匹配项
 	if len(matches) == 0 {
-		Notice("在文件 \"%s\" 中搜索模式 \"%s\"，未找到匹配项", fullPath, pattern)
+		Notice("在文件 \"%s\" 中搜索模式 \"%s\"，未找到匹配项", path, pattern)
 		return "", nil
 	}
 
@@ -218,10 +218,7 @@ func handleSearchFileWithPattern(_ context.Context, args map[string]string) (str
 		}
 
 		// 计算上下文范围
-		startCtx := lineIdx - contextLines
-		if startCtx < 0 {
-			startCtx = 0
-		}
+		startCtx := max(lineIdx-contextLines, 0)
 
 		endCtx := lineIdx + contextLines
 		if endCtx >= len(allLines) {
@@ -256,7 +253,7 @@ func handleSearchFileWithPattern(_ context.Context, args map[string]string) (str
 
 	// 记录日志
 	Notice("在文件 \"%s\" 中搜索模式 \"%s\"，找到 %d 个匹配项，显示上下文 ±%d 行",
-		fullPath, pattern, len(matches), contextLines)
+		path, pattern, len(matches), contextLines)
 
 	return result, nil
 }
