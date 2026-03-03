@@ -384,3 +384,298 @@ func TestHandleReadFileWithLineRange_AwkComparison(t *testing.T) {
 		}
 	})
 }
+
+func TestHandleSearchFileWithPattern(t *testing.T) {
+	// 创建临时测试文件
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.txt")
+
+	// 写入测试内容（包含各种模式）
+	content := `First line with no special content
+Second line contains the word error in it
+Third line is normal
+Fourth line has ERROR in uppercase
+Fifth line contains error again
+Sixth line is normal
+Seventh line has Error with capital E
+Eighth line is normal
+Ninth line contains the word warning
+Tenth line is the last line`
+
+	if err := os.WriteFile(testFile, []byte(content), 0o644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// 保存原始 ProjectRoot
+	originalRoot := ProjectRoot
+	ProjectRoot = tmpDir
+	defer func() { ProjectRoot = originalRoot }()
+
+	tests := []struct {
+		name      string
+		args      map[string]string
+		wantError bool
+		want      string // 期望的输出内容
+	}{
+		{
+			name: "搜索error（不区分大小写，默认上下文5行）",
+			args: map[string]string{
+				"path":    "test.txt",
+				"pattern": "error",
+			},
+			want: `> 2: Second line contains the word error in it
+  1: First line with no special content
+  3: Third line is normal
+  4: Fourth line has ERROR in uppercase
+  5: Fifth line contains error again
+  6: Sixth line is normal
+  7: Seventh line has Error with capital E
+
+  8: Eighth line is normal
+  9: Ninth line contains the word warning
+
+  10: Tenth line is the last line`,
+		},
+		{
+			name: "搜索error（区分大小写）",
+			args: map[string]string{
+				"path":           "test.txt",
+				"pattern":        "error",
+				"case_sensitive": "true",
+			},
+			want: `> 2: Second line contains the word error in it
+  1: First line with no special content
+  3: Third line is normal
+  4: Fourth line has ERROR in uppercase
+  5: Fifth line contains error again
+  6: Sixth line is normal
+  7: Seventh line has Error with capital E
+
+  8: Eighth line is normal
+  9: Ninth line contains the word warning
+  10: Tenth line is the last line`,
+		},
+		{
+			name: "搜索ERROR（区分大小写）",
+			args: map[string]string{
+				"path":           "test.txt",
+				"pattern":        "ERROR",
+				"case_sensitive": "true",
+			},
+			want: `> 4: Fourth line has ERROR in uppercase
+  1: First line with no special content
+  2: Second line contains the word error in it
+  3: Third line is normal
+  5: Fifth line contains error again
+  6: Sixth line is normal
+  7: Seventh line has Error with capital E
+  8: Eighth line is normal
+  9: Ninth line contains the word warning`,
+		},
+		{
+			name: "搜索warning（上下文2行）",
+			args: map[string]string{
+				"path":          "test.txt",
+				"pattern":       "warning",
+				"context_lines": "2",
+			},
+			want: `> 9: Ninth line contains the word warning
+  7: Seventh line has Error with capital E
+  8: Eighth line is normal
+  10: Tenth line is the last line`,
+		},
+		{
+			name: "搜索不存在的模式",
+			args: map[string]string{
+				"path":    "test.txt",
+				"pattern": "nonexistent",
+			},
+			want: "", // 应该返回空字符串
+		},
+		{
+			name: "限制最大匹配数为1",
+			args: map[string]string{
+				"path":        "test.txt",
+				"pattern":     "error",
+				"max_matches": "1",
+			},
+			want: `> 2: Second line contains the word error in it
+  1: First line with no special content
+  3: Third line is normal
+  4: Fourth line has ERROR in uppercase
+  5: Fifth line contains error again
+  6: Sixth line is normal
+  7: Seventh line has Error with capital E`,
+		},
+		{
+			name: "缺少必需参数",
+			args: map[string]string{
+				"path": "test.txt",
+				// 缺少pattern参数
+			},
+			wantError: true,
+		},
+		{
+			name: "文件不存在",
+			args: map[string]string{
+				"path":    "nonexistent.txt",
+				"pattern": "error",
+			},
+			wantError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			result, err := handleSearchFileWithPattern(ctx, tt.args)
+
+			if tt.wantError {
+				if err == nil {
+					t.Errorf("handleSearchFileWithPattern() expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("handleSearchFileWithPattern() error: %v", err)
+				return
+			}
+
+			// 清理结果字符串
+			result = strings.TrimSpace(result)
+			if result != tt.want {
+				t.Errorf("handleSearchFileWithPattern() output mismatch")
+				t.Logf("Expected:\n%s", tt.want)
+				t.Logf("Got:\n%s", result)
+			}
+		})
+	}
+}
+
+func TestHandleSearchFileWithPattern_EdgeCases(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.txt")
+
+	// 测试边缘情况：空文件
+	t.Run("空文件", func(t *testing.T) {
+		if err := os.WriteFile(testFile, []byte(""), 0o644); err != nil {
+			t.Fatalf("Failed to create empty test file: %v", err)
+		}
+
+		originalRoot := ProjectRoot
+		ProjectRoot = tmpDir
+		defer func() { ProjectRoot = originalRoot }()
+
+		ctx := context.Background()
+		result, err := handleSearchFileWithPattern(ctx, map[string]string{
+			"path":    "test.txt",
+			"pattern": "anything",
+		})
+		if err != nil {
+			t.Errorf("handleSearchFileWithPattern() error: %v", err)
+			return
+		}
+
+		if strings.TrimSpace(result) != "" {
+			t.Errorf("Expected empty result for empty file, got: %s", result)
+		}
+	})
+
+	// 测试边缘情况：单行文件
+	t.Run("单行文件匹配", func(t *testing.T) {
+		content := "This line contains the word test"
+		if err := os.WriteFile(testFile, []byte(content), 0o644); err != nil {
+			t.Fatalf("Failed to create single line test file: %v", err)
+		}
+
+		originalRoot := ProjectRoot
+		ProjectRoot = tmpDir
+		defer func() { ProjectRoot = originalRoot }()
+
+		ctx := context.Background()
+		result, err := handleSearchFileWithPattern(ctx, map[string]string{
+			"path":    "test.txt",
+			"pattern": "test",
+		})
+		if err != nil {
+			t.Errorf("handleSearchFileWithPattern() error: %v", err)
+			return
+		}
+
+		expected := "> 1: This line contains the word test"
+		if strings.TrimSpace(result) != expected {
+			t.Errorf("Expected: %s\nGot: %s", expected, result)
+		}
+	})
+
+	// 测试边缘情况：上下文行数超过文件边界
+	t.Run("大上下文行数", func(t *testing.T) {
+		// 创建只有3行的文件
+		content := "Line 1\nLine 2 contains pattern\nLine 3"
+		if err := os.WriteFile(testFile, []byte(content), 0o644); err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
+
+		originalRoot := ProjectRoot
+		ProjectRoot = tmpDir
+		defer func() { ProjectRoot = originalRoot }()
+
+		ctx := context.Background()
+		result, err := handleSearchFileWithPattern(ctx, map[string]string{
+			"path":          "test.txt",
+			"pattern":       "pattern",
+			"context_lines": "10", // 上下文行数大于文件行数
+		})
+		if err != nil {
+			t.Errorf("handleSearchFileWithPattern() error: %v", err)
+			return
+		}
+
+		expected := `> 2: Line 2 contains pattern
+  1: Line 1
+  3: Line 3`
+		if strings.TrimSpace(result) != expected {
+			t.Errorf("Expected:\n%s\nGot:\n%s", expected, result)
+		}
+	})
+
+	// 测试边缘情况：重叠的上下文
+	t.Run("重叠上下文", func(t *testing.T) {
+		// 创建文件，其中两个匹配行很接近
+		content := `Line 1
+Line 2 contains first match
+Line 3
+Line 4 contains second match
+Line 5
+Line 6`
+		if err := os.WriteFile(testFile, []byte(content), 0o644); err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
+
+		originalRoot := ProjectRoot
+		ProjectRoot = tmpDir
+		defer func() { ProjectRoot = originalRoot }()
+
+		ctx := context.Background()
+		result, err := handleSearchFileWithPattern(ctx, map[string]string{
+			"path":          "test.txt",
+			"pattern":       "match",
+			"context_lines": "2",
+		})
+		if err != nil {
+			t.Errorf("handleSearchFileWithPattern() error: %v", err)
+			return
+		}
+
+		// 检查是否有重复行
+		lines := strings.Split(strings.TrimSpace(result), "\n")
+		lineSet := make(map[string]bool)
+		for _, line := range lines {
+			if lineSet[line] {
+				t.Errorf("Found duplicate line in output: %s", line)
+			}
+			lineSet[line] = true
+		}
+	})
+}
