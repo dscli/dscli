@@ -947,9 +947,6 @@ func registerScriptTools() {
 		Category: "system",
 		Handler:  handlePython,
 	})
-
-	// 注册execute_script作为shell的别名（保持向后兼容性）
-	RegisterToolAlias("execute_script", "shell")
 }
 
 // registerDatabaseTools 注册数据库工具
