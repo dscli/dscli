@@ -692,7 +692,7 @@ func handleDscliChatReload(ctx context.Context, args map[string]string) (result 
 func registerFileTools() {
 	RegisterTool(ToolDef{
 		Name:        "read_file",
-		Description: "读取项目内指定文件的内容",
+		Description: "读取项目内指定文件的内容，返回文件内容和元数据信息（大小、权限、修改时间等）",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -710,7 +710,7 @@ func registerFileTools() {
 
 	RegisterTool(ToolDef{
 		Name:        "write_file",
-		Description: "将内容写入文件（覆盖或新建）",
+		Description: "将内容写入文件，如果文件不存在则创建，如果存在则覆盖。支持创建目录结构。",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -732,7 +732,7 @@ func registerFileTools() {
 
 	RegisterTool(ToolDef{
 		Name:        "search_files",
-		Description: "在项目中搜索文件（按文件名模式或文件内容）",
+		Description: "在项目目录中搜索文件，支持文件名模式匹配（如*.go）和文件内容搜索。自动排除.git目录。",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -775,13 +775,13 @@ func registerGitTools() {
 
 	RegisterTool(ToolDef{
 		Name:        "git_commit",
-		Description: "提交暂存区更改",
+		Description: "提交暂存区更改，需要提供提交信息。注意：不要在options中包含-m或--message参数。",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"message": map[string]any{
 					"type":        "string",
-					"description": "提交信息",
+					"description": "提交信息（不要在options中包含-m或--message参数）",
 				},
 				"options": map[string]any{
 					"type": "string",
@@ -980,13 +980,13 @@ func registerDatabaseTools() {
 func registerSystemTools() {
 	RegisterTool(ToolDef{
 		Name:        "dscli_chat_reload",
-		Description: `perform dscli chat reload.`,
+		Description: "重新加载dscli chat进程，需要提供confirm=yes参数确认。",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"confirm": map[string]any{
 					"type":        "string",
-					"description": `must be ` + "`yes`",
+					"description": `必须为 ` + "`yes`" + `，用于确认重载操作`,
 				},
 			},
 			"required":             []string{"confirm"},
