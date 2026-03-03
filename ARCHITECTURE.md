@@ -249,6 +249,247 @@ $ ls *.go | grep -v _test.go | wc -l  # 源文件数
 
 ---
 
+
+## 📋 核心类型定义
+
+### 1. ToolDef 工具定义结构
+`ToolDef` 是 dscli 工具系统的核心类型，用于定义和注册所有可调用的工具：
+
+```go
+// ToolDef 工具定义
+type ToolDef struct {
+    Name        string  // 工具名称（必须与工具注册名称一致）
+    DisplayName string  // 显示名称（自动从Name生成，如"read_file" -> "ReadFile"）
+    Description string  // 工具描述（用于AI理解工具功能）
+    Parameters  map[string]any  // 参数定义（JSON Schema格式）
+    Category    string  // 工具分类（如"file_ops"、"git"、"system"等）
+    Timeout     time.Duration  // 工具执行超时时间（必须设置）
+    Handler     func(ctx context.Context, args map[string]string) (string, error)  // 工具处理器函数
+}
+```
+
+#### 字段说明：
+
+1. **Name**（工具名称）
+   - 必须使用小写字母和下划线分隔（如 `read_file`, `git_add`）
+   - 必须与工具注册名称一致
+   - 用于工具调用时的标识
+
+2. **DisplayName**（显示名称）
+   - 自动从 `Name` 生成（通过 `GetToolDisplayName` 函数）
+   - 格式：下划线转驼峰（如 `read_file` → `ReadFile`）
+   - 用于日志和显示目的
+
+3. **Description**（工具描述）
+   - 清晰描述工具的功能和用途
+   - AI 根据描述决定是否调用该工具
+   - 应包含使用示例和注意事项
+
+4. **Parameters**（参数定义）
+   - JSON Schema 格式的参数定义
+   - 必须包含 `type`、`properties`、`required` 等字段
+   - 示例：
+   ```go
+   Parameters: map[string]any{
+       "type": "object",
+       "properties": map[string]any{
+           "path": map[string]any{
+               "type":        "string",
+               "description": "文件路径，如main.go",
+           },
+       },
+       "required":             []string{"path"},
+       "additionalProperties": false,
+   },
+   ```
+
+5. **Category**（工具分类）
+   - 用于工具分组和管理
+   - 现有分类：`file_ops`、`git`、`system`、`database`、`web` 等
+   - 新工具应根据功能选择合适的分类
+
+6. **Timeout**（超时时间）
+   - 必须设置合理的超时时间
+   - 防止工具执行时间过长阻塞系统
+   - 示例：`30 * time.Second`
+
+7. **Handler**（处理器函数）
+   - 工具的实际执行函数
+   - 函数签名：`func(ctx context.Context, args map[string]string) (string, error)`
+   - 必须正确处理错误和超时
+
+### 2. 工具注册机制
+
+#### 2.1 工具注册表
+```go
+// toolRegistry 工具注册表
+var toolRegistry = map[string]ToolDef{}
+
+// RegisterTool 注册工具
+func RegisterTool(tool ToolDef) {
+    tool.DisplayName = GetToolDisplayName(tool.Name)
+    toolRegistry[tool.Name] = tool
+}
+```
+
+#### 2.2 工具注册时机
+所有工具必须在 `init()` 函数中注册：
+```go
+func init() {
+    RegisterTool(ToolDef{
+        Name:        "read_file",
+        Description: "读取项目内指定文件的内容",
+        Parameters:  // ... 参数定义
+        Category:    "file_ops",
+        Timeout:     30 * time.Second,
+        Handler:     handleReadFile,
+    })
+}
+```
+
+### 3. 工具调用流程
+
+#### 3.1 工具调用处理
+```go
+// HandleToolCall 处理工具调用（带统计和超时）
+func HandleToolCall(ctx context.Context, toolName string, argsRaw json.RawMessage) (string, error) {
+    // 1. 从注册表获取工具定义
+    // 2. 解析参数
+    // 3. 设置超时上下文
+    // 4. 执行工具处理器
+    // 5. 记录使用统计
+    // 6. 返回结果或错误
+}
+```
+
+#### 3.2 工具调用上下文
+工具处理器接收的 `context.Context` 包含：
+- **超时控制**：通过 `context.WithTimeout` 设置
+- **项目根目录**：通过 `ProjectRoot` 全局变量访问
+- **工具显示名称**：通过 `ToolDisplayName` 上下文键访问
+
+### 4. 工具开发规范
+
+#### 4.1 新工具开发步骤
+1. **定义处理器函数**：
+   ```go
+   func handleNewTool(ctx context.Context, args map[string]string) (string, error) {
+       // 1. 参数验证
+       // 2. 业务逻辑
+       // 3. 错误处理
+       // 4. 返回格式化结果
+   }
+   ```
+
+2. **定义参数Schema**：
+   ```go
+   Parameters: map[string]any{
+       "type": "object",
+       "properties": map[string]any{
+           "param1": map[string]any{
+               "type":        "string",
+               "description": "参数1描述",
+           },
+       },
+       "required":             []string{"param1"},
+       "additionalProperties": false,
+   },
+   ```
+
+3. **注册工具**：
+   ```go
+   func init() {
+       RegisterTool(ToolDef{
+           Name:        "new_tool",
+           Description: "新工具描述",
+           Parameters:  // 参数定义
+           Category:    "appropriate_category",
+           Timeout:     30 * time.Second,
+           Handler:     handleNewTool,
+       })
+   }
+   ```
+
+#### 4.2 工具结果格式
+工具应返回格式化的结果字符串：
+```go
+result := fmt.Sprintf(`✅ 执行成功:
+详细信息: %s
+
+📊 执行统计:
+执行时间: %v
+状态: 成功`,
+    details, executionTime)
+```
+
+#### 4.3 错误处理要求
+1. **参数错误**：返回清晰的错误信息
+2. **执行错误**：包含错误上下文
+3. **超时错误**：正确处理context取消
+4. **资源错误**：检查文件、网络等资源可用性
+
+### 5. 工具测试要求
+
+#### 5.1 必须包含的测试
+1. **参数验证测试**：测试各种参数组合
+2. **正常路径测试**：测试工具正常功能
+3. **错误路径测试**：测试各种错误情况
+4. **超时测试**：测试超时处理
+5. **并发测试**：测试并发安全性
+
+#### 5.2 测试示例
+```go
+func TestHandleNewTool(t *testing.T) {
+    testCases := []struct {
+        name     string
+        args     map[string]string
+        wantErr  bool
+        contains string
+    }{
+        {
+            name: "正常参数",
+            args: map[string]string{"param1": "value1"},
+            contains: "✅ 执行成功",
+        },
+        {
+            name: "缺少必需参数",
+            args: map[string]string{},
+            wantErr: true,
+            contains: "参数错误",
+        },
+    }
+    
+    for _, tc := range testCases {
+        t.Run(tc.name, func(t *testing.T) {
+            result, err := handleNewTool(context.Background(), tc.args)
+            // 验证逻辑...
+        })
+    }
+}
+```
+
+### 6. 工具维护指南
+
+#### 6.1 工具版本兼容性
+1. **参数变更**：向后兼容，新增参数应为可选
+2. **功能变更**：记录变更日志
+3. **废弃工具**：标记为废弃，提供替代方案
+
+#### 6.2 工具性能监控
+1. **执行时间**：监控工具平均执行时间
+2. **成功率**：监控工具调用成功率
+3. **使用频率**：统计工具使用频率
+4. **错误分析**：分析工具错误类型和频率
+
+#### 6.3 工具文档要求
+每个工具必须有：
+1. **功能描述**：清晰的功能说明
+2. **参数说明**：每个参数的详细说明
+3. **使用示例**：典型使用场景示例
+4. **注意事项**：使用时的注意事项
+5. **错误代码**：可能的错误代码和含义
+
+---
 ## 🛠️ 工具可靠性规范
 
 ### 1. 工具调用可靠性原则
@@ -273,14 +514,18 @@ func RetryToolCall(toolFunc func() error, config RetryConfig) error {
 #### 1.2 超时控制
 每个工具必须设置合理的超时时间：
 ```go
-type ToolDef struct {
-    Name        string
-    Description string
-    Timeout     time.Duration  // 必须设置超时时间
-    // ... 其他字段
-}
+// 引用完整的 ToolDef 定义（详见"核心类型定义"章节）
+// ToolDef 包含以下字段：
+// - Name: 工具名称
+// - DisplayName: 显示名称
+// - Description: 工具描述
+// - Parameters: 参数定义（JSON Schema格式）
+// - Category: 工具分类
+// - Timeout: 工具执行超时时间（必须设置）
+// - Handler: 工具处理器函数
 ```
 
+**注意**：完整的 `ToolDef` 定义详见[📋 核心类型定义](#-核心类型定义)章节。
 #### 1.3 结果验证
 工具调用后必须验证结果完整性：
 ```go
