@@ -423,18 +423,17 @@ Tenth line is the last line`
 				"path":    "test.txt",
 				"pattern": "error",
 			},
-			want: `> 2: Second line contains the word error in it
-  1: First line with no special content
+			want: `  1: First line with no special content
+> 2: Second line contains the word error in it
   3: Third line is normal
   4: Fourth line has ERROR in uppercase
   5: Fifth line contains error again
   6: Sixth line is normal
   7: Seventh line has Error with capital E
-
   8: Eighth line is normal
   9: Ninth line contains the word warning
-
-  10: Tenth line is the last line`,
+  10: Tenth line is the last line
+`,
 		},
 		{
 			name: "搜索error（区分大小写）",
@@ -443,17 +442,17 @@ Tenth line is the last line`
 				"pattern":        "error",
 				"case_sensitive": "true",
 			},
-			want: `> 2: Second line contains the word error in it
-  1: First line with no special content
+			want: `  1: First line with no special content
+> 2: Second line contains the word error in it
   3: Third line is normal
   4: Fourth line has ERROR in uppercase
   5: Fifth line contains error again
   6: Sixth line is normal
   7: Seventh line has Error with capital E
-
   8: Eighth line is normal
   9: Ninth line contains the word warning
-  10: Tenth line is the last line`,
+  10: Tenth line is the last line
+`,
 		},
 		{
 			name: "搜索ERROR（区分大小写）",
@@ -462,15 +461,16 @@ Tenth line is the last line`
 				"pattern":        "ERROR",
 				"case_sensitive": "true",
 			},
-			want: `> 4: Fourth line has ERROR in uppercase
-  1: First line with no special content
+			want: `  1: First line with no special content
   2: Second line contains the word error in it
   3: Third line is normal
+> 4: Fourth line has ERROR in uppercase
   5: Fifth line contains error again
   6: Sixth line is normal
   7: Seventh line has Error with capital E
   8: Eighth line is normal
-  9: Ninth line contains the word warning`,
+  9: Ninth line contains the word warning
+`,
 		},
 		{
 			name: "搜索warning（上下文2行）",
@@ -479,10 +479,11 @@ Tenth line is the last line`
 				"pattern":       "warning",
 				"context_lines": "2",
 			},
-			want: `> 9: Ninth line contains the word warning
-  7: Seventh line has Error with capital E
+			want: `  7: Seventh line has Error with capital E
   8: Eighth line is normal
-  10: Tenth line is the last line`,
+> 9: Ninth line contains the word warning
+  10: Tenth line is the last line
+`,
 		},
 		{
 			name: "搜索不存在的模式",
@@ -499,13 +500,14 @@ Tenth line is the last line`
 				"pattern":     "error",
 				"max_matches": "1",
 			},
-			want: `> 2: Second line contains the word error in it
-  1: First line with no special content
+			want: `  1: First line with no special content
+> 2: Second line contains the word error in it
   3: Third line is normal
   4: Fourth line has ERROR in uppercase
   5: Fifth line contains error again
   6: Sixth line is normal
-  7: Seventh line has Error with capital E`,
+  7: Seventh line has Error with capital E
+`,
 		},
 		{
 			name: "缺少必需参数",
@@ -543,11 +545,10 @@ Tenth line is the last line`
 			}
 
 			// 清理结果字符串
-			result = strings.TrimSpace(result)
 			if result != tt.want {
 				t.Errorf("handleSearchFileWithPattern() output mismatch")
-				t.Logf("Expected:\n%s", tt.want)
-				t.Logf("Got:\n%s", result)
+				t.Logf("Expected:\n[%s]", tt.want)
+				t.Logf("Got:\n[%s]", result)
 			}
 		})
 	}
@@ -632,10 +633,11 @@ func TestHandleSearchFileWithPattern_EdgeCases(t *testing.T) {
 			return
 		}
 
-		expected := `> 2: Line 2 contains pattern
-  1: Line 1
-  3: Line 3`
-		if strings.TrimSpace(result) != expected {
+		expected := `  1: Line 1
+> 2: Line 2 contains pattern
+  3: Line 3
+`
+		if result != expected {
 			t.Errorf("Expected:\n%s\nGot:\n%s", expected, result)
 		}
 	})

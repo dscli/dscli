@@ -1,5 +1,3 @@
-// Package main 文件操作工具实现
-// 包含 read_file 和 read_file_with_line_range 工具的实现
 package main
 
 import (
@@ -21,90 +19,79 @@ func handleReadFileWithLineRange(_ context.Context, args map[string]string) (str
 
 	fullPath := resolvePath(path)
 
-	// 解析行范围参数
-	startLine, endLine := 1, -1 // 默认从第1行开始，-1表示到文件末尾
-	var err error
-
+	// 解析起始行号
+	startLine := 1
 	if startStr, ok := args["start_line"]; ok && startStr != "" {
-		startLine, err = strconv.Atoi(startStr)
+		start, err := strconv.Atoi(startStr)
 		if err != nil {
 			return "", fmt.Errorf("invalid start_line parameter: %w", err)
 		}
-		if startLine < 1 {
-			startLine = 1
+		if start < 1 {
+			return "", fmt.Errorf("start_line must be at least 1")
 		}
+		startLine = start
 	}
 
+	// 解析结束行号
+	endLine := -1 // -1 表示到文件末尾
 	if endStr, ok := args["end_line"]; ok && endStr != "" {
-		endLine, err = strconv.Atoi(endStr)
+		end, err := strconv.Atoi(endStr)
 		if err != nil {
 			return "", fmt.Errorf("invalid end_line parameter: %w", err)
 		}
-		if endLine < startLine {
-			return "", fmt.Errorf("end_line (%d) must be greater than or equal to start_line (%d)", endLine, startLine)
+		if end < 1 {
+			return "", fmt.Errorf("end_line must be at least 1")
 		}
+		endLine = end
 	}
 
-	// 读取文件
+	// 验证行号范围
+	if endLine != -1 && endLine < startLine {
+		return "", fmt.Errorf("end_line must be greater than or equal to start_line")
+	}
+
+	// 打开文件
 	file, err := os.Open(fullPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
 
-	// 逐行读取并过滤
+	// 逐行读取并构建结果
+	var resultBuilder strings.Builder
 	scanner := bufio.NewScanner(file)
-	var lines []string
 	lineNum := 0
-	totalLines := 0
+	linesRead := 0
 
 	for scanner.Scan() {
-		totalLines++
 		lineNum++
+		line := scanner.Text()
 
-		// 如果还没有到起始行，继续扫描
-		if lineNum < startLine {
-			continue
+		// 检查是否在指定范围内
+		if lineNum >= startLine && (endLine == -1 || lineNum <= endLine) {
+			fmt.Fprintf(&resultBuilder, "%d: %s\n", lineNum, line)
+			linesRead++
 		}
 
-		// 如果指定了结束行且已超过结束行，停止扫描
-		if endLine > 0 && lineNum > endLine {
+		// 如果已经超过结束行号，可以提前退出
+		if endLine != -1 && lineNum > endLine {
 			break
 		}
-
-		lines = append(lines, scanner.Text())
 	}
 
 	if err := scanner.Err(); err != nil {
 		return "", fmt.Errorf("failed to read file line by line: %w", err)
 	}
 
-	// 构建结果内容 - 与awk格式完全一致: NR": "$0
-	var contentBuilder strings.Builder
-	if len(lines) == 0 {
-		// 空范围时返回空字符串，与awk行为一致
+	// 如果起始行号超出文件范围，返回空字符串（与awk行为一致）
+	if linesRead == 0 {
 		return "", nil
-	} else {
-		for i, line := range lines {
-			actualLineNum := startLine + i
-			// 与 awk 'NR>=start && NR<=end {print NR": "$0}' 格式完全一致
-			fmt.Fprintf(&contentBuilder, "%d: %s\n", actualLineNum, line)
-		}
 	}
 
-	// 移除最后一个换行符（如果需要保持与awk完全一致，可以保留）
-	result := contentBuilder.String()
+	result := resultBuilder.String()
 
-	// 记录日志但不包含在返回结果中
-	rangeDesc := "完整文件"
-	if startLine > 1 || endLine > 0 {
-		if endLine > 0 {
-			rangeDesc = fmt.Sprintf("第 %d-%d 行", startLine, endLine)
-		} else {
-			rangeDesc = fmt.Sprintf("第 %d 行到文件末尾", startLine)
-		}
-	}
-	Notice("读取文件: \"%s\" (%s, %d行)", path, rangeDesc, len(lines))
+	// 记录日志
+	Notice("读取文件 \"%s\" 行范围 %d-%d，共 %d 行", path, startLine, endLine, linesRead)
 
 	return result, nil
 }
@@ -211,42 +198,39 @@ func handleSearchFileWithPattern(_ context.Context, args map[string]string) (str
 	// 用于跟踪已输出的行，避免重复输出（当上下文重叠时）
 	outputLines := make(map[int]bool)
 
+	// 用于跟踪上一个匹配项的上下文结束行
+	prevEndCtx := -1
+
 	for matchIdx, lineIdx := range matches {
-		// 添加分隔符（如果不是第一个匹配项）
-		if matchIdx > 0 {
+		// 计算上下文范围
+		startCtx := max(lineIdx-contextLines, 0)
+		endCtx := min(lineIdx+contextLines, len(allLines)-1)
+
+		// 如果这不是第一个匹配项，并且上下文范围与前一个匹配项没有重叠，则添加空行分隔符
+		if matchIdx > 0 && startCtx > prevEndCtx {
 			resultBuilder.WriteString("\n")
 		}
 
-		// 计算上下文范围
-		startCtx := max(lineIdx-contextLines, 0)
-
-		endCtx := lineIdx + contextLines
-		if endCtx >= len(allLines) {
-			endCtx = len(allLines) - 1
-		}
-
-		// 首先输出匹配行（突出显示）
-		if !outputLines[lineIdx] {
-			outputLines[lineIdx] = true
-			fmt.Fprintf(&resultBuilder, "> %d: %s\n", lineIdx+1, allLines[lineIdx])
-		}
-
-		// 然后输出上下文行（按行号顺序）
+		// 按行号顺序输出上下文行和匹配行
 		for i := startCtx; i <= endCtx; i++ {
-			// 跳过匹配行（已经输出过了）
-			if i == lineIdx {
-				continue
-			}
-
 			// 避免重复输出
 			if outputLines[i] {
 				continue
 			}
 			outputLines[i] = true
 
-			// 输出上下文行
-			fmt.Fprintf(&resultBuilder, "  %d: %s\n", i+1, allLines[i])
+			// 判断是否是匹配行
+			if i == lineIdx {
+				// 匹配行用 > 标记
+				fmt.Fprintf(&resultBuilder, "> %d: %s\n", i+1, allLines[i])
+			} else {
+				// 上下文行用两个空格对齐
+				fmt.Fprintf(&resultBuilder, "  %d: %s\n", i+1, allLines[i])
+			}
 		}
+
+		// 更新上一个匹配项的上下文结束行
+		prevEndCtx = endCtx
 	}
 
 	result := resultBuilder.String()

@@ -191,7 +191,7 @@ func handleWriteFile(ctx context.Context, args map[string]string) (string, error
 		fullPath,
 		executionTime)
 
-	Notice("写入文件: \"%s\"（%d字节）", fullPath, fileInfo.Size())
+	Notice("写入文件: \"%s\"（%d字节）", path, fileInfo.Size())
 	return result, nil
 }
 
@@ -471,6 +471,7 @@ func runScript(ctx context.Context, script string, name string, arg []string) (o
 }
 
 func ShortenScript(script string) string {
+	script = strings.ReplaceAll(script, ProjectRoot, ".")
 	// 处理空字符串
 	if script == "" {
 		return ""
