@@ -32,16 +32,21 @@ func TestHandleReadFileWithLineRange(t *testing.T) {
 		name      string
 		args      map[string]string
 		wantError bool
-		checkFunc func(string) bool
+		want      string // 期望的输出内容（与awk格式一致）
 	}{
 		{
 			name: "读取完整文件",
 			args: map[string]string{"path": "test.txt"},
-			checkFunc: func(result string) bool {
-				return strings.Contains(result, "完整文件") &&
-					strings.Contains(result, "Line 1") &&
-					strings.Contains(result, "Line 10")
-			},
+			want: `1: Line 1
+2: Line 2
+3: Line 3
+4: Line 4
+5: Line 5
+6: Line 6
+7: Line 7
+8: Line 8
+9: Line 9
+10: Line 10`,
 		},
 		{
 			name: "读取指定行范围",
@@ -50,13 +55,11 @@ func TestHandleReadFileWithLineRange(t *testing.T) {
 				"start_line": "3",
 				"end_line":   "7",
 			},
-			checkFunc: func(result string) bool {
-				return strings.Contains(result, "第 3-7 行") &&
-					strings.Contains(result, "Line 3") &&
-					strings.Contains(result, "Line 7") &&
-					!strings.Contains(result, "   1: Line 1") && // 精确匹配行号
-					!strings.Contains(result, "  10: Line 10") // 精确匹配行号
-			},
+			want: `3: Line 3
+4: Line 4
+5: Line 5
+6: Line 6
+7: Line 7`,
 		},
 		{
 			name: "从某行到文件末尾",
@@ -64,12 +67,9 @@ func TestHandleReadFileWithLineRange(t *testing.T) {
 				"path":       "test.txt",
 				"start_line": "8",
 			},
-			checkFunc: func(result string) bool {
-				return strings.Contains(result, "第 8 行到文件末尾") &&
-					strings.Contains(result, "   8: Line 8") && // 精确匹配行号
-					strings.Contains(result, "  10: Line 10") && // 精确匹配行号
-					!strings.Contains(result, "   1: Line 1") // 精确匹配行号
-			},
+			want: `8: Line 8
+9: Line 9
+10: Line 10`,
 		},
 		{
 			name: "无效起始行号",
@@ -110,9 +110,7 @@ func TestHandleReadFileWithLineRange(t *testing.T) {
 				"start_line": "20",
 				"end_line":   "30",
 			},
-			checkFunc: func(result string) bool {
-				return strings.Contains(result, "指定行范围内无内容")
-			},
+			want: "", // 空范围返回空字符串，与awk行为一致
 		},
 		{
 			name: "单行读取",
@@ -121,12 +119,7 @@ func TestHandleReadFileWithLineRange(t *testing.T) {
 				"start_line": "5",
 				"end_line":   "5",
 			},
-			checkFunc: func(result string) bool {
-				return strings.Contains(result, "第 5-5 行") &&
-					strings.Contains(result, "   5: Line 5") && // 精确匹配行号
-					!strings.Contains(result, "   4: Line 4") && // 精确匹配行号
-					!strings.Contains(result, "   6: Line 6") // 精确匹配行号
-			},
+			want: "5: Line 5",
 		},
 	}
 
@@ -147,17 +140,12 @@ func TestHandleReadFileWithLineRange(t *testing.T) {
 				return
 			}
 
-			if tt.checkFunc != nil && !tt.checkFunc(result) {
-				t.Errorf("handleReadFileWithLineRange() result validation failed")
-				t.Logf("Result:\n%s", result)
-			}
-
-			// 验证结果包含必要的统计信息
-			if !strings.Contains(result, "文件信息:") {
-				t.Errorf("Result missing file information")
-			}
-			if !strings.Contains(result, "执行统计:") {
-				t.Errorf("Result missing execution statistics")
+			// 清理结果字符串（去除末尾可能的换行符）
+			result = strings.TrimSpace(result)
+			if result != tt.want {
+				t.Errorf("handleReadFileWithLineRange() output mismatch")
+				t.Logf("Expected:\n%s", tt.want)
+				t.Logf("Got:\n%s", result)
 			}
 		})
 	}
@@ -194,45 +182,55 @@ func TestHandleReadFileWithLineRange_EdgeCases(t *testing.T) {
 
 	tests := []struct {
 		name string
-		file string
 		args map[string]string
+		want string
 	}{
 		{
 			name: "空文件读取",
-			file: "empty.txt",
 			args: map[string]string{"path": "empty.txt"},
+			want: "", // 空文件返回空字符串
 		},
 		{
 			name: "单行文件完整读取",
-			file: "single.txt",
 			args: map[string]string{"path": "single.txt"},
+			want: "1: Single line",
 		},
 		{
 			name: "大文件部分读取",
-			file: "big.txt",
 			args: map[string]string{
 				"path":       "big.txt",
 				"start_line": "500",
 				"end_line":   "510",
 			},
+			want: `500: Line 0500
+501: Line 0501
+502: Line 0502
+503: Line 0503
+504: Line 0504
+505: Line 0505
+506: Line 0506
+507: Line 0507
+508: Line 0508
+509: Line 0509
+510: Line 0510`,
 		},
 		{
 			name: "读取第一行",
-			file: "big.txt",
 			args: map[string]string{
 				"path":       "big.txt",
 				"start_line": "1",
 				"end_line":   "1",
 			},
+			want: "1: Line 0001",
 		},
 		{
 			name: "读取最后一行",
-			file: "big.txt",
 			args: map[string]string{
 				"path":       "big.txt",
 				"start_line": "1000",
 				"end_line":   "1000",
 			},
+			want: "1000: Line 1000",
 		},
 	}
 
@@ -245,16 +243,144 @@ func TestHandleReadFileWithLineRange_EdgeCases(t *testing.T) {
 				return
 			}
 
-			// 验证基本输出格式
-			if !strings.Contains(result, "📄 文件内容") {
-				t.Errorf("Result missing header")
-			}
-			if !strings.Contains(result, "文件信息:") {
-				t.Errorf("Result missing file info")
-			}
-			if !strings.Contains(result, "执行统计:") {
-				t.Errorf("Result missing execution stats")
+			// 清理结果字符串
+			result = strings.TrimSpace(result)
+			if result != tt.want {
+				t.Errorf("handleReadFileWithLineRange() output mismatch")
+				t.Logf("Expected:\n%s", tt.want)
+				t.Logf("Got:\n%s", result)
 			}
 		})
 	}
+}
+
+func TestHandleReadFileWithLineRange_AwkComparison(t *testing.T) {
+	// 创建与awk测试相同的文件
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "awk_test.txt")
+
+	// 创建25行测试文件，与之前的awk测试一致
+	var content strings.Builder
+	for i := 1; i <= 25; i++ {
+		fmt.Fprintf(&content, "Line %d\n", i)
+	}
+	if err := os.WriteFile(testFile, []byte(content.String()), 0o644); err != nil {
+		t.Fatalf("Failed to create awk test file: %v", err)
+	}
+
+	originalRoot := ProjectRoot
+	ProjectRoot = tmpDir
+	defer func() { ProjectRoot = originalRoot }()
+
+	// 测试与 awk 'NR>=10 && NR<=20 {print NR": "$0}' 完全一致
+	t.Run("与awk格式完全一致", func(t *testing.T) {
+		ctx := context.Background()
+		result, err := handleReadFileWithLineRange(ctx, map[string]string{
+			"path":       "awk_test.txt",
+			"start_line": "10",
+			"end_line":   "20",
+		})
+		if err != nil {
+			t.Fatalf("handleReadFileWithLineRange() error: %v", err)
+		}
+
+		// 期望的输出（与awk完全一致）
+		expected := `10: Line 10
+11: Line 11
+12: Line 12
+13: Line 13
+14: Line 14
+15: Line 15
+16: Line 16
+17: Line 17
+18: Line 18
+19: Line 19
+20: Line 20`
+
+		result = strings.TrimSpace(result)
+		if result != expected {
+			t.Errorf("Output does not match awk format")
+			t.Logf("Expected (awk format):\n%s", expected)
+			t.Logf("Got:\n%s", result)
+		}
+	})
+
+	// 测试其他awk常用模式
+	t.Run("awk常用模式测试", func(t *testing.T) {
+		testCases := []struct {
+			name       string
+			startLine  string
+			endLine    string
+			awkPattern string
+			expected   string
+		}{
+			{
+				name:       "前10行",
+				startLine:  "1",
+				endLine:    "10",
+				awkPattern: "NR<=10",
+				expected: `1: Line 1
+2: Line 2
+3: Line 3
+4: Line 4
+5: Line 5
+6: Line 6
+7: Line 7
+8: Line 8
+9: Line 9
+10: Line 10`,
+			},
+			{
+				name:       "最后5行",
+				startLine:  "21",
+				endLine:    "25",
+				awkPattern: "NR>=21",
+				expected: `21: Line 21
+22: Line 22
+23: Line 23
+24: Line 24
+25: Line 25`,
+			},
+			{
+				name:       "中间5行",
+				startLine:  "11",
+				endLine:    "15",
+				awkPattern: "NR>=11 && NR<=15",
+				expected: `11: Line 11
+12: Line 12
+13: Line 13
+14: Line 14
+15: Line 15`,
+			},
+			{
+				name:       "单行",
+				startLine:  "13",
+				endLine:    "13",
+				awkPattern: "NR==13",
+				expected:   "13: Line 13",
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				ctx := context.Background()
+				result, err := handleReadFileWithLineRange(ctx, map[string]string{
+					"path":       "awk_test.txt",
+					"start_line": tc.startLine,
+					"end_line":   tc.endLine,
+				})
+				if err != nil {
+					t.Errorf("handleReadFileWithLineRange() error: %v", err)
+					return
+				}
+
+				result = strings.TrimSpace(result)
+				if result != tc.expected {
+					t.Errorf("Output does not match awk pattern: %s", tc.awkPattern)
+					t.Logf("Expected (对应awk: '%s'):\n%s", tc.awkPattern, tc.expected)
+					t.Logf("Got:\n%s", result)
+				}
+			})
+		}
+	})
 }

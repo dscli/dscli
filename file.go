@@ -9,10 +9,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // handleReadFileWithLineRange 读取文件指定行范围的内容
+// 输出格式与 awk 'NR>=start && NR<=end {print NR": "$0}' 完全一致
 func handleReadFileWithLineRange(_ context.Context, args map[string]string) (string, error) {
 	path, ok := args["path"]
 	if !ok || path == "" {
@@ -46,18 +46,11 @@ func handleReadFileWithLineRange(_ context.Context, args map[string]string) (str
 	}
 
 	// 读取文件
-	startTime := time.Now()
 	file, err := os.Open(fullPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
-
-	// 获取文件信息
-	fileInfo, err := os.Stat(fullPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to fetch file information: %w", err)
-	}
 
 	// 逐行读取并过滤
 	scanner := bufio.NewScanner(file)
@@ -86,25 +79,23 @@ func handleReadFileWithLineRange(_ context.Context, args map[string]string) (str
 		return "", fmt.Errorf("failed to read file line by line: %w", err)
 	}
 
-	// 构建结果内容
+	// 构建结果内容 - 与awk格式完全一致: NR": "$0
 	var contentBuilder strings.Builder
 	if len(lines) == 0 {
-		contentBuilder.WriteString("（指定行范围内无内容）")
+		// 空范围时返回空字符串，与awk行为一致
+		return "", nil
 	} else {
 		for i, line := range lines {
 			actualLineNum := startLine + i
-			fmt.Fprintf(&contentBuilder, "%4d: %s\n", actualLineNum, line)
+			// 与 awk 'NR>=start && NR<=end {print NR": "$0}' 格式完全一致
+			fmt.Fprintf(&contentBuilder, "%d: %s\n", actualLineNum, line)
 		}
-		// 移除最后一个换行符
-		contentStr := contentBuilder.String()
-		if len(contentStr) > 0 && contentStr[len(contentStr)-1] == '\n' {
-			contentStr = contentStr[:len(contentStr)-1]
-		}
-		contentBuilder.Reset()
-		contentBuilder.WriteString(contentStr)
 	}
 
-	// 构建行范围描述
+	// 移除最后一个换行符（如果需要保持与awk完全一致，可以保留）
+	result := contentBuilder.String()
+
+	// 记录日志但不包含在返回结果中
 	rangeDesc := "完整文件"
 	if startLine > 1 || endLine > 0 {
 		if endLine > 0 {
@@ -113,36 +104,7 @@ func handleReadFileWithLineRange(_ context.Context, args map[string]string) (str
 			rangeDesc = fmt.Sprintf("第 %d 行到文件末尾", startLine)
 		}
 	}
-
-	// 构建结果
-	executionTime := time.Since(startTime)
-	result := fmt.Sprintf(`📄 文件内容 (%s):
-内容:
-%s
-
-文件信息:
-- 路径: %s
-- 大小: %d 字节
-- 总行数: %d 行
-- 读取范围: %s
-- 读取行数: %d 行
-- 权限: %s
-- 修改时间: %s
-
-📊 执行统计:
-执行时间: %v
-状态: 成功`,
-		rangeDesc,
-		contentBuilder.String(),
-		fullPath,
-		fileInfo.Size(),
-		totalLines,
-		rangeDesc,
-		len(lines),
-		fileInfo.Mode().String(),
-		fileInfo.ModTime().Format("2006-01-02 15:04:05"),
-		executionTime)
-
 	Notice("读取文件: \"%s\" (%s, %d行)", fullPath, rangeDesc, len(lines))
+
 	return result, nil
 }
