@@ -198,9 +198,9 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 	}
 	defer db.Close()
 	rows, err := db.Query(`
-		SELECT role, content, created_at
+		SELECT role, content, tool_call_id, tool_calls, created_at
 		FROM messages
-		WHERE session_id = ? AND model_id = ? AND tool_call_id IS NULL AND tool_calls is NULL
+		WHERE session_id = ? AND model_id = ? 
 		ORDER BY id ASC`, SessionID, ModelID)
 	if err != nil {
 		return nil, fmt.Errorf("查询历史消息失败: %w", err)
@@ -210,8 +210,18 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 	var messages []Message
 	for rows.Next() {
 		var m Message
-		if err := rows.Scan(&m.Role, &m.Content, &m.CreatedAt); err != nil {
+		var toolCallID, toolCalls sql.NullString
+		if err := rows.Scan(&m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt); err != nil {
 			return nil, fmt.Errorf("扫描消息失败: %w", err)
+		}
+		if toolCallID.Valid {
+			m.ToolCallID = toolCallID.String
+		}
+		if toolCalls.Valid {
+			var toolCallsData []ToolCall
+			if err := json.Unmarshal([]byte(toolCalls.String), &toolCallsData); err == nil {
+				m.ToolCalls = toolCallsData
+			}
 		}
 		messages = append(messages, m)
 	}
