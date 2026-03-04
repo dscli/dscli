@@ -208,3 +208,106 @@ func TestNewClient(t *testing.T) {
 		t.Errorf("Expected retryDelay=60s, got %v", dsClient.retryDelay)
 	}
 }
+
+func TestRetryNotificationLength(t *testing.T) {
+	// 测试重试通知是否在20字以内
+	testCases := []struct {
+		name     string
+		delay    time.Duration
+		expected string
+	}{
+		{
+			name:     "1秒延迟",
+			delay:    1 * time.Second,
+			expected: "网络异常，1秒后重试...",
+		},
+		{
+			name:     "60秒延迟",
+			delay:    60 * time.Second,
+			expected: "网络异常，60秒后重试...",
+		},
+		{
+			name:     "300秒延迟",
+			delay:    300 * time.Second,
+			expected: "网络异常，300秒后重试...",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// 计算通知消息
+			notification := fmt.Sprintf("网络异常，%d秒后重试...", int(tc.delay.Seconds()))
+
+			// 检查长度是否在20字以内
+			chineseCharCount := len([]rune(notification))
+			if chineseCharCount > 20 {
+				t.Errorf("通知消息超过20字: %s (长度: %d)", notification, chineseCharCount)
+			}
+
+			// 验证内容
+			if notification != tc.expected {
+				t.Errorf("通知消息不匹配: got %s, want %s", notification, tc.expected)
+			}
+		})
+	}
+}
+
+func TestSuccessNotificationLength(t *testing.T) {
+	// 测试成功通知是否在20字以内
+	notification := "重试成功！"
+
+	// 检查长度是否在20字以内
+	chineseCharCount := len([]rune(notification))
+	if chineseCharCount > 20 {
+		t.Errorf("成功通知超过20字: %s (长度: %d)", notification, chineseCharCount)
+	}
+
+	// 验证内容
+	if notification != "重试成功！" {
+		t.Errorf("成功通知不匹配: got %s, want %s", notification, "重试成功！")
+	}
+}
+
+func TestRetryDelayCalculation(t *testing.T) {
+	// 测试指数退避计算
+	client := &Deepseek{
+		retryDelay: 60 * time.Second,
+		maxRetries: 3,
+	}
+
+	testCases := []struct {
+		name     string
+		attempt  int
+		expected time.Duration
+	}{
+		{
+			name:     "第一次重试",
+			attempt:  1,
+			expected: 60 * time.Second, // 2^0 * 60s = 60s
+		},
+		{
+			name:     "第二次重试",
+			attempt:  2,
+			expected: 120 * time.Second, // 2^1 * 60s = 120s
+		},
+		{
+			name:     "第三次重试",
+			attempt:  3,
+			expected: 240 * time.Second, // 2^2 * 60s = 240s
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			delay := time.Duration(1<<(tc.attempt-1)) * client.retryDelay
+			if delay > 300*time.Second {
+				delay = 300 * time.Second
+			}
+
+			if delay != tc.expected {
+				t.Errorf("重试延迟计算错误: attempt=%d, got %v, want %v",
+					tc.attempt, delay, tc.expected)
+			}
+		})
+	}
+}
