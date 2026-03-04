@@ -3,8 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -253,44 +251,9 @@ func init() {
 			return
 		},
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
-			originURL, err := ShellExec(cmd.Context(), `git remote get-url origin`)
-			if err != nil {
-				return
-			}
-
-			baseURL, token, err := IssueAPIBaseURL(originURL)
+			issues, err := ListIssues(state)
 			if err != nil {
 				return err
-			}
-			url := fmt.Sprintf("%s?access_token=%s&state=%s", baseURL, token, state)
-			resp, err := http.Get(url)
-			if err != nil {
-				return err
-			}
-			defer resp.Body.Close()
-
-			// 检查HTTP状态码
-			if resp.StatusCode != http.StatusOK {
-				body, _ := io.ReadAll(resp.Body)
-				return fmt.Errorf("API请求失败 (状态码: %d): %s", resp.StatusCode, string(body))
-			}
-
-			b, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return err
-			}
-
-			// 先解析为RawIssue数组
-			var rawIssues []RawIssue
-			err = json.Unmarshal(b, &rawIssues)
-			if err != nil {
-				return fmt.Errorf("解析issue列表失败: %w", err)
-			}
-
-			// 转换为Issue数组
-			issues, err := parseRawIssues(rawIssues)
-			if err != nil {
-				return fmt.Errorf("处理issue数据失败: %w", err)
 			}
 
 			for _, issue := range issues {
@@ -320,49 +283,12 @@ func init() {
 		},
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			issueNumber := args[0]
-			originURL, err := ShellExec(cmd.Context(), `git remote get-url origin`)
-			if err != nil {
-				return
-			}
-
-			baseURL, token, err := IssueAPIBaseURL(originURL)
+			issue, err := ShowIssue(issueNumber)
 			if err != nil {
 				return err
 			}
 
-			// 构建单个issue的API URL
-			url := fmt.Sprintf("%s/%s?access_token=%s", baseURL, issueNumber, token)
-			resp, err := http.Get(url)
-			if err != nil {
-				return fmt.Errorf("请求issue失败: %w", err)
-			}
-			defer resp.Body.Close()
-
-			// 检查HTTP状态码
-			if resp.StatusCode != http.StatusOK {
-				body, _ := io.ReadAll(resp.Body)
-				return fmt.Errorf("API请求失败 (状态码: %d): %s", resp.StatusCode, string(body))
-			}
-
-			b, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return fmt.Errorf("读取响应失败: %w", err)
-			}
-
-			// 先解析为RawIssue
-			var rawIssue RawIssue
-			err = json.Unmarshal(b, &rawIssue)
-			if err != nil {
-				return fmt.Errorf("解析issue数据失败: %w", err)
-			}
-
-			// 转换为Issue
-			issue, err := parseRawIssue(rawIssue)
-			if err != nil {
-				return fmt.Errorf("处理issue数据失败: %w", err)
-			}
-
-			PrintIssue(issue, true)
+			PrintIssue(*issue, true)
 			return nil
 		},
 	}
@@ -401,86 +327,22 @@ func init() {
 				body = string(content)
 			} else {
 				// 从标准输入读取
-				stat, _ := os.Stdin.Stat()
-				if (stat.Mode() & os.ModeCharDevice) == 0 {
-					// 有标准输入数据
-					data, err := io.ReadAll(os.Stdin)
-					if err != nil {
-						return fmt.Errorf("读取标准输入失败: %w", err)
-					}
-					body = string(data)
-				}
+				body, _ = ReadBodyFromStdinOrFile("")
 			}
 
-			// 获取API信息
-			originURL, err := ShellExec(cmd.Context(), `git remote get-url origin`)
+			// 创建issue
+			issue, err := CreateIssue(CreateIssueOptions{
+				Title: title,
+				Body:  body,
+			})
 			if err != nil {
 				return err
-			}
-
-			baseURL, token, err := IssueAPIBaseURL(originURL)
-			if err != nil {
-				return err
-			}
-
-			// 准备请求数据
-			requestData := map[string]any{
-				"title": title,
-			}
-			if body != "" {
-				requestData["body"] = body
-			}
-
-			// 转换为JSON
-			jsonData, err := json.Marshal(requestData)
-			if err != nil {
-				return fmt.Errorf("序列化请求数据失败: %w", err)
-			}
-
-			// 发送POST请求
-			url := fmt.Sprintf("%s?access_token=%s", baseURL, token)
-			req, err := http.NewRequest("POST", url, strings.NewReader(string(jsonData)))
-			if err != nil {
-				return fmt.Errorf("创建请求失败: %w", err)
-			}
-			req.Header.Set("Content-Type", "application/json")
-
-			client := &http.Client{}
-			resp, err := client.Do(req)
-			if err != nil {
-				return fmt.Errorf("发送请求失败: %w", err)
-			}
-			defer resp.Body.Close()
-
-			// 检查HTTP状态码
-			if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-				body, _ := io.ReadAll(resp.Body)
-				return fmt.Errorf("创建issue失败 (状态码: %d): %s", resp.StatusCode, string(body))
-			}
-
-			// 解析响应
-			b, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return fmt.Errorf("读取响应失败: %w", err)
-			}
-
-			// 解析为RawIssue
-			var rawIssue RawIssue
-			err = json.Unmarshal(b, &rawIssue)
-			if err != nil {
-				return fmt.Errorf("解析响应数据失败: %w", err)
-			}
-
-			// 转换为Issue
-			issue, err := parseRawIssue(rawIssue)
-			if err != nil {
-				return fmt.Errorf("处理issue数据失败: %w", err)
 			}
 
 			// 显示创建结果
 			Println("✅ Issue 创建成功!")
 			Println()
-			PrintIssue(issue, true)
+			PrintIssue(*issue, true)
 			return nil
 		},
 	}
@@ -489,6 +351,7 @@ func init() {
 	createCmd.Flags().StringVarP(&bodyFlag, "body", "b", "", "issue内容")
 	createCmd.Flags().StringVarP(&fileFlag, "file", "f", "", "从文件读取内容")
 	createCmd.MarkFlagRequired("title")
+
 	// update命令的变量定义
 	var (
 		updateTitle string
@@ -551,90 +414,21 @@ func init() {
 				body = string(content)
 			}
 
-			// 获取API信息
-			originURL, err := ShellExec(cmd.Context(), `git remote get-url origin`)
+			// 更新issue
+			issue, err := UpdateIssue(UpdateIssueOptions{
+				Number: issueNumber,
+				Title:  updateTitle,
+				Body:   body,
+				State:  updateState,
+			})
 			if err != nil {
 				return err
-			}
-
-			baseURL, token, err := IssueAPIBaseURL(originURL)
-			if err != nil {
-				return err
-			}
-
-			// 准备请求数据
-			requestData := make(map[string]any)
-			if updateTitle != "" {
-				requestData["title"] = updateTitle
-			}
-			if body != "" {
-				requestData["body"] = body
-			}
-			if updateState != "" {
-				// GitCode API 使用 "state_event" 而不是 "state"
-				// 并且值应该是 "close" 而不是 "closed"
-				if updateState == "closed" {
-					requestData["state_event"] = "close"
-				} else if updateState == "open" {
-					requestData["state_event"] = "reopen"
-				}
-			}
-
-			// 如果没有提供任何更新字段，直接返回
-			if len(requestData) == 0 {
-				return fmt.Errorf("没有提供有效的更新字段")
-			}
-
-			// 转换为JSON
-			jsonData, err := json.Marshal(requestData)
-			if err != nil {
-				return fmt.Errorf("序列化请求数据失败: %w", err)
-			}
-
-			// 发送PATCH请求
-			url := fmt.Sprintf("%s/%s?access_token=%s", baseURL, issueNumber, token)
-			req, err := http.NewRequest("PATCH", url, strings.NewReader(string(jsonData)))
-			if err != nil {
-				return fmt.Errorf("创建请求失败: %w", err)
-			}
-			req.Header.Set("Content-Type", "application/json")
-
-			client := &http.Client{}
-			resp, err := client.Do(req)
-			if err != nil {
-				return fmt.Errorf("发送请求失败: %w", err)
-			}
-			defer resp.Body.Close()
-
-			// 检查HTTP状态码
-			if resp.StatusCode != http.StatusOK {
-				body, _ := io.ReadAll(resp.Body)
-				return fmt.Errorf("更新issue失败 (状态码: %d): %s", resp.StatusCode, string(body))
-			}
-
-			// 解析响应
-			b, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return fmt.Errorf("读取响应失败: %w", err)
-			}
-
-			// 解析为RawIssue
-			var rawIssue RawIssue
-			err = json.Unmarshal(b, &rawIssue)
-			if err != nil {
-				return fmt.Errorf("解析响应数据失败: %w", err)
-			}
-
-			// 转换为Issue
-			issue, err := parseRawIssue(rawIssue)
-			if err != nil {
-				return fmt.Errorf("处理issue数据失败: %w", err)
 			}
 
 			// 显示更新结果
 			Println("✅ Issue 更新成功!")
 			Println()
-			PrintIssue(issue, true)
+			PrintIssue(*issue, true)
 			return nil
 		},
 	}
@@ -663,73 +457,15 @@ func init() {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			issueNumber := args[0]
-
-			// 获取API信息
-			originURL, err := ShellExec(cmd.Context(), `git remote get-url origin`)
+			issue, err := CloseIssue(issueNumber)
 			if err != nil {
 				return err
-			}
-
-			baseURL, token, err := IssueAPIBaseURL(originURL)
-			if err != nil {
-				return err
-			}
-
-			// 准备请求数据 - 关闭issue
-			requestData := map[string]any{
-				"state_event": "close",
-			}
-
-			// 转换为JSON
-			jsonData, err := json.Marshal(requestData)
-			if err != nil {
-				return fmt.Errorf("序列化请求数据失败: %w", err)
-			}
-
-			// 发送PATCH请求
-			url := fmt.Sprintf("%s/%s?access_token=%s", baseURL, issueNumber, token)
-			req, err := http.NewRequest("PATCH", url, strings.NewReader(string(jsonData)))
-			if err != nil {
-				return fmt.Errorf("创建请求失败: %w", err)
-			}
-			req.Header.Set("Content-Type", "application/json")
-
-			client := &http.Client{}
-			resp, err := client.Do(req)
-			if err != nil {
-				return fmt.Errorf("发送请求失败: %w", err)
-			}
-			defer resp.Body.Close()
-
-			// 检查HTTP状态码
-			if resp.StatusCode != http.StatusOK {
-				body, _ := io.ReadAll(resp.Body)
-				return fmt.Errorf("关闭issue失败 (状态码: %d): %s", resp.StatusCode, string(body))
-			}
-
-			// 解析响应
-			b, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return fmt.Errorf("读取响应失败: %w", err)
-			}
-
-			// 解析为RawIssue
-			var rawIssue RawIssue
-			err = json.Unmarshal(b, &rawIssue)
-			if err != nil {
-				return fmt.Errorf("解析响应数据失败: %w", err)
-			}
-
-			// 转换为Issue
-			issue, err := parseRawIssue(rawIssue)
-			if err != nil {
-				return fmt.Errorf("处理issue数据失败: %w", err)
 			}
 
 			// 显示关闭结果
 			Println("✅ Issue 已关闭!")
 			Println()
-			PrintIssue(issue, true)
+			PrintIssue(*issue, true)
 			return nil
 		},
 	}
@@ -753,73 +489,15 @@ func init() {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			issueNumber := args[0]
-
-			// 获取API信息
-			originURL, err := ShellExec(cmd.Context(), `git remote get-url origin`)
+			issue, err := ReopenIssue(issueNumber)
 			if err != nil {
 				return err
-			}
-
-			baseURL, token, err := IssueAPIBaseURL(originURL)
-			if err != nil {
-				return err
-			}
-
-			// 准备请求数据 - 重新打开issue
-			requestData := map[string]any{
-				"state_event": "reopen",
-			}
-
-			// 转换为JSON
-			jsonData, err := json.Marshal(requestData)
-			if err != nil {
-				return fmt.Errorf("序列化请求数据失败: %w", err)
-			}
-
-			// 发送PATCH请求
-			url := fmt.Sprintf("%s/%s?access_token=%s", baseURL, issueNumber, token)
-			req, err := http.NewRequest("PATCH", url, strings.NewReader(string(jsonData)))
-			if err != nil {
-				return fmt.Errorf("创建请求失败: %w", err)
-			}
-			req.Header.Set("Content-Type", "application/json")
-
-			client := &http.Client{}
-			resp, err := client.Do(req)
-			if err != nil {
-				return fmt.Errorf("发送请求失败: %w", err)
-			}
-			defer resp.Body.Close()
-
-			// 检查HTTP状态码
-			if resp.StatusCode != http.StatusOK {
-				body, _ := io.ReadAll(resp.Body)
-				return fmt.Errorf("重新打开issue失败 (状态码: %d): %s", resp.StatusCode, string(body))
-			}
-
-			// 解析响应
-			b, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return fmt.Errorf("读取响应失败: %w", err)
-			}
-
-			// 解析为RawIssue
-			var rawIssue RawIssue
-			err = json.Unmarshal(b, &rawIssue)
-			if err != nil {
-				return fmt.Errorf("解析响应数据失败: %w", err)
-			}
-
-			// 转换为Issue
-			issue, err := parseRawIssue(rawIssue)
-			if err != nil {
-				return fmt.Errorf("处理issue数据失败: %w", err)
 			}
 
 			// 显示重新打开结果
 			Println("✅ Issue 已重新打开!")
 			Println()
-			PrintIssue(issue, true)
+			PrintIssue(*issue, true)
 			return nil
 		},
 	}
@@ -844,78 +522,15 @@ func init() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			issueNumber := args[0]
 			username := args[1]
-
-			// 获取API信息
-			originURL, err := ShellExec(cmd.Context(), `git remote get-url origin`)
+			issue, err := AssignIssue(issueNumber, username)
 			if err != nil {
 				return err
-			}
-
-			baseURL, token, err := IssueAPIBaseURL(originURL)
-			if err != nil {
-				return err
-			}
-
-			// 首先需要获取用户的ID
-			// 这里简化处理，假设username就是用户ID
-			// 在实际应用中，可能需要先查询用户ID
-			assigneeID := username
-
-			// 准备请求数据 - 分配issue
-			requestData := map[string]any{
-				"assignee_ids": []string{assigneeID},
-			}
-
-			// 转换为JSON
-			jsonData, err := json.Marshal(requestData)
-			if err != nil {
-				return fmt.Errorf("序列化请求数据失败: %w", err)
-			}
-
-			// 发送PUT请求（GitLab API使用PUT来更新assignee）
-			url := fmt.Sprintf("%s/%s?access_token=%s", baseURL, issueNumber, token)
-			req, err := http.NewRequest("PUT", url, strings.NewReader(string(jsonData)))
-			if err != nil {
-				return fmt.Errorf("创建请求失败: %w", err)
-			}
-			req.Header.Set("Content-Type", "application/json")
-
-			client := &http.Client{}
-			resp, err := client.Do(req)
-			if err != nil {
-				return fmt.Errorf("发送请求失败: %w", err)
-			}
-			defer resp.Body.Close()
-
-			// 检查HTTP状态码
-			if resp.StatusCode != http.StatusOK {
-				body, _ := io.ReadAll(resp.Body)
-				return fmt.Errorf("分配issue失败 (状态码: %d): %s", resp.StatusCode, string(body))
-			}
-
-			// 解析响应
-			b, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return fmt.Errorf("读取响应失败: %w", err)
-			}
-
-			// 解析为RawIssue
-			var rawIssue RawIssue
-			err = json.Unmarshal(b, &rawIssue)
-			if err != nil {
-				return fmt.Errorf("解析响应数据失败: %w", err)
-			}
-
-			// 转换为Issue
-			issue, err := parseRawIssue(rawIssue)
-			if err != nil {
-				return fmt.Errorf("处理issue数据失败: %w", err)
 			}
 
 			// 显示分配结果
 			Println("✅ Issue 已分配给用户!")
 			Println()
-			PrintIssue(issue, true)
+			PrintIssue(*issue, true)
 			return nil
 		},
 	}
@@ -983,7 +598,6 @@ func IssueAPIBaseURL(originURL string) (baseURL string, token string, err error)
 		err = fmt.Errorf("no token found for %s in ~/.netrc", host)
 		return
 	}
-
 	baseURL = fmt.Sprintf("https://%s/repos/%s/%s/issues",
 		apiHost, owner, repo)
 	return
