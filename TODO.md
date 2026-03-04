@@ -149,29 +149,29 @@
   - 相关函数：需要实现新的命令处理函数
   - 难度：简单
 
-- [~] **任务1.15.3：添加 issue assign 快捷命令** 🔄 **部分完成**
+- [~] **任务1.15.3：添加 issue assign 快捷命令** 🔄 **基本完成**
   - 文件：`issue.go`, `issue_test.go`
   - 描述：添加分配 issue 给指定用户的命令
   - 功能：
     - ✅ 基础命令结构：`dscli issue assign 123 username`
-    - ❌ API 集成：需要 GitCode API 支持 assignee_ids 字段
-    - ❌ 用户验证：验证目标用户是否存在
-    - ❌ 取消分配：支持取消已分配的负责人
-  - 相关函数：需要实现新的命令处理函数
+    - ✅ API 集成：实现了 assignee_ids 字段支持
+    - ⬜ 用户验证：验证目标用户是否存在（当前简化处理）
+    - ⬜ 取消分配：支持取消已分配的负责人
+  - 相关函数：已实现 assign 命令处理函数
   - 难度：中等（依赖 API 支持）
-  - 备注：当前为占位符实现，需要进一步研究 GitCode API 的 assign 接口
+  - 备注：已实现基本功能，需要进一步测试和优化
   - 优先级：高（提升用户体验）
   - 依赖：任务1.15.1 完成后的状态更新功能
 
-- [ ] **任务1.15.3：增强 issue list 命令的过滤功能**
+- [ ] **任务1.15.4：增强 issue list 命令的过滤功能**
   - 文件：`issue.go`, `issue_test.go`
   - 描述：为 list 命令添加更多过滤选项
   - 功能：
-    - ✅ 按标签过滤：`dscli issue list --label bug,enhancement`
-    - ✅ 按作者过滤：`dscli issue list --author username`
-    - ✅ 按负责人过滤：`dscli issue list --assignee username`
-    - ✅ 按时间范围过滤：`dscli issue list --since "2024-01-01" --until "2024-12-31"`
-    - ✅ 组合过滤：支持多个过滤条件的组合
+    - ⬜ 按标签过滤：`dscli issue list --label bug,enhancement`
+    - ⬜ 按作者过滤：`dscli issue list --author username`
+    - ⬜ 按负责人过滤：`dscli issue list --assignee username`
+    - ⬜ 按时间范围过滤：`dscli issue list --since "2024-01-01" --until "2024-12-31"`
+    - ⬜ 组合过滤：支持多个过滤条件的组合
   - 相关函数：需要扩展现有的 list 命令处理逻辑
   - 难度：中等
   - 优先级：中（提高查询效率）
