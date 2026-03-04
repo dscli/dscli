@@ -138,7 +138,7 @@
   - 优先级：高（核心缺失功能）
   - 依赖：现有 issue 基础架构已就绪
 
-- [ ] **任务1.15.2：添加 issue close 和 reopen 快捷命令**
+- [x] **任务1.15.2：添加 issue close 和 reopen 快捷命令** ✅ **已完成**
   - 文件：`issue.go`, `issue_test.go`
   - 描述：添加快速关闭和重新打开 issue 的命令
   - 功能：

@@ -644,7 +644,198 @@ func init() {
 	updateCmd.Flags().StringVarP(&updateState, "state", "s", "", "更新issue状态（open/closed）")
 	updateCmd.Flags().StringVarP(&updateFile, "file", "f", "", "从文件读取内容")
 
-	issueCmd.AddCommand(listCmd, showCmd, updateCmd, createCmd)
+	// close命令
+	closeCmd := &cobra.Command{
+		Use:   "close <number>",
+		Short: "关闭指定的issue",
+		Long: `关闭指定的issue。
+
+示例:
+  dscli issue close 123`,
+		Args: cobra.ExactArgs(1), // 必须且只能有一个参数
+		PreRunE: func(cmd *cobra.Command, args []string) (err error) {
+			// 验证参数是否为有效的数字
+			issueNumber := args[0]
+			if _, err := strconv.Atoi(issueNumber); err != nil {
+				return fmt.Errorf("issue编号必须是数字，收到: %s", issueNumber)
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			issueNumber := args[0]
+
+			// 获取API信息
+			originURL, err := ShellExec(cmd.Context(), `git remote get-url origin`)
+			if err != nil {
+				return err
+			}
+
+			baseURL, token, err := IssueAPIBaseURL(originURL)
+			if err != nil {
+				return err
+			}
+
+			// 准备请求数据 - 关闭issue
+			requestData := map[string]any{
+				"state_event": "close",
+			}
+
+			// 转换为JSON
+			jsonData, err := json.Marshal(requestData)
+			if err != nil {
+				return fmt.Errorf("序列化请求数据失败: %w", err)
+			}
+
+			// 发送PATCH请求
+			url := fmt.Sprintf("%s/%s?access_token=%s", baseURL, issueNumber, token)
+			req, err := http.NewRequest("PATCH", url, strings.NewReader(string(jsonData)))
+			if err != nil {
+				return fmt.Errorf("创建请求失败: %w", err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				return fmt.Errorf("发送请求失败: %w", err)
+			}
+			defer resp.Body.Close()
+
+			// 检查HTTP状态码
+			if resp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(resp.Body)
+				return fmt.Errorf("关闭issue失败 (状态码: %d): %s", resp.StatusCode, string(body))
+			}
+
+			// 解析响应
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return fmt.Errorf("读取响应失败: %w", err)
+			}
+
+			// 解析为RawIssue
+			var rawIssue RawIssue
+			err = json.Unmarshal(b, &rawIssue)
+			if err != nil {
+				return fmt.Errorf("解析响应数据失败: %w", err)
+			}
+
+			// 转换为Issue
+			issue, err := parseRawIssue(rawIssue)
+			if err != nil {
+				return fmt.Errorf("处理issue数据失败: %w", err)
+			}
+
+			// 显示关闭结果
+			Println("✅ Issue 已关闭!")
+			Println()
+			PrintIssue(issue, true)
+			return nil
+		},
+	}
+
+	// reopen命令
+	reopenCmd := &cobra.Command{
+		Use:   "reopen <number>",
+		Short: "重新打开指定的issue",
+		Long: `重新打开指定的issue。
+
+示例:
+  dscli issue reopen 123`,
+		Args: cobra.ExactArgs(1), // 必须且只能有一个参数
+		PreRunE: func(cmd *cobra.Command, args []string) (err error) {
+			// 验证参数是否为有效的数字
+			issueNumber := args[0]
+			if _, err := strconv.Atoi(issueNumber); err != nil {
+				return fmt.Errorf("issue编号必须是数字，收到: %s", issueNumber)
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			issueNumber := args[0]
+
+			// 获取API信息
+			originURL, err := ShellExec(cmd.Context(), `git remote get-url origin`)
+			if err != nil {
+				return err
+			}
+
+			baseURL, token, err := IssueAPIBaseURL(originURL)
+			if err != nil {
+				return err
+			}
+
+			// 准备请求数据 - 重新打开issue
+			requestData := map[string]any{
+				"state_event": "reopen",
+			}
+
+			// 转换为JSON
+			jsonData, err := json.Marshal(requestData)
+			if err != nil {
+				return fmt.Errorf("序列化请求数据失败: %w", err)
+			}
+
+			// 发送PATCH请求
+			url := fmt.Sprintf("%s/%s?access_token=%s", baseURL, issueNumber, token)
+			req, err := http.NewRequest("PATCH", url, strings.NewReader(string(jsonData)))
+			if err != nil {
+				return fmt.Errorf("创建请求失败: %w", err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				return fmt.Errorf("发送请求失败: %w", err)
+			}
+			defer resp.Body.Close()
+
+			// 检查HTTP状态码
+			if resp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(resp.Body)
+				return fmt.Errorf("重新打开issue失败 (状态码: %d): %s", resp.StatusCode, string(body))
+			}
+
+			// 解析响应
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return fmt.Errorf("读取响应失败: %w", err)
+			}
+
+			// 解析为RawIssue
+			var rawIssue RawIssue
+			err = json.Unmarshal(b, &rawIssue)
+			if err != nil {
+				return fmt.Errorf("解析响应数据失败: %w", err)
+			}
+
+			// 转换为Issue
+			issue, err := parseRawIssue(rawIssue)
+			if err != nil {
+				return fmt.Errorf("处理issue数据失败: %w", err)
+			}
+
+			// 显示重新打开结果
+			Println("✅ Issue 已重新打开!")
+			Println()
+			PrintIssue(issue, true)
+			return nil
+		},
+	}
+
+	// assign命令 - 简化实现
+	assignCmd := &cobra.Command{
+		Use:   "assign <number> <username>",
+		Short: "分配issue给指定用户",
+		Long:  "分配issue给指定用户。\n\n示例:\n  dscli issue assign 123 username",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return fmt.Errorf("assign命令暂未实现")
+		},
+	}
+
+	issueCmd.AddCommand(listCmd, showCmd, updateCmd, createCmd, closeCmd, reopenCmd, assignCmd)
 }
 
 func IssueAPIBaseURL(originURL string) (baseURL string, token string, err error) {
