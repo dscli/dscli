@@ -200,13 +200,14 @@ func TestNewClient(t *testing.T) {
 	}
 
 	// 验证默认重试配置
+	// 验证默认重试配置
 	dsClient := client.(*Deepseek)
-	if dsClient.maxRetries != 3 {
-		t.Errorf("Expected maxRetries=3, got %d", dsClient.maxRetries)
+	if dsClient.maxRetries != 600 {
+		t.Errorf("Expected maxRetries=600, got %d", dsClient.maxRetries)
 	}
 
-	if dsClient.retryDelay != 60*time.Second {
-		t.Errorf("Expected retryDelay=60s, got %v", dsClient.retryDelay)
+	if dsClient.retryDelay != 10*time.Second {
+		t.Errorf("Expected retryDelay=10s, got %v", dsClient.retryDelay)
 	}
 }
 

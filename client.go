@@ -26,16 +26,25 @@ type Client interface {
 	Chat(model string, messages []Message, tools []Tool) (*ChatResponse, error)
 }
 
-// NewClient 创建客户端（默认带重试机制）
+// httpClient 单例HTTP客户端，避免创建多个连接池
+// 超时设置为10分钟，适应DeepSeek API长处理时间的特性
+var httpClient = &http.Client{
+	Timeout: 600 * time.Second,
+}
+
+// 重试配置：
+//   - 最大重试次数：600次（支持长时间网络中断场景，如移动办公）
+//   - 重试延迟：10秒初始延迟，使用指数退避，最大延迟5分钟
+//   - 总重试时间：理论最长约50小时，实际使用中很少达到上限
 func NewClient(apiKey, baseURL string) Client {
 	// 默认重试配置
-	maxRetries := 3
-	retryDelay := 60 * time.Second
+	maxRetries := 600
+	retryDelay := 10 * time.Second
 
 	return &Deepseek{
 		apiKey:     apiKey,
 		baseURL:    baseURL,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		httpClient: httpClient,
 		maxRetries: maxRetries,
 		retryDelay: retryDelay,
 	}
