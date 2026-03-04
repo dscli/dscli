@@ -9,23 +9,14 @@ import (
 	"time"
 )
 
-func TestNewClientWithRetry(t *testing.T) {
-	// 测试创建带重试的客户端
-	client := NewClientWithRetry("test-key", "https://api.example.com", 3, 60*time.Second)
-
-	// 验证客户端类型
-	if _, ok := client.(*Deepseek); !ok {
-		t.Errorf("Expected *Deepseek, got %T", client)
-	}
-
-	// 验证最大重试次数
-	dsClient := client.(*Deepseek)
-	if dsClient.maxRetries != 3 {
-		t.Errorf("Expected maxRetries=3, got %d", dsClient.maxRetries)
-	}
-
-	if dsClient.retryDelay != 60*time.Second {
-		t.Errorf("Expected retryDelay=60s, got %v", dsClient.retryDelay)
+// newTestClient 创建测试用的客户端，使用较短的重试延迟
+func newTestClient(apiKey, baseURL string) *Deepseek {
+	return &Deepseek{
+		apiKey:     apiKey,
+		baseURL:    baseURL,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+		maxRetries: 3,
+		retryDelay: 100 * time.Millisecond, // 测试使用较短延迟
 	}
 }
 
@@ -119,12 +110,12 @@ func TestRetryLogic(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// 创建带重试的客户端
-	client := NewClientWithRetry("test-key", server.URL, 3, 100*time.Millisecond).(*Deepseek)
+	// 创建测试客户端
+	client := newTestClient("test-key", server.URL)
 
 	// 发送请求
 	var result map[string]string
-	err := client.doRequestWithRetry("GET", "/test", nil, &result)
+	err := client.doRequest("GET", "/test", nil, &result)
 	if err != nil {
 		t.Errorf("Expected success after retries, got error: %v", err)
 	}
@@ -148,24 +139,24 @@ func TestMaxRetriesExceeded(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// 创建带重试的客户端（最大重试2次）
-	client := NewClientWithRetry("test-key", server.URL, 2, 100*time.Millisecond).(*Deepseek)
+	// 创建测试客户端
+	client := newTestClient("test-key", server.URL)
 
 	// 发送请求
 	var result map[string]string
-	err := client.doRequestWithRetry("GET", "/test", nil, &result)
+	err := client.doRequest("GET", "/test", nil, &result)
 
 	if err == nil {
 		t.Error("Expected error after max retries, got nil")
 	}
 
-	// 应该尝试了3次（初始请求 + 2次重试）
-	if attempts != 3 {
-		t.Errorf("Expected 3 attempts (initial + 2 retries), got %d", attempts)
+	// 应该尝试了4次（初始请求 + 3次重试）
+	if attempts != 4 {
+		t.Errorf("Expected 4 attempts (initial + 3 retries), got %d", attempts)
 	}
 
 	// 检查错误消息
-	expectedErr := "经过2次重试后仍然失败"
+	expectedErr := "经过3次重试后仍然失败"
 	if !strings.Contains(err.Error(), expectedErr) {
 		t.Errorf("Expected error to contain '%s', got: %v", expectedErr, err)
 	}
@@ -181,12 +172,12 @@ func TestNonRetryableError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// 创建带重试的客户端
-	client := NewClientWithRetry("test-key", server.URL, 3, 100*time.Millisecond).(*Deepseek)
+	// 创建测试客户端
+	client := newTestClient("test-key", server.URL)
 
 	// 发送请求
 	var result map[string]string
-	err := client.doRequestWithRetry("GET", "/test", nil, &result)
+	err := client.doRequest("GET", "/test", nil, &result)
 
 	if err == nil {
 		t.Error("Expected error for bad request, got nil")
@@ -195,5 +186,25 @@ func TestNonRetryableError(t *testing.T) {
 	// 400错误不可重试，应该只尝试1次
 	if attempts != 1 {
 		t.Errorf("Expected 1 attempt (no retry for 400), got %d", attempts)
+	}
+}
+
+func TestNewClient(t *testing.T) {
+	// 测试创建客户端
+	client := NewClient("test-key", "https://api.example.com")
+
+	// 验证客户端类型
+	if _, ok := client.(*Deepseek); !ok {
+		t.Errorf("Expected *Deepseek, got %T", client)
+	}
+
+	// 验证默认重试配置
+	dsClient := client.(*Deepseek)
+	if dsClient.maxRetries != 3 {
+		t.Errorf("Expected maxRetries=3, got %d", dsClient.maxRetries)
+	}
+
+	if dsClient.retryDelay != 60*time.Second {
+		t.Errorf("Expected retryDelay=60s, got %v", dsClient.retryDelay)
 	}
 }

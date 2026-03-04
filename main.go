@@ -167,8 +167,7 @@ func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 		url = "https://api.deepseek.com" // 默认值
 	}
 
-	// 使用带重试的客户端
-	DeepseekClient = createClientWithRetry(key, url)
+	DeepseekClient = NewClient(key, url)
 	return nil
 }
 

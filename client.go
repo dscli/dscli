@@ -26,25 +26,11 @@ type Client interface {
 	Chat(model string, messages []Message, tools []Tool) (*ChatResponse, error)
 }
 
-// NewClient 创建默认客户端（无重试）
+// NewClient 创建客户端（默认带重试机制）
 func NewClient(apiKey, baseURL string) Client {
-	return &Deepseek{
-		apiKey:     apiKey,
-		baseURL:    baseURL,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
-		maxRetries: 0, // 默认不重试
-		retryDelay: 60 * time.Second,
-	}
-}
-
-// NewClientWithRetry 创建带重试功能的客户端
-func NewClientWithRetry(apiKey, baseURL string, maxRetries int, retryDelay time.Duration) Client {
-	if maxRetries < 0 {
-		maxRetries = 0
-	}
-	if retryDelay <= 0 {
-		retryDelay = 60 * time.Second
-	}
+	// 默认重试配置
+	maxRetries := 3
+	retryDelay := 60 * time.Second
 
 	return &Deepseek{
 		apiKey:     apiKey,
@@ -147,8 +133,8 @@ func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (e
 	return
 }
 
-// doRequestWithRetry 带重试的请求方法
-func (c *Deepseek) doRequestWithRetry(method, path string, body any, result any) (err error) {
+// doRequest 请求方法（自动重试）
+func (c *Deepseek) doRequest(method, path string, body any, result any) (err error) {
 	var lastErr error
 
 	for attempt := 0; attempt <= c.maxRetries; attempt++ {
@@ -159,7 +145,8 @@ func (c *Deepseek) doRequestWithRetry(method, path string, body any, result any)
 				delay = 300 * time.Second
 			}
 
-			fmt.Printf("网络请求失败，%d秒后重试（第%d次重试）...\n", int(delay.Seconds()), attempt)
+			// 简洁通知用户（不超过20字）
+			fmt.Printf("网络异常，%d秒后重试...\n", int(delay.Seconds()))
 			time.Sleep(delay)
 		}
 
@@ -186,14 +173,6 @@ func (c *Deepseek) doRequestWithRetry(method, path string, body any, result any)
 		return fmt.Errorf("经过%d次重试后仍然失败，最后错误: %w", c.maxRetries, lastErr)
 	}
 	return lastErr
-}
-
-// doRequest 请求方法（兼容原有接口，根据配置决定是否重试）
-func (c *Deepseek) doRequest(method, path string, body any, result any) (err error) {
-	if c.maxRetries > 0 {
-		return c.doRequestWithRetry(method, path, body, result)
-	}
-	return c.doRequestSingle(method, path, body, result)
 }
 
 // Models 获取模型列表
