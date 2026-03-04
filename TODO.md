@@ -21,9 +21,9 @@
     - `fim.go` → 需要 `fim_test.go`
     - `models.go` → 需要 `models_test.go`
     - `prompt.go` → 需要 `prompt_test.go`
-    - `skills.go` → 需要 `skills_test.go`（已有，但skills.go不存在）
+    - `skills.go` → 已创建，需要实现功能（已有 `skills_test.go`）
     - `types.go` → 需要 `types_test.go`
-    - `version.go` → 需要 `version_test.go`
+    - `version.go` → 已添加 `version_test.go` ✅
   - 难度：简单到中等
 
 ### 基础任务1：工具增强与可靠性校验
@@ -470,11 +470,16 @@
   - 描述：完善skills系统，支持技能管理和应用
   - 功能：
     - ✅ 技能定义和注册
-    - ✅ 技能自动匹配和应用
-    - ✅ 技能优先级和冲突解决
-    - ✅ 技能效果评估和优化
-  - 相关函数：需要实现完整的skills系统
-  - 难度：困难
+    - ✅ 技能数据库表结构
+    - ✅ 技能测试框架
+    - ✅ 技能命令框架（增删改查子命令）
+    - ⬜ 技能CRUD实现
+    - ⬜ 技能搜索和匹配
+    - ⬜ 项目技能管理
+    - ⬜ 技能导入导出
+    - ⬜ 技能统计功能
+  - 相关函数：`PrintSkill`, `parseSkillContent`, `formatSkillContent`
+  - 难度：中等
   - 优先级：高
 
 - [ ] **任务1.18：配置reasoner为chat的工具**
