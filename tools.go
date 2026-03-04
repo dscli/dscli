@@ -241,7 +241,7 @@ func handleSearchFiles(ctx context.Context, args map[string]string) (string, err
 	// 处理空结果
 	script += ` || echo "未找到匹配的文件"`
 
-	return runBash(ctx, script)
+	return runShell(ctx, script)
 }
 
 // gitCommand 执行git命令（直接使用exec.Command）
@@ -468,8 +468,8 @@ func handleShell(ctx context.Context, args map[string]string) (out string, err e
 	if !ok {
 		script = ""
 	}
-	Notice("Shell: %s", ShortenScript(script))
-	out, err = runBash(ctx, script)
+	Notice("Shell: %s", ShortenShellScript(script))
+	out, err = runShell(ctx, script)
 	return
 }
 
@@ -485,11 +485,11 @@ func handlePython(ctx context.Context, args map[string]string) (out string, err 
 		script = "#!/usr/bin/env python3\n" + script
 	}
 
-	out, err = runBash(ctx, script)
+	out, err = runShell(ctx, script)
 	return
 }
 
-func ShortenScript(script string) string {
+func ShortenShellScript(script string) string {
 	script = strings.ReplaceAll(script, ProjectRoot, ".")
 	// 处理空字符串
 	if script == "" {
@@ -565,7 +565,7 @@ func shellExec(cxt context.Context, script string, name string, arg []string) (o
 	return out, nil
 }
 
-func runBash(ctx context.Context, script string) (result string, err error) {
+func runShell(ctx context.Context, script string) (result string, err error) {
 	startTime := time.Now()
 	name, arg := Shebang(script)
 
@@ -608,7 +608,7 @@ func handleSqlite(ctx context.Context, args map[string]string) (string, error) {
 	fullScript := fmt.Sprintf("#!/usr/bin/env sqlite3 %s\n%s", DBPath, script)
 
 	// 使用现有的runBash执行
-	return runBash(ctx, fullScript)
+	return runShell(ctx, fullScript)
 }
 
 // handleDscliChatReload 重新加载运行 dscli chat --reload

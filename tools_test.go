@@ -173,7 +173,7 @@ func TestShuffleExported(t *testing.T) {
 	}
 }
 
-func TestShortenScript(t *testing.T) {
+func TestShortenShellScript(t *testing.T) {
 	tests := []struct {
 		name   string
 		script string
@@ -257,16 +257,16 @@ echo "执行完成"
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ShortenScript(tt.script)
+			got := ShortenShellScript(tt.script)
 			if got != tt.want {
-				t.Errorf("ShortenScript() = %v, want %v", got, tt.want)
+				t.Errorf("ShortenShellScript() = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-// TestShortenScriptEdgeCases 测试边界情况
-func TestShortenScriptEdgeCases(t *testing.T) {
+// TestShortenShellScriptEdgeCases 测试边界情况
+func TestShortenShellScriptEdgeCases(t *testing.T) {
 	tests := []struct {
 		name   string
 		script string
@@ -319,9 +319,9 @@ echo "第八行：测试完成"`,
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ShortenScript(tt.script)
+			got := ShortenShellScript(tt.script)
 			if got != tt.want {
-				t.Errorf("ShortenScript() = %v, want %v", got, tt.want)
+				t.Errorf("ShortenShellScript() = %v, want %v", got, tt.want)
 			}
 		})
 	}

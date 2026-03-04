@@ -424,7 +424,7 @@ func init() {
 			}
 
 			// 准备请求数据
-			requestData := map[string]interface{}{
+			requestData := map[string]any{
 				"title": title,
 			}
 			if body != "" {
