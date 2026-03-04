@@ -81,6 +81,19 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 
+	// 检查是否有历史记录，并且最后一个历史记录包含工具调用
+	if len(history) > 0 {
+		lastHist := history[len(history)-1]
+		tcs := lastHist.ToolCalls
+		if len(tcs) > 0 {
+			ctx = WithToolCallNames(ctx, tcs)
+			toolInputs := HandleToolCalls(ctx, tcs)
+			if len(toolInputs) > 0 {
+				return ChatRound(ctx, prompts, skills, history, toolInputs...)
+			}
+		}
+	}
+
 	// 如果是重载进程，需要特殊处理
 	if reload {
 		return handleReload(ctx, prompts, skills, history)
@@ -116,7 +129,7 @@ func handleReload(ctx context.Context, prompts []Message, skills []Message, hist
 	toolInputs := HandleToolCalls(ctx, tcs)
 
 	// 移除最后一个assistant消息（因为它包含未完成的工具调用）
-	newHistory := make([]Message, 0, len(history)-1)
+	newHistory := make([]Message, 0, max(0, len(history)-1))
 	for _, msg := range history {
 		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
 			// 跳过这个未完成的消息
@@ -175,6 +188,7 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 	messages := make([]Message, 0, len(history)+len(prompts)+len(skills))
 	messages = append(messages, prompts...)
 	messages = append(messages, history...)
+
 	// 2. 添加当前用户消息
 	messages = append(messages, inputs...)
 
