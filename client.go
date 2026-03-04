@@ -5,13 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"strings"
+	"time"
 )
 
 type Deepseek struct {
 	apiKey     string
 	baseURL    string
 	httpClient *http.Client
+	maxRetries int           // 最大重试次数
+	retryDelay time.Duration // 重试延迟（指数退避的初始延迟）
 }
 
 type Client interface {
@@ -21,15 +26,74 @@ type Client interface {
 	Chat(model string, messages []Message, tools []Tool) (*ChatResponse, error)
 }
 
+// NewClient 创建默认客户端（无重试）
 func NewClient(apiKey, baseURL string) Client {
 	return &Deepseek{
 		apiKey:     apiKey,
 		baseURL:    baseURL,
-		httpClient: &http.Client{},
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+		maxRetries: 0, // 默认不重试
+		retryDelay: 60 * time.Second,
 	}
 }
 
-func (c *Deepseek) doRequest(method, path string, body any, result any) (err error) {
+// NewClientWithRetry 创建带重试功能的客户端
+func NewClientWithRetry(apiKey, baseURL string, maxRetries int, retryDelay time.Duration) Client {
+	if maxRetries < 0 {
+		maxRetries = 0
+	}
+	if retryDelay <= 0 {
+		retryDelay = 60 * time.Second
+	}
+
+	return &Deepseek{
+		apiKey:     apiKey,
+		baseURL:    baseURL,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+		maxRetries: maxRetries,
+		retryDelay: retryDelay,
+	}
+}
+
+// isRetryableError 判断错误是否可重试
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := err.Error()
+
+	// 网络连接错误（可重试）
+	if strings.Contains(errStr, "connection refused") ||
+		strings.Contains(errStr, "connection reset") ||
+		strings.Contains(errStr, "dial tcp") ||
+		strings.Contains(errStr, "network is unreachable") ||
+		strings.Contains(errStr, "no such host") ||
+		strings.Contains(errStr, "timeout") ||
+		strings.Contains(errStr, "i/o timeout") ||
+		strings.Contains(errStr, "TLS handshake timeout") ||
+		strings.Contains(errStr, "EOF") ||
+		strings.Contains(errStr, "connection timed out") {
+		return true
+	}
+
+	// HTTP状态码错误（部分可重试）
+	if strings.Contains(errStr, "API 返回错误状态码") {
+		// 5xx错误可重试，4xx错误不可重试
+		if strings.Contains(errStr, "500") ||
+			strings.Contains(errStr, "502") ||
+			strings.Contains(errStr, "503") ||
+			strings.Contains(errStr, "504") ||
+			strings.Contains(errStr, "429") { // 429 Too Many Requests 也可重试
+			return true
+		}
+	}
+
+	return false
+}
+
+// doRequestSingle 单次请求（不带重试）
+func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (err error) {
 	url := c.baseURL + path
 
 	var reqBody io.Reader
@@ -53,7 +117,12 @@ func (c *Deepseek) doRequest(method, path string, body any, result any) (err err
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		err = fmt.Errorf("请求失败: %w", err)
+		// 检查是否是网络错误
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			err = fmt.Errorf("网络请求超时: %w", err)
+		} else {
+			err = fmt.Errorf("网络请求失败: %w", err)
+		}
 		return
 	}
 	defer resp.Body.Close()
@@ -76,6 +145,55 @@ func (c *Deepseek) doRequest(method, path string, body any, result any) (err err
 		}
 	}
 	return
+}
+
+// doRequestWithRetry 带重试的请求方法
+func (c *Deepseek) doRequestWithRetry(method, path string, body any, result any) (err error) {
+	var lastErr error
+
+	for attempt := 0; attempt <= c.maxRetries; attempt++ {
+		if attempt > 0 {
+			// 计算重试延迟（指数退避）
+			delay := time.Duration(1<<(attempt-1)) * c.retryDelay
+			if delay > 300*time.Second { // 最大延迟5分钟
+				delay = 300 * time.Second
+			}
+
+			fmt.Printf("网络请求失败，%d秒后重试（第%d次重试）...\n", int(delay.Seconds()), attempt)
+			time.Sleep(delay)
+		}
+
+		lastErr = c.doRequestSingle(method, path, body, result)
+		if lastErr == nil {
+			// 成功，返回
+			if attempt > 0 {
+				fmt.Printf("重试成功！\n")
+			}
+			return nil
+		}
+
+		// 检查错误是否可重试
+		if !isRetryableError(lastErr) || attempt == c.maxRetries {
+			// 不可重试错误或已达到最大重试次数
+			break
+		}
+
+		// 可重试错误，继续循环
+	}
+
+	// 所有重试都失败
+	if c.maxRetries > 0 {
+		return fmt.Errorf("经过%d次重试后仍然失败，最后错误: %w", c.maxRetries, lastErr)
+	}
+	return lastErr
+}
+
+// doRequest 请求方法（兼容原有接口，根据配置决定是否重试）
+func (c *Deepseek) doRequest(method, path string, body any, result any) (err error) {
+	if c.maxRetries > 0 {
+		return c.doRequestWithRetry(method, path, body, result)
+	}
+	return c.doRequestSingle(method, path, body, result)
 }
 
 // Models 获取模型列表
