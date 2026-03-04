@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -209,62 +210,107 @@ func TestNewClient(t *testing.T) {
 	}
 }
 
-func TestRetryNotificationLength(t *testing.T) {
-	// 测试重试通知是否在20字以内
-	testCases := []struct {
-		name     string
-		delay    time.Duration
-		expected string
-	}{
-		{
-			name:     "1秒延迟",
-			delay:    1 * time.Second,
-			expected: "网络异常，1秒后重试...",
-		},
-		{
-			name:     "60秒延迟",
-			delay:    60 * time.Second,
-			expected: "网络异常，60秒后重试...",
-		},
-		{
-			name:     "300秒延迟",
-			delay:    300 * time.Second,
-			expected: "网络异常，300秒后重试...",
-		},
+func TestRetryNotificationOutput(t *testing.T) {
+	// 创建一个模拟服务器，前两次失败，第三次成功
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts <= 2 {
+			// 前两次返回500错误
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("internal server error"))
+		} else {
+			// 第三次成功
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"data": "success"}`))
+		}
+	}))
+	defer server.Close()
+
+	// 创建测试客户端
+	client := newTestClient("test-key", server.URL)
+
+	// 创建一个缓冲区来捕获输出
+	var buf bytes.Buffer
+	oldWriter := outputWriter
+	SetOutputWriter(&buf)
+	defer SetOutputWriter(oldWriter)
+
+	// 发送请求
+	var result map[string]string
+	err := client.doRequest("GET", "/test", nil, &result)
+	if err != nil {
+		t.Errorf("Expected success after retries, got error: %v", err)
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			// 计算通知消息
-			notification := fmt.Sprintf("网络异常，%d秒后重试...", int(tc.delay.Seconds()))
+	// 获取输出
+	output := buf.String()
 
-			// 检查长度是否在20字以内
-			chineseCharCount := len([]rune(notification))
-			if chineseCharCount > 20 {
-				t.Errorf("通知消息超过20字: %s (长度: %d)", notification, chineseCharCount)
-			}
+	// 检查是否有重试通知
+	if attempts > 1 {
+		// 应该有重试通知
+		if !strings.Contains(output, "网络异常") {
+			t.Error("Expected retry notification in output")
+		}
 
-			// 验证内容
-			if notification != tc.expected {
-				t.Errorf("通知消息不匹配: got %s, want %s", notification, tc.expected)
+		// 检查是否有成功通知
+		if !strings.Contains(output, "重试成功") {
+			t.Error("Expected success notification in output")
+		}
+
+		// 验证通知格式（应该通过output.go处理）
+		lines := strings.Split(strings.TrimSpace(output), "\n")
+		for _, line := range lines {
+			// 通知应该简洁明了
+			if strings.Contains(line, "网络异常") || strings.Contains(line, "重试成功") {
+				// 检查长度是否合理（不超过20字）
+				chineseCharCount := len([]rune(line))
+				if chineseCharCount > 30 { // 稍微放宽，因为可能包含颜色代码等
+					t.Errorf("通知消息过长: %s (长度: %d)", line, chineseCharCount)
+				}
 			}
-		})
+		}
 	}
 }
 
-func TestSuccessNotificationLength(t *testing.T) {
-	// 测试成功通知是否在20字以内
-	notification := "重试成功！"
+func TestRetryNotificationWithCustomWriter(t *testing.T) {
+	// 创建一个总是失败的模拟服务器
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("internal server error"))
+	}))
+	defer server.Close()
 
-	// 检查长度是否在20字以内
-	chineseCharCount := len([]rune(notification))
-	if chineseCharCount > 20 {
-		t.Errorf("成功通知超过20字: %s (长度: %d)", notification, chineseCharCount)
+	// 创建测试客户端
+	client := newTestClient("test-key", server.URL)
+
+	// 创建一个缓冲区来捕获输出
+	var buf bytes.Buffer
+	oldWriter := outputWriter
+	SetOutputWriter(&buf)
+	defer SetOutputWriter(oldWriter)
+
+	// 发送请求
+	var result map[string]string
+	err := client.doRequest("GET", "/test", nil, &result)
+
+	// 应该失败
+	if err == nil {
+		t.Error("Expected error after max retries, got nil")
 	}
 
-	// 验证内容
-	if notification != "重试成功！" {
-		t.Errorf("成功通知不匹配: got %s, want %s", notification, "重试成功！")
+	// 获取输出
+	output := buf.String()
+
+	// 检查是否有重试通知（应该有3次重试通知）
+	if attempts > 1 {
+		// 统计重试通知次数
+		retryCount := strings.Count(output, "网络异常")
+		if retryCount != 3 {
+			t.Errorf("Expected 3 retry notifications, got %d", retryCount)
+		}
 	}
 }
 

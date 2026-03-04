@@ -146,15 +146,17 @@ func (c *Deepseek) doRequest(method, path string, body any, result any) (err err
 			}
 
 			// 简洁通知用户（不超过20字）
-			fmt.Printf("网络异常，%d秒后重试...\n", int(delay.Seconds()))
+			Printf("网络异常，%d秒后重试...\n", int(delay.Seconds()))
 			time.Sleep(delay)
 		}
 
-		lastErr = c.doRequestSingle(method, path, body, result)
+		err = c.doRequestSingle(method, path, body, result)
+		lastErr = err
+
 		if lastErr == nil {
 			// 成功，返回
 			if attempt > 0 {
-				fmt.Printf("重试成功！\n")
+				Printf("重试成功！\n")
 			}
 			return nil
 		}
