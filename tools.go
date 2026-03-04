@@ -990,7 +990,6 @@ func init() {
 	registerScriptTools()
 	registerDatabaseTools()
 	registerSystemTools()
-	registerIssueTools()
 }
 
 // HandleToolCall 处理工具调用（带统计和超时）

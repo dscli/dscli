@@ -178,12 +178,12 @@
   - 依赖：现有 list 命令基础
 
 - [✅] **任务1.15.5：重构issue系统为公共函数库** ✅ **已完成**
-  - 文件：`issue.go`, `issue_lib.go`, `tools.go`, `issue_tools.go`
+  - 文件：`issue.go`, `issue_lib.go`
   - 描述：将issue功能重构为公共函数库，支持CLI和Tool Calling两种使用方式
   - 功能：
     - ✅ 提取公共API函数：`ListIssues`, `ShowIssue`, `CreateIssue`, `UpdateIssue`, `CloseIssue`, `ReopenIssue`, `AssignIssue`
     - ✅ 重构CLI命令：基于公共函数实现
-    - ✅ 实现Tool Calling：在issue_tools.go中添加issue工具，调用公共函数
+    - ✅ 实现Tool Calling：在issue.go的init()中注册issue工具，遵循web.go模式
     - ✅ 统一错误处理：结构化错误返回
     - ✅ 完善测试：确保两种使用方式都正常工作
   - 相关函数：已创建新的公共函数库和工具集成
@@ -193,6 +193,16 @@
 
 - [ ] **任务1.15.6：实现issue工具自动化**
   - 文件：`tools.go`, `issue_lib.go`
+  - 描述：让dscli能够基于issue系统自动化解决问题
+  - 功能：
+    - ⬜ 自动创建TODO任务为issues
+    - ⬜ 自动分配和跟踪任务
+    - ⬜ 进度报告和状态更新
+    - ⬜ 与现有TODO.md系统集成
+  - 相关函数：需要实现自动化逻辑
+  - 难度：困难
+  - 优先级：中（提升开发效率）
+  - 依赖：任务1.15.5完成后的公共函数库
   - 描述：让dscli能够基于issue系统自动化解决问题
   - 功能：
     - ⬜ 自动创建TODO任务为issues
