@@ -54,9 +54,15 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 }
 
 func ChatRunE(cmd *cobra.Command, args []string) (err error) {
-	content, err := ReadContent()
-	if err != nil {
-		return
+	content := ""
+	// 如果是重载进程，不读
+	if reload {
+		content = "dscli reloaded"
+	} else {
+		content, err = ReadContent()
+		if err != nil {
+			return
+		}
 	}
 
 	ctx := cmd.Context()
@@ -87,63 +93,33 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		tcs := lastHist.ToolCalls
 		if len(tcs) > 0 {
 			ctx = WithToolCallNames(ctx, tcs)
-			toolInputs := HandleToolCalls(ctx, tcs)
+			toolInputs := []Message{}
+			// 如果是重载进程，工具不执行
+			if reload {
+				for _, tc := range tcs {
+					toolInputs = append(toolInputs, Message{
+						Role:       "tool",
+						Content:    "dscli reloaded",
+						ToolCallID: tc.ID,
+					})
+				}
+			} else {
+				toolInputs = HandleToolCalls(ctx, tcs)
+			}
+			if content != "" {
+				toolInputs = append(toolInputs, Message{
+					Role:    "user",
+					Content: content,
+				})
+			}
 			if len(toolInputs) > 0 {
 				return ChatRound(ctx, prompts, skills, history, toolInputs...)
 			}
 		}
 	}
 
-	// 如果是重载进程，需要特殊处理
-	if reload {
-		return handleReload(ctx, prompts, skills, history)
-	}
-
 	return ChatRound(ctx, prompts, skills, history,
 		Message{Role: "user", Content: content})
-}
-
-// handleReload 处理重载逻辑
-func handleReload(ctx context.Context, prompts []Message, skills []Message, history []Message) (err error) {
-	Info("🔄 检测到重载进程，正在恢复对话...")
-
-	// 找到最后一个assistant消息（包含未完成的工具调用）
-	var lastAssistant *Message
-	for idx := len(history) - 1; idx >= 0; idx-- {
-		if history[idx].Role == "assistant" && len(history[idx].ToolCalls) > 0 {
-			lastAssistant = &history[idx]
-			break
-		}
-	}
-
-	if lastAssistant == nil {
-		Warn("未找到未完成的工具调用，继续正常对话")
-		return ChatRound(ctx, prompts, skills, history)
-	}
-
-	// 处理未完成的工具调用
-	tcs := lastAssistant.ToolCalls
-	Info("恢复处理 %d 个未完成的工具调用...", len(tcs))
-
-	// 执行工具调用
-	toolInputs := HandleToolCalls(ctx, tcs)
-
-	// 移除最后一个assistant消息（因为它包含未完成的工具调用）
-	newHistory := make([]Message, 0, max(0, len(history)-1))
-	for _, msg := range history {
-		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
-			// 跳过这个未完成的消息
-			continue
-		}
-		newHistory = append(newHistory, msg)
-	}
-
-	// 继续对话
-	if len(toolInputs) > 0 {
-		return ChatRound(ctx, prompts, skills, newHistory, toolInputs...)
-	}
-
-	return nil
 }
 
 func ReadContent() (content string, err error) {
