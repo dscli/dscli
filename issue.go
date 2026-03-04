@@ -489,10 +489,160 @@ func init() {
 	createCmd.Flags().StringVarP(&bodyFlag, "body", "b", "", "issue内容")
 	createCmd.Flags().StringVarP(&fileFlag, "file", "f", "", "从文件读取内容")
 	createCmd.MarkFlagRequired("title")
+	// update命令的变量定义
+	var (
+		updateTitle string
+		updateBody  string
+		updateState string
+		updateFile  string
+	)
+
 	updateCmd := &cobra.Command{
-		Use:  "update",
-		RunE: func(cmd *cobra.Command, args []string) error { return nil },
+		Use:   "update <number>",
+		Short: "更新指定的issue",
+		Long: `更新指定的issue。
+
+可以通过以下方式更新内容：
+1. 使用 --title 更新标题
+2. 使用 --body 更新内容
+3. 使用 --state 更新状态（open/closed）
+4. 使用 --file 从文件读取内容
+
+示例:
+  dscli issue update 123 --title "新的标题"
+  dscli issue update 123 --body "更新后的内容"
+  dscli issue update 123 --state closed
+  dscli issue update 123 --title "新标题" --body "新内容" --state open
+  dscli issue update 123 --file README.md`,
+		Args: cobra.ExactArgs(1), // 必须且只能有一个参数
+		PreRunE: func(cmd *cobra.Command, args []string) (err error) {
+			// 验证参数是否为有效的数字
+			issueNumber := args[0]
+			if _, err := strconv.Atoi(issueNumber); err != nil {
+				return fmt.Errorf("issue编号必须是数字，收到: %s", issueNumber)
+			}
+
+			// 验证至少提供了一个更新字段
+			if updateTitle == "" && updateBody == "" && updateState == "" && updateFile == "" {
+				return fmt.Errorf("必须提供至少一个更新字段（--title, --body, --state 或 --file）")
+			}
+
+			// 验证状态参数
+			if updateState != "" && updateState != "open" && updateState != "closed" {
+				return fmt.Errorf("状态必须是 'open' 或 'closed'，收到: %s", updateState)
+			}
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			issueNumber := args[0]
+
+			// 获取内容
+			var body string
+			if updateBody != "" {
+				// 从 --body 参数获取
+				body = updateBody
+			} else if updateFile != "" {
+				// 从文件读取
+				content, err := os.ReadFile(updateFile)
+				if err != nil {
+					return fmt.Errorf("读取文件失败: %w", err)
+				}
+				body = string(content)
+			}
+
+			// 获取API信息
+			originURL, err := ShellExec(cmd.Context(), `git remote get-url origin`)
+			if err != nil {
+				return err
+			}
+
+			baseURL, token, err := IssueAPIBaseURL(originURL)
+			if err != nil {
+				return err
+			}
+
+			// 准备请求数据
+			requestData := make(map[string]any)
+			if updateTitle != "" {
+				requestData["title"] = updateTitle
+			}
+			if body != "" {
+				requestData["body"] = body
+			}
+			if updateState != "" {
+				// GitCode API 使用 "state_event" 而不是 "state"
+				// 并且值应该是 "close" 而不是 "closed"
+				if updateState == "closed" {
+					requestData["state_event"] = "close"
+				} else if updateState == "open" {
+					requestData["state_event"] = "reopen"
+				}
+			}
+
+			// 如果没有提供任何更新字段，直接返回
+			if len(requestData) == 0 {
+				return fmt.Errorf("没有提供有效的更新字段")
+			}
+
+			// 转换为JSON
+			jsonData, err := json.Marshal(requestData)
+			if err != nil {
+				return fmt.Errorf("序列化请求数据失败: %w", err)
+			}
+
+			// 发送PATCH请求
+			url := fmt.Sprintf("%s/%s?access_token=%s", baseURL, issueNumber, token)
+			req, err := http.NewRequest("PATCH", url, strings.NewReader(string(jsonData)))
+			if err != nil {
+				return fmt.Errorf("创建请求失败: %w", err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				return fmt.Errorf("发送请求失败: %w", err)
+			}
+			defer resp.Body.Close()
+
+			// 检查HTTP状态码
+			if resp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(resp.Body)
+				return fmt.Errorf("更新issue失败 (状态码: %d): %s", resp.StatusCode, string(body))
+			}
+
+			// 解析响应
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return fmt.Errorf("读取响应失败: %w", err)
+			}
+
+			// 解析为RawIssue
+			var rawIssue RawIssue
+			err = json.Unmarshal(b, &rawIssue)
+			if err != nil {
+				return fmt.Errorf("解析响应数据失败: %w", err)
+			}
+
+			// 转换为Issue
+			issue, err := parseRawIssue(rawIssue)
+			if err != nil {
+				return fmt.Errorf("处理issue数据失败: %w", err)
+			}
+
+			// 显示更新结果
+			Println("✅ Issue 更新成功!")
+			Println()
+			PrintIssue(issue, true)
+			return nil
+		},
 	}
+	// 绑定update命令的flags
+	updateCmd.Flags().StringVarP(&updateTitle, "title", "t", "", "更新issue标题")
+	updateCmd.Flags().StringVarP(&updateBody, "body", "b", "", "更新issue内容")
+	updateCmd.Flags().StringVarP(&updateState, "state", "s", "", "更新issue状态（open/closed）")
+	updateCmd.Flags().StringVarP(&updateFile, "file", "f", "", "从文件读取内容")
 
 	issueCmd.AddCommand(listCmd, showCmd, updateCmd, createCmd)
 }

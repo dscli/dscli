@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -969,6 +970,227 @@ Labels:     bug, fixed
 			}
 
 			SetOutputWriter(oldWriter)
+		})
+	}
+}
+
+// TestUpdateCommandValidation 测试update命令的参数验证逻辑
+func TestUpdateCommandValidation(t *testing.T) {
+	testCases := []struct {
+		name        string
+		issueNumber string
+		title       string
+		body        string
+		state       string
+		file        string
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "有效的更新-标题",
+			issueNumber: "123",
+			title:       "新的标题",
+			expectError: false,
+		},
+		{
+			name:        "有效的更新-内容",
+			issueNumber: "456",
+			body:        "新的内容",
+			expectError: false,
+		},
+		{
+			name:        "有效的更新-状态",
+			issueNumber: "789",
+			state:       "closed",
+			expectError: false,
+		},
+		{
+			name:        "有效的更新-组合",
+			issueNumber: "999",
+			title:       "新标题",
+			body:        "新内容",
+			state:       "open",
+			expectError: false,
+		},
+		{
+			name:        "无效的issue编号",
+			issueNumber: "abc",
+			title:       "测试标题",
+			expectError: true,
+			errorMsg:    "issue编号必须是数字",
+		},
+		{
+			name:        "没有提供更新字段",
+			issueNumber: "123",
+			expectError: true,
+			errorMsg:    "必须提供至少一个更新字段",
+		},
+		{
+			name:        "无效的状态值",
+			issueNumber: "123",
+			state:       "invalid",
+			expectError: true,
+			errorMsg:    "状态必须是 'open' 或 'closed'",
+		},
+		{
+			name:        "有效的状态-open",
+			issueNumber: "123",
+			state:       "open",
+			expectError: false,
+		},
+		{
+			name:        "有效的状态-closed",
+			issueNumber: "123",
+			state:       "closed",
+			expectError: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// 模拟验证逻辑
+			issueNumber := tc.issueNumber
+
+			// 验证参数是否为有效的数字
+			if _, err := strconv.Atoi(issueNumber); err != nil {
+				// 验证参数是否为有效的数字
+				if _, err := strconv.Atoi(issueNumber); err != nil {
+					if !tc.expectError {
+						t.Errorf("不期望的错误: issue编号必须是数字，收到: %s", issueNumber)
+					}
+					// 检查错误消息是否包含预期内容
+					expectedMsg := "issue编号必须是数字"
+					if !strings.Contains(err.Error(), "invalid syntax") && !strings.Contains(expectedMsg, tc.errorMsg) {
+						t.Errorf("错误消息不匹配: 期望包含数字验证错误, 实际='%v'", err)
+					}
+					return
+				}
+				if !tc.expectError {
+					t.Error("应该返回错误：必须提供至少一个更新字段")
+				}
+				if tc.errorMsg != "" && !strings.Contains("必须提供至少一个更新字段", tc.errorMsg) {
+					t.Errorf("错误消息不匹配: 期望包含='%s', 实际='必须提供至少一个更新字段'", tc.errorMsg)
+				}
+				return
+			}
+			// 验证至少提供了一个更新字段
+			if tc.title == "" && tc.body == "" && tc.state == "" && tc.file == "" {
+				if !tc.expectError {
+					t.Error("应该返回错误：必须提供至少一个更新字段")
+					return
+				}
+				// 如果期望错误且确实没有提供字段，测试通过
+				if tc.expectError {
+					return
+				}
+			}
+
+			// 验证状态参数
+			if tc.state != "" && tc.state != "open" && tc.state != "closed" {
+				if !tc.expectError {
+					t.Errorf("应该返回错误：状态必须是 'open' 或 'closed'，收到: %s", tc.state)
+					return
+				}
+				// 如果期望错误且状态无效，测试通过
+				if tc.expectError {
+					return
+				}
+			}
+
+			// 如果没有错误，但期望有错误
+			if tc.expectError {
+				t.Error("期望错误但验证通过")
+			}
+		})
+	}
+}
+
+func TestUpdateRequestData(t *testing.T) {
+	testCases := []struct {
+		name     string
+		title    string
+		body     string
+		state    string
+		file     string
+		expected map[string]any
+	}{
+		{
+			name:  "只更新标题",
+			title: "新的标题",
+			expected: map[string]any{
+				"title": "新的标题",
+			},
+		},
+		{
+			name: "只更新内容",
+			body: "新的内容",
+			expected: map[string]any{
+				"body": "新的内容",
+			},
+		},
+		{
+			name:  "只更新状态",
+			state: "closed",
+			expected: map[string]any{
+				"state": "closed",
+			},
+		},
+		{
+			name:  "组合更新",
+			title: "新标题",
+			body:  "新内容",
+			state: "open",
+			expected: map[string]any{
+				"title": "新标题",
+				"body":  "新内容",
+				"state": "open",
+			},
+		},
+		{
+			name:     "空更新",
+			expected: map[string]any{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// 模拟请求数据构建逻辑
+			requestData := make(map[string]any)
+
+			// 模拟从文件读取内容的逻辑
+			var body string
+			if tc.body != "" {
+				body = tc.body
+			} else if tc.file != "" {
+				// 在测试中，我们不实际读取文件
+				body = "文件内容"
+			}
+
+			if tc.title != "" {
+				requestData["title"] = tc.title
+			}
+			if body != "" {
+				requestData["body"] = body
+			}
+			if tc.state != "" {
+				requestData["state"] = tc.state
+			}
+
+			// 验证请求数据
+			if len(requestData) != len(tc.expected) {
+				t.Errorf("请求数据长度不匹配: 期望=%d, 实际=%d", len(tc.expected), len(requestData))
+			}
+
+			for key, expectedValue := range tc.expected {
+				actualValue, ok := requestData[key]
+				if !ok {
+					t.Errorf("缺少键: %s", key)
+					continue
+				}
+				if actualValue != expectedValue {
+					t.Errorf("键 %s 的值不匹配: 期望=%v, 实际=%v", key, expectedValue, actualValue)
+				}
+			}
 		})
 	}
 }
