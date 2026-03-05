@@ -145,10 +145,8 @@ func (c *Deepseek) doRequest(method, path string, body any, result any) (err err
 	for attempt := 0; attempt <= c.maxRetries; attempt++ {
 		if attempt > 0 {
 			// 计算重试延迟（指数退避）
-			delay := time.Duration(1<<(attempt-1)) * c.retryDelay
-			if delay > 300*time.Second { // 最大延迟5分钟
-				delay = 300 * time.Second
-			}
+			delay := min(time.Duration(1<<(attempt-1))*c.retryDelay,
+				300*time.Second)
 
 			// 简洁通知用户（不超过20字）
 			Printf("网络异常，%d秒后重试...\n", int(delay.Seconds()))
@@ -204,13 +202,7 @@ func (c *Deepseek) Balance() (*BalanceResponse, error) {
 
 // Chat 发送聊天请求
 func (c *Deepseek) Chat(model string, messages []Message, tools []Tool) (*ChatResponse, error) {
-	for i, m := range messages {
-		if m.ReasoningContent != "" {
-			m.ReasoningContent = ""
-			messages[i] = m
-		}
-	}
-
+	// reset reasoning
 	req := ChatRequest{
 		Model:    model,
 		Messages: messages,

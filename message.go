@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"unicode/utf8"
 )
 
 func init() {
@@ -56,6 +57,7 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 	defer rows.Close()
 
 	var messages []Message
+	tokens := 0
 	for rows.Next() {
 		var m Message
 		var toolCallID, toolCalls sql.NullString
@@ -70,6 +72,10 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 			if err := json.Unmarshal([]byte(toolCalls.String), &toolCallsData); err == nil {
 				m.ToolCalls = toolCallsData
 			}
+		}
+		tokens += utf8.RuneCountInString(m.Content) / 2
+		if tokens > 131072 {
+			break
 		}
 		messages = append(messages, m)
 	}

@@ -38,8 +38,6 @@ type ProjectDomain struct {
 
 // 初始化函数
 func init() {
-	fmt.Println("segment.go: 注册表结构...")
-
 	// 注册表结构
 	RegisterTableSchema(
 		`CREATE TABLE IF NOT EXISTS domains (
@@ -93,11 +91,8 @@ func init() {
 
 	// 注册后初始化钩子
 	RegisterPostInitHook(func(db *sql.DB) error {
-		fmt.Println("segment.go: 初始化默认数据...")
 		return initDefaultSegments(db)
 	})
-
-	fmt.Println("segment.go: 注册完成")
 }
 
 // initDefaultSegments 初始化默认段落
@@ -117,7 +112,6 @@ func initDefaultSegments(db *sql.DB) error {
 	}
 
 	if count > 0 {
-		fmt.Println("segment.go: 已有段落，跳过初始化")
 		return nil
 	}
 

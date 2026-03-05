@@ -509,12 +509,10 @@ func handleWriteFileWithLineRange(_ context.Context, args map[string]string) (st
 	if beforeStart > 0 {
 		newLines = append(newLines, lines[:beforeStart]...)
 	}
-
 	// 2. 如果 startLine 超出文件范围，需要插入空行
 	if startLine > len(lines) {
-		// 计算需要插入的空行数
 		emptyLinesNeeded := startLine - len(lines) - 1
-		for i := 0; i < emptyLinesNeeded; i++ {
+		for range emptyLinesNeeded {
 			newLines = append(newLines, "")
 		}
 	}

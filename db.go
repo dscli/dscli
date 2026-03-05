@@ -43,17 +43,8 @@ func RegisterPostInitHook(hook func(*sql.DB) error) {
 }
 
 // 初始化数据库（延迟执行，确保所有init()已完成）
-func initDatabase() error {
-	fmt.Println("初始化数据库...")
-
-	var err error
-	db, err = sql.Open("sqlite", DBPath)
-	if err != nil {
-		return fmt.Errorf("打开数据库失败: %w", err)
-	}
-
+func initDatabase(db *sql.DB) error {
 	// 1. 创建表
-	fmt.Printf("创建 %d 个表\n", len(tableSchemas))
 	for _, query := range tableSchemas {
 		if _, err := db.Exec(query); err != nil {
 			return fmt.Errorf("创建表失败: %w\nSQL: %s", err, query[:100])
@@ -61,7 +52,6 @@ func initDatabase() error {
 	}
 
 	// 2. 创建索引
-	fmt.Printf("创建 %d 个索引\n", len(indexSchemas))
 	for _, query := range indexSchemas {
 		if _, err := db.Exec(query); err != nil {
 			return fmt.Errorf("创建索引失败: %w\nSQL: %s", err, query[:100])
@@ -69,7 +59,6 @@ func initDatabase() error {
 	}
 
 	// 3. 执行升级脚本
-	fmt.Printf("执行 %d 个升级脚本\n", len(upgradeSchemas))
 	for _, query := range upgradeSchemas {
 		if _, err := db.Exec(query); err == nil {
 			fmt.Printf("升级完成: %s\n", query[:50])
@@ -77,21 +66,25 @@ func initDatabase() error {
 	}
 
 	// 4. 执行后初始化钩子
-	fmt.Printf("执行 %d 个后初始化钩子\n", len(postInitHooks))
 	for _, hook := range postInitHooks {
 		if err := hook(db); err != nil {
 			fmt.Printf("后初始化钩子失败: %v\n", err)
 		}
 	}
 
-	fmt.Println("数据库初始化完成")
 	return nil
 }
 
 // OpenDB 打开数据库连接（确保数据库已初始化）
 func OpenDB(elem ...string) (*sql.DB, error) {
+	var err error
+	db, err = sql.Open("sqlite", DBPath)
+	if err != nil {
+		return nil, fmt.Errorf("打开数据库失败: %w", err)
+	}
+
 	dbOnce.Do(func() {
-		dbErr = initDatabase()
+		dbErr = initDatabase(db)
 	})
 
 	if dbErr != nil {
