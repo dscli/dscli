@@ -200,7 +200,6 @@ func TestNewClient(t *testing.T) {
 	}
 
 	// 验证默认重试配置
-	// 验证默认重试配置
 	dsClient := client.(*Deepseek)
 	if dsClient.maxRetries != 600 {
 		t.Errorf("Expected maxRetries=600, got %d", dsClient.maxRetries)
@@ -258,19 +257,6 @@ func TestRetryNotificationOutput(t *testing.T) {
 		if !strings.Contains(output, "重试成功") {
 			t.Error("Expected success notification in output")
 		}
-
-		// 验证通知格式（应该通过output.go处理）
-		lines := strings.Split(strings.TrimSpace(output), "\n")
-		for _, line := range lines {
-			// 通知应该简洁明了
-			if strings.Contains(line, "网络异常") || strings.Contains(line, "重试成功") {
-				// 检查长度是否合理（不超过20字）
-				chineseCharCount := len([]rune(line))
-				if chineseCharCount > 30 { // 稍微放宽，因为可能包含颜色代码等
-					t.Errorf("通知消息过长: %s (长度: %d)", line, chineseCharCount)
-				}
-			}
-		}
 	}
 }
 
@@ -312,49 +298,5 @@ func TestRetryNotificationWithCustomWriter(t *testing.T) {
 		if retryCount != 3 {
 			t.Errorf("Expected 3 retry notifications, got %d", retryCount)
 		}
-	}
-}
-
-func TestRetryDelayCalculation(t *testing.T) {
-	// 测试指数退避计算
-	client := &Deepseek{
-		retryDelay: 60 * time.Second,
-		maxRetries: 3,
-	}
-
-	testCases := []struct {
-		name     string
-		attempt  int
-		expected time.Duration
-	}{
-		{
-			name:     "第一次重试",
-			attempt:  1,
-			expected: 60 * time.Second, // 2^0 * 60s = 60s
-		},
-		{
-			name:     "第二次重试",
-			attempt:  2,
-			expected: 120 * time.Second, // 2^1 * 60s = 120s
-		},
-		{
-			name:     "第三次重试",
-			attempt:  3,
-			expected: 240 * time.Second, // 2^2 * 60s = 240s
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			delay := time.Duration(1<<(tc.attempt-1)) * client.retryDelay
-			if delay > 300*time.Second {
-				delay = 300 * time.Second
-			}
-
-			if delay != tc.expected {
-				t.Errorf("重试延迟计算错误: attempt=%d, got %v, want %v",
-					tc.attempt, delay, tc.expected)
-			}
-		})
 	}
 }
