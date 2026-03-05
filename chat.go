@@ -22,14 +22,6 @@ var (
 	reload    bool
 )
 
-var (
-	StartTime       = ContextKeyType("StartTime")
-	CurrentModel    = ContextKeyType("CurrentModel")
-	IsReload        = ContextKeyType("IsReload")
-	CommandLineArgs = ContextKeyType("CommandLineArgs")
-	ToolCallsName   = ContextKeyType("ToolCallsName")
-)
-
 func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 	// 设置ModelID
 	var modelID int64
@@ -69,8 +61,6 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx = context.WithValue(ctx, StartTime, time.Now())
 	ctx = context.WithValue(ctx, CurrentModel, chatModel)
 	ctx = context.WithValue(ctx, IsReload, reload)
-	// 存储命令行参数
-	ctx = context.WithValue(ctx, CommandLineArgs, os.Args)
 
 	prompts, err := LoadPrompts(ctx)
 	if err != nil {
@@ -92,7 +82,6 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		lastHist := history[len(history)-1]
 		tcs := lastHist.ToolCalls
 		if len(tcs) > 0 {
-			ctx = WithToolCallNames(ctx, tcs)
 			toolInputs := []Message{}
 			// 如果是重载进程，工具不执行
 			if reload {
@@ -133,11 +122,7 @@ func ReadContent() (content string, err error) {
 }
 
 func PrintContent(ctx context.Context, reasoning string, content string) {
-	var startTime time.Time
-	if v, ok := ctx.Value(StartTime).(time.Time); ok {
-		startTime = v
-	}
-
+	startTime := ContextValue(ctx, StartTime, time.Time{})
 	reasoning = strings.TrimSpace(reasoning)
 	if reasoning != "" {
 		duration := time.Since(startTime)
@@ -202,20 +187,11 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 		return
 	}
 
-	ctx = WithToolCallNames(ctx, tcs)
 	toolInputs := HandleToolCalls(ctx, tcs)
 	if len(toolInputs) > 0 {
 		return ChatRound(ctx, prompts, skills, history, toolInputs...)
 	}
 	return
-}
-
-func WithToolCallNames(ctx context.Context, tcs []ToolCall) context.Context {
-	names := []string{}
-	for _, tc := range tcs {
-		names = append(names, GetToolDisplayName(tc.Function.Name))
-	}
-	return context.WithValue(ctx, ToolCallsName, strings.Join(names, " "))
 }
 
 func init() {

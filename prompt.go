@@ -6,20 +6,20 @@ import (
 	"time"
 )
 
-func GetSystemPrompt() (prompt string) {
-	id := ModelID
-
+func GetSystemPrompt(ctx context.Context) (prompt string) {
+	id := ModelID // should get from context later
 	// 获取当前日期
 	currentDate := time.Now().Format("2006年01月02日")
-
+	projectRoot := ProjectRoot // get from context later
+	configDir := ConfigDir     // get from context later
 	switch id {
 	case DeepseekChat:
 		prompt = `你是一个专业的编程助手。
 当前日期：` + currentDate + `，请基于当前日期处理与日期相关的需求。
 
-当前工作目录：` + ProjectRoot + ` ，你可以增删改查当前工作目录下的任何文件。
+当前工作目录：` + projectRoot + ` ，你可以增删改查当前工作目录下的任何文件。
 
-配置目录：` + ConfigDir + `，你可操作配置目录下的任何文件，但不能删除以下文件 1) sqlite.db，2) dscli.env。
+配置目录：` + configDir + `，你可操作配置目录下的任何文件，但不能删除以下文件 1) sqlite.db，2) dscli.env。
 
 版权信息：
 1. 版权归人类所有，
@@ -50,8 +50,9 @@ func GetSystemPrompt() (prompt string) {
 }
 
 func LoadPrompts(ctx context.Context) ([]Message, error) {
+	// projectRoot := ""
 	return []Message{{
 		Role:    "system",
-		Content: GetSystemPrompt(),
+		Content: GetSystemPrompt(ctx),
 	}}, nil
 }

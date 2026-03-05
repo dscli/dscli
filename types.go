@@ -169,8 +169,6 @@ type FIMChoice struct {
 	Text string `json:"text"`
 }
 
-type ContextKeyType string
-
 // ==================== Issue 相关类型 ====================
 
 // RawIssue 用于接收原始JSON数据

@@ -36,17 +36,18 @@ func TestLoadPrompts(t *testing.T) {
 func TestGetSystemPrompt(t *testing.T) {
 	tests := []struct {
 		name string // description of this test case
-		want string
+		want func(*testing.T, string)
 	}{
-		// TODO: Add test cases.
+		{"Basic", func(t *testing.T, s string) {
+			if s == "" {
+				t.Fatal()
+			}
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := GetSystemPrompt()
-			// TODO: update the condition below to compare got with tt.want.
-			if true {
-				t.Errorf("GetSystemPrompt() = %v, want %v", got, tt.want)
-			}
+			got := GetSystemPrompt(context.Background())
+			tt.want(t, got)
 		})
 	}
 }
