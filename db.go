@@ -61,14 +61,14 @@ func initDatabase(db *sql.DB) error {
 	// 3. 执行升级脚本
 	for _, query := range upgradeSchemas {
 		if _, err := db.Exec(query); err == nil {
-			fmt.Printf("升级完成: %s\n", query[:50])
+			Debug("升级完成: %s\n", query[:50])
 		}
 	}
 
 	// 4. 执行后初始化钩子
 	for _, hook := range postInitHooks {
 		if err := hook(db); err != nil {
-			fmt.Printf("后初始化钩子失败: %v\n", err)
+			Debug("后初始化钩子失败: %v\n", err)
 		}
 	}
 
