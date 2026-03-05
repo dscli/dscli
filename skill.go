@@ -123,10 +123,10 @@ func init() {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_skills_category ON skills(category)`,
 		`CREATE INDEX IF NOT EXISTS idx_skills_priority ON skills(priority DESC)`,
-)
+	)
 
 	// 创建skills命令
-	skillsCmd:=AddRootCommand(&cobra.Command{
+	skillsCmd := AddRootCommand(&cobra.Command{
 		Use:   "skills",
 		Short: "管理技能",
 		Long:  `管理技能系统，包括增删改查等操作。`,
@@ -338,7 +338,6 @@ func init() {
 	)
 }
 
-
 func LoadSkills(ctx context.Context) ([]Message, error) {
 	return []Message{}, nil
 }
@@ -523,4 +522,3 @@ func RecordSkillUsage(skillID int64, projectPath string) error {
 
 	return nil
 }
-
