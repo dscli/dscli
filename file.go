@@ -597,6 +597,11 @@ func handleWriteFileWithLineRange(_ context.Context, args map[string]string) (st
 		return "", fmt.Errorf("end_line must be greater than or equal to start_line")
 	}
 
+	Notice("fullPath: [%s]\n", fullPath)
+	Notice("startLine: [%d]\n", startLine)
+	Notice("endLine: [%d]\n", endLine)
+	Notice("content: [%s]\n", content)
+
 	// 读取原文件所有行
 	file, err := os.Open(fullPath)
 	if err != nil {
