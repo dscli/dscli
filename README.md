@@ -1,18 +1,15 @@
 # dscli - AI增强的开发者工具箱
 
 ```
-      o
-     /|\
-      |   +----------------------------+
-     / \  | * dscli.el - Emacs集成    |
-~~~~~~~~~~| $ dscli chat - AI助手     |
-dscli     |                            |
-          +----------------------------+
+     o
+    /|\
+     |   +---------------+
+    / \  | dscli tools   |
+~~~~~~~~~| AI assistant  |
+dscli    +---------------+
 ```
 
 ## 🎯 什么是 dscli？
-
-**dscli** 是一个 AI 增强的命令行开发者工具箱，它结合了：
 
 1. **AI 编程助手** - 基于 DeepSeek API 的智能对话和代码补全
 2. **开发工具** - 文件操作等实用功能
@@ -22,9 +19,10 @@ dscli     |                            |
 
 ## 📦 版本信息
 
-**当前版本：v0.5.1**
+**当前版本：v0.5.2**
 
 ### 版本历史
+- v0.5.2 (2026-03-05) - 重构工具实现，删除重复代码，拆分专门工具文件
 - v0.5.1 (2026-02-28) - 版本更新发布
 - v0.5.0 (2026-02-28) - 功能完备版本，包含43个迭代
 - v0.4.0 - 格式化系统重构，支持多种输出模式
@@ -51,12 +49,12 @@ dscli     |                            |
 ### 安装
 ```bash
 # 方式1：使用 go install（推荐）
-go install gitcode.com/dscli/dscli@v0.5.1
+go install gitcode.com/dscli/dscli@v0.5.2
 
 # 方式2：从源码构建
 git clone https://gitcode.com/dscli/dscli.git
 cd dscli
-git checkout v0.5.1
+git checkout v0.5.2
 make install    # 安装到 $GOPATH/bin
 
 # 方式3：下载预编译二进制
@@ -173,4 +171,4 @@ Apache License 2.0
 
 ---
 
-**dscli v0.5.1** - 让命令行开发更智能、更高效！
+**dscli v0.5.2** - 让命令行开发更智能、更高效！
