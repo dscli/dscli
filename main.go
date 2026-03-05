@@ -4,10 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/joho/godotenv"
-	"github.com/spf13/cobra"
 )
 
 var (
@@ -19,54 +17,22 @@ var (
 	Version = "0.5.2"
 	Build   = ""
 
-	mode                  string
-	logLevel              string
-	colorEnabled          bool
-	showTimestamp         bool
-	verbose               bool
 	ModelDeepseekChat     = Getenv("MODEL_DEEPSEEK_CHAT", "deepseek-chat")
 	ModelDeepseekReasoner = Getenv("MODEL_DEEPSEEK_REASONER", "deepseek-reasoner")
 
 	DeepseekClient Client
-	closeAll       func() error
 	ProjectRoot    = GetProjectRoot()
 
 	ConfigDir = GetConfigDir()
 	EnvPath   = filepath.Join(ConfigDir, "dscli.env")
 	LogPath   = filepath.Join(ConfigDir, "dscli.log")
-
-	RootCmd = &cobra.Command{
-		Use:   "dscli",
-		Short: "DeepSeek CLI - 与 DeepSeek API 交互",
-		Long: `dscli 是一个命令行工具，用于调用 DeepSeek 的 API。
-支持 models、balance、chat 和 fim 四个子命令。
-
-输出选项：
-  --mode          输出模式：markdown（Markdown格式）、org（Org模式格式）
-  --log-level     日志级别：debug、info、warn、error、fatal
-  --no-color      禁用颜色输出
-  --no-timestamp  禁用时间戳显示
-  --verbose       显示详细输出`,
-		PersistentPreRunE:  RootPreRunE,
-		PersistentPostRunE: RootPostRunE,
-		Version:            Version,
-	}
 )
-
-func init() {
-	RootCmd.PersistentFlags().StringVar(&mode, "mode", "markdown", "输出模式：markdown（Markdown格式）、org（Org模式格式）")
-	RootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "日志级别：debug、info、warn、error、fatal")
-	RootCmd.PersistentFlags().BoolVar(&colorEnabled, "no-color", false, "禁用颜色输出")
-	RootCmd.PersistentFlags().BoolVar(&showTimestamp, "no-timestamp", false, "禁用时间戳显示")
-	RootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "显示详细输出")
-}
 
 func GetConfigDir() (configDir string) {
 	configDir = filepath.Join(os.Getenv("HOME"), ".dscli")
 	err := os.MkdirAll(configDir, 0o755)
 	if err != nil {
 		panic(err)
-		return
 	}
 	return
 }
@@ -75,7 +41,6 @@ func GetProjectRoot() (projectRoot string) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		panic(err)
-		return
 	}
 	gitRoot, err := findGitRoot(cwd)
 	if err != nil {
@@ -84,27 +49,23 @@ func GetProjectRoot() (projectRoot string) {
 	projectRoot, err = filepath.Abs(gitRoot)
 	if err != nil {
 		panic(err)
-		return
 	}
 
 	if cwd != projectRoot {
 		err = os.Chdir(projectRoot)
 		if err != nil {
 			panic(err)
-			return
 		}
 	}
 
 	cwd, err = os.Getwd()
 	if err != nil {
 		panic(err)
-		return
 	}
 
 	if cwd != projectRoot {
 		err = fmt.Errorf("cwd(%s) != ProjectRoot(%s)", cwd, projectRoot)
 		panic(err)
-		return
 	}
 	return projectRoot
 }
@@ -136,71 +97,8 @@ func findGitRoot(dir string) (string, error) {
 	return "", fmt.Errorf("未找到 Git 仓库根目录")
 }
 
-func RootPostRunE(cmd *cobra.Command, args []string) (err error) {
-	if closeAll != nil {
-		err = closeAll()
-	}
-	return
-}
-
-func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
-	// 配置输出系统
-	configureOutput()
-	SetOutputWriter(cmd.OutOrStdout())
-	switch mode {
-	case "markdown":
-	case "org":
-		SetOutputMode(mode)
-	default:
-		err = fmt.Errorf("do not support %s", mode)
-		return
-	}
-
-	key := Getenv("DEEPSEEK_API_KEY", "")
-	if key == "" {
-		err = fmt.Errorf("no api key specified")
-		return
-	}
-
-	url := os.Getenv("DEEPSEEK_BASE_URL")
-	if url == "" {
-		url = "https://api.deepseek.com" // 默认值
-	}
-
-	DeepseekClient = NewClient(key, url)
-	return nil
-}
-
-// configureOutput 配置输出系统
-func configureOutput() {
-	// 设置日志级别
-	switch strings.ToLower(logLevel) {
-	case "debug":
-		SetLogLevel(LogLevelDebug)
-	case "info":
-		SetLogLevel(LogLevelInfo)
-	case "warn":
-		SetLogLevel(LogLevelWarn)
-	case "error":
-		SetLogLevel(LogLevelError)
-	case "fatal":
-		SetLogLevel(LogLevelFatal)
-	default:
-		SetLogLevel(LogLevelInfo)
-	}
-
-	// 设置颜色输出
-	SetColorEnabled(!colorEnabled) // 注意：--no-color 为 true 时禁用颜色
-
-	// 设置时间戳显示
-	SetShowTimestamp(!showTimestamp) // 注意：--no-timestamp 为 true 时禁用时间戳
-
-	// 设置详细输出
-	SetVerbose(verbose)
-}
-
 func main() {
-	if err := RootCmd.Execute(); err != nil {
+	if err := RootExecute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

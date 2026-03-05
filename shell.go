@@ -142,7 +142,7 @@ func validateShell(script string) (err error) {
 	}
 
 	if slices.Contains(commands, "./dscli") {
-		return fmt.Errorf("Do not run dscli in dscli!")
+		return fmt.Errorf("do not run dscli in dscli")
 	}
 	return
 }

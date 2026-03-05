@@ -1,0 +1,391 @@
+package main
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+)
+
+var ToolDisplayName = &struct{}{}
+
+// toolRegistry 工具注册表
+var toolRegistry = map[string]ToolDef{}
+
+func init() {
+	RegisterTableSchema(
+		// 工具表
+		`CREATE TABLE IF NOT EXISTS tools (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			description TEXT NOT NULL,
+			category TEXT,
+			usage_count INTEGER DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+
+		// 工具使用记录表
+		`CREATE TABLE IF NOT EXISTS tool_usage (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			project_path TEXT NOT NULL,
+			tool_id INTEGER NOT NULL,
+			used_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			success BOOLEAN DEFAULT 1,
+			error_msg TEXT,
+			FOREIGN KEY (tool_id) REFERENCES tools(id) ON DELETE CASCADE
+		)`,
+
+		// 工具相关索引
+		`CREATE INDEX IF NOT EXISTS idx_tools_category ON tools(category)`,
+		`CREATE INDEX IF NOT EXISTS idx_tools_usage ON tools(usage_count DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_tool_usage_tool ON tool_usage(tool_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_tool_usage_time ON tool_usage(used_at DESC)`,
+	)
+}
+
+func GetToolDisplayName(name string) string {
+	words := strings.Split(name, "_")
+	for i, word := range words {
+		word = strings.ToUpper(word[0:1]) + word[1:]
+		words[i] = word
+	}
+	return strings.Join(words, "")
+}
+
+// RegisterTool 注册工具
+func RegisterTool(tool ToolDef) {
+	tool.DisplayName = GetToolDisplayName(tool.Name)
+	toolRegistry[tool.Name] = tool
+}
+
+// GetAllTools 获取所有工具定义（用于API调用）
+func GetAllTools() []Tool {
+	if ModelID == DeepseekReasoner {
+		return nil
+	}
+
+	var tools []Tool
+	for name, def := range toolRegistry {
+		tools = append(tools, Tool{
+			Type: "function",
+			Function: Function{
+				Name:        name,
+				Description: def.Description,
+				Parameters:  def.Parameters,
+			},
+		})
+	}
+	return tools
+}
+
+// HandleToolCalls 处理工具调用（带统计）
+func HandleToolCalls(ctx context.Context, tcs []ToolCall) []Message {
+	inputs := []Message{}
+	// 处理每个工具调用
+	for _, tc := range tcs {
+		// 使用新的工具调用处理器
+		result, err := HandleToolCall(ctx, tc.Function.Name, []byte(tc.Function.Arguments))
+		if err != nil {
+			// But we still need to tell the result to assistant
+			result = err.Error()
+		}
+
+		inputs = append(inputs, Message{
+			Role:       "tool",
+			ToolCallID: tc.ID,
+			Content:    result,
+		})
+	}
+	return inputs
+}
+
+// HandleToolCall 处理工具调用（带统计和超时）
+func HandleToolCall(ctx context.Context, toolName string, argsRaw json.RawMessage) (string, error) {
+	// 获取工具处理器
+	tool, ok := toolRegistry[toolName]
+	if !ok {
+		return "", fmt.Errorf("未知工具: %s", toolName)
+	}
+	args := map[string]string{}
+	if err := json.Unmarshal(argsRaw, &args); err != nil {
+		n := len(argsRaw)
+		if n > 80 {
+			err = fmt.Errorf(`failed to unmarshal arguments: %w, below `+
+				`is the details about raw argument tool %q received`+
+				` which lead error:
+- the length of the argument string: %d
+- the last 40 bytes of the argument string: %q
+- the first 40 bytes of the argument string: %q`, err, toolName, n,
+				string(argsRaw[n-40:]), string(argsRaw[0:40]))
+		} else {
+			err = fmt.Errorf(`failed to unmarshal arguments: %w, below `+
+				`is the details about the raw argument tool %q received, 
+which lead to the error:
+- the length of the argument string：%d
+- the argument raw：%q`, err, toolName, n, string(argsRaw))
+		}
+		return "", err
+	}
+
+	// 创建带超时的context（如果工具设置了超时）
+	var cancel context.CancelFunc
+	if tool.Timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, tool.Timeout)
+		defer cancel()
+	}
+
+	ctx = context.WithValue(ctx, ToolDisplayName, tool.DisplayName)
+	toolID, err := GetOrCreateTool(tool.Name, tool.Description, tool.Category)
+	if err != nil {
+		Error(err.Error(), "name", tool.Name)
+		// 继续执行工具，但不记录统计
+		return tool.Handler(ctx, args)
+	}
+
+	// 执行工具
+	result, err := tool.Handler(ctx, args)
+
+	// 检查是否超时
+	if ctx.Err() == context.DeadlineExceeded {
+		err = fmt.Errorf("工具执行超时（%v）", tool.Timeout)
+	}
+
+	// 记录使用情况
+	success := err == nil
+	errorMsg := ""
+	if err != nil {
+		errorMsg = err.Error()
+	}
+
+	if err := RecordToolUsage(toolID, success, errorMsg); err != nil {
+		return "", err
+	}
+
+	return result, err
+}
+
+// GetOrCreateTool 获取或创建工具
+func GetOrCreateTool(name, description, category string) (int64, error) {
+	db, err := OpenDB()
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+	var id int64
+	err = db.QueryRow("SELECT id FROM tools WHERE name = ?", name).Scan(&id)
+	if err == nil {
+		return id, nil
+	}
+	if err != sql.ErrNoRows {
+		return 0, fmt.Errorf("查询工具失败: %w", err)
+	}
+
+	result, err := db.Exec(`
+		INSERT INTO tools (name, description, category)
+		VALUES (?, ?, ?)`, name, description, category)
+	if err != nil {
+		return 0, fmt.Errorf("创建工具失败: %w", err)
+	}
+	return result.LastInsertId()
+}
+
+// GetTool 根据ID获取工具
+func GetTool(id int64) (*ToolDesc, error) {
+	db, err := OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	var tool ToolDesc
+	err = db.QueryRow(`
+		SELECT id, name, description, category, usage_count, created_at, updated_at
+		FROM tools WHERE id = ?`, id).Scan(
+		&tool.ID, &tool.Name, &tool.Description, &tool.Category,
+		&tool.UsageCount, &tool.CreatedAt, &tool.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("获取工具失败: %w", err)
+	}
+	return &tool, nil
+}
+
+// GetToolByName 根据名称获取工具
+func GetToolByName(name string) (*ToolDesc, error) {
+	db, err := OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	var tool ToolDesc
+	err = db.QueryRow(`
+		SELECT id, name, description, category, usage_count, created_at, updated_at
+		FROM tools WHERE name = ?`, name).Scan(
+		&tool.ID, &tool.Name, &tool.Description, &tool.Category,
+		&tool.UsageCount, &tool.CreatedAt, &tool.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("获取工具失败: %w", err)
+	}
+	return &tool, nil
+}
+
+// ListTools 列出所有工具（可按分类过滤）
+func ListTools(category string) ([]ToolDesc, error) {
+	db, err := OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	var rows *sql.Rows
+
+	if category == "" {
+		rows, err = db.Query(`
+			SELECT id, name, description, category, usage_count, created_at, updated_at
+			FROM tools ORDER BY usage_count DESC, name`)
+	} else {
+		rows, err = db.Query(`
+			SELECT id, name, description, category, usage_count, created_at, updated_at
+			FROM tools WHERE category = ? ORDER BY usage_count DESC, name`, category)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("查询工具失败: %w", err)
+	}
+	defer rows.Close()
+
+	var tools []ToolDesc
+	for rows.Next() {
+		var tool ToolDesc
+		if err := rows.Scan(
+			&tool.ID, &tool.Name, &tool.Description, &tool.Category,
+			&tool.UsageCount, &tool.CreatedAt, &tool.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("扫描工具失败: %w", err)
+		}
+		tools = append(tools, tool)
+	}
+	return tools, nil
+}
+
+// RecordToolUsage 记录工具使用
+func RecordToolUsage(toolID int64, success bool, errorMsg string) error {
+	db, err := OpenDB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	// 更新工具使用次数
+	_, err = db.Exec("UPDATE tools SET usage_count = usage_count + 1 WHERE id = ?", toolID)
+	if err != nil {
+		return fmt.Errorf("更新工具使用次数失败: %w", err)
+	}
+
+	// 记录使用详情
+	_, err = db.Exec(`
+		INSERT INTO tool_usage (project_path, tool_id, success, error_msg)
+		VALUES (?, ?, ?, ?)`, ProjectRoot, toolID, success, errorMsg)
+	if err != nil {
+		return fmt.Errorf("记录工具使用详情失败: %w", err)
+	}
+
+	return nil
+}
+
+// GetToolUsageStats 获取工具使用统计
+func GetToolUsageStats(days int) ([]ToolUsageStat, error) {
+	db, err := OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	var rows *sql.Rows
+
+	query := `
+		SELECT 
+			t.name,
+			t.usage_count,
+			COALESCE(SUM(CASE WHEN tu.success THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 100) as success_rate,
+			MAX(tu.used_at) as last_used
+		FROM tools t
+		LEFT JOIN tool_usage tu ON t.id = tu.tool_id
+	`
+
+	if days > 0 {
+		query += " WHERE tu.used_at >= datetime('now', '-' || ? || ' days')"
+		rows, err = db.Query(query+" GROUP BY t.id ORDER BY t.usage_count DESC", days)
+	} else {
+		rows, err = db.Query(query + " GROUP BY t.id ORDER BY t.usage_count DESC")
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("查询工具统计失败: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []ToolUsageStat
+
+	for rows.Next() {
+		var stat ToolUsageStat
+		var lastUsedStr sql.NullString
+		if err := rows.Scan(&stat.Name, &stat.UsageCount, &stat.SuccessRate, &lastUsedStr); err != nil {
+			return nil, fmt.Errorf("扫描工具统计失败: %w", err)
+		}
+		if lastUsedStr.Valid && lastUsedStr.String != "" {
+			if t, err := time.Parse("2006-01-02 15:04:05", lastUsedStr.String); err == nil {
+				stat.LastUsed = t
+			}
+		}
+		stats = append(stats, stat)
+	}
+	return stats, nil
+}
+
+// GetProjectToolUsage 获取项目工具使用情况
+func GetProjectToolUsage(days int) ([]ToolUsageStat, error,
+) {
+	db, err := OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	var rows *sql.Rows
+
+	query := `
+		SELECT 
+			t.name,
+			COUNT(tu.id) as usage_count,
+			MAX(tu.used_at) as last_used
+		FROM tools t
+		JOIN tool_usage tu ON t.id = tu.tool_id
+		WHERE tu.project_path = ?
+	`
+
+	if days > 0 {
+		query += " AND tu.used_at >= datetime('now', '-' || ? || ' days')"
+		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", ProjectRoot, days)
+	} else {
+		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", ProjectRoot)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("查询项目工具使用失败: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []ToolUsageStat
+
+	for rows.Next() {
+		var stat ToolUsageStat
+		var lastUsedStr sql.NullString
+		if err := rows.Scan(&stat.Name, &stat.UsageCount, &lastUsedStr); err != nil {
+			return nil, fmt.Errorf("扫描项目工具使用失败: %w", err)
+		}
+		if lastUsedStr.Valid && lastUsedStr.String != "" {
+			if t, err := time.Parse("2006-01-02 15:04:05", lastUsedStr.String); err == nil {
+				stat.LastUsed = t
+			}
+		}
+		stats = append(stats, stat)
+	}
+	return stats, nil
+}

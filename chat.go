@@ -219,7 +219,7 @@ func WithToolCallNames(ctx context.Context, tcs []ToolCall) context.Context {
 }
 
 func init() {
-	chatCmd := &cobra.Command{
+	chatCmd := AddRootCommand(&cobra.Command{
 		Use:   "chat",
 		Short: "与 DeepSeek 对话（支持工具调用：文件操作、Git）",
 		Long: `发送一条消息给 DeepSeek 聊天模型并获取回复。
@@ -232,8 +232,7 @@ func init() {
   cat prompt.txt | dscli chat --model deepseek-chat`,
 		PreRunE: ChatPreRunE,
 		RunE:    ChatRunE,
-	}
+	})
 	chatCmd.Flags().StringVar(&chatModel, "model", ModelDeepseekChat, "使用的模型名称")
 	chatCmd.Flags().BoolVar(&reload, "reload", false, "重载进程（内部使用）")
-	RootCmd.AddCommand(chatCmd)
 }

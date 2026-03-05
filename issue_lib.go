@@ -11,26 +11,6 @@ import (
 	"strings"
 )
 
-// IssueAPIError 表示issue API调用错误
-type IssueAPIError struct {
-	StatusCode int
-	Message    string
-	Details    string
-}
-
-func (e *IssueAPIError) Error() string {
-	if e.Details != "" {
-		return fmt.Sprintf("issue API错误 (状态码: %d): %s\n详情: %s", e.StatusCode, e.Message, e.Details)
-	}
-	return fmt.Sprintf("issue API错误 (状态码: %d): %s", e.StatusCode, e.Message)
-}
-
-// IssueConfig 包含issue操作的配置信息
-type IssueConfig struct {
-	BaseURL string
-	Token   string
-}
-
 // GetIssueConfig 获取issue配置信息
 func GetIssueConfig() (*IssueConfig, error) {
 	// 使用context.Background()，因为CLI命令可能没有传递context
@@ -150,7 +130,6 @@ func ShowIssue(number string) (*Issue, error) {
 	return &issue, nil
 }
 
-// CreateIssue 创建新的issue
 type CreateIssueOptions struct {
 	Title string
 	Body  string
@@ -227,7 +206,6 @@ func CreateIssue(opts CreateIssueOptions) (*Issue, error) {
 	return &issue, nil
 }
 
-// UpdateIssue 更新issue
 type UpdateIssueOptions struct {
 	Number string
 	Title  string
@@ -265,9 +243,10 @@ func UpdateIssue(opts UpdateIssueOptions) (*Issue, error) {
 	}
 	if opts.State != "" {
 		// GitCode API 使用 "state_event" 而不是 "state"
-		if opts.State == "closed" {
+		switch opts.State {
+		case "closed":
 			requestData["state_event"] = "close"
-		} else if opts.State == "open" {
+		case "open":
 			requestData["state_event"] = "reopen"
 		}
 	}

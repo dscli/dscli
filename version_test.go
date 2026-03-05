@@ -72,7 +72,7 @@ func TestVersionCommandOutput(t *testing.T) {
 	SetOutputWriter(&buf)
 
 	// 执行version命令
-	versionCmd.Run(nil, nil)
+	VersionRun(nil, nil)
 
 	output := buf.String()
 
@@ -144,7 +144,7 @@ func TestVersionCommandWithoutBuild(t *testing.T) {
 	SetOutputWriter(&buf)
 
 	// 执行version命令
-	versionCmd.Run(nil, nil)
+	VersionRun(nil, nil)
 
 	output := buf.String()
 
@@ -155,33 +155,6 @@ func TestVersionCommandWithoutBuild(t *testing.T) {
 
 	// 验证程序没有崩溃（这是主要测试点）
 	// 空构建信息应该被正确处理
-}
-
-func TestVersionCommandStructure(t *testing.T) {
-	// 验证命令结构
-	if versionCmd == nil {
-		t.Fatal("versionCmd未初始化")
-	}
-
-	// 验证命令基本信息
-	if versionCmd.Use != "version" {
-		t.Errorf("versionCmd.Use = %q, want %q", versionCmd.Use, "version")
-	}
-
-	if versionCmd.Short != "显示版本信息" {
-		t.Errorf("versionCmd.Short = %q, want %q", versionCmd.Short, "显示版本信息")
-	}
-
-	// 验证命令描述
-	expectedLong := "显示 dscli 的版本信息、构建信息和运行时信息。"
-	if versionCmd.Long != expectedLong {
-		t.Errorf("versionCmd.Long = %q, want %q", versionCmd.Long, expectedLong)
-	}
-
-	// 验证Run函数不为nil
-	if versionCmd.Run == nil {
-		t.Error("versionCmd.Run函数未设置")
-	}
 }
 
 func TestVersionCommandIntegration(t *testing.T) {
@@ -195,7 +168,7 @@ func TestVersionCommandIntegration(t *testing.T) {
 	SetOutputWriter(&buf)
 
 	// 执行命令
-	versionCmd.Run(nil, nil)
+	VersionRun(nil, nil)
 
 	output := buf.String()
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"time"
 )
@@ -46,4 +47,11 @@ func GetSystemPrompt() (prompt string) {
 		log.Fatalf("do not support %s", chatModel)
 	}
 	return
+}
+
+func LoadPrompts(ctx context.Context) ([]Message, error) {
+	return []Message{{
+		Role:    "system",
+		Content: GetSystemPrompt(),
+	}}, nil
 }

@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -168,3 +170,79 @@ type FIMChoice struct {
 }
 
 type ContextKeyType string
+
+// ==================== Issue 相关类型 ====================
+
+// RawIssue 用于接收原始JSON数据
+type RawIssue struct {
+	ID        json.RawMessage `json:"id"`
+	Number    string          `json:"number"`
+	State     string          `json:"state"`
+	Title     string          `json:"title"`
+	Body      string          `json:"body"`
+	CreatedAt string          `json:"created_at"`
+	UpdatedAt string          `json:"updated_at"`
+	ClosedAt  string          `json:"closed_at"`
+	Labels    []Label         `json:"labels"`
+	Assignee  *RawUser        `json:"assignee"`
+	User      RawUser         `json:"user"`
+}
+
+// RawUser 原始用户数据
+type RawUser struct {
+	ID        json.RawMessage `json:"id"`
+	Login     string          `json:"login"`
+	Name      string          `json:"name"`
+	AvatarURL string          `json:"avatar_url"`
+}
+
+// Label 表示issue的标签
+type Label struct {
+	ID          int    `json:"id"`
+	Name        string `json:"name"`
+	Color       string `json:"color"`
+	Description string `json:"description"`
+}
+
+// Issue 处理后的issue数据结构
+type Issue struct {
+	ID        int
+	Number    string
+	State     string
+	Title     string
+	Body      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	ClosedAt  time.Time
+	Labels    []Label
+	Assignee  *User
+	User      User
+}
+
+// User 处理后的用户信息
+type User struct {
+	ID        int
+	Login     string
+	Name      string
+	AvatarURL string
+}
+
+// IssueAPIError 表示issue API调用错误
+type IssueAPIError struct {
+	StatusCode int
+	Message    string
+	Details    string
+}
+
+func (e *IssueAPIError) Error() string {
+	if e.Details != "" {
+		return fmt.Sprintf("issue API错误 (状态码: %d): %s\n详情: %s", e.StatusCode, e.Message, e.Details)
+	}
+	return fmt.Sprintf("issue API错误 (状态码: %d): %s", e.StatusCode, e.Message)
+}
+
+// IssueConfig 包含issue操作的配置信息
+type IssueConfig struct {
+	BaseURL string
+	Token   string
+}

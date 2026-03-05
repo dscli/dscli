@@ -1,10 +1,10 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -96,14 +96,41 @@ func PrintSkill(skill Skill, detailed bool) {
 }
 
 func init() {
+	RegisterTableSchema(
+		// 技能表
+		`CREATE TABLE IF NOT EXISTS skills (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			description TEXT NOT NULL,
+			content TEXT NOT NULL,
+			category TEXT,
+			priority INTEGER DEFAULT 50,
+			is_global BOOLEAN DEFAULT 0,
+			usage_count INTEGER DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            model_id INTEGER NOT NULL DEFAULT 0,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		// 项目技能关联表
+		`CREATE TABLE IF NOT EXISTS project_skills (
+			project_path TEXT NOT NULL,
+			skill_id INTEGER NOT NULL,
+			is_enabled BOOLEAN DEFAULT 1,
+			enabled_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			last_used DATETIME,
+			PRIMARY KEY (project_path, skill_id),
+			FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_skills_category ON skills(category)`,
+		`CREATE INDEX IF NOT EXISTS idx_skills_priority ON skills(priority DESC)`,
+)
+
 	// 创建skills命令
-	skillsCmd := &cobra.Command{
+	skillsCmd:=AddRootCommand(&cobra.Command{
 		Use:   "skills",
 		Short: "管理技能",
 		Long:  `管理技能系统，包括增删改查等操作。`,
-	}
-
-	RootCmd.AddCommand(skillsCmd)
+	})
 
 	// list命令
 	listCmd := &cobra.Command{
@@ -311,57 +338,189 @@ func init() {
 	)
 }
 
-// getDB 获取数据库连接
-func getDB() (*sql.DB, error) {
-	dbPath := filepath.Join(ConfigDir, "sqlite.db")
-	db, err := sql.Open("sqlite3", dbPath)
+
+func LoadSkills(ctx context.Context) ([]Message, error) {
+	return []Message{}, nil
+}
+
+// CreateSkill 创建新技能
+func CreateSkill(name, description, content, category string, priority int, isGlobal bool) (int64, error) {
+	db, err := OpenDB()
 	if err != nil {
-		return nil, fmt.Errorf("无法打开数据库: %w", err)
+		return 0, err
 	}
-	return db, nil
+	defer db.Close()
+	result, err := db.Exec(`
+		INSERT INTO skills (name, description, content, category, priority, is_global)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		name, description, content, category, priority, isGlobal)
+	if err != nil {
+		return 0, fmt.Errorf("创建技能失败: %w", err)
+	}
+	return result.LastInsertId()
 }
 
-// 数据库操作函数（将在后续实现中填充）
-func listSkills(category, priorityFilter string) ([]Skill, error) {
-	return nil, fmt.Errorf("暂未实现")
+// GetSkill 根据ID获取技能
+func GetSkill(id int64) (*Skill, error) {
+	db, err := OpenDB()
+	if err != nil {
+		return nil, err
+	}
+
+	defer db.Close()
+	var skill Skill
+	err = db.QueryRow(`
+		SELECT id, name, description, content, category, priority, is_global, usage_count, created_at, updated_at
+		FROM skills WHERE id = ?`, id).Scan(
+		&skill.ID, &skill.Name, &skill.Description, &skill.Content, &skill.Category,
+		&skill.Priority, &skill.IsGlobal, &skill.UsageCount, &skill.CreatedAt, &skill.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("获取技能失败: %w", err)
+	}
+	return &skill, nil
 }
 
-func getSkillByID(id int64) (*Skill, error) {
-	return nil, fmt.Errorf("暂未实现")
+// GetSkillByName 根据名称获取技能
+func GetSkillByName(name string) (*Skill, error) {
+	db, err := OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	var skill Skill
+	err = db.QueryRow(`
+		SELECT id, name, description, content, category, priority, is_global, usage_count, created_at, updated_at
+		FROM skills WHERE name = ?`, name).Scan(
+		&skill.ID, &skill.Name, &skill.Description, &skill.Content, &skill.Category,
+		&skill.Priority, &skill.IsGlobal, &skill.UsageCount, &skill.CreatedAt, &skill.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("获取技能失败: %w", err)
+	}
+	return &skill, nil
 }
 
-func createSkill(skill Skill) (int64, error) {
-	return 0, fmt.Errorf("暂未实现")
+// ListSkills 列出所有技能（可按分类过滤）
+func ListSkills(category string) ([]Skill, error) {
+	db, err := OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	var rows *sql.Rows
+
+	if category == "" {
+		rows, err = db.Query(`
+			SELECT id, name, description, content, category, priority, is_global, usage_count, created_at, updated_at
+			FROM skills ORDER BY priority DESC, name`)
+	} else {
+		rows, err = db.Query(`
+			SELECT id, name, description, content, category, priority, is_global, usage_count, created_at, updated_at
+			FROM skills WHERE category = ? ORDER BY priority DESC, name`, category)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("查询技能失败: %w", err)
+	}
+	defer rows.Close()
+
+	var skills []Skill
+	for rows.Next() {
+		var skill Skill
+		if err := rows.Scan(
+			&skill.ID, &skill.Name, &skill.Description, &skill.Content, &skill.Category,
+			&skill.Priority, &skill.IsGlobal, &skill.UsageCount, &skill.CreatedAt, &skill.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("扫描技能失败: %w", err)
+		}
+		skills = append(skills, skill)
+	}
+	return skills, nil
 }
 
-func updateSkill(id int64, updates map[string]any) error {
-	return fmt.Errorf("暂未实现")
+// EnableSkill 为项目启用技能
+func EnableSkill(skillID int64) error {
+	db, err := OpenDB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	_, err = db.Exec(`
+		INSERT OR REPLACE INTO project_skills (project_path, skill_id, is_enabled, enabled_at)
+		VALUES (?, ?, 1, CURRENT_TIMESTAMP)`, ProjectRoot, skillID)
+	if err != nil {
+		return fmt.Errorf("启用技能失败: %w", err)
+	}
+	return nil
 }
 
-func deleteSkill(id int64) error {
-	return fmt.Errorf("暂未实现")
+// DisableSkill 为项目禁用技能
+func DisableSkill(skillID int64) error {
+	db, err := OpenDB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	_, err = db.Exec(`
+		UPDATE project_skills SET is_enabled = 0 WHERE project_path = ? AND skill_id = ?`,
+		ProjectRoot, skillID)
+	if err != nil {
+		return fmt.Errorf("禁用技能失败: %w", err)
+	}
+	return nil
 }
 
-func enableSkillForProject(skillID int64, projectPath string) error {
-	return fmt.Errorf("暂未实现")
+// GetEnabledSkills 获取项目启用的技能
+func GetEnabledSkills() ([]Skill, error) {
+	db, err := OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	rows, err := db.Query(`
+		SELECT s.id, s.name, s.description, s.content, s.category, s.priority, 
+		       s.is_global, s.usage_count, s.created_at, s.updated_at
+		FROM skills s
+		JOIN project_skills ps ON s.id = ps.skill_id
+		WHERE ps.project_path = ? AND ps.is_enabled = 1
+		ORDER BY s.priority DESC, s.name`, ProjectRoot)
+	if err != nil {
+		return nil, fmt.Errorf("查询启用技能失败: %w", err)
+	}
+	defer rows.Close()
+
+	var skills []Skill
+	for rows.Next() {
+		var skill Skill
+		if err := rows.Scan(
+			&skill.ID, &skill.Name, &skill.Description, &skill.Content, &skill.Category,
+			&skill.Priority, &skill.IsGlobal, &skill.UsageCount, &skill.CreatedAt, &skill.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("扫描技能失败: %w", err)
+		}
+		skills = append(skills, skill)
+	}
+	return skills, nil
 }
 
-func disableSkillForProject(skillID int64, projectPath string) error {
-	return fmt.Errorf("暂未实现")
+// RecordSkillUsage 记录技能使用
+func RecordSkillUsage(skillID int64, projectPath string) error {
+	db, err := OpenDB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	// 更新技能使用次数
+	_, err = db.Exec("UPDATE skills SET usage_count = usage_count + 1 WHERE id = ?", skillID)
+	if err != nil {
+		return fmt.Errorf("更新技能使用次数失败: %w", err)
+	}
+
+	// 更新最后使用时间
+	_, err = db.Exec(`
+		UPDATE project_skills SET last_used = CURRENT_TIMESTAMP 
+		WHERE project_path = ? AND skill_id = ?`, projectPath, skillID)
+	if err != nil {
+		return fmt.Errorf("更新最后使用时间失败: %w", err)
+	}
+
+	return nil
 }
 
-func searchSkills(query string) ([]Skill, error) {
-	return nil, fmt.Errorf("暂未实现")
-}
-
-func importSkillsFromFile(filePath string) (int, error) {
-	return 0, fmt.Errorf("暂未实现")
-}
-
-func exportSkillsToFile(filePath string) error {
-	return fmt.Errorf("暂未实现")
-}
-
-func getSkillStats() (map[string]any, error) {
-	return nil, fmt.Errorf("暂未实现")
-}
