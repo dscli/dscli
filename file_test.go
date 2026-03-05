@@ -335,8 +335,10 @@ Line 2`,
 				}
 				expected := `Line 1
 Line 2
+
+
 Appended Line`
-				if strings.TrimSpace(string(content)) != strings.TrimSpace(expected) {
+				if string(content) != expected {
 					t.Errorf("文件内容不正确\n期望:\n%s\n实际:\n%s", expected, string(content))
 				}
 			},
@@ -458,5 +460,43 @@ func TestHandleWriteFileWithLineRange_MissingContent(t *testing.T) {
 	expectedErr := "parameter error: no content specified"
 	if err.Error() != expectedErr {
 		t.Errorf("错误消息不正确\n期望: %s\n实际: %s", expectedErr, err.Error())
+	}
+}
+
+func TestHandlerWriteFileWithLineRangeLineBeyondScope(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "test.txt")
+
+	// 创建测试文件
+	os.WriteFile(filePath, []byte("Line 1\nLine 2\nLine 3"), 0o644)
+
+	args := map[string]string{
+		"path":       filePath,
+		"start_line": "10",
+		"content":    "Line 10: Inserted at line 10",
+	}
+
+	ctx := context.Background()
+	_, err := handleWriteFileWithLineRange(ctx, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	b, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual := string(b)
+	if actual != `Line 1
+Line 2
+Line 3
+
+
+
+
+
+
+Line 10: Inserted at line 10` {
+		t.Fatal(actual)
 	}
 }

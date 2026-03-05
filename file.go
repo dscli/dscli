@@ -510,7 +510,16 @@ func handleWriteFileWithLineRange(_ context.Context, args map[string]string) (st
 		newLines = append(newLines, lines[:beforeStart]...)
 	}
 
-	// 2. 处理新内容
+	// 2. 如果 startLine 超出文件范围，需要插入空行
+	if startLine > len(lines) {
+		// 计算需要插入的空行数
+		emptyLinesNeeded := startLine - len(lines) - 1
+		for i := 0; i < emptyLinesNeeded; i++ {
+			newLines = append(newLines, "")
+		}
+	}
+
+	// 3. 处理新内容
 	if content != "" {
 		// 分割新内容为多行
 		contentLines := strings.Split(content, "\n")
@@ -518,16 +527,13 @@ func handleWriteFileWithLineRange(_ context.Context, args map[string]string) (st
 	}
 	// 如果 content 为空，这里什么都不添加，相当于删除
 
-	// 3. 添加 end_line 之后的部分
+	// 4. 添加 end_line 之后的部分
 	if endLine != -1 {
-		// 如果 endLine 超出文件范围，则没有后续内容
+		// endLine 是包含的结束行号，所以之后的部分从 endLine 开始
+		// 但需要确保 endLine 在文件范围内
 		if endLine < len(lines) {
 			newLines = append(newLines, lines[endLine:]...)
 		}
-	} else {
-		// endLine 为 -1 表示到文件末尾
-		// 如果 startLine 在文件范围内，则删除从 startLine 到末尾的内容
-		// 这里什么都不添加
 	}
 
 	// 将新内容写回文件
