@@ -63,10 +63,8 @@ func init() {
 
 func GetConfigDir() (configDir string) {
 	configDir = filepath.Join(os.Getenv("HOME"), ".dscli")
-	err := os.MkdirAll(configDir, 0o755)
-	if err != nil {
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		panic(err)
-		return
 	}
 	return
 }
@@ -75,7 +73,6 @@ func GetProjectRoot() (projectRoot string) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		panic(err)
-		return
 	}
 	gitRoot, err := findGitRoot(cwd)
 	if err != nil {
@@ -84,27 +81,21 @@ func GetProjectRoot() (projectRoot string) {
 	projectRoot, err = filepath.Abs(gitRoot)
 	if err != nil {
 		panic(err)
-		return
 	}
 
 	if cwd != projectRoot {
-		err = os.Chdir(projectRoot)
-		if err != nil {
+		if err = os.Chdir(projectRoot); err != nil {
 			panic(err)
-			return
 		}
 	}
 
 	cwd, err = os.Getwd()
 	if err != nil {
 		panic(err)
-		return
 	}
 
 	if cwd != projectRoot {
-		err = fmt.Errorf("cwd(%s) != ProjectRoot(%s)", cwd, projectRoot)
-		panic(err)
-		return
+		panic(fmt.Errorf("cwd(%s) != ProjectRoot(%s)", cwd, projectRoot))
 	}
 	return projectRoot
 }

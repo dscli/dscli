@@ -41,11 +41,11 @@ var fimCmd = &cobra.Command{
 		}
 
 		resp, err := DeepseekClient.FIM(fimModel, prompt, fimSuffix, fimMaxTokens, fimTemp)
-		log.Printf("FIM请求成功，生成 %d 个补全结果", len(resp.Choices))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "FIM 请求失败: %v\n", err)
 			os.Exit(1)
 		}
+		log.Printf("FIM请求成功，生成 %d 个补全结果", len(resp.Choices))
 		if len(resp.Choices) == 0 {
 			fmt.Fprintln(os.Stderr, "错误: 未收到回复")
 			os.Exit(1)

@@ -358,3 +358,13 @@ func TestRetryDelayCalculation(t *testing.T) {
 		})
 	}
 }
+
+// TestIsRetryableError_WrappedError verifies that wrapped errors are still detected.
+func TestIsRetryableError_WrappedError(t *testing.T) {
+	inner := fmt.Errorf("connection refused")
+	wrapped := fmt.Errorf("outer context: %w", inner)
+
+	if !isRetryableError(wrapped) {
+		t.Error("isRetryableError should detect wrapped 'connection refused' errors")
+	}
+}

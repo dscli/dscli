@@ -43,7 +43,7 @@ func GetSystemPrompt() (prompt string) {
 
 请保持逻辑严谨，有条不紊，滴水不漏。`
 	default:
-		log.Fatalf("do not support %s", chatModel)
+		log.Fatalf("do not support model id %d", id)
 	}
 	return
 }

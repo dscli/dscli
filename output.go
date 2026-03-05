@@ -183,7 +183,7 @@ func Warn(format string, a ...any) {
 	if outputCurrentLogLevel <= LogLevelWarn {
 		message := fmt.Sprintf(format, a...)
 		formatted := formatMessage("WARN", ColorYellow, message)
-		Println(outputErrorWriter, formatted)
+		fmt.Fprintln(outputErrorWriter, formatted)
 	}
 }
 
@@ -192,7 +192,7 @@ func Error(format string, a ...any) {
 	if outputCurrentLogLevel <= LogLevelError {
 		message := fmt.Sprintf(format, a...)
 		formatted := formatMessage("ERROR", ColorRed, message)
-		Println(outputErrorWriter, formatted)
+		fmt.Fprintln(outputErrorWriter, formatted)
 	}
 }
 
@@ -201,7 +201,7 @@ func Fatal(format string, a ...any) {
 	if outputCurrentLogLevel <= LogLevelFatal {
 		message := fmt.Sprintf(format, a...)
 		formatted := formatMessage("FATAL", ColorBoldRed, message)
-		Println(outputErrorWriter, formatted)
+		fmt.Fprintln(outputErrorWriter, formatted)
 		os.Exit(1)
 	}
 }

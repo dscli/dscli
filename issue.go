@@ -381,10 +381,10 @@ func handleIssueUpdate(ctx context.Context, args map[string]string) (string, err
 	result.WriteString(fmt.Sprintf("Updated:    %s\n", formatTime(issue.UpdatedAt)))
 
 	if hasTitle && title != "" {
-		result.WriteString(fmt.Sprintf("标题已更新\n"))
+		result.WriteString("标题已更新\n")
 	}
 	if hasBody && body != "" {
-		result.WriteString(fmt.Sprintf("内容已更新\n"))
+		result.WriteString("内容已更新\n")
 	}
 	if hasState && state != "" {
 		result.WriteString(fmt.Sprintf("状态已更新为: %s\n", state))

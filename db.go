@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -152,7 +153,7 @@ func CreateOrGetSessionID() (sessionID int64, err error) {
 	err = db.QueryRow("SELECT id FROM sessions WHERE project_path = ?",
 		ProjectRoot).Scan(&id)
 	if err != nil {
-		if err != sql.ErrNoRows {
+		if !errors.Is(err, sql.ErrNoRows) {
 			return
 		}
 	} else if id > 0 {
@@ -308,7 +309,7 @@ func CreateSkill(name, description, content, category string, priority int, isGl
 	defer db.Close()
 	result, err := db.Exec(`
 		INSERT INTO skills (name, description, content, category, priority, is_global)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?)`,
 		name, description, content, category, priority, isGlobal)
 	if err != nil {
 		return 0, fmt.Errorf("创建技能失败: %w", err)

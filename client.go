@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -113,7 +114,7 @@ func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (e
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		// 检查是否是网络错误
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		if netErr, ok := errors.AsType[net.Error](err); ok && netErr.Timeout() {
 			err = fmt.Errorf("网络请求超时: %w", err)
 		} else {
 			err = fmt.Errorf("网络请求失败: %w", err)

@@ -106,7 +106,7 @@ which lead to the error:
 	ctx = context.WithValue(ctx, ToolDisplayName, tool.DisplayName)
 	toolID, err := GetOrCreateTool(tool.Name, tool.Description, tool.Category)
 	if err != nil {
-		Error(err.Error(), "name", tool.Name)
+		Error("获取工具失败: %v (tool=%s)", err, tool.Name)
 		// 继续执行工具，但不记录统计
 		return tool.Handler(ctx, args)
 	}
@@ -126,8 +126,8 @@ which lead to the error:
 		errorMsg = err.Error()
 	}
 
-	if err := RecordToolUsage(toolID, success, errorMsg); err != nil {
-		return "", err
+	if recordErr := RecordToolUsage(toolID, success, errorMsg); recordErr != nil {
+		Error("记录工具使用失败: %v", recordErr)
 	}
 
 	return result, err

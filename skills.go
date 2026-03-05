@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -313,12 +312,7 @@ func init() {
 
 // getDB 获取数据库连接
 func getDB() (*sql.DB, error) {
-	dbPath := filepath.Join(ConfigDir, "sqlite.db")
-	db, err := sql.Open("sqlite3", dbPath)
-	if err != nil {
-		return nil, fmt.Errorf("无法打开数据库: %w", err)
-	}
-	return db, nil
+	return OpenDB()
 }
 
 // 数据库操作函数（将在后续实现中填充）

@@ -265,9 +265,10 @@ func UpdateIssue(opts UpdateIssueOptions) (*Issue, error) {
 	}
 	if opts.State != "" {
 		// GitCode API 使用 "state_event" 而不是 "state"
-		if opts.State == "closed" {
+		switch opts.State {
+		case "closed":
 			requestData["state_event"] = "close"
-		} else if opts.State == "open" {
+		case "open":
 			requestData["state_event"] = "reopen"
 		}
 	}
