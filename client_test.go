@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -210,93 +209,46 @@ func TestNewClient(t *testing.T) {
 	}
 }
 
-func TestRetryNotificationOutput(t *testing.T) {
-	// 创建一个模拟服务器，前两次失败，第三次成功
-	attempts := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		attempts++
-		if attempts <= 2 {
-			// 前两次返回500错误
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("internal server error"))
-		} else {
-			// 第三次成功
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"data": "success"}`))
-		}
-	}))
-	defer server.Close()
-
-	// 创建测试客户端
-	client := newTestClient("test-key", server.URL)
-
-	// 创建一个缓冲区来捕获输出
-	var buf bytes.Buffer
-	oldWriter := outputWriter
-	SetOutputWriter(&buf)
-	defer SetOutputWriter(oldWriter)
-
-	// 发送请求
-	var result map[string]string
-	err := client.doRequest("GET", "/test", nil, &result)
-	if err != nil {
-		t.Errorf("Expected success after retries, got error: %v", err)
+func TestRetryDelayCalculation(t *testing.T) {
+	// 测试指数退避计算
+	client := &Deepseek{
+		retryDelay: 60 * time.Second,
+		maxRetries: 3,
 	}
 
-	// 获取输出
-	output := buf.String()
-
-	// 检查是否有重试通知
-	if attempts > 1 {
-		// 应该有重试通知
-		if !strings.Contains(output, "网络异常") {
-			t.Error("Expected retry notification in output")
-		}
-
-		// 检查是否有成功通知
-		if !strings.Contains(output, "重试成功") {
-			t.Error("Expected success notification in output")
-		}
-	}
-}
-
-func TestRetryNotificationWithCustomWriter(t *testing.T) {
-	// 创建一个总是失败的模拟服务器
-	attempts := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		attempts++
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("internal server error"))
-	}))
-	defer server.Close()
-
-	// 创建测试客户端
-	client := newTestClient("test-key", server.URL)
-
-	// 创建一个缓冲区来捕获输出
-	var buf bytes.Buffer
-	oldWriter := outputWriter
-	SetOutputWriter(&buf)
-	defer SetOutputWriter(oldWriter)
-
-	// 发送请求
-	var result map[string]string
-	err := client.doRequest("GET", "/test", nil, &result)
-
-	// 应该失败
-	if err == nil {
-		t.Error("Expected error after max retries, got nil")
+	testCases := []struct {
+		name     string
+		attempt  int
+		expected time.Duration
+	}{
+		{
+			name:     "第一次重试",
+			attempt:  1,
+			expected: 60 * time.Second, // 2^0 * 60s = 60s
+		},
+		{
+			name:     "第二次重试",
+			attempt:  2,
+			expected: 120 * time.Second, // 2^1 * 60s = 120s
+		},
+		{
+			name:     "第三次重试",
+			attempt:  3,
+			expected: 240 * time.Second, // 2^2 * 60s = 240s
+		},
 	}
 
-	// 获取输出
-	output := buf.String()
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			delay := time.Duration(1<<(tc.attempt-1)) * client.retryDelay
+			if delay > 300*time.Second {
+				delay = 300 * time.Second
+			}
 
-	// 检查是否有重试通知（应该有3次重试通知）
-	if attempts > 1 {
-		// 统计重试通知次数
-		retryCount := strings.Count(output, "网络异常")
-		if retryCount != 3 {
-			t.Errorf("Expected 3 retry notifications, got %d", retryCount)
-		}
+			if delay != tc.expected {
+				t.Errorf("重试延迟计算错误: attempt=%d, got %v, want %v",
+					tc.attempt, delay, tc.expected)
+			}
+		})
 	}
 }

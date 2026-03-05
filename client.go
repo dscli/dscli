@@ -147,9 +147,8 @@ func (c *Deepseek) doRequest(method, path string, body any, result any) (err err
 			// 计算重试延迟（指数退避）
 			delay := min(time.Duration(1<<(attempt-1))*c.retryDelay,
 				300*time.Second)
-
 			// 简洁通知用户（不超过20字）
-			Printf("网络异常，%d秒后重试...\n", int(delay.Seconds()))
+			Notice("网络异常，%d秒后重试...", int(delay.Seconds()))
 			time.Sleep(delay)
 		}
 
@@ -159,7 +158,7 @@ func (c *Deepseek) doRequest(method, path string, body any, result any) (err err
 		if lastErr == nil {
 			// 成功，返回
 			if attempt > 0 {
-				Printf("重试成功！\n")
+				Success("重试成功！")
 			}
 			return nil
 		}
@@ -180,7 +179,6 @@ func (c *Deepseek) doRequest(method, path string, body any, result any) (err err
 	return lastErr
 }
 
-// Models 获取模型列表
 func (c *Deepseek) Models() (*ModelsResponse, error) {
 	var resp ModelsResponse
 	err := c.doRequest("GET", "/models", nil, &resp)

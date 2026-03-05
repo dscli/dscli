@@ -115,8 +115,6 @@ func initDefaultSegments(db *sql.DB) error {
 		return nil
 	}
 
-	fmt.Println("segment.go: 初始化编程领域段落...")
-
 	// 插入默认段落
 	segments := []struct {
 		name    string
@@ -162,7 +160,6 @@ func initDefaultSegments(db *sql.DB) error {
 		}
 	}
 
-	fmt.Println("segment.go: 默认段落初始化完成")
 	return nil
 }
 
