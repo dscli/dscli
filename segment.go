@@ -163,7 +163,8 @@ func initDefaultSegments(db *sql.DB) error {
 	return nil
 }
 
-// BuildSystemMessages 构建系统消息（待实现）
+// BuildSystemMessages 构建系统消息
 func BuildSystemMessages(ctx context.Context) ([]Message, error) {
-	return []Message{}, nil
+	// 使用包含段落的系统消息构建器
+	return BuildSystemMessagesWithSegments(ctx)
 }
