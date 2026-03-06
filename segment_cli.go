@@ -88,11 +88,11 @@ func segmentListRunE(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(filtered) == 0 {
-		fmt.Println("没有找到段落")
+		Println("没有找到段落")
 		return nil
 	}
 
-	fmt.Printf("找到 %d 个段落:\n\n", len(filtered))
+	Printf("找到 %d 个段落:\n\n", len(filtered))
 	for _, seg := range filtered {
 		domainType := "系统级"
 		if seg.DomainID > 0 {
@@ -111,7 +111,7 @@ func segmentListRunE(cmd *cobra.Command, args []string) error {
 			status = "❌"
 		}
 
-		fmt.Printf("%s [%d] %s (领域ID: %d[%s], 模型: %s, 排序: %d)\n",
+		Printf("%s [%d] %s (领域ID: %d[%s], 模型: %s, 排序: %d)\n",
 			status, seg.ID, seg.Name, seg.DomainID, domainType, modelName, seg.SortOrder)
 
 		// 显示内容预览
@@ -120,9 +120,9 @@ func segmentListRunE(cmd *cobra.Command, args []string) error {
 			preview = preview[:77] + "..."
 		}
 		if preview != "" {
-			fmt.Printf("   内容预览: %s\n", preview)
+			Printf("   内容预览: %s\n", preview)
 		}
-		fmt.Println()
+		Println()
 	}
 
 	return nil
@@ -139,7 +139,7 @@ func segmentCreateRunE(cmd *cobra.Command, args []string) error {
 	content, _ := cmd.Flags().GetString("content")
 
 	if content == "" {
-		fmt.Println("请输入段落内容（以空行结束）:")
+		Println("请输入段落内容（以空行结束）:")
 		lines := []string{}
 		for {
 			var line string
@@ -157,7 +157,7 @@ func segmentCreateRunE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("创建段落失败: %w", err)
 	}
 
-	fmt.Printf("✅ 段落创建成功: %s\n", name)
+	Printf("✅ 段落创建成功: %s\n", name)
 	return nil
 }
 
@@ -178,14 +178,14 @@ func segmentDeleteRunE(cmd *cobra.Command, args []string) error {
 	}
 
 	// 确认删除
-	fmt.Printf("⚠️  确认删除段落: [%d] %s\n", segment.ID, segment.Name)
-	fmt.Printf("   内容预览: %s\n\n", truncateString(strings.TrimSpace(segment.Content), 80))
-	fmt.Print("确定要删除吗？(y/N): ")
+	Printf("⚠️  确认删除段落: [%d] %s\n", segment.ID, segment.Name)
+	Printf("   内容预览: %s\n\n", truncateString(strings.TrimSpace(segment.Content), 80))
+	Printf("确定要删除吗？(y/N): ")
 
 	var confirm string
 	fmt.Scanln(&confirm)
 	if strings.ToLower(confirm) != "y" {
-		fmt.Println("取消删除")
+		Println("取消删除")
 		return nil
 	}
 
@@ -195,7 +195,7 @@ func segmentDeleteRunE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("删除段落失败: %w", err)
 	}
 
-	fmt.Printf("✅ 段落删除成功: [%d] %s\n", segment.ID, segment.Name)
+	Printf("✅ 段落删除成功: [%d] %s\n", segment.ID, segment.Name)
 	return nil
 }
 
@@ -240,19 +240,19 @@ func segmentEditRunE(cmd *cobra.Command, args []string) error {
 	finalEnabled := newEnabled
 
 	// 显示将要更新的信息
-	fmt.Println("将更新以下信息:")
-	fmt.Printf("  ID: %d\n", segment.ID)
-	fmt.Printf("  名称: %s → %s\n", segment.Name, finalName)
-	fmt.Printf("  排序: %d → %d\n", segment.SortOrder, finalOrder)
-	fmt.Printf("  启用: %v → %v\n", segment.Enabled, finalEnabled)
-	fmt.Println("  内容: (将更新)")
+	Println("将更新以下信息:")
+	Printf("  ID: %d\n", segment.ID)
+	Printf("  名称: %s → %s\n", segment.Name, finalName)
+	Printf("  排序: %d → %d\n", segment.SortOrder, finalOrder)
+	Printf("  启用: %v → %v\n", segment.Enabled, finalEnabled)
+	Println("  内容: (将更新)")
 
 	// 确认更新
-	fmt.Print("\n确定要更新吗？(y/N): ")
+	Println("\n确定要更新吗？(y/N): ")
 	var confirm string
 	fmt.Scanln(&confirm)
 	if strings.ToLower(confirm) != "y" {
-		fmt.Println("取消更新")
+		Println("取消更新")
 		return nil
 	}
 
@@ -262,7 +262,7 @@ func segmentEditRunE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("更新段落失败: %w", err)
 	}
 
-	fmt.Printf("✅ 段落更新成功: [%d] %s\n", segment.ID, finalName)
+	Printf("✅ 段落更新成功: [%d] %s\n", segment.ID, finalName)
 	return nil
 }
 

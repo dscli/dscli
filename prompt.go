@@ -63,7 +63,7 @@ func LoadSimplePrompts(ctx context.Context) ([]Message, error) {
 func GetCurrentDomainID() int64 {
 	// TODO: 从项目配置或数据库获取当前项目的领域ID
 	// 暂时返回编程领域的ID
-	return 1 // 编程领域
+	return 0 // 编程领域
 }
 
 // GetCurrentModelID 获取当前模型ID

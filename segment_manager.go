@@ -49,17 +49,15 @@ func (sm *SegmentManager) GetSegmentsForPrompt(ctx context.Context, modelID int6
 	}
 	defer db.Close()
 
-	// 查询系统级段落和指定领域的段落
+	// 查询指定领域和模型的段落
 	// 模型ID匹配规则：-1表示通用段落，或者与指定modelID匹配
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, domain_id, model_id, name, content, sort_order, enabled
 		FROM prompt_segments 
 		WHERE enabled = 1 
-		AND (domain_id = 0 OR domain_id = ?)
+		AND domain_id = ?
 		AND (model_id = -1 OR model_id = ?)
-		ORDER BY 
-			CASE WHEN domain_id = 0 THEN 0 ELSE 1 END, -- 系统级段落在前
-			sort_order
+		ORDER BY sort_order
 	`, domainID, modelID)
 	if err != nil {
 		return nil, fmt.Errorf("查询段落失败: %w", err)

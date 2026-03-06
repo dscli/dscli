@@ -97,16 +97,12 @@ func init() {
 
 // initDefaultSegments 初始化默认段落
 func initDefaultSegments(db *sql.DB) error {
-	// 获取编程领域的ID
-	var programmingID int64
-	err := db.QueryRow("SELECT id FROM domains WHERE name = 'programming'").Scan(&programmingID)
-	if err != nil {
-		return fmt.Errorf("获取编程领域ID失败: %w", err)
-	}
+	// 编程领域的ID为0
+	programmingID := int64(0)
 
 	// 检查是否已经有段落
 	var count int
-	err = db.QueryRow("SELECT COUNT(*) FROM prompt_segments WHERE domain_id = ?", programmingID).Scan(&count)
+	err := db.QueryRow("SELECT COUNT(*) FROM prompt_segments WHERE domain_id = ?", programmingID).Scan(&count)
 	if err != nil {
 		return err
 	}

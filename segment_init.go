@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"log"
 )
 
 func init() {
@@ -13,20 +12,20 @@ func init() {
 
 // initSegmentsHook 段落初始化钩子
 func initSegmentsHook(db *sql.DB) error {
-	// 检查是否已有系统级段落
+	// 检查是否已有编程领域段落
 	var count int
 	err := db.QueryRow("SELECT COUNT(*) FROM prompt_segments WHERE domain_id = 0 AND model_id IN (0, 1)").Scan(&count)
 	if err != nil {
 		return fmt.Errorf("检查段落失败: %w", err)
 	}
 
-	// 如果已有系统级段落，跳过初始化
+	// 如果已有编程领域段落，跳过初始化
 	if count > 0 {
-		log.Println("系统级段落已存在，跳过初始化")
+		Debug("编程领域段落已存在，跳过初始化")
 		return nil
 	}
 
-	// 插入默认系统级段落
+	// 插入默认编程领域段落
 	segments := []struct {
 		name      string
 		content   string
@@ -126,16 +125,16 @@ func initSegmentsHook(db *sql.DB) error {
 	}
 	defer tx.Rollback()
 
-	// 插入系统级段落
+	// 插入编程领域段落
 	for _, segment := range segments {
 		_, err := tx.Exec(`
 			INSERT INTO prompt_segments (domain_id, model_id, name, content, sort_order, enabled)
 			VALUES (0, ?, ?, ?, ?, 1)
 		`, segment.modelID, segment.name, segment.content, segment.sortOrder)
 		if err != nil {
-			return fmt.Errorf("插入系统级段落失败: %w", err)
+			return fmt.Errorf("插入编程领域段落失败: %w", err)
 		}
-		log.Printf("已插入系统级段落: %s (模型: %d)", segment.name, segment.modelID)
+		Debug("已插入编程领域段落: %s (模型: %d)", segment.name, segment.modelID)
 	}
 
 	// 提交事务
@@ -143,7 +142,7 @@ func initSegmentsHook(db *sql.DB) error {
 		return fmt.Errorf("提交事务失败: %w", err)
 	}
 
-	log.Println("✅ 段落初始化完成")
+	Println("✅ 编程领域段落初始化完成")
 	return nil
 }
 
