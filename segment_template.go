@@ -121,33 +121,29 @@ func (r *SegmentTemplateRenderer) RenderAllSegments() (string, error) {
 
 // BuildSystemMessagesWithSegments 构建包含段落的系统消息
 func BuildSystemMessagesWithSegments(ctx context.Context) ([]Message, error) {
-	// 获取基础系统提示词
-	basePrompt := GetTemplateSystemPrompt(ctx)
+	// 获取当前项目的领域ID
+	domainID := GetCurrentDomainID()
 
-	// 获取并渲染段落
-	renderer := NewSegmentTemplateRenderer(ctx)
-	segmentsContent, err := renderer.RenderAllSegments()
+	// 获取当前模型ID
+	modelID := GetCurrentModelID()
+
+	// 获取系统提示词配置
+	config := GetSystemPromptConfig()
+
+	// 使用段落管理器渲染系统提示词
+	sm := &SegmentManager{}
+	prompt, err := sm.RenderSystemPrompt(ctx, modelID, domainID, config)
 	if err != nil {
-		// 如果获取段落失败，只使用基础提示词
+		// 如果失败，使用基础提示词
 		return []Message{{
 			Role:    "system",
-			Content: basePrompt,
+			Content: GetSystemPrompt(ctx),
 		}}, nil
-	}
-
-	// 组合基础提示词和段落
-	var fullContent strings.Builder
-	fullContent.WriteString(basePrompt)
-
-	if segmentsContent != "" {
-		fullContent.WriteString("\n\n")
-		fullContent.WriteString("## 领域特定指导\n")
-		fullContent.WriteString(segmentsContent)
 	}
 
 	return []Message{{
 		Role:    "system",
-		Content: fullContent.String(),
+		Content: prompt,
 	}}, nil
 }
 

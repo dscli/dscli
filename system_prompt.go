@@ -248,3 +248,31 @@ func LoadEnhancedPrompts(ctx context.Context) ([]Message, error) {
 		Content: GetEnhancedSystemPrompt(ctx),
 	}}, nil
 }
+
+// GetSystemPromptConfig 获取系统提示词配置
+func GetSystemPromptConfig() *SystemPromptConfig {
+	ctx := context.Background()
+	return NewSystemPromptConfig(ctx)
+}
+
+// GetTemplateSystemPrompt 获取模板化的系统提示词（兼容旧代码）
+func GetTemplateSystemPrompt(ctx context.Context) string {
+	// 获取当前项目的领域ID
+	domainID := GetCurrentDomainID()
+
+	// 获取当前模型ID
+	modelID := GetCurrentModelID()
+
+	// 获取系统提示词配置
+	config := NewSystemPromptConfig(ctx)
+
+	// 使用段落管理器渲染系统提示词
+	sm := &SegmentManager{}
+	prompt, err := sm.RenderSystemPrompt(ctx, modelID, domainID, config)
+	if err != nil {
+		// 如果失败，使用基础提示词
+		return config.GeneratePrompt()
+	}
+
+	return prompt
+}
