@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"fmt"
 	"html/template"
 	"strings"
@@ -11,23 +10,26 @@ import (
 
 // SegmentTemplateRenderer 段落模板渲染器
 type SegmentTemplateRenderer struct {
-	db     *sql.DB
 	config *SystemPromptConfig
 }
 
 // NewSegmentTemplateRenderer 创建段落模板渲染器
 func NewSegmentTemplateRenderer(ctx context.Context) *SegmentTemplateRenderer {
 	return &SegmentTemplateRenderer{
-		db:     GetDB(),
 		config: NewSystemPromptConfig(ctx),
 	}
 }
 
 // GetSegmentsForProject 获取项目的提示词段落
-func (r *SegmentTemplateRenderer) GetSegmentsForProject() ([]PromptSegment, error) {
+func (r *SegmentTemplateRenderer) GetSegmentsForProject() (segment []PromptSegment, err error) {
 	// 获取项目对应的领域ID
 	var domainID int64
-	err := r.db.QueryRow(`
+	db, err := OpenDB()
+	if err != nil {
+		return
+	}
+	defer db.Close()
+	err = db.QueryRow(`
 		SELECT d.id 
 		FROM domains d
 		LEFT JOIN project_domains pd ON d.id = pd.domain_id
@@ -37,14 +39,14 @@ func (r *SegmentTemplateRenderer) GetSegmentsForProject() ([]PromptSegment, erro
 	`, r.config.ProjectRoot).Scan(&domainID)
 	if err != nil {
 		// 如果没有找到特定领域，使用通用领域
-		err = r.db.QueryRow(`SELECT id FROM domains WHERE name = 'general'`).Scan(&domainID)
+		err = db.QueryRow(`SELECT id FROM domains WHERE name = 'general'`).Scan(&domainID)
 		if err != nil {
 			return nil, fmt.Errorf("获取领域ID失败: %w", err)
 		}
 	}
 
 	// 获取该领域的段落，按模型和排序
-	rows, err := r.db.Query(`
+	rows, err := db.Query(`
 		SELECT id, domain_id, model_id, name, content, sort_order, enabled, created_at, updated_at
 		FROM prompt_segments 
 		WHERE domain_id = ? AND enabled = true
@@ -163,9 +165,13 @@ func (c *SystemPromptConfig) IsGitClean() bool {
 }
 
 // UpdateSegmentContent 更新段落内容（支持模板）
-func UpdateSegmentContent(id int64, content string) error {
-	db := GetDB()
-	_, err := db.Exec(`
+func UpdateSegmentContent(id int64, content string) (err error) {
+	db, err := OpenDB()
+	if err != nil {
+		return
+	}
+	defer db.Close()
+	_, err = db.Exec(`
 		UPDATE prompt_segments 
 		SET content = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
@@ -174,9 +180,13 @@ func UpdateSegmentContent(id int64, content string) error {
 }
 
 // CreateSegment 创建新段落
-func CreateSegment(domainID, modelID int64, name, content string, sortOrder int) error {
-	db := GetDB()
-	_, err := db.Exec(`
+func CreateSegment(domainID, modelID int64, name, content string, sortOrder int) (err error) {
+	db, err := OpenDB()
+	if err != nil {
+		return
+	}
+	defer db.Close()
+	_, err = db.Exec(`
 		INSERT INTO prompt_segments (domain_id, model_id, name, content, sort_order, enabled)
 		VALUES (?, ?, ?, ?, ?, true)
 	`, domainID, modelID, name, content, sortOrder)

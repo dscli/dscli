@@ -9,19 +9,15 @@ import (
 )
 
 // SegmentManager 段落管理器
-type SegmentManager struct {
-	db *sql.DB
-}
+type SegmentManager struct{}
 
 // NewSegmentManager 创建段落管理器
 func NewSegmentManager() *SegmentManager {
-	return &SegmentManager{
-		db: GetDB(),
-	}
+	return &SegmentManager{}
 }
 
 // ListSegments 列出所有段落
-func (m *SegmentManager) ListSegments(domainName string, modelID int64) ([]PromptSegment, error) {
+func (m *SegmentManager) ListSegments(domainName string, modelID int64) (segments []PromptSegment, err error) {
 	query := `
 		SELECT ps.id, ps.domain_id, ps.model_id, ps.name, ps.content, 
 		       ps.sort_order, ps.enabled, ps.created_at, ps.updated_at,
@@ -43,14 +39,17 @@ func (m *SegmentManager) ListSegments(domainName string, modelID int64) ([]Promp
 	}
 
 	query += " ORDER BY d.name, ps.sort_order ASC"
-
-	rows, err := m.db.Query(query, args...)
+	db, err := OpenDB()
+	if err != nil {
+		return
+	}
+	defer db.Close()
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("查询段落失败: %w", err)
 	}
 	defer rows.Close()
 
-	var segments []PromptSegment
 	for rows.Next() {
 		var segment PromptSegment
 		var domainName string
@@ -65,14 +64,20 @@ func (m *SegmentManager) ListSegments(domainName string, modelID int64) ([]Promp
 		}
 		segments = append(segments, segment)
 	}
-
-	return segments, nil
+	return
 }
 
 // GetSegment 获取单个段落
-func (m *SegmentManager) GetSegment(id int64) (*PromptSegment, error) {
-	var segment PromptSegment
-	err := m.db.QueryRow(`
+// GetSegment 获取单个段落
+func (m *SegmentManager) GetSegment(id int64) (segment *PromptSegment, err error) {
+	db, err := OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	segment = &PromptSegment{}
+	err = db.QueryRow(`
 		SELECT id, domain_id, model_id, name, content, sort_order, enabled, created_at, updated_at
 		FROM prompt_segments
 		WHERE id = ?
@@ -84,12 +89,17 @@ func (m *SegmentManager) GetSegment(id int64) (*PromptSegment, error) {
 	if err != nil {
 		return nil, fmt.Errorf("获取段落失败: %w", err)
 	}
-	return &segment, nil
+	return segment, nil
 }
 
 // ToggleSegment 切换段落启用状态
-func (m *SegmentManager) ToggleSegment(id int64, enabled bool) error {
-	_, err := m.db.Exec(`
+func (m *SegmentManager) ToggleSegment(id int64, enabled bool) (err error) {
+	db, err := OpenDB()
+	if err != nil {
+		return
+	}
+	defer db.Close()
+	_, err = db.Exec(`
 		UPDATE prompt_segments 
 		SET enabled = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
@@ -98,8 +108,13 @@ func (m *SegmentManager) ToggleSegment(id int64, enabled bool) error {
 }
 
 // UpdateSegmentOrder 更新段落排序
-func (m *SegmentManager) UpdateSegmentOrder(id int64, sortOrder int) error {
-	_, err := m.db.Exec(`
+func (m *SegmentManager) UpdateSegmentOrder(id int64, sortOrder int) (err error) {
+	db, err := OpenDB()
+	if err != nil {
+		return
+	}
+	defer db.Close()
+	_, err = db.Exec(`
 		UPDATE prompt_segments 
 		SET sort_order = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
@@ -108,22 +123,32 @@ func (m *SegmentManager) UpdateSegmentOrder(id int64, sortOrder int) error {
 }
 
 // DeleteSegment 删除段落
-func (m *SegmentManager) DeleteSegment(id int64) error {
-	_, err := m.db.Exec("DELETE FROM prompt_segments WHERE id = ?", id)
+func (m *SegmentManager) DeleteSegment(id int64) (err error) {
+	db, err := OpenDB()
+	if err != nil {
+		return
+	}
+	defer db.Close()
+	_, err = db.Exec("DELETE FROM prompt_segments WHERE id = ?", id)
 	return err
 }
 
 // AssignProjectDomain 为项目分配领域
-func (m *SegmentManager) AssignProjectDomain(projectRoot string, domainName string) error {
+func (m *SegmentManager) AssignProjectDomain(projectRoot string, domainName string) (err error) {
 	// 获取领域ID
 	var domainID int64
-	err := m.db.QueryRow("SELECT id FROM domains WHERE name = ?", domainName).Scan(&domainID)
+	db, err := OpenDB()
+	if err != nil {
+		return
+	}
+	defer db.Close()
+	err = db.QueryRow("SELECT id FROM domains WHERE name = ?", domainName).Scan(&domainID)
 	if err != nil {
 		return fmt.Errorf("获取领域失败: %w", err)
 	}
 
 	// 插入或更新项目领域关联
-	_, err = m.db.Exec(`
+	_, err = db.Exec(`
 		INSERT INTO project_domains (project_root, domain_id)
 		VALUES (?, ?)
 		ON CONFLICT(project_root) DO UPDATE SET domain_id = ?
@@ -133,9 +158,17 @@ func (m *SegmentManager) AssignProjectDomain(projectRoot string, domainName stri
 }
 
 // GetProjectDomain 获取项目的领域
-func (m *SegmentManager) GetProjectDomain(projectRoot string) (string, error) {
+func (m *SegmentManager) GetProjectDomain(projectRoot string) (domain string, err error) {
 	var domainName string
-	err := m.db.QueryRow(`
+	db, err := OpenDB()
+	if err != nil {
+		return
+	}
+	defer db.Close()
+	if err != nil {
+		return
+	}
+	err = db.QueryRow(`
 		SELECT d.name
 		FROM project_domains pd
 		JOIN domains d ON pd.domain_id = d.id
@@ -153,7 +186,6 @@ func (m *SegmentManager) GetProjectDomain(projectRoot string) (string, error) {
 func (m *SegmentManager) PreviewSegment(ctx context.Context, content string) (string, error) {
 	config := NewSystemPromptConfig(ctx)
 	renderer := &SegmentTemplateRenderer{
-		db:     m.db,
 		config: config,
 	}
 	return renderer.RenderSegment(content)

@@ -147,7 +147,7 @@ func TestTemplateConditionals(t *testing.T) {
 
 	// 检查条件内容是否正确渲染
 	if !strings.Contains(prompt, "测试用户 <test@example.com>") {
-		t.Error("模板没有正确渲染Git用户信息")
+		t.Error("模板没有正确渲染Git用户信息", prompt)
 	}
 
 	if !strings.Contains(prompt, "分支：main") {
