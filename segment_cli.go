@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 )
 
-// segmentCmd 段落管理命令
 var segmentCmd = AddRootCommand(&cobra.Command{
 	Use:   "segment",
 	Short: "管理提示词段落",
@@ -45,12 +45,17 @@ var segmentEditCmd = AddCommand(segmentCmd, &cobra.Command{
 	RunE:  segmentEditRunE,
 })
 
-// truncateString 截断字符串
+// truncateString 截断字符串（按rune而不是字节）
+// truncateString 截断字符串（按rune而不是字节）
 func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	// 使用utf8.RuneCountInString获取字符数
+	if utf8.RuneCountInString(s) <= maxLen {
 		return s
 	}
-	return s[:maxLen-3] + "..."
+
+	// 将字符串转换为rune切片，然后截断
+	runes := []rune(s)
+	return string(runes[:maxLen-3]) + "..."
 }
 
 func init() {
