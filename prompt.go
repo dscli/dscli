@@ -5,11 +5,11 @@ import (
 )
 
 func GetSystemPrompt(ctx context.Context) (prompt string) {
-	// 使用增强的系统提示词
-	return GetEnhancedSystemPrompt(ctx)
+	// 使用模板化的系统提示词
+	return GetTemplateSystemPrompt(ctx)
 }
 
 func LoadPrompts(ctx context.Context) ([]Message, error) {
-	// 使用增强的提示词加载
-	return LoadEnhancedPrompts(ctx)
+	// 使用模板化的提示词加载
+	return LoadTemplatePrompts(ctx)
 }

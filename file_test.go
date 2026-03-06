@@ -494,8 +494,6 @@ Line 3
 
 
 
-
-
 Line 10: Inserted at line 10` {
 		t.Fatal(actual)
 	}
