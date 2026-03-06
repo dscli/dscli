@@ -122,6 +122,22 @@ func (m *SegmentManager) UpdateSegmentOrder(id int64, sortOrder int) (err error)
 	return err
 }
 
+// UpdateSegment 更新段落
+func (m *SegmentManager) UpdateSegment(id int64, domainID, modelID int64, name, content string, sortOrder int, enabled bool) (err error) {
+	db, err := OpenDB()
+	if err != nil {
+		return
+	}
+	defer db.Close()
+	_, err = db.Exec(`
+		UPDATE prompt_segments 
+		SET domain_id = ?, model_id = ?, name = ?, content = ?, 
+		    sort_order = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, domainID, modelID, name, content, sortOrder, enabled, id)
+	return err
+}
+
 // DeleteSegment 删除段落
 func (m *SegmentManager) DeleteSegment(id int64) (err error) {
 	db, err := OpenDB()

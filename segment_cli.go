@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -30,26 +29,20 @@ var segmentCreateCmd = AddCommand(segmentCmd, &cobra.Command{
 	RunE:  segmentCreateRunE,
 })
 
-// segmentPreviewCmd 预览段落
-var segmentPreviewCmd = AddCommand(segmentCmd, &cobra.Command{
-	Use:   "preview [id|content]",
-	Short: "预览段落渲染结果",
-	Args:  cobra.MinimumNArgs(1),
-	RunE:  segmentPreviewRunE,
+// segmentDeleteCmd 删除段落
+var segmentDeleteCmd = AddCommand(segmentCmd, &cobra.Command{
+	Use:   "delete <id>",
+	Short: "删除段落",
+	Args:  cobra.ExactArgs(1),
+	RunE:  segmentDeleteRunE,
 })
 
-// segmentTestCmd 测试模板
-var segmentTestCmd = AddCommand(segmentCmd, &cobra.Command{
-	Use:   "test",
-	Short: "测试模板语法",
-	RunE:  segmentTestRunE,
-})
-
-// segmentExamplesCmd 查看示例
-var segmentExamplesCmd = AddCommand(segmentCmd, &cobra.Command{
-	Use:   "examples",
-	Short: "查看段落示例",
-	RunE:  segmentExampleRunE,
+// segmentEditCmd 编辑段落
+var segmentEditCmd = AddCommand(segmentCmd, &cobra.Command{
+	Use:   "edit <id>",
+	Short: "编辑段落",
+	Args:  cobra.ExactArgs(1),
+	RunE:  segmentEditRunE,
 })
 
 // truncateString 截断字符串
@@ -71,6 +64,13 @@ func init() {
 	segmentCreateCmd.Flags().IntP("order", "o", 0, "排序顺序")
 	segmentCreateCmd.Flags().StringP("content", "c", "", "段落内容")
 	segmentCreateCmd.MarkFlagRequired("name")
+
+	segmentEditCmd.Flags().StringP("domain", "d", "", "领域名称")
+	segmentEditCmd.Flags().StringP("model", "m", "", "模型 (chat|reasoner|all)")
+	segmentEditCmd.Flags().StringP("name", "n", "", "段落名称")
+	segmentEditCmd.Flags().IntP("order", "o", -1, "排序顺序 (-1表示不修改)")
+	segmentEditCmd.Flags().StringP("content", "c", "", "段落内容")
+	segmentEditCmd.Flags().Bool("enabled", true, "是否启用")
 }
 
 func segmentListRunE(cmd *cobra.Command, args []string) error {
@@ -201,63 +201,268 @@ func segmentCreateRunE(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func segmentPreviewRunE(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
-	manager := NewSegmentManager()
-
-	input := args[0]
-
-	// 判断是ID还是内容
-	if id, err := strconv.ParseInt(input, 10, 64); err == nil {
-		// 是ID，从数据库获取
-		segment, err := manager.GetSegment(id)
-		if err != nil {
-			return fmt.Errorf("获取段落失败: %w", err)
-		}
-
-		fmt.Printf("📝 段落: %s (ID: %d)\n\n", segment.Name, segment.ID)
-		fmt.Println("原始内容:")
-		fmt.Println("---")
-		fmt.Println(segment.Content)
-		fmt.Println("---")
-
-		// 预览渲染结果
-		result, err := manager.PreviewSegment(ctx, segment.Content)
-		if err != nil {
-			return fmt.Errorf("渲染失败: %w", err)
-		}
-
-		fmt.Println("渲染结果:")
-		fmt.Println("---")
-		fmt.Println(result)
-		fmt.Println("---")
-
-	} else {
-		// 是内容，直接预览
-		fmt.Println("预览模板内容:")
-		fmt.Println("---")
-		fmt.Println(input)
-		fmt.Println("---")
-
-		result, err := manager.PreviewSegment(ctx, input)
-		if err != nil {
-			return fmt.Errorf("渲染失败: %w", err)
-		}
-
-		fmt.Println("渲染结果:")
-		fmt.Println("---")
-		fmt.Println(result)
-		fmt.Println("---")
+func segmentDeleteRunE(cmd *cobra.Command, args []string) error {
+	// 解析ID
+	id, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("无效的段落ID: %s", args[0])
 	}
 
+	// 获取段落信息用于确认
+	manager := NewSegmentManager()
+	segment, err := manager.GetSegment(id)
+	if err != nil {
+		return fmt.Errorf("获取段落失败: %w", err)
+	}
+
+	// 确认删除
+	fmt.Printf("⚠️  确认删除段落: [%d] %s\n", segment.ID, segment.Name)
+	fmt.Printf("   内容预览: %s\n\n", truncateString(strings.TrimSpace(segment.Content), 80))
+	fmt.Print("确定要删除吗？(y/N): ")
+
+	var confirm string
+	fmt.Scanln(&confirm)
+	if strings.ToLower(confirm) != "y" {
+		fmt.Println("取消删除")
+		return nil
+	}
+
+	// 执行删除
+	err = manager.DeleteSegment(id)
+	if err != nil {
+		return fmt.Errorf("删除段落失败: %w", err)
+	}
+
+	fmt.Printf("✅ 段落删除成功: [%d] %s\n", segment.ID, segment.Name)
 	return nil
 }
 
-func segmentTestRunE(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
-	manager := NewSegmentManager()
+func segmentEditRunE(cmd *cobra.Command, args []string) error {
+	// 解析ID
+	id, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("无效的段落ID: %s", args[0])
+	}
 
-	fmt.Println("输入模板内容进行测试（以空行结束）:")
+	// 获取当前段落信息
+	manager := NewSegmentManager()
+	segment, err := manager.GetSegment(id)
+	if err != nil {
+		return fmt.Errorf("获取段落失败: %w", err)
+	}
+
+	// 获取命令行参数
+	newDomain, _ := cmd.Flags().GetString("domain")
+	newModel, _ := cmd.Flags().GetString("model")
+	newName, _ := cmd.Flags().GetString("name")
+	newOrder, _ := cmd.Flags().GetInt("order")
+	newContent, _ := cmd.Flags().GetString("content")
+	newEnabled, _ := cmd.Flags().GetBool("enabled")
+
+	// 检查是否有命令行参数，决定使用哪种编辑模式
+	hasCmdArgs := newDomain != "" || newModel != "" || newName != "" || newOrder != -1 || newContent != ""
+
+	if hasCmdArgs {
+		// 命令行参数模式
+		return editSegmentWithArgs(id, segment, manager, newDomain, newModel, newName, newOrder, newContent, newEnabled)
+	} else {
+		// 交互式编辑模式
+		return editSegmentInteractive(id, segment, manager)
+	}
+}
+
+func editSegmentWithArgs(id int64, segment *PromptSegment, manager *SegmentManager,
+	newDomain, newModel, newName string, newOrder int, newContent string, newEnabled bool,
+) error {
+	db, err := OpenDB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	// 使用原值作为默认值
+	finalDomain := newDomain
+	finalModel := newModel
+	finalName := newName
+	finalOrder := newOrder
+	finalContent := newContent
+	finalEnabled := newEnabled
+
+	// 获取当前领域名称
+	var currentDomainName string
+	err = db.QueryRow("SELECT name FROM domains WHERE id = ?", segment.DomainID).Scan(&currentDomainName)
+	if err != nil {
+		currentDomainName = "unknown"
+	}
+
+	// 处理领域
+	if finalDomain == "" {
+		finalDomain = currentDomainName
+	}
+
+	// 处理模型
+	if finalModel == "" {
+		// 获取当前模型名称
+		currentModelName := "all"
+		if segment.ModelID == DeepseekChat {
+			currentModelName = "chat"
+		} else if segment.ModelID == DeepseekReasoner {
+			currentModelName = "reasoner"
+		}
+		finalModel = currentModelName
+	}
+
+	// 处理名称
+	if finalName == "" {
+		finalName = segment.Name
+	}
+
+	// 处理排序
+	if finalOrder == -1 {
+		finalOrder = segment.SortOrder
+	}
+
+	// 处理内容
+	if finalContent == "" {
+		finalContent = segment.Content
+	}
+
+	// 获取领域ID
+	var finalDomainID int64
+	err = db.QueryRow("SELECT id FROM domains WHERE name = ?", finalDomain).Scan(&finalDomainID)
+	if err != nil {
+		return fmt.Errorf("领域不存在: %s", finalDomain)
+	}
+
+	// 解析模型ID
+	var finalModelID int64 = -1 // 通用
+	switch strings.ToLower(finalModel) {
+	case "chat":
+		finalModelID = DeepseekChat
+	case "reasoner":
+		finalModelID = DeepseekReasoner
+	case "all", "通用":
+		finalModelID = -1
+	default:
+		return fmt.Errorf("无效的模型: %s", finalModel)
+	}
+
+	// 显示将要更新的信息
+	fmt.Println("将更新以下信息:")
+	fmt.Printf("  ID: %d\n", segment.ID)
+	fmt.Printf("  名称: %s → %s\n", segment.Name, finalName)
+	fmt.Printf("  领域: %s → %s\n", currentDomainName, finalDomain)
+	fmt.Printf("  模型: %d → %s\n", segment.ModelID, finalModel)
+	fmt.Printf("  排序: %d → %d\n", segment.SortOrder, finalOrder)
+	fmt.Printf("  启用: %v → %v\n", segment.Enabled, finalEnabled)
+	fmt.Println("  内容: (将更新)")
+
+	// 确认更新
+	fmt.Print("\n确定要更新吗？(y/N): ")
+	var confirm string
+	fmt.Scanln(&confirm)
+	if strings.ToLower(confirm) != "y" {
+		fmt.Println("取消更新")
+		return nil
+	}
+
+	// 更新段落
+	err = manager.UpdateSegment(id, finalDomainID, finalModelID, finalName, finalContent, finalOrder, finalEnabled)
+	if err != nil {
+		return fmt.Errorf("更新段落失败: %w", err)
+	}
+
+	fmt.Printf("✅ 段落更新成功: [%d] %s\n", segment.ID, finalName)
+	return nil
+}
+
+func editSegmentInteractive(id int64, segment *PromptSegment, manager *SegmentManager) error {
+	db, err := OpenDB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	fmt.Printf("📝 编辑段落: [%d] %s\n\n", segment.ID, segment.Name)
+	fmt.Println("当前信息:")
+	fmt.Printf("  ID: %d\n", segment.ID)
+	fmt.Printf("  名称: %s\n", segment.Name)
+
+	// 获取领域名称
+	var domainName string
+	err = db.QueryRow("SELECT name FROM domains WHERE id = ?", segment.DomainID).Scan(&domainName)
+	if err != nil {
+		domainName = "unknown"
+	}
+	fmt.Printf("  领域: %s\n", domainName)
+
+	// 显示模型
+	modelName := "通用"
+	if segment.ModelID == DeepseekChat {
+		modelName = "Chat"
+	} else if segment.ModelID == DeepseekReasoner {
+		modelName = "Reasoner"
+	}
+	fmt.Printf("  模型: %s\n", modelName)
+	fmt.Printf("  排序: %d\n", segment.SortOrder)
+	fmt.Printf("  启用: %v\n", segment.Enabled)
+	fmt.Printf("  内容:\n---\n%s\n---\n\n", segment.Content)
+
+	// 交互式编辑
+	fmt.Println("开始编辑（直接回车保持原值）:")
+
+	// 编辑名称
+	fmt.Printf("新名称 [%s]: ", segment.Name)
+	var newName string
+	fmt.Scanln(&newName)
+	if newName == "" {
+		newName = segment.Name
+	}
+
+	// 编辑领域
+	fmt.Printf("新领域 [%s]: ", domainName)
+	var newDomain string
+	fmt.Scanln(&newDomain)
+	if newDomain == "" {
+		newDomain = domainName
+	}
+
+	// 编辑模型
+	fmt.Printf("新模型 (chat/reasoner/all) [%s]: ", modelName)
+	var newModel string
+	fmt.Scanln(&newModel)
+	if newModel == "" {
+		newModel = modelName
+	}
+
+	// 编辑排序
+	fmt.Printf("新排序 [%d]: ", segment.SortOrder)
+	var newOrderStr string
+	fmt.Scanln(&newOrderStr)
+	newOrder := segment.SortOrder
+	if newOrderStr != "" {
+		if order, err := strconv.Atoi(newOrderStr); err == nil {
+			newOrder = order
+		}
+	}
+
+	// 编辑启用状态
+	fmt.Printf("启用 (true/false) [%v]: ", segment.Enabled)
+	var enabledStr string
+	fmt.Scanln(&enabledStr)
+	newEnabled := segment.Enabled
+	if enabledStr != "" {
+		newEnabled = strings.ToLower(enabledStr) == "true"
+	}
+
+	// 编辑内容
+	fmt.Println("编辑内容（输入空行结束，输入'.'保持原内容）:")
+	fmt.Println("当前内容:")
+	fmt.Println("---")
+	fmt.Println(segment.Content)
+	fmt.Println("---")
+	fmt.Println("请输入新内容:")
+
 	lines := []string{}
 	for {
 		var line string
@@ -265,38 +470,45 @@ func segmentTestRunE(cmd *cobra.Command, args []string) error {
 		if line == "" {
 			break
 		}
+		if line == "." && len(lines) == 0 {
+			// 保持原内容
+			lines = nil
+			break
+		}
 		lines = append(lines, line)
 	}
 
-	templateStr := strings.Join(lines, "\n")
+	newContent := segment.Content
+	if lines != nil {
+		newContent = strings.Join(lines, "\n")
+	}
 
-	result, err := manager.TestSegmentTemplate(ctx, templateStr)
+	// 获取领域ID
+	var newDomainID int64
+	err = db.QueryRow("SELECT id FROM domains WHERE name = ?", newDomain).Scan(&newDomainID)
 	if err != nil {
-		return fmt.Errorf("模板测试失败: %w", err)
+		return fmt.Errorf("领域不存在: %s", newDomain)
 	}
 
-	fmt.Println("\n✅ 模板语法正确")
-	fmt.Println("\n渲染结果:")
-	fmt.Println("---")
-	fmt.Println(result)
-	fmt.Println("---")
-
-	return nil
-}
-
-func segmentExampleRunE(cmd *cobra.Command, args []string) error {
-	fmt.Println("可用段落示例:")
-	fmt.Println()
-
-	for i, name := range AllExampleNames() {
-		example := GetExampleSegment(name)
-		fmt.Printf("%d. %s\n", i+1, name)
-		fmt.Printf("   预览: %s\n\n",
-			truncateString(strings.TrimSpace(example), 60))
+	// 解析模型ID
+	var newModelID int64 = -1 // 通用
+	switch strings.ToLower(newModel) {
+	case "chat":
+		newModelID = DeepseekChat
+	case "reasoner":
+		newModelID = DeepseekReasoner
+	case "all", "通用":
+		newModelID = -1
+	default:
+		return fmt.Errorf("无效的模型: %s", newModel)
 	}
 
-	fmt.Println("\n使用示例:")
-	fmt.Println(ExampleUsage())
+	// 更新段落
+	err = manager.UpdateSegment(id, newDomainID, newModelID, newName, newContent, newOrder, newEnabled)
+	if err != nil {
+		return fmt.Errorf("更新段落失败: %w", err)
+	}
 
+	fmt.Printf("✅ 段落更新成功: [%d] %s\n", segment.ID, newName)
 	return nil
 }
