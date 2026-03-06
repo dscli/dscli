@@ -14,7 +14,7 @@ var (
 	}()
 
 	// Version information - set via ldflags during build
-	Version = "0.5.2"
+	Version = "0.5.3"
 	Build   = ""
 
 	ModelDeepseekChat     = Getenv("MODEL_DEEPSEEK_CHAT", "deepseek-chat")
