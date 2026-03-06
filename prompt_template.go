@@ -3,9 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
-	"html/template"
 	"log"
 	"strings"
+	"text/template"
 )
 
 // PromptTemplate 提示词模板管理器
