@@ -88,17 +88,11 @@ func (sm *SegmentManager) getHardcodedTemplate(modelID int64) string {
 		ProjectType: "Go项目",
 		Hostname:    "dev01",
 		Username:    "nanjj",
+		ModelID:     modelID,
 	}
 
-	switch modelID {
-	case DeepseekChat:
-		return config.generateDeepseekChatPrompt()
-	case DeepseekReasoner:
-		return config.generateDeepseekReasonerPrompt()
-	default:
-		log.Printf("不支持模型ID: %d，使用通用模板", modelID)
-		return config.generateDeepseekChatPrompt()
-	}
+	// 使用模板版本生成提示词
+	return config.GeneratePromptWithTemplate()
 }
 
 // RenderSystemPrompt 渲染系统提示词

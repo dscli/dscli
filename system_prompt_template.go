@@ -170,8 +170,9 @@ func (c *SystemPromptConfig) GeneratePromptWithTemplate() string {
 
 	prompt, err := template.Render(data)
 	if err != nil {
-		log.Printf("渲染模板失败: %v，使用字符串拼接方式", err)
-		return c.GeneratePrompt()
+		log.Printf("渲染模板失败: %v", err)
+		// 返回一个基本的提示词，而不是回退到字符串拼接
+		return "你是一个专业的编程助手。请基于当前环境提供帮助。"
 	}
 
 	return prompt
