@@ -294,50 +294,130 @@ func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (
 		FilePath: filePath,
 	}
 
-	// 解析函数
-	if functions, ok := pythonResult["functions"].([]interface{}); ok {
-		for _, f := range functions {
-			if funcMap, ok := f.(map[string]interface{}); ok {
-				symbol := &Symbol{
-					Name: getString(funcMap, "name"),
-					Type: getString(funcMap, "type"),
+	// 对于Markdown等非编程语言，处理不同的结构
+	if lang == "markdown" || lang == "org" {
+		// 处理Markdown标题
+		if headings, ok := pythonResult["headings"].([]interface{}); ok {
+			for _, h := range headings {
+				if headingMap, ok := h.(map[string]interface{}); ok {
+					symbol := &Symbol{
+						Name: getString(headingMap, "name"),
+						Type: getString(headingMap, "type"),
+					}
+					if line, ok := headingMap["lineno"].(float64); ok {
+						symbol.Line = int(line)
+					}
+					if endLine, ok := headingMap["end_lineno"].(float64); ok {
+						symbol.EndLine = int(endLine)
+					} else {
+						symbol.EndLine = symbol.Line
+					}
+					fs.Classes = append(fs.Classes, symbol)
 				}
-				if line, ok := funcMap["lineno"].(float64); ok {
-					symbol.Line = int(line)
-				}
-				if endLine, ok := funcMap["end_lineno"].(float64); ok {
-					symbol.EndLine = int(endLine)
-				} else {
-					// 如果没有end_lineno，使用lineno作为默认值
-					symbol.EndLine = symbol.Line
-				}
-				fs.Functions = append(fs.Functions, symbol)
 			}
 		}
-	}
 
-	// 解析类
-	if classes, ok := pythonResult["classes"].([]interface{}); ok {
-		for _, c := range classes {
-			if classMap, ok := c.(map[string]interface{}); ok {
-				symbol := &Symbol{
-					Name: getString(classMap, "name"),
-					Type: getString(classMap, "type"),
+		// 处理代码块
+		if codeBlocks, ok := pythonResult["code_blocks"].([]interface{}); ok {
+			for _, cb := range codeBlocks {
+				if cbMap, ok := cb.(map[string]interface{}); ok {
+					symbol := &Symbol{
+						Name: getString(cbMap, "name"),
+						Type: getString(cbMap, "type"),
+					}
+					if line, ok := cbMap["lineno"].(float64); ok {
+						symbol.Line = int(line)
+					}
+					if endLine, ok := cbMap["end_lineno"].(float64); ok {
+						symbol.EndLine = int(endLine)
+					} else {
+						symbol.EndLine = symbol.Line
+					}
+					fs.Functions = append(fs.Functions, symbol)
 				}
-				if line, ok := classMap["lineno"].(float64); ok {
-					symbol.Line = int(line)
-					symbol.EndLine = int(line)
-				}
-				fs.Classes = append(fs.Classes, symbol)
 			}
 		}
-	}
 
-	// 解析导入
-	if imports, ok := pythonResult["imports"].([]interface{}); ok {
-		for _, imp := range imports {
-			if impStr, ok := imp.(string); ok {
-				fs.Imports = append(fs.Imports, impStr)
+		// 处理列表项
+		if lists, ok := pythonResult["lists"].([]interface{}); ok {
+			for _, l := range lists {
+				if listMap, ok := l.(map[string]interface{}); ok {
+					// 将列表项添加到Imports字段
+					listItem := getString(listMap, "name")
+					if listItem != "" {
+						fs.Imports = append(fs.Imports, listItem)
+					}
+				}
+			}
+		}
+
+		// 处理链接
+		if links, ok := pythonResult["links"].([]interface{}); ok {
+			for _, l := range links {
+				if linkMap, ok := l.(map[string]interface{}); ok {
+					symbol := &Symbol{
+						Name: getString(linkMap, "name"),
+						Type: getString(linkMap, "type"),
+					}
+					if line, ok := linkMap["lineno"].(float64); ok {
+						symbol.Line = int(line)
+					}
+					if endLine, ok := linkMap["end_lineno"].(float64); ok {
+						symbol.EndLine = int(endLine)
+					} else {
+						symbol.EndLine = symbol.Line
+					}
+					fs.Functions = append(fs.Functions, symbol)
+				}
+			}
+		}
+	} else {
+		// 对于编程语言，处理函数和类
+		// 解析函数
+		if functions, ok := pythonResult["functions"].([]interface{}); ok {
+			for _, f := range functions {
+				if funcMap, ok := f.(map[string]interface{}); ok {
+					symbol := &Symbol{
+						Name: getString(funcMap, "name"),
+						Type: getString(funcMap, "type"),
+					}
+					if line, ok := funcMap["lineno"].(float64); ok {
+						symbol.Line = int(line)
+					}
+					if endLine, ok := funcMap["end_lineno"].(float64); ok {
+						symbol.EndLine = int(endLine)
+					} else {
+						// 如果没有end_lineno，使用lineno作为默认值
+						symbol.EndLine = symbol.Line
+					}
+					fs.Functions = append(fs.Functions, symbol)
+				}
+			}
+		}
+
+		// 解析类
+		if classes, ok := pythonResult["classes"].([]interface{}); ok {
+			for _, c := range classes {
+				if classMap, ok := c.(map[string]interface{}); ok {
+					symbol := &Symbol{
+						Name: getString(classMap, "name"),
+						Type: getString(classMap, "type"),
+					}
+					if line, ok := classMap["lineno"].(float64); ok {
+						symbol.Line = int(line)
+						symbol.EndLine = int(line)
+					}
+					fs.Classes = append(fs.Classes, symbol)
+				}
+			}
+		}
+
+		// 解析导入
+		if imports, ok := pythonResult["imports"].([]interface{}); ok {
+			for _, imp := range imports {
+				if impStr, ok := imp.(string); ok {
+					fs.Imports = append(fs.Imports, impStr)
+				}
 			}
 		}
 	}
@@ -435,50 +515,118 @@ func ParseFileStructure(filePath, content string) (*FileStructure, error) {
 		FilePath: filePath,
 	}
 
-	// 解析函数
-	if functions, ok := pythonResult["functions"].([]interface{}); ok {
-		for _, f := range functions {
-			if funcMap, ok := f.(map[string]interface{}); ok {
-				symbol := &Symbol{
-					Name: getString(funcMap, "name"),
-					Type: getString(funcMap, "type"),
+	// 对于Markdown等非编程语言，处理不同的结构
+	if lang == "markdown" || lang == "org" {
+		// 处理标题（映射到Classes）
+		if headings, ok := pythonResult["headings"].([]interface{}); ok {
+			for _, h := range headings {
+				if headingMap, ok := h.(map[string]interface{}); ok {
+					symbol := &Symbol{
+						Name: getString(headingMap, "name"),
+						Type: getString(headingMap, "type"),
+					}
+					if line, ok := headingMap["lineno"].(float64); ok {
+						symbol.Line = int(line)
+						symbol.EndLine = int(line)
+					}
+					fs.Classes = append(fs.Classes, symbol)
 				}
-				if line, ok := funcMap["lineno"].(float64); ok {
-					symbol.Line = int(line)
-				}
-				if endLine, ok := funcMap["end_lineno"].(float64); ok {
-					symbol.EndLine = int(endLine)
-				} else {
-					// 如果没有end_lineno，使用lineno作为默认值
-					symbol.EndLine = symbol.Line
-				}
-				fs.Functions = append(fs.Functions, symbol)
 			}
 		}
-	}
 
-	// 解析类
-	if classes, ok := pythonResult["classes"].([]interface{}); ok {
-		for _, c := range classes {
-			if classMap, ok := c.(map[string]interface{}); ok {
-				symbol := &Symbol{
-					Name: getString(classMap, "name"),
-					Type: getString(classMap, "type"),
+		// 处理代码块（映射到Functions）
+		if codeBlocks, ok := pythonResult["code_blocks"].([]interface{}); ok {
+			for _, cb := range codeBlocks {
+				if cbMap, ok := cb.(map[string]interface{}); ok {
+					symbol := &Symbol{
+						Name: getString(cbMap, "name"),
+						Type: getString(cbMap, "type"),
+					}
+					if line, ok := cbMap["lineno"].(float64); ok {
+						symbol.Line = int(line)
+					}
+					if endLine, ok := cbMap["end_lineno"].(float64); ok {
+						symbol.EndLine = int(endLine)
+					} else {
+						symbol.EndLine = symbol.Line
+					}
+					fs.Functions = append(fs.Functions, symbol)
 				}
-				if line, ok := classMap["lineno"].(float64); ok {
-					symbol.Line = int(line)
-					symbol.EndLine = int(line)
-				}
-				fs.Classes = append(fs.Classes, symbol)
 			}
 		}
-	}
 
-	// 解析导入
-	if imports, ok := pythonResult["imports"].([]interface{}); ok {
-		for _, imp := range imports {
-			if impStr, ok := imp.(string); ok {
-				fs.Imports = append(fs.Imports, impStr)
+		// 处理列表项（映射到Imports）
+		if lists, ok := pythonResult["lists"].([]interface{}); ok {
+			for _, l := range lists {
+				if listMap, ok := l.(map[string]interface{}); ok {
+					fs.Imports = append(fs.Imports, getString(listMap, "name"))
+				}
+			}
+		}
+
+		// 处理链接（映射到Functions）
+		if links, ok := pythonResult["links"].([]interface{}); ok {
+			for _, l := range links {
+				if linkMap, ok := l.(map[string]interface{}); ok {
+					symbol := &Symbol{
+						Name: getString(linkMap, "name"),
+						Type: getString(linkMap, "type"),
+					}
+					if line, ok := linkMap["lineno"].(float64); ok {
+						symbol.Line = int(line)
+						symbol.EndLine = int(line)
+					}
+					fs.Functions = append(fs.Functions, symbol)
+				}
+			}
+		}
+	} else {
+		// 原有的编程语言处理逻辑
+		// 解析函数
+		if functions, ok := pythonResult["functions"].([]interface{}); ok {
+			for _, f := range functions {
+				if funcMap, ok := f.(map[string]interface{}); ok {
+					symbol := &Symbol{
+						Name: getString(funcMap, "name"),
+						Type: getString(funcMap, "type"),
+					}
+					if line, ok := funcMap["lineno"].(float64); ok {
+						symbol.Line = int(line)
+					}
+					if endLine, ok := funcMap["end_lineno"].(float64); ok {
+						symbol.EndLine = int(endLine)
+					} else {
+						// 如果没有end_lineno，使用lineno作为默认值
+						symbol.EndLine = symbol.Line
+					}
+					fs.Functions = append(fs.Functions, symbol)
+				}
+			}
+		}
+
+		// 解析类
+		if classes, ok := pythonResult["classes"].([]interface{}); ok {
+			for _, c := range classes {
+				if classMap, ok := c.(map[string]interface{}); ok {
+					symbol := &Symbol{
+						Name: getString(classMap, "name"),
+						Type: getString(classMap, "type"),
+					}
+					if line, ok := classMap["lineno"].(float64); ok {
+						symbol.Line = int(line)
+						symbol.EndLine = int(line)
+					}
+					fs.Classes = append(fs.Classes, symbol)
+				}
+			}
+		}
+
+		// 解析导入
+		if imports, ok := pythonResult["imports"].([]interface{}); ok {
+			for _, imp := range imports {
+				if impStr, ok := imp.(string); ok {
+					fs.Imports = append(fs.Imports, impStr)
+				}
 			}
 		}
 	}
