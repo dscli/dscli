@@ -12,7 +12,7 @@ import ast
 import re
 from typing import Dict, List, Any, Optional
 import traceback
-
+import importlib.util
 
 class FileStructureParser:
     """Main parser class for analyzing file structure"""
@@ -27,7 +27,10 @@ class FileStructureParser:
             'c': self.parse_c,
             'cpp': self.parse_cpp,
         }
-    
+        
+        # Check dependencies
+        self.deps_ok = self._check_dependencies()
+        self.enhanced_capabilities = self._get_enhanced_capabilities()
     def parse_go(self, content: str) -> Dict[str, Any]:
         """Parse Go file structure using regex (Go AST parsing is done in Go)"""
         result = {
@@ -372,6 +375,66 @@ class FileStructureParser:
                 'error': str(e),
                 'traceback': traceback.format_exc()
             }
+    
+    def _check_dependencies(self) -> bool:
+        """Check if required dependencies are available"""
+        required_deps = ['json', 're', 'ast', 'typing', 'traceback', 'importlib.util']
+        
+        for dep in required_deps:
+            try:
+                if dep == 'importlib.util':
+                    import importlib.util
+                elif dep == 'json':
+                    import json
+                elif dep == 're':
+                    import re
+                elif dep == 'ast':
+                    import ast
+                elif dep == 'typing':
+                    from typing import Dict, List, Any, Optional
+                elif dep == 'traceback':
+                    import traceback
+            except ImportError:
+                return False
+        
+        return True
+    
+    def _get_enhanced_capabilities(self) -> List[str]:
+        """Get enhanced parsing capabilities based on available optional dependencies"""
+        capabilities = []
+        
+        # Check for astroid (enhanced Python parsing)
+        try:
+            import astroid
+            capabilities.append('python_enhanced')
+        except ImportError:
+            pass
+        
+        # Check for javalang (enhanced Java parsing)
+        try:
+            import javalang
+            capabilities.append('java_enhanced')
+        except ImportError:
+            pass
+        
+        # Check for pycparser (enhanced C/C++ parsing)
+        try:
+            import pycparser
+            capabilities.append('c_enhanced')
+            capabilities.append('cpp_enhanced')
+        except ImportError:
+            pass
+        
+        return capabilities
+    
+    def get_dependency_info(self) -> Dict[str, Any]:
+        """Get information about dependencies and capabilities"""
+        return {
+            'dependencies_ok': self.deps_ok,
+            'enhanced_capabilities': self.enhanced_capabilities,
+            'python_version': sys.version,
+            'supported_languages': list(self.language_parsers.keys())
+        }
 
 
 def main():
@@ -397,7 +460,14 @@ def main():
             }, indent=2))
             sys.exit(1)
         
-        # Validate input
+        # Check for dependency check request
+        if data.get('action') == 'check_deps':
+            parser = FileStructureParser()
+            result = parser.get_dependency_info()
+            print(json.dumps(result, indent=2))
+            sys.exit(0)
+        
+        # Validate input for parsing
         if 'content' not in data:
             print(json.dumps({
                 'error': 'Missing required field: content'
@@ -410,11 +480,16 @@ def main():
             }, indent=2))
             sys.exit(1)
         
-        # Parse file structure
+        # Create parser and check dependencies
         parser = FileStructureParser()
+        
+        # Add dependency info to result
         result = parser.parse(data['content'], data['language'])
+        result['dependency_info'] = parser.get_dependency_info()
         
         # Output result as JSON
+        print(json.dumps(result, indent=2))
+        sys.exit(0)
         print(json.dumps(result, indent=2))
         
     except Exception as e:
@@ -424,6 +499,9 @@ def main():
         }, indent=2))
         sys.exit(1)
 
+
+if __name__ == '__main__':
+    main()
 
 if __name__ == '__main__':
     main()
