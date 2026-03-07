@@ -18,9 +18,9 @@ func GetSystemPrompt(ctx context.Context) string {
 	// 使用段落管理器渲染系统提示词
 	sm := &SegmentManager{}
 	prompt, err := sm.RenderSystemPrompt(ctx, modelID, domainID, config)
-	if err != nil {
-		// 如果失败，使用基础提示词
-		return config.GeneratePrompt()
+	if err != nil || prompt == "" {
+		// 如果失败或为空，使用模板化的系统提示词
+		return GetEnhancedSystemPromptWithTemplate(ctx)
 	}
 
 	return prompt
