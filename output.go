@@ -220,7 +220,7 @@ func Warn(format string, a ...any) {
 	if outputCurrentLogLevel <= LogLevelWarn {
 		message := fmt.Sprintf(format, a...)
 		formatted := formatMessage("WARN", ColorYellow, message)
-		Println(outputErrorWriter, formatted)
+		fmt.Fprintln(outputErrorWriter, formatted)
 	}
 }
 
@@ -229,7 +229,7 @@ func Error(format string, a ...any) {
 	if outputCurrentLogLevel <= LogLevelError {
 		message := fmt.Sprintf(format, a...)
 		formatted := formatMessage("ERROR", ColorRed, message)
-		Println(outputErrorWriter, formatted)
+		fmt.Fprintln(outputErrorWriter, formatted)
 	}
 }
 
@@ -238,7 +238,7 @@ func Fatal(format string, a ...any) {
 	if outputCurrentLogLevel <= LogLevelFatal {
 		message := fmt.Sprintf(format, a...)
 		formatted := formatMessage("FATAL", ColorBoldRed, message)
-		Println(outputErrorWriter, formatted)
+		fmt.Fprintln(outputErrorWriter, formatted)
 		os.Exit(1)
 	}
 }
@@ -267,7 +267,7 @@ func PrintHeader(title string) {
 
 // PrintSection 输出章节标题
 func PrintSection(title string) {
-	Println(outputWriter)
+	Println()
 	Println(colorize(ColorBoldBlue, "▶ "+title))
 	Println(colorize(ColorGray, strings.Repeat("─", len(title)+2)))
 }
@@ -372,10 +372,9 @@ func (pb *ProgressBar) render() {
 
 	// 输出进度条（使用回车符覆盖上一行）
 	Printf("\r%s %s", bar, info)
-
 	// 如果完成，输出换行
 	if pb.current >= pb.total {
-		Println(outputWriter)
+		Println()
 	}
 }
 

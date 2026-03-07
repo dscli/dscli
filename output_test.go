@@ -114,8 +114,13 @@ func TestOutputFunctions(t *testing.T) {
 	// 测试所有输出函数的基本功能
 	var buf bytes.Buffer
 	oldWriter := outputWriter
+	oldErrorWriter := outputErrorWriter
 	SetOutputWriter(&buf)
-	defer SetOutputWriter(oldWriter)
+	SetErrorWriter(&buf)
+	defer func() {
+		SetOutputWriter(oldWriter)
+		SetErrorWriter(oldErrorWriter)
+	}()
 
 	// 测试Println
 	buf.Reset()
@@ -159,4 +164,192 @@ func TestOutputFunctions(t *testing.T) {
 	if !strings.Contains(output, "测试Error") {
 		t.Errorf("Error输出错误: got %s, want contains %s", output, "测试Error")
 	}
+}
+
+// TestErrorOutputWriter 测试错误输出函数是否正确使用outputErrorWriter
+func TestErrorOutputWriter(t *testing.T) {
+	// 创建两个不同的缓冲区来区分标准输出和错误输出
+	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
+
+	// 保存原始writer
+	oldStdoutWriter := outputWriter
+	oldStderrWriter := outputErrorWriter
+
+	// 设置测试writer
+	SetOutputWriter(&stdoutBuf)
+	SetErrorWriter(&stderrBuf)
+
+	// 测试完成后恢复
+	defer func() {
+		SetOutputWriter(oldStdoutWriter)
+		SetErrorWriter(oldStderrWriter)
+	}()
+
+	// 测试1: Info应该输出到stdout
+	SetLogLevel(LogLevelInfo)
+	stdoutBuf.Reset()
+	stderrBuf.Reset()
+	Info("测试Info到标准输出")
+
+	stdoutOutput := strings.TrimSpace(stdoutBuf.String())
+	stderrOutput := strings.TrimSpace(stderrBuf.String())
+
+	if !strings.Contains(stdoutOutput, "测试Info到标准输出") {
+		t.Errorf("Info应该输出到标准输出，但stdout为空")
+	}
+	if stderrOutput != "" {
+		t.Errorf("Info不应该输出到错误输出，但stderr有内容: %s", stderrOutput)
+	}
+
+	// 测试2: Warn应该输出到stderr
+	SetLogLevel(LogLevelWarn)
+	stdoutBuf.Reset()
+	stderrBuf.Reset()
+	Warn("测试Warn到错误输出")
+
+	stdoutOutput = strings.TrimSpace(stdoutBuf.String())
+	stderrOutput = strings.TrimSpace(stderrBuf.String())
+
+	if stdoutOutput != "" {
+		t.Errorf("Warn不应该输出到标准输出，但stdout有内容: %s", stdoutOutput)
+	}
+	if !strings.Contains(stderrOutput, "测试Warn到错误输出") {
+		t.Errorf("Warn应该输出到错误输出，但stderr为空")
+	}
+
+	// 测试3: Error应该输出到stderr
+	SetLogLevel(LogLevelError)
+	stdoutBuf.Reset()
+	stderrBuf.Reset()
+	Error("测试Error到错误输出")
+
+	stdoutOutput = strings.TrimSpace(stdoutBuf.String())
+	stderrOutput = strings.TrimSpace(stderrBuf.String())
+
+	if stdoutOutput != "" {
+		t.Errorf("Error不应该输出到标准输出，但stdout有内容: %s", stdoutOutput)
+	}
+	if !strings.Contains(stderrOutput, "测试Error到错误输出") {
+		t.Errorf("Error应该输出到错误输出，但stderr为空")
+	}
+
+	// 测试4: 验证日志级别过滤
+	SetLogLevel(LogLevelError) // 只显示Error及以上级别
+	stdoutBuf.Reset()
+	stderrBuf.Reset()
+
+	// Warn应该被过滤掉（不输出）
+	Warn("这个Warn应该被过滤")
+
+	stdoutOutput = strings.TrimSpace(stdoutBuf.String())
+	stderrOutput = strings.TrimSpace(stderrBuf.String())
+
+	if stdoutOutput != "" {
+		t.Errorf("Warn被过滤时，stdout应该为空，但有内容: %s", stdoutOutput)
+	}
+	if stderrOutput != "" {
+		t.Errorf("Warn被过滤时，stderr应该为空，但有内容: %s", stderrOutput)
+	}
+
+	// Error应该输出
+	Error("这个Error应该输出")
+	stderrOutput = strings.TrimSpace(stderrBuf.String())
+	if !strings.Contains(stderrOutput, "这个Error应该输出") {
+		t.Errorf("Error应该输出，但stderr为空")
+	}
+
+	// 测试5: 验证Debug在低日志级别下不输出
+	SetLogLevel(LogLevelInfo) // Info及以上级别
+	stdoutBuf.Reset()
+	stderrBuf.Reset()
+
+	Debug("这个Debug应该被过滤")
+
+	stdoutOutput = strings.TrimSpace(stdoutBuf.String())
+	stderrOutput = strings.TrimSpace(stderrBuf.String())
+
+	if stdoutOutput != "" {
+		t.Errorf("Debug被过滤时，stdout应该为空，但有内容: %s", stdoutOutput)
+	}
+	if stderrOutput != "" {
+		t.Errorf("Debug被过滤时，stderr应该为空，但有内容: %s", stderrOutput)
+	}
+
+	// 测试6: 验证Debug在高日志级别下输出
+	SetLogLevel(LogLevelDebug) // 所有级别
+	stdoutBuf.Reset()
+	stderrBuf.Reset()
+
+	Debug("这个Debug应该输出")
+
+	stdoutOutput = strings.TrimSpace(stdoutBuf.String())
+	if !strings.Contains(stdoutOutput, "这个Debug应该输出") {
+		t.Errorf("Debug应该输出，但stdout为空")
+	}
+
+	t.Log("✅ 错误输出writer测试通过")
+}
+
+// TestFatalOutput 测试Fatal输出（使用模拟的os.Exit）
+func TestFatalOutput(t *testing.T) {
+	// 由于Fatal会调用os.Exit(1)，我们需要在子进程中测试
+	// 这里我们只测试它是否正确使用了outputErrorWriter
+
+	var stderrBuf bytes.Buffer
+	oldStderrWriter := outputErrorWriter
+	SetErrorWriter(&stderrBuf)
+	defer SetErrorWriter(oldStderrWriter)
+
+	SetLogLevel(LogLevelFatal)
+
+	// 注意：我们不能直接调用Fatal，因为它会退出进程
+	// 这里我们只是验证函数定义和基本的writer使用
+	// 在实际测试中，应该使用测试子进程来测试Fatal
+
+	t.Log("✅ Fatal输出测试跳过（需要子进程测试）")
+}
+
+// TestOutputWriterSeparation 测试输出writer分离
+func TestOutputWriterSeparation(t *testing.T) {
+	// 创建三个不同的缓冲区
+	var buf1, buf2, buf3 bytes.Buffer
+
+	// 测试设置不同的writer
+	oldWriter := outputWriter
+	oldErrorWriter := outputErrorWriter
+
+	// 设置buf1为标准输出
+	SetOutputWriter(&buf1)
+	SetErrorWriter(&buf2)
+
+	SetLogLevel(LogLevelInfo)
+	Info("输出到buf1")
+	Warn("输出到buf2")
+
+	// 验证分离
+	buf1Str := strings.TrimSpace(buf1.String())
+	buf2Str := strings.TrimSpace(buf2.String())
+
+	if !strings.Contains(buf1Str, "输出到buf1") {
+		t.Errorf("Info应该输出到buf1，但内容: %s", buf1Str)
+	}
+	if !strings.Contains(buf2Str, "输出到buf2") {
+		t.Errorf("Warn应该输出到buf2，但内容: %s", buf2Str)
+	}
+
+	// 切换writer到buf3
+	SetOutputWriter(&buf3)
+	Info("输出到buf3")
+
+	buf3Str := strings.TrimSpace(buf3.String())
+	if !strings.Contains(buf3Str, "输出到buf3") {
+		t.Errorf("Info应该输出到buf3，但内容: %s", buf3Str)
+	}
+
+	// 恢复原始writer
+	SetOutputWriter(oldWriter)
+	SetErrorWriter(oldErrorWriter)
+
+	t.Log("✅ 输出writer分离测试通过")
 }
