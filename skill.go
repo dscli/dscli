@@ -351,7 +351,7 @@ func CreateSkill(name, description, content, category string, priority int, isGl
 	defer db.Close()
 	result, err := db.Exec(`
 		INSERT INTO skills (name, description, content, category, priority, is_global)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?)`,
 		name, description, content, category, priority, isGlobal)
 	if err != nil {
 		return 0, fmt.Errorf("创建技能失败: %w", err)
