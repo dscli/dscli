@@ -40,7 +40,7 @@ func init() {
 
 // LoadHistory 加载指定会话的所有历史消息，按时间升序返回
 func LoadHistory(ctx context.Context) ([]Message, error) {
-	limit := ContextValue(ctx, HistoryLimit, 32)
+	limit := ContextValue(ctx, HistoryLimit, 8)
 	db, err := OpenDB()
 	if err != nil {
 		return nil, err
@@ -87,7 +87,8 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 	if idx > 0 {
 		for {
 			m := messages[idx]
-			if m.ToolCallID == "" && len(m.ToolCalls) == 0 || idx == 0 {
+			role := m.Role
+			if role == "assistant" || idx == 0 {
 				break
 			}
 			idx -= 1
