@@ -304,7 +304,12 @@ func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (
 				}
 				if line, ok := funcMap["lineno"].(float64); ok {
 					symbol.Line = int(line)
-					symbol.EndLine = int(line)
+				}
+				if endLine, ok := funcMap["end_lineno"].(float64); ok {
+					symbol.EndLine = int(endLine)
+				} else {
+					// 如果没有end_lineno，使用lineno作为默认值
+					symbol.EndLine = symbol.Line
 				}
 				fs.Functions = append(fs.Functions, symbol)
 			}
@@ -424,7 +429,6 @@ func ParseFileStructure(filePath, content string) (*FileStructure, error) {
 		}
 		return nil, fmt.Errorf("Python parser failed without error message")
 	}
-
 	// 转换为FileStructure格式
 	fs := &FileStructure{
 		Language: lang,
@@ -441,7 +445,12 @@ func ParseFileStructure(filePath, content string) (*FileStructure, error) {
 				}
 				if line, ok := funcMap["lineno"].(float64); ok {
 					symbol.Line = int(line)
-					symbol.EndLine = int(line)
+				}
+				if endLine, ok := funcMap["end_lineno"].(float64); ok {
+					symbol.EndLine = int(endLine)
+				} else {
+					// 如果没有end_lineno，使用lineno作为默认值
+					symbol.EndLine = symbol.Line
 				}
 				fs.Functions = append(fs.Functions, symbol)
 			}

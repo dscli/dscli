@@ -399,9 +399,13 @@ func TestParseCommands(t *testing.T) {
 }
 
 func TestShellExec(t *testing.T) {
-	jsonData := `{
+	goJson := `{
   "content": "package main\nfunc main(){\n\n}",
   "language": "go"
+}`
+	mdJson := `{
+  "content": "# GO Code main.go\n` + "```" + `package main\nfunc main(){\n\n}\n` + "```" + `",
+  "language": "markdown"
 }`
 	tcs := []struct {
 		name   string
@@ -411,7 +415,8 @@ func TestShellExec(t *testing.T) {
 	}{
 		{"bash", `#!/usr/bin/env bash
 cat`, "hello", "hello"},
-		{"python", pythonScript, jsonData, "functions"},
+		{"go", pythonScript, goJson, "functions"},
+		{"markdown", pythonScript, mdJson, `"lineno": 1`},
 	}
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
