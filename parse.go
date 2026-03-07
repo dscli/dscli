@@ -1,18 +1,23 @@
 package main
 
 import (
+	"bytes"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/spf13/cobra"
 )
+
+//go:embed parse.py
+var pythonScript string
 
 // FileStructure 表示文件结构
 type FileStructure struct {
@@ -42,7 +47,7 @@ func init() {
 		Use:   "parse <file>",
 		Short: "Parse file structure for LLM editing",
 		Long: `Parse file structure (functions, classes, imports) for LLM-assisted editing.
-Supports Go files with built-in parser, other languages with fallback regex parsing.`,
+Supports Go files with built-in parser, other languages with Python-based parsing.`,
 		Args: cobra.ExactArgs(1),
 		RunE: runParse,
 	}
@@ -50,6 +55,7 @@ Supports Go files with built-in parser, other languages with fallback regex pars
 	// 添加选项
 	parseCmd.Flags().StringP("language", "l", "", "Specify language (auto-detected by default)")
 	parseCmd.Flags().BoolP("verbose", "v", false, "Verbose output")
+	parseCmd.Flags().BoolP("use-python", "p", false, "Force use Python parser (for non-Go languages)")
 
 	AddRootCommand(parseCmd)
 }
@@ -70,9 +76,10 @@ func runParse(cmd *cobra.Command, args []string) error {
 	}
 
 	verbose, _ := cmd.Flags().GetBool("verbose")
+	usePython, _ := cmd.Flags().GetBool("use-python")
 
 	// 解析文件结构
-	fs, err := parseFileStructure(filePath, lang, verbose)
+	fs, err := parseFileStructure(filePath, lang, verbose, usePython)
 	if err != nil {
 		return fmt.Errorf("failed to parse file: %w", err)
 	}
@@ -135,14 +142,14 @@ func guessLanguage(path string) string {
 }
 
 // parseFileStructure 解析文件结构
-func parseFileStructure(filePath, lang string, verbose bool) (*FileStructure, error) {
-	switch lang {
-	case "go":
+func parseFileStructure(filePath, lang string, verbose, usePython bool) (*FileStructure, error) {
+	// 如果是Go语言且不强制使用Python，使用Go内置解析器
+	if lang == "go" && !usePython {
 		return parseGoStructure(filePath)
-	default:
-		// 对于非Go语言，使用备用解析器
-		return fallbackParse(filePath, lang)
 	}
+
+	// 其他语言使用Python解析器
+	return parseWithPython(filePath, lang, verbose)
 }
 
 // parseGoStructure 使用Go内置AST解析器解析Go文件结构
@@ -224,226 +231,125 @@ func parseGoStructure(path string) (*FileStructure, error) {
 	return fs, nil
 }
 
-// fallbackParse 使用正则表达式进行简单解析（用于非Go语言）
-func fallbackParse(filePath, lang string) (*FileStructure, error) {
+// parseWithPython 使用Python脚本解析文件结构
+func parseWithPython(filePath, lang string, verbose bool) (*FileStructure, error) {
+	// 读取文件内容
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
+	// 准备输入数据
+	inputData := map[string]interface{}{
+		"content":  string(content),
+		"language": lang,
+	}
+
+	jsonInput, err := json.Marshal(inputData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal input data: %w", err)
+	}
+
+	if verbose {
+		fmt.Fprintf(os.Stderr, "Using Python parser for language: %s\n", lang)
+		fmt.Fprintf(os.Stderr, "Input size: %d bytes\n", len(jsonInput))
+	}
+
+	// 执行Python脚本
+	cmd := exec.Command("python3", "-c", pythonScript)
+	cmd.Stdin = bytes.NewReader(jsonInput)
+	cmd.Stderr = os.Stderr
+
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute Python script: %w", err)
+	}
+
+	if verbose {
+		fmt.Fprintf(os.Stderr, "Python output size: %d bytes\n", len(output))
+	}
+
+	// 解析Python输出
+	var pythonResult map[string]interface{}
+	if err := json.Unmarshal(output, &pythonResult); err != nil {
+		return nil, fmt.Errorf("failed to parse Python output: %w", err)
+	}
+
+	// 检查Python解析是否成功
+	if success, ok := pythonResult["success"].(bool); ok && !success {
+		if errMsg, ok := pythonResult["error"].(string); ok {
+			return nil, fmt.Errorf("Python parser error: %s", errMsg)
+		}
+		return nil, fmt.Errorf("Python parser failed without error message")
+	}
+
+	// 转换为FileStructure格式
 	fs := &FileStructure{
 		Language: lang,
 		FilePath: filePath,
 	}
 
-	lines := strings.Split(string(content), "\n")
+	// 解析函数
+	if functions, ok := pythonResult["functions"].([]interface{}); ok {
+		for _, f := range functions {
+			if funcMap, ok := f.(map[string]interface{}); ok {
+				symbol := &Symbol{
+					Name: getString(funcMap, "name"),
+					Type: getString(funcMap, "type"),
+				}
+				if line, ok := funcMap["lineno"].(float64); ok {
+					symbol.Line = int(line)
+					symbol.EndLine = int(line)
+				}
+				fs.Functions = append(fs.Functions, symbol)
+			}
+		}
+	}
 
-	switch lang {
-	case "python":
-		parsePython(lines, fs)
-	case "javascript", "typescript":
-		parseJavaScript(lines, fs)
-	case "java":
-		parseJava(lines, fs)
-	case "cpp", "c":
-		parseCpp(lines, fs)
-	default:
-		// 对于未知语言，只提供基本信息
-		fs.Errors = append(fs.Errors, fmt.Sprintf("No specific parser for language: %s", lang))
+	// 解析类
+	if classes, ok := pythonResult["classes"].([]interface{}); ok {
+		for _, c := range classes {
+			if classMap, ok := c.(map[string]interface{}); ok {
+				symbol := &Symbol{
+					Name: getString(classMap, "name"),
+					Type: getString(classMap, "type"),
+				}
+				if line, ok := classMap["lineno"].(float64); ok {
+					symbol.Line = int(line)
+					symbol.EndLine = int(line)
+				}
+				fs.Classes = append(fs.Classes, symbol)
+			}
+		}
+	}
+
+	// 解析导入
+	if imports, ok := pythonResult["imports"].([]interface{}); ok {
+		for _, imp := range imports {
+			if impStr, ok := imp.(string); ok {
+				fs.Imports = append(fs.Imports, impStr)
+			}
+		}
+	}
+
+	// 解析错误
+	if errors, ok := pythonResult["errors"].([]interface{}); ok {
+		for _, err := range errors {
+			if errStr, ok := err.(string); ok {
+				fs.Errors = append(fs.Errors, errStr)
+			}
+		}
 	}
 
 	return fs, nil
 }
 
-// parsePython 解析Python文件
-func parsePython(lines []string, fs *FileStructure) {
-	funcRegex := regexp.MustCompile(`^def\s+(\w+)`)
-	classRegex := regexp.MustCompile(`^class\s+(\w+)`)
-	importRegex := regexp.MustCompile(`^import\s+(.+)|^from\s+(\S+)\s+import`)
-
-	for i, line := range lines {
-		line = strings.TrimSpace(line)
-
-		// 跳过注释
-		if strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		// 匹配函数
-		if matches := funcRegex.FindStringSubmatch(line); matches != nil {
-			fs.Functions = append(fs.Functions, &Symbol{
-				Name:    matches[1],
-				Type:    "function",
-				Line:    i + 1,
-				EndLine: i + 1,
-			})
-		}
-
-		// 匹配类
-		if matches := classRegex.FindStringSubmatch(line); matches != nil {
-			fs.Classes = append(fs.Classes, &Symbol{
-				Name:    matches[1],
-				Type:    "class",
-				Line:    i + 1,
-				EndLine: i + 1,
-			})
-		}
-
-		// 匹配导入
-		if matches := importRegex.FindStringSubmatch(line); matches != nil {
-			if matches[1] != "" {
-				fs.Imports = append(fs.Imports, matches[1])
-			} else if matches[2] != "" {
-				fs.Imports = append(fs.Imports, matches[2])
-			}
+// getString 安全地从map中获取字符串
+func getString(m map[string]interface{}, key string) string {
+	if val, ok := m[key]; ok {
+		if str, ok := val.(string); ok {
+			return str
 		}
 	}
-}
-
-// parseJavaScript 解析JavaScript/TypeScript文件
-func parseJavaScript(lines []string, fs *FileStructure) {
-	funcRegex := regexp.MustCompile(`^(?:export\s+)?(?:async\s+)?function\s+(\w+)`)
-	classRegex := regexp.MustCompile(`^(?:export\s+)?class\s+(\w+)`)
-	arrowFuncRegex := regexp.MustCompile(`^(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>`)
-	importRegex := regexp.MustCompile(`^import\s+(?:.+from\s+)?['"]([^'"]+)['"]`)
-
-	for i, line := range lines {
-		line = strings.TrimSpace(line)
-
-		// 跳过注释
-		if strings.HasPrefix(line, "//") || strings.HasPrefix(line, "/*") {
-			continue
-		}
-
-		// 匹配函数
-		if matches := funcRegex.FindStringSubmatch(line); matches != nil {
-			fs.Functions = append(fs.Functions, &Symbol{
-				Name:    matches[1],
-				Type:    "function",
-				Line:    i + 1,
-				EndLine: i + 1,
-			})
-		}
-
-		// 匹配箭头函数
-		if matches := arrowFuncRegex.FindStringSubmatch(line); matches != nil {
-			fs.Functions = append(fs.Functions, &Symbol{
-				Name:    matches[1],
-				Type:    "function",
-				Line:    i + 1,
-				EndLine: i + 1,
-			})
-		}
-
-		// 匹配类
-		if matches := classRegex.FindStringSubmatch(line); matches != nil {
-			fs.Classes = append(fs.Classes, &Symbol{
-				Name:    matches[1],
-				Type:    "class",
-				Line:    i + 1,
-				EndLine: i + 1,
-			})
-		}
-
-		// 匹配导入
-		if matches := importRegex.FindStringSubmatch(line); matches != nil {
-			fs.Imports = append(fs.Imports, matches[1])
-		}
-	}
-}
-
-// parseJava 解析Java文件
-func parseJava(lines []string, fs *FileStructure) {
-	classRegex := regexp.MustCompile(`^(?:public\s+|private\s+|protected\s+)?(?:abstract\s+)?(?:final\s+)?class\s+(\w+)`)
-	methodRegex := regexp.MustCompile(`^(?:public\s+|private\s+|protected\s+)?(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?(?:[\w<>\[\]]+\s+)?(\w+)\s*\([^)]*\)\s*(?:throws\s+[\w,.\s]+)?\s*[{]`)
-	importRegex := regexp.MustCompile(`^import\s+(.+);`)
-
-	for i, line := range lines {
-		line = strings.TrimSpace(line)
-
-		// 跳过注释
-		if strings.HasPrefix(line, "//") || strings.HasPrefix(line, "/*") {
-			continue
-		}
-
-		// 匹配类
-		if matches := classRegex.FindStringSubmatch(line); matches != nil {
-			fs.Classes = append(fs.Classes, &Symbol{
-				Name:    matches[1],
-				Type:    "class",
-				Line:    i + 1,
-				EndLine: i + 1,
-			})
-		}
-
-		// 匹配方法（简化版）
-		if matches := methodRegex.FindStringSubmatch(line); matches != nil {
-			// 排除Java关键字
-			keywords := map[string]bool{
-				"if": true, "for": true, "while": true, "switch": true,
-				"case": true, "try": true, "catch": true, "finally": true,
-			}
-			if keywords[matches[1]] {
-				continue
-			}
-
-			// 排除构造函数（与类名相同）
-			if len(fs.Classes) > 0 && matches[1] == fs.Classes[len(fs.Classes)-1].Name {
-				continue
-			}
-			fs.Functions = append(fs.Functions, &Symbol{
-				Name:    matches[1],
-				Type:    "method",
-				Line:    i + 1,
-				EndLine: i + 1,
-			})
-		}
-
-		// 匹配导入
-		if matches := importRegex.FindStringSubmatch(line); matches != nil {
-			fs.Imports = append(fs.Imports, matches[1])
-		}
-	}
-}
-
-// parseCpp 解析C/C++文件
-func parseCpp(lines []string, fs *FileStructure) {
-	funcRegex := regexp.MustCompile(`^(?:[\w:<>\[\]\*&]+\s+)?(\w+)\s*\([^)]*\)\s*(?:const\s*)?[{;]`)
-	classRegex := regexp.MustCompile(`^(?:class|struct)\s+(\w+)`)
-	includeRegex := regexp.MustCompile(`^#include\s+[<"]([^>"]+)[>"]`)
-
-	for i, line := range lines {
-		line = strings.TrimSpace(line)
-
-		// 跳过注释和预处理指令（除了#include）
-		if strings.HasPrefix(line, "//") || strings.HasPrefix(line, "/*") ||
-			(strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "#include")) {
-			continue
-		}
-
-		// 匹配函数
-		if matches := funcRegex.FindStringSubmatch(line); matches != nil {
-			fs.Functions = append(fs.Functions, &Symbol{
-				Name:    matches[1],
-				Type:    "function",
-				Line:    i + 1,
-				EndLine: i + 1,
-			})
-		}
-
-		// 匹配类/结构体
-		if matches := classRegex.FindStringSubmatch(line); matches != nil {
-			fs.Classes = append(fs.Classes, &Symbol{
-				Name:    matches[1],
-				Type:    "class",
-				Line:    i + 1,
-				EndLine: i + 1,
-			})
-		}
-
-		// 匹配包含
-		if matches := includeRegex.FindStringSubmatch(line); matches != nil {
-			fs.Imports = append(fs.Imports, matches[1])
-		}
-	}
+	return ""
 }
