@@ -40,7 +40,7 @@ func init() {
 
 // LoadHistory 加载指定会话的所有历史消息，按时间升序返回
 func LoadHistory(ctx context.Context) ([]Message, error) {
-	limit := ContextValue(ctx, HistoryLimit, 8)
+	histSize := ContextValue(ctx, HistSize, 8)
 	db, err := OpenDB()
 	if err != nil {
 		return nil, err
@@ -49,8 +49,9 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 	rows, err := db.Query(`
 		SELECT role, content, tool_call_id, tool_calls, created_at
 		FROM messages
-		WHERE session_id = ? AND model_id = ? 
-		ORDER BY id ASC`, SessionID, ModelID)
+		WHERE session_id = ? AND model_id = ?
+        LIMIT ?
+		ORDER BY id ASC`, SessionID, ModelID, histSize*2)
 	if err != nil {
 		return nil, fmt.Errorf("查询历史消息失败: %w", err)
 	}
@@ -83,7 +84,7 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 		return nil, fmt.Errorf("遍历消息失败: %w", err)
 	}
 	n := len(messages)
-	idx := n - limit
+	idx := n - histSize
 	if idx > 0 {
 		for {
 			m := messages[idx]

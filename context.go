@@ -5,6 +5,7 @@ import (
 )
 
 var (
+	HistSize     = ContextKeyType("HistSize")
 	StartTime    = ContextKeyType("StartTime")
 	CurrentModel = ContextKeyType("CurrentModel")
 	IsReload     = ContextKeyType("IsReload")

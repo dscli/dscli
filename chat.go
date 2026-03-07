@@ -56,8 +56,12 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 			return
 		}
 	}
-
 	ctx := cmd.Context()
+	histSize, err := cmd.Flags().GetInt("histSize")
+	if err != nil {
+		return
+	}
+	ctx = context.WithValue(ctx, HistSize, histSize)
 	ctx = context.WithValue(ctx, StartTime, time.Now())
 	ctx = context.WithValue(ctx, CurrentModel, chatModel)
 	ctx = context.WithValue(ctx, IsReload, reload)
@@ -208,4 +212,5 @@ func init() {
 	})
 	chatCmd.Flags().StringVar(&chatModel, "model", ModelDeepseekChat, "使用的模型名称")
 	chatCmd.Flags().BoolVar(&reload, "reload", false, "重载进程（内部使用）")
+	chatCmd.Flags().Int("histSize", 8, "history size loaded")
 }

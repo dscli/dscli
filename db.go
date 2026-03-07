@@ -10,9 +10,8 @@ import (
 )
 
 var (
-	HistoryLimit = &struct{}{}
-	ModelID      = int64(0)
-	DBPath       = filepath.Join(ConfigDir, "sqlite.db")
+	ModelID = int64(0)
+	DBPath  = filepath.Join(ConfigDir, "sqlite.db")
 
 	// 注册队列
 	tableSchemas   = []string{}
