@@ -8,6 +8,7 @@ var (
 	StartTime    = ContextKeyType("StartTime")
 	CurrentModel = ContextKeyType("CurrentModel")
 	IsReload     = ContextKeyType("IsReload")
+	ToolCallID   = ContextKeyType("ToolCallID")
 )
 
 type ContextKeyType string

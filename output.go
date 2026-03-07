@@ -160,6 +160,20 @@ func formatMessage(level, levelColor, message string) string {
 	return strings.Join(parts, " ")
 }
 
+func JSONMarshal(v any) ([]byte, error) {
+	if outputCurrentLogLevel <= LogLevelDebug {
+		return json.MarshalIndent(v, "", "  ")
+	}
+	return json.Marshal(v)
+}
+
+// DebugBytes output bytes if debug
+func DebugBytes(b []byte) {
+	if outputCurrentLogLevel <= LogLevelDebug {
+		Debug("bytes: %s", string(b))
+	}
+}
+
 // Debug 输出调试信息
 func Debug(format string, a ...any) {
 	if outputCurrentLogLevel <= LogLevelDebug {

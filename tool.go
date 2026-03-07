@@ -81,23 +81,46 @@ func GetAllTools() []Tool {
 	return tools
 }
 
+func HandleReloadToolCalls(ctx context.Context, tcs []ToolCall) (inputs []Message) {
+	for _, tc := range tcs {
+		id := tc.ID
+		input := Message{
+			Role:       "tool",
+			Content:    "dscli reloaded",
+			ToolCallID: id,
+		}
+
+		err := SaveMessages(input)
+		if err != nil {
+			Debug("failed to save: %v", err)
+		}
+		inputs = append(inputs, input)
+	}
+	return
+}
+
 // HandleToolCalls 处理工具调用（带统计）
-func HandleToolCalls(ctx context.Context, tcs []ToolCall) []Message {
-	inputs := []Message{}
+func HandleToolCalls(ctx context.Context, tcs []ToolCall) (inputs []Message) {
 	// 处理每个工具调用
 	for _, tc := range tcs {
+		id := tc.ID
 		// 使用新的工具调用处理器
 		result, err := HandleToolCall(ctx, tc.Function.Name, []byte(tc.Function.Arguments))
 		if err != nil {
 			// But we still need to tell the result to assistant
 			result = err.Error()
 		}
-
-		inputs = append(inputs, Message{
+		input := Message{
 			Role:       "tool",
-			ToolCallID: tc.ID,
+			ToolCallID: id,
 			Content:    result,
-		})
+		}
+		err = SaveMessages(input)
+		if err != nil {
+			Debug("failed to save: %v", err)
+		}
+		inputs = append(inputs, input)
+
 	}
 	return inputs
 }

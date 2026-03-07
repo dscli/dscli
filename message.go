@@ -99,7 +99,7 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 }
 
 // SaveMessages 保存消息（事务）
-func SaveMessages(msgs []Message) error {
+func SaveMessages(msgs ...Message) error {
 	db, err := OpenDB()
 	if err != nil {
 		return err
@@ -128,7 +128,7 @@ func SaveMessages(msgs []Message) error {
 		}
 		if len(m.ToolCalls) > 0 {
 			var data json.RawMessage
-			data, err = json.Marshal(&m.ToolCalls)
+			data, err = JSONMarshal(&m.ToolCalls)
 			if err != nil {
 				return err
 			}

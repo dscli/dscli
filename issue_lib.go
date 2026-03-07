@@ -154,7 +154,7 @@ func CreateIssue(opts CreateIssueOptions) (*Issue, error) {
 	}
 
 	// 转换为JSON
-	jsonData, err := json.Marshal(requestData)
+	jsonData, err := JSONMarshal(requestData)
 	if err != nil {
 		return nil, fmt.Errorf("序列化请求数据失败: %w", err)
 	}
@@ -252,7 +252,7 @@ func UpdateIssue(opts UpdateIssueOptions) (*Issue, error) {
 	}
 
 	// 转换为JSON
-	jsonData, err := json.Marshal(requestData)
+	jsonData, err := JSONMarshal(requestData)
 	if err != nil {
 		return nil, fmt.Errorf("序列化请求数据失败: %w", err)
 	}
@@ -340,7 +340,7 @@ func AssignIssue(number, username string) (*Issue, error) {
 	}
 
 	// 转换为JSON
-	jsonData, err := json.Marshal(requestData)
+	jsonData, err := JSONMarshal(requestData)
 	if err != nil {
 		return nil, fmt.Errorf("序列化请求数据失败: %w", err)
 	}

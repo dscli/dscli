@@ -82,28 +82,22 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		lastHist := history[len(history)-1]
 		tcs := lastHist.ToolCalls
 		if len(tcs) > 0 {
-			toolInputs := []Message{}
 			// 如果是重载进程，工具不执行
 			if reload {
-				for _, tc := range tcs {
-					toolInputs = append(toolInputs, Message{
-						Role:       "tool",
-						Content:    "dscli reloaded",
-						ToolCallID: tc.ID,
-					})
-				}
+				history = append(history, HandleReloadToolCalls(ctx, tcs)...)
 			} else {
-				toolInputs = HandleToolCalls(ctx, tcs)
+				history = append(history, HandleToolCalls(ctx, tcs)...)
 			}
+
+			inputs := []Message{}
 			if content != "" {
-				toolInputs = append(toolInputs, Message{
+				inputs = append(inputs, Message{
 					Role:    "user",
 					Content: content,
 				})
 			}
-			if len(toolInputs) > 0 {
-				return ChatRound(ctx, prompts, skills, history, toolInputs...)
-			}
+
+			return ChatRound(ctx, prompts, skills, history, inputs...)
 		}
 	}
 
@@ -172,7 +166,7 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 	PrintContent(ctx, story.ReasoningContent, story.Content)
 	stories = append(stories, story)
 	// save stories here
-	err = SaveMessages(stories)
+	err = SaveMessages(stories...)
 	story.ReasoningContent = "" // reset reasoning content
 
 	if err != nil {
@@ -189,7 +183,10 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 
 	toolInputs := HandleToolCalls(ctx, tcs)
 	if len(toolInputs) > 0 {
-		return ChatRound(ctx, prompts, skills, history, toolInputs...)
+		// Now tool call inputs saved in db
+		// move them to history
+		history = append(history, toolInputs...)
+		return ChatRound(ctx, prompts, skills, history)
 	}
 	return
 }

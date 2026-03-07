@@ -90,11 +90,14 @@ func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (e
 	var reqBody io.Reader
 	var data []byte
 	if body != nil {
-		data, err = json.Marshal(body)
+		data, err = JSONMarshal(body)
 		if err != nil {
 			err = fmt.Errorf("序列化请求失败: %w", err)
 			return
 		}
+
+		DebugBytes(data)
+
 		reqBody = bytes.NewReader(data)
 	}
 
@@ -107,6 +110,7 @@ func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (e
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
+	// DebugHTTPClientDo(req, resp, err)
 	if err != nil {
 		// 检查是否是网络错误
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
@@ -116,6 +120,7 @@ func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (e
 		}
 		return
 	}
+
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
@@ -123,6 +128,8 @@ func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (e
 		err = fmt.Errorf("读取响应失败: %w", err)
 		return
 	}
+
+	DebugBytes(respBody)
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		err = fmt.Errorf("API 返回错误状态码 %d: %s", resp.StatusCode, string(respBody))

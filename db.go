@@ -22,7 +22,6 @@ var (
 
 	// 数据库连接
 	dbOnce sync.Once
-	db     *sql.DB
 	dbErr  error
 )
 
@@ -78,7 +77,7 @@ func initDatabase(db *sql.DB) error {
 // OpenDB 打开数据库连接（确保数据库已初始化）
 func OpenDB(elem ...string) (*sql.DB, error) {
 	var err error
-	db, err = sql.Open("sqlite", DBPath)
+	db, err := sql.Open("sqlite", DBPath)
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}

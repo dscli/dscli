@@ -44,7 +44,7 @@ func TestSaveMessages(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotErr := SaveMessages(tt.msgs)
+			gotErr := SaveMessages(tt.msgs...)
 			if gotErr != nil {
 				if !tt.wantErr {
 					t.Errorf("SaveMessages() failed: %v", gotErr)
