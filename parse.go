@@ -358,3 +358,130 @@ func getString(m map[string]interface{}, key string) string {
 	}
 	return ""
 }
+
+// ParseFileStructure 公共接口：解析文件结构
+func ParseFileStructure(filePath, content string) (*FileStructure, error) {
+	// 猜测语言
+	lang := guessLanguage(filePath)
+
+	// 如果是Go语言，使用Go解析器
+	if lang == "go" {
+		// 创建临时文件
+		tmpFile, err := os.CreateTemp("", "parse_*.go")
+		if err != nil {
+			return nil, fmt.Errorf("failed to create temp file: %w", err)
+		}
+		defer os.Remove(tmpFile.Name())
+
+		// 写入内容
+		if _, err := tmpFile.WriteString(content); err != nil {
+			return nil, fmt.Errorf("failed to write temp file: %w", err)
+		}
+		tmpFile.Close()
+
+		// 解析Go结构
+		return parseGoStructure(tmpFile.Name())
+	}
+
+	// 其他语言使用Python解析器
+	ctx := context.Background()
+	inputData := map[string]any{
+		"content":  content,
+		"language": lang,
+	}
+
+	jsonInput, err := json.Marshal(inputData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal input data: %w", err)
+	}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	_, err = w.Write(jsonInput)
+	if err != nil {
+		return nil, err
+	}
+	w.Close()
+	ctx = context.WithValue(ctx, ShellStdin, r)
+	output, err := ShellExec(ctx, pythonScript)
+	r.Close()
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute Python script: %w", err)
+	}
+
+	// 解析Python输出
+	var pythonResult map[string]any
+	if err := json.Unmarshal([]byte(output), &pythonResult); err != nil {
+		return nil, fmt.Errorf("failed to parse Python output: %w", err)
+	}
+
+	// 检查Python解析是否成功
+	if success, ok := pythonResult["success"].(bool); ok && !success {
+		if errMsg, ok := pythonResult["error"].(string); ok {
+			return nil, fmt.Errorf("Python parser error: %s", errMsg)
+		}
+		return nil, fmt.Errorf("Python parser failed without error message")
+	}
+
+	// 转换为FileStructure格式
+	fs := &FileStructure{
+		Language: lang,
+		FilePath: filePath,
+	}
+
+	// 解析函数
+	if functions, ok := pythonResult["functions"].([]interface{}); ok {
+		for _, f := range functions {
+			if funcMap, ok := f.(map[string]interface{}); ok {
+				symbol := &Symbol{
+					Name: getString(funcMap, "name"),
+					Type: getString(funcMap, "type"),
+				}
+				if line, ok := funcMap["lineno"].(float64); ok {
+					symbol.Line = int(line)
+					symbol.EndLine = int(line)
+				}
+				fs.Functions = append(fs.Functions, symbol)
+			}
+		}
+	}
+
+	// 解析类
+	if classes, ok := pythonResult["classes"].([]interface{}); ok {
+		for _, c := range classes {
+			if classMap, ok := c.(map[string]interface{}); ok {
+				symbol := &Symbol{
+					Name: getString(classMap, "name"),
+					Type: getString(classMap, "type"),
+				}
+				if line, ok := classMap["lineno"].(float64); ok {
+					symbol.Line = int(line)
+					symbol.EndLine = int(line)
+				}
+				fs.Classes = append(fs.Classes, symbol)
+			}
+		}
+	}
+
+	// 解析导入
+	if imports, ok := pythonResult["imports"].([]interface{}); ok {
+		for _, imp := range imports {
+			if impStr, ok := imp.(string); ok {
+				fs.Imports = append(fs.Imports, impStr)
+			}
+		}
+	}
+
+	// 解析错误
+	if errors, ok := pythonResult["errors"].([]interface{}); ok {
+		for _, err := range errors {
+			if errStr, ok := err.(string); ok {
+				fs.Errors = append(fs.Errors, errStr)
+			}
+		}
+	}
+
+	return fs, nil
+}
