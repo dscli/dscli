@@ -57,7 +57,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		}
 	}
 	ctx := cmd.Context()
-	histSize, err := cmd.Flags().GetInt("histSize")
+	histSize, err := cmd.Flags().GetInt("histsize")
 	if err != nil {
 		return
 	}
