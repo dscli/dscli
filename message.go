@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"unicode/utf8"
 )
 
@@ -50,7 +51,7 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 		SELECT role, content, tool_call_id, tool_calls, created_at
 		FROM messages
 		WHERE session_id = ? AND model_id = ?
-		ORDER BY id ASC
+		ORDER BY id DESC
         LIMIT ?`, SessionID, ModelID, histSize*2)
 	if err != nil {
 		return nil, fmt.Errorf("查询历史消息失败: %w", err)
@@ -83,6 +84,9 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("遍历消息失败: %w", err)
 	}
+
+	// Reverse it since we use the limit
+	slices.Reverse(messages)
 	n := len(messages)
 	idx := n - histSize
 	if idx > 0 {
