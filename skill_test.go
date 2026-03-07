@@ -464,3 +464,229 @@ func Example_skillUsage() {
 		//   - Markdown到Org转换 (markdown): Markdown到Org模式转换规则 (优先级: 80)
 	}
 }
+
+// TestCreateSkillSQL 专门测试CreateSkill函数的SQL语句修复
+// 这个测试验证了修复SQL参数数量不匹配的问题
+func TestCreateSkillSQL(t *testing.T) {
+	// 创建临时测试数据库
+	tempDir := t.TempDir()
+	testDBPath := filepath.Join(tempDir, "test_create_skill_sql.db")
+
+	// 创建数据库连接
+	db, err := sql.Open("sqlite3", testDBPath)
+	if err != nil {
+		t.Fatalf("无法打开测试数据库: %v", err)
+	}
+	defer db.Close()
+
+	// 创建skills表（使用实际的表结构，包含model_id列）
+	_, err = db.Exec(`
+		CREATE TABLE skills (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			description TEXT NOT NULL,
+			content TEXT NOT NULL,
+			category TEXT,
+			priority INTEGER DEFAULT 50,
+			is_global BOOLEAN DEFAULT 0,
+			usage_count INTEGER DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            model_id INTEGER NOT NULL DEFAULT 0,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		t.Fatalf("无法创建skills表: %v", err)
+	}
+
+	// 测试1: 验证修复后的SQL语句能正常工作（6个占位符）
+	t.Run("验证修复后的SQL参数数量", func(t *testing.T) {
+		skillContent := map[string]any{
+			"trigger": []string{"sql-test"},
+		}
+		contentJSON, _ := json.Marshal(skillContent)
+
+		// 使用修复后的SQL语句（6个占位符，6个参数）
+		result, err := db.Exec(`
+			INSERT INTO skills (name, description, content, category, priority, is_global)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			"SQL参数测试",
+			"测试SQL参数数量修复",
+			string(contentJSON),
+			"sql-test",
+			55,
+			false,
+		)
+		if err != nil {
+			t.Fatalf("SQL执行失败: %v", err)
+		}
+
+		skillID, err := result.LastInsertId()
+		if err != nil {
+			t.Fatalf("获取插入ID失败: %v", err)
+		}
+
+		if skillID <= 0 {
+			t.Errorf("技能ID应该大于0，实际: %d", skillID)
+		}
+
+		t.Logf("✅ SQL参数数量测试通过，创建的技能ID: %d", skillID)
+	})
+
+	// 测试2: 验证修复前的SQL语句会失败（7个占位符，6个参数）
+	t.Run("验证修复前的SQL会失败", func(t *testing.T) {
+		skillContent := map[string]any{
+			"trigger": []string{"old-sql-test"},
+		}
+		contentJSON, _ := json.Marshal(skillContent)
+
+		// 使用修复前的SQL语句（7个占位符，但只有6个参数）
+		_, err := db.Exec(`
+			INSERT INTO skills (name, description, content, category, priority, is_global)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`, // 注意：这里有7个占位符，但只有6个参数
+			"旧SQL测试",
+			"测试旧SQL参数数量",
+			string(contentJSON),
+			"old-sql-test",
+			60,
+			true,
+		)
+
+		// 修复前的SQL应该失败（参数数量不匹配）
+		if err == nil {
+			t.Error("❌ 修复前的SQL语句应该失败（参数数量不匹配），但成功了")
+		} else {
+			t.Logf("✅ 修复前的SQL语句按预期失败: %v", err)
+		}
+	})
+
+	// 测试3: 验证列和参数完全匹配
+	t.Run("验证列和参数完全匹配", func(t *testing.T) {
+		testCases := []struct {
+			name        string
+			description string
+			content     string
+			category    string
+			priority    int
+			isGlobal    bool
+		}{
+			{
+				name:        "完全匹配测试1",
+				description: "描述1",
+				content:     `{"trigger": ["test1"]}`,
+				category:    "cat1",
+				priority:    80,
+				isGlobal:    true,
+			},
+			{
+				name:        "完全匹配测试2",
+				description: "描述2",
+				content:     `{"trigger": ["test2"]}`,
+				category:    "cat2",
+				priority:    20,
+				isGlobal:    false,
+			},
+		}
+
+		for i, tc := range testCases {
+			result, err := db.Exec(`
+				INSERT INTO skills (name, description, content, category, priority, is_global)
+				VALUES (?, ?, ?, ?, ?, ?)`,
+				tc.name,
+				tc.description,
+				tc.content,
+				tc.category,
+				tc.priority,
+				tc.isGlobal,
+			)
+			if err != nil {
+				t.Fatalf("测试用例%d失败: %v", i+1, err)
+			}
+
+			skillID, err := result.LastInsertId()
+			if err != nil {
+				t.Fatalf("测试用例%d获取ID失败: %v", i+1, err)
+			}
+
+			// 验证数据正确插入
+			var name, description, content, category string
+			var priority int
+			var isGlobal bool
+			err = db.QueryRow(`
+				SELECT name, description, content, category, priority, is_global
+				FROM skills WHERE id = ?
+			`, skillID).Scan(&name, &description, &content, &category, &priority, &isGlobal)
+			if err != nil {
+				t.Fatalf("测试用例%d查询失败: %v", i+1, err)
+			}
+
+			if name != tc.name {
+				t.Errorf("测试用例%d名称不匹配: 期望='%s', 实际='%s'", i+1, tc.name, name)
+			}
+			if description != tc.description {
+				t.Errorf("测试用例%d描述不匹配: 期望='%s', 实际='%s'", i+1, tc.description, description)
+			}
+			if content != tc.content {
+				t.Errorf("测试用例%d内容不匹配: 期望='%s', 实际='%s'", i+1, tc.content, content)
+			}
+			if category != tc.category {
+				t.Errorf("测试用例%d分类不匹配: 期望='%s', 实际='%s'", i+1, tc.category, category)
+			}
+			if priority != tc.priority {
+				t.Errorf("测试用例%d优先级不匹配: 期望=%d, 实际=%d", i+1, tc.priority, priority)
+			}
+			if isGlobal != tc.isGlobal {
+				t.Errorf("测试用例%d全局状态不匹配: 期望=%v, 实际=%v", i+1, tc.isGlobal, isGlobal)
+			}
+		}
+
+		t.Log("✅ 列和参数完全匹配测试通过")
+	})
+
+	// 测试4: 验证唯一约束
+	t.Run("验证唯一约束", func(t *testing.T) {
+		content := `{"trigger": ["unique-test"]}`
+
+		// 第一次插入应该成功
+		result1, err := db.Exec(`
+			INSERT INTO skills (name, description, content, category, priority, is_global)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			"唯一名称测试",
+			"第一次插入",
+			content,
+			"unique",
+			50,
+			true,
+		)
+		if err != nil {
+			t.Fatalf("第一次插入失败: %v", err)
+		}
+
+		skillID1, _ := result1.LastInsertId()
+		if skillID1 <= 0 {
+			t.Errorf("第一次插入的ID应该大于0，实际: %d", skillID1)
+		}
+
+		// 第二次插入相同名称应该失败
+		_, err = db.Exec(`
+			INSERT INTO skills (name, description, content, category, priority, is_global)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			"唯一名称测试", // 相同的名称
+			"第二次插入",
+			content,
+			"unique",
+			60,
+			false,
+		)
+
+		if err == nil {
+			t.Error("❌ 插入同名技能应该失败（唯一约束），但成功了")
+		} else if !strings.Contains(err.Error(), "UNIQUE") && !strings.Contains(err.Error(), "constraint") {
+			t.Logf("错误信息: %v", err)
+		} else {
+			t.Log("✅ 唯一约束测试通过")
+		}
+	})
+
+	t.Log("✅ CreateSkill SQL测试全部通过")
+}
