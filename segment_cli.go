@@ -100,9 +100,10 @@ func segmentListRunE(cmd *cobra.Command, args []string) error {
 		}
 
 		modelName := "通用"
-		if seg.ModelID == DeepseekChat {
+		switch seg.ModelID {
+		case DeepseekChat:
 			modelName = "Chat"
-		} else if seg.ModelID == DeepseekReasoner {
+		case DeepseekReasoner:
 			modelName = "Reasoner"
 		}
 

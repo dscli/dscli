@@ -205,13 +205,14 @@ func parseGoStructure(path string) (*FileStructure, error) {
 			fs.Functions = append(fs.Functions, symbol)
 
 		case *ast.GenDecl:
-			if x.Tok == token.IMPORT {
+			switch x.Tok {
+			case token.IMPORT:
 				for _, spec := range x.Specs {
 					if imp, ok := spec.(*ast.ImportSpec); ok {
 						fs.Imports = append(fs.Imports, imp.Path.Value)
 					}
 				}
-			} else if x.Tok == token.TYPE {
+			case token.TYPE:
 				for _, spec := range x.Specs {
 					if typeSpec, ok := spec.(*ast.TypeSpec); ok {
 						pos := fset.Position(typeSpec.Pos())
