@@ -10,6 +10,9 @@ var (
 	CurrentModel = ContextKeyType("CurrentModel")
 	IsReload     = ContextKeyType("IsReload")
 	ToolCallID   = ContextKeyType("ToolCallID")
+	ShellName    = ContextKeyType("ShellName")
+	ShellArgs    = ContextKeyType("ShellArgs")
+	ShellStdin   = ContextKeyType("ShellStdin")
 )
 
 type ContextKeyType string

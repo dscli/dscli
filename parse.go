@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bytes"
+	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -9,7 +9,6 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -79,7 +78,7 @@ func runParse(cmd *cobra.Command, args []string) error {
 	usePython, _ := cmd.Flags().GetBool("use-python")
 
 	// 解析文件结构
-	fs, err := parseFileStructure(filePath, lang, verbose, usePython)
+	fs, err := parseFileStructure(cmd.Context(), filePath, lang, verbose, usePython)
 	if err != nil {
 		return fmt.Errorf("failed to parse file: %w", err)
 	}
@@ -142,14 +141,14 @@ func guessLanguage(path string) string {
 }
 
 // parseFileStructure 解析文件结构
-func parseFileStructure(filePath, lang string, verbose, usePython bool) (*FileStructure, error) {
+func parseFileStructure(ctx context.Context, filePath, lang string, verbose, usePython bool) (*FileStructure, error) {
 	// 如果是Go语言且不强制使用Python，使用Go内置解析器
 	if lang == "go" && !usePython {
 		return parseGoStructure(filePath)
 	}
 
 	// 其他语言使用Python解析器
-	return parseWithPython(filePath, lang, verbose)
+	return parseWithPython(ctx, filePath, lang, verbose)
 }
 
 // parseGoStructure 使用Go内置AST解析器解析Go文件结构
@@ -233,7 +232,7 @@ func parseGoStructure(path string) (*FileStructure, error) {
 }
 
 // parseWithPython 使用Python脚本解析文件结构
-func parseWithPython(filePath, lang string, verbose bool) (*FileStructure, error) {
+func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (structure *FileStructure, err error) {
 	// 读取文件内容
 	content, err := os.ReadFile(filePath)
 	if err != nil {
@@ -241,7 +240,7 @@ func parseWithPython(filePath, lang string, verbose bool) (*FileStructure, error
 	}
 
 	// 准备输入数据
-	inputData := map[string]interface{}{
+	inputData := map[string]any{
 		"content":  string(content),
 		"language": lang,
 	}
@@ -255,13 +254,18 @@ func parseWithPython(filePath, lang string, verbose bool) (*FileStructure, error
 		fmt.Fprintf(os.Stderr, "Using Python parser for language: %s\n", lang)
 		fmt.Fprintf(os.Stderr, "Input size: %d bytes\n", len(jsonInput))
 	}
-
-	// 执行Python脚本
-	cmd := exec.Command("python3", "-c", pythonScript)
-	cmd.Stdin = bytes.NewReader(jsonInput)
-	cmd.Stderr = os.Stderr
-
-	output, err := cmd.Output()
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	_, err = w.Write(jsonInput)
+	if err != nil {
+		return nil, err
+	}
+	w.Close()
+	ctx = context.WithValue(ctx, ShellStdin, r)
+	output, err := ShellExec(ctx, pythonScript)
+	r.Close()
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute Python script: %w", err)
 	}
@@ -271,8 +275,8 @@ func parseWithPython(filePath, lang string, verbose bool) (*FileStructure, error
 	}
 
 	// 解析Python输出
-	var pythonResult map[string]interface{}
-	if err := json.Unmarshal(output, &pythonResult); err != nil {
+	var pythonResult map[string]any
+	if err := json.Unmarshal([]byte(output), &pythonResult); err != nil {
 		return nil, fmt.Errorf("failed to parse Python output: %w", err)
 	}
 

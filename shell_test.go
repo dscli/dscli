@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"io"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -393,5 +395,46 @@ func TestParseCommands(t *testing.T) {
 	}
 	if !slices.Contains(commands, "./dscli") {
 		t.Fatal(commands)
+	}
+}
+
+func TestShellExec(t *testing.T) {
+	jsonData := `{
+  "content": "package main\nfunc main(){\n\n}",
+  "language": "go"
+}`
+	tcs := []struct {
+		name   string
+		script string
+		input  string
+		want   string
+	}{
+		{"bash", `#!/usr/bin/env bash
+cat`, "hello", "hello"},
+		{"python", pythonScript, jsonData, "functions"},
+	}
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			r, w, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = io.WriteString(w, tc.input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			w.Close()
+			ctx := context.Background()
+			ctx = context.WithValue(ctx, ShellStdin, r)
+			out, err := ShellExec(ctx, tc.script)
+			r.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out, tc.want) {
+				t.Fatal("[", out, "]", "[", tc.want, "]")
+			}
+		})
 	}
 }

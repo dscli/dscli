@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """
 dscli-get-file-structure - Python implementation for file structure parsing
 
@@ -499,9 +499,6 @@ def main():
         }, indent=2))
         sys.exit(1)
 
-
-if __name__ == '__main__':
-    main()
 
 if __name__ == '__main__':
     main()

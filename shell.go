@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -300,40 +301,89 @@ func ShortenShellScript(script string) string {
 }
 
 func ShellExec(ctx context.Context, script string) (out string, err error) {
-	name, arg := Shebang(script)
+	name := ContextValue(ctx, ShellName, "")
+	arg := ContextValue(ctx, ShellArgs, []string{})
+	if name == "" {
+		name, arg = Shebang(script)
+	}
 	out, err = shellExec(ctx, script, name, arg)
 	return
 }
 
+func ArrangeArgs(name string, args []string) ([]string, bool) {
+	if strings.HasSuffix(name, "env") {
+		if len(args) == 0 {
+			return args, false
+		}
+		arg := args[0]
+		switch arg {
+		case "bash": // support bash
+			args = append([]string{"bash", "/dev/fd/3"}, args[1:]...)
+			return args, true
+		case "python", "python3": // support python
+			args = append([]string{args[0], "-u", "/dev/fd/3"}, args[1:]...)
+			return args, true
+		default:
+			return args, false
+		}
+	}
+	if strings.HasSuffix(name, "bash") {
+		args = append([]string{"/dev/fd/3"}, args...)
+		return args, true
+	}
+	if strings.HasSuffix(name, "python") || strings.HasSuffix(name, "python3") {
+		args = append([]string{"-u", "/dev/fd/3"}, args...)
+		return args, true
+	}
+	return args, false
+}
+
 func shellExec(ctx context.Context, script string, name string, arg []string) (out string, err error) {
+	arg, ok := ArrangeArgs(name, arg)
+	if !ok {
+		return "", fmt.Errorf("do not support %s %v", name, arg)
+	}
+
+	shellStdin := ContextValue(ctx, ShellStdin, io.Reader(os.Stdin))
+	r, w, err := os.Pipe()
+	if err != nil {
+		return "", err
+	}
+
+	defer func() {
+		if r != nil {
+			r.Close()
+		}
+		if w != nil {
+			w.Close()
+		}
+	}()
+
 	buf := bytes.NewBuffer([]byte{})
 	subproc := exec.CommandContext(ctx, name, arg...)
+	Println(subproc)
 	subproc.Dir = ProjectRoot
 	subproc.Stdout = buf
 	subproc.Stderr = buf
-	stdin, err := subproc.StdinPipe()
-	if err != nil {
-		err = fmt.Errorf("failed to get stdin pipe: %w", err)
-		return
-	}
-
+	subproc.Stdin = shellStdin
+	subproc.ExtraFiles = []*os.File{r}
 	err = subproc.Start()
 	if err != nil {
 		err = fmt.Errorf("failed to start %s: %w", name, err)
 		return
 	}
-
-	n, err := io.WriteString(stdin, fmt.Sprintf("%s\n", script))
+	_ = r.Close()
+	r = nil
+	_, err = io.WriteString(w, script)
 	if err != nil {
-		err = fmt.Errorf("failed to write string at %d: %w", n, err)
+		err = fmt.Errorf("failed to write stdin: %w", err)
 		return
 	}
-	err = stdin.Close()
+	_ = w.Close()
+	w = nil
 	if err != nil {
-		err = fmt.Errorf("failed to close stdin: %w", err)
 		return
 	}
-
 	err = subproc.Wait()
 	out = buf.String()
 
