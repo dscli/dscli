@@ -212,5 +212,5 @@ func init() {
 	})
 	chatCmd.Flags().StringVar(&chatModel, "model", ModelDeepseekChat, "使用的模型名称")
 	chatCmd.Flags().BoolVar(&reload, "reload", false, "重载进程（内部使用）")
-	chatCmd.Flags().Int("histSize", 8, "history size loaded")
+	chatCmd.Flags().Int("histsize", 8, "history size loaded")
 }

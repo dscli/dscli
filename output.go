@@ -25,6 +25,23 @@ const (
 	LogLevelFatal
 )
 
+func (logLevel LogLevel) String() string {
+	switch logLevel {
+	case LogLevelDebug:
+		return "debug"
+	case LogLevelInfo:
+		return "info"
+	case LogLevelWarn:
+		return "warn"
+	case LogLevelError:
+		return "error"
+	case LogLevelFatal:
+		return "fatal"
+	default:
+		return "unknown"
+	}
+}
+
 // 输出系统变量
 var (
 	// 当前日志级别
@@ -106,6 +123,10 @@ func SetOutputMode(mode string) {
 // SetLogLevel 设置日志级别
 func SetLogLevel(level LogLevel) {
 	outputCurrentLogLevel = level
+}
+
+func GetLogLevel() LogLevel {
+	return outputCurrentLogLevel
 }
 
 // SetColorEnabled 设置是否启用颜色输出

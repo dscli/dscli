@@ -3,14 +3,13 @@ package main
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
 
 var (
 	mode          string
-	logLevel      string
+	debug         string
 	colorEnabled  bool
 	showTimestamp bool
 	verbose       bool
@@ -24,7 +23,7 @@ var (
 
 输出选项：
   --mode          输出模式：markdown（Markdown格式）、org（Org模式格式）
-  --log-level     日志级别：debug、info、warn、error、fatal
+  --verbose       打开调试选项，显示详细输出
   --no-color      禁用颜色输出
   --no-timestamp  禁用时间戳显示
   --db            数据库文件路径（默认：~/.dscli/sqlite.db）`,
@@ -35,10 +34,9 @@ var (
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&mode, "mode", "markdown", "输出模式：markdown（Markdown格式）、org（Org模式格式）")
-	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "日志级别：debug、info、warn、error、fatal")
 	rootCmd.PersistentFlags().BoolVar(&colorEnabled, "no-color", false, "禁用颜色输出")
 	rootCmd.PersistentFlags().BoolVar(&showTimestamp, "no-timestamp", false, "禁用时间戳显示")
-	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "显示详细输出")
+	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "打开调试选项（显示详细输出）")
 	rootCmd.PersistentFlags().StringVar(&dbPath, "db", "", "数据库文件路径（默认：~/.dscli/sqlite.db）")
 }
 
@@ -92,19 +90,8 @@ func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 // configureOutput 配置输出系统
 func configureOutput() {
 	// 设置日志级别
-	switch strings.ToLower(logLevel) {
-	case "debug":
+	if verbose {
 		SetLogLevel(LogLevelDebug)
-	case "info":
-		SetLogLevel(LogLevelInfo)
-	case "warn":
-		SetLogLevel(LogLevelWarn)
-	case "error":
-		SetLogLevel(LogLevelError)
-	case "fatal":
-		SetLogLevel(LogLevelFatal)
-	default:
-		SetLogLevel(LogLevelInfo)
 	}
 
 	// 设置颜色输出

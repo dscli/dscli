@@ -50,8 +50,8 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 		SELECT role, content, tool_call_id, tool_calls, created_at
 		FROM messages
 		WHERE session_id = ? AND model_id = ?
-        LIMIT ?
-		ORDER BY id ASC`, SessionID, ModelID, histSize*2)
+		ORDER BY id ASC
+        LIMIT ?`, SessionID, ModelID, histSize*2)
 	if err != nil {
 		return nil, fmt.Errorf("查询历史消息失败: %w", err)
 	}

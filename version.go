@@ -42,7 +42,7 @@ func VersionRun(cmd *cobra.Command, args []string) {
 	PrintKeyValue("配置目录", ConfigDir)
 	PrintKeyValue("项目根目录", ProjectRoot)
 	PrintKeyValue("输出模式", mode)
-	PrintKeyValue("日志级别", logLevel)
+	PrintKeyValue("日志级别", GetLogLevel().String())
 	PrintKeyValue("颜色输出", boolToString(!colorEnabled))
 	PrintKeyValue("时间戳显示", boolToString(!showTimestamp))
 
