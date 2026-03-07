@@ -96,7 +96,7 @@ func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (e
 			return
 		}
 
-		DebugBytes(data)
+		defer DebugBytes("json", data)
 
 		reqBody = bytes.NewReader(data)
 	}
@@ -129,7 +129,7 @@ func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (e
 		return
 	}
 
-	DebugBytes(respBody)
+	defer DebugBytes("", respBody)
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		err = fmt.Errorf("API 返回错误状态码 %d: %s", resp.StatusCode, string(respBody))

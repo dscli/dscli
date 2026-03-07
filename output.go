@@ -168,9 +168,11 @@ func JSONMarshal(v any) ([]byte, error) {
 }
 
 // DebugBytes output bytes if debug
-func DebugBytes(b []byte) {
+func DebugBytes(lang string, b []byte) {
 	if outputCurrentLogLevel <= LogLevelDebug {
-		Debug("bytes: %s", string(b))
+		Printf("```%s\n", lang)
+		Println(string(b))
+		Println("```")
 	}
 }
 
