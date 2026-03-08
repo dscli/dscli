@@ -25,10 +25,9 @@ func TestPrintContent(t *testing.T) {
 	if !strings.Contains(s, "content") {
 		t.Error("missing content")
 	}
-	// 检查是否包含执行时间信息
-	if !strings.Contains(s, "执行时间") {
-		t.Error("missing execution time")
-	}
+	// 注意：PrintContent 函数本身不输出执行时间
+	// 执行时间是在 PrintSessionStats 中输出的
+	// 所以这里不应该检查执行时间
 }
 
 func TestPrintToolCalls(t *testing.T) {
