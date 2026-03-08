@@ -12,13 +12,10 @@ var (
 	_ = func() error {
 		return godotenv.Load(EnvPath)
 	}()
-
 	// Version information - set via ldflags during build
 	Version = "0.5.4"
 	Build   = ""
 
-	ModelDeepseekChat     = Getenv("MODEL_DEEPSEEK_CHAT", "deepseek-chat")
-	ModelDeepseekReasoner = Getenv("MODEL_DEEPSEEK_REASONER", "deepseek-reasoner")
 	ModelDeepseekChat     = Getenv("MODEL_DEEPSEEK_CHAT", "deepseek-chat")
 	ModelDeepseekReasoner = Getenv("MODEL_DEEPSEEK_REASONER", "deepseek-reasoner")
 
