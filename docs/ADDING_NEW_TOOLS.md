@@ -5,14 +5,14 @@
 ## 目录
 
 1. [工具架构概述](#工具架构概述)
-2. [添加新工具的步骤](#添加新工具的步骤)
-3. [工具定义详解](#工具定义详解)
-4. [处理器实现指南](#处理器实现指南)
-5. [工具分类](#工具分类)
-6. [最佳实践](#最佳实践)
-7. [示例：git_am 工具实现](#示例git_am-工具实现)
-8. [工具命名约定](#工具命名约定)
-
+2. [工具命名约定](#工具命名约定)
+3. [添加新工具的步骤](#添加新工具的步骤)
+4. [工具定义详解](#工具定义详解)
+5. [处理器实现指南](#处理器实现指南)
+6. [工具分类](#工具分类)
+7. [最佳实践](#最佳实践)
+8. [示例：git_am 工具实现](#示例git_am-工具实现)
+9. [常见问题](#常见问题)
 ## 工具架构概述
 
 dscli 的工具系统基于以下组件：
@@ -42,24 +42,32 @@ dscli 的工具系统基于以下组件：
 - `git_am` - 应用patch文件（apply patch from mail）
 - `read_code_section` - 读取代码片段
 - `write_code_section` - 写入代码片段
-        Name:        "tool_name",
-        Description: "工具描述",
-        Parameters:  map[string]any{...},
-        Category:    "category",
-        Timeout:     60 * time.Second, // 可选
-        Handler:     handleToolName,
-    })
-}
-```
+## 添加新工具的步骤
+
+添加新工具到 dscli 需要以下步骤：
+
+### 步骤 1：创建工具文件
+1. 在项目根目录下创建新的 `.go` 文件，如 `new_tool.go`
+2. 文件命名建议：`工具名.go`，如 `git_am.go`
+
+### 步骤 2：定义工具处理器
+1. 实现工具处理函数：`func handleToolName(ctx context.Context, args map[string]string) (string, error)`
+2. 函数名格式：`handle` + 工具名（首字母大写），如 `handleGitAm`
+
+### 步骤 3：注册工具
+1. 在 `init()` 函数中调用 `RegisterTool()`
+2. 提供完整的工具定义，包括名称、描述、参数等
 
 ### 步骤 4：编译测试
-
 ```bash
 go build -o dscli .
 ```
 
+### 步骤 5：验证工具
+1. 启动 dscli：`./dscli`
+2. 检查工具是否出现在可用工具列表中
+3. 测试工具功能是否正常
 ## 工具定义详解
-
 ### ToolDef 结构体
 
 ```go
@@ -98,10 +106,7 @@ Parameters: map[string]any{
 
 ### 参数类型支持
 
-- `string`: 字符串类型
-- `number`: 数字类型（实际使用字符串传递）
-- `boolean`: 布尔类型（实际使用字符串传递）
-- `array`: 数组类型（实际使用字符串传递）
+- `string`: 字符串类型，只支持字符串类型，需要其他类型自己转换
 
 ## 处理器实现指南
 
@@ -206,51 +211,6 @@ if ctx.Err() == context.DeadlineExceeded {
 ## 示例：git_am 工具实现
 
 以下是完整的 `git_am.go` 实现示例：
-
-```go
-package main
-
-import (
-    "context"
-    "fmt"
-    "strings"
-    "time"
-)
-
-func init() {
-    RegisterTool(ToolDef{
-        Name:        "git_am",
-        Description: `应用通过git format-patch生成的patch文件。
-支持将patch内容通过标准输入传递给git am命令。
-
-主要功能：
-1. 应用patch：将patch内容应用到当前分支
-2. 错误处理：支持--continue、--skip、--abort等恢复选项
-3. 简单易用：只需提供patch内容即可
-
-参数说明：
-- patch: patch内容（必需），通过git format-patch生成的RFC 2822格式patch
-- options: git am选项（可选），如--continue、--skip、--abort、--quit、--show-current-patch
-
-使用示例：
-1. 应用patch：git_am(patch="从patch内容...")
-2. 继续应用：git_am(options="--continue")
-3. 放弃应用：git_am(options="--abort")
-
-注意：patch内容较长时建议通过标准输入传递，避免命令行长度限制。`,
-        Parameters: map[string]any{
-            "type": "object",
-            "properties": map[string]any{
-                "patch": map[string]any{
-                    "type":        "string",
-                    "description": "patch内容（RFC 2822格式），通过git format-patch生成",
-                },
-                "options": map[string]any{
-                    "type":        "string",
-## 示例：git_am 工具实现
-
-以下是完整的 `git_am.go` 实现示例：
-
 ```go
 package main
 
@@ -342,20 +302,6 @@ func handleGitAm(ctx context.Context, args map[string]string) (string, error) {
     }
 }
 ```
-
-### 1. 编译测试
-```bash
-go build -o dscli .
-```
-
-### 2. 运行测试
-启动 dscli 并尝试调用新工具：
-```bash
-./dscli
-```
-
-### 3. 验证工具列表
-工具应该出现在可用工具列表中。
 
 ## 常见问题
 
