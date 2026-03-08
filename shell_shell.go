@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
@@ -61,5 +62,27 @@ func handleShell(ctx context.Context, args map[string]string) (out string, err e
 
 	Notice("Shell: %s", ShortenShellScript(script))
 	out, err = runShell(ctx, script)
+	return
+}
+
+func runShell(ctx context.Context, script string) (result string, err error) {
+	startTime := time.Now()
+	name, arg := Shebang(script)
+	ctx = context.WithValue(ctx, ShellName, name)
+	ctx = context.WithValue(ctx, ShellArgs, arg)
+	out, err := ShellExec(ctx, script)
+	executionTime := time.Since(startTime)
+
+	if err != nil {
+		// 构建包含执行统计的失败结果
+		result := fmt.Sprintf("❌ 执行失败:\n错误: %v\n\n输出内容:\n%s\n\n📊 执行统计:\n执行时间: %v\n状态: 失败",
+			err, out, executionTime)
+		return result, nil
+	}
+
+	// 构建包含执行统计的成功结果
+	result = fmt.Sprintf("📝 执行结果:\n%s\n\n📊 执行统计:\n执行时间: %v\n状态: 成功",
+		out, executionTime)
+
 	return
 }
