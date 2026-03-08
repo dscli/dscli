@@ -195,25 +195,30 @@ func PrintSessionStats(ctx context.Context) {
 
 // ShowWaitingAnimation 显示等待动画
 // ShowWaitingAnimation 显示等待动画
+// ShowWaitingAnimation 显示等待提示
 func ShowWaitingAnimation(ctx context.Context, done chan bool) {
-	// 简单的旋转动画
-	spinner := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-	i := 0
+	// 简单的等待提示：每3秒打印一个点
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
+	dotCount := 0
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-done:
-			// 清除动画行
-			fmt.Print("\r")
 			return
-		default:
-			// 显示动画
-			fmt.Printf("\r%s 正在思考...", spinner[i])
+		case <-ticker.C:
+			// 打印一个点
+			fmt.Print(".")
+			dotCount++
 
-			i = (i + 1) % len(spinner)
-			time.Sleep(100 * time.Millisecond)
+			// 每10个点换行，避免一行太长
+			if dotCount >= 10 {
+				fmt.Println()
+				dotCount = 0
+			}
 		}
 	}
 }
@@ -231,18 +236,27 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 	stories := make([]Message, 0, len(inputs)+1)
 	stories = append(stories, inputs...)
 
-	// 创建等待动画控制通道
+	// 创建等待提示控制通道
 	done := make(chan bool)
 	animationCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// 启动等待动画
-	go ShowWaitingAnimation(animationCtx, done)
+	// 启动等待提示（3秒后开始显示）
+	go func() {
+		select {
+		case <-time.After(3 * time.Second):
+			// 如果3秒后还没有完成，开始显示等待提示
+			ShowWaitingAnimation(animationCtx, done)
+		case <-done:
+			// 如果在3秒内完成，不显示等待提示
+			return
+		}
+	}()
 
 	var resp *ChatResponse
 	resp, err = DeepseekClient.Chat(chatModel, messages, GetAllTools())
 
-	// 停止等待动画
+	// 停止等待提示
 	done <- true
 	cancel()
 
