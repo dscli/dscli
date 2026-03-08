@@ -158,8 +158,43 @@ func getStructureInfoForLine(structure *FileStructure, line int) string {
 func init() {
 	// 注册 searchCodeSemantic 工具
 	RegisterTool(ToolDef{
-		Name:        "search_code_semantic",
-		Description: "搜索文件中匹配指定模式的行，并显示上下文内容。\n参数：\n  path: 文件路径（必需）\n  pattern: 搜索模式（必需）\n  context_lines: 上下文行数（可选，默认5）\n  case_sensitive: 是否区分大小写（可选，默认false）\n  max_matches: 最大匹配数（可选，默认无限制）",
+		Name: "search_code_semantic",
+		Description: `搜索文件中匹配指定模式的行，并显示上下文内容。
+✅ 推荐：这是基于语义的新工具，比基于行号的搜索更智能、更准确。
+
+参数：
+  path: 文件路径（必需）
+  pattern: 搜索模式（必需）
+  context_lines: 上下文行数（可选，默认5）
+  case_sensitive: 是否区分大小写（可选，默认false）
+  max_matches: 最大匹配数（可选，默认无限制）
+
+优势：
+1. 基于语义搜索，能理解代码结构
+2. 显示匹配行所在的函数、类、方法信息
+3. 提供丰富的上下文信息
+4. 比 search_file_with_pattern 更智能、更准确
+
+功能特点：
+1. 支持简单的字符串包含匹配
+2. 显示匹配行及其上下文，便于理解上下文
+3. 避免重复输出重叠的上下文区域
+4. 支持大小写敏感/不敏感搜索
+5. 可限制最大匹配数，避免输出过多内容
+6. 显示匹配行所在的代码结构信息（函数、类、方法）
+
+示例：
+  # 搜索包含"error"的行，显示前后5行上下文
+  search_code_semantic(path="main.go", pattern="error")
+  
+  # 搜索"TODO"注释，显示前后3行上下文
+  search_code_semantic(path="main.go", pattern="TODO", context_lines="3")
+  
+  # 区分大小写搜索"Config"
+  search_code_semantic(path="config.go", pattern="Config", case_sensitive="true")
+  
+  # 只显示前10个匹配项
+  search_code_semantic(path="large.go", pattern="warning", max_matches="10")`,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

@@ -205,8 +205,37 @@ func writeToFile(path string, lines []string, startLine, endLine int, newContent
 func init() {
 	// 注册 writeCodeSection 工具
 	RegisterTool(ToolDef{
-		Name:        "write_code_section",
-		Description: "基于代码结构定位并修改特定代码片段。支持function:函数名、class:类名、method:类名.方法名、lines:开始行-结束行等选择器。提供dry-run模式预览修改。",
+		Name: "write_code_section",
+		Description: `基于代码结构定位并修改特定代码片段。支持function:函数名、class:类名、method:类名.方法名、lines:开始行-结束行等选择器。提供dry-run模式预览修改。
+✅ 推荐：这是基于代码结构的新工具，比基于行号的操作更智能、更准确。
+
+参数：
+  path: 文件路径（相对于项目根目录）
+  selector: 代码片段选择器，例如：function:main、class:User、method:User.GetName、lines:10-20
+  new_content: 要写入的新内容
+  dry_run: 是否只预览不实际写入（默认false）
+
+选择器语法：
+  function:函数名      - 修改指定函数
+  class:类名          - 修改指定类/结构体
+  method:类名.方法名   - 修改指定方法
+  lines:开始行-结束行  - 修改指定行范围（后备方案）
+
+优势：
+1. 基于代码结构，能理解函数、类、方法的语义
+2. 自动定位代码片段，无需手动计算行号
+3. 提供dry-run模式，安全预览修改
+4. 支持多种编程语言（通过文件结构解析）
+
+示例：
+  # 修改main函数
+  write_code_section(path="main.go", selector="function:main", new_content="func main() {\n    fmt.Println(\"Hello\")\n}")
+  
+  # 修改User类的GetName方法（dry-run模式预览）
+  write_code_section(path="user.go", selector="method:User.GetName", new_content="func (u *User) GetName() string {\n    return u.Name\n}", dry_run=true)
+  
+  # 修改第10-20行（后备方案）
+  write_code_section(path="config.yaml", selector="lines:10-20", new_content="new config content")`,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
