@@ -141,9 +141,7 @@ const deepseekChatTemplate = `你是一个专业的编程助手。
 
 请基于以上信息，为用户提供专业的编程帮助。`
 
-// deepseekReasonerTemplate Deepseek Reasoner模板
 const deepseekReasonerTemplate = `你是编程领域一个深入思考者。
-
 ## 思考环境
 - 当前日期：{{.CurrentDate}}
 - 项目：{{.ProjectName}}（{{.ProjectType}}）
