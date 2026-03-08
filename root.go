@@ -9,7 +9,6 @@ import (
 
 var (
 	mode          string
-	debug         string
 	colorEnabled  bool
 	showTimestamp bool
 	verbose       bool
@@ -89,11 +88,6 @@ func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 
 // configureOutput 配置输出系统
 func configureOutput() {
-	// 设置日志级别
-	if verbose {
-		SetLogLevel(LogLevelDebug)
-	}
-
 	// 设置颜色输出
 	SetColorEnabled(!colorEnabled) // 注意：--no-color 为 true 时禁用颜色
 

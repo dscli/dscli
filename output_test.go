@@ -138,27 +138,24 @@ func TestOutputFunctions(t *testing.T) {
 		t.Errorf("Printf输出错误: got %s, want %s", output, "测试Printf")
 	}
 
-	// 测试Info
+	// 测试Info（始终显示）
 	buf.Reset()
-	SetLogLevel(LogLevelInfo)
 	Info("测试Info")
 	output = strings.TrimSpace(buf.String())
 	if !strings.Contains(output, "测试Info") {
 		t.Errorf("Info输出错误: got %s, want contains %s", output, "测试Info")
 	}
 
-	// 测试Warn
+	// 测试Warn（始终显示）
 	buf.Reset()
-	SetLogLevel(LogLevelWarn)
 	Warn("测试Warn")
 	output = strings.TrimSpace(buf.String())
 	if !strings.Contains(output, "测试Warn") {
 		t.Errorf("Warn输出错误: got %s, want contains %s", output, "测试Warn")
 	}
 
-	// 测试Error
+	// 测试Error（始终显示）
 	buf.Reset()
-	SetLogLevel(LogLevelError)
 	Error("测试Error")
 	output = strings.TrimSpace(buf.String())
 	if !strings.Contains(output, "测试Error") {
@@ -187,7 +184,6 @@ func TestErrorOutputWriter(t *testing.T) {
 	}()
 
 	// 测试1: Info应该输出到stdout
-	SetLogLevel(LogLevelInfo)
 	stdoutBuf.Reset()
 	stderrBuf.Reset()
 	Info("测试Info到标准输出")
@@ -203,7 +199,6 @@ func TestErrorOutputWriter(t *testing.T) {
 	}
 
 	// 测试2: Warn应该输出到stderr
-	SetLogLevel(LogLevelWarn)
 	stdoutBuf.Reset()
 	stderrBuf.Reset()
 	Warn("测试Warn到错误输出")
@@ -219,7 +214,6 @@ func TestErrorOutputWriter(t *testing.T) {
 	}
 
 	// 测试3: Error应该输出到stderr
-	SetLogLevel(LogLevelError)
 	stdoutBuf.Reset()
 	stderrBuf.Reset()
 	Error("测试Error到错误输出")
@@ -234,80 +228,77 @@ func TestErrorOutputWriter(t *testing.T) {
 		t.Errorf("Error应该输出到错误输出，但stderr为空")
 	}
 
-	// 测试4: 验证日志级别过滤
-	SetLogLevel(LogLevelError) // 只显示Error及以上级别
+	// 测试4: Debug在verbose=false时不输出
+	SetVerbose(false)
 	stdoutBuf.Reset()
 	stderrBuf.Reset()
-
-	// Warn应该被过滤掉（不输出）
-	Warn("这个Warn应该被过滤")
+	Debug("这个Debug不应该输出")
 
 	stdoutOutput = strings.TrimSpace(stdoutBuf.String())
 	stderrOutput = strings.TrimSpace(stderrBuf.String())
 
 	if stdoutOutput != "" {
-		t.Errorf("Warn被过滤时，stdout应该为空，但有内容: %s", stdoutOutput)
+		t.Errorf("Debug在verbose=false时不应该输出，但stdout有内容: %s", stdoutOutput)
 	}
 	if stderrOutput != "" {
-		t.Errorf("Warn被过滤时，stderr应该为空，但有内容: %s", stderrOutput)
+		t.Errorf("Debug在verbose=false时不应该输出，但stderr有内容: %s", stderrOutput)
 	}
 
-	// Error应该输出
-	Error("这个Error应该输出")
-	stderrOutput = strings.TrimSpace(stderrBuf.String())
-	if !strings.Contains(stderrOutput, "这个Error应该输出") {
-		t.Errorf("Error应该输出，但stderr为空")
-	}
-
-	// 测试5: 验证Debug在低日志级别下不输出
-	SetLogLevel(LogLevelInfo) // Info及以上级别
+	// 测试5: Debug在verbose=true时输出
+	SetVerbose(true)
 	stdoutBuf.Reset()
 	stderrBuf.Reset()
-
-	Debug("这个Debug应该被过滤")
-
-	stdoutOutput = strings.TrimSpace(stdoutBuf.String())
-	stderrOutput = strings.TrimSpace(stderrBuf.String())
-
-	if stdoutOutput != "" {
-		t.Errorf("Debug被过滤时，stdout应该为空，但有内容: %s", stdoutOutput)
-	}
-	if stderrOutput != "" {
-		t.Errorf("Debug被过滤时，stderr应该为空，但有内容: %s", stderrOutput)
-	}
-
-	// 测试6: 验证Debug在高日志级别下输出
-	SetLogLevel(LogLevelDebug) // 所有级别
-	stdoutBuf.Reset()
-	stderrBuf.Reset()
-
 	Debug("这个Debug应该输出")
 
 	stdoutOutput = strings.TrimSpace(stdoutBuf.String())
 	if !strings.Contains(stdoutOutput, "这个Debug应该输出") {
-		t.Errorf("Debug应该输出，但stdout为空")
+		t.Errorf("Debug在verbose=true时应该输出，但stdout为空")
 	}
 
 	t.Log("✅ 错误输出writer测试通过")
 }
 
-// TestFatalOutput 测试Fatal输出（使用模拟的os.Exit）
-func TestFatalOutput(t *testing.T) {
-	// 由于Fatal会调用os.Exit(1)，我们需要在子进程中测试
-	// 这里我们只测试它是否正确使用了outputErrorWriter
+// TestVerboseMode 测试verbose模式
+func TestVerboseMode(t *testing.T) {
+	var buf bytes.Buffer
+	oldWriter := outputWriter
+	SetOutputWriter(&buf)
+	defer SetOutputWriter(oldWriter)
 
-	var stderrBuf bytes.Buffer
-	oldStderrWriter := outputErrorWriter
-	SetErrorWriter(&stderrBuf)
-	defer SetErrorWriter(oldStderrWriter)
+	// 测试verbose=false时Debug不输出
+	SetVerbose(false)
+	buf.Reset()
+	Debug("测试Debug1")
+	output := strings.TrimSpace(buf.String())
+	if output != "" {
+		t.Errorf("verbose=false时Debug不应该输出，但输出: %s", output)
+	}
 
-	SetLogLevel(LogLevelFatal)
+	// 测试verbose=true时Debug输出
+	SetVerbose(true)
+	buf.Reset()
+	Debug("测试Debug2")
+	output = strings.TrimSpace(buf.String())
+	if !strings.Contains(output, "测试Debug2") {
+		t.Errorf("verbose=true时Debug应该输出，但输出为空")
+	}
 
-	// 注意：我们不能直接调用Fatal，因为它会退出进程
-	// 这里我们只是验证函数定义和基本的writer使用
-	// 在实际测试中，应该使用测试子进程来测试Fatal
+	// 测试Info始终输出（无论verbose状态）
+	SetVerbose(false)
+	buf.Reset()
+	Info("测试Info")
+	output = strings.TrimSpace(buf.String())
+	if !strings.Contains(output, "测试Info") {
+		t.Errorf("Info应该始终输出，但输出为空")
+	}
 
-	t.Log("✅ Fatal输出测试跳过（需要子进程测试）")
+	SetVerbose(true)
+	buf.Reset()
+	Info("测试Info2")
+	output = strings.TrimSpace(buf.String())
+	if !strings.Contains(output, "测试Info2") {
+		t.Errorf("Info应该始终输出，但输出为空")
+	}
 }
 
 // TestOutputWriterSeparation 测试输出writer分离
@@ -323,7 +314,6 @@ func TestOutputWriterSeparation(t *testing.T) {
 	SetOutputWriter(&buf1)
 	SetErrorWriter(&buf2)
 
-	SetLogLevel(LogLevelInfo)
 	Info("输出到buf1")
 	Warn("输出到buf2")
 
@@ -352,4 +342,58 @@ func TestOutputWriterSeparation(t *testing.T) {
 	SetErrorWriter(oldErrorWriter)
 
 	t.Log("✅ 输出writer分离测试通过")
+}
+
+// TestDebugBytes 测试DebugBytes函数
+func TestDebugBytes(t *testing.T) {
+	var buf bytes.Buffer
+	oldWriter := outputWriter
+	SetOutputWriter(&buf)
+	defer SetOutputWriter(oldWriter)
+
+	// 测试verbose=false时DebugBytes不输出
+	SetVerbose(false)
+	buf.Reset()
+	DebugBytes("json", []byte(`{"key": "value"}`))
+	output := buf.String()
+	if output != "" {
+		t.Errorf("verbose=false时DebugBytes不应该输出，但输出: %s", output)
+	}
+
+	// 测试verbose=true时DebugBytes输出
+	SetVerbose(true)
+	buf.Reset()
+	DebugBytes("json", []byte(`{"key": "value"}`))
+	output = buf.String()
+	expected := "```json\n{\"key\": \"value\"}\n```\n"
+	if output != expected {
+		t.Errorf("DebugBytes输出不匹配:\n期望: %q\n实际: %q", expected, output)
+	}
+}
+
+// TestJSONMarshal 测试JSONMarshal函数
+func TestJSONMarshal(t *testing.T) {
+	data := map[string]string{"key": "value"}
+
+	// 测试verbose=false时紧凑格式
+	SetVerbose(false)
+	compactJSON, err := JSONMarshal(data)
+	if err != nil {
+		t.Fatalf("JSONMarshal失败: %v", err)
+	}
+	expectedCompact := `{"key":"value"}`
+	if string(compactJSON) != expectedCompact {
+		t.Errorf("verbose=false时JSON应该紧凑:\n期望: %s\n实际: %s", expectedCompact, string(compactJSON))
+	}
+
+	// 测试verbose=true时格式化格式
+	SetVerbose(true)
+	formattedJSON, err := JSONMarshal(data)
+	if err != nil {
+		t.Fatalf("JSONMarshal失败: %v", err)
+	}
+	expectedFormatted := "{\n  \"key\": \"value\"\n}"
+	if string(formattedJSON) != expectedFormatted {
+		t.Errorf("verbose=true时JSON应该格式化:\n期望: %s\n实际: %s", expectedFormatted, string(formattedJSON))
+	}
 }

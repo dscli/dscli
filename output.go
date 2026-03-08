@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// LogLevel 定义日志级别
+// LogLevel 定义日志级别（保留类型但不再使用多级过滤）
 type LogLevel int
 
 const (
@@ -44,11 +44,8 @@ func (logLevel LogLevel) String() string {
 
 // 输出系统变量
 var (
-	// 当前日志级别
-	outputCurrentLogLevel LogLevel = LogLevelInfo
-
 	// 是否启用颜色输出
-	outputEnableColor bool = true
+	outputColorEnabled bool = true
 
 	// 是否显示时间戳
 	outputShowTimestamp bool = true
@@ -59,13 +56,13 @@ var (
 	// 输出写入器
 	outputWriter io.Writer = os.Stdout
 
-	// 输出格式
-	outputMode = "markdown"
-
 	// 错误输出写入器
 	outputErrorWriter io.Writer = os.Stderr
 
-	//
+	// 输出格式
+	outputMode string = "markdown"
+
+	// Markdown转换器
 	markdown = NewMarkdownToOrgConverter()
 )
 
@@ -116,22 +113,14 @@ func SetOutputWriter(w io.Writer) {
 	outputWriter = w
 }
 
+// SetOutputMode 设置输出模式
 func SetOutputMode(mode string) {
 	outputMode = mode
 }
 
-// SetLogLevel 设置日志级别
-func SetLogLevel(level LogLevel) {
-	outputCurrentLogLevel = level
-}
-
-func GetLogLevel() LogLevel {
-	return outputCurrentLogLevel
-}
-
 // SetColorEnabled 设置是否启用颜色输出
 func SetColorEnabled(enabled bool) {
-	outputEnableColor = enabled
+	outputColorEnabled = enabled
 }
 
 // SetShowTimestamp 设置是否显示时间戳
@@ -144,8 +133,6 @@ func SetVerbose(verbose bool) {
 	outputVerbose = verbose
 }
 
-// SetOutputWriter 设置输出写入器
-
 // SetErrorWriter 设置错误输出写入器
 func SetErrorWriter(w io.Writer) {
 	outputErrorWriter = w
@@ -153,7 +140,7 @@ func SetErrorWriter(w io.Writer) {
 
 // colorize 根据是否启用颜色返回带颜色的字符串
 func colorize(color, text string) string {
-	if outputEnableColor {
+	if outputColorEnabled {
 		return color + text + ColorReset
 	}
 	return text
@@ -168,21 +155,16 @@ func getTimestamp() string {
 }
 
 // formatMessage 格式化消息
-func formatMessage(level, levelColor, message string) string {
-	var parts []string
-
-	if timestamp := getTimestamp(); timestamp != "" {
-		parts = append(parts, colorize(ColorGray, "["+timestamp+"]"))
+func formatMessage(level, color, message string) string {
+	timestamp := getTimestamp()
+	if timestamp != "" {
+		return fmt.Sprintf("%s [%s] %s", timestamp, colorize(color, level), message)
 	}
-
-	parts = append(parts, colorize(levelColor, "["+level+"]"))
-	parts = append(parts, message)
-
-	return strings.Join(parts, " ")
+	return fmt.Sprintf("[%s] %s", colorize(color, level), message)
 }
 
 func JSONMarshal(v any) ([]byte, error) {
-	if outputCurrentLogLevel <= LogLevelDebug {
+	if outputVerbose {
 		return json.MarshalIndent(v, "", "  ")
 	}
 	return json.Marshal(v)
@@ -190,57 +172,49 @@ func JSONMarshal(v any) ([]byte, error) {
 
 // DebugBytes output bytes if debug
 func DebugBytes(lang string, b []byte) {
-	if outputCurrentLogLevel <= LogLevelDebug {
+	if outputVerbose {
 		Printf("```%s\n", lang)
 		Println(string(b))
 		Println("```")
 	}
 }
 
-// Debug 输出调试信息
+// Debug 输出调试信息（仅在verbose模式下显示）
 func Debug(format string, a ...any) {
-	if outputCurrentLogLevel <= LogLevelDebug {
+	if outputVerbose {
 		message := fmt.Sprintf(format, a...)
 		formatted := formatMessage("DEBUG", ColorGray, message)
 		Println(formatted)
 	}
 }
 
-// Info 输出普通信息
+// Info 输出普通信息（始终显示）
 func Info(format string, a ...any) {
-	if outputCurrentLogLevel <= LogLevelInfo {
-		message := fmt.Sprintf(format, a...)
-		formatted := formatMessage("INFO", ColorGreen, message)
-		Println(formatted)
-	}
+	message := fmt.Sprintf(format, a...)
+	formatted := formatMessage("INFO", ColorGreen, message)
+	Println(formatted)
 }
 
-// Warn 输出警告信息
+// Warn 输出警告信息（始终显示）
 func Warn(format string, a ...any) {
-	if outputCurrentLogLevel <= LogLevelWarn {
-		message := fmt.Sprintf(format, a...)
-		formatted := formatMessage("WARN", ColorYellow, message)
-		fmt.Fprintln(outputErrorWriter, formatted)
-	}
+	message := fmt.Sprintf(format, a...)
+	formatted := formatMessage("WARN", ColorYellow, message)
+	fmt.Fprintln(outputErrorWriter, formatted)
 }
 
-// Error 输出错误信息
+// Error 输出错误信息（始终显示）
 func Error(format string, a ...any) {
-	if outputCurrentLogLevel <= LogLevelError {
-		message := fmt.Sprintf(format, a...)
-		formatted := formatMessage("ERROR", ColorRed, message)
-		fmt.Fprintln(outputErrorWriter, formatted)
-	}
+	message := fmt.Sprintf(format, a...)
+	formatted := formatMessage("ERROR", ColorRed, message)
+	fmt.Fprintln(outputErrorWriter, formatted)
 }
 
-// Fatal 输出致命错误信息并退出
+// Fatal 输出致命错误信息并退出（始终显示）
 func Fatal(format string, a ...any) {
-	if outputCurrentLogLevel <= LogLevelFatal {
-		message := fmt.Sprintf(format, a...)
-		formatted := formatMessage("FATAL", ColorBoldRed, message)
-		fmt.Fprintln(outputErrorWriter, formatted)
-		os.Exit(1)
-	}
+	message := fmt.Sprintf(format, a...)
+	formatted := formatMessage("FATAL", ColorBoldRed, message)
+	fmt.Fprintln(outputErrorWriter, formatted)
+	os.Exit(1)
 }
 
 // Success 输出成功信息

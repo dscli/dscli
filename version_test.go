@@ -34,7 +34,7 @@ func TestVersionCommandOutput(t *testing.T) {
 	originalConfigDir := ConfigDir
 	originalProjectRoot := ProjectRoot
 	originalMode := mode
-	originalLogLevel := debug
+	originalVerbose := verbose
 	originalColorEnabled := colorEnabled
 	originalShowTimestamp := showTimestamp
 	originalModelChat := ModelDeepseekChat
@@ -48,7 +48,7 @@ func TestVersionCommandOutput(t *testing.T) {
 		ConfigDir = originalConfigDir
 		ProjectRoot = originalProjectRoot
 		mode = originalMode
-		debug = originalLogLevel
+		verbose = originalVerbose
 		colorEnabled = originalColorEnabled
 		showTimestamp = originalShowTimestamp
 		ModelDeepseekChat = originalModelChat
@@ -61,7 +61,7 @@ func TestVersionCommandOutput(t *testing.T) {
 	ConfigDir = "/tmp/.dscli-test"
 	ProjectRoot = "/tmp/project-test"
 	mode = "markdown"
-	debug = "info"
+	verbose = true
 	colorEnabled = true
 	showTimestamp = false
 	ModelDeepseekChat = "deepseek-chat-test"
@@ -94,6 +94,7 @@ func TestVersionCommandOutput(t *testing.T) {
 		{"配置目录", "配置目录"},
 		{"项目根目录", "项目根目录"},
 		{"输出模式", "输出模式"},
+		{"详细输出", "详细输出"},
 		{"颜色输出", "颜色输出"},
 		{"时间戳显示", "时间戳显示"},
 		{"模型配置章节", "模型配置"},
