@@ -1,9 +1,26 @@
 # Makefile for dscli
 
 BINARY_NAME = dscli
-VERSION ?= 0.5.2
-BUILD_DATE ?= $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
-GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+
+# 版本信息：优先使用git标签，如果没有标签则使用git提交哈希
+GIT_TAG = $(shell git describe --tags --exact-match 2>/dev/null || echo "")
+GIT_COMMIT = $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_DATE = $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
+
+# 如果存在git标签，使用标签作为版本号，否则使用提交哈希
+ifeq ($(GIT_TAG),)
+  VERSION ?= $(GIT_COMMIT)
+else
+  VERSION ?= $(GIT_TAG)
+endif
+
+# 如果VERSION为空或为unknown，使用开发版本
+ifeq ($(VERSION),)
+  VERSION = dev
+else ifeq ($(VERSION),unknown)
+  VERSION = dev
+endif
+
 LDFLAGS = -ldflags "-X main.Version=$(VERSION) -X main.Build=$(BUILD_DATE)-$(GIT_COMMIT)"
 GOFLAGS = -trimpath -tags netgo
 SOURCE_DIR = .
@@ -183,3 +200,15 @@ release-info:
 	@echo ""
 	@echo "构建命令: make release"
 	@echo "安装命令: make install 或 go install gitcode.com/dscli/dscli@v$(VERSION)"
+
+# version-info: 显示版本信息
+version-info:
+	@echo "=== 版本信息 ==="
+	@echo "Git标签: $(GIT_TAG)"
+	@echo "Git提交: $(GIT_COMMIT)"
+	@echo "构建时间: $(BUILD_DATE)"
+	@echo "最终版本: $(VERSION)"
+	@echo ""
+	@echo "构建标志:"
+	@echo "  -X main.Version=$(VERSION)"
+	@echo "  -X main.Build=$(BUILD_DATE)-$(GIT_COMMIT)"
