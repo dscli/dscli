@@ -211,7 +211,7 @@ func TestShortenShellScriptEdgeCases(t *testing.T) {
 		{
 			name:   "中文字符_短",
 			script: "echo 中文测试",
-			want:   "echo ",
+			want:   "echo",
 		},
 		{
 			name:   "中文字符_长",
@@ -221,7 +221,7 @@ func TestShortenShellScriptEdgeCases(t *testing.T) {
 		{
 			name:   "混合字符",
 			script: "echo 'Hello 世界! 123 ABC' && echo '测试 test 123'",
-			want:   "echo 'Hello ! 123 ABC' && echo ' test 123'",
+			want:   "echo; echo",
 		},
 		{
 			name:   "shebang后有空格",
@@ -250,7 +250,7 @@ echo "第五行：并显示前后部分"
 echo "第六行：用..连接"
 echo "第七行：确保功能正常"
 echo "第八行：测试完成"`,
-			want: `echo ""; echo "ShortenScript"; echo "72"; echo "";`,
+			want: `echo; echo; echo...`,
 		},
 	}
 	for _, tt := range tests {
