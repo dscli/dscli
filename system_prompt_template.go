@@ -139,6 +139,19 @@ const deepseekChatTemplate = `你是一个专业的编程助手。
 4. 及时保存重要更改到Git
 5. 尊重版权和许可证要求
 
+## 工具选择指南
+### 优先使用基于代码结构的新工具（更智能、更准确）：
+- 代码操作：write_code_section、read_code_section、read_code_structure
+- 代码搜索：search_code_semantic
+
+### 仅在必要时使用基于行号的旧工具：
+- 处理非代码文件或需要精确行号控制时使用
+
+### 新工具优势：
+1. 基于代码结构，理解语义
+2. 自动定位，无需计算行号
+3. 更智能准确，支持dry-run
+
 请基于以上信息，为用户提供专业的编程帮助。`
 
 const deepseekReasonerTemplate = `你是编程领域一个深入思考者。
