@@ -57,6 +57,14 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx = context.WithValue(ctx, StartTime, time.Now())
 	ctx = context.WithValue(ctx, CurrentModel, chatModel)
 
+	// 获取开始余额
+	var startBalance BalanceInfo
+	if resp, err := DeepseekClient.Balance(); err == nil && len(resp.BalanceInfos) > 0 {
+		// 使用第一个余额信息（通常是CNY）
+		startBalance = resp.BalanceInfos[0]
+		ctx = context.WithValue(ctx, StartBalance, startBalance)
+	}
+
 	prompts, err := LoadPrompts(ctx)
 	if err != nil {
 		return
@@ -107,8 +115,6 @@ func ReadContent() (content string, err error) {
 }
 
 func PrintContent(ctx context.Context, reasoning string, content string) {
-	startTime := ContextValue(ctx, StartTime, time.Time{})
-	startBalance := ContextValue(ctx, StartBalance, BalanceInfo{})
 	reasoning = strings.TrimSpace(reasoning)
 	if reasoning != "" {
 		Println(reasoning)
@@ -118,42 +124,6 @@ func PrintContent(ctx context.Context, reasoning string, content string) {
 	if content != "" {
 		content = strings.TrimSpace(content)
 		Println(content)
-	}
-
-	// 计算并打印用时（如果提供了开始时间）
-	if !startTime.IsZero() {
-		duration := time.Since(startTime)
-		// 格式化时间，保留1-2位小数
-		var durationStr string
-		if duration.Seconds() < 60 {
-			// 小于60秒，显示秒，保留1位小数
-			durationStr = fmt.Sprintf("%.1fs", duration.Seconds())
-		} else if duration.Minutes() < 60 {
-			// 小于60分钟，显示分钟，保留1位小数
-			durationStr = fmt.Sprintf("%.1fm", duration.Minutes())
-		} else {
-			// 大于等于60分钟，显示小时，保留1位小数
-			durationStr = fmt.Sprintf("%.1fh", duration.Hours())
-		}
-		Println(fmt.Sprintf("⏱️  用时: %s", durationStr))
-	}
-
-	// 计算并打印花费（如果提供了开始余额）
-	if startBalance.Currency != "" {
-		// 获取当前余额
-		if resp, err := DeepseekClient.Balance(); err == nil && len(resp.BalanceInfos) > 0 {
-			// 查找与开始余额相同货币的余额信息
-			for _, balance := range resp.BalanceInfos {
-				if balance.Currency == startBalance.Currency {
-					// 计算花费
-					cost := calculateCost(startBalance, balance)
-					if cost != "" {
-						Println(fmt.Sprintf("💰  花费: %s", cost))
-					}
-					break
-				}
-			}
-		}
 	}
 }
 
@@ -187,18 +157,68 @@ func parseBalance(balanceStr string) (float64, error) {
 	return strconv.ParseFloat(balanceStr, 64)
 }
 
-func ChatRound(ctx context.Context, prompts []Message, skills []Message, history []Message, inputs ...Message) (err error) {
-	// 在每次 ChatRound 开始时更新 StartTime
-	ctx = context.WithValue(ctx, StartTime, time.Now())
+// PrintSessionStats 打印会话统计信息
+// PrintSessionStats 打印会话统计信息
+func PrintSessionStats(ctx context.Context) {
+	startTime := ContextValue(ctx, StartTime, time.Time{})
+	startBalance := ContextValue(ctx, StartBalance, BalanceInfo{})
 
-	// 获取开始余额
-	var startBalance BalanceInfo
-	if resp, err := DeepseekClient.Balance(); err == nil && len(resp.BalanceInfos) > 0 {
-		// 使用第一个余额信息（通常是CNY）
-		startBalance = resp.BalanceInfos[0]
-		ctx = context.WithValue(ctx, StartBalance, startBalance)
+	// 打印用时
+	if !startTime.IsZero() {
+		duration := time.Since(startTime)
+		var durationStr string
+		if duration.Seconds() < 60 {
+			durationStr = fmt.Sprintf("%.1fs", duration.Seconds())
+		} else if duration.Minutes() < 60 {
+			durationStr = fmt.Sprintf("%.1fm", duration.Minutes())
+		} else {
+			durationStr = fmt.Sprintf("%.1fh", duration.Hours())
+		}
+		Println(fmt.Sprintf("⏱️  会话用时: %s", durationStr))
 	}
 
+	// 打印花费
+	if startBalance.Currency != "" {
+		if resp, err := DeepseekClient.Balance(); err == nil && len(resp.BalanceInfos) > 0 {
+			for _, balance := range resp.BalanceInfos {
+				if balance.Currency == startBalance.Currency {
+					cost := calculateCost(startBalance, balance)
+					if cost != "" {
+						Println(fmt.Sprintf("💰  会话花费: %s", cost))
+					}
+					break
+				}
+			}
+		}
+	}
+}
+
+// ShowWaitingAnimation 显示等待动画
+// ShowWaitingAnimation 显示等待动画
+func ShowWaitingAnimation(ctx context.Context, done chan bool) {
+	// 简单的旋转动画
+	spinner := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	i := 0
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-done:
+			// 清除动画行
+			fmt.Print("\r")
+			return
+		default:
+			// 显示动画
+			fmt.Printf("\r%s 正在思考...", spinner[i])
+
+			i = (i + 1) % len(spinner)
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+}
+
+func ChatRound(ctx context.Context, prompts []Message, skills []Message, history []Message, inputs ...Message) (err error) {
 	// 1. 构造 messages 切片（包含历史）
 	messages := make([]Message, 0, len(history)+len(prompts)+len(skills))
 	messages = append(messages, prompts...)
@@ -210,8 +230,22 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 	// 3. 记录本轮新增的消息（用于存储）
 	stories := make([]Message, 0, len(inputs)+1)
 	stories = append(stories, inputs...)
+
+	// 创建等待动画控制通道
+	done := make(chan bool)
+	animationCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// 启动等待动画
+	go ShowWaitingAnimation(animationCtx, done)
+
 	var resp *ChatResponse
 	resp, err = DeepseekClient.Chat(chatModel, messages, GetAllTools())
+
+	// 停止等待动画
+	done <- true
+	cancel()
+
 	if err != nil {
 		err = fmt.Errorf("聊天请求失败: %w", err)
 		return
@@ -238,6 +272,8 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 
 	tcs := story.ToolCalls
 	if len(tcs) == 0 {
+		// 会话结束，打印统计信息
+		PrintSessionStats(ctx)
 		return
 	}
 
