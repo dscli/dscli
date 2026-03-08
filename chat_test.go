@@ -72,10 +72,9 @@ func TestPrintSessionStats(t *testing.T) {
 
 	// 检查输出是否包含期望的内容
 	expectedStrings := []string{
-		"⏱️  会话用时:",
-		"💰  会话花费:",
-		"💳  当前余额:",
-		"CNY 95.50",
+		"⏱️ 30.0s",
+		"💰 CNY 4.50",
+		"💳 CNY 95.50",
 	}
 
 	for _, expected := range expectedStrings {
@@ -101,7 +100,7 @@ func TestPrintSessionStats(t *testing.T) {
 	PrintSessionStats(ctx)
 	output = buf.String()
 
-	if !strings.Contains(output, "⚠️  余额较低，请及时充值！") {
+	if !strings.Contains(output, "⚠️ 余额较低，请及时充值！") {
 		t.Errorf("低余额时应该显示提醒\n完整输出:\n%s", output)
 	}
 }

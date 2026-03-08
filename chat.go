@@ -164,7 +164,10 @@ func PrintSessionStats(ctx context.Context) {
 	startTime := ContextValue(ctx, StartTime, time.Time{})
 	startBalance := ContextValue(ctx, StartBalance, BalanceInfo{})
 
-	// 打印用时
+	// 收集要显示的信息
+	var stats []string
+
+	// 用时
 	if !startTime.IsZero() {
 		duration := time.Since(startTime)
 		var durationStr string
@@ -175,10 +178,10 @@ func PrintSessionStats(ctx context.Context) {
 		} else {
 			durationStr = fmt.Sprintf("%.1fh", duration.Hours())
 		}
-		Println(fmt.Sprintf("⏱️  会话用时: %s", durationStr))
+		stats = append(stats, fmt.Sprintf("⏱️ %s", durationStr))
 	}
 
-	// 打印花费和余额
+	// 花费和余额
 	if startBalance.Currency != "" {
 		if resp, err := DeepseekClient.Balance(); err == nil && len(resp.BalanceInfos) > 0 {
 			for _, balance := range resp.BalanceInfos {
@@ -192,23 +195,28 @@ func PrintSessionStats(ctx context.Context) {
 						currentBalance = 0
 					}
 
-					// 显示花费和余额
+					// 花费
 					if cost != "" {
-						Println(fmt.Sprintf("💰  会话花费: %s", cost))
+						stats = append(stats, fmt.Sprintf("💰 %s", cost))
 					}
 
-					// 显示当前余额
-					Println(fmt.Sprintf("💳  当前余额: %s %s", balance.Currency, balance.TotalBalance))
+					// 余额
+					stats = append(stats, fmt.Sprintf("💳 %s %s", balance.Currency, balance.TotalBalance))
 
 					// 如果余额较低，显示提醒
 					if currentBalance < 10.0 { // 余额低于10元时提醒
-						Println("⚠️  余额较低，请及时充值！")
+						stats = append(stats, "⚠️ 余额较低，请及时充值！")
 					}
 
 					break
 				}
 			}
 		}
+	}
+
+	// 在一行中显示所有统计信息
+	if len(stats) > 0 {
+		Println(strings.Join(stats, "  "))
 	}
 }
 
