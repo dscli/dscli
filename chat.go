@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -107,6 +108,7 @@ func ReadContent() (content string, err error) {
 
 func PrintContent(ctx context.Context, reasoning string, content string) {
 	startTime := ContextValue(ctx, StartTime, time.Time{})
+	startBalance := ContextValue(ctx, StartBalance, BalanceInfo{})
 	reasoning = strings.TrimSpace(reasoning)
 	if reasoning != "" {
 		Println(reasoning)
@@ -121,13 +123,81 @@ func PrintContent(ctx context.Context, reasoning string, content string) {
 	// 计算并打印执行时间（如果提供了开始时间）
 	if !startTime.IsZero() {
 		duration := time.Since(startTime)
-		Println(fmt.Sprintf("⏱️  执行时间: %v", duration))
+		// 格式化时间，保留1-2位小数
+		var durationStr string
+		if duration.Seconds() < 60 {
+			// 小于60秒，显示秒，保留1位小数
+			durationStr = fmt.Sprintf("%.1fs", duration.Seconds())
+		} else if duration.Minutes() < 60 {
+			// 小于60分钟，显示分钟，保留1位小数
+			durationStr = fmt.Sprintf("%.1fm", duration.Minutes())
+		} else {
+			// 大于等于60分钟，显示小时，保留1位小数
+			durationStr = fmt.Sprintf("%.1fh", duration.Hours())
+		}
+		Println(fmt.Sprintf("⏱️  执行时间: %s", durationStr))
 	}
+
+	// 计算并打印花费（如果提供了开始余额）
+	if startBalance.Currency != "" {
+		// 获取当前余额
+		if resp, err := DeepseekClient.Balance(); err == nil && len(resp.BalanceInfos) > 0 {
+			// 查找与开始余额相同货币的余额信息
+			for _, balance := range resp.BalanceInfos {
+				if balance.Currency == startBalance.Currency {
+					// 计算花费
+					cost := calculateCost(startBalance, balance)
+					if cost != "" {
+						Println(fmt.Sprintf("💰  花费: %s", cost))
+					}
+					break
+				}
+			}
+		}
+	}
+}
+
+// calculateCost 计算花费
+func calculateCost(startBalance, endBalance BalanceInfo) string {
+	// 解析余额字符串为浮点数
+	startTotal, err1 := parseBalance(startBalance.TotalBalance)
+	endTotal, err2 := parseBalance(endBalance.TotalBalance)
+
+	if err1 != nil || err2 != nil {
+		return "" // 解析失败，不显示花费
+	}
+
+	// 计算花费（开始余额 - 结束余额）
+	cost := startTotal - endTotal
+
+	// 如果花费很小或为负数，不显示
+	if cost <= 0 {
+		return ""
+	}
+
+	// 格式化花费，精确到分
+	return fmt.Sprintf("%s %.2f", startBalance.Currency, cost)
+}
+
+// parseBalance 解析余额字符串
+func parseBalance(balanceStr string) (float64, error) {
+	// 移除货币符号和空格
+	balanceStr = strings.TrimSpace(balanceStr)
+	// 尝试解析为浮点数
+	return strconv.ParseFloat(balanceStr, 64)
 }
 
 func ChatRound(ctx context.Context, prompts []Message, skills []Message, history []Message, inputs ...Message) (err error) {
 	// 在每次 ChatRound 开始时更新 StartTime
 	ctx = context.WithValue(ctx, StartTime, time.Now())
+
+	// 获取开始余额
+	var startBalance BalanceInfo
+	if resp, err := DeepseekClient.Balance(); err == nil && len(resp.BalanceInfos) > 0 {
+		// 使用第一个余额信息（通常是CNY）
+		startBalance = resp.BalanceInfos[0]
+		ctx = context.WithValue(ctx, StartBalance, startBalance)
+	}
 
 	// 1. 构造 messages 切片（包含历史）
 	messages := make([]Message, 0, len(history)+len(prompts)+len(skills))

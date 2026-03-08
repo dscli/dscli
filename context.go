@@ -7,6 +7,7 @@ import (
 var (
 	HistSize     = ContextKeyType("HistSize")
 	StartTime    = ContextKeyType("StartTime")
+	StartBalance = ContextKeyType("StartBalance")
 	CurrentModel = ContextKeyType("CurrentModel")
 	ToolCallID   = ContextKeyType("ToolCallID")
 	ShellName    = ContextKeyType("ShellName")
