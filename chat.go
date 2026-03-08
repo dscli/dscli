@@ -196,12 +196,16 @@ func PrintSessionStats(ctx context.Context) {
 // ShowWaitingAnimation 显示等待动画
 // ShowWaitingAnimation 显示等待动画
 // ShowWaitingAnimation 显示等待提示
+// ShowWaitingAnimation 显示等待提示
 func ShowWaitingAnimation(ctx context.Context, done chan bool) {
 	// 简单的等待提示：每3秒打印一个点
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 
 	dotCount := 0
+
+	// 先输出一个换行，确保点从新行开始
+	fmt.Println()
 
 	for {
 		select {
