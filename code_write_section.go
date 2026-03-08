@@ -286,6 +286,16 @@ func handleWriteCodeSection(ctx context.Context, args map[string]string) (string
 			dryRun = true
 		}
 	}
-	Printf("修改文件%s代码片段%s(dry_run=%v)\n", path, selector, dryRun)
+
+	PrintWriteSession(path, selector, dryRun)
+
 	return writeCodeSection(path, selector, newContent, dryRun)
+}
+
+func PrintWriteSession(path string, selector string, dryRun bool) {
+	run := ""
+	if dryRun {
+		run = "（空跑）"
+	}
+	Printf("修改文件%s代码片段%s%s\n", path, selector, run)
 }
