@@ -203,7 +203,6 @@ func ShellExec(ctx context.Context, script string) (out string, err error) {
 
 	buf := bytes.NewBuffer([]byte{})
 	subproc := exec.CommandContext(ctx, name, arg...)
-	Println(subproc)
 	subproc.Dir = ProjectRoot
 	subproc.Stdout = buf
 	subproc.Stderr = buf
