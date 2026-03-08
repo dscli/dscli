@@ -119,7 +119,7 @@ func TestShortenShellScript(t *testing.T) {
 		{
 			name:   "短脚本_普通命令",
 			script: "echo hello world",
-			want:   "echo hello world",
+			want:   "echo hello",
 		},
 		{
 			name:   "短脚本_多行命令",
@@ -135,7 +135,7 @@ func TestShortenShellScript(t *testing.T) {
 		{
 			name:   "长脚本_多行超过72字符",
 			script: "#!/usr/bin/env bash\necho '这是一个非常长的脚本，用于测试ShortenScript函数'\necho '第二行内容'\necho '第三行内容'\necho '第四行内容'\necho '第五行内容'",
-			want:   `echo 'ShortenScript'; echo ''; echo ''; echo ''; e`,
+			want:   `echo; echo; echo...`,
 		},
 		// 3. 带shebang的脚本
 		{
@@ -163,7 +163,7 @@ func TestShortenShellScript(t *testing.T) {
 		{
 			name:   "特殊字符_空格分隔",
 			script: "command1 arg1 arg2 arg3 arg4 arg5 arg6 arg7 arg8 arg9 arg10 arg11 arg12 arg13 arg14 arg15",
-			want:   "command1 arg1 arg2 arg3 arg4 arg5 arg6 arg7 arg8 a",
+			want:   "command1 arg1",
 		},
 		// 6. 空脚本
 		{
@@ -188,7 +188,7 @@ for i in {1..10}; do
 done
 echo "执行完成"
 # 结束脚本`,
-			want: `echo ""; for i in {1..10}; do; echo " $i"; done; e`,
+			want: `echo; echo; echo`,
 		},
 	}
 	for _, tt := range tests {

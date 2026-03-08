@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"mvdan.cc/sh/v3/syntax"
 )
 
 func Shebang(script string) (name string, arg []string) {
@@ -24,40 +26,116 @@ func Shebang(script string) (name string, arg []string) {
 	return
 }
 
-// ShortenShellScript for display
+// ShortenShellScript 生成脚本的简短摘要
 func ShortenShellScript(script string) string {
-	script = strings.ReplaceAll(script, ProjectRoot, ".")
 	// 处理空字符串
 	if script == "" {
 		return ""
 	}
 
+	// 移除项目根目录路径（只有在ProjectRoot不为空时）
+	if ProjectRoot != "" {
+		script = strings.ReplaceAll(script, ProjectRoot, ".")
+	}
+
+	// 移除非ASCII字符
+	script = strings.Map(func(r rune) rune {
+		if r > 127 {
+			return -1
+		}
+		return r
+	}, script)
+	// 使用语法解析生成摘要
+	summary := shortenWithSyntaxAnalysis(script)
+
+	// 如果语法解析失败或结果为空，使用简单回退
+	if summary == "" {
+		summary = shortenSimple(script)
+	}
+
+	// 确保长度不超过50字符
+	if len(summary) > 50 {
+		summary = summary[:50]
+	}
+
+	return summary
+}
+
+// shortenWithSyntaxAnalysis 使用语法分析生成有意义的摘要
+func shortenWithSyntaxAnalysis(script string) string {
+	parser := syntax.NewParser()
+	reader := strings.NewReader(script)
+	sf, err := parser.Parse(reader, "script.sh")
+	if err != nil {
+		return "" // 解析失败
+	}
+
+	// 收集所有命令
+	var commands []string
+	syntax.Walk(sf, func(node syntax.Node) bool {
+		switch n := node.(type) {
+		case *syntax.CallExpr:
+			if len(n.Args) > 0 {
+				cmd := n.Args[0].Lit()
+				if cmd != "" && !strings.HasPrefix(cmd, "#!") {
+					// 添加命令和最多一个参数
+					cmdStr := cmd
+					if len(n.Args) > 1 {
+						arg := n.Args[1].Lit()
+						if arg != "" && len(arg) < 20 {
+							cmdStr += " " + arg
+						}
+					}
+					commands = append(commands, cmdStr)
+				}
+			}
+		}
+		return true
+	})
+
+	if len(commands) == 0 {
+		return ""
+	}
+
+	// 构建摘要：最多显示3个命令
+	maxCommands := 3
+	if len(commands) > maxCommands {
+		commands = commands[:maxCommands]
+		return strings.Join(commands, "; ") + "..."
+	}
+
+	return strings.Join(commands, "; ")
+}
+
+// shortenSimple 简单的回退方法
+func shortenSimple(script string) string {
 	lines := []string{}
-	n := 0
+
 	for line := range strings.Lines(script) {
 		line = strings.TrimSpace(line)
-		line = strings.Map(func(r rune) rune {
-			if r > 127 {
-				return -1
-			}
-			return r
-		}, line)
-		if strings.HasPrefix(line, "#") ||
-			strings.HasPrefix(line, "//") {
+
+		// 跳过注释和shebang
+		if strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
 			continue
 		}
+
+		if line == "" {
+			continue
+		}
+
 		lines = append(lines, line)
-		n += len(line)
-		if n > 50 { // we need 50 most
+
+		// 如果已经收集了足够的内容，停止
+		if len(lines) >= 3 {
 			break
 		}
 	}
 
-	script = strings.Join(lines, "; ")
-	if len(script) > 50 {
-		return script[0:50]
+	if len(lines) == 0 {
+		return ""
 	}
-	return script
+
+	return strings.Join(lines, "; ")
 }
 
 func ArrangeArgs(name string, args []string) ([]string, bool) {
