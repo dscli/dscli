@@ -89,6 +89,7 @@ func handleGitAdd(ctx context.Context, args map[string]string) (string, error) {
 		path = ""
 	}
 	path = strings.TrimSpace(path)
+	Println("git add", path)
 	names := strings.Fields(path)
 	gitArgs := []string{"add"}
 	gitArgs = append(gitArgs, names...)
@@ -113,6 +114,8 @@ func handleGitCommit(ctx context.Context, args map[string]string) (string, error
 	if !ok {
 		options = ""
 	}
+
+	Println("git commit", options)
 
 	options = strings.TrimSpace(options)
 
@@ -141,6 +144,9 @@ func handleGitCommit(ctx context.Context, args map[string]string) (string, error
 }
 
 // handleGitLog git日志
+// handleGitLog git日志
+// handleGitLog git日志
+// handleGitLog git日志
 func handleGitLog(ctx context.Context, args map[string]string) (string, error) {
 	maxCountRaw, ok := args["max_count"]
 	if !ok || maxCountRaw == "" {
@@ -152,6 +158,7 @@ func handleGitLog(ctx context.Context, args map[string]string) (string, error) {
 		return "", err
 	}
 
+	Println("git log --oneline -n", maxCountRaw)
 	out, err := gitCommand(ctx, "log", "-n", maxCountRaw, "--oneline")
 	if err != nil {
 		return "", err
@@ -164,12 +171,15 @@ func handleGitLog(ctx context.Context, args map[string]string) (string, error) {
 }
 
 // handleGitDiff git差异
+// handleGitDiff git差异
 func handleGitDiff(ctx context.Context, args map[string]string) (string, error) {
 	path, ok := args["path"]
 	if !ok {
 		path = ""
 	}
 	path = strings.TrimSpace(path)
+
+	Println("git diff HEAD --", path)
 	gitArgs := []string{"diff"}
 	if path != "" {
 		names := strings.Fields(path)
@@ -185,6 +195,7 @@ func handleGitDiff(ctx context.Context, args map[string]string) (string, error) 
 
 // handleGitStatus git状态
 func handleGitStatus(ctx context.Context, args map[string]string) (string, error) {
+	Println("git status --short")
 	out, err := gitCommand(ctx, "status", "--short")
 	if err != nil {
 		return "", err
@@ -202,6 +213,8 @@ func handleGitPush(ctx context.Context, args map[string]string) (string, error) 
 		options = ""
 	}
 	options = strings.TrimSpace(options)
+
+	Println("git push", options)
 	names := strings.Fields(options)
 	gitArgs := []string{"push"}
 	if options != "" {
@@ -214,6 +227,7 @@ func handleGitPush(ctx context.Context, args map[string]string) (string, error) 
 	return out, nil
 }
 
+// init
 func init() {
 	RegisterTool(ToolDef{
 		Name:        "git_add",
