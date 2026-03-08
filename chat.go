@@ -198,8 +198,16 @@ func PrintSessionStats(ctx context.Context) {
 // ShowWaitingAnimation 显示等待提示
 // ShowWaitingAnimation 显示等待提示
 // ShowWaitingAnimation 显示等待提示
+// ShowWaitingAnimation 显示等待动画
 func ShowWaitingAnimation(ctx context.Context, done chan bool) {
-	// 简单的环境判断：检查是否是终端
+	// 检查是否是Emacs环境
+	if isEmacsEnvironment() {
+		// Emacs环境：输出特殊标记，让Emacs可以增强
+		showEmacsAnimation(ctx, done)
+		return
+	}
+
+	// 检查是否是终端环境
 	isTerminal := isTerminal()
 
 	if isTerminal {
