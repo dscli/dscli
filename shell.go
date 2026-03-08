@@ -14,90 +14,6 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
-func init() {
-	// 注册shell工具
-	RegisterTool(ToolDef{
-		Name: "shell",
-		Description: `在项目根目录执行Shell脚本。
-支持shebang指定解释器（如bash、sh等）。
-脚本通过标准输入传递，避免命令行长度限制。
-
-输出格式：
-- 成功时：返回包含执行结果和执行统计的格式化文本
-- 失败时：返回包含错误信息、输出内容和执行统计的格式化文本
-
-示例：
-1. Bash脚本：echo "Hello"
-2. Shell脚本：ls -la
-3. 文件操作：cat file.txt
-4. Git操作：git status
-
-注意：谨慎使用，避免破坏性操作。确保脚本在项目目录内执行。`,
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"script": map[string]any{
-					"type": "string",
-					"description": `要执行的Shell脚本内容。
-脚本执行结果会以格式化文本返回，包含执行统计信息。
-
-示例：
-1. Bash脚本：echo "Hello"
-2. Shell脚本：ls -la
-3. 文件操作：cat file.txt
-4. Git操作：git status
-`,
-				},
-			},
-			"required":             []string{"script"},
-			"additionalProperties": false,
-		},
-		Category: "system",
-		Timeout:  60 * time.Second, // 设置60秒超时
-		Handler:  handleShell,
-	})
-
-	// 注册python工具
-	RegisterTool(ToolDef{
-		Name: "python",
-		Description: `在项目根目录执行Python脚本。
-脚本通过标准输入传递，避免命令行长度限制。
-
-输出格式：
-- 成功时：返回包含执行结果和执行统计的格式化文本
-- 失败时：返回包含错误信息、输出内容和执行统计的格式化文本
-
-示例：
-1. Python脚本：print("Hello")
-2. 数据处理：import json; print(json.dumps({"key": "value"}))
-3. 文件操作：with open("file.txt", "r") as f: print(f.read())
-
-注意：谨慎使用，避免破坏性操作。确保脚本在项目目录内执行。`,
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"script": map[string]any{
-					"type": "string",
-					"description": `要执行的Python脚本内容。
-支持shebang指定解释器（如#!/usr/bin/env python, #!/usr/bin/env python3）。
-脚本执行结果会以格式化文本返回，包含执行统计信息。
-
-示例：
-1. Python脚本：print("Hello")
-2. 数据处理：import json; print(json.dumps({"key": "value"}))
-3. 文件操作：with open("file.txt", "r") as f: print(f.read())
-`,
-				},
-			},
-			"required":             []string{"script"},
-			"additionalProperties": false,
-		},
-		Category: "system",
-		Timeout:  60 * time.Second, // 设置60秒超时
-		Handler:  handlePython,
-	})
-}
-
 // 危险命令列表
 var dangerousCommands = []string{
 	// 系统破坏性命令
@@ -228,43 +144,7 @@ func validateShell(script string) (err error) {
 	return nil
 }
 
-// handleShell 执行Shell脚本
-func handleShell(ctx context.Context, args map[string]string) (out string, err error) {
-	script, ok := args["script"]
-	if !ok {
-		script = ""
-	}
-
-	if err = validateShell(script); err != nil {
-		return
-	}
-
-	Notice("Shell: %s", ShortenShellScript(script))
-	out, err = runShell(ctx, script)
-	return
-}
-
-// handlePython 执行Python脚本
-func handlePython(ctx context.Context, args map[string]string) (out string, err error) {
-	script, ok := args["script"]
-	if !ok {
-		script = ""
-	}
-
-	// 检查危险命令（Python脚本也可能包含shell命令）
-	if err := checkDangerousCommands(script); err != nil {
-		return "", err
-	}
-
-	// 如果没有shebang，添加默认的python shebang
-	if !strings.HasPrefix(strings.TrimSpace(script), "#!") {
-		script = "#!/usr/bin/env python3\n" + script
-	}
-
-	out, err = runShell(ctx, script)
-	return
-}
-
+// ShortenShellScript for display
 func ShortenShellScript(script string) string {
 	script = strings.ReplaceAll(script, ProjectRoot, ".")
 	// 处理空字符串
@@ -300,16 +180,6 @@ func ShortenShellScript(script string) string {
 	return script
 }
 
-func ShellExec(ctx context.Context, script string) (out string, err error) {
-	name := ContextValue(ctx, ShellName, "")
-	arg := ContextValue(ctx, ShellArgs, []string{})
-	if name == "" {
-		name, arg = Shebang(script)
-	}
-	out, err = shellExec(ctx, script, name, arg)
-	return
-}
-
 func ArrangeArgs(name string, args []string) ([]string, bool) {
 	if strings.HasSuffix(name, "env") {
 		if len(args) == 0 {
@@ -338,7 +208,12 @@ func ArrangeArgs(name string, args []string) ([]string, bool) {
 	return args, false
 }
 
-func shellExec(ctx context.Context, script string, name string, arg []string) (out string, err error) {
+func ShellExec(ctx context.Context, script string) (out string, err error) {
+	name := ContextValue(ctx, ShellName, "")
+	arg := ContextValue(ctx, ShellArgs, []string{})
+	if name == "" {
+		name, arg = Shebang(script)
+	}
 	arg, ok := ArrangeArgs(name, arg)
 	if !ok {
 		return "", fmt.Errorf("do not support %s %v", name, arg)
@@ -410,8 +285,9 @@ func shellExec(ctx context.Context, script string, name string, arg []string) (o
 func runShell(ctx context.Context, script string) (result string, err error) {
 	startTime := time.Now()
 	name, arg := Shebang(script)
-
-	out, err := shellExec(ctx, script, name, arg)
+	ctx = context.WithValue(ctx, ShellName, name)
+	ctx = context.WithValue(ctx, ShellArgs, arg)
+	out, err := ShellExec(ctx, script)
 	executionTime := time.Since(startTime)
 
 	if err != nil {
