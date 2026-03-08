@@ -70,7 +70,7 @@ func shortenWithSyntaxAnalysis(script string) string {
 		return "" // 解析失败
 	}
 
-	// 收集所有命令
+	// 收集所有命令（排除echo命令）
 	var commands []string
 	syntax.Walk(sf, func(node syntax.Node) bool {
 		switch n := node.(type) {
@@ -78,6 +78,10 @@ func shortenWithSyntaxAnalysis(script string) string {
 			if len(n.Args) > 0 {
 				cmd := n.Args[0].Lit()
 				if cmd != "" && !strings.HasPrefix(cmd, "#!") {
+					// 跳过echo命令（视为不重要）
+					if cmd == "echo" {
+						return true
+					}
 					// 添加命令和最多一个参数
 					cmdStr := cmd
 					if len(n.Args) > 1 {
@@ -120,6 +124,11 @@ func shortenSimple(script string) string {
 		}
 
 		if line == "" {
+			continue
+		}
+
+		// 跳过echo命令（视为不重要）
+		if strings.HasPrefix(line, "echo ") || line == "echo" {
 			continue
 		}
 
