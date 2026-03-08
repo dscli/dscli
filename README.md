@@ -19,9 +19,11 @@ dscli    +---------------+
 
 ## 📦 版本信息
 
-**当前版本：v0.5.2**
+**当前版本：v0.5.4**
 
 ### 版本历史
+- v0.5.4 (2026-03-09) - 新增余额显示和低余额提醒功能，增强用户体验
+- v0.5.3 (2026-03-06) - 添加段落系统，统一提示词管理
 - v0.5.2 (2026-03-05) - 重构工具实现，删除重复代码，拆分专门工具文件
 - v0.5.1 (2026-02-28) - 版本更新发布
 - v0.5.0 (2026-02-28) - 功能完备版本，包含43个迭代
@@ -29,7 +31,6 @@ dscli    +---------------+
 - v0.3.0 - 添加Git issue管理功能
 - v0.2.0 - 增强AI工具调用能力
 - v0.1.0 - 初始版本发布
-
 ## ✨ 核心功能
 
 ### 🤖 AI 功能
@@ -47,14 +48,15 @@ dscli    +---------------+
 ## 🚀 快速开始
 
 ### 安装
+### 安装
 ```bash
 # 方式1：使用 go install（推荐）
-go install gitcode.com/dscli/dscli@v0.5.2
+go install gitcode.com/dscli/dscli@v0.5.4
 
 # 方式2：从源码构建
 git clone https://gitcode.com/dscli/dscli.git
 cd dscli
-git checkout v0.5.2
+git checkout v0.5.4
 make install    # 安装到 $GOPATH/bin
 
 # 方式3：下载预编译二进制
@@ -168,7 +170,7 @@ Apache License 2.0
 
 - 项目地址：[gitcode.com/dscli/dscli](https://gitcode.com/dscli/dscli)
 - 问题反馈：[创建 Issue](https://gitcode.com/dscli/dscli/issues)
-
 ---
 
+**dscli v0.5.4** - 让命令行开发更智能、更高效！
 **dscli v0.5.2** - 让命令行开发更智能、更高效！

@@ -5,6 +5,25 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 并且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.5.4] - 2026-03-09
+
+### 新增
+- 在会话统计中显示用户余额和低余额提醒功能
+  - 会话结束后显示当前余额（💳图标）
+  - 当余额低于10元时显示提醒信息（⚠️图标）
+  - 支持余额数值解析和比较
+- 添加余额显示功能演示脚本（example_balance_demo.sh）
+- 添加PrintSessionStats函数完整测试
+
+### 变更
+- 改进PrintSessionStats函数，增强用户体验
+- 优化余额显示逻辑，与花费显示区分
+- 更新版本号到0.5.4
+
+### 修复
+- 确保向后兼容性，不影响现有功能
+- 修复测试覆盖率，确保功能稳定性
+
 ## [0.5.3] - 2026-03-06
 
 ### 新增
@@ -40,34 +59,6 @@
 - 修复模板重复插入问题
 - 修复模型ID常量定义
 - 改进错误处理和回退机制
-
-## [0.5.1] - 2026-02-28
-
-### 变更
-- 版本更新发布：从 v0.5.0 升级到 v0.5.1
-- 更新 README.md 中的版本信息和安装说明
-
-## [0.5.0] - 2026-02-28
-
-### 新增
-- 添加 `version` 命令，显示版本信息和运行时信息
-- 在 main.go 中添加版本常量定义
-- 更新 README.md 包含版本历史和安装说明
-
-### 变更
-- 重构格式化系统，支持多种输出模式
-- 改进工具调用接口，增强稳定性
-- 优化错误处理和日志记录
-
-### 修复
-- 修复 Printf 函数相关问题
-- 移除不再使用的 --mode 特性
-- 修复代码中的兼容性问题
-
-所有 dscli 项目的显著变更都将记录在此文件中。
-
-格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
-并且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
 ## [0.5.1] - 2026-02-28
 
@@ -141,19 +132,12 @@
 - 支持 models、balance、chat、fim 命令
 - 基本配置和日志系统
 
+[0.5.4]: https://gitcode.com/dscli/dscli/compare/v0.5.3...v0.5.4
+[0.5.3]: https://gitcode.com/dscli/dscli/compare/v0.5.2...v0.5.3
+[0.5.2]: https://gitcode.com/dscli/dscli/compare/v0.5.1...v0.5.2
 [0.5.1]: https://gitcode.com/dscli/dscli/compare/v0.5.0...v0.5.1
 [0.5.0]: https://gitcode.com/dscli/dscli/compare/v0.4...v0.5.0
 [0.4.0]: https://gitcode.com/dscli/dscli/compare/v0.3...v0.4
 [0.3.0]: https://gitcode.com/dscli/dscli/compare/v0.2...v0.3
 [0.2.0]: https://gitcode.com/dscli/dscli/compare/v0.1...v0.2
 [0.1.0]: https://gitcode.com/dscli/dscli/releases/tag/0.1
-
-文件信息:
-- 路径: /home/nanjj/src/gitcode.com/dscli/dscli/CHANGELOG.md
-- 大小: 2114 字节
-权限: -rw-r--r--
-修改时间: 2026-02-28 15:54:48
-
-=== 执行统计 ===
-执行时间: 94.807µs
-状态: 成功
