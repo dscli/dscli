@@ -8,7 +8,6 @@ var (
 	HistSize     = ContextKeyType("HistSize")
 	StartTime    = ContextKeyType("StartTime")
 	CurrentModel = ContextKeyType("CurrentModel")
-	IsReload     = ContextKeyType("IsReload")
 	ToolCallID   = ContextKeyType("ToolCallID")
 	ShellName    = ContextKeyType("ShellName")
 	ShellArgs    = ContextKeyType("ShellArgs")

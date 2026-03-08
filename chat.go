@@ -17,10 +17,7 @@ const (
 	DeepseekReasoner = int64(1)
 )
 
-var (
-	chatModel string
-	reload    bool
-)
+var chatModel string
 
 func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 	// 设置ModelID
@@ -46,15 +43,9 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 }
 
 func ChatRunE(cmd *cobra.Command, args []string) (err error) {
-	content := ""
-	// 如果是重载进程，不读
-	if reload {
-		content = "dscli reloaded"
-	} else {
-		content, err = ReadContent()
-		if err != nil {
-			return
-		}
+	content, err := ReadContent()
+	if err != nil {
+		return
 	}
 	ctx := cmd.Context()
 	histSize, err := cmd.Flags().GetInt("histsize")
@@ -64,7 +55,6 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx = context.WithValue(ctx, HistSize, histSize)
 	ctx = context.WithValue(ctx, StartTime, time.Now())
 	ctx = context.WithValue(ctx, CurrentModel, chatModel)
-	ctx = context.WithValue(ctx, IsReload, reload)
 
 	prompts, err := LoadPrompts(ctx)
 	if err != nil {
@@ -86,12 +76,8 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		lastHist := history[len(history)-1]
 		tcs := lastHist.ToolCalls
 		if len(tcs) > 0 {
-			// 如果是重载进程，工具不执行
-			if reload {
-				history = append(history, HandleReloadToolCalls(ctx, tcs)...)
-			} else {
-				history = append(history, HandleToolCalls(ctx, tcs)...)
-			}
+			// 执行工具调用
+			history = append(history, HandleToolCalls(ctx, tcs)...)
 
 			inputs := []Message{}
 			if content != "" {
@@ -211,6 +197,5 @@ func init() {
 		RunE:    ChatRunE,
 	})
 	chatCmd.Flags().StringVar(&chatModel, "model", ModelDeepseekChat, "使用的模型名称")
-	chatCmd.Flags().BoolVar(&reload, "reload", false, "重载进程（内部使用）")
 	chatCmd.Flags().Int("histsize", 8, "history size loaded")
 }

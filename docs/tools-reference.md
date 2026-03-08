@@ -230,18 +230,6 @@ dscli 提供了丰富的工具集，帮助AI助手与开发环境进行交互。
 
 ### 5. 系统工具
 
-#### dscli_chat_reload
-**描述**: 重新加载dscli chat进程，需要提供`confirm=yes`参数确认。
-
-**参数**:
-- `confirm` (必需): 必须为`yes`，用于确认重载操作
-
-**示例**:
-```json
-{
-  "confirm": "yes"
-}
-```
 
 ## 使用建议
 

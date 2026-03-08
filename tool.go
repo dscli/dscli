@@ -81,24 +81,6 @@ func GetAllTools() []Tool {
 	return tools
 }
 
-func HandleReloadToolCalls(ctx context.Context, tcs []ToolCall) (inputs []Message) {
-	for _, tc := range tcs {
-		id := tc.ID
-		input := Message{
-			Role:       "tool",
-			Content:    "dscli reloaded",
-			ToolCallID: id,
-		}
-
-		err := SaveMessages(input)
-		if err != nil {
-			Debug("failed to save: %v", err)
-		}
-		inputs = append(inputs, input)
-	}
-	return
-}
-
 // HandleToolCalls 处理工具调用（带统计）
 func HandleToolCalls(ctx context.Context, tcs []ToolCall) (inputs []Message) {
 	// 处理每个工具调用
