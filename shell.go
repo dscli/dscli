@@ -10,63 +10,6 @@ import (
 	"strings"
 )
 
-// 危险命令列表
-var dangerousCommands = []string{
-	// 系统破坏性命令
-	"rm -rf /",
-	"rm -rf /*",
-	"rm -rf /etc",
-	"rm -rf /bin",
-	"rm -rf /usr",
-	"rm -rf /var",
-	"rm -rf /lib",
-	"rm -rf /opt",
-	"rm -rf /sbin",
-	"rm -rf /boot",
-	"rm -rf /dev",
-	"rm -rf /proc",
-	"rm -rf /sys",
-	"rm -rf ~",
-	"rm -rf $HOME",
-
-	// 磁盘操作命令
-	"dd if=/dev/zero",
-	"dd of=/dev/sd",
-	"mkfs",
-	"fdisk",
-	"parted",
-	"wipefs",
-
-	// 系统关键文件
-	"chmod 000 /etc",
-	"chmod 777 /etc/passwd",
-	"chmod 777 /etc/shadow",
-
-	// 网络破坏
-	"iptables -F",
-	"iptables -X",
-	"iptables -t nat -F",
-
-	// 进程管理
-	"kill -9 -1",
-	"killall",
-	"pkill",
-
-	// 内存/CPU破坏
-	":(){ :|:& };:", // fork炸弹
-	"cat /dev/urandom",
-
-	// 服务管理
-	"systemctl stop",
-	"service stop",
-	"init 0",
-	"init 6",
-	"shutdown",
-	"halt",
-	"poweroff",
-	"reboot",
-}
-
 func Shebang(script string) (name string, arg []string) {
 	shebang := []string{"/usr/bin/env", "bash"}
 	before, _, ok := strings.Cut(script, "\n")

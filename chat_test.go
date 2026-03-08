@@ -17,19 +17,17 @@ func TestPrintContent(t *testing.T) {
 	SetOutputWriter(buf)
 	PrintContent(ctx, "reasoning", "content")
 	s := buf.String()
-	tag := "用时"
-	idx := strings.Index(s, tag)
-	if idx == -1 {
-		t.Fatal(idx)
+
+	// 检查输出是否包含 reasoning 和 content
+	if !strings.Contains(s, "reasoning") {
+		t.Error("missing reasoning")
 	}
-	s = s[idx+len(tag):]
-	s = strings.Fields(s)[0]
-	d, err := time.ParseDuration(s)
-	if err != nil {
-		t.Fatal(err)
+	if !strings.Contains(s, "content") {
+		t.Error("missing content")
 	}
-	if d > time.Minute {
-		t.Fatal(d)
+	// 检查是否包含执行时间信息
+	if !strings.Contains(s, "执行时间") {
+		t.Error("missing execution time")
 	}
 }
 

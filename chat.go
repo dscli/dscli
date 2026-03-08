@@ -123,19 +123,19 @@ func PrintContent(ctx context.Context, reasoning string, content string) {
 	startTime := ContextValue(ctx, StartTime, time.Time{})
 	reasoning = strings.TrimSpace(reasoning)
 	if reasoning != "" {
-		duration := time.Since(startTime)
-		seconds := duration.Seconds()
-		Printf("已思考用时%.2fs\n\n", seconds)
 		Println(reasoning)
 	}
 
 	content = strings.TrimSpace(content)
 	if content != "" {
-		duration := time.Since(startTime)
-		seconds := duration.Seconds()
-		Printf("用时%.2fs\n\n", seconds)
 		content = strings.TrimSpace(content)
 		Println(content)
+	}
+
+	// 计算并打印执行时间（如果提供了开始时间）
+	if !startTime.IsZero() {
+		duration := time.Since(startTime)
+		Println(fmt.Sprintf("⏱️  执行时间: %v", duration))
 	}
 }
 
