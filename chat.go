@@ -120,7 +120,7 @@ func PrintContent(ctx context.Context, reasoning string, content string) {
 		Println(content)
 	}
 
-	// 计算并打印执行时间（如果提供了开始时间）
+	// 计算并打印用时（如果提供了开始时间）
 	if !startTime.IsZero() {
 		duration := time.Since(startTime)
 		// 格式化时间，保留1-2位小数
@@ -135,7 +135,7 @@ func PrintContent(ctx context.Context, reasoning string, content string) {
 			// 大于等于60分钟，显示小时，保留1位小数
 			durationStr = fmt.Sprintf("%.1fh", duration.Hours())
 		}
-		Println(fmt.Sprintf("⏱️  执行时间: %s", durationStr))
+		Println(fmt.Sprintf("⏱️  用时: %s", durationStr))
 	}
 
 	// 计算并打印花费（如果提供了开始余额）
