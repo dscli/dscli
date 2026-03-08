@@ -207,9 +207,9 @@ func handleWriteFileWithLineRange(_ context.Context, args map[string]string) (st
 		operation = "删除"
 	}
 
-	rangeDesc := fmt.Sprintf("%d-%d", startLine, endLine)
+	rangeDesc := fmt.Sprintf("第%d行 - 第%d行", startLine, endLine)
 	if endLine == -1 {
-		rangeDesc = fmt.Sprintf("%d-末尾", startLine)
+		rangeDesc = fmt.Sprintf("第%d行 - 末尾", startLine)
 	}
 
 	linesChanged := 0

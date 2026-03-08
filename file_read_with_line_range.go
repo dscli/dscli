@@ -112,7 +112,12 @@ func handleReadFileWithLineRange(_ context.Context, args map[string]string) (str
 	result := resultBuilder.String()
 
 	// 记录日志
-	Notice("读取文件 \"%s\" 行范围 %d-%d，共 %d 行", path, startLine, endLine, linesRead)
+	// 记录日志
+	rangeDesc := fmt.Sprintf("第%d行 - 第%d行", startLine, endLine)
+	if endLine == -1 {
+		rangeDesc = fmt.Sprintf("第%d行 - 末尾", startLine)
+	}
+	Notice("读取文件 \"%s\" 行范围 %s，共 %d 行", path, rangeDesc, linesRead)
 
 	return result, nil
 }
