@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -59,6 +61,12 @@ func handleEditor(ctx context.Context, args map[string]string) (string, error) {
 
 // OpenEditor 打开编辑器让用户编辑内容
 func OpenEditor(initialContent string) ([]byte, error) {
+	// 检查是否应该使用Emacs内置编辑器
+	if os.Getenv("DS_CLI_USE_EMACS_EDITOR") != "" {
+		// 使用Emacs内置编辑器
+		return openEditorInEmacs(initialContent)
+	}
+
 	// 检测编辑器
 	editor := os.Getenv("VISUAL")
 	if editor == "" {
@@ -121,4 +129,55 @@ func OpenEditor(initialContent string) ([]byte, error) {
 	}
 
 	return content, nil
+}
+
+// openEditorInEmacs 在Emacs环境中打开编辑器
+func openEditorInEmacs(initialContent string) ([]byte, error) {
+	// 输出特殊标记，告诉Emacs需要打开编辑器
+	fmt.Println("<!-- DS-CLI-EDITOR-START -->")
+
+	// 转义初始内容中的特殊字符，防止HTML注释被意外关闭
+	escapedContent := strings.ReplaceAll(initialContent, "-->", "->")
+	// 同时转义换行符，确保内容在一行内
+	escapedContent = strings.ReplaceAll(escapedContent, "\n", "\\n")
+	escapedContent = strings.ReplaceAll(escapedContent, "\r", "\\r")
+
+	fmt.Printf("<!-- DS-CLI-EDITOR-CONTENT:%s -->\n", escapedContent)
+	fmt.Println("<!-- DS-CLI-EDITOR-END -->")
+
+	// 等待Emacs返回编辑结果
+	// 这里需要从标准输入读取Emacs返回的内容
+	reader := bufio.NewReader(os.Stdin)
+
+	// 设置读取超时（30秒）
+	// 注意：标准输入通常不支持超时，这里我们使用一个简单的循环
+	contentChan := make(chan string)
+	errorChan := make(chan error)
+
+	go func() {
+		content, err := reader.ReadString('\x00') // 使用空字符作为分隔符
+		if err != nil && err != io.EOF {
+			errorChan <- fmt.Errorf("读取Emacs编辑内容失败: %v", err)
+			return
+		}
+		contentChan <- content
+	}()
+
+	select {
+	case content := <-contentChan:
+		// 移除分隔符
+		if len(content) > 0 && content[len(content)-1] == '\x00' {
+			content = content[:len(content)-1]
+		}
+		// 恢复转义的换行符
+		content = strings.ReplaceAll(content, "\\n", "\n")
+		content = strings.ReplaceAll(content, "\\r", "\r")
+		return []byte(content), nil
+
+	case err := <-errorChan:
+		return nil, err
+
+	case <-time.After(30 * time.Second):
+		return nil, errors.New("等待Emacs编辑超时（30秒）")
+	}
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -88,6 +87,7 @@ func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 	DeepseekClient = NewClient(key, url)
 	return nil
 }
+
 // configureOutput 配置输出系统
 func configureOutput() {
 	// 设置颜色输出
@@ -100,4 +100,4 @@ func configureOutput() {
 	SetVerbose(verbose)
 }
 
-}
+func RootExecute() error { return rootCmd.Execute() }
