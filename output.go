@@ -92,10 +92,7 @@ const (
 func Println(a ...any) (n int, err error) {
 	if colorEnabled {
 		// 记录输出事件，重置等待计时器
-		manager := GetWaitingManager()
-		if manager != nil && manager.IsActive() {
-			manager.RecordOutput()
-		}
+		GetWaitingManager().RecordOutput()
 	}
 
 	if outputMode == "org" {
@@ -106,14 +103,20 @@ func Println(a ...any) (n int, err error) {
 	return fmt.Fprintln(outputWriter, a...)
 }
 
+func StartWaiting(duration time.Duration) func() {
+	if colorEnabled {
+		GetWaitingManager().StartWaiting(duration)
+		return GetWaitingManager().StopWaiting
+	} else {
+		return func() {}
+	}
+}
+
 // Printf 输出格式化文本（保持向后兼容）
 func Printf(format string, a ...any) (n int, err error) {
 	if colorEnabled {
 		// 记录输出事件，重置等待计时器
-		manager := GetWaitingManager()
-		if manager != nil && manager.IsActive() {
-			manager.RecordOutput()
-		}
+		GetWaitingManager().RecordOutput()
 	}
 
 	if outputMode == "org" {

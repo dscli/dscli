@@ -148,6 +148,7 @@ func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (e
 
 // doRequest 请求方法（自动重试）
 func (c *Deepseek) doRequest(method, path string, body any, result any) (err error) {
+	defer StartWaiting(time.Second * 3)()
 	var lastErr error
 
 	for attempt := 0; attempt <= c.maxRetries; attempt++ {
