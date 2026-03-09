@@ -73,16 +73,18 @@ func runShell(ctx context.Context, script string) (result string, err error) {
 	out, err := ShellExec(ctx, script)
 	executionTime := time.Since(startTime)
 
+	// 记录调试信息（不在用户输出中显示）
+	Debug("Shell命令执行时间: %v", executionTime)
+
 	if err != nil {
-		// 构建包含执行统计的失败结果
-		result := fmt.Sprintf("❌ 执行失败:\n错误: %v\n\n输出内容:\n%s\n\n📊 执行统计:\n执行时间: %v\n状态: 失败",
-			err, out, executionTime)
+		// 简化错误输出，不显示执行时间
+		result := fmt.Sprintf("❌ 执行失败:\n错误: %v\n\n输出内容:\n%s",
+			err, out)
 		return result, nil
 	}
 
-	// 构建包含执行统计的成功结果
-	result = fmt.Sprintf("📝 执行结果:\n%s\n\n📊 执行统计:\n执行时间: %v\n状态: 成功",
-		out, executionTime)
+	// 简化成功输出，不显示执行时间
+	result = fmt.Sprintf("📝 执行结果:\n%s", out)
 
 	return
 }

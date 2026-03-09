@@ -54,14 +54,21 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 
 func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
-	input, err := cmd.Flags().GetString("input")
-	if err != nil {
-		return
-	}
-	ctx = context.WithValue(ctx, InputContent, input)
-	content, err := ReadContent(ctx)
-	if err != nil {
-		return
+	content := ""
+	input := ""
+	if len(args) > 0 {
+		content = strings.Join(args, " ")
+	} else {
+		input, err = cmd.Flags().GetString("input")
+		if err != nil {
+			return
+		}
+		ctx = context.WithValue(ctx, InputContent, input)
+
+		content, err = ReadContentWithTimeout(ctx)
+		if err != nil {
+			return
+		}
 	}
 	histSize, err := cmd.Flags().GetInt("histsize")
 	if err != nil {
@@ -116,6 +123,32 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 
 	return ChatRound(ctx, prompts, skills, history,
 		Message{Role: "user", Content: content})
+}
+
+func ReadContentWithTimeout(ctx context.Context) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
+	defer cancel()
+	// 用于传递读取结果的通道
+	resultCh := make(chan string, 1)
+	errCh := make(chan error, 1)
+
+	go func() {
+		content, err := ReadContent(ctx)
+		if err != nil {
+			errCh <- err
+		}
+		resultCh <- content
+	}()
+
+	select {
+	case <-ctx.Done():
+		// context 超时或取消
+		return "", ctx.Err()
+	case res := <-resultCh:
+		return res, nil
+	case err := <-errCh:
+		return "", err
+	}
 }
 
 func ReadContent(ctx context.Context) (content string, err error) {
