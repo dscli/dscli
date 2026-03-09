@@ -14,6 +14,7 @@ var (
 	ShellArgs    = ContextKeyType("ShellArgs")
 	ShellStdin   = ContextKeyType("ShellStdin")
 	InputContent = ContextKeyType("InputContent")
+	VerboseKey   = ContextKeyType("Verbose")
 )
 
 type ContextKeyType string

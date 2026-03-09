@@ -243,9 +243,18 @@ func PrintSessionStats(ctx context.Context) {
 }
 
 // ShowWaitingAnimation 显示等待动画
+// ShowWaitingAnimation 显示等待动画
 func ShowWaitingAnimation(ctx context.Context, done chan bool) {
 	// 检查是否是Emacs环境
 	if isEmacsEnvironment() {
+		// 获取动画间隔
+		interval := getEmacsAnimationInterval()
+
+		// 调试信息
+		if verbose, ok := ctx.Value(VerboseKey).(bool); ok && verbose {
+			fmt.Printf("[DEBUG] Emacs动画间隔: %v\n", interval)
+		}
+
 		// Emacs环境：输出特殊标记，让Emacs可以增强
 		showEmacsAnimation(ctx, done)
 		return
