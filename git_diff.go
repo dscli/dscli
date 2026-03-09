@@ -68,13 +68,15 @@ func handleGitDiff(ctx context.Context, args map[string]string) (string, error) 
 
 	PrintSubSection("差异详情")
 
-	// 使用更好的格式显示差异
+	// 使用Markdown格式显示差异
+	fmt.Fprintln(outputWriter, "```diff")
+
 	for _, line := range lines {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
 
-		// 根据差异类型着色
+		// 根据差异类型着色（同时保持diff语法）
 		var coloredLine string
 		switch {
 		case strings.HasPrefix(line, "diff --git"):
@@ -106,6 +108,7 @@ func handleGitDiff(ctx context.Context, args map[string]string) (string, error) 
 		fmt.Fprintln(outputWriter, coloredLine)
 	}
 
+	fmt.Fprintln(outputWriter, "```")
 	// 显示统计信息
 	PrintSubSection("统计信息")
 	diffStats := analyzeDiffStats(out)
