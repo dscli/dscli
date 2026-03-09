@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"sync"
@@ -26,7 +27,6 @@ var (
 	managerOnce    sync.Once
 )
 
-// GetWaitingManager 获取等待动画管理器单例
 // GetWaitingManager 获取等待动画管理器单例
 func GetWaitingManager() *WaitingManager {
 	managerOnce.Do(func() {
@@ -99,6 +99,29 @@ func (w *WaitingManager) IsActive() bool {
 	return w.active
 }
 
+// isTerminal 简单判断是否是终端环境
+func isTerminal() bool {
+	// 超简单判断：只有在非常明确是交互式终端时才使用动画
+
+	// 1. 检查标准输出是否是终端设备
+	if fileInfo, err := os.Stdout.Stat(); err != nil || (fileInfo.Mode()&os.ModeCharDevice) == 0 {
+		return false // 不是终端设备
+	}
+
+	// 2. 检查是否是哑终端
+	if term := os.Getenv("TERM"); term == "dumb" {
+		return false
+	}
+
+	// 3. 排除Emacs环境（最可能出问题的环境）
+	if os.Getenv("INSIDE_EMACS") != "" || os.Getenv("EMACS") != "" {
+		return false
+	}
+
+	// 其他情况认为是终端
+	return true
+}
+
 // detectAnimationType 检测动画类型
 func (w *WaitingManager) detectAnimationType() string {
 	// 1. 检查是否是Emacs环境
@@ -142,6 +165,70 @@ func (w *WaitingManager) monitorAndStartAnimation(delay time.Duration) {
 	}
 }
 
+// showTerminalAnimation 在终端中显示动画（使用回显）
+func showTerminalAnimation(ctx context.Context, done chan bool) {
+	// 旋转动画字符
+	spinner := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	idx := 0
+
+	ticker := time.NewTicker(1000 * time.Millisecond)
+	defer ticker.Stop()
+
+	// 显示初始动画
+	fmt.Print(spinner[idx])
+
+	for {
+		select {
+		case <-ctx.Done():
+			// 清除动画
+			fmt.Print("\r")
+			return
+		case <-done:
+			// 清除动画
+			fmt.Print("\r")
+			return
+		case <-ticker.C:
+			// 清除上一帧
+			fmt.Print("\r")
+
+			// 显示下一帧
+			idx = (idx + 1) % len(spinner)
+			fmt.Print(spinner[idx])
+		}
+	}
+}
+
+// showPlainAnimation 在非终端环境中显示简单点
+func showPlainAnimation(ctx context.Context, done chan bool) {
+	// 简单的等待提示：每3秒打印一个点
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
+	dotCount := 0
+
+	// 先输出一个换行，确保点从新行开始
+	fmt.Println()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-done:
+			return
+		case <-ticker.C:
+			// 打印一个点
+			fmt.Print(".")
+			dotCount++
+
+			// 每10个点换行，避免一行太长
+			if dotCount >= 10 {
+				fmt.Println()
+				dotCount = 0
+			}
+		}
+	}
+}
+
 // startAnimation 启动动画
 func (w *WaitingManager) startAnimation() {
 	switch w.animationType {
@@ -152,69 +239,4 @@ func (w *WaitingManager) startAnimation() {
 	case "plain":
 		go showPlainAnimation(w.animationCtx, w.done)
 	}
-}
-
-// WithWaiting 包装一个函数，使其支持等待动画
-func WithWaiting(delay time.Duration, fn func() error) error {
-	manager := GetWaitingManager()
-	manager.StartWaiting(delay)
-	defer manager.StopWaiting()
-
-	return fn()
-}
-
-// WaitingPrintln 支持等待动画的 Println
-func WaitingPrintln(a ...any) (n int, err error) {
-	manager := GetWaitingManager()
-	manager.RecordOutput()
-	return Println(a...)
-}
-
-// WaitingPrintf 支持等待动画的 Printf
-func WaitingPrintf(format string, a ...any) (n int, err error) {
-	manager := GetWaitingManager()
-	manager.RecordOutput()
-	return Printf(format, a...)
-}
-
-// WaitingInfo 支持等待动画的 Info
-func WaitingInfo(format string, a ...any) {
-	manager := GetWaitingManager()
-	manager.RecordOutput()
-	Info(format, a...)
-}
-
-// WaitingDebug 支持等待动画的 Debug
-func WaitingDebug(format string, a ...any) {
-	manager := GetWaitingManager()
-	manager.RecordOutput()
-	Debug(format, a...)
-}
-
-// WaitingWarn 支持等待动画的 Warn
-func WaitingWarn(format string, a ...any) {
-	manager := GetWaitingManager()
-	manager.RecordOutput()
-	Warn(format, a...)
-}
-
-// WaitingError 支持等待动画的 Error
-func WaitingError(format string, a ...any) {
-	manager := GetWaitingManager()
-	manager.RecordOutput()
-	Error(format, a...)
-}
-
-// WaitingSuccess 支持等待动画的 Success
-func WaitingSuccess(format string, a ...any) {
-	manager := GetWaitingManager()
-	manager.RecordOutput()
-	Success(format, a...)
-}
-
-// WaitingNotice 支持等待动画的 Notice
-func WaitingNotice(format string, a ...any) {
-	manager := GetWaitingManager()
-	manager.RecordOutput()
-	Notice(format, a...)
 }

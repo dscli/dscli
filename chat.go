@@ -286,123 +286,6 @@ func PrintSessionStats(ctx context.Context) {
 	}
 }
 
-// ShowWaitingAnimation 显示等待动画
-func ShowWaitingAnimation(ctx context.Context, done chan bool) {
-	// 检查是否是Emacs环境
-	if isEmacsEnvironment() {
-		// 获取动画间隔
-		interval := getEmacsAnimationInterval()
-
-		// 调试信息
-		if verbose, ok := ctx.Value(VerboseKey).(bool); ok && verbose {
-			fmt.Printf("[DEBUG] Emacs动画间隔: %v\n", interval)
-		}
-
-		// Emacs环境：输出特殊标记，让Emacs可以增强
-		showEmacsAnimation(ctx, done)
-		return
-	}
-
-	// 检查是否是终端环境
-	isTerminal := isTerminal()
-
-	if isTerminal {
-		showTerminalAnimation(ctx, done)
-	} else {
-		showPlainAnimation(ctx, done)
-	}
-}
-
-// isTerminal 简单判断是否是终端环境
-// isTerminal 简单判断是否是终端环境
-// isTerminal 简单判断是否是终端环境
-// isTerminal 简单判断是否是终端环境
-func isTerminal() bool {
-	// 超简单判断：只有在非常明确是交互式终端时才使用动画
-
-	// 1. 检查标准输出是否是终端设备
-	if fileInfo, err := os.Stdout.Stat(); err != nil || (fileInfo.Mode()&os.ModeCharDevice) == 0 {
-		return false // 不是终端设备
-	}
-
-	// 2. 检查是否是哑终端
-	if term := os.Getenv("TERM"); term == "dumb" {
-		return false
-	}
-
-	// 3. 排除Emacs环境（最可能出问题的环境）
-	if os.Getenv("INSIDE_EMACS") != "" || os.Getenv("EMACS") != "" {
-		return false
-	}
-
-	// 其他情况认为是终端
-	return true
-}
-
-// showTerminalAnimation 在终端中显示动画（使用回显）
-func showTerminalAnimation(ctx context.Context, done chan bool) {
-	// 旋转动画字符
-	spinner := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-	idx := 0
-
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-
-	// 显示初始动画
-	fmt.Print(spinner[idx])
-
-	for {
-		select {
-		case <-ctx.Done():
-			// 清除动画
-			fmt.Print("\r\033[K")
-			return
-		case <-done:
-			// 清除动画
-			fmt.Print("\r\033[K")
-			return
-		case <-ticker.C:
-			// 清除上一帧
-			fmt.Print("\r\033[K")
-
-			// 显示下一帧
-			idx = (idx + 1) % len(spinner)
-			fmt.Print(spinner[idx])
-		}
-	}
-}
-
-// showPlainAnimation 在非终端环境中显示简单点
-func showPlainAnimation(ctx context.Context, done chan bool) {
-	// 简单的等待提示：每3秒打印一个点
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
-
-	dotCount := 0
-
-	// 先输出一个换行，确保点从新行开始
-	fmt.Println()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-done:
-			return
-		case <-ticker.C:
-			// 打印一个点
-			fmt.Print(".")
-			dotCount++
-
-			// 每10个点换行，避免一行太长
-			if dotCount >= 10 {
-				fmt.Println()
-				dotCount = 0
-			}
-		}
-	}
-}
-
 func ChatRound(ctx context.Context, prompts []Message, skills []Message, history []Message, inputs ...Message) (err error) {
 	// 1. 构造 messages 切片（包含历史）
 	messages := make([]Message, 0, len(history)+len(prompts)+len(skills))
@@ -415,11 +298,6 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 	// 3. 记录本轮新增的消息（用于存储）
 	stories := make([]Message, 0, len(inputs)+1)
 	stories = append(stories, inputs...)
-
-	// 使用新的等待动画系统
-	manager := GetWaitingManager()
-	manager.StartWaiting(2 * time.Second)
-	defer manager.StopWaiting()
 
 	var resp *ChatResponse
 	resp, err = DeepseekClient.Chat(ctx, messages, GetAllTools())

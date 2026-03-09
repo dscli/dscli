@@ -1,224 +1,70 @@
 package main
 
 import (
-	"bufio"
-	"context"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 )
 
-// Editor 工具定义
-var EditorTool = ToolDef{
-	Name:        "editor",
-	DisplayName: "编辑器",
-	Description: "打开编辑器让用户编辑内容，返回编辑后的文本",
-	Parameters: map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"prompt": map[string]any{
-				"type":        "string",
-				"description": "显示给用户的提示信息（可选）",
-			},
-			"initial_content": map[string]any{
-				"type":        "string",
-				"description": "编辑器的初始内容（可选）",
-			},
-		},
-		"required": []string{},
-	},
-	Category: "interaction",
-	Timeout:  300 * time.Second, // 给用户5分钟时间编辑
-	Handler:  handleEditor,
-}
-
-func init() {
-	RegisterTool(EditorTool)
-}
-
-// handleEditor 处理编辑器工具调用
-func handleEditor(ctx context.Context, args map[string]string) (string, error) {
-	prompt := args["prompt"]
-	initialContent := args["initial_content"]
-
-	// 如果有提示信息，先显示
-	if prompt != "" {
-		fmt.Printf("\n%s\n\n", prompt)
-	}
-
-	// 调用编辑器
-	content, err := OpenEditor(initialContent)
-	if err != nil {
-		return "", fmt.Errorf("编辑器错误: %v", err)
-	}
-
-	return string(content), nil
-}
-
-// OpenEditor 打开编辑器让用户编辑内容
-// OpenEditor 打开编辑器让用户编辑内容
-func OpenEditor(initialContent string) ([]byte, error) {
-	// 检查是否应该使用Emacs内置编辑器
-	// 只有在明确设置了环境变量，并且检测到在Emacs环境中运行时才启用
-	if shouldUseEmacsEditor() {
-		// 使用Emacs内置编辑器
-		return openEditorInEmacs(initialContent)
-	}
-
-	// 检测编辑器
-	editor := os.Getenv("VISUAL")
-	if editor == "" {
-		editor = os.Getenv("EDITOR")
-		if editor == "" {
-			// 尝试常见编辑器
-			for _, p := range []string{"editor", "vi", "vim", "emacs", "nano", "code", "subl"} {
-				_, err := exec.LookPath(p)
-				if err == nil {
-					editor = p
-					break
-				}
-			}
-			if editor == "" {
-				return nil, errors.New("未找到文本编辑器，请设置 EDITOR 环境变量")
-			}
-		}
-	}
-
-	// 创建临时文件
-	tmpFile, err := os.CreateTemp("", "dscli_editor_*.txt")
-	if err != nil {
-		return nil, fmt.Errorf("创建临时文件失败: %v", err)
-	}
-	defer os.Remove(tmpFile.Name())
-
-	// 写入初始内容
-	if initialContent != "" {
-		if _, err := tmpFile.WriteString(initialContent); err != nil {
-			tmpFile.Close()
-			return nil, fmt.Errorf("写入初始内容失败: %v", err)
-		}
-	}
-
-	// 关闭文件以便编辑器可以访问
-	if err := tmpFile.Close(); err != nil {
-		return nil, fmt.Errorf("关闭临时文件失败: %v", err)
-	}
-
-	// 设置文件权限
-	if err := os.Chmod(tmpFile.Name(), 0o600); err != nil {
-		return nil, fmt.Errorf("设置文件权限失败: %v", err)
-	}
-
-	// 调用编辑器
-	cmdParts := strings.Fields(editor)
-	cmd := exec.Command(cmdParts[0], append(cmdParts[1:], tmpFile.Name())...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("编辑器执行失败: %v", err)
-	}
-
-	// 读取编辑后的内容
-	content, err := os.ReadFile(tmpFile.Name())
-	if err != nil {
-		return nil, fmt.Errorf("读取编辑内容失败: %v", err)
-	}
-
-	return content, nil
-}
-
-// openEditorInEmacs 在Emacs环境中打开编辑器
-func openEditorInEmacs(initialContent string) ([]byte, error) {
-	// 输出特殊标记，告诉Emacs需要打开编辑器
-	fmt.Println("<!-- DS-CLI-EDITOR-START -->")
-
-	// 转义初始内容中的特殊字符，防止HTML注释被意外关闭
-	escapedContent := strings.ReplaceAll(initialContent, "-->", "->")
-	// 同时转义换行符，确保内容在一行内
-	escapedContent = strings.ReplaceAll(escapedContent, "\n", "\\n")
-	escapedContent = strings.ReplaceAll(escapedContent, "\r", "\\r")
-
-	fmt.Printf("<!-- DS-CLI-EDITOR-CONTENT:%s -->\n", escapedContent)
-	fmt.Println("<!-- DS-CLI-EDITOR-END -->")
-
-	// 等待Emacs返回编辑结果
-	// 这里需要从标准输入读取Emacs返回的内容
-	reader := bufio.NewReader(os.Stdin)
-
-	// 设置读取超时（30秒）
-	// 注意：标准输入通常不支持超时，这里我们使用一个简单的循环
-	contentChan := make(chan string)
-	errorChan := make(chan error)
-
-	go func() {
-		content, err := reader.ReadString('\x00') // 使用空字符作为分隔符
-		if err != nil && err != io.EOF {
-			errorChan <- fmt.Errorf("读取Emacs编辑内容失败: %v", err)
-			return
-		}
-		contentChan <- content
-	}()
-
-	select {
-	case content := <-contentChan:
-		// 移除分隔符
-		if len(content) > 0 && content[len(content)-1] == '\x00' {
-			content = content[:len(content)-1]
-		}
-		// 恢复转义的换行符
-		content = strings.ReplaceAll(content, "\\n", "\n")
-		content = strings.ReplaceAll(content, "\\r", "\r")
-		return []byte(content), nil
-
-	case err := <-errorChan:
-		return nil, err
-
-	case <-time.After(30 * time.Second):
-		return nil, errors.New("等待Emacs编辑超时（30秒）")
-	}
-}
-
-// shouldUseEmacsEditor 判断是否应该使用Emacs内置编辑器
-func shouldUseEmacsEditor() bool {
-	// 检查是否设置了环境变量
-	if os.Getenv("DS_CLI_USE_EMACS_EDITOR") == "" {
-		return false
-	}
-
-	// 检查是否在Emacs环境中运行
-	// Emacs通常会设置EMACS环境变量
-	if os.Getenv("EMACS") == "" && os.Getenv("INSIDE_EMACS") == "" {
-		// 不在Emacs环境中，但用户设置了环境变量
-		// 给出警告，但仍然使用传统编辑器
-		fmt.Fprintf(os.Stderr, "⚠️  警告: DS_CLI_USE_EMACS_EDITOR已设置，但未检测到Emacs环境\n")
-		fmt.Fprintf(os.Stderr, "   将使用传统编辑器模式\n")
-		return false
-	}
-
-	// 检查当前编辑器设置
-	// 如果用户明确设置了非Emacs编辑器，尊重用户选择
-	editor := os.Getenv("VISUAL")
-	if editor == "" {
-		editor = os.Getenv("EDITOR")
-	}
-
-	// 如果用户明确设置了编辑器，并且不是emacs，尊重用户选择
+func getEditor() (editor string, ext string) {
+	editor = os.Getenv("VISUAL")
 	if editor != "" {
-		editorLower := strings.ToLower(editor)
-		if !strings.Contains(editorLower, "emacs") &&
-			!strings.Contains(editorLower, "emacsclient") {
-			fmt.Fprintf(os.Stderr, "⚠️  警告: DS_CLI_USE_EMACS_EDITOR已设置，但EDITOR/VISUAL设置为非Emacs编辑器: %s\n", editor)
-			fmt.Fprintf(os.Stderr, "   将使用用户指定的编辑器: %s\n", editor)
-			return false
-		}
+		return
+	}
+	editor = os.Getenv("EDITOR")
+	mode := GetOutputMode()
+	if mode == "markdown" {
+		ext = "md"
+	} else {
+		ext = "org"
+	}
+	return
+}
+
+func createTempfile(initialContent string, ext string) (name string, err error) {
+	tmpFile, err := os.CreateTemp("", "dscli_editor_*."+ext)
+	if err != nil {
+		return
+	}
+	err = tmpFile.Close()
+	if err != nil {
+		return
+	}
+	name = tmpFile.Name()
+	err = os.WriteFile(name, []byte(initialContent), 0o655)
+	if err != nil {
+		return
+	}
+	return
+}
+
+func OpenEditor(initialContent string) (content string, err error) {
+	editor, ext := getEditor()
+	path, err := createTempfile(initialContent, ext)
+	if err != nil {
+		return
+	}
+	defer os.RemoveAll(path)
+	if editor == "" {
+		err = fmt.Errorf("no editor specified")
+		return
 	}
 
-	// 所有条件满足，使用Emacs内置编辑器
-	return true
+	cmdParts := strings.Fields(editor)
+	name := cmdParts[0]
+	args := cmdParts[1:]
+	args = append(args, path)
+	cmd := exec.Command(name, args...)
+	Println(cmd.String())
+	if err = cmd.Run(); err != nil {
+		return
+	}
+
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	content = strings.TrimSpace(string(b))
+	return
 }
