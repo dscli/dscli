@@ -12,7 +12,7 @@ func TestPrintContent(t *testing.T) {
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, StartTime, time.Now())
 	// make sure two keys  no overlap
-	ctx = context.WithValue(ctx, CurrentModel, chatModel)
+	ctx = context.WithValue(ctx, CurrentModel, ModelDeepseekChat)
 	buf := bytes.NewBuffer([]byte{})
 	SetOutputWriter(buf)
 	PrintContent(ctx, "reasoning", "content")
@@ -119,10 +119,10 @@ func (m *MockDeepseekClient) Models() (*ModelsResponse, error) {
 	return nil, nil
 }
 
-func (m *MockDeepseekClient) FIM(model, prompt, suffix string, maxTokens int, temperature float64) (*FIMResponse, error) {
+func (m *MockDeepseekClient) FIM(ctx context.Context, prompt, suffix string, maxTokens int, temperature float64) (*FIMResponse, error) {
 	return nil, nil
 }
 
-func (m *MockDeepseekClient) Chat(model string, messages []Message, tools []Tool) (*ChatResponse, error) {
+func (m *MockDeepseekClient) Chat(ctx context.Context, messages []Message, tools []Tool) (*ChatResponse, error) {
 	return nil, nil
 }

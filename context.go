@@ -5,16 +5,17 @@ import (
 )
 
 var (
-	HistSize     = ContextKeyType("HistSize")
-	StartTime    = ContextKeyType("StartTime")
-	StartBalance = ContextKeyType("StartBalance")
-	CurrentModel = ContextKeyType("CurrentModel")
-	ToolCallID   = ContextKeyType("ToolCallID")
-	ShellName    = ContextKeyType("ShellName")
-	ShellArgs    = ContextKeyType("ShellArgs")
-	ShellStdin   = ContextKeyType("ShellStdin")
-	InputContent = ContextKeyType("InputContent")
-	VerboseKey   = ContextKeyType("Verbose")
+	HistSize        = ContextKeyType("HistSize")
+	StartTime       = ContextKeyType("StartTime")
+	StartBalance    = ContextKeyType("StartBalance")
+	CurrentModel    = ContextKeyType("CurrentModel")
+	ToolCallID      = ContextKeyType("ToolCallID")
+	ShellName       = ContextKeyType("ShellName")
+	ShellArgs       = ContextKeyType("ShellArgs")
+	ShellStdin      = ContextKeyType("ShellStdin")
+	InputContent    = ContextKeyType("InputContent")
+	VerboseKey      = ContextKeyType("Verbose")
+	InsideShellExec = ContextKeyType("InsideShellExec")
 )
 
 type ContextKeyType string

@@ -18,24 +18,30 @@ const (
 	DeepseekReasoner = int64(1)
 )
 
-var chatModel string
-
 func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
+	model, err := cmd.Flags().GetString("model")
+	if err != nil {
+		return
+	}
+
+	if model == "" {
+		model = ModelDeepseekChat
+	}
 	// 调试：打印chatModel和ModelDeepseekChat的值
 	if verbose, _ := cmd.Flags().GetBool("verbose"); verbose {
 		fmt.Printf("[DEBUG] ChatPreRunE: chatModel='%s', ModelDeepseekChat='%s'\n",
-			chatModel, ModelDeepseekChat)
+			model, ModelDeepseekChat)
 	}
 
 	// 设置ModelID
 	var modelID int64
-	switch chatModel {
+	switch model {
 	case ModelDeepseekChat:
 		modelID = DeepseekChat
 	case ModelDeepseekReasoner:
 		modelID = DeepseekReasoner
 	default:
-		err = fmt.Errorf("do not support %s", chatModel)
+		err = fmt.Errorf("do not support %s", model)
 		if verbose, _ := cmd.Flags().GetBool("verbose"); verbose {
 			fmt.Printf("[DEBUG] ChatPreRunE: unsupported model error: %v\n", err)
 		}
@@ -53,7 +59,12 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 }
 
 func ChatRunE(cmd *cobra.Command, args []string) (err error) {
+	model, err := cmd.Flags().GetString("model")
+	if err != nil {
+		return
+	}
 	ctx := cmd.Context()
+	ctx = context.WithValue(ctx, InsideShellExec, os.Getenv(string(InsideShellExec)) == "1")
 	content := ""
 	input := ""
 	if len(args) > 0 {
@@ -76,7 +87,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 	ctx = context.WithValue(ctx, HistSize, histSize)
 	ctx = context.WithValue(ctx, StartTime, time.Now())
-	ctx = context.WithValue(ctx, CurrentModel, chatModel)
+	ctx = context.WithValue(ctx, CurrentModel, model)
 
 	// 获取开始余额
 	var startBalance BalanceInfo
@@ -276,7 +287,6 @@ func PrintSessionStats(ctx context.Context) {
 }
 
 // ShowWaitingAnimation 显示等待动画
-// ShowWaitingAnimation 显示等待动画
 func ShowWaitingAnimation(ctx context.Context, done chan bool) {
 	// 检查是否是Emacs环境
 	if isEmacsEnvironment() {
@@ -424,7 +434,7 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 	}()
 
 	var resp *ChatResponse
-	resp, err = DeepseekClient.Chat(chatModel, messages, GetAllTools())
+	resp, err = DeepseekClient.Chat(ctx, messages, GetAllTools())
 
 	// 停止等待提示
 	done <- true
@@ -486,7 +496,7 @@ func init() {
 		PreRunE: ChatPreRunE,
 		RunE:    ChatRunE,
 	})
-	chatCmd.Flags().StringVar(&chatModel, "model", ModelDeepseekChat, "使用的模型名称")
+	chatCmd.Flags().String("model", ModelDeepseekChat, "使用的模型名称")
 	chatCmd.Flags().Int("histsize", 8, "history size loaded")
 	chatCmd.Flags().String("input", "", "read content from input file or read content from stdin if input file empty")
 }

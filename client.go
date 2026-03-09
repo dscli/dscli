@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,8 +23,8 @@ type Deepseek struct {
 type Client interface {
 	Models() (*ModelsResponse, error)
 	Balance() (*BalanceResponse, error)
-	FIM(model, prompt, suffix string, maxTokens int, temperature float64) (*FIMResponse, error)
-	Chat(model string, messages []Message, tools []Tool) (*ChatResponse, error)
+	FIM(ctx context.Context, prompt, suffix string, maxTokens int, temperature float64) (*FIMResponse, error)
+	Chat(ctx context.Context, messages []Message, tools []Tool) (*ChatResponse, error)
 }
 
 // httpClient 单例HTTP客户端，避免创建多个连接池
@@ -206,7 +207,20 @@ func (c *Deepseek) Balance() (*BalanceResponse, error) {
 }
 
 // Chat 发送聊天请求
-func (c *Deepseek) Chat(model string, messages []Message, tools []Tool) (*ChatResponse, error) {
+func (c *Deepseek) Chat(ctx context.Context, messages []Message, tools []Tool) (*ChatResponse, error) {
+	model := ContextValue(ctx, CurrentModel, ModelDeepseekChat)
+	insideShellExec := ContextValue(ctx, InsideShellExec, false)
+	if insideShellExec {
+		return &ChatResponse{
+			ID: "id",
+			Choices: []Choice{
+				{
+					Message: Message{Role: "assistant", Content: "yes, here I heard"},
+				},
+			},
+		}, nil
+	}
+
 	// reset reasoning
 	req := ChatRequest{
 		Model:    model,
@@ -223,7 +237,8 @@ func (c *Deepseek) Chat(model string, messages []Message, tools []Tool) (*ChatRe
 }
 
 // FIM 发送 FIM 补全请求
-func (c *Deepseek) FIM(model, prompt, suffix string, maxTokens int, temperature float64) (*FIMResponse, error) {
+func (c *Deepseek) FIM(ctx context.Context, prompt, suffix string, maxTokens int, temperature float64) (*FIMResponse, error) {
+	model := ContextValue(ctx, CurrentModel, ModelDeepseekChat)
 	req := FIMRequest{
 		Model:       model,
 		Prompt:      prompt,
