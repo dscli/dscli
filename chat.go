@@ -416,30 +416,13 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 	stories := make([]Message, 0, len(inputs)+1)
 	stories = append(stories, inputs...)
 
-	// 创建等待提示控制通道
-	done := make(chan bool)
-	animationCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	// 启动等待提示（3秒后开始显示）
-	go func() {
-		select {
-		case <-time.After(3 * time.Second):
-			// 如果3秒后还没有完成，开始显示等待提示
-			ShowWaitingAnimation(animationCtx, done)
-		case <-done:
-			// 如果在3秒内完成，不显示等待提示
-			return
-		}
-	}()
+	// 使用新的等待动画系统
+	manager := GetWaitingManager()
+	manager.StartWaiting(2 * time.Second)
+	defer manager.StopWaiting()
 
 	var resp *ChatResponse
 	resp, err = DeepseekClient.Chat(ctx, messages, GetAllTools())
-
-	// 停止等待提示
-	done <- true
-	cancel()
-
 	if err != nil {
 		err = fmt.Errorf("聊天请求失败: %w", err)
 		return

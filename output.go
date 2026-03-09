@@ -89,7 +89,14 @@ const (
 )
 
 // Println 输出一行文本（保持向后兼容）
+// Println 输出一行文本（保持向后兼容）
 func Println(a ...any) (n int, err error) {
+	// 记录输出事件，重置等待计时器
+	manager := GetWaitingManager()
+	if manager != nil && manager.IsActive() {
+		manager.RecordOutput()
+	}
+
 	if outputMode == "org" {
 		input := fmt.Sprintln(a...)
 		err = markdown.ConvertLines(input, outputWriter)
@@ -99,7 +106,14 @@ func Println(a ...any) (n int, err error) {
 }
 
 // Printf 输出格式化文本（保持向后兼容）
+// Printf 输出格式化文本（保持向后兼容）
 func Printf(format string, a ...any) (n int, err error) {
+	// 记录输出事件，重置等待计时器
+	manager := GetWaitingManager()
+	if manager != nil && manager.IsActive() {
+		manager.RecordOutput()
+	}
+
 	if outputMode == "org" {
 		input := fmt.Sprintf(format, a...)
 		err = markdown.ConvertLines(input, outputWriter)
@@ -171,6 +185,8 @@ func JSONMarshal(v any) ([]byte, error) {
 }
 
 // DebugBytes output bytes if debug
+// DebugBytes output bytes if debug
+// DebugBytes output bytes if debug
 func DebugBytes(lang string, b []byte) {
 	if outputVerbose {
 		Printf("```%s\n", lang)
@@ -179,6 +195,7 @@ func DebugBytes(lang string, b []byte) {
 	}
 }
 
+// Debug 输出调试信息（仅在verbose模式下显示）
 // Debug 输出调试信息（仅在verbose模式下显示）
 func Debug(format string, a ...any) {
 	if outputVerbose {
@@ -189,7 +206,15 @@ func Debug(format string, a ...any) {
 }
 
 // Info 输出普通信息（始终显示）
+// Info 输出普通信息（始终显示）
+// Info 输出普通信息（始终显示）
 func Info(format string, a ...any) {
+	// 记录输出事件，重置等待计时器
+	manager := GetWaitingManager()
+	if manager != nil && manager.IsActive() {
+		manager.RecordOutput()
+	}
+
 	message := fmt.Sprintf(format, a...)
 	formatted := formatMessage("INFO", ColorGreen, message)
 	Println(formatted)
@@ -197,6 +222,12 @@ func Info(format string, a ...any) {
 
 // Warn 输出警告信息（始终显示）
 func Warn(format string, a ...any) {
+	// 记录输出事件，重置等待计时器
+	manager := GetWaitingManager()
+	if manager != nil && manager.IsActive() {
+		manager.RecordOutput()
+	}
+
 	message := fmt.Sprintf(format, a...)
 	formatted := formatMessage("WARN", ColorYellow, message)
 	fmt.Fprintln(outputErrorWriter, formatted)
@@ -204,6 +235,12 @@ func Warn(format string, a ...any) {
 
 // Error 输出错误信息（始终显示）
 func Error(format string, a ...any) {
+	// 记录输出事件，重置等待计时器
+	manager := GetWaitingManager()
+	if manager != nil && manager.IsActive() {
+		manager.RecordOutput()
+	}
+
 	message := fmt.Sprintf(format, a...)
 	formatted := formatMessage("ERROR", ColorRed, message)
 	fmt.Fprintln(outputErrorWriter, formatted)
@@ -211,6 +248,12 @@ func Error(format string, a ...any) {
 
 // Fatal 输出致命错误信息并退出（始终显示）
 func Fatal(format string, a ...any) {
+	// 记录输出事件，重置等待计时器
+	manager := GetWaitingManager()
+	if manager != nil && manager.IsActive() {
+		manager.RecordOutput()
+	}
+
 	message := fmt.Sprintf(format, a...)
 	formatted := formatMessage("FATAL", ColorBoldRed, message)
 	fmt.Fprintln(outputErrorWriter, formatted)
@@ -219,6 +262,12 @@ func Fatal(format string, a ...any) {
 
 // Success 输出成功信息
 func Success(format string, a ...any) {
+	// 记录输出事件，重置等待计时器
+	manager := GetWaitingManager()
+	if manager != nil && manager.IsActive() {
+		manager.RecordOutput()
+	}
+
 	message := fmt.Sprintf(format, a...)
 	formatted := colorize(ColorBoldGreen, "✓ "+message)
 	Println(formatted)
@@ -226,6 +275,12 @@ func Success(format string, a ...any) {
 
 // Notice 输出注意信息
 func Notice(format string, a ...any) {
+	// 记录输出事件，重置等待计时器
+	manager := GetWaitingManager()
+	if manager != nil && manager.IsActive() {
+		manager.RecordOutput()
+	}
+
 	message := fmt.Sprintf(format, a...)
 	formatted := colorize(ColorBoldCyan, "→ "+message)
 	Println(formatted)
@@ -233,6 +288,12 @@ func Notice(format string, a ...any) {
 
 // PrintHeader 输出标题
 func PrintHeader(title string) {
+	// 记录输出事件，重置等待计时器
+	manager := GetWaitingManager()
+	if manager != nil && manager.IsActive() {
+		manager.RecordOutput()
+	}
+
 	line := strings.Repeat("=", len(title)+4)
 	Println(colorize(ColorBoldCyan, line))
 	Println(colorize(ColorBoldCyan, "  "+title+"  "))
@@ -241,6 +302,12 @@ func PrintHeader(title string) {
 
 // PrintSection 输出章节标题
 func PrintSection(title string) {
+	// 记录输出事件，重置等待计时器
+	manager := GetWaitingManager()
+	if manager != nil && manager.IsActive() {
+		manager.RecordOutput()
+	}
+
 	Println()
 	Println(colorize(ColorBoldBlue, "▶ "+title))
 	Println(colorize(ColorGray, strings.Repeat("─", len(title)+2)))
@@ -248,17 +315,35 @@ func PrintSection(title string) {
 
 // PrintSubSection 输出子章节标题
 func PrintSubSection(title string) {
+	// 记录输出事件，重置等待计时器
+	manager := GetWaitingManager()
+	if manager != nil && manager.IsActive() {
+		manager.RecordOutput()
+	}
+
 	Println()
 	Println(colorize(ColorBoldPurple, "  • "+title))
 }
 
 // PrintBullet 输出项目符号
 func PrintBullet(text string) {
+	// 记录输出事件，重置等待计时器
+	manager := GetWaitingManager()
+	if manager != nil && manager.IsActive() {
+		manager.RecordOutput()
+	}
+
 	Println(colorize(ColorWhite, "  ◦ "+text))
 }
 
 // PrintKeyValue 输出键值对
 func PrintKeyValue(key, value string) {
+	// 记录输出事件，重置等待计时器
+	manager := GetWaitingManager()
+	if manager != nil && manager.IsActive() {
+		manager.RecordOutput()
+	}
+
 	Printf("%s: %s\n",
 		colorize(ColorBoldWhite, key),
 		colorize(ColorCyan, value))
@@ -266,6 +351,12 @@ func PrintKeyValue(key, value string) {
 
 // PrintJSON 输出JSON格式数据
 func PrintJSON(data any) error {
+	// 记录输出事件，重置等待计时器
+	manager := GetWaitingManager()
+	if manager != nil && manager.IsActive() {
+		manager.RecordOutput()
+	}
+
 	jsonStr, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return err
