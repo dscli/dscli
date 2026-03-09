@@ -34,7 +34,6 @@ func init() {
 }
 
 // handleGitCommit git提交
-// handleGitCommit git提交
 func handleGitCommit(ctx context.Context, args map[string]string) (string, error) {
 	message, ok := args["message"]
 	if !ok {
@@ -46,7 +45,15 @@ func handleGitCommit(ctx context.Context, args map[string]string) (string, error
 		options = ""
 	}
 
-	Println("git commit", options)
+	// 显示操作标题
+	PrintGitSection("提交更改")
+
+	// 显示提交信息
+	Info("提交信息: %s", message)
+
+	if options != "" {
+		Info("提交选项: %s", options)
+	}
 
 	options = strings.TrimSpace(options)
 
@@ -55,6 +62,8 @@ func handleGitCommit(ctx context.Context, args map[string]string) (string, error
 	optionWords := strings.Fields(options)
 	for _, word := range optionWords {
 		if word == "-m" || word == "--message" || strings.HasPrefix(word, "-m") {
+			Error("检测到-m或--message参数")
+			Warn("提示: message参数已通过message字段提供，不要在options中包含-m或--message")
 			return "", fmt.Errorf("message参数已通过message字段提供，不要在options中包含-m或--message")
 		}
 	}
@@ -68,8 +77,23 @@ func handleGitCommit(ctx context.Context, args map[string]string) (string, error
 	if err != nil {
 		return "", err
 	}
-	if out == "" {
-		out = "Git has commited"
+
+	// 如果输出为空，显示成功消息
+	if out == "" || strings.Contains(out, "命令执行成功（无输出）") {
+		Success("提交成功: %s", message)
+		return "Git提交成功", nil
 	}
+
+	// 提取提交哈希（如果可能）
+	if strings.Contains(out, "[") && strings.Contains(out, "]") {
+		lines := strings.Split(out, "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "[") && strings.Contains(line, "]") {
+				Success("提交成功: %s", strings.TrimSpace(line))
+				break
+			}
+		}
+	}
+
 	return out, nil
 }

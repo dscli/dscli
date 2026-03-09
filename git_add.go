@@ -27,22 +27,46 @@ func init() {
 }
 
 // handleGitAdd git添加
+// handleGitAdd git添加
 func handleGitAdd(ctx context.Context, args map[string]string) (string, error) {
 	path, ok := args["path"]
 	if !ok {
 		path = ""
 	}
 	path = strings.TrimSpace(path)
-	Println("git add", path)
+
+	// 显示操作标题
+	PrintGitSection("添加文件到暂存区")
+
 	names := strings.Fields(path)
 	gitArgs := []string{"add"}
 	gitArgs = append(gitArgs, names...)
+
+	// 显示要添加的文件
+	if len(names) > 0 {
+		Info("要添加的文件:")
+		for i, name := range names {
+			PrintBullet(fmt.Sprintf("[%d] %s", i+1, name))
+		}
+	} else {
+		Warn("未指定要添加的文件路径")
+		return "", fmt.Errorf("必须指定要添加的文件路径")
+	}
+
 	out, err := gitCommand(ctx, gitArgs...)
 	if err != nil {
 		return "", err
 	}
-	if out == "" {
-		out = fmt.Sprintf("(%s)已添加到暂存区", strings.Join(names, " "))
+
+	// 如果输出为空，显示成功消息
+	if out == "" || strings.Contains(out, "命令执行成功（无输出）") {
+		if len(names) == 1 {
+			Success("文件 %s 已成功添加到暂存区", names[0])
+		} else {
+			Success("%d 个文件已成功添加到暂存区", len(names))
+		}
+		return "文件已添加到暂存区", nil
 	}
+
 	return out, nil
 }
