@@ -12,7 +12,6 @@ var (
 	colorEnabled  bool
 	showTimestamp bool
 	verbose       bool
-	dbPath        string
 
 	rootCmd = &cobra.Command{
 		Use:   "dscli",
@@ -36,7 +35,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&colorEnabled, "no-color", false, "禁用颜色输出")
 	rootCmd.PersistentFlags().BoolVar(&showTimestamp, "no-timestamp", false, "禁用时间戳显示")
 	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "打开调试选项（显示详细输出）")
-	rootCmd.PersistentFlags().StringVar(&dbPath, "db", "", "数据库文件路径（默认：~/.dscli/sqlite.db）")
+	rootCmd.PersistentFlags().String("db", "", "数据库文件路径（默认：~/.dscli/sqlite.db）")
 }
 
 func AddCommand(parent *cobra.Command, child *cobra.Command) *cobra.Command {
@@ -60,10 +59,13 @@ func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 		err = fmt.Errorf("do not support %s", mode)
 		return
 	}
-
+	path, err := cmd.Flags().GetString("db")
+	if err != nil {
+		return
+	}
 	// 设置数据库路径（如果指定了--db选项）
-	if dbPath != "" {
-		SetDBPath(dbPath)
+	if path != "" {
+		SetDBPath(path)
 	}
 
 	// 初始化数据库（确保所有init()函数已执行）

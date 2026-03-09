@@ -28,11 +28,13 @@ class FileStructureParser:
             'cpp': self.parse_cpp,
             'markdown': self.parse_markdown,
             'org': self.parse_org,
+            'elisp': self.parse_elisp,
+            'makefile': self.parse_makefile,
+            'cmake': self.parse_cmake,
         }
         # Check dependencies
         self.deps_ok = self._check_dependencies()
         self.enhanced_capabilities = self._get_enhanced_capabilities()
-    
     def parse(self, content: str, language: str) -> Dict[str, Any]:
         """Parse content with specified language"""
         if language not in self.language_parsers:
@@ -824,9 +826,371 @@ class FileStructureParser:
             result['errors'].append(f"Org-mode parsing error: {str(e)}")
         
         return result
+        return result
+    
+    def parse_elisp(self, content: str) -> Dict[str, Any]:
+        """Parse Emacs Lisp file structure"""
+        result = {
+            'functions': [],
+            'variables': [],
+            'macros': [],
+            'custom_variables': [],
+            'provides': [],
+            'errors': []
+        }
+        
+        try:
+            lines = content.split('\n')
+            
+            for i, line in enumerate(lines):
+                line_num = i + 1
+                stripped_line = line.strip()
+                
+                # 解析函数定义 (defun)
+                defun_match = re.match(r'\(defun\s+([^\s\(]+)', stripped_line)
+                if defun_match:
+                    func_name = defun_match.group(1)
+                    # 查找函数结束
+                    paren_count = stripped_line.count('(') - stripped_line.count(')')
+                    end_line = line_num
+                    
+                    if paren_count > 0:
+                        # 函数定义跨越多行
+                        for j in range(i + 1, len(lines)):
+                            paren_count += lines[j].count('(') - lines[j].count(')')
+                            if paren_count <= 0:
+                                end_line = j + 1
+                                break
+                    
+                    result['functions'].append({
+                        'name': func_name,
+                        'type': 'function',
+                        'lineno': line_num,
+                        'end_lineno': end_line
+                    })
+                
+                # 解析变量定义 (defvar)
+                defvar_match = re.match(r'\(defvar\s+([^\s\(]+)', stripped_line)
+                if defvar_match:
+                    var_name = defvar_match.group(1)
+                    result['variables'].append({
+                        'name': var_name,
+                        'type': 'variable',
+                        'lineno': line_num
+                    })
+                
+                # 解析自定义变量 (defcustom)
+                defcustom_match = re.match(r'\(defcustom\s+([^\s\(]+)', stripped_line)
+                if defcustom_match:
+                    var_name = defcustom_match.group(1)
+                    result['custom_variables'].append({
+                        'name': var_name,
+                        'type': 'custom_variable',
+                        'lineno': line_num
+                    })
+                
+                # 解析宏定义 (defmacro)
+                defmacro_match = re.match(r'\(defmacro\s+([^\s\(]+)', stripped_line)
+                if defmacro_match:
+                    macro_name = defmacro_match.group(1)
+                    result['macros'].append({
+                        'name': macro_name,
+                        'type': 'macro',
+                        'lineno': line_num
+                    })
+                
+                # 解析提供模块 (provide)
+                provide_match = re.match(r'\(provide\s+\'([^\s\)]+)', stripped_line)
+                if provide_match:
+                    module_name = provide_match.group(1)
+                    result['provides'].append({
+                        'name': module_name,
+                        'type': 'provide',
+                        'lineno': line_num
+                    })
+                
+                # 解析注释
+                if stripped_line.startswith(';;;'):
+                    # 文件头注释
+                    result.setdefault('comments', []).append({
+                        'name': stripped_line[3:].strip(),
+                        'type': 'file_header_comment',
+                        'lineno': line_num
+                    })
+                elif stripped_line.startswith(';;'):
+                    # 节注释
+                    result.setdefault('comments', []).append({
+                        'name': stripped_line[2:].strip(),
+                        'type': 'section_comment',
+                        'lineno': line_num
+                    })
+                elif stripped_line.startswith(';'):
+                    # 行内注释
+                    result.setdefault('comments', []).append({
+                        'name': stripped_line[1:].strip(),
+                        'type': 'inline_comment',
+                        'lineno': line_num
+                    })
+                    
+        except Exception as e:
+            result['errors'].append(f"Emacs Lisp parsing error: {str(e)}")
+        
+        return result
+    
+    def parse_makefile(self, content: str) -> Dict[str, Any]:
+        """Parse Makefile structure"""
+        result = {
+            'targets': [],
+            'variables': [],
+            'phony_targets': [],
+            'functions': [],
+            'conditionals': [],
+            'errors': []
+        }
+        
+        try:
+            lines = content.split('\n')
+            
+            for i, line in enumerate(lines):
+                line_num = i + 1
+                stripped_line = line.strip()
+                
+                # 跳过空行和注释
+                if not stripped_line or stripped_line.startswith('#'):
+                    continue
+                
+                # 解析变量定义 (VAR = value)
+                var_match = re.match(r'^([A-Za-z_][A-Za-z0-9_]*)\s*[:?+]?=\s*(.+)$', stripped_line)
+                if var_match:
+                    var_name = var_match.group(1)
+                    var_value = var_match.group(2).strip()
+                    result['variables'].append({
+                        'name': var_name,
+                        'type': 'variable',
+                        'value': var_value,
+                        'lineno': line_num
+                    })
+                    continue
+                
+                # 解析目标定义 (target: dependencies)
+                target_match = re.match(r'^([^:#=\s]+)\s*:(.*)$', stripped_line)
+                if target_match:
+                    target_name = target_match.group(1).strip()
+                    dependencies = target_match.group(2).strip()
+                    
+                    # 检查是否是伪目标
+                    if target_name == '.PHONY':
+                        # 解析伪目标列表
+                        phony_targets = [t.strip() for t in dependencies.split() if t.strip()]
+                        for phony_target in phony_targets:
+                            result['phony_targets'].append({
+                                'name': phony_target,
+                                'type': 'phony_target',
+                                'lineno': line_num
+                            })
+                    else:
+                        result['targets'].append({
+                            'name': target_name,
+                            'type': 'target',
+                            'dependencies': dependencies,
+                            'lineno': line_num
+                        })
+                    continue
+                
+                # 解析函数调用 ($(shell command) 或 $(function args))
+                function_match = re.search(r'\$\(([^)]+)\)', stripped_line)
+                if function_match:
+                    func_call = function_match.group(1)
+                    # 检查是否是shell函数
+                    if func_call.startswith('shell '):
+                        result['functions'].append({
+                            'name': 'shell',
+                            'type': 'shell_function',
+                            'args': func_call[6:].strip(),
+                            'lineno': line_num
+                        })
+                    else:
+                        # 其他函数
+                        result['functions'].append({
+                            'name': func_call.split()[0] if ' ' in func_call else func_call,
+                            'type': 'make_function',
+                            'args': func_call,
+                            'lineno': line_num
+                        })
+                
+                # 解析条件语句 (ifeq, ifneq, ifdef, ifndef)
+                conditional_patterns = [
+                    (r'^ifeq\s+\((.+)\)', 'ifeq'),
+                    (r'^ifneq\s+\((.+)\)', 'ifneq'),
+                    (r'^ifdef\s+([^\s]+)', 'ifdef'),
+                    (r'^ifndef\s+([^\s]+)', 'ifndef'),
+                    (r'^else', 'else'),
+                    (r'^endif', 'endif')
+                ]
+                
+                for pattern, cond_type in conditional_patterns:
+                    cond_match = re.match(pattern, stripped_line)
+                    if cond_match:
+                        condition = cond_match.group(1) if cond_match.groups() else ''
+                        result['conditionals'].append({
+                            'name': cond_type,
+                            'type': 'conditional',
+                            'condition': condition,
+                            'lineno': line_num
+                        })
+                        break
+                
+                # 解析包含 (include)
+                include_match = re.match(r'^include\s+(.+)$', stripped_line)
+                if include_match:
+                    included_file = include_match.group(1).strip()
+                    result.setdefault('includes', []).append({
+                        'name': included_file,
+                        'type': 'include',
+                        'lineno': line_num
+                    })
+                    
+        except Exception as e:
+            result['errors'].append(f"Makefile parsing error: {str(e)}")
+        
+        return result
+    
+    def parse_cmake(self, content: str) -> Dict[str, Any]:
+        """Parse CMake file structure"""
+        result = {
+            'commands': [],
+            'variables': [],
+            'targets': [],
+            'tests': [],
+            'installs': [],
+            'errors': []
+        }
+        
+        try:
+            lines = content.split('\n')
+            
+            for i, line in enumerate(lines):
+                line_num = i + 1
+                stripped_line = line.strip()
+                
+                # 跳过空行和注释
+                if not stripped_line or stripped_line.startswith('#'):
+                    continue
+                
+                # 解析CMake命令 (command(arg1 arg2 ...))
+                # 匹配命令名和参数
+                cmd_match = re.match(r'^([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)', stripped_line)
+                if cmd_match:
+                    cmd_name = cmd_match.group(1)
+                    cmd_args = cmd_match.group(2).strip()
+                    
+                    # 根据命令类型分类
+                    cmd_info = {
+                        'name': cmd_name,
+                        'type': 'command',
+                        'args': cmd_args,
+                        'lineno': line_num
+                    }
+                    
+                    # 特殊处理一些常见命令
+                    if cmd_name == 'cmake_minimum_required':
+                        cmd_info['type'] = 'minimum_version'
+                    elif cmd_name == 'project':
+                        cmd_info['type'] = 'project_declaration'
+                    elif cmd_name == 'set':
+                        # 解析变量设置
+                        var_match = re.match(r'([A-Za-z_][A-Za-z0-9_]*)\s+(.+)', cmd_args)
+                        if var_match:
+                            var_name = var_match.group(1)
+                            var_value = var_match.group(2).strip()
+                            result['variables'].append({
+                                'name': var_name,
+                                'type': 'variable',
+                                'value': var_value,
+                                'lineno': line_num
+                            })
+                    elif cmd_name == 'add_executable':
+                        # 解析可执行文件目标
+                        target_match = re.match(r'([A-Za-z_][A-Za-z0-9_]*)\s+(.+)', cmd_args)
+                        if target_match:
+                            target_name = target_match.group(1)
+                            sources = target_match.group(2).strip()
+                            result['targets'].append({
+                                'name': target_name,
+                                'type': 'executable',
+                                'sources': sources,
+                                'lineno': line_num
+                            })
+                    elif cmd_name == 'add_library':
+                        # 解析库目标
+                        lib_match = re.match(r'([A-Za-z_][A-Za-z0-9_]*)\s+(STATIC|SHARED|MODULE)?\s*(.+)', cmd_args)
+                        if lib_match:
+                            lib_name = lib_match.group(1)
+                            lib_type = lib_match.group(2) or 'STATIC'
+                            sources = lib_match.group(3).strip()
+                            result['targets'].append({
+                                'name': lib_name,
+                                'type': 'library',
+                                'library_type': lib_type,
+                                'sources': sources,
+                                'lineno': line_num
+                            })
+                    elif cmd_name == 'target_link_libraries':
+                        # 解析库链接
+                        link_match = re.match(r'([A-Za-z_][A-Za-z0-9_]*)\s+(.+)', cmd_args)
+                        if link_match:
+                            target_name = link_match.group(1)
+                            libraries = link_match.group(2).strip()
+                            cmd_info['target'] = target_name
+                            cmd_info['libraries'] = libraries
+                    elif cmd_name == 'add_test':
+                        # 解析测试
+                        test_match = re.match(r'NAME\s+([A-Za-z_][A-Za-z0-9_]*)\s+COMMAND\s+(.+)', cmd_args)
+                        if test_match:
+                            test_name = test_match.group(1)
+                            test_command = test_match.group(2).strip()
+                            result['tests'].append({
+                                'name': test_name,
+                                'type': 'test',
+                                'command': test_command,
+                                'lineno': line_num
+                            })
+                    elif cmd_name == 'install':
+                        # 解析安装命令
+                        install_match = re.match(r'TARGETS\s+([A-Za-z_][A-Za-z0-9_]+(?:\s+[A-Za-z_][A-Za-z0-9_]+)*)', cmd_args)
+                        if install_match:
+                            targets = install_match.group(1).strip()
+                            result['installs'].append({
+                                'name': 'install_targets',
+                                'type': 'install',
+                                'targets': targets,
+                                'lineno': line_num
+                            })
+                    elif cmd_name == 'include_directories':
+                        cmd_info['type'] = 'include_directories'
+                    elif cmd_name == 'enable_testing':
+                        cmd_info['type'] = 'enable_testing'
+                    elif cmd_name == 'add_custom_command':
+                        cmd_info['type'] = 'custom_command'
+                    
+                    result['commands'].append(cmd_info)
+                
+                # 解析变量引用 (${VAR})
+                var_ref_match = re.search(r'\$\{([^}]+)\}', stripped_line)
+                if var_ref_match:
+                    var_name = var_ref_match.group(1)
+                    result.setdefault('variable_references', []).append({
+                        'name': var_name,
+                        'type': 'variable_reference',
+                        'lineno': line_num
+                    })
+                    
+        except Exception as e:
+            result['errors'].append(f"CMake parsing error: {str(e)}")
+        
+        return result
     
     def _check_dependencies(self) -> bool:
-        """Check if required dependencies are available"""
         required_deps = ['json', 're', 'ast', 'typing', 'traceback', 'importlib.util']
         
         for dep in required_deps:

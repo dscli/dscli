@@ -21,6 +21,12 @@ const (
 var chatModel string
 
 func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
+	// 调试：打印chatModel和ModelDeepseekChat的值
+	if verbose, _ := cmd.Flags().GetBool("verbose"); verbose {
+		fmt.Printf("[DEBUG] ChatPreRunE: chatModel='%s', ModelDeepseekChat='%s'\n",
+			chatModel, ModelDeepseekChat)
+	}
+
 	// 设置ModelID
 	var modelID int64
 	switch chatModel {
@@ -30,6 +36,9 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 		modelID = DeepseekReasoner
 	default:
 		err = fmt.Errorf("do not support %s", chatModel)
+		if verbose, _ := cmd.Flags().GetBool("verbose"); verbose {
+			fmt.Printf("[DEBUG] ChatPreRunE: unsupported model error: %v\n", err)
+		}
 		return
 	}
 
@@ -44,11 +53,16 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 }
 
 func ChatRunE(cmd *cobra.Command, args []string) (err error) {
-	content, err := ReadContent()
+	ctx := cmd.Context()
+	input, err := cmd.Flags().GetString("input")
 	if err != nil {
 		return
 	}
-	ctx := cmd.Context()
+	ctx = context.WithValue(ctx, InputContent, input)
+	content, err := ReadContent(ctx)
+	if err != nil {
+		return
+	}
 	histSize, err := cmd.Flags().GetInt("histsize")
 	if err != nil {
 		return
@@ -104,9 +118,19 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		Message{Role: "user", Content: content})
 }
 
-func ReadContent() (content string, err error) {
-	reader := bufio.NewReader(os.Stdin)
-	b, err := io.ReadAll(reader)
+func ReadContent(ctx context.Context) (content string, err error) {
+	input := ContextValue(ctx, InputContent, "")
+	var b []byte
+	if input == "" || input == "-" {
+		reader := bufio.NewReader(os.Stdin)
+		b, err = io.ReadAll(reader)
+		if err != nil {
+			return
+		}
+		content = strings.TrimSpace(string(b))
+		return
+	}
+	b, err = os.ReadFile(input)
 	if err != nil {
 		return
 	}
@@ -157,8 +181,6 @@ func parseBalance(balanceStr string) (float64, error) {
 	return strconv.ParseFloat(balanceStr, 64)
 }
 
-// PrintSessionStats 打印会话统计信息
-// PrintSessionStats 打印会话统计信息
 // PrintSessionStats 打印会话统计信息
 func PrintSessionStats(ctx context.Context) {
 	startTime := ContextValue(ctx, StartTime, time.Time{})
@@ -220,11 +242,6 @@ func PrintSessionStats(ctx context.Context) {
 	}
 }
 
-// ShowWaitingAnimation 显示等待动画
-// ShowWaitingAnimation 显示等待动画
-// ShowWaitingAnimation 显示等待提示
-// ShowWaitingAnimation 显示等待提示
-// ShowWaitingAnimation 显示等待提示
 // ShowWaitingAnimation 显示等待动画
 func ShowWaitingAnimation(ctx context.Context, done chan bool) {
 	// 检查是否是Emacs环境
@@ -429,4 +446,5 @@ func init() {
 	})
 	chatCmd.Flags().StringVar(&chatModel, "model", ModelDeepseekChat, "使用的模型名称")
 	chatCmd.Flags().Int("histsize", 8, "history size loaded")
+	chatCmd.Flags().String("input", "", "read content from input file or read content from stdin if input file empty")
 }

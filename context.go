@@ -13,6 +13,7 @@ var (
 	ShellName    = ContextKeyType("ShellName")
 	ShellArgs    = ContextKeyType("ShellArgs")
 	ShellStdin   = ContextKeyType("ShellStdin")
+	InputContent = ContextKeyType("InputContent")
 )
 
 type ContextKeyType string

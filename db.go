@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 
@@ -11,7 +12,21 @@ import (
 
 var (
 	ModelID = int64(0)
-	DBPath  = filepath.Join(ConfigDir, "sqlite.db")
+	dbPath  = func() string {
+		path := filepath.Join(ConfigDir, "sqlite.db")
+		insideShellExec := os.Getenv("InsideShellExec")
+		if insideShellExec != "" {
+			dir := filepath.Join(ConfigDir, "inside-shell-exec")
+			err := os.MkdirAll(dir, 0o755)
+			if err != nil {
+				panic(err)
+			}
+			name := filepath.Base(os.Args[0])
+			pid := os.Getpid()
+			path = filepath.Join(dir, fmt.Sprintf("%s-%d.db", name, pid))
+		}
+		return path
+	}()
 
 	// 注册队列
 	tableSchemas   = []string{}
@@ -76,7 +91,7 @@ func initDatabase(db *sql.DB) error {
 // OpenDB 打开数据库连接（确保数据库已初始化）
 func OpenDB(elem ...string) (*sql.DB, error) {
 	var err error
-	db, err := sql.Open("sqlite", DBPath)
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
@@ -101,6 +116,10 @@ func OpenDB(elem ...string) (*sql.DB, error) {
 // SetDBPath 设置数据库文件路径
 func SetDBPath(path string) {
 	if path != "" {
-		DBPath = path
+		dbPath = path
 	}
+}
+
+func GetDBPath() string {
+	return dbPath
 }

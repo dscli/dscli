@@ -85,8 +85,8 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 		return nil, fmt.Errorf("遍历消息失败: %w", err)
 	}
 
-	// Reverse it since we use the limit
-	slices.Reverse(messages)
+	// Cleanup
+	messages = CleanupReverse(messages)
 	n := len(messages)
 	idx := n - histSize
 	if idx > 0 {
@@ -102,6 +102,65 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 		idx = 0
 	}
 	return messages[idx:], nil
+}
+
+// CleanupReverse - make the messages clean, remove the mistake message
+func CleanupReverse(messages []Message) (cleaned []Message) {
+	// The messages is in reverse order, say
+	// [{id=5},{id=4},{id=3},{id=1},{id=0}]
+	// We need to find the tool message and check whether
+	// the next is assistant message and the tool is is same with the tool's
+	// The cleanup here only handle the one tool call situation
+	l := len(messages)
+	cleaned = make([]Message, l)
+	k := l
+	tms := []Message{}
+	flag := false
+outloop:
+	for _, m := range messages {
+		if m.Role == "tool" {
+			if !flag {
+				flag = true
+			}
+		}
+		if flag && m.Role != "assistant" {
+			tms = append(tms, m)
+		}
+		if flag && m.Role == "assistant" {
+			toolCalls := m.ToolCalls
+			if len(toolCalls) != len(tms) { // skill all the messages in tms
+				flag = false
+				continue
+			}
+			if len(tms) > 1 { // reverse tms
+				slices.Reverse(tms)
+			}
+			for i, tm := range tms {
+				if tm.ToolCallID != toolCalls[i].ID {
+					flag = false
+					continue outloop
+				}
+			}
+			size := len(tms) + 1
+			begin := k - size
+			cleaned[begin] = m
+			for i, tm := range tms {
+				cleaned[begin+i+1] = tm
+			}
+			tms = []Message{}
+			k = begin
+			if flag {
+				flag = false
+			}
+			continue
+		}
+
+		if !flag {
+			k--
+			cleaned[k] = m
+		}
+	}
+	return cleaned[k:]
 }
 
 // SaveMessages 保存消息（事务）

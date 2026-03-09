@@ -7,7 +7,7 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
-// 危险命令配置
+// DangerousCommand - 危险命令配置
 type DangerousCommand struct {
 	Command    string   // 命令名（如 "rm"）
 	Args       []string // 危险参数模式（如 ["-rf", "/"]）
@@ -223,22 +223,8 @@ func checkDangerousCommandsFallback(script string) error {
 
 func validateShell(script string) (err error) {
 	// 检查危险命令（基于语法解析）
-	if err := checkDangerousCommands(script); err != nil {
-		return err
+	if err = checkDangerousCommands(script); err != nil {
+		return
 	}
-
-	// 检查是否运行 dscli
-	commands, err := parseCommands(script)
-	if err != nil {
-		// 如果解析失败，使用回退检查
-		return checkDangerousCommandsFallback(script)
-	}
-
-	for _, cmd := range commands {
-		if cmd.IsExecuted && (cmd.Name == "./dscli" || cmd.Name == "dscli") {
-			return fmt.Errorf("do not run dscli in dscli")
-		}
-	}
-
-	return nil
+	return
 }

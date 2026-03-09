@@ -207,6 +207,7 @@ func ShellExec(ctx context.Context, script string) (out string, err error) {
 	subproc.Stdout = buf
 	subproc.Stderr = buf
 	subproc.Stdin = shellStdin
+	subproc.Env = append(os.Environ(), "InsideShellExec=1")
 	subproc.ExtraFiles = []*os.File{r}
 	err = subproc.Start()
 	if err != nil {

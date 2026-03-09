@@ -113,12 +113,17 @@ func TestValidateShell(t *testing.T) {
 		{
 			name:    "运行dscli",
 			script:  "./dscli chat",
-			wantErr: true,
+			wantErr: false,
+		},
+		{
+			name:    "运行dscli model",
+			script:  "./dscli model",
+			wantErr: false,
 		},
 		{
 			name:    "运行dscli_无路径",
-			script:  "dscli chat",
-			wantErr: true,
+			script:  "dscli model",
+			wantErr: false,
 		},
 		{
 			name:    "危险命令",
