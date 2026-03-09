@@ -60,9 +60,11 @@ func handleEditor(ctx context.Context, args map[string]string) (string, error) {
 }
 
 // OpenEditor 打开编辑器让用户编辑内容
+// OpenEditor 打开编辑器让用户编辑内容
 func OpenEditor(initialContent string) ([]byte, error) {
 	// 检查是否应该使用Emacs内置编辑器
-	if os.Getenv("DS_CLI_USE_EMACS_EDITOR") != "" {
+	// 只有在明确设置了环境变量，并且检测到在Emacs环境中运行时才启用
+	if shouldUseEmacsEditor() {
 		// 使用Emacs内置编辑器
 		return openEditorInEmacs(initialContent)
 	}
@@ -180,4 +182,43 @@ func openEditorInEmacs(initialContent string) ([]byte, error) {
 	case <-time.After(30 * time.Second):
 		return nil, errors.New("等待Emacs编辑超时（30秒）")
 	}
+}
+
+// shouldUseEmacsEditor 判断是否应该使用Emacs内置编辑器
+func shouldUseEmacsEditor() bool {
+	// 检查是否设置了环境变量
+	if os.Getenv("DS_CLI_USE_EMACS_EDITOR") == "" {
+		return false
+	}
+
+	// 检查是否在Emacs环境中运行
+	// Emacs通常会设置EMACS环境变量
+	if os.Getenv("EMACS") == "" && os.Getenv("INSIDE_EMACS") == "" {
+		// 不在Emacs环境中，但用户设置了环境变量
+		// 给出警告，但仍然使用传统编辑器
+		fmt.Fprintf(os.Stderr, "⚠️  警告: DS_CLI_USE_EMACS_EDITOR已设置，但未检测到Emacs环境\n")
+		fmt.Fprintf(os.Stderr, "   将使用传统编辑器模式\n")
+		return false
+	}
+
+	// 检查当前编辑器设置
+	// 如果用户明确设置了非Emacs编辑器，尊重用户选择
+	editor := os.Getenv("VISUAL")
+	if editor == "" {
+		editor = os.Getenv("EDITOR")
+	}
+
+	// 如果用户明确设置了编辑器，并且不是emacs，尊重用户选择
+	if editor != "" {
+		editorLower := strings.ToLower(editor)
+		if !strings.Contains(editorLower, "emacs") &&
+			!strings.Contains(editorLower, "emacsclient") {
+			fmt.Fprintf(os.Stderr, "⚠️  警告: DS_CLI_USE_EMACS_EDITOR已设置，但EDITOR/VISUAL设置为非Emacs编辑器: %s\n", editor)
+			fmt.Fprintf(os.Stderr, "   将使用用户指定的编辑器: %s\n", editor)
+			return false
+		}
+	}
+
+	// 所有条件满足，使用Emacs内置编辑器
+	return true
 }
