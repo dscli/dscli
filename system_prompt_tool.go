@@ -7,27 +7,26 @@ import (
 	"time"
 )
 
-// SystemPromptTool 工具定义 - 获取当前系统提示词
+// SystemPromptTool 系统提示词工具
 var SystemPromptTool = ToolDef{
 	Name:        "system_prompt",
-	DisplayName: "系统提示词",
-	Description: `获取当前系统提示词。
+	DisplayName: "SystemPrompt",
+	Description: `获取当前系统提示词，帮助理解工作环境和约束条件
 
-功能说明：
-1. 获取当前使用的系统提示词内容
-2. 显示系统提示词的来源（模板、段落管理器等）
-3. 帮助理解当前的工作环境和约束条件
+参数说明：
+- format: 输出格式，可选值：
+  - "full": 完整系统提示词（默认）
+  - "summary": 简要摘要（基本信息）
+  - "template": 原始模板内容
+  - "variables": 模板变量值
 
 使用场景：
-1. 了解当前的工作环境和权限
-2. 查看系统提示词是否需要更新
-3. 调试系统提示词相关问题
-4. 学习系统提示词的最佳实践
+1. 了解当前工作环境、权限和约束条件
+2. 调试系统提示词相关问题
+3. 学习系统提示词的最佳实践
+4. 检查模板变量是否正确渲染
 
-返回信息：
-- 系统提示词完整内容
-- 提示词来源信息
-- 模板变量替换状态`,
+注意：系统提示词包含重要的环境信息、工作流程和工具使用指南。`,
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -35,8 +34,8 @@ var SystemPromptTool = ToolDef{
 				"type": "string",
 				"description": `输出格式，可选值：
 - "full": 完整系统提示词（默认）
-- "summary": 简要摘要
-- "template": 原始模板（未渲染）
+- "summary": 简要摘要（基本信息）
+- "template": 原始模板内容
 - "variables": 模板变量值`,
 				"enum": []string{"full", "summary", "template", "variables"},
 			},
@@ -45,15 +44,15 @@ var SystemPromptTool = ToolDef{
 	},
 	Category: "debug",
 	Timeout:  10 * time.Second,
-	Handler:  handleSystemPrompt,
+	Handler:  HandleSystemPrompt,
 }
 
 func init() {
 	RegisterTool(SystemPromptTool)
 }
 
-// handleSystemPrompt 处理系统提示词工具调用
-func handleSystemPrompt(ctx context.Context, args map[string]string) (reply string, err error) {
+// HandleSystemPrompt 处理系统提示词工具调用
+func HandleSystemPrompt(ctx context.Context, args map[string]string) (reply string, err error) {
 	format := args["format"]
 	if format == "" {
 		format = "full"
@@ -86,21 +85,14 @@ func handleSystemPrompt(ctx context.Context, args map[string]string) (reply stri
 	}
 }
 
-// formatFullPrompt 格式化完整系统提示词
+// formatFullPrompt 格式化完整提示词
 func formatFullPrompt(prompt string, config *SystemPromptConfig, template *SystemPromptTemplate) string {
 	var sb strings.Builder
 
 	sb.WriteString("# 📋 系统提示词信息\n\n")
 
 	// 基本信息
-	sb.WriteString("## 🔍 基本信息\n")
-	sb.WriteString(fmt.Sprintf("- **模型**: %s\n", getModelName(config.ModelID)))
-	sb.WriteString(fmt.Sprintf("- **模板**: %s\n", template.Name))
-	sb.WriteString(fmt.Sprintf("- **来源**: %s\n", getPromptSource()))
-	sb.WriteString(fmt.Sprintf("- **长度**: %d 字符\n\n", len(prompt)))
-
-	// 模板变量
-	sb.WriteString("## 📊 模板变量\n")
+	sb.WriteString("## 📊 基本信息\n")
 	sb.WriteString(fmt.Sprintf("- **当前日期**: %s\n", config.CurrentDate))
 	sb.WriteString(fmt.Sprintf("- **项目名称**: %s\n", config.ProjectName))
 	sb.WriteString(fmt.Sprintf("- **项目类型**: %s\n", config.ProjectType))
@@ -124,50 +116,59 @@ func formatSummaryPrompt(prompt string, config *SystemPromptConfig) string {
 	sb.WriteString("# 📋 系统提示词摘要\n\n")
 
 	// 基本信息
-	sb.WriteString("## 🔍 基本信息\n")
-	sb.WriteString(fmt.Sprintf("- **模型**: %s\n", getModelName(config.ModelID)))
-	sb.WriteString(fmt.Sprintf("- **项目**: %s (%s)\n", config.ProjectName, config.ProjectType))
-	sb.WriteString(fmt.Sprintf("- **日期**: %s\n", config.CurrentDate))
-	sb.WriteString(fmt.Sprintf("- **Git**: %s @ %s\n", config.GitUserName, config.GitBranch))
-	sb.WriteString(fmt.Sprintf("- **长度**: %d 字符\n\n", len(prompt)))
+	sb.WriteString("## 📊 基本信息\n")
+	sb.WriteString(fmt.Sprintf("- **当前日期**: %s\n", config.CurrentDate))
+	sb.WriteString(fmt.Sprintf("- **项目名称**: %s\n", config.ProjectName))
+	sb.WriteString(fmt.Sprintf("- **项目类型**: %s\n", config.ProjectType))
+	sb.WriteString(fmt.Sprintf("- **Git用户**: %s <%s>\n", config.GitUserName, config.GitUserEmail))
+	sb.WriteString(fmt.Sprintf("- **Git分支**: %s\n", config.GitBranch))
+	sb.WriteString(fmt.Sprintf("- **Git状态**: %s\n", config.GitStatus))
+	sb.WriteString(fmt.Sprintf("- **工作目录**: %s\n", config.WorkingDirectory))
+	sb.WriteString(fmt.Sprintf("- **主机**: %s\n", config.Hostname))
+	sb.WriteString(fmt.Sprintf("- **用户**: %s\n\n", config.Username))
 
-	// 关键段落
-	sb.WriteString("## 📊 关键段落\n")
+	// 提示词长度信息
+	lines := strings.Count(prompt, "\n") + 1
+	words := len(strings.Fields(prompt))
+	sb.WriteString("## 📏 提示词统计\n")
+	sb.WriteString(fmt.Sprintf("- **总行数**: %d\n", lines))
+	sb.WriteString(fmt.Sprintf("- **总字数**: %d\n", words))
+	sb.WriteString(fmt.Sprintf("- **模型ID**: %d\n\n", config.ModelID))
 
-	lines := strings.Split(prompt, "\n")
-	sectionCount := 0
-	currentSection := ""
+	// 关键信息摘要
+	sb.WriteString("## 🔑 关键信息\n")
 
-	for _, line := range lines {
-		if strings.HasPrefix(line, "## ") {
-			if currentSection != "" && sectionCount < 5 {
-				sb.WriteString(fmt.Sprintf("- %s\n", currentSection))
-				sectionCount++
-			}
-			currentSection = strings.TrimPrefix(line, "## ")
-		}
+	// 提取关键段落
+	if strings.Contains(prompt, "## 文件操作权限") {
+		sb.WriteString("- **文件权限**: 可操作工作目录和配置目录文件\n")
 	}
-
-	if currentSection != "" && sectionCount < 5 {
-		sb.WriteString(fmt.Sprintf("- %s\n", currentSection))
+	if strings.Contains(prompt, "## 你的工作流程") {
+		sb.WriteString("- **工作流程**: 5步工作法（分析、工具调用、执行、分析结果、给出答案）\n")
+	}
+	if strings.Contains(prompt, "## 重要原则") {
+		sb.WriteString("- **重要原则**: 逻辑严谨、使用现有工具、代码质量、Git保存、尊重版权\n")
+	}
+	if strings.Contains(prompt, "## 工具选择指南") {
+		sb.WriteString("- **工具指南**: 优先使用基于代码结构的新工具\n")
+	}
+	if strings.Contains(prompt, "## 代码质量保证流程") {
+		sb.WriteString("- **质量流程**: 代码修改、专家审阅、问题修复、推送远程\n")
 	}
 
 	return sb.String()
 }
 
-// formatTemplatePrompt 格式化原始模板
+// formatTemplatePrompt 格式化模板内容
 func formatTemplatePrompt(template *SystemPromptTemplate, config *SystemPromptConfig) string {
 	var sb strings.Builder
 
 	sb.WriteString("# 📋 系统提示词模板\n\n")
 
-	sb.WriteString("## 🔍 模板信息\n")
-	sb.WriteString(fmt.Sprintf("- **名称**: %s\n", template.Name))
-	sb.WriteString(fmt.Sprintf("- **模型**: %s\n", getModelName(config.ModelID)))
-	sb.WriteString(fmt.Sprintf("- **长度**: %d 字符\n\n", len(template.Template)))
+	sb.WriteString("## 📊 模板信息\n")
+	sb.WriteString(fmt.Sprintf("- **模板名称**: %s\n", template.Name))
+	sb.WriteString(fmt.Sprintf("- **模型ID**: %d\n\n", config.ModelID))
 
-	// 模板内容
-	sb.WriteString("## 📝 模板内容\n")
+	sb.WriteString("## 📝 原始模板内容\n")
 	sb.WriteString("```\n")
 	sb.WriteString(template.Template)
 	sb.WriteString("\n```")
@@ -179,49 +180,28 @@ func formatTemplatePrompt(template *SystemPromptTemplate, config *SystemPromptCo
 func formatVariablesPrompt(config *SystemPromptConfig) string {
 	var sb strings.Builder
 
-	sb.WriteString("# 📋 模板变量值\n\n")
+	sb.WriteString("# 📋 系统提示词模板变量\n\n")
 
-	// 基础信息
 	sb.WriteString("## 📊 基础信息\n")
-	sb.WriteString(fmt.Sprintf("- **当前日期**: %s\n", config.CurrentDate))
-	sb.WriteString(fmt.Sprintf("- **项目根目录**: %s\n", config.ProjectRoot))
-	sb.WriteString(fmt.Sprintf("- **配置目录**: %s\n", config.ConfigDir))
-	sb.WriteString(fmt.Sprintf("- **工作目录**: %s\n\n", config.WorkingDirectory))
+	sb.WriteString(fmt.Sprintf("- **CurrentDate**: %s\n", config.CurrentDate))
+	sb.WriteString(fmt.Sprintf("- **ProjectRoot**: %s\n", config.ProjectRoot))
+	sb.WriteString(fmt.Sprintf("- **ConfigDir**: %s\n", config.ConfigDir))
+	sb.WriteString(fmt.Sprintf("- **WorkingDirectory**: %s\n", config.WorkingDirectory))
+	sb.WriteString(fmt.Sprintf("- **Hostname**: %s\n", config.Hostname))
+	sb.WriteString(fmt.Sprintf("- **Username**: %s\n\n", config.Username))
 
-	// Git信息
-	sb.WriteString("## 🔧 Git信息\n")
-	sb.WriteString(fmt.Sprintf("- **用户名**: %s\n", config.GitUserName))
-	sb.WriteString(fmt.Sprintf("- **邮箱**: %s\n", config.GitUserEmail))
-	sb.WriteString(fmt.Sprintf("- **分支**: %s\n", config.GitBranch))
-	sb.WriteString(fmt.Sprintf("- **状态**: %s\n\n", config.GitStatus))
+	sb.WriteString("## 📊 Git信息\n")
+	sb.WriteString(fmt.Sprintf("- **GitUserName**: %s\n", config.GitUserName))
+	sb.WriteString(fmt.Sprintf("- **GitUserEmail**: %s\n", config.GitUserEmail))
+	sb.WriteString(fmt.Sprintf("- **GitBranch**: %s\n", config.GitBranch))
+	sb.WriteString(fmt.Sprintf("- **GitStatus**: %s\n\n", config.GitStatus))
 
-	// 项目信息
-	sb.WriteString("## 📁 项目信息\n")
-	sb.WriteString(fmt.Sprintf("- **项目名称**: %s\n", config.ProjectName))
-	sb.WriteString(fmt.Sprintf("- **项目类型**: %s\n", config.ProjectType))
+	sb.WriteString("## 📊 项目信息\n")
+	sb.WriteString(fmt.Sprintf("- **ProjectName**: %s\n", config.ProjectName))
+	sb.WriteString(fmt.Sprintf("- **ProjectType**: %s\n\n", config.ProjectType))
 
-	// 环境信息
-	sb.WriteString(fmt.Sprintf("- **主机名**: %s\n", config.Hostname))
-	sb.WriteString(fmt.Sprintf("- **用户名**: %s\n", config.Username))
+	sb.WriteString("## 📊 模型配置\n")
+	sb.WriteString(fmt.Sprintf("- **ModelID**: %d\n", config.ModelID))
 
 	return sb.String()
-}
-
-// getModelName 获取模型名称
-func getModelName(modelID int64) string {
-	switch modelID {
-	case DeepseekChat:
-		return "Deepseek Chat"
-	case DeepseekReasoner:
-		return "Deepseek Reasoner"
-	default:
-		return fmt.Sprintf("未知模型 (%d)", modelID)
-	}
-}
-
-// getPromptSource 获取提示词来源
-func getPromptSource() string {
-	// 这里可以添加更复杂的逻辑来检测提示词来源
-	// 目前假设使用模板
-	return "模板渲染"
 }
