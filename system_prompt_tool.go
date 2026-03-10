@@ -8,7 +8,7 @@ import (
 )
 
 // SystemPromptTool 系统提示词工具 - 简化实用版
-var SystemPromptTool = ToolDef{
+var systemPromptTool = ToolDef{
 	Name:        "system_prompt",
 	DisplayName: "SystemPrompt",
 	Description: `获取当前系统提示词
@@ -21,18 +21,17 @@ var SystemPromptTool = ToolDef{
 - 学习系统提示词的结构和内容`,
 	Category: "debug",
 	Timeout:  5 * time.Second,
-	Handler:  HandleSystemPrompt,
+	Handler:  handleSystemPrompt,
 }
 
 func init() {
-	RegisterTool(SystemPromptTool)
+	RegisterTool(systemPromptTool)
 }
 
 // HandleSystemPrompt 处理系统提示词工具调用
-func HandleSystemPrompt(ctx context.Context, args ToolArgs) (reply string, err error) {
+func handleSystemPrompt(ctx context.Context, args ToolArgs) (reply string, err error) {
 	// 获取系统提示词
 	prompt := GetSystemPrompt(ctx)
-
 	// 获取配置信息（用于显示关键信息）
 	config := NewSystemPromptConfig(ctx)
 
@@ -58,6 +57,7 @@ func HandleSystemPrompt(ctx context.Context, args ToolArgs) (reply string, err e
 	sb.WriteString("```\n")
 	sb.WriteString(prompt)
 	sb.WriteString("\n```")
-
-	return sb.String(), nil
+	reply = sb.String()
+	Println(reply)
+	return
 }
