@@ -5,6 +5,10 @@ import (
 	"strconv"
 	"time"
 )
+
+// ToolDef 工具定义
+type ToolDef struct {
+	Name        string
 	DisplayName string
 	Description string
 	Parameters  map[string]any
@@ -22,7 +26,7 @@ func ToolArgsValue[T any](args ToolArgs, key string, defaultValue T) T {
 	if !exists {
 		return defaultValue
 	}
-	
+
 	// 根据目标类型进行安全转换
 	return convertValue(value, defaultValue)
 }
@@ -30,7 +34,7 @@ func ToolArgsValue[T any](args ToolArgs, key string, defaultValue T) T {
 // convertValue 安全类型转换
 func convertValue[T any](value any, defaultValue T) T {
 	var result T
-	
+
 	// 使用类型开关进行安全转换
 	switch target := any(&result).(type) {
 	case *int:
@@ -86,6 +90,6 @@ func convertValue[T any](value any, defaultValue T) T {
 		}
 		return defaultValue
 	}
-	
+
 	return result
 }
