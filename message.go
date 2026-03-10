@@ -41,6 +41,8 @@ func init() {
 
 // LoadHistory 加载指定会话的所有历史消息，按时间升序返回
 func LoadHistory(ctx context.Context) ([]Message, error) {
+	sessionID := ContextValue(ctx, CurrentSessionID, int64(0))
+	modelID := ContextValue(ctx, CurrentModelID, DeepseekChat)
 	histSize := ContextValue(ctx, HistSize, 8)
 	db, err := OpenDB()
 	if err != nil {
@@ -52,7 +54,7 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 		FROM messages
 		WHERE session_id = ? AND model_id = ?
 		ORDER BY id DESC
-        LIMIT ?`, SessionID, ModelID, histSize*2)
+        LIMIT ?`, sessionID, modelID, histSize*2)
 	if err != nil {
 		return nil, fmt.Errorf("查询历史消息失败: %w", err)
 	}
@@ -164,7 +166,9 @@ outloop:
 }
 
 // SaveMessages 保存消息（事务）
-func SaveMessages(msgs ...Message) error {
+func SaveMessages(ctx context.Context, msgs ...Message) error {
+	sessionID := ContextValue(ctx, CurrentSessionID, int64(0))
+	modelID := ContextValue(ctx, CurrentModelID, DeepseekChat)
 	db, err := OpenDB()
 	if err != nil {
 		return err
@@ -200,13 +204,13 @@ func SaveMessages(msgs ...Message) error {
 			toolCalls.String = string(data)
 			toolCalls.Valid = true
 		}
-		if _, err := stmt.Exec(SessionID, m.Role, m.Content, toolCallID, toolCalls, ModelID, m.ReasoningContent); err != nil {
+		if _, err := stmt.Exec(sessionID, m.Role, m.Content, toolCallID, toolCalls, modelID, m.ReasoningContent); err != nil {
 			return fmt.Errorf("插入消息失败: %w", err)
 		}
 	}
 
 	// 更新会话的更新时间
-	if _, err := tx.Exec("UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", SessionID); err != nil {
+	if _, err := tx.Exec("UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", sessionID); err != nil {
 		return fmt.Errorf("更新会话时间失败: %w", err)
 	}
 

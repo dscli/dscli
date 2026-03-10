@@ -7,7 +7,8 @@ import (
 // TestRegisterToolAndGetAllTools 测试工具注册和获取
 func TestRegisterToolAndGetAllTools(t *testing.T) {
 	// 测试获取工具列表
-	tools := GetAllTools()
+	ctx := t.Context()
+	tools := GetAllTools(ctx)
 	if len(tools) == 0 {
 		t.Error("GetAllTools应该返回至少一个工具")
 	}

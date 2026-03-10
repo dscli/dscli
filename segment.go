@@ -31,7 +31,7 @@ type PromptSegment struct {
 // ProjectDomain 项目领域关联
 type ProjectDomain struct {
 	ID          int64     `json:"id"`
-	ProjectRoot string    `json:"project_root"`
+	ProjectRoot string    `json:"project_path"`
 	DomainID    int64     `json:"domain_id"`
 	CreatedAt   time.Time `json:"created_at"`
 }
@@ -60,11 +60,11 @@ func init() {
 		)`,
 		`CREATE TABLE IF NOT EXISTS project_domains (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			project_root TEXT NOT NULL,
+			project_path TEXT NOT NULL,
 			domain_id INTEGER NOT NULL,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (domain_id) REFERENCES domains(id) ON DELETE CASCADE,
-			UNIQUE(project_root)
+			UNIQUE(project_path)
 		)`,
 	)
 
@@ -74,19 +74,19 @@ func init() {
 		ON prompt_segments(domain_id, model_id, sort_order) WHERE enabled = true`,
 		`CREATE INDEX IF NOT EXISTS idx_prompt_segments_enabled 
 		ON prompt_segments(enabled, sort_order)`,
-		`CREATE INDEX IF NOT EXISTS idx_project_domains_root 
-		ON project_domains(project_root)`,
+		`CREATE INDEX IF NOT EXISTS idx_project_domains_path
+		ON project_domains(project_path)`,
 	)
 
 	// 注册升级脚本
 	RegisterUpgradeSchema(
-		`INSERT OR IGNORE INTO domains (name, description) VALUES 
-		('programming', '编程开发 - 代码编写、审查、调试等'),
-		('documentation', '文档写作 - 技术文档、用户手册、API文档等'),
-		('mathematics', '数学研究 - 数学推导、证明、公式计算等'),
-		('industrial', '工业控制 - 燃气锅炉、PLC、自动化控制等'),
-		('research', '科学研究 - 实验设计、数据分析、论文写作等'),
-		('general', '通用助手 - 日常问答、文本处理、学习辅导等')`,
+		`INSERT OR IGNORE INTO domains (id, name, description) VALUES 
+		(0, 'programming', '编程开发 - 代码编写、审查、调试等'),
+		(1, 'documentation', '文档写作 - 技术文档、用户手册、API文档等'),
+		(2, 'mathematics', '数学研究 - 数学推导、证明、公式计算等'),
+		(3, 'industrial', '工业控制 - 燃气锅炉、PLC、自动化控制等'),
+		(4, 'research', '科学研究 - 实验设计、数据分析、论文写作等'),
+		(5, 'general', '通用助手 - 日常问答、文本处理、学习辅导等')`,
 	)
 
 	// 注册后初始化钩子

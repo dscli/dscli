@@ -62,8 +62,9 @@ func RegisterTool(tool ToolDef) {
 }
 
 // GetAllTools 获取所有工具定义（用于API调用）
-func GetAllTools() []Tool {
-	if ModelID == DeepseekReasoner {
+func GetAllTools(ctx context.Context) []Tool {
+	modelID := ContextValue(ctx, CurrentModelID, DeepseekChat)
+	if modelID == DeepseekReasoner {
 		return nil
 	}
 
@@ -97,7 +98,7 @@ func HandleToolCalls(ctx context.Context, tcs []ToolCall) (inputs []Message) {
 			ToolCallID: id,
 			Content:    result,
 		}
-		err = SaveMessages(input)
+		err = SaveMessages(ctx, input)
 		if err != nil {
 			Debug("failed to save: %v", err)
 		}

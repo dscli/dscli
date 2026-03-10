@@ -19,6 +19,7 @@ const (
 )
 
 func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
+	ctx := cmd.Context()
 	model, err := cmd.Flags().GetString("model")
 	if err != nil {
 		return
@@ -27,6 +28,8 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 	if model == "" {
 		model = ModelDeepseekChat
 	}
+
+	ctx = context.WithValue(ctx, CurrentModelName, model)
 	// 调试：打印chatModel和ModelDeepseekChat的值
 	if verbose, _ := cmd.Flags().GetBool("verbose"); verbose {
 		fmt.Printf("[DEBUG] ChatPreRunE: chatModel='%s', ModelDeepseekChat='%s'\n",
@@ -47,24 +50,22 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 		}
 		return
 	}
-
-	// 设置全局ModelID
-	ModelID = modelID
-	// 设置全局SessionID
-	SessionID, err = CreateOrGetSessionID()
+	ctx = context.WithValue(ctx, CurrentModelID, modelID)
+	sessionID, err := CreateOrGetSessionID()
 	if err != nil {
 		return
 	}
+	ctx = context.WithValue(ctx, CurrentSessionID, sessionID)
+	ctx = context.WithValue(ctx, InsideShellExec, os.Getenv(string(InsideShellExec)) == "1")
+	cmd.SetContext(ctx)
 	return
 }
 
 func ChatRunE(cmd *cobra.Command, args []string) (err error) {
-	model, err := cmd.Flags().GetString("model")
 	if err != nil {
 		return
 	}
 	ctx := cmd.Context()
-	ctx = context.WithValue(ctx, InsideShellExec, os.Getenv(string(InsideShellExec)) == "1")
 	content := ""
 	input := ""
 	if len(args) > 0 {
@@ -87,7 +88,6 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 	ctx = context.WithValue(ctx, HistSize, histSize)
 	ctx = context.WithValue(ctx, StartTime, time.Now())
-	ctx = context.WithValue(ctx, CurrentModel, model)
 
 	// 获取开始余额
 	var startBalance BalanceInfo
@@ -300,7 +300,7 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 	stories = append(stories, inputs...)
 
 	var resp *ChatResponse
-	resp, err = DeepseekClient.Chat(ctx, messages, GetAllTools())
+	resp, err = DeepseekClient.Chat(ctx, messages, GetAllTools(ctx))
 	if err != nil {
 		err = fmt.Errorf("聊天请求失败: %w", err)
 		return
@@ -315,7 +315,7 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 	PrintContent(ctx, story.ReasoningContent, story.Content)
 	stories = append(stories, story)
 	// save stories here
-	err = SaveMessages(stories...)
+	err = SaveMessages(ctx, stories...)
 	story.ReasoningContent = "" // reset reasoning content
 
 	if err != nil {

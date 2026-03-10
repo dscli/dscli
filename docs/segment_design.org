@@ -97,11 +97,11 @@
 #+BEGIN_SRC sql
     CREATE TABLE project_domains (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_root TEXT NOT NULL,           -- 项目根目录
+        project_path TEXT NOT NULL,           -- 项目根目录
         domain_id INTEGER NOT NULL,           -- 领域ID
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (domain_id) REFERENCES domains(id) ON DELETE CASCADE,
-        UNIQUE(project_root)
+        UNIQUE(project_path)
     );
 #+END_SRC
 

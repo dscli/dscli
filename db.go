@@ -11,8 +11,8 @@ import (
 )
 
 var (
-	ModelID = int64(0)
-	dbPath  = func() string {
+	// ModelID = int64(0)
+	dbPath = func() string {
 		path := filepath.Join(ConfigDir, "sqlite.db")
 		insideShellExec := os.Getenv("InsideShellExec")
 		if insideShellExec != "" {

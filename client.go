@@ -209,7 +209,7 @@ func (c *Deepseek) Balance() (*BalanceResponse, error) {
 
 // Chat 发送聊天请求
 func (c *Deepseek) Chat(ctx context.Context, messages []Message, tools []Tool) (*ChatResponse, error) {
-	model := ContextValue(ctx, CurrentModel, ModelDeepseekChat)
+	model := ContextValue(ctx, CurrentModelID, ModelDeepseekChat)
 	insideShellExec := ContextValue(ctx, InsideShellExec, false)
 	if insideShellExec {
 		return &ChatResponse{
@@ -239,7 +239,7 @@ func (c *Deepseek) Chat(ctx context.Context, messages []Message, tools []Tool) (
 
 // FIM 发送 FIM 补全请求
 func (c *Deepseek) FIM(ctx context.Context, prompt, suffix string, maxTokens int, temperature float64) (*FIMResponse, error) {
-	model := ContextValue(ctx, CurrentModel, ModelDeepseekChat)
+	model := ContextValue(ctx, CurrentModelID, ModelDeepseekChat)
 	req := FIMRequest{
 		Model:       model,
 		Prompt:      prompt,

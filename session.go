@@ -2,7 +2,7 @@ package main
 
 import "database/sql"
 
-var SessionID = int64(0)
+// var SessionID = int64(0)
 
 func init() {
 	RegisterTableSchema(

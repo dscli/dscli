@@ -12,7 +12,7 @@ func TestPrintContent(t *testing.T) {
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, StartTime, time.Now())
 	// make sure two keys  no overlap
-	ctx = context.WithValue(ctx, CurrentModel, ModelDeepseekChat)
+	ctx = context.WithValue(ctx, CurrentModelID, ModelDeepseekChat)
 	buf := bytes.NewBuffer([]byte{})
 	SetOutputWriter(buf)
 	PrintContent(ctx, "reasoning", "content")

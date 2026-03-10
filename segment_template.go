@@ -33,8 +33,8 @@ func (r *SegmentTemplateRenderer) GetSegmentsForProject() (segment []PromptSegme
 		SELECT d.id 
 		FROM domains d
 		LEFT JOIN project_domains pd ON d.id = pd.domain_id
-		WHERE pd.project_root = ? OR d.name = 'general'
-		ORDER BY pd.project_root DESC
+		WHERE pd.project_path = ? OR d.name = 'general'
+		ORDER BY pd.project_path DESC
 		LIMIT 1
 	`, r.config.ProjectRoot).Scan(&domainID)
 	if err != nil {
@@ -122,13 +122,13 @@ func (r *SegmentTemplateRenderer) RenderAllSegments() (string, error) {
 // BuildSystemMessagesWithSegments 构建包含段落的系统消息
 func BuildSystemMessagesWithSegments(ctx context.Context) ([]Message, error) {
 	// 获取当前项目的领域ID
-	domainID := GetCurrentDomainID()
+	domainID := GetCurrentDomainID(ctx)
 
 	// 获取当前模型ID
-	modelID := GetCurrentModelID()
+	modelID := GetCurrentModelID(ctx)
 
 	// 获取系统提示词配置
-	config := GetSystemPromptConfig()
+	config := GetSystemPromptConfig(ctx)
 
 	// 使用段落管理器渲染系统提示词
 	sm := &SegmentManager{}

@@ -38,6 +38,7 @@ type SystemPromptConfig struct {
 
 // NewSystemPromptConfig 创建系统提示词配置
 func NewSystemPromptConfig(ctx context.Context) *SystemPromptConfig {
+	modelID := ContextValue(ctx, CurrentModelID, int64(0))
 	config := &SystemPromptConfig{
 		CurrentDate:      time.Now().Format("2006年01月02日"),
 		ProjectRoot:      ProjectRoot,
@@ -45,7 +46,7 @@ func NewSystemPromptConfig(ctx context.Context) *SystemPromptConfig {
 		WorkingDirectory: getWorkingDirectory(),
 		Hostname:         getHostname(),
 		Username:         getUsername(),
-		ModelID:          ModelID,
+		ModelID:          modelID,
 	}
 
 	// 获取Git信息
@@ -168,18 +169,17 @@ func LoadEnhancedPrompts(ctx context.Context) ([]Message, error) {
 }
 
 // GetSystemPromptConfig 获取系统提示词配置
-func GetSystemPromptConfig() *SystemPromptConfig {
-	ctx := context.Background()
+func GetSystemPromptConfig(ctx context.Context) *SystemPromptConfig {
 	return NewSystemPromptConfig(ctx)
 }
 
 // GetTemplateSystemPrompt 获取模板化的系统提示词（兼容旧代码）
 func GetTemplateSystemPrompt(ctx context.Context) string {
 	// 获取当前项目的领域ID
-	domainID := GetCurrentDomainID()
+	domainID := GetCurrentDomainID(ctx)
 
 	// 获取当前模型ID
-	modelID := GetCurrentModelID()
+	modelID := GetCurrentModelID(ctx)
 
 	// 获取系统提示词配置
 	config := NewSystemPromptConfig(ctx)
