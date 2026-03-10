@@ -41,6 +41,47 @@ func handleGitDiff(ctx context.Context, args map[string]string) (string, error) 
 	names := strings.Fields(path)
 	gitArgs := []string{"diff", "--no-ext-diff"}
 
+	// 检查是否有暂存的文件
+	statusOut, err := gitCommand(ctx, "status", "--short")
+	if err != nil {
+		return "", err
+	}
+
+	// 分析状态：是否有已暂存的文件？
+	hasStagedChanges := false
+	hasUnstagedChanges := false
+	lines := strings.Split(strings.TrimSpace(statusOut), "\n")
+	for _, line := range lines {
+		if len(line) >= 2 {
+			// 第一个字符表示暂存区状态
+			stagedStatus := line[0]
+			// 第二个字符表示工作区状态
+			unstagedStatus := line[1]
+
+			if stagedStatus != ' ' && stagedStatus != '?' {
+				hasStagedChanges = true
+			}
+			if unstagedStatus != ' ' && unstagedStatus != '?' {
+				hasUnstagedChanges = true
+			}
+		}
+	}
+
+	// 智能选择diff模式
+	if hasStagedChanges && !hasUnstagedChanges {
+		// 只有暂存的文件，没有工作区修改
+		Info("检测到只有暂存的文件，使用 --cached 查看暂存区与HEAD的差异")
+		gitArgs = append(gitArgs, "--cached")
+	} else if hasStagedChanges && hasUnstagedChanges {
+		// 既有暂存的文件，又有工作区修改
+		Info("检测到既有暂存文件又有工作区修改")
+		Info("默认显示工作区与暂存区的差异")
+		Notice("使用 --cached 查看暂存区与HEAD的差异")
+	} else if !hasStagedChanges && hasUnstagedChanges {
+		// 只有工作区修改，没有暂存文件
+		Info("检测到只有工作区修改，显示工作区与HEAD的差异")
+	}
+
 	// 显示要比较的文件
 	if len(names) > 0 {
 		Info("要比较的文件:")
@@ -64,7 +105,7 @@ func handleGitDiff(ctx context.Context, args map[string]string) (string, error) 
 	}
 
 	// 解析差异输出
-	lines := strings.Split(strings.TrimSpace(out), "\n")
+	lines = strings.Split(strings.TrimSpace(out), "\n")
 
 	PrintSubSection("差异详情")
 

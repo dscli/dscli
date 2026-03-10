@@ -90,6 +90,12 @@ func TestMarkdownToOrgConverter_ConvertLine(t *testing.T) {
 			input:    "```\n",
 			expected: "#+begin_src text\n",
 		},
+		// diff代码块测试 - 新增
+		{
+			name:     "diff代码块开始",
+			input:    "```diff\n",
+			expected: "#+begin_src diff\n",
+		},
 		// 空行测试
 		{
 			name:     "空行",
@@ -147,6 +153,47 @@ func TestMarkdownToOrgConverter_CodeBlock(t *testing.T) {
 	}
 }
 
+func TestMarkdownToOrgConverter_DiffCodeBlock(t *testing.T) {
+	converter := NewMarkdownToOrgConverter()
+
+	// 测试diff代码块
+	inputs := []string{
+		"```diff\n",
+		"--- a/file.go\n",
+		"+++ b/file.go\n",
+		"@@ -1,5 +1,5 @@\n",
+		"-old line\n",
+		"+new line\n",
+		" context line\n",
+		"```\n",
+		"Normal text after diff block\n",
+	}
+
+	expected := []string{
+		"#+begin_src diff\n",
+		"--- a/file.go\n",
+		"+++ b/file.go\n",
+		"@@ -1,5 +1,5 @@\n",
+		"-old line\n",
+		"+new line\n",
+		" context line\n",
+		"#+end_src\n",
+		"Normal text after diff block\n",
+	}
+
+	for i, input := range inputs {
+		result := converter.ConvertLine(input)
+		if result != expected[i] {
+			t.Errorf("Diff code block test [%d]: ConvertLine() = %q, want %q", i, result, expected[i])
+		}
+	}
+
+	// 验证转换器状态已重置
+	if converter.inCodeBlock {
+		t.Error("Converter should not be in code block after processing")
+	}
+}
+
 func TestMarkdownToOrgConverter_EdgeCases(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -172,6 +219,11 @@ func TestMarkdownToOrgConverter_EdgeCases(t *testing.T) {
 			name:     "代码块带语言",
 			input:    "```javascript\n",
 			expected: "#+begin_src javascript\n",
+		},
+		{
+			name:     "diff代码块",
+			input:    "```diff\n",
+			expected: "#+begin_src diff\n",
 		},
 		{
 			name:     "行尾无换行",
