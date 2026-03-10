@@ -60,6 +60,7 @@ func init() {
 
 // handleCodeReview 处理代码审查工具调用
 // handleCodeReview 处理代码审查工具调用
+// handleCodeReview 处理代码审查工具调用
 func handleCodeReview(ctx context.Context, args map[string]string) (reply string, err error) {
 	summary := args["summary"]
 
@@ -138,54 +139,58 @@ func handleCodeReview(ctx context.Context, args map[string]string) (reply string
 		return "", fmt.Errorf("代码审查失败: %v", err)
 	}
 
-	// 调试：显示原始回复长度和内容
-	Println(fmt.Sprintf("📊 专家回复长度: %d 字符", len(reply)))
-	if len(reply) > 0 && len(reply) < 1000 {
-		Println(fmt.Sprintf("📄 专家回复预览: %q", reply))
-	}
-
 	// 显示专家回答摘要
 	if reply != "" {
 		// 清理回复中的多余空白和换行
 		cleanReply := strings.TrimSpace(reply)
-		Println(fmt.Sprintf("📊 清理后回复长度: %d 字符", len(cleanReply)))
 
-		// 取前几行作为摘要
-		lines := strings.Split(cleanReply, "\n")
-		Println(fmt.Sprintf("📊 回复行数: %d", len(lines)))
-
-		expertSummary := ""
-		nonEmptyLines := 0
-		for i := 0; i < len(lines) && i < 5; i++ {
-			line := strings.TrimSpace(lines[i])
-			if line != "" {
-				nonEmptyLines++
-				if expertSummary != "" {
-					expertSummary += " "
-				}
-				expertSummary += line
-			}
-		}
-
-		Println(fmt.Sprintf("📊 非空行数: %d", nonEmptyLines))
-		Println(fmt.Sprintf("📊 摘要长度: %d 字符", len(expertSummary)))
-
-		// 如果摘要太长，截断
-		if len(expertSummary) > 200 {
-			expertSummary = expertSummary[:197] + "..."
-		}
-
-		if expertSummary != "" {
-			Println("  专家审查摘要:", expertSummary)
+		// 检查清理后的回复是否为空
+		if cleanReply == "" {
+			Println("  专家审查摘要: [空] - 专家回复只包含空白字符")
+			Println("⚠️  注意：专家可能没有生成有效的审查意见")
 		} else {
-			Println("  专家审查摘要: [空] - 专家回复可能只包含空白字符或特殊格式")
+			// 取前几行作为摘要
+			lines := strings.Split(cleanReply, "\n")
+			expertSummary := ""
+			nonEmptyLines := 0
+
+			// 收集前5个非空行
+			for i := 0; i < len(lines) && nonEmptyLines < 5; i++ {
+				line := strings.TrimSpace(lines[i])
+				if line != "" {
+					nonEmptyLines++
+					if expertSummary != "" {
+						expertSummary += " "
+					}
+					expertSummary += line
+				}
+			}
+
+			// 检查摘要是否为空
+			if expertSummary == "" {
+				Println("  专家审查摘要: [空] - 专家回复的前5行都是空白行")
+				Println("⚠️  注意：专家回复格式异常，建议检查完整回复")
+			} else {
+				// 如果摘要太长，截断
+				if len(expertSummary) > 200 {
+					expertSummary = expertSummary[:197] + "..."
+				}
+				Println("  专家审查摘要:", expertSummary)
+			}
 		}
 	} else {
 		Println("  专家审查摘要: [空] - 专家回复为空")
+		Println("⚠️  注意：专家没有返回任何内容，可能是网络或API问题")
 	}
 
 	Println("✅ 代码审查完成")
-	Println("💡 提示：请仔细考虑专家的建议，如有需要可进行修改")
+
+	// 如果回复不为空，提示用户查看完整回复
+	if reply != "" && strings.TrimSpace(reply) != "" {
+		Println("💡 提示：请查看上面的完整专家回复，仔细考虑专家的建议")
+	} else {
+		Println("💡 提示：专家回复为空，建议检查网络连接或稍后重试")
+	}
 
 	return reply, nil
 }
