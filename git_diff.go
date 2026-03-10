@@ -170,11 +170,12 @@ type diffStats struct {
 }
 
 // analyzeDiffStats 分析差异统计
+// analyzeDiffStats 分析差异统计
 func analyzeDiffStats(diffOutput string) diffStats {
 	stats := diffStats{}
-	lines := strings.SplitSeq(diffOutput, "\n")
+	lines := strings.Split(diffOutput, "\n")
 
-	for line := range lines {
+	for _, line := range lines {
 		if strings.HasPrefix(line, "diff --git") {
 			stats.files++
 		} else if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
