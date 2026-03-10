@@ -66,7 +66,6 @@ func init() {
 			FOREIGN KEY (domain_id) REFERENCES domains(id) ON DELETE CASCADE,
 			UNIQUE(project_path)
 		)`,
-		``,
 	)
 
 	// 注册索引
@@ -80,7 +79,7 @@ func init() {
 	// 注册升级脚本
 	RegisterUpgradeSchema(
 		`DROP INDEX IF EXISTS idx_project_domains_root`,
-		`ALERT TABLE project_domains RENAME COLUMN project_root TO project_path`,
+		`ALTER TABLE project_domains RENAME COLUMN project_root TO project_path`,
 		`CREATE INDEX IF NOT EXISTS idx_project_domains_path
 		ON project_domains(project_path)`,
 		`INSERT OR IGNORE INTO domains (id, name, description) VALUES 
