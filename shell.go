@@ -57,9 +57,10 @@ func ShortenShellScript(script string) string {
 		summary = shortenSimple(script)
 	}
 
-	// 确保长度不超过50字符
-	if len(summary) > 50 {
-		summary = summary[:50]
+	// 确保长度不超过50字符（使用rune操作避免乱码）
+	runes := []rune(summary)
+	if len(runes) > 50 {
+		summary = string(runes[:50])
 	}
 
 	return summary
@@ -90,7 +91,7 @@ func shortenWithSyntaxAnalysis(script string) string {
 					cmdStr := cmd
 					if len(n.Args) > 1 {
 						arg := n.Args[1].Lit()
-						if arg != "" && len(arg) < 20 {
+						if arg != "" && len([]rune(arg)) < 20 {
 							cmdStr += " " + arg
 						}
 					}
