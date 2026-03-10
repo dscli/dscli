@@ -66,6 +66,7 @@ _test.go
 
 # 项目二进制文件
 dscli
+dscli_new
 *.sqlite
 *.db
 *.sqlite3
