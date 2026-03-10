@@ -34,7 +34,7 @@ build: $(BUILD_DIR)/$(BINARY_NAME)
 
 $(BUILD_DIR)/$(BINARY_NAME): $(shell find . -name "*.go")
 	@mkdir -p $(BUILD_DIR)
-	@echo "构建 dscli v$(VERSION) (commit: $(GIT_COMMIT), date: $(BUILD_DATE))"
+	@echo "构建 dscli $(VERSION) (commit: $(GIT_COMMIT), date: $(BUILD_DATE))"
 	CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(SOURCE_DIR)
 
 install:
