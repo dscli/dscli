@@ -59,6 +59,7 @@ func init() {
 }
 
 // handleCodeReview 处理代码审查工具调用
+// handleCodeReview 处理代码审查工具调用
 func handleCodeReview(ctx context.Context, args map[string]string) (reply string, err error) {
 	summary := args["summary"]
 
@@ -137,22 +138,37 @@ func handleCodeReview(ctx context.Context, args map[string]string) (reply string
 		return "", fmt.Errorf("代码审查失败: %v", err)
 	}
 
+	// 调试：显示原始回复长度和内容
+	Println(fmt.Sprintf("📊 专家回复长度: %d 字符", len(reply)))
+	if len(reply) > 0 && len(reply) < 1000 {
+		Println(fmt.Sprintf("📄 专家回复预览: %q", reply))
+	}
+
 	// 显示专家回答摘要
 	if reply != "" {
 		// 清理回复中的多余空白和换行
 		cleanReply := strings.TrimSpace(reply)
+		Println(fmt.Sprintf("📊 清理后回复长度: %d 字符", len(cleanReply)))
+
 		// 取前几行作为摘要
 		lines := strings.Split(cleanReply, "\n")
+		Println(fmt.Sprintf("📊 回复行数: %d", len(lines)))
+
 		expertSummary := ""
+		nonEmptyLines := 0
 		for i := 0; i < len(lines) && i < 5; i++ {
 			line := strings.TrimSpace(lines[i])
 			if line != "" {
+				nonEmptyLines++
 				if expertSummary != "" {
 					expertSummary += " "
 				}
 				expertSummary += line
 			}
 		}
+
+		Println(fmt.Sprintf("📊 非空行数: %d", nonEmptyLines))
+		Println(fmt.Sprintf("📊 摘要长度: %d 字符", len(expertSummary)))
 
 		// 如果摘要太长，截断
 		if len(expertSummary) > 200 {
@@ -161,7 +177,11 @@ func handleCodeReview(ctx context.Context, args map[string]string) (reply string
 
 		if expertSummary != "" {
 			Println("  专家审查摘要:", expertSummary)
+		} else {
+			Println("  专家审查摘要: [空] - 专家回复可能只包含空白字符或特殊格式")
 		}
+	} else {
+		Println("  专家审查摘要: [空] - 专家回复为空")
 	}
 
 	Println("✅ 代码审查完成")
