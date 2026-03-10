@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
+	"gitcode.com/dscli/dscli/internal/shell"
 	"mvdan.cc/sh/v3/syntax"
 )
 
@@ -180,18 +182,121 @@ func ArrangeArgs(name string, args []string) ([]string, bool) {
 	return args, false
 }
 
+// ShellExec 是混合实现的 Shell 执行函数
+// 对于 shell 命令使用新的 internal/shell 包
+// 对于非 shell 命令回退到原始的 os/exec 实现
 func ShellExec(ctx context.Context, script string) (out string, err error) {
+	// 获取上下文中的配置
 	name := ContextValue(ctx, ShellName, "")
-	arg := ContextValue(ctx, ShellArgs, []string{})
+	shellArgs := ContextValue(ctx, ShellArgs, []string{})
+	stdin := ContextValue(ctx, ShellStdin, io.Reader(os.Stdin))
+
+	// 如果未指定解释器，解析 shebang
 	if name == "" {
-		name, arg = Shebang(script)
-	}
-	arg, ok := ArrangeArgs(name, arg)
-	if !ok {
-		return "", fmt.Errorf("do not support %s %v", name, arg)
+		name, shellArgs = Shebang(script)
 	}
 
-	shellStdin := ContextValue(ctx, ShellStdin, io.Reader(os.Stdin))
+	// 使用 ArrangeArgs 处理参数
+	shellArgs, ok := ArrangeArgs(name, shellArgs)
+	if !ok {
+		return "", fmt.Errorf("do not support %s %v", name, shellArgs)
+	}
+
+	// 检查是否在测试模式
+	if IsTesting() {
+		script = strings.ReplaceAll(script, "dscli", "echo dscli")
+	}
+
+	// 判断是否是 shell 命令
+	isShellCommand := isShellInterpreter(name)
+
+	if isShellCommand {
+		// 使用新的 shell 包执行
+		return executeWithShellPackage(ctx, name, shellArgs, script)
+	} else {
+		// 回退到原始的 os/exec 实现
+		return executeWithOSExec(ctx, name, shellArgs, script, stdin)
+	}
+}
+
+// isShellInterpreter 判断是否是 shell 解释器
+func isShellInterpreter(name string) bool {
+	shellInterpreters := map[string]bool{
+		"bash": true,
+		"sh":   true,
+		"zsh":  true,
+		"dash": true,
+		"ksh":  true,
+	}
+
+	// 检查基本名称
+	baseName := strings.ToLower(name)
+	if strings.Contains(baseName, "bash") || strings.Contains(baseName, "sh") {
+		return true
+	}
+
+	// 检查完整路径
+	if strings.HasSuffix(name, "bash") || strings.HasSuffix(name, "sh") {
+		return true
+	}
+
+	return shellInterpreters[baseName]
+}
+
+// executeWithShellPackage 使用新的 shell 包执行命令
+func executeWithShellPackage(ctx context.Context, name string, args []string, script string) (out string, err error) {
+	// 创建 shell 配置
+	config := &shell.Config{
+		WorkingDir:  ProjectRoot,
+		Timeout:     60 * time.Second,
+		StrictMode:  true,
+		SandboxMode: !IsTesting(),
+		EnvVars:     append(os.Environ(), "InsideShellExec=1"),
+		SandboxConfig: &shell.SandboxConfig{
+			AllowedCommands: []string{
+				"bash", "sh", "zsh",
+				"echo", "ls", "cat", "git", "find", "grep",
+				"mkdir", "rm", "cp", "mv", "chmod", "chown",
+				"curl", "wget", "tar", "gzip", "unzip",
+				"/usr/bin/env", "/bin/bash", "/bin/sh",
+			},
+			AllowedPaths: []string{ProjectRoot},
+		},
+	}
+
+	// 创建执行器
+	executor := shell.NewExecutor(config)
+
+	// 构建命令
+	cmd := name
+	if len(args) > 0 {
+		cmd += " " + strings.Join(args, " ")
+	}
+
+	// 执行命令
+	result, execErr := executor.Execute(ctx, cmd+"\n"+script)
+	if execErr != nil {
+		return "", fmt.Errorf("failed to create executor: %w", execErr)
+	}
+
+	if result.Err != nil {
+		// 检查是否超时
+		if ctx.Err() != nil {
+			if ctx.Err() == context.DeadlineExceeded {
+				return result.Stdout, fmt.Errorf("命令执行超时")
+			}
+			return result.Stdout, fmt.Errorf("命令被取消: %w", ctx.Err())
+		}
+
+		return result.Stdout, fmt.Errorf("命令执行失败: %w", result.Err)
+	}
+
+	return result.Stdout, nil
+}
+
+// executeWithOSExec 使用原始的 os/exec 实现执行命令
+func executeWithOSExec(ctx context.Context, name string, args []string, script string, stdin io.Reader) (out string, err error) {
+	// 这是原始的 ShellExec 实现的核心部分
 	r, w, err := os.Pipe()
 	if err != nil {
 		return "", err
@@ -206,16 +311,12 @@ func ShellExec(ctx context.Context, script string) (out string, err error) {
 		}
 	}()
 
-	if IsTesting() {
-		script = strings.ReplaceAll(script, "dscli", "echo dscli")
-	}
-
 	buf := bytes.NewBuffer([]byte{})
-	subproc := exec.CommandContext(ctx, name, arg...)
+	subproc := exec.CommandContext(ctx, name, args...)
 	subproc.Dir = ProjectRoot
 	subproc.Stdout = buf
 	subproc.Stderr = buf
-	subproc.Stdin = shellStdin
+	subproc.Stdin = stdin
 	subproc.Env = append(os.Environ(), "InsideShellExec=1")
 	subproc.ExtraFiles = []*os.File{r}
 	err = subproc.Start()
@@ -256,4 +357,14 @@ func ShellExec(ctx context.Context, script string) (out string, err error) {
 	}
 
 	return out, nil
+}
+
+// ShellExecSimple 简化的 Shell 执行函数
+func ShellExecSimple(ctx context.Context, script string) (out string, err error) {
+	return shell.SimpleExecute(ctx, script)
+}
+
+// ShellExecSafe 安全的 Shell 执行函数
+func ShellExecSafe(ctx context.Context, script string) (out string, err error) {
+	return shell.SafeExecute(ctx, script)
 }
