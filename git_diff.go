@@ -27,7 +27,6 @@ func init() {
 }
 
 // handleGitDiff git差异
-// handleGitDiff git差异
 func handleGitDiff(ctx context.Context, args map[string]string) (string, error) {
 	path, ok := args["path"]
 	if !ok {
@@ -110,7 +109,7 @@ func handleGitDiff(ctx context.Context, args map[string]string) (string, error) 
 	PrintSubSection("差异详情")
 
 	// 使用Markdown格式显示差异
-	fmt.Fprintln(outputWriter, "```diff")
+	Println("```diff")
 
 	for _, line := range lines {
 		if strings.TrimSpace(line) == "" {
@@ -146,10 +145,10 @@ func handleGitDiff(ctx context.Context, args map[string]string) (string, error) 
 			coloredLine = colorize(ColorWhite, line)
 		}
 
-		fmt.Fprintln(outputWriter, coloredLine)
+		Println(coloredLine)
 	}
 
-	fmt.Fprintln(outputWriter, "```")
+	Println("```")
 	// 显示统计信息
 	PrintSubSection("统计信息")
 	diffStats := analyzeDiffStats(out)
@@ -173,9 +172,9 @@ type diffStats struct {
 // analyzeDiffStats 分析差异统计
 func analyzeDiffStats(diffOutput string) diffStats {
 	stats := diffStats{}
-	lines := strings.Split(diffOutput, "\n")
+	lines := strings.SplitSeq(diffOutput, "\n")
 
-	for _, line := range lines {
+	for line := range lines {
 		if strings.HasPrefix(line, "diff --git") {
 			stats.files++
 		} else if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
