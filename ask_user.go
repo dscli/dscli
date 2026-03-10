@@ -53,7 +53,7 @@ func handleAskUser(ctx context.Context, args ToolArgs) (reply string, err error)
 	if len(summary) > 100 {
 		summary = append(summary[:97], []rune("...")...)
 	}
-	Println("  问题摘要:", summary)
+	Println("  问题摘要:", string(summary))
 
 	reply, err = OpenEditor(content)
 	if err != nil {
@@ -67,7 +67,7 @@ func handleAskUser(ctx context.Context, args ToolArgs) (reply string, err error)
 		if len(replySummary) > 100 {
 			replySummary = append(replySummary[:97], []rune("...")...)
 		}
-		Println("  用户回答摘要:", replySummary)
+		Println("  用户回答摘要:", string(replySummary))
 	}
 
 	Println("✅ 用户咨询完成")

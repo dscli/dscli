@@ -52,7 +52,7 @@ func handleAskExpert(ctx context.Context, args ToolArgs) (reply string, err erro
 	if len(summary) > 100 {
 		summary = append(summary[:97], []rune("...")...)
 	}
-	Println("  问题摘要:", summary)
+	Println("  问题摘要:", string(summary))
 
 	// expert 或 reasoner（已映射到 expert）
 	eof := "EOFFOEOFEEFO"
