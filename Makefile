@@ -3,22 +3,22 @@
 BINARY_NAME = dscli
 
 # 版本信息：优先使用git标签，如果没有标签则使用git提交哈希
-GIT_TAG = $(shell git describe --tags --exact-match 2>/dev/null || echo "")
+GIT_TAG = $(shell git describe --tags 2>/dev/null || echo "")
 GIT_COMMIT = $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE = $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
 
 # 如果存在git标签，使用标签作为版本号，否则使用提交哈希
 ifeq ($(GIT_TAG),)
-  VERSION ?= $(GIT_COMMIT)
+	VERSION ?= $(GIT_COMMIT)
 else
-  VERSION ?= $(GIT_TAG)
+	VERSION ?= $(GIT_TAG)
 endif
 
 # 如果VERSION为空或为unknown，使用开发版本
 ifeq ($(VERSION),)
-  VERSION = dev
+	VERSION = dev
 else ifeq ($(VERSION),unknown)
-  VERSION = dev
+	VERSION = dev
 endif
 
 LDFLAGS = -ldflags "-X main.Version=$(VERSION) -X main.Build=$(BUILD_DATE)-$(GIT_COMMIT)"
@@ -59,24 +59,20 @@ test-coverage: fmt
 	@echo "运行测试并生成覆盖率报告..."
 	@echo "=== 覆盖率测试开始 ==="
 	@echo ""
-	
 	# 生成覆盖率文件
 	@go test -v -coverprofile=coverage.out ./... 2>&1 | tee test-output.txt
-	
 	@echo ""
 	@echo "=== 覆盖率统计 ==="
 	@go tool cover -func=coverage.out
-	
+
 	@echo ""
 	@echo "=== 生成HTML覆盖率报告 ==="
 	@go tool cover -html=coverage.out -o coverage.html
-	
 	@echo ""
 	@echo "✅ 覆盖率报告已生成:"
 	@echo "   - coverage.out    : 原始覆盖率数据"
 	@echo "   - coverage.html   : HTML可视化报告"
 	@echo "   - test-output.txt : 测试详细输出"
-	
 	# 显示关键覆盖率信息
 	@echo ""
 	@echo "=== 关键文件覆盖率 ==="
@@ -154,26 +150,21 @@ release: clean
 	@echo "构建时间: $(BUILD_DATE)"
 	@echo "Git提交: $(GIT_COMMIT)"
 	@echo ""
-	
 	# 构建Linux版本
 	@echo "=== 构建Linux版本 ==="
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 $(SOURCE_DIR)
 	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 $(SOURCE_DIR)
-	
 	# 构建macOS版本
 	@echo "=== 构建macOS版本 ==="
 	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 $(SOURCE_DIR)
 	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 $(SOURCE_DIR)
-	
 	# 构建Windows版本
 	@echo "=== 构建Windows版本 ==="
 	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe $(SOURCE_DIR)
-	
 	@echo ""
 	@echo "✅ 发布版本构建完成！"
 	@echo "输出目录: $(BUILD_DIR)/"
 	@ls -lh $(BUILD_DIR)/*
-	
 	@echo ""
 	@echo "版本信息验证:"
 	@for binary in $(BUILD_DIR)/*; do \
