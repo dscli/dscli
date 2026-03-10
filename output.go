@@ -90,7 +90,7 @@ const (
 
 // Println 输出一行文本（保持向后兼容）
 func Println(a ...any) (n int, err error) {
-	if colorEnabled {
+	if outputColorEnabled {
 		// 记录输出事件，重置等待计时器
 		GetWaitingManager().RecordOutput()
 	}
@@ -104,7 +104,7 @@ func Println(a ...any) (n int, err error) {
 }
 
 func StartWaiting(duration time.Duration) func() {
-	if colorEnabled {
+	if outputColorEnabled {
 		GetWaitingManager().StartWaiting(duration)
 		return GetWaitingManager().StopWaiting
 	} else {
@@ -114,7 +114,7 @@ func StartWaiting(duration time.Duration) func() {
 
 // Printf 输出格式化文本（保持向后兼容）
 func Printf(format string, a ...any) (n int, err error) {
-	if colorEnabled {
+	if outputColorEnabled {
 		// 记录输出事件，重置等待计时器
 		GetWaitingManager().RecordOutput()
 	}

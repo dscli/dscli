@@ -283,3 +283,20 @@ func TestShellExec(t *testing.T) {
 		})
 	}
 }
+
+func TestIsTesting(t *testing.T) {
+	tests := []struct {
+		name string // description of this test case
+		want bool
+	}{
+		{"IsTesting", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsTesting()
+			if got != tt.want {
+				t.Errorf("IsTesting() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
