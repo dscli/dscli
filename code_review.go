@@ -52,7 +52,7 @@ func init() {
 }
 
 // handleCodeReview 处理代码审查工具调用
-// handleCodeReview 处理代码审查工具调用
+func handleCodeReview(ctx context.Context, args map[string]string) (reply string, err error) {
 func handleCodeReview(ctx context.Context, args map[string]string) (reply string, err error) {
 	summary := args["summary"]
 
