@@ -8,10 +8,7 @@ import (
 )
 
 // CodeReviewTool 代码审查工具定义
-var CodeReviewTool = ToolDef{
-	Name:        "code_review",
-	DisplayName: "代码审查",
-	Description: `对当前最新的Git提交进行代码审查，由专家提供改进建议。
+Description: `对当前最新的Git提交进行代码审查，由专家提供改进建议。
 
 参数说明：
 - summary: 可选，提供本次提交的背景说明，帮助专家理解上下文
@@ -23,26 +20,22 @@ var CodeReviewTool = ToolDef{
 3. 检查潜在的性能、安全、可维护性问题
 
 审查流程：
-1. 获取最新的提交（HEAD）
-2. 生成patch格式的代码变更
-3. 发送给专家进行审查
-4. 返回专家的改进建议
+1. 检查是否有未提交的更改（如果有则返回错误）
+2. 获取最新的提交（HEAD）
+3. 生成patch格式的代码变更
+4. 发送给专家进行审查
+5. 返回专家的改进建议
+
+错误处理：
+- 如果检测到未提交的更改，工具会立即返回错误
+- 错误信息包含详细的Git状态，帮助用户了解需要提交的内容
+- 用户需要先提交所有更改，然后才能使用代码审查工具
 
 注意：
 - 只审查最新的一个提交（HEAD）
 - 专家会看到完整的代码变更
-- 建议在push之前使用此工具`,
-	Parameters: map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"summary": map[string]any{
-				"type":        "string",
-				"description": "可选，提供本次提交的背景说明，帮助专家理解上下文",
-			},
-		},
-		"required": []string{},
-	},
-	Category: "git",
+- 建议在push之前使用此工具
+- 确保所有更改都已提交，否则工具会返回错误`,
 	Timeout:  120 * time.Second, // 2分钟超时
 	Handler:  handleCodeReview,
 }
