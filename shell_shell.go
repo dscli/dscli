@@ -50,11 +50,8 @@ func init() { // 注册shell工具
 }
 
 // handleShell 执行Shell脚本
-func handleShell(ctx context.Context, args map[string]string) (out string, err error) {
-	script, ok := args["script"]
-	if !ok {
-		script = ""
-	}
+func handleShell(ctx context.Context, args ToolArgs) (out string, err error) {
+	script := ToolArgsValue(args, "script", "")
 
 	if err = validateShell(script); err != nil {
 		return

@@ -29,9 +29,9 @@ func init() {
 }
 
 // handleSqlite 执行SQLite数据库查询和操作
-func handleSqlite(ctx context.Context, args map[string]string) (string, error) {
-	script, ok := args["script"]
-	if !ok || script == "" {
+func handleSqlite(ctx context.Context, args ToolArgs) (string, error) {
+	script := ToolArgsValue(args, "script", "")
+	if script == "" {
 		return "", fmt.Errorf("sql script can not be empty")
 	}
 	// 构建完整的shebang脚本

@@ -31,15 +31,9 @@ func init() {
 }
 
 // handleSearchFiles 搜索文件
-func handleSearchFiles(ctx context.Context, args map[string]string) (string, error) {
-	pattern, ok := args["pattern"]
-	if !ok {
-		pattern = ""
-	}
-	content, ok := args["content"]
-	if !ok {
-		content = ""
-	}
+func handleSearchFiles(ctx context.Context, args ToolArgs) (string, error) {
+	pattern := ToolArgsValue(args, "pattern", "")
+	content := ToolArgsValue(args, "content", "")
 	// 使用find和grep命令实现搜索
 	// 基础find命令：从当前目录开始，排除.git目录，只搜索文件
 	script := `find . -type f -not -path "./.git/*"`

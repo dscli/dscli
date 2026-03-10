@@ -34,16 +34,16 @@ func init() {
 
 示例：
   # 替换第5-10行的内容
-  write_file_with_line_range(path="file.txt", start_line="5", end_line="10", content="新内容")
+  write_file_with_line_range(path="file.txt", start_line=5, end_line=10, content="新内容")
   
   # 删除第5-10行的内容
-  write_file_with_line_range(path="file.txt", start_line="5", end_line="10", content="")
+  write_file_with_line_range(path="file.txt", start_line=5, end_line=10, content="")
   
   # 从第5行开始替换到文件末尾
-  write_file_with_line_range(path="file.txt", start_line="5", content="新内容")
+  write_file_with_line_range(path="file.txt", start_line=5, content="新内容")
   
   # 删除从第5行到文件末尾的内容
-  write_file_with_line_range(path="file.txt", start_line="5", content="")
+  write_file_with_line_range(path="file.txt", start_line=5, content="")
   
   # 替换整个文件
   write_file_with_line_range(path="file.txt", content="全新内容")
@@ -65,11 +65,11 @@ func init() {
 					"description": "要写入的内容，可以为空字符串表示删除",
 				},
 				"start_line": map[string]any{
-					"type":        "string",
+					"type":        "integer",
 					"description": "起始行号（从1开始），可选，默认1",
 				},
 				"end_line": map[string]any{
-					"type":        "string",
+					"type":        "integer",
 					"description": "结束行号，可选，默认到文件末尾",
 				},
 			},
@@ -83,17 +83,15 @@ func init() {
 
 // handleWriteFileWithLineRange 写入文件指定行范围的内容
 // 如果 content 为空字符串，则删除指定行范围
-func handleWriteFileWithLineRange(_ context.Context, args map[string]string) (string, error) {
+func handleWriteFileWithLineRange(_ context.Context, args ToolArgs) (string, error) {
 	// 检查必需参数
-	path, ok := args["path"]
-	if !ok || path == "" {
+	path := ToolArgsValue(args, "path", "")
+	if path == "" {
 		return "", fmt.Errorf("parameter error: no path specified")
 	}
 
-	content, ok := args["content"]
-	if !ok {
-		return "", fmt.Errorf("parameter error: no content specified")
-	}
+	content := ToolArgsValue(args, "content", "")
+
 	// content 可以为空字符串，表示删除
 
 	fullPath := resolvePath(path)

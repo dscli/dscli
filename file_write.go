@@ -29,6 +29,6 @@ func init() {
 }
 
 // handleWriteFile 写入文件（纯Go实现）
-func handleWriteFile(ctx context.Context, args map[string]string) (string, error) {
+func handleWriteFile(ctx context.Context, args ToolArgs) (string, error) {
 	return handleWriteFileWithLineRange(ctx, args)
 }

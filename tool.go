@@ -115,7 +115,7 @@ func HandleToolCall(ctx context.Context, toolName string, argsRaw json.RawMessag
 	if !ok {
 		return "", fmt.Errorf("未知工具: %s", toolName)
 	}
-	args := map[string]string{}
+	args := ToolArgs{}
 	if err := json.Unmarshal(argsRaw, &args); err != nil {
 		n := len(argsRaw)
 		if n > 80 {

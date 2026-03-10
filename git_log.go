@@ -14,8 +14,8 @@ func init() {
 			"type": "object",
 			"properties": map[string]any{
 				"max_count": map[string]any{
-					"type":        "string",
-					"description": `最大显示数量，默认"10"`,
+					"type":        "integer",
+					"description": `最大显示数量，默认10`,
 				},
 			},
 			"required":             []string{},
@@ -27,19 +27,15 @@ func init() {
 }
 
 // handleGitLog git日志
-// handleGitLog git日志
-func handleGitLog(ctx context.Context, args map[string]string) (string, error) {
-	maxCount, ok := args["max_count"]
-	if !ok {
-		maxCount = "10"
-	}
+func handleGitLog(ctx context.Context, args ToolArgs) (string, error) {
+	maxCount := ToolArgsValue(args, "max_count", 10)
 
 	// 显示操作标题
 	PrintGitSection("提交历史")
 
-	Info("显示最近 %s 条提交记录", maxCount)
+	Info("显示最近 %d 条提交记录", maxCount)
 
-	gitArgs := []string{"log", "--oneline", "--graph", "--decorate", fmt.Sprintf("-%s", maxCount)}
+	gitArgs := []string{"log", "--oneline", "--graph", "--decorate", fmt.Sprintf("-%d", maxCount)}
 	out, err := gitCommand(ctx, gitArgs...)
 	if err != nil {
 		return "", err

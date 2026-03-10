@@ -52,23 +52,16 @@ func init() {
 	})
 }
 
-// handleGitAm 处理git am命令
-// handleGitAm 处理git am命令
 // handleGitAm 处理git am命令（apply patch from mail）
-// git am 全称是 "apply patch from mail"，用于应用邮件格式的patch
-// handleGitAm 处理git am命令
-// handleGitAm 处理git am命令
-// handleGitAm 处理git am命令（apply patch from mail）
-// git am 全称是 "apply patch from mail"，用于应用邮件格式的patch
-func handleGitAm(ctx context.Context, args map[string]string) (string, error) {
-	patch, hasPatch := args["patch"]
-	options, hasOptions := args["options"]
+func handleGitAm(ctx context.Context, args ToolArgs) (string, error) {
+	patch := ToolArgsValue(args, "patch", "")
+	options := ToolArgsValue(args, "options", "")
 
 	// 显示操作标题
 	PrintGitSection("应用Patch")
 
 	// 如果没有提供patch和options，返回错误
-	if !hasPatch && !hasOptions {
+	if patch == "" && options == "" {
 		Error("必须提供patch内容或options参数")
 		return "", fmt.Errorf("必须提供patch内容或options参数")
 	}
@@ -77,14 +70,14 @@ func handleGitAm(ctx context.Context, args map[string]string) (string, error) {
 	gitArgs := []string{"am"}
 
 	// 添加选项
-	if hasOptions && options != "" {
+	if options != "" {
 		optionList := strings.Fields(options)
 		gitArgs = append(gitArgs, optionList...)
 		Info("应用选项: %s", options)
 	}
 
 	// 如果提供了patch内容，通过标准输入传递
-	if hasPatch && patch != "" {
+	if patch != "" {
 		// 显示patch信息
 		PrintSubSection("Patch信息")
 

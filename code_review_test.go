@@ -53,7 +53,7 @@ func TestHandleCodeReviewFunction(t *testing.T) {
 	// We can't easily test the actual execution without mocking external dependencies
 
 	ctx := context.Background()
-	args := map[string]string{"summary": "Test commit"}
+	args := ToolArgs{"summary": "Test commit"}
 
 	// The function should exist and be callable
 	// Note: We're not checking the actual return value since it depends on Git state

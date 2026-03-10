@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 )
 
@@ -63,15 +62,15 @@ func init() {
 					"description": "搜索模式（字符串包含匹配）",
 				},
 				"context_lines": map[string]any{
-					"type":        "string",
+					"type":        "integer",
 					"description": "上下文行数（前后各N行），可选，默认5",
 				},
 				"case_sensitive": map[string]any{
-					"type":        "string",
+					"type":        "boolean",
 					"description": "是否区分大小写，可选，默认false",
 				},
 				"max_matches": map[string]any{
-					"type":        "string",
+					"type":        "integer",
 					"description": "最大匹配数，可选，默认无限制",
 				},
 			},
@@ -85,51 +84,32 @@ func init() {
 
 // handleSearchFileWithPattern 搜索文件中匹配指定模式的行，并显示上下文
 // 输出格式与 awk 类似，保持一致性
-func handleSearchFileWithPattern(_ context.Context, args map[string]string) (string, error) {
-	path, ok := args["path"]
-	if !ok || path == "" {
+func handleSearchFileWithPattern(_ context.Context, args ToolArgs) (string, error) {
+	path := ToolArgsValue(args, "path", "")
+	if path == "" {
 		return "", fmt.Errorf("parameter error: no path specified")
 	}
 
-	pattern, ok := args["pattern"]
-	if !ok || pattern == "" {
+	pattern := ToolArgsValue(args, "pattern", "")
+	if pattern == "" {
 		return "", fmt.Errorf("parameter error: no pattern specified")
 	}
 
 	fullPath := resolvePath(path)
 
 	// 解析上下文行数参数
-	contextLines := 5 // 默认上下文行数
-	if contextStr, ok := args["context_lines"]; ok && contextStr != "" {
-		ctx, err := strconv.Atoi(contextStr)
-		if err != nil {
-			return "", fmt.Errorf("invalid context_lines parameter: %w", err)
-		}
-		if ctx < 0 {
-			return "", fmt.Errorf("context_lines must be non-negative")
-		}
-		contextLines = ctx
+	contextLines := ToolArgsValue(args, "context_lines", 5) // 默认上下文行数
+	if contextLines < 0 {
+		return "", fmt.Errorf("context_lines must be non-negative")
 	}
 
 	// 解析是否区分大小写
-	caseSensitive := false
-	if caseStr, ok := args["case_sensitive"]; ok && caseStr != "" {
-		if caseStr == "true" || caseStr == "1" {
-			caseSensitive = true
-		}
-	}
+	caseSensitive := ToolArgsValue(args, "case_sensitive", false)
 
 	// 解析最大匹配数
-	maxMatches := 0 // 0表示无限制
-	if maxStr, ok := args["max_matches"]; ok && maxStr != "" {
-		max, err := strconv.Atoi(maxStr)
-		if err != nil {
-			return "", fmt.Errorf("invalid max_matches parameter: %w", err)
-		}
-		if max < 0 {
-			return "", fmt.Errorf("max_matches must be non-negative")
-		}
-		maxMatches = max
+	maxMatches := ToolArgsValue(args, "max_matches", 0) // 0表示无限制
+	if maxMatches < 0 {
+		return "", fmt.Errorf("max_matches must be non-negative")
 	}
 
 	// 读取文件

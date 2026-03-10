@@ -34,16 +34,13 @@ func init() {
 }
 
 // handleGitCommit git提交
-func handleGitCommit(ctx context.Context, args map[string]string) (string, error) {
-	message, ok := args["message"]
-	if !ok {
+func handleGitCommit(ctx context.Context, args ToolArgs) (string, error) {
+	message := ToolArgsValue(args, "message", "")
+	if message == "" {
 		return "", fmt.Errorf("no message specified")
 	}
 
-	options, ok := args["options"]
-	if !ok {
-		options = ""
-	}
+	options := ToolArgsValue(args, "options", "")
 
 	// 显示操作标题
 	PrintGitSection("提交更改")

@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 )
 
@@ -79,19 +78,14 @@ func ListIssues(state string) ([]Issue, error) {
 }
 
 // ShowIssue 显示单个issue详情
-func ShowIssue(number string) (*Issue, error) {
+func ShowIssue(number int) (*Issue, error) {
 	config, err := GetIssueConfig()
 	if err != nil {
 		return nil, err
 	}
 
-	// 验证参数
-	if _, err := strconv.Atoi(number); err != nil {
-		return nil, fmt.Errorf("issue编号必须是数字，收到: %s", number)
-	}
-
 	// 构建URL
-	url := fmt.Sprintf("%s/%s?access_token=%s", config.BaseURL, number, config.Token)
+	url := fmt.Sprintf("%s/%d?access_token=%s", config.BaseURL, number, config.Token)
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("请求issue失败: %w", err)
@@ -207,14 +201,14 @@ func CreateIssue(opts CreateIssueOptions) (*Issue, error) {
 }
 
 type UpdateIssueOptions struct {
-	Number string
+	Number int
 	Title  string
 	Body   string
 	State  string
 }
 
 func UpdateIssue(opts UpdateIssueOptions) (*Issue, error) {
-	if opts.Number == "" {
+	if opts.Number == 0 {
 		return nil, fmt.Errorf("必须提供issue编号")
 	}
 
@@ -258,7 +252,7 @@ func UpdateIssue(opts UpdateIssueOptions) (*Issue, error) {
 	}
 
 	// 发送PATCH请求
-	url := fmt.Sprintf("%s/%s?access_token=%s", config.BaseURL, opts.Number, config.Token)
+	url := fmt.Sprintf("%s/%d?access_token=%s", config.BaseURL, opts.Number, config.Token)
 	req, err := http.NewRequest("PATCH", url, strings.NewReader(string(jsonData)))
 	if err != nil {
 		return nil, fmt.Errorf("创建请求失败: %w", err)
@@ -305,7 +299,7 @@ func UpdateIssue(opts UpdateIssueOptions) (*Issue, error) {
 }
 
 // CloseIssue 关闭issue
-func CloseIssue(number string) (*Issue, error) {
+func CloseIssue(number int) (*Issue, error) {
 	return UpdateIssue(UpdateIssueOptions{
 		Number: number,
 		State:  "closed",
@@ -313,7 +307,7 @@ func CloseIssue(number string) (*Issue, error) {
 }
 
 // ReopenIssue 重新打开issue
-func ReopenIssue(number string) (*Issue, error) {
+func ReopenIssue(number int) (*Issue, error) {
 	return UpdateIssue(UpdateIssueOptions{
 		Number: number,
 		State:  "open",
@@ -321,8 +315,8 @@ func ReopenIssue(number string) (*Issue, error) {
 }
 
 // AssignIssue 分配issue给用户
-func AssignIssue(number, username string) (*Issue, error) {
-	if number == "" {
+func AssignIssue(number int, username string) (*Issue, error) {
+	if number == 0 {
 		return nil, fmt.Errorf("必须提供issue编号")
 	}
 	if username == "" {
@@ -346,7 +340,7 @@ func AssignIssue(number, username string) (*Issue, error) {
 	}
 
 	// 发送PUT请求（GitLab API使用PUT来更新assignee）
-	url := fmt.Sprintf("%s/%s?access_token=%s", config.BaseURL, number, config.Token)
+	url := fmt.Sprintf("%s/%d?access_token=%s", config.BaseURL, number, config.Token)
 	req, err := http.NewRequest("PUT", url, strings.NewReader(string(jsonData)))
 	if err != nil {
 		return nil, fmt.Errorf("创建请求失败: %w", err)

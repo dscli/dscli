@@ -48,7 +48,7 @@ dscli 提供了丰富的工具集，帮助AI助手与开发环境进行交互。
 ```json
 {
   "path": "main.go",
-  "start_line": "10",
+  "start_line": 10,
   "end_line": "20"
 }
 ```
@@ -66,8 +66,8 @@ dscli 提供了丰富的工具集，帮助AI助手与开发环境进行交互。
 ```json
 {
   "path": "file.txt",
-  "start_line": "5",
-  "end_line": "10",
+  "start_line": 5,
+  "end_line": 10,
   "content": "新内容"
 }
 ```

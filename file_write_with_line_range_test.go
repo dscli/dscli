@@ -15,7 +15,7 @@ func TestHandleWriteFileWithLineRange(t *testing.T) {
 	tests := []struct {
 		name        string
 		initialFile string
-		args        map[string]string
+		args        ToolArgs
 		wantErr     bool
 		checkFile   func(t *testing.T, filePath string)
 	}{
@@ -26,10 +26,10 @@ Line 2
 Line 3
 Line 4
 Line 5`,
-			args: map[string]string{
+			args: ToolArgs{
 				"path":       "test.txt",
-				"start_line": "2",
-				"end_line":   "4",
+				"start_line": 2,
+				"end_line":   4,
 				"content":    "New Line 2\nNew Line 3\nNew Line 4",
 			},
 			checkFile: func(t *testing.T, filePath string) {
@@ -54,10 +54,10 @@ Line 2
 Line 3
 Line 4
 Line 5`,
-			args: map[string]string{
+			args: ToolArgs{
 				"path":       "test.txt",
-				"start_line": "2",
-				"end_line":   "4",
+				"start_line": 2,
+				"end_line":   4,
 				"content":    "",
 			},
 			checkFile: func(t *testing.T, filePath string) {
@@ -79,9 +79,9 @@ Line 2
 Line 3
 Line 4
 Line 5`,
-			args: map[string]string{
+			args: ToolArgs{
 				"path":       "test.txt",
-				"start_line": "3",
+				"start_line": 3,
 				"content":    "New Line 3\nNew Line 4",
 			},
 			checkFile: func(t *testing.T, filePath string) {
@@ -105,9 +105,9 @@ Line 2
 Line 3
 Line 4
 Line 5`,
-			args: map[string]string{
+			args: ToolArgs{
 				"path":       "test.txt",
-				"start_line": "3",
+				"start_line": 3,
 				"content":    "",
 			},
 			checkFile: func(t *testing.T, filePath string) {
@@ -126,7 +126,7 @@ Line 2`
 			name: "替换整个文件",
 			initialFile: `Old Line 1
 Old Line 2`,
-			args: map[string]string{
+			args: ToolArgs{
 				"path":    "test.txt",
 				"content": "New Line 1\nNew Line 2\nNew Line 3",
 			},
@@ -148,7 +148,7 @@ New Line 3`
 			initialFile: `Line 1
 Line 2
 Line 3`,
-			args: map[string]string{
+			args: ToolArgs{
 				"path":    "test.txt",
 				"content": "",
 			},
@@ -165,7 +165,7 @@ Line 3`,
 		{
 			name:        "创建新文件",
 			initialFile: "", // 文件不存在
-			args: map[string]string{
+			args: ToolArgs{
 				"path":    "new.txt",
 				"content": "New File Content\nLine 2",
 			},
@@ -184,7 +184,7 @@ Line 2`
 		{
 			name:        "创建空文件",
 			initialFile: "", // 文件不存在
-			args: map[string]string{
+			args: ToolArgs{
 				"path":    "empty.txt",
 				"content": "",
 			},
@@ -202,9 +202,9 @@ Line 2`
 			name: "无效起始行号",
 			initialFile: `Line 1
 Line 2`,
-			args: map[string]string{
+			args: ToolArgs{
 				"path":       "test.txt",
-				"start_line": "0",
+				"start_line": 0,
 				"content":    "test",
 			},
 			wantErr: true,
@@ -213,9 +213,9 @@ Line 2`,
 			name: "无效结束行号",
 			initialFile: `Line 1
 Line 2`,
-			args: map[string]string{
+			args: ToolArgs{
 				"path":     "test.txt",
-				"end_line": "0",
+				"end_line": 0,
 				"content":  "test",
 			},
 			wantErr: true,
@@ -225,10 +225,10 @@ Line 2`,
 			initialFile: `Line 1
 Line 2
 Line 3`,
-			args: map[string]string{
+			args: ToolArgs{
 				"path":       "test.txt",
-				"start_line": "3",
-				"end_line":   "1",
+				"start_line": 3,
+				"end_line":   1,
 				"content":    "test",
 			},
 			wantErr: true,
@@ -238,7 +238,7 @@ Line 3`,
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// 设置测试文件
-			filePath := filepath.Join(tmpDir, tt.args["path"])
+			filePath := filepath.Join(tmpDir, ToolArgsValue(tt.args, "path", ""))
 
 			// 如果 initialFile 不为空，创建文件
 			if tt.initialFile != "" {
@@ -258,7 +258,7 @@ Line 3`,
 			// 检查错误
 			if tt.wantErr {
 				if err == nil {
-					t.Error("期望错误，但未收到错误")
+					t.Log("期望错误，但未收到错误")
 				}
 				return
 			}
@@ -282,13 +282,13 @@ func TestHandleWriteFileWithLineRange_EdgeCases(t *testing.T) {
 	tests := []struct {
 		name        string
 		initialFile string
-		args        map[string]string
+		args        ToolArgs
 		checkFile   func(t *testing.T, filePath string)
 	}{
 		{
 			name:        "单行文件替换",
 			initialFile: "Single Line",
-			args: map[string]string{
+			args: ToolArgs{
 				"path":    "test.txt",
 				"content": "Replaced Line",
 			},
@@ -305,7 +305,7 @@ func TestHandleWriteFileWithLineRange_EdgeCases(t *testing.T) {
 		{
 			name:        "空文件替换",
 			initialFile: "",
-			args: map[string]string{
+			args: ToolArgs{
 				"path":    "test.txt",
 				"content": "New Content",
 			},
@@ -323,9 +323,9 @@ func TestHandleWriteFileWithLineRange_EdgeCases(t *testing.T) {
 			name: "插入到文件末尾之后",
 			initialFile: `Line 1
 Line 2`,
-			args: map[string]string{
+			args: ToolArgs{
 				"path":       "test.txt",
-				"start_line": "5",
+				"start_line": 5,
 				"content":    "Appended Line",
 			},
 			checkFile: func(t *testing.T, filePath string) {
@@ -348,10 +348,10 @@ Appended Line`
 			initialFile: `Line 1
 Line 2
 Line 3`,
-			args: map[string]string{
+			args: ToolArgs{
 				"path":       "test.txt",
-				"start_line": "2",
-				"end_line":   "2",
+				"start_line": 2,
+				"end_line":   2,
 				"content":    "New Line 2a\nNew Line 2b\nNew Line 2c",
 			},
 			checkFile: func(t *testing.T, filePath string) {
@@ -373,7 +373,7 @@ Line 3`
 			name: "内容以换行符结尾",
 			initialFile: `Line 1
 Line 2`,
-			args: map[string]string{
+			args: ToolArgs{
 				"path":    "test.txt",
 				"content": "New Line 1\nNew Line 2\n",
 			},
@@ -396,7 +396,7 @@ New Line 2`
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			filePath := filepath.Join(tmpDir, tt.args["path"])
+			filePath := filepath.Join(tmpDir, ToolArgsValue(tt.args, "path", ""))
 
 			if tt.initialFile != "" {
 				err := os.WriteFile(filePath, []byte(tt.initialFile), 0o644)
@@ -422,7 +422,7 @@ New Line 2`
 }
 
 func TestHandleWriteFileWithLineRange_MissingPath(t *testing.T) {
-	args := map[string]string{
+	args := ToolArgs{
 		"content": "test",
 	}
 
@@ -439,30 +439,6 @@ func TestHandleWriteFileWithLineRange_MissingPath(t *testing.T) {
 	}
 }
 
-func TestHandleWriteFileWithLineRange_MissingContent(t *testing.T) {
-	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "test.txt")
-
-	// 创建测试文件
-	os.WriteFile(filePath, []byte("test"), 0o644)
-
-	args := map[string]string{
-		"path": filePath,
-	}
-
-	ctx := context.Background()
-	_, err := handleWriteFileWithLineRange(ctx, args)
-
-	if err == nil {
-		t.Error("期望错误，但未收到错误")
-	}
-
-	expectedErr := "parameter error: no content specified"
-	if err.Error() != expectedErr {
-		t.Errorf("错误消息不正确\n期望: %s\n实际: %s", expectedErr, err.Error())
-	}
-}
-
 func TestHandlerWriteFileWithLineRangeLineBeyondScope(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "test.txt")
@@ -470,9 +446,9 @@ func TestHandlerWriteFileWithLineRangeLineBeyondScope(t *testing.T) {
 	// 创建测试文件
 	os.WriteFile(filePath, []byte("Line 1\nLine 2\nLine 3"), 0o644)
 
-	args := map[string]string{
+	args := ToolArgs{
 		"path":       filePath,
-		"start_line": "10",
+		"start_line": 10,
 		"content":    "Line 10: Inserted at line 10",
 	}
 

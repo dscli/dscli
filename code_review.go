@@ -59,10 +59,8 @@ func init() {
 }
 
 // handleCodeReview 处理代码审查工具调用
-// handleCodeReview 处理代码审查工具调用
-// handleCodeReview 处理代码审查工具调用
-func handleCodeReview(ctx context.Context, args map[string]string) (reply string, err error) {
-	summary := args["summary"]
+func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err error) {
+	summary := ToolArgsValue(args, "summary", "")
 
 	// 输出审查日志
 	Println("🔍 正在请求专家进行代码审查...")

@@ -35,17 +35,10 @@ func init() {
 // handleGitFormatPatch 生成指定commit的patch格式描述
 // 支持参数：
 //
-//	commit: 指定commit哈希或-n格式（如-1表示最新提交），默认为"-1"
-//	stdout: 是否输出到标准输出，默认为true（实际总是输出到stdout）
-//
-// handleGitFormatPatch 生成指定commit的patch格式描述
-// 支持参数：
-//
-//	commit: 指定commit哈希或-n格式（如-1表示最新提交），默认为"-1"
-//	stdout: 是否输出到标准输出，默认为true（实际总是输出到stdout）
-func handleGitFormatPatch(ctx context.Context, args map[string]string) (string, error) {
+//	revision: 指定commit哈希或-n格式（如-1表示最新提交），默认为"-1"
+func handleGitFormatPatch(ctx context.Context, args ToolArgs) (string, error) {
 	// 获取revision参数，默认为"-1"（最新提交）
-	revision := args["revision"]
+	revision := ToolArgsValue(args, "revision", "")
 
 	// 显示操作标题
 	PrintGitSection("生成Patch")

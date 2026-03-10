@@ -27,11 +27,8 @@ func init() {
 }
 
 // handleGitDiff git差异
-func handleGitDiff(ctx context.Context, args map[string]string) (string, error) {
-	path, ok := args["path"]
-	if !ok {
-		path = ""
-	}
+func handleGitDiff(ctx context.Context, args ToolArgs) (string, error) {
+	path := ToolArgsValue(args, "path", "")
 	path = strings.TrimSpace(path)
 
 	// 显示操作标题

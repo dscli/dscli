@@ -49,12 +49,8 @@ func init() {
 }
 
 // handlePython 执行Python脚本
-func handlePython(ctx context.Context, args map[string]string) (out string, err error) {
-	script, ok := args["script"]
-	if !ok {
-		script = ""
-	}
-
+func handlePython(ctx context.Context, args ToolArgs) (out string, err error) {
+	script := ToolArgsValue(args, "script", "")
 	// 检查危险命令（Python脚本也可能包含shell命令）
 	if err := checkDangerousCommands(script); err != nil {
 		return "", err

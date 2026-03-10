@@ -20,9 +20,9 @@ var webClient = &http.Client{
 }
 
 // handleWebReader 读取网页内容
-func handleWebReader(ctx context.Context, args map[string]string) (string, error) {
-	url, ok := args["url"]
-	if !ok || url == "" {
+func handleWebReader(ctx context.Context, args ToolArgs) (string, error) {
+	url := ToolArgsValue(args, "url", "")
+	if url == "" {
 		return "", fmt.Errorf("no URL or empty URL specified")
 	}
 

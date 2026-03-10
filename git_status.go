@@ -22,8 +22,7 @@ func init() {
 }
 
 // handleGitStatus git状态
-// handleGitStatus git状态
-func handleGitStatus(ctx context.Context, args map[string]string) (string, error) {
+func handleGitStatus(ctx context.Context, args ToolArgs) (string, error) {
 	// 显示操作标题
 	PrintGitSection("仓库状态")
 

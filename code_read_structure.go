@@ -166,9 +166,9 @@ func init() {
 	})
 }
 
-func handleReadCodeStructure(ctx context.Context, args map[string]string) (string, error) {
-	path, ok := args["path"]
-	if !ok {
+func handleReadCodeStructure(ctx context.Context, args ToolArgs) (string, error) {
+	path := ToolArgsValue(args, "path", "")
+	if path == "" {
 		return "", fmt.Errorf("参数 'path' 缺失")
 	}
 	Printf("查看%s文件结构体定义\n", path)

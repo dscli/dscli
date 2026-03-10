@@ -29,7 +29,7 @@ func init() {
 }
 
 // HandleSystemPrompt 处理系统提示词工具调用
-func HandleSystemPrompt(ctx context.Context, args map[string]string) (reply string, err error) {
+func HandleSystemPrompt(ctx context.Context, args ToolArgs) (reply string, err error) {
 	// 获取系统提示词
 	prompt := GetSystemPrompt(ctx)
 

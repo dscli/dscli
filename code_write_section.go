@@ -265,28 +265,24 @@ func init() {
 	})
 }
 
-func handleWriteCodeSection(ctx context.Context, args map[string]string) (string, error) {
-	path, ok := args["path"]
-	if !ok {
+func handleWriteCodeSection(ctx context.Context, args ToolArgs) (string, error) {
+	path := ToolArgsValue(args, "path", "")
+	if path == "" {
 		return "", fmt.Errorf("参数 'path' 缺失")
 	}
-	selector, ok := args["selector"]
-	if !ok {
+
+	// selector, ok := args["selector"]
+	selector := ToolArgsValue(args, "selector", "")
+	if selector == "" {
 		return "", fmt.Errorf("参数 'selector' 缺失")
 	}
-	newContent, ok := args["new_content"]
-	if !ok {
+	newContent := ToolArgsValue(args, "new_content", "")
+	if newContent == "" {
 		return "", fmt.Errorf("参数 'new_content' 缺失")
 	}
 
 	// 解析dry_run参数
-	dryRun := false
-	if dryRunStr, ok := args["dry_run"]; ok {
-		if dryRunStr == "true" || dryRunStr == "1" {
-			dryRun = true
-		}
-	}
-
+	dryRun := ToolArgsValue(args, "dry_run", false)
 	PrintWriteSession(path, selector, dryRun)
 
 	return writeCodeSection(path, selector, newContent, dryRun)

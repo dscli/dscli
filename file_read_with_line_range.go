@@ -29,9 +29,9 @@ func init() {
 
 示例：
   # 显示所有行：read_file_with_line_range(path="file.txt")
-  # 显示单行：read_file_with_line_range(path="file.txt", start_line="3", end_line="3")
-  # 显示范围：read_file_with_line_range(path="file.txt", start_line="10", end_line="20")
-  # 从某行到末尾：read_file_with_line_range(path="file.txt", start_line="50")`,
+  # 显示单行：read_file_with_line_range(path="file.txt", start_line=3, end_line=3)
+  # 显示范围：read_file_with_line_range(path="file.txt", start_line=10, end_line=20)
+  # 从某行到末尾：read_file_with_line_range(path="file.txt", start_line=50)`,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -58,9 +58,9 @@ func init() {
 
 // handleReadFileWithLineRange 读取文件指定行范围的内容
 // 输出格式与 awk 'NR>=start && NR<=end {print NR": "$0}' 完全一致
-func handleReadFileWithLineRange(_ context.Context, args map[string]string) (string, error) {
-	path, ok := args["path"]
-	if !ok || path == "" {
+func handleReadFileWithLineRange(_ context.Context, args ToolArgs) (string, error) {
+	path := ToolArgsValue(args, "path", "")
+	if path == "" {
 		return "", fmt.Errorf("parameter error: no path specified")
 	}
 

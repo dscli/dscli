@@ -205,13 +205,13 @@ func init() {
 	})
 }
 
-func handleReadCodeSection(ctx context.Context, args map[string]string) (string, error) {
-	path, ok := args["path"]
-	if !ok {
+func handleReadCodeSection(ctx context.Context, args ToolArgs) (string, error) {
+	path := ToolArgsValue(args, "path", "")
+	if path == "" {
 		return "", fmt.Errorf("参数 'path' 缺失")
 	}
-	selector, ok := args["selector"]
-	if !ok {
+	selector := ToolArgsValue(args, "selector", "")
+	if selector == "" {
 		return "", fmt.Errorf("参数 'selector' 缺失")
 	}
 	Printf("读取%s文件代码片段%s\n", path, selector)

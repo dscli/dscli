@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 )
 
@@ -207,15 +206,15 @@ func init() {
 					"description": "搜索模式（字符串包含匹配）",
 				},
 				"context_lines": map[string]any{
-					"type":        "string",
+					"type":        "integer",
 					"description": "上下文行数（前后各N行），可选，默认5",
 				},
 				"case_sensitive": map[string]any{
-					"type":        "string",
+					"type":        "boolean",
 					"description": "是否区分大小写，可选，默认false",
 				},
 				"max_matches": map[string]any{
-					"type":        "string",
+					"type":        "integer",
 					"description": "最大匹配数，可选，默认无限制",
 				},
 			},
@@ -227,38 +226,20 @@ func init() {
 	})
 }
 
-func handleSearchCodeSemantic(ctx context.Context, args map[string]string) (string, error) {
-	path, ok := args["path"]
-	if !ok {
+func handleSearchCodeSemantic(ctx context.Context, args ToolArgs) (string, error) {
+	path := ToolArgsValue(args, "path", "")
+	if path == "" {
 		return "", fmt.Errorf("参数 'path' 缺失")
 	}
-
-	pattern, ok := args["pattern"]
-	if !ok {
+	pattern := ToolArgsValue(args, "pattern", "")
+	if pattern == "" {
 		return "", fmt.Errorf("参数 'pattern' 缺失")
 	}
 
 	// 解析可选参数
-	contextLines := 5
-	if contextLinesStr, ok := args["context_lines"]; ok {
-		if val, err := strconv.Atoi(contextLinesStr); err == nil && val > 0 {
-			contextLines = val
-		}
-	}
-
-	caseSensitive := false
-	if caseSensitiveStr, ok := args["case_sensitive"]; ok {
-		if caseSensitiveStr == "true" || caseSensitiveStr == "1" {
-			caseSensitive = true
-		}
-	}
-
-	maxMatches := 0 // 0表示无限制
-	if maxMatchesStr, ok := args["max_matches"]; ok {
-		if val, err := strconv.Atoi(maxMatchesStr); err == nil && val > 0 {
-			maxMatches = val
-		}
-	}
+	contextLines := ToolArgsValue(args, "context_lines", 5)
+	caseSensitive := ToolArgsValue(args, "case_sensitive", false)
+	maxMatches := ToolArgsValue(args, "max_matches", 0)
 	Printf("搜索文件%s中匹配指定模式%s的行", path, pattern)
 	return searchCodeSemantic(path, pattern, contextLines, caseSensitive, maxMatches)
 }

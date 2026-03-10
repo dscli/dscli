@@ -27,12 +27,8 @@ func init() {
 }
 
 // handleGitPush git push [options...]
-// handleGitPush git push [options...]
-func handleGitPush(ctx context.Context, args map[string]string) (string, error) {
-	options, ok := args["options"]
-	if !ok {
-		options = ""
-	}
+func handleGitPush(ctx context.Context, args ToolArgs) (string, error) {
+	options := ToolArgsValue(args, "options", "")
 	options = strings.TrimSpace(options)
 
 	// 显示操作标题

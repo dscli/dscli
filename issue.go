@@ -102,11 +102,8 @@ func formatTime(t time.Time) string {
 // ==================== Tool Calling 处理器 ====================
 
 // handleIssueList 处理issue列表查询（Tool Calling）
-func handleIssueList(ctx context.Context, args map[string]string) (string, error) {
-	state, ok := args["state"]
-	if !ok || state == "" {
-		state = "open"
-	}
+func handleIssueList(ctx context.Context, args ToolArgs) (string, error) {
+	state := ToolArgsValue(args, "state", "open")
 
 	// 验证状态参数
 	if state != "open" && state != "closed" && state != "all" {
@@ -166,15 +163,10 @@ func handleIssueList(ctx context.Context, args map[string]string) (string, error
 }
 
 // handleIssueShow 处理显示单个issue（Tool Calling）
-func handleIssueShow(ctx context.Context, args map[string]string) (string, error) {
-	number, ok := args["number"]
-	if !ok || number == "" {
+func handleIssueShow(ctx context.Context, args ToolArgs) (string, error) {
+	number := ToolArgsValue(args, "number", 0)
+	if number == 0 {
 		return "", fmt.Errorf("必须提供issue编号")
-	}
-
-	// 验证参数
-	if _, err := strconv.Atoi(number); err != nil {
-		return "", fmt.Errorf("issue编号必须是数字，收到: %s", number)
 	}
 
 	issue, err := ShowIssue(number)
@@ -236,16 +228,13 @@ func handleIssueShow(ctx context.Context, args map[string]string) (string, error
 }
 
 // handleIssueCreate 处理创建issue（Tool Calling）
-func handleIssueCreate(ctx context.Context, args map[string]string) (string, error) {
-	title, ok := args["title"]
-	if !ok || title == "" {
+func handleIssueCreate(ctx context.Context, args ToolArgs) (string, error) {
+	title := ToolArgsValue(args, "title", "")
+	if title == "" {
 		return "", fmt.Errorf("必须提供标题")
 	}
 
-	body, ok := args["body"]
-	if !ok {
-		body = ""
-	}
+	body := ToolArgsValue(args, "body", "")
 
 	issue, err := CreateIssue(CreateIssueOptions{
 		Title: title,
@@ -282,23 +271,23 @@ func handleIssueCreate(ctx context.Context, args map[string]string) (string, err
 }
 
 // handleIssueUpdate 处理更新issue（Tool Calling）
-func handleIssueUpdate(ctx context.Context, args map[string]string) (string, error) {
-	number, ok := args["number"]
-	if !ok || number == "" {
+func handleIssueUpdate(ctx context.Context, args ToolArgs) (string, error) {
+	number := ToolArgsValue(args, "number", 0)
+	if number == 0 {
 		return "", fmt.Errorf("必须提供issue编号")
 	}
 
 	// 验证至少提供了一个更新字段
-	title, hasTitle := args["title"]
-	body, hasBody := args["body"]
-	state, hasState := args["state"]
+	title := ToolArgsValue(args, "title", "")
+	body := ToolArgsValue(args, "body", "")
+	state := ToolArgsValue(args, "state", "")
 
-	if !hasTitle && !hasBody && !hasState {
+	if title == "" && body == "" && state == "" {
 		return "", fmt.Errorf("必须提供至少一个更新字段（title, body 或 state）")
 	}
 
 	// 验证状态参数
-	if hasState && state != "" && state != "open" && state != "closed" {
+	if state != "" && state != "open" && state != "closed" {
 		return "", fmt.Errorf("状态必须是 'open' 或 'closed'，收到: %s", state)
 	}
 
@@ -325,13 +314,13 @@ func handleIssueUpdate(ctx context.Context, args map[string]string) (string, err
 	result.WriteString(fmt.Sprintf("State:      %s\n", issue.State))
 	result.WriteString(fmt.Sprintf("Updated:    %s\n", formatTime(issue.UpdatedAt)))
 
-	if hasTitle && title != "" {
+	if title != "" {
 		result.WriteString(fmt.Sprintf("标题已更新\n"))
 	}
-	if hasBody && body != "" {
+	if body != "" {
 		result.WriteString(fmt.Sprintf("内容已更新\n"))
 	}
-	if hasState && state != "" {
+	if state != "" {
 		result.WriteString(fmt.Sprintf("状态已更新为: %s\n", state))
 	}
 
@@ -341,9 +330,9 @@ func handleIssueUpdate(ctx context.Context, args map[string]string) (string, err
 }
 
 // handleIssueClose 处理关闭issue（Tool Calling）
-func handleIssueClose(ctx context.Context, args map[string]string) (string, error) {
-	number, ok := args["number"]
-	if !ok || number == "" {
+func handleIssueClose(ctx context.Context, args ToolArgs) (string, error) {
+	number := ToolArgsValue(args, "number", 0)
+	if number == 0 {
 		return "", fmt.Errorf("必须提供issue编号")
 	}
 
@@ -356,9 +345,9 @@ func handleIssueClose(ctx context.Context, args map[string]string) (string, erro
 }
 
 // handleIssueReopen 处理重新打开issue（Tool Calling）
-func handleIssueReopen(ctx context.Context, args map[string]string) (string, error) {
-	number, ok := args["number"]
-	if !ok || number == "" {
+func handleIssueReopen(ctx context.Context, args ToolArgs) (string, error) {
+	number := ToolArgsValue(args, "number", 0)
+	if number == 0 {
 		return "", fmt.Errorf("必须提供issue编号")
 	}
 
@@ -371,14 +360,14 @@ func handleIssueReopen(ctx context.Context, args map[string]string) (string, err
 }
 
 // handleIssueAssign 处理分配issue（Tool Calling）
-func handleIssueAssign(ctx context.Context, args map[string]string) (string, error) {
-	number, ok := args["number"]
-	if !ok || number == "" {
+func handleIssueAssign(ctx context.Context, args ToolArgs) (string, error) {
+	number := ToolArgsValue(args, "number", 0)
+	if number == 0 {
 		return "", fmt.Errorf("必须提供issue编号")
 	}
 
-	username, ok := args["username"]
-	if !ok || username == "" {
+	username := ToolArgsValue(args, "username", "")
+	if username == "" {
 		return "", fmt.Errorf("必须提供用户名")
 	}
 
@@ -423,7 +412,7 @@ func init() {
 			"type": "object",
 			"properties": map[string]any{
 				"number": map[string]any{
-					"type":        "string",
+					"type":        "integer",
 					"description": "issue编号，必须是数字",
 				},
 			},
@@ -673,7 +662,7 @@ func init() {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
-			issueNumber := args[0]
+			issueNumber, _ := strconv.Atoi(args[0])
 			issue, err := ShowIssue(issueNumber)
 			if err != nil {
 				return err
@@ -789,7 +778,7 @@ func init() {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			issueNumber := args[0]
+			issueNumber, _ := strconv.Atoi(args[0])
 
 			// 获取内容
 			var body string
@@ -847,7 +836,7 @@ func init() {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			issueNumber := args[0]
+			issueNumber, _ := strconv.Atoi(args[0])
 			issue, err := CloseIssue(issueNumber)
 			if err != nil {
 				return err
@@ -879,7 +868,7 @@ func init() {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			issueNumber := args[0]
+			issueNumber, _ := strconv.Atoi(args[0])
 			issue, err := ReopenIssue(issueNumber)
 			if err != nil {
 				return err
@@ -911,7 +900,7 @@ func init() {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			issueNumber := args[0]
+			issueNumber, _ := strconv.Atoi(args[0])
 			username := args[1]
 			issue, err := AssignIssue(issueNumber, username)
 			if err != nil {
