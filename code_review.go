@@ -74,7 +74,8 @@ func handleCodeReview(ctx context.Context, args map[string]string) (reply string
 	if strings.Contains(status, "Changes not staged for commit") ||
 		strings.Contains(status, "Changes to be committed") ||
 		(status != "" && !strings.Contains(status, "nothing to commit")) {
-		Println("⚠️  检测到未提交的更改，建议先提交再审查")
+		Println("❌ 检测到未提交的更改")
+		return "", fmt.Errorf("检测到未提交的更改，请先提交所有更改再审查。当前状态：\n%s", status)
 	}
 
 	// 获取最新的提交信息
