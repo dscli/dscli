@@ -60,21 +60,21 @@ func initDatabase(db *sql.DB) error {
 	// 1. 创建表
 	for _, query := range tableSchemas {
 		if _, err := db.Exec(query); err != nil {
-			return fmt.Errorf("创建表失败: %w\nSQL: %s", err, query[:100])
+			return fmt.Errorf("创建表失败: %w\nSQL: %s", err, query)
 		}
 	}
 
 	// 2. 创建索引
 	for _, query := range indexSchemas {
 		if _, err := db.Exec(query); err != nil {
-			return fmt.Errorf("创建索引失败: %w\nSQL: %s", err, query[:100])
+			return fmt.Errorf("创建索引失败: %w\nSQL: %s", err, query)
 		}
 	}
 
 	// 3. 执行升级脚本
 	for _, query := range upgradeSchemas {
 		if _, err := db.Exec(query); err == nil {
-			Debug("升级完成: %s\n", query[:50])
+			Debug("升级完成: %s\n", query)
 		}
 	}
 

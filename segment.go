@@ -66,6 +66,7 @@ func init() {
 			FOREIGN KEY (domain_id) REFERENCES domains(id) ON DELETE CASCADE,
 			UNIQUE(project_path)
 		)`,
+		``,
 	)
 
 	// 注册索引
@@ -74,12 +75,14 @@ func init() {
 		ON prompt_segments(domain_id, model_id, sort_order) WHERE enabled = true`,
 		`CREATE INDEX IF NOT EXISTS idx_prompt_segments_enabled 
 		ON prompt_segments(enabled, sort_order)`,
-		`CREATE INDEX IF NOT EXISTS idx_project_domains_path
-		ON project_domains(project_path)`,
 	)
 
 	// 注册升级脚本
 	RegisterUpgradeSchema(
+		`DROP INDEX IF EXISTS idx_project_domains_root`,
+		`ALERT TABLE project_domains RENAME COLUMN project_root TO project_path`,
+		`CREATE INDEX IF NOT EXISTS idx_project_domains_path
+		ON project_domains(project_path)`,
 		`INSERT OR IGNORE INTO domains (id, name, description) VALUES 
 		(0, 'programming', '编程开发 - 代码编写、审查、调试等'),
 		(1, 'documentation', '文档写作 - 技术文档、用户手册、API文档等'),

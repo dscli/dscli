@@ -40,18 +40,18 @@ func HandleSystemPrompt(ctx context.Context, args map[string]string) (reply stri
 
 	// 1. 显示关键环境信息（简洁有用）
 	sb.WriteString("## 当前环境\n")
-	sb.WriteString(fmt.Sprintf("- 项目: %s\n", config.ProjectName))
-	sb.WriteString(fmt.Sprintf("- 目录: %s\n", config.WorkingDirectory))
-	sb.WriteString(fmt.Sprintf("- Git: %s @ %s\n", config.GitUserName, config.GitBranch))
-	sb.WriteString(fmt.Sprintf("- 时间: %s\n\n", config.CurrentDate))
+	fmt.Fprintf(&sb, "- 项目: %s\n", config.ProjectName)
+	fmt.Fprintf(&sb, "- 目录: %s\n", config.WorkingDirectory)
+	fmt.Fprintf(&sb, "- Git: %s @ %s\n", config.GitUserName, config.GitBranch)
+	fmt.Fprintf(&sb, "- 时间: %s\n\n", config.CurrentDate)
 
 	// 2. 显示提示词基本信息
 	lines := strings.Count(prompt, "\n") + 1
 	words := len(strings.Fields(prompt))
 	sb.WriteString("## 提示词信息\n")
-	sb.WriteString(fmt.Sprintf("- 长度: %d 字符\n", len(prompt)))
-	sb.WriteString(fmt.Sprintf("- 行数: %d 行\n", lines))
-	sb.WriteString(fmt.Sprintf("- 词数: %d 词\n\n", words))
+	fmt.Fprintf(&sb, "- 长度: %d 字符\n", len(prompt))
+	fmt.Fprintf(&sb, "- 行数: %d 行\n", lines)
+	fmt.Fprintf(&sb, "- 词数: %d 词\n\n", words)
 
 	// 3. 显示系统提示词内容
 	sb.WriteString("## 系统提示词内容\n")
