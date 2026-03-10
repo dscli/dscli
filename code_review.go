@@ -8,7 +8,10 @@ import (
 )
 
 // CodeReviewTool 代码审查工具定义
-Description: `对当前最新的Git提交进行代码审查，由专家提供改进建议。
+var CodeReviewTool = ToolDef{
+	Name:        "code_review",
+	DisplayName: "代码审查",
+	Description: `对当前最新的Git提交进行代码审查，由专家提供改进建议。
 
 参数说明：
 - summary: 可选，提供本次提交的背景说明，帮助专家理解上下文
@@ -36,6 +39,17 @@ Description: `对当前最新的Git提交进行代码审查，由专家提供改
 - 专家会看到完整的代码变更
 - 建议在push之前使用此工具
 - 确保所有更改都已提交，否则工具会返回错误`,
+	Parameters: map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"summary": map[string]any{
+				"type":        "string",
+				"description": "可选，提供本次提交的背景说明，帮助专家理解上下文",
+			},
+		},
+		"required": []string{},
+	},
+	Category: "git",
 	Timeout:  120 * time.Second, // 2分钟超时
 	Handler:  handleCodeReview,
 }
