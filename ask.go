@@ -12,21 +12,33 @@ var AskTool = ToolDef{
 	Name:        "ask",
 	DisplayName: "询问",
 	Description: `向 user 问需求，期望用户把需求澄清
-期望reasoner对自己方案审阅，给出建设性意见`,
+期望expert对自己方案审阅，给出建设性意见
+
+参数说明：
+- advisor: 要询问的对象，只能为 user 或 expert
+  * user - 用户（用于澄清需求、确认细节等）
+  * expert - 专家（用于技术咨询、方案审阅等）
+  * 注意：reasoner 已弃用，请使用 expert
+- content: 要询问的内容
+
+使用场景：
+1. 需求不明确时问 user
+2. 技术上有困难时问 expert
+3. 需要方案审阅时问 expert`,
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"advisor": map[string]any{
 				"type": "string",
-				"description": `要询问的对象，只能为 user 或 reasoner
-user - 用户
-reasoner - deepseek reasoner 大模型
-一般需求不明问 user，技术上不会问 reasoner，`,
+				"description": `要询问的对象，只能为 user 或 expert
+user - 用户（用于澄清需求、确认细节等）
+expert - 专家（用于技术咨询、方案审阅等）
+注意：reasoner 已弃用，请使用 expert`,
 			},
 
 			"content": map[string]any{
 				"type":        "string",
-				"description": "要询问的内容，比如",
+				"description": "要询问的内容",
 			},
 		},
 		"required": []string{"content", "advisor"},
@@ -47,16 +59,41 @@ func handleAsk(ctx context.Context, args map[string]string) (reply string, err e
 		return "", fmt.Errorf("内容不能为空")
 	}
 	advisor := args["advisor"]
-	if advisor != "reasoner" && advisor != "user" {
-		return "", fmt.Errorf("只能为user或reasoner")
+
+	// 参数标准化和向后兼容处理
+	advisorName := "用户"
+	switch strings.ToLower(advisor) {
+	case "user":
+		advisorName = "用户"
+	case "expert":
+		advisorName = "专家"
+	case "reasoner":
+		// 向后兼容：reasoner 映射到 expert
+		advisorName = "专家"
+		Println("⚠️  注意：参数 'reasoner' 已弃用，请使用 'expert'")
+	default:
+		return "", fmt.Errorf("advisor 只能为 user 或 expert (reasoner 已弃用)")
 	}
 
-	if advisor == "user" {
+	// 输出咨询日志
+	Println("📞 正在向", advisorName, "咨询...")
+
+	// 生成问题摘要（避免过长）
+	summary := content
+	if len(summary) > 100 {
+		summary = summary[:97] + "..."
+	}
+	Println("  问题摘要:", summary)
+
+	if advisor == "user" || strings.ToLower(advisor) == "user" {
 		reply, err = OpenEditor(content)
 		if err != nil {
+			Println("❌ 获取用户回答失败")
 			return "", fmt.Errorf("获取用户回答失败: %v", err)
 		}
+		Println("✅ 用户咨询完成")
 	} else {
+		// expert 或 reasoner（已映射到 expert）
 		eof := "EOFFOEOFEEFO"
 		for strings.Contains(content, eof) {
 			eof = Shuffle(eof)
@@ -69,7 +106,11 @@ dscli chat --no-color --model deepseek-reasoner <<`+eof+`
 		ctx = context.WithValue(ctx, ShellName, "/usr/bin/env")
 		ctx = context.WithValue(ctx, ShellArgs, []string{"bash"})
 		reply, err = ShellExec(ctx, script)
-		return
+		if err != nil {
+			Println("❌ 专家咨询失败")
+			return
+		}
+		Println("✅ 专家咨询完成")
 	}
 
 	return reply, nil
