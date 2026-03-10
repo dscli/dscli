@@ -53,6 +53,7 @@ func init() {
 }
 
 // handleAsk 处理提问工具调用
+// handleAsk 处理提问工具调用
 func handleAsk(ctx context.Context, args map[string]string) (reply string, err error) {
 	content := args["content"]
 	if content == "" {
@@ -91,6 +92,16 @@ func handleAsk(ctx context.Context, args map[string]string) (reply string, err e
 			Println("❌ 获取用户回答失败")
 			return "", fmt.Errorf("获取用户回答失败: %v", err)
 		}
+
+		// 显示用户回答摘要
+		if reply != "" {
+			replySummary := reply
+			if len(replySummary) > 100 {
+				replySummary = replySummary[:97] + "..."
+			}
+			Println("  用户回答摘要:", replySummary)
+		}
+
 		Println("✅ 用户咨询完成")
 	} else {
 		// expert 或 reasoner（已映射到 expert）
@@ -110,6 +121,34 @@ dscli chat --no-color --model deepseek-reasoner <<`+eof+`
 			Println("❌ 专家咨询失败")
 			return
 		}
+
+		// 显示专家回答摘要
+		if reply != "" {
+			// 清理回复中的多余空白和换行
+			cleanReply := strings.TrimSpace(reply)
+			// 取前几行作为摘要
+			lines := strings.Split(cleanReply, "\n")
+			expertSummary := ""
+			for i := 0; i < len(lines) && i < 3; i++ {
+				line := strings.TrimSpace(lines[i])
+				if line != "" {
+					if expertSummary != "" {
+						expertSummary += " "
+					}
+					expertSummary += line
+				}
+			}
+
+			// 如果摘要太长，截断
+			if len(expertSummary) > 150 {
+				expertSummary = expertSummary[:147] + "..."
+			}
+
+			if expertSummary != "" {
+				Println("  专家回答摘要:", expertSummary)
+			}
+		}
+
 		Println("✅ 专家咨询完成")
 	}
 
