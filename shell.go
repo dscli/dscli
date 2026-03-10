@@ -12,6 +12,27 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
+// ShellError 表示shell执行错误
+type ShellError struct {
+	ExitCode int
+	Command  string
+	Output   string
+	Err      error
+	Context  string
+}
+
+func (e *ShellError) Error() string {
+	if e.ExitCode == -1 {
+		return fmt.Sprintf("%s: %v\n命令: %s", e.Context, e.Err, e.Command)
+	}
+	return fmt.Sprintf("%s (退出码: %d): %v\n命令: %s\n输出: %s",
+		e.Context, e.ExitCode, e.Err, e.Command, e.Output)
+}
+
+func (e *ShellError) Unwrap() error {
+	return e.Err
+}
+
 func IsTesting() bool {
 	return strings.HasSuffix(os.Args[0], ".test")
 }
@@ -187,22 +208,18 @@ func ShellExec(ctx context.Context, script string) (out string, err error) {
 	}
 	arg, ok := ArrangeArgs(name, arg)
 	if !ok {
-		return "", fmt.Errorf("do not support %s %v", name, arg)
+		return "", fmt.Errorf("不支持的命令: %s %v", name, arg)
 	}
 
 	shellStdin := ContextValue(ctx, ShellStdin, io.Reader(os.Stdin))
 	r, w, err := os.Pipe()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("创建管道失败: %w", err)
 	}
 
+	// 使用defer确保资源清理
 	defer func() {
-		if r != nil {
-			r.Close()
-		}
-		if w != nil {
-			w.Close()
-		}
+		cleanupResources(r, w)
 	}()
 
 	if IsTesting() {
@@ -217,42 +234,104 @@ func ShellExec(ctx context.Context, script string) (out string, err error) {
 	subproc.Stdin = shellStdin
 	subproc.Env = append(os.Environ(), "InsideShellExec=1")
 	subproc.ExtraFiles = []*os.File{r}
+
+	// 记录命令摘要用于错误信息
+	cmdSummary := ShortenShellScript(script)
+	if cmdSummary == "" {
+		cmdSummary = script
+		if len(cmdSummary) > 50 {
+			cmdSummary = cmdSummary[:50] + "..."
+		}
+	}
+
 	err = subproc.Start()
 	if err != nil {
-		err = fmt.Errorf("failed to start %s: %w", name, err)
-		return
+		return "", &ShellError{
+			ExitCode: -1,
+			Command:  cmdSummary,
+			Output:   "",
+			Err:      fmt.Errorf("启动进程失败: %w", err),
+			Context:  "进程启动失败",
+		}
 	}
+
+	// 确保进程在函数结束时被清理
+	defer cleanupProcess(subproc)
+
 	_ = r.Close()
 	r = nil
 	_, err = io.WriteString(w, script)
 	if err != nil {
-		err = fmt.Errorf("failed to write stdin: %w", err)
-		return
+		return "", &ShellError{
+			ExitCode: -1,
+			Command:  cmdSummary,
+			Output:   "",
+			Err:      fmt.Errorf("写入脚本失败: %w", err),
+			Context:  "脚本输入失败",
+		}
 	}
 	_ = w.Close()
 	w = nil
-	if err != nil {
-		return
-	}
+
 	err = subproc.Wait()
 	out = buf.String()
 
 	// 检查是否被取消或超时
 	if ctx.Err() != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return out, fmt.Errorf("命令执行超时")
+			return out, &ShellError{
+				ExitCode: -1,
+				Command:  cmdSummary,
+				Output:   out,
+				Err:      fmt.Errorf("命令执行超时"),
+				Context:  "执行超时",
+			}
 		}
-		return out, fmt.Errorf("命令被取消: %w", ctx.Err())
+		return out, &ShellError{
+			ExitCode: -1,
+			Command:  cmdSummary,
+			Output:   out,
+			Err:      fmt.Errorf("命令被取消: %w", ctx.Err()),
+			Context:  "执行被取消",
+		}
 	}
 
 	if err != nil {
-		// 提供更详细的错误信息
-		exitErr, ok := err.(*exec.ExitError)
-		if ok {
-			return out, fmt.Errorf("命令执行失败 (退出码: %d): %s", exitErr.ExitCode(), exitErr.String())
+		exitCode := 1
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
 		}
-		return out, fmt.Errorf("命令执行失败: %w", err)
+
+		return out, &ShellError{
+			ExitCode: exitCode,
+			Command:  cmdSummary,
+			Output:   out,
+			Err:      err,
+			Context:  "命令执行失败",
+		}
 	}
 
 	return out, nil
+}
+
+// cleanupResources 清理管道资源
+func cleanupResources(r, w *os.File) {
+	if r != nil {
+		r.Close()
+	}
+	if w != nil {
+		w.Close()
+	}
+}
+
+// cleanupProcess 清理进程资源
+func cleanupProcess(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+
+	// 如果进程还在运行，尝试终止
+	if cmd.ProcessState == nil || !cmd.ProcessState.Exited() {
+		cmd.Process.Kill()
+	}
 }
