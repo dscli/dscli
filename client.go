@@ -24,7 +24,7 @@ type Client interface {
 	Models() (*ModelsResponse, error)
 	Balance() (*BalanceResponse, error)
 	FIM(ctx context.Context, prompt, suffix string, maxTokens int, temperature float64) (*FIMResponse, error)
-	Chat(ctx context.Context, messages []Message, tools []Tool) (*ChatResponse, error)
+	Chat(ctx context.Context, messages []Message, tools []Tool, stream bool) (*ChatResponse, error)
 }
 
 // httpClient 单例HTTP客户端，避免创建多个连接池
@@ -208,7 +208,7 @@ func (c *Deepseek) Balance() (*BalanceResponse, error) {
 }
 
 // Chat 发送聊天请求
-func (c *Deepseek) Chat(ctx context.Context, messages []Message, tools []Tool) (*ChatResponse, error) {
+func (c *Deepseek) Chat(ctx context.Context, messages []Message, tools []Tool, stream bool) (*ChatResponse, error) {
 	model := ContextValue(ctx, CurrentModelID, ModelDeepseekChat)
 	insideShellExec := ContextValue(ctx, InsideShellExec, false)
 	if insideShellExec {
@@ -227,7 +227,7 @@ func (c *Deepseek) Chat(ctx context.Context, messages []Message, tools []Tool) (
 		Model:    model,
 		Messages: messages,
 		Tools:    tools,
-		Stream:   false,
+		Stream:   stream,
 	}
 	var resp ChatResponse
 	err := c.doRequest("POST", "/chat/completions", req, &resp)

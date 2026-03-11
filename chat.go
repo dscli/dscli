@@ -51,6 +51,14 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 	ctx = context.WithValue(ctx, CurrentModelID, modelID)
+
+	// 获取stream标志
+	stream, err := cmd.Flags().GetBool("stream")
+	if err != nil {
+		return
+	}
+	ctx = context.WithValue(ctx, "streaming_enabled", stream)
+
 	sessionID, err := CreateOrGetSessionID()
 	if err != nil {
 		return
@@ -299,8 +307,16 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 	stories := make([]Message, 0, len(inputs)+1)
 	stories = append(stories, inputs...)
 
+	// 获取stream标志
+	stream := false
+	if streamVal := ctx.Value("streaming_enabled"); streamVal != nil {
+		if s, ok := streamVal.(bool); ok {
+			stream = s
+		}
+	}
+
 	var resp *ChatResponse
-	resp, err = DeepseekClient.Chat(ctx, messages, GetAllTools(ctx))
+	resp, err = DeepseekClient.Chat(ctx, messages, GetAllTools(ctx), stream)
 	if err != nil {
 		err = fmt.Errorf("聊天请求失败: %w", err)
 		return
@@ -360,4 +376,5 @@ func init() {
 	chatCmd.Flags().String("model", ModelDeepseekChat, "使用的模型名称")
 	chatCmd.Flags().Int("histsize", 8, "history size loaded")
 	chatCmd.Flags().String("input", "", "read content from input file or read content from stdin if input file empty")
+	chatCmd.Flags().Bool("stream", false, "启用流式输出（SSE）")
 }
