@@ -70,8 +70,8 @@ func handleGitAmend(ctx context.Context, args ToolArgs) (string, error) {
 
 	// 提取提交哈希（如果可能）
 	if strings.Contains(out, "[") && strings.Contains(out, "]") {
-		lines := strings.Split(out, "\n")
-		for _, line := range lines {
+		lines := strings.SplitSeq(out, "\n")
+		for line := range lines {
 			if strings.Contains(line, "[") && strings.Contains(line, "]") {
 				Success("提交修改成功: %s", strings.TrimSpace(line))
 				break
@@ -82,7 +82,6 @@ func handleGitAmend(ctx context.Context, args ToolArgs) (string, error) {
 	return out, nil
 }
 
-// checkAmendSafety 检查amend操作的安全性
 // checkAmendSafety 检查amend操作的安全性
 func checkAmendSafety(ctx context.Context) (bool, string) {
 	// 检查1：是否在git仓库中
@@ -99,9 +98,8 @@ func checkAmendSafety(ctx context.Context) (bool, string) {
 	// 检查3：是否已推送
 	if isCommitPushed(ctx) {
 		Error("⚠️  警告：当前提交可能已推送到远程仓库")
-		Error("   修改已推送的提交需要使用 git push --force-with-lease")
-		Error("   这可能会影响其他协作者，请谨慎操作")
-		return false, "当前提交已推送到远程仓库，修改需要强制推送"
+		Error("   已推送的提交不可修改！")
+		return false, "当前提交已推送到远程仓库，已推送提交不可修改"
 	}
 
 	return true, ""
@@ -133,8 +131,8 @@ func uncommittedChanges(ctx context.Context) (changes []string, err error) {
 	}
 
 	// 分割行
-	lines := strings.Split(out, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(out, "\n")
+	for line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

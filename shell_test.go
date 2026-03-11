@@ -35,6 +35,10 @@ func TestShebang(t *testing.T) {
 }
 
 func TestRunScriptShebang(t *testing.T) {
+	if os.Getenv("InsideShellExec") != "" {
+		t.SkipNow()
+	}
+
 	tcs := []struct {
 		script   string
 		expected string
@@ -247,6 +251,9 @@ func TestShortenShellScriptEdgeCases(t *testing.T) {
 }
 
 func TestShellExec(t *testing.T) {
+	if os.Getenv("InsideShellExec") != "" {
+		t.SkipNow()
+	}
 	tcs := []struct {
 		name   string
 		script string

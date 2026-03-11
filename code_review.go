@@ -72,10 +72,6 @@ func init() {
 func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err error) {
 	summary := ToolArgsValue(args, "summary", "")
 	testCommand := ToolArgsValue(args, "test_command", "go test ./...")
-
-	// 输出审查日志
-	Println("🔍 正在请求专家进行代码审查...")
-
 	// 获取Git状态，确保有提交可审查
 	statusScript := `git status --short`
 	ctx = context.Background()
@@ -87,7 +83,6 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 		Println("❌ 获取Git状态失败")
 		return "", fmt.Errorf("获取Git状态失败: %v", err)
 	}
-
 	// 检查是否有未提交的更改
 	if strings.Contains(status, "Changes not staged for commit") ||
 		strings.Contains(status, "Changes to be committed") ||
@@ -101,52 +96,51 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 	singleCommitScript := `git log --oneline @{u}..HEAD`
 	unpushedCommits, err := ShellExec(ctx, singleCommitScript)
 	if err != nil {
-		// 如果@{u}未设置，尝试其他方法
-		singleCommitScript = `git log --oneline origin/HEAD..HEAD 2>/dev/null || git log --oneline origin/main..HEAD 2>/dev/null || git log --oneline origin/master..HEAD 2>/dev/null || echo ""`
-		unpushedCommits, err = ShellExec(ctx, singleCommitScript)
-		if err != nil {
-			Println("⚠️  无法检查未push的提交，继续执行...")
-		}
+		err = fmt.Errorf("failed to check single commit: %w", err)
+		return
 	}
 
-	if strings.TrimSpace(unpushedCommits) != "" {
+	unpushedCommits = strings.TrimSpace(unpushedCommits)
+	if unpushedCommits == "" {
+		Println("📝 未发现未push的提交，不必代码审查")
+		reply = "No unpushed commits found, no need to do code review"
+		return
+	}
+
+	lines := strings.Split(unpushedCommits, "\n")
+	commitCount := len(lines)
+
+	// 如果有多个未push的提交，建议用户先rebase
+	if commitCount > 1 {
 		Println("❌ 检测到多个未push的提交")
-		lines := strings.Split(strings.TrimSpace(unpushedCommits), "\n")
-		commitCount := len(lines)
-		errorMsg := fmt.Sprintf("检测到%d个未push的提交，请先push所有提交再审查。\n", commitCount)
-		if commitCount <= 5 {
-			errorMsg += "未push的提交：\n" + unpushedCommits
-		} else {
-			errorMsg += fmt.Sprintf("前5个未push的提交：\n%s", strings.Join(lines[:5], "\n"))
-			errorMsg += fmt.Sprintf("\n... 还有%d个提交", commitCount-5)
+		return "", fmt.Errorf("more than 1 unpushed commit found")
+	}
+
+	Println("✅ 单一commit检查通过")
+	if testCommand == "" {
+		Println("❌ 无法进行单元测试")
+		err = fmt.Errorf("没有指定单元测试命令，无法进行代码审查")
+		return
+	}
+
+	Println("🔍 运行单元测试:", testCommand)
+	testOutput, err := ShellExec(ctx, testCommand)
+	if err != nil {
+		Println("❌ 单元测试未通过")
+		errorMsg := fmt.Sprintf("单元测试未通过，请修复测试后再审查。\n测试命令：%s\n", testCommand)
+		if testOutput != "" {
+			// 截断过长的输出
+			outputLines := strings.Split(testOutput, "\n")
+			if len(outputLines) > 20 {
+				errorMsg += "测试输出（前20行）：\n" + strings.Join(outputLines[:20], "\n")
+				errorMsg += fmt.Sprintf("\n... 还有%d行输出", len(outputLines)-20)
+			} else {
+				errorMsg += "测试输出：\n" + testOutput
+			}
 		}
 		return "", fmt.Errorf("%s", errorMsg)
 	}
-	Println("✅ 单一commit检查通过")
-
-	// 运行单元测试（如果test_command不为空）
-	if testCommand != "" {
-		Println("🔍 运行单元测试:", testCommand)
-		testOutput, err := ShellExec(ctx, testCommand)
-		if err != nil {
-			Println("❌ 单元测试未通过")
-			errorMsg := fmt.Sprintf("单元测试未通过，请修复测试后再审查。\n测试命令：%s\n", testCommand)
-			if testOutput != "" {
-				// 截断过长的输出
-				outputLines := strings.Split(testOutput, "\n")
-				if len(outputLines) > 20 {
-					errorMsg += "测试输出（前20行）：\n" + strings.Join(outputLines[:20], "\n")
-					errorMsg += fmt.Sprintf("\n... 还有%d行输出", len(outputLines)-20)
-				} else {
-					errorMsg += "测试输出：\n" + testOutput
-				}
-			}
-			return "", fmt.Errorf("%s", errorMsg)
-		}
-		Println("✅ 单元测试通过")
-	} else {
-		Println("⚠️  跳过单元测试检查")
-	}
+	Println("✅ 单元测试通过")
 
 	// 获取最新的提交信息
 	logScript := `git log --oneline -1`
@@ -184,6 +178,8 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 		return "", fmt.Errorf("生成patch失败: %v", err)
 	}
 
+	// 输出审查日志
+	Println("🔍 正在请求专家进行代码审查...")
 	// 构建结构化请求
 	structuredRequest := buildCodeReviewRequest(summary, fullLog, patch)
 
