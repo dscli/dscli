@@ -222,6 +222,52 @@ func RecordSkillUsage(skillID int64, projectPath string) error {
 	}
 
 	return nil
+// validateSkillID 验证skill_id参数
+func validateSkillID(skillID int64) error {
+	if skillID == -1 {
+		return nil // -1表示未提供，是有效的
+	}
+	if skillID <= 0 {
+		return fmt.Errorf("skill_id必须是正整数，当前值: %d", skillID)
+	}
+	if skillID > 1000000 {
+		return fmt.Errorf("skill_id不能超过1000000，当前值: %d", skillID)
+	}
+	return nil
+}
+
+// validateSkillName 验证skill_name参数
+func validateSkillName(skillName string) error {
+	skillName = strings.TrimSpace(skillName)
+	if skillName == "" {
+		return nil // 空字符串表示未提供，是有效的
+	}
+	if len(skillName) < 2 {
+		return fmt.Errorf("skill_name太短，至少2个字符")
+	}
+	if len(skillName) > 100 {
+		return fmt.Errorf("skill_name太长，最多100个字符")
+	}
+	// 检查是否包含非法字符
+	if strings.ContainsAny(skillName, "\x00\r\n\t") {
+		return fmt.Errorf("skill_name包含非法字符")
+	}
+	return nil
+}
+
+// safeAsyncRecordUsage 安全的异步记录技能使用
+func safeAsyncRecordUsage(skillID int64, projectPath string) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				Println("记录技能使用panic:", r)
+			}
+		}()
+		
+		if err := RecordSkillUsage(skillID, projectPath); err != nil {
+			Println("警告：记录技能使用失败:", err)
+		}
+	}()
 }
 
 // handleSkillTool 处理Skill工具调用
@@ -230,37 +276,29 @@ func handleSkillTool(ctx context.Context, args ToolArgs) (string, error) {
 	skillID := ToolArgsValue(args, "skill_id", int64(-1))
 	skillName := ToolArgsValue(args, "skill_name", "")
 
-	var err error
-
-	// 清理skill_name
-	skillName = strings.TrimSpace(skillName)
+	// 验证参数
+	if err := validateSkillID(skillID); err != nil {
+		return "", err
+	}
+	if err := validateSkillName(skillName); err != nil {
+		return "", err
+	}
 
 	// 验证参数组合
 	if skillID == -1 && skillName == "" {
 		return "", fmt.Errorf("必须提供skill_id或skill_name参数")
 	}
 
-	if skillID > 0 && skillName != "" {
+	// 参数冲突提示
+	if skillID != -1 && skillName != "" {
 		Println("提示：同时提供了skill_id和skill_name，优先使用skill_id")
 	}
 
-	// 验证skill_name长度
-	if skillName != "" {
-		if len(skillName) < 2 {
-			return "", fmt.Errorf("skill_name太短，至少2个字符")
-		}
-		if len(skillName) > 100 {
-			return "", fmt.Errorf("skill_name太长，最多100个字符")
-		}
-	}
-
-	if skillName == "" && skillID == 0 {
-		return "", fmt.Errorf("skill_name不能为空字符串")
-	}
-
+	// 获取技能
 	var skill *Skill
+	var err error
 
-	if skillID > 0 {
+	if skillID != -1 {
 		skill, err = GetSkill(skillID)
 	} else {
 		skill, err = GetSkillByName(skillName)
@@ -271,23 +309,19 @@ func handleSkillTool(ctx context.Context, args ToolArgs) (string, error) {
 	}
 
 	if skill == nil {
-		if skillID > 0 {
-			return "", fmt.Errorf("找不到ID为 %d 的技能，请检查技能ID是否正确", skillID)
-		} else {
-			// 提供更友好的建议
-			suggestion := ""
-			if strings.Contains(skillName, " ") {
-				suggestion = "（提示：技能名称中不要包含空格）"
-			}
-			return "", fmt.Errorf("找不到名称为 '%s' 的技能%s，请检查技能名称是否正确", skillName, suggestion)
+		if skillID != -1 {
+			return "", fmt.Errorf("找不到ID为 %d 的技能", skillID)
 		}
+		// 提供更友好的建议
+		suggestion := ""
+		if strings.Contains(skillName, " ") {
+			suggestion = "（提示：技能名称中不要包含空格）"
+		}
+		return "", fmt.Errorf("找不到名称为 '%s' 的技能%s", skillName, suggestion)
 	}
 
-	// 记录技能使用
-	if err := RecordSkillUsage(skill.ID, ProjectRoot); err != nil {
-		// 只记录日志，不中断操作
-		Println("警告：记录技能使用失败:", err)
-	}
+	// 异步记录技能使用
+	safeAsyncRecordUsage(skill.ID, ProjectRoot)
 
 	// 格式化输出
 	return formatSkillDetails(skill, true), nil
@@ -305,23 +339,31 @@ func init() {
 2. 通过名称获取：skill(skill_name="Go最佳实践")
 
 注意事项：
-- skill_id和skill_name至少提供一个
-- 如果同时提供，优先使用skill_id
-- 技能名称区分大小写
-- skill_id必须是正整数`,
+- skill_id和skill_name必须提供一个
+- skill_id必须是正整数（1-1000000）
+- skill_name长度2-100字符，区分大小写
+- 如果同时提供，优先使用skill_id`,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"skill_id": map[string]any{
 					"type":        "integer",
 					"description": "技能ID（正整数）",
+					"minimum":     1,
+					"maximum":     1000000,
 				},
 				"skill_name": map[string]any{
 					"type":        "string",
 					"description": "技能名称（区分大小写）",
+					"minLength":   2,
+					"maxLength":   100,
 				},
 			},
-			"required": []string{},
+			"anyOf": []map[string]any{
+				{"required": []string{"skill_id"}},
+				{"required": []string{"skill_name"}},
+			},
+			"additionalProperties": false,
 		},
 		Category: "skill",
 		Handler:  handleSkillTool,
