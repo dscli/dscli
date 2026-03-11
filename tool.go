@@ -57,8 +57,12 @@ func GetToolDisplayName(name string) string {
 
 // RegisterTool 注册工具
 func RegisterTool(tool ToolDef) {
-	tool.DisplayName = GetToolDisplayName(tool.Name)
-	toolRegistry[tool.Name] = tool
+	name := tool.Name
+	if _, ok := toolRegistry[name]; ok {
+		panic(fmt.Sprintf("%s exists", name))
+	}
+	tool.DisplayName = GetToolDisplayName(name)
+	toolRegistry[name] = tool
 }
 
 // GetAllTools 获取所有工具定义（用于API调用）

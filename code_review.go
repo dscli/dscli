@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-// CodeReviewTool 代码审查工具定义
-var CodeReviewTool = ToolDef{
+// codeReviewTool 代码审查工具定义
+var codeReviewTool = ToolDef{
 	Name:        "code_review",
 	DisplayName: "代码审查",
 	Description: `对当前最新的Git提交进行代码审查，由专家提供改进建议。
@@ -17,6 +17,7 @@ var CodeReviewTool = ToolDef{
 参数说明：
 - summary: 可选，提供本次提交的背景说明，帮助专家理解上下文
            （例如：修复了什么bug、实现了什么功能、为什么这样设计等）
+- test_command: 可选，单元测试命令，默认为'go test ./...'。设置为空字符串可跳过测试
 
 使用场景：
 1. 提交代码前，让专家review一下
@@ -25,15 +26,19 @@ var CodeReviewTool = ToolDef{
 
 审查流程：
 1. 检查是否有未提交的更改（如果有则返回错误）
-2. 获取最新的提交（HEAD）
-3. 生成patch格式的代码变更
-4. 发送给专家进行审查
-5. 返回专家的改进建议
+2. 检查是否为单一commit（确保没有多个未push的提交）
+3. 运行单元测试（确保代码质量）
+4. 获取最新的提交（HEAD）
+5. 生成patch格式的代码变更
+6. 发送给专家进行审查
+7. 返回专家的改进建议
 
 错误处理：
 - 如果检测到未提交的更改，工具会立即返回错误
-- 错误信息包含详细的Git状态，帮助用户了解需要提交的内容
-- 用户需要先提交所有更改，然后才能使用代码审查工具
+- 如果检测到多个未push的提交，工具会返回错误
+- 如果单元测试未通过，工具会返回错误
+- 错误信息包含详细的原因和修复建议
+- 用户需要先解决所有问题，然后才能使用代码审查工具
 
 注意：
 - 只审查最新的一个提交（HEAD）
@@ -47,6 +52,10 @@ var CodeReviewTool = ToolDef{
 				"type":        "string",
 				"description": "可选，提供本次提交的背景说明，帮助专家理解上下文",
 			},
+			"test_command": map[string]any{
+				"type":        "string",
+				"description": "可选，单元测试命令，默认为'go test ./...'。设置为空字符串可跳过测试",
+			},
 		},
 		"required": []string{},
 	},
@@ -56,12 +65,13 @@ var CodeReviewTool = ToolDef{
 }
 
 func init() {
-	RegisterTool(CodeReviewTool)
+	RegisterTool(codeReviewTool)
 }
 
 // handleCodeReview 处理代码审查工具调用
 func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err error) {
 	summary := ToolArgsValue(args, "summary", "")
+	testCommand := ToolArgsValue(args, "test_command", "go test ./...")
 
 	// 输出审查日志
 	Println("🔍 正在请求专家进行代码审查...")
@@ -84,6 +94,58 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 		(status != "" && !strings.Contains(status, "nothing to commit")) {
 		Println("❌ 检测到未提交的更改")
 		return "", fmt.Errorf("检测到未提交的更改，请先提交所有更改再审查。当前状态：\n%s", status)
+	}
+
+	// 检查是否为单一commit（没有多个未push的提交）
+	Println("🔍 检查是否为单一commit...")
+	singleCommitScript := `git log --oneline @{u}..HEAD`
+	unpushedCommits, err := ShellExec(ctx, singleCommitScript)
+	if err != nil {
+		// 如果@{u}未设置，尝试其他方法
+		singleCommitScript = `git log --oneline origin/HEAD..HEAD 2>/dev/null || git log --oneline origin/main..HEAD 2>/dev/null || git log --oneline origin/master..HEAD 2>/dev/null || echo ""`
+		unpushedCommits, err = ShellExec(ctx, singleCommitScript)
+		if err != nil {
+			Println("⚠️  无法检查未push的提交，继续执行...")
+		}
+	}
+
+	if strings.TrimSpace(unpushedCommits) != "" {
+		Println("❌ 检测到多个未push的提交")
+		lines := strings.Split(strings.TrimSpace(unpushedCommits), "\n")
+		commitCount := len(lines)
+		errorMsg := fmt.Sprintf("检测到%d个未push的提交，请先push所有提交再审查。\n", commitCount)
+		if commitCount <= 5 {
+			errorMsg += "未push的提交：\n" + unpushedCommits
+		} else {
+			errorMsg += fmt.Sprintf("前5个未push的提交：\n%s", strings.Join(lines[:5], "\n"))
+			errorMsg += fmt.Sprintf("\n... 还有%d个提交", commitCount-5)
+		}
+		return "", fmt.Errorf("%s", errorMsg)
+	}
+	Println("✅ 单一commit检查通过")
+
+	// 运行单元测试（如果test_command不为空）
+	if testCommand != "" {
+		Println("🔍 运行单元测试:", testCommand)
+		testOutput, err := ShellExec(ctx, testCommand)
+		if err != nil {
+			Println("❌ 单元测试未通过")
+			errorMsg := fmt.Sprintf("单元测试未通过，请修复测试后再审查。\n测试命令：%s\n", testCommand)
+			if testOutput != "" {
+				// 截断过长的输出
+				outputLines := strings.Split(testOutput, "\n")
+				if len(outputLines) > 20 {
+					errorMsg += "测试输出（前20行）：\n" + strings.Join(outputLines[:20], "\n")
+					errorMsg += fmt.Sprintf("\n... 还有%d行输出", len(outputLines)-20)
+				} else {
+					errorMsg += "测试输出：\n" + testOutput
+				}
+			}
+			return "", fmt.Errorf("%s", errorMsg)
+		}
+		Println("✅ 单元测试通过")
+	} else {
+		Println("⚠️  跳过单元测试检查")
 	}
 
 	// 获取最新的提交信息
@@ -248,7 +310,6 @@ func processCodeReviewResponse(response string) string {
 	return cleanResponse
 }
 
-// extractCodeReviewSummary 从代码审查响应中提取摘要
 // extractCodeReviewSummary 从代码审查响应中提取摘要
 func extractCodeReviewSummary(response string) string {
 	// 查找摘要标记

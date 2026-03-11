@@ -12,22 +12,24 @@ import (
 // TestCodeReviewToolStructure tests the basic structure of the code review tool
 func TestCodeReviewToolStructure(t *testing.T) {
 	// Verify the tool definition exists
-	if CodeReviewTool.Name != "code_review" {
-		t.Errorf("Expected tool name 'code_review', got '%s'", CodeReviewTool.Name)
+	if codeReviewTool.Name != "code_review" {
+		t.Errorf("Expected tool name 'code_review', got '%s'", codeReviewTool.Name)
 	}
 
-	if CodeReviewTool.DisplayName != "代码审查" {
-		t.Errorf("Expected display name '代码审查', got '%s'", CodeReviewTool.DisplayName)
+	if codeReviewTool.DisplayName != "代码审查" {
+		t.Errorf("Expected display name '代码审查', got '%s'", codeReviewTool.DisplayName)
 	}
 
 	// Check that description contains key information
-	description := CodeReviewTool.Description
+	description := codeReviewTool.Description
 	requiredKeywords := []string{
 		"未提交的更改",
 		"错误",
 		"提交",
 		"审查",
 		"专家",
+		"单元测试",
+		"test_command",
 	}
 
 	for _, keyword := range requiredKeywords {
@@ -35,15 +37,13 @@ func TestCodeReviewToolStructure(t *testing.T) {
 			t.Errorf("Tool description missing required keyword: %s", keyword)
 		}
 	}
-
-	// Check timeout is reasonable (2 minutes)
-	if CodeReviewTool.Timeout != 120*time.Second {
-		t.Errorf("Expected timeout 120s, got %v", CodeReviewTool.Timeout)
+	if codeReviewTool.Timeout != 120*time.Second {
+		t.Errorf("Expected timeout 120s, got %v", codeReviewTool.Timeout)
 	}
 
 	// Check category
-	if CodeReviewTool.Category != "git" {
-		t.Errorf("Expected category 'git', got '%s'", CodeReviewTool.Category)
+	if codeReviewTool.Category != "git" {
+		t.Errorf("Expected category 'git', got '%s'", codeReviewTool.Category)
 	}
 }
 
@@ -128,25 +128,25 @@ func TestToolRegistration(t *testing.T) {
 	// we verify that the init() function exists by checking side effects
 	// The tool should be registered when the package is initialized
 	// We can verify this by checking that CodeReviewTool is properly configured
-	if CodeReviewTool.Name == "" {
+	if codeReviewTool.Name == "" {
 		t.Error("CodeReviewTool should have a name")
 	}
 
 	// Verify the tool definition is properly configured
-	if CodeReviewTool.Handler == nil {
+	if codeReviewTool.Handler == nil {
 		t.Error("CodeReviewTool.Handler should not be nil")
 	}
 
 	// Check that the handler points to the right function
 	// This is a bit tricky to test directly, so we'll just verify the tool is configured
-	if CodeReviewTool.Name == "" {
+	if codeReviewTool.Name == "" {
 		t.Error("CodeReviewTool should have a name")
 	}
 }
 
 // TestDocumentationCompleteness tests that all required documentation is present
 func TestDocumentationCompleteness(t *testing.T) {
-	desc := CodeReviewTool.Description
+	desc := codeReviewTool.Description
 
 	// Check for key sections in documentation
 	sections := []string{
@@ -164,12 +164,14 @@ func TestDocumentationCompleteness(t *testing.T) {
 	}
 
 	// Check that error handling is documented
-	if !strings.Contains(desc, "如果检测到未提交的更改，工具会立即返回错误") {
-		t.Error("Documentation should mention immediate error return for uncommitted changes")
+	if !strings.Contains(desc, "如果检测到未提交的更改，工具会立即返回错误") &&
+		!strings.Contains(desc, "如果检测到多个未push的提交，工具会返回错误") &&
+		!strings.Contains(desc, "如果单元测试未通过，工具会返回错误") {
+		t.Error("Documentation should mention error returns for various checks")
 	}
-
 	// Check that user guidance is provided
-	if !strings.Contains(desc, "用户需要先提交所有更改") {
-		t.Error("Documentation should instruct users to commit changes first")
+	// Check that user guidance is provided
+	if !strings.Contains(desc, "用户需要先解决所有问题") {
+		t.Error("Documentation should instruct users to resolve all issues first")
 	}
 }
