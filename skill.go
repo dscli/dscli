@@ -61,37 +61,45 @@ func formatSkillContent(content string) string {
 
 // PrintSkill 打印技能信息
 // PrintSkill 打印技能信息
-func PrintSkill(skill Skill, detailed bool) {
+// formatSkillDetails 格式化技能详细信息
+func formatSkillDetails(skill *Skill, detailed bool) string {
+	var builder strings.Builder
+
 	if detailed {
-		// 详细显示模式
-		fmt.Println(strings.Repeat("=", 80))
-		fmt.Printf("技能: %s\n", skill.Name)
-		fmt.Println(strings.Repeat("=", 80))
+		builder.WriteString(strings.Repeat("=", 80) + "\n")
+		builder.WriteString(fmt.Sprintf("技能: %s\n", skill.Name))
+		builder.WriteString(strings.Repeat("=", 80) + "\n")
 
-		fmt.Printf("ID:               %d\n", skill.ID)
-		fmt.Printf("名称:             %s\n", skill.Name)
-		fmt.Printf("描述:             %s\n", skill.Description)
-		fmt.Printf("分类:             %s\n", skill.Category)
-		fmt.Printf("优先级:           %d\n", skill.Priority)
-		fmt.Printf("全局技能:         %v\n", skill.IsGlobal)
-		fmt.Printf("使用次数:         %d\n", skill.UsageCount)
-		fmt.Printf("创建时间:         %s\n", skill.CreatedAt.Format("2006-01-02 15:04:05"))
-		fmt.Printf("更新时间:         %s\n", skill.UpdatedAt.Format("2006-01-02 15:04:05"))
+		builder.WriteString(fmt.Sprintf("ID:               %d\n", skill.ID))
+		builder.WriteString(fmt.Sprintf("名称:             %s\n", skill.Name))
+		builder.WriteString(fmt.Sprintf("描述:             %s\n", skill.Description))
+		builder.WriteString(fmt.Sprintf("分类:             %s\n", skill.Category))
+		builder.WriteString(fmt.Sprintf("优先级:           %d\n", skill.Priority))
+		builder.WriteString(fmt.Sprintf("全局技能:         %v\n", skill.IsGlobal))
+		builder.WriteString(fmt.Sprintf("使用次数:         %d\n", skill.UsageCount))
+		builder.WriteString(fmt.Sprintf("创建时间:         %s\n", skill.CreatedAt.Format("2006-01-02 15:04:05")))
+		builder.WriteString(fmt.Sprintf("更新时间:         %s\n", skill.UpdatedAt.Format("2006-01-02 15:04:05")))
 
-		fmt.Println(strings.Repeat("-", 80))
-		fmt.Println(formatSkillContent(skill.Content))
-		fmt.Println(strings.Repeat("=", 80))
+		builder.WriteString(strings.Repeat("-", 80) + "\n")
+		builder.WriteString(formatSkillContent(skill.Content))
+		builder.WriteString(strings.Repeat("=", 80) + "\n")
 	} else {
-		// 简洁显示模式
-		fmt.Printf("#%d [%s] %s\n", skill.ID, skill.Category, skill.Name)
-		fmt.Printf("  描述: %s\n", skill.Description)
-		fmt.Printf("  优先级: %d | 全局: %v | 使用次数: %d\n",
-			skill.Priority, skill.IsGlobal, skill.UsageCount)
-		fmt.Printf("  创建: %s | 更新: %s\n",
+		builder.WriteString(fmt.Sprintf("#%d [%s] %s\n", skill.ID, skill.Category, skill.Name))
+		builder.WriteString(fmt.Sprintf("  描述: %s\n", skill.Description))
+		builder.WriteString(fmt.Sprintf("  优先级: %d | 全局: %v | 使用次数: %d\n",
+			skill.Priority, skill.IsGlobal, skill.UsageCount))
+		builder.WriteString(fmt.Sprintf("  创建: %s | 更新: %s\n",
 			skill.CreatedAt.Format("2006-01-02 15:04:05"),
-			skill.UpdatedAt.Format("2006-01-02 15:04:05"))
-		fmt.Println()
+			skill.UpdatedAt.Format("2006-01-02 15:04:05")))
+		builder.WriteString("\n")
 	}
+
+	return builder.String()
+}
+
+// PrintSkill 打印技能信息
+func PrintSkill(skill Skill, detailed bool) {
+	fmt.Print(formatSkillDetails(&skill, detailed))
 }
 
 // LoadSkills 加载技能到系统提示词中
@@ -284,17 +292,51 @@ func RecordSkillUsage(skillID int64, projectPath string) error {
 // handleSkillTool 处理Skill工具调用
 // handleSkillTool 处理Skill工具调用
 // handleSkillTool 处理Skill工具调用
+// handleSkillTool 处理Skill工具调用
+// handleSkillTool 处理Skill工具调用
 func handleSkillTool(ctx context.Context, args ToolArgs) (string, error) {
 	// 获取参数
-	skillID := int64(ToolArgsValue(args, "skill_id", 0))
-	skillName := ToolArgsValue(args, "skill_name", "")
+	skillIDVal := ToolArgsValue[any](args, "skill_id", nil)
+	skillName := ToolArgsValue[string](args, "skill_name", "")
 
+	var skillID int64
+	var err error
+
+	// 处理skill_id参数
+	if skillIDVal != nil {
+		switch v := skillIDVal.(type) {
+		case int:
+			skillID = int64(v)
+		case int64:
+			skillID = v
+		case float64: // JSON数字可能被解析为float64
+			skillID = int64(v)
+		default:
+			return "", fmt.Errorf("skill_id必须是整数类型，当前类型: %T", skillIDVal)
+		}
+
+		if skillID <= 0 {
+			return "", fmt.Errorf("skill_id必须是正整数，当前值: %d", skillID)
+		}
+	}
+
+	// 清理skill_name
+	skillName = strings.TrimSpace(skillName)
+
+	// 验证参数组合
 	if skillID == 0 && skillName == "" {
 		return "", fmt.Errorf("必须提供skill_id或skill_name参数")
 	}
 
+	if skillID > 0 && skillName != "" {
+		Println("提示：同时提供了skill_id和skill_name，优先使用skill_id")
+	}
+
+	if skillName == "" && skillID == 0 {
+		return "", fmt.Errorf("skill_name不能为空字符串")
+	}
+
 	var skill *Skill
-	var err error
 
 	if skillID > 0 {
 		skill, err = GetSkill(skillID)
@@ -307,36 +349,21 @@ func handleSkillTool(ctx context.Context, args ToolArgs) (string, error) {
 	}
 
 	if skill == nil {
-		return "", fmt.Errorf("技能不存在")
+		if skillID > 0 {
+			return "", fmt.Errorf("技能不存在 (ID: %d)", skillID)
+		} else {
+			return "", fmt.Errorf("技能不存在 (名称: %s)", skillName)
+		}
 	}
 
 	// 记录技能使用
 	if err := RecordSkillUsage(skill.ID, ProjectRoot); err != nil {
 		// 只记录日志，不中断操作
-		fmt.Printf("警告：记录技能使用失败: %v\n", err)
+		Println("警告：记录技能使用失败:", err)
 	}
 
 	// 格式化输出
-	var builder strings.Builder
-	builder.WriteString(strings.Repeat("=", 80) + "\n")
-	builder.WriteString(fmt.Sprintf("技能: %s\n", skill.Name))
-	builder.WriteString(strings.Repeat("=", 80) + "\n")
-
-	builder.WriteString(fmt.Sprintf("ID:               %d\n", skill.ID))
-	builder.WriteString(fmt.Sprintf("名称:             %s\n", skill.Name))
-	builder.WriteString(fmt.Sprintf("描述:             %s\n", skill.Description))
-	builder.WriteString(fmt.Sprintf("分类:             %s\n", skill.Category))
-	builder.WriteString(fmt.Sprintf("优先级:           %d\n", skill.Priority))
-	builder.WriteString(fmt.Sprintf("全局技能:         %v\n", skill.IsGlobal))
-	builder.WriteString(fmt.Sprintf("使用次数:         %d\n", skill.UsageCount))
-	builder.WriteString(fmt.Sprintf("创建时间:         %s\n", skill.CreatedAt.Format("2006-01-02 15:04:05")))
-	builder.WriteString(fmt.Sprintf("更新时间:         %s\n", skill.UpdatedAt.Format("2006-01-02 15:04:05")))
-
-	builder.WriteString(strings.Repeat("-", 80) + "\n")
-	builder.WriteString(formatSkillContent(skill.Content))
-	builder.WriteString(strings.Repeat("=", 80) + "\n")
-
-	return builder.String(), nil
+	return formatSkillDetails(skill, true), nil
 }
 
 func init() {
@@ -344,15 +371,24 @@ func init() {
 	RegisterTool(ToolDef{
 		Name:        "skill",
 		DisplayName: "获取技能",
-		Description: "根据ID或名称获取技能内容。技能包含最佳实践、技巧、规范等知识。",
+		Description: `根据ID或名称获取技能内容。技能包含最佳实践、技巧、规范等知识。
+
+使用示例：
+1. 通过ID获取：skill(skill_id=1)
+2. 通过名称获取：skill(skill_name="Go最佳实践")
+
+注意事项：
+- skill_id和skill_name至少提供一个
+- 如果同时提供，优先使用skill_id
+- 技能名称区分大小写`,
 		Parameters: map[string]any{
 			"skill_id": map[string]any{
 				"type":        "integer",
-				"description": "技能ID（与skill_name二选一）",
+				"description": "技能ID（正整数）",
 			},
 			"skill_name": map[string]any{
 				"type":        "string",
-				"description": "技能名称（与skill_id二选一）",
+				"description": "技能名称（区分大小写）",
 			},
 		},
 		Category: "skill",
