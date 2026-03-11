@@ -13,7 +13,11 @@ import (
 var (
 	// ModelID = int64(0)
 	dbPath = func() string {
-		path := filepath.Join(ConfigDir, "sqlite.db")
+		dbname := "sqlite.db"
+		if IsTesting() {
+			dbname = fmt.Sprintf("%s.db", filepath.Base(os.Args[0]))
+		}
+		path := filepath.Join(ConfigDir, dbname)
 		insideShellExec := os.Getenv("InsideShellExec")
 		if insideShellExec != "" {
 			dir := filepath.Join(ConfigDir, "inside-shell-exec")
