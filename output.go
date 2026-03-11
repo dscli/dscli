@@ -103,6 +103,21 @@ func Println(a ...any) (n int, err error) {
 	return fmt.Fprintln(outputWriter, a...)
 }
 
+// Print 输出一行文本（保持向后兼容）
+func Print(a ...any) (n int, err error) {
+	if outputColorEnabled {
+		// 记录输出事件，重置等待计时器
+		GetWaitingManager().RecordOutput()
+	}
+
+	if outputMode == "org" {
+		input := fmt.Sprint(a...)
+		err = markdown.ConvertLines(input, outputWriter)
+		return
+	}
+	return fmt.Fprint(outputWriter, a...)
+}
+
 func StartWaiting(duration time.Duration) func() {
 	if outputColorEnabled {
 		GetWaitingManager().StartWaiting(duration)

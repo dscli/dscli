@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"strings"
@@ -11,6 +12,7 @@ type MarkdownToOrgConverter struct {
 	inCodeBlock     bool
 	inOrgBlock      bool
 	currentCodeLang string
+	buf             bytes.Buffer
 }
 
 // NewMarkdownToOrgConverter creates a new converter
@@ -285,11 +287,16 @@ func (c *MarkdownToOrgConverter) convertItalicInBold(text string) string {
 
 // ConvertLines converts input to output line by line (simpler, more reliable)
 func (c *MarkdownToOrgConverter) ConvertLines(input string, output io.Writer) error {
-	lines := strings.Split(input, "\n")
-	for _, line := range lines {
-		converted := c.ConvertLine(line + "\n")
-		if _, err := output.Write([]byte(converted)); err != nil {
-			return fmt.Errorf("failed to write output: %w", err)
+	for _, r := range input {
+		if r != '\n' {
+			c.buf.WriteRune(r)
+		} else {
+			line := c.buf.String()
+			converted := c.ConvertLine(line + "\n")
+			if _, err := output.Write([]byte(converted)); err != nil {
+				return fmt.Errorf("failed to write output: %w", err)
+			}
+			c.buf.Reset()
 		}
 	}
 	return nil

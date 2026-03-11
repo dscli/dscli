@@ -67,13 +67,9 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx = context.WithValue(ctx, InsideShellExec, os.Getenv("InsideShellExec") == "1")
 	cmd.SetContext(ctx)
 	return
-	return
 }
 
 func ChatRunE(cmd *cobra.Command, args []string) (err error) {
-	if err != nil {
-		return
-	}
 	ctx := cmd.Context()
 	content := ""
 	input := ""
@@ -192,6 +188,9 @@ func ReadContent(ctx context.Context) (content string, err error) {
 }
 
 func PrintContent(ctx context.Context, reasoning string, content string) {
+	// 检查是否是streaming模式
+	stream := ContextValue(ctx, StreamKey, false)
+
 	reasoning = strings.TrimSpace(reasoning)
 	if reasoning != "" {
 		Println(reasoning)
@@ -199,8 +198,10 @@ func PrintContent(ctx context.Context, reasoning string, content string) {
 
 	content = strings.TrimSpace(content)
 	if content != "" {
-		content = strings.TrimSpace(content)
-		Println(content)
+		// 在streaming模式下，内容已经在streaming过程中输出，这里不需要再次输出
+		if !stream {
+			Println(content)
+		}
 	}
 }
 

@@ -209,14 +209,13 @@ func (c *Deepseek) Balance() (*BalanceResponse, error) {
 }
 
 // Chat 发送聊天请求
-// Chat 发送聊天请求
-// Chat 发送聊天请求
 func (c *Deepseek) Chat(ctx context.Context, messages []Message, tools []Tool) (*ChatResponse, error) {
 	model := ContextValue(ctx, CurrentModelID, ModelDeepseekChat)
 	insideShellExec := ContextValue(ctx, InsideShellExec, false)
 	stream := ContextValue(ctx, StreamKey, false)
 
-	if insideShellExec {
+	// 如果是streaming请求，即使InsideShellExec为true也测试streaming逻辑
+	if insideShellExec && !stream {
 		return &ChatResponse{
 			ID: "id",
 			Choices: []Choice{
