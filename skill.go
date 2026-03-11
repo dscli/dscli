@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-
-	"github.com/spf13/cobra"
 )
 
 // parseSkillContent 解析技能内容
@@ -62,282 +60,42 @@ func formatSkillContent(content string) string {
 }
 
 // PrintSkill 打印技能信息
+// PrintSkill 打印技能信息
 func PrintSkill(skill Skill, detailed bool) {
 	if detailed {
 		// 详细显示模式
-		Println(strings.Repeat("=", 80))
-		Printf("技能: %s\n", skill.Name)
-		Println(strings.Repeat("=", 80))
+		fmt.Println(strings.Repeat("=", 80))
+		fmt.Printf("技能: %s\n", skill.Name)
+		fmt.Println(strings.Repeat("=", 80))
 
-		Printf("ID:               %d\n", skill.ID)
-		Printf("名称:             %s\n", skill.Name)
-		Printf("描述:             %s\n", skill.Description)
-		Printf("分类:             %s\n", skill.Category)
-		Printf("优先级:           %d\n", skill.Priority)
-		Printf("全局技能:         %v\n", skill.IsGlobal)
-		Printf("使用次数:         %d\n", skill.UsageCount)
-		Printf("创建时间:         %s\n", skill.CreatedAt.Format("2006-01-02 15:04:05"))
-		Printf("更新时间:         %s\n", skill.UpdatedAt.Format("2006-01-02 15:04:05"))
+		fmt.Printf("ID:               %d\n", skill.ID)
+		fmt.Printf("名称:             %s\n", skill.Name)
+		fmt.Printf("描述:             %s\n", skill.Description)
+		fmt.Printf("分类:             %s\n", skill.Category)
+		fmt.Printf("优先级:           %d\n", skill.Priority)
+		fmt.Printf("全局技能:         %v\n", skill.IsGlobal)
+		fmt.Printf("使用次数:         %d\n", skill.UsageCount)
+		fmt.Printf("创建时间:         %s\n", skill.CreatedAt.Format("2006-01-02 15:04:05"))
+		fmt.Printf("更新时间:         %s\n", skill.UpdatedAt.Format("2006-01-02 15:04:05"))
 
-		Println(strings.Repeat("-", 80))
-		Println(formatSkillContent(skill.Content))
-		Println(strings.Repeat("=", 80))
+		fmt.Println(strings.Repeat("-", 80))
+		fmt.Println(formatSkillContent(skill.Content))
+		fmt.Println(strings.Repeat("=", 80))
 	} else {
 		// 简洁显示模式
-		Printf("#%d [%s] %s\n", skill.ID, skill.Category, skill.Name)
-		Printf("  描述: %s\n", skill.Description)
-		Printf("  优先级: %d | 全局: %v | 使用次数: %d\n",
+		fmt.Printf("#%d [%s] %s\n", skill.ID, skill.Category, skill.Name)
+		fmt.Printf("  描述: %s\n", skill.Description)
+		fmt.Printf("  优先级: %d | 全局: %v | 使用次数: %d\n",
 			skill.Priority, skill.IsGlobal, skill.UsageCount)
-		Printf("  创建: %s | 更新: %s\n",
+		fmt.Printf("  创建: %s | 更新: %s\n",
 			skill.CreatedAt.Format("2006-01-02 15:04:05"),
 			skill.UpdatedAt.Format("2006-01-02 15:04:05"))
-		Println()
+		fmt.Println()
 	}
 }
 
-func init() {
-	RegisterTableSchema(
-		// 技能表
-		`CREATE TABLE IF NOT EXISTS skills (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name TEXT NOT NULL UNIQUE,
-			description TEXT NOT NULL,
-			content TEXT NOT NULL,
-			category TEXT,
-			priority INTEGER DEFAULT 50,
-			is_global BOOLEAN DEFAULT 0,
-			usage_count INTEGER DEFAULT 0,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            model_id INTEGER NOT NULL DEFAULT 0,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)`,
-		// 项目技能关联表
-		`CREATE TABLE IF NOT EXISTS project_skills (
-			project_path TEXT NOT NULL,
-			skill_id INTEGER NOT NULL,
-			is_enabled BOOLEAN DEFAULT 1,
-			enabled_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			last_used DATETIME,
-			PRIMARY KEY (project_path, skill_id),
-			FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_skills_category ON skills(category)`,
-		`CREATE INDEX IF NOT EXISTS idx_skills_priority ON skills(priority DESC)`,
-	)
-
-	// 创建skills命令
-	skillsCmd := AddRootCommand(&cobra.Command{
-		Use:   "skills",
-		Short: "管理技能",
-		Long:  `管理技能系统，包括增删改查等操作。`,
-	})
-
-	// list命令
-	listCmd := &cobra.Command{
-		Use:   "list",
-		Short: "列出所有技能",
-		Long: `列出所有技能，支持按分类和优先级排序。
-
-示例:
-  dscli skills list
-  dscli skills list --category go
-  dscli skills list --priority high`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("list命令暂未实现")
-		},
-	}
-	listCmd.Flags().String("category", "", "按分类筛选")
-	listCmd.Flags().String("priority", "", "按优先级筛选（high/medium/low）")
-
-	// show命令
-	showCmd := &cobra.Command{
-		Use:   "show <id>",
-		Short: "显示指定技能的详细信息",
-		Long: `显示指定技能的详细信息。
-
-示例:
-  dscli skills show 1
-  dscli skills show 2`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("show命令暂未实现")
-		},
-	}
-
-	// create命令
-	createCmd := &cobra.Command{
-		Use:   "create",
-		Short: "创建新技能",
-		Long: `创建新技能。
-
-可以通过以下方式提供内容：
-1. 使用 --name, --description, --content 参数
-2. 使用 --file 参数从JSON文件读取技能配置
-
-示例:
-  dscli skills create --name "Go测试规范" --description "Go语言测试最佳实践" --content '{"trigger": ["test", "测试"], "rules": ["规则1"], "examples": ["示例1"]}'
-  dscli skills create --file skill.json`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("create命令暂未实现")
-		},
-	}
-	createCmd.Flags().String("name", "", "技能名称（必需）")
-	createCmd.Flags().String("description", "", "技能描述（必需）")
-	createCmd.Flags().String("content", "", "技能内容（JSON格式）")
-	createCmd.Flags().String("file", "", "从JSON文件读取技能配置")
-	createCmd.Flags().String("category", "", "技能分类")
-	createCmd.Flags().Int("priority", 50, "技能优先级（1-100）")
-	createCmd.Flags().Bool("global", false, "是否为全局技能")
-
-	// update命令
-	updateCmd := &cobra.Command{
-		Use:   "update <id>",
-		Short: "更新指定技能",
-		Long: `更新指定技能。
-
-可以通过以下方式更新：
-1. 使用 --name 更新名称
-2. 使用 --description 更新描述
-3. 使用 --content 更新内容
-4. 使用 --category 更新分类
-5. 使用 --priority 更新优先级
-6. 使用 --global 更新全局状态
-
-示例:
-  dscli skills update 1 --name "新名称"
-  dscli skills update 2 --priority 90 --global true`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("update命令暂未实现")
-		},
-	}
-	updateCmd.Flags().String("name", "", "更新技能名称")
-	updateCmd.Flags().String("description", "", "更新技能描述")
-	updateCmd.Flags().String("content", "", "更新技能内容（JSON格式）")
-	updateCmd.Flags().String("category", "", "更新技能分类")
-	updateCmd.Flags().Int("priority", 0, "更新技能优先级（1-100）")
-	updateCmd.Flags().Bool("global", false, "更新是否为全局技能")
-
-	// delete命令
-	deleteCmd := &cobra.Command{
-		Use:   "delete <id>",
-		Short: "删除指定技能",
-		Long: `删除指定技能。
-
-示例:
-  dscli skills delete 1
-  dscli skills delete 2`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("delete命令暂未实现")
-		},
-	}
-
-	// enable命令 - 为项目启用技能
-	enableCmd := &cobra.Command{
-		Use:   "enable <skill-id>",
-		Short: "为当前项目启用技能",
-		Long: `为当前项目启用指定技能。
-
-示例:
-  dscli skills enable 1
-  dscli skills enable 2`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("enable命令暂未实现")
-		},
-	}
-
-	// disable命令 - 为项目禁用技能
-	disableCmd := &cobra.Command{
-		Use:   "disable <skill-id>",
-		Short: "为当前项目禁用技能",
-		Long: `为当前项目禁用指定技能。
-
-示例:
-  dscli skills disable 1
-  dscli skills disable 2`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("disable命令暂未实现")
-		},
-	}
-
-	// search命令 - 搜索技能
-	searchCmd := &cobra.Command{
-		Use:   "search <query>",
-		Short: "搜索技能",
-		Long: `根据关键词搜索技能。
-
-示例:
-  dscli skills search "测试"
-  dscli skills search "Go"
-  dscli skills search "规范"`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("search命令暂未实现")
-		},
-	}
-
-	// import命令 - 从文件导入技能
-	importCmd := &cobra.Command{
-		Use:   "import <file>",
-		Short: "从JSON文件导入技能",
-		Long: `从JSON文件导入技能配置。
-
-示例:
-  dscli skills import skills.json
-  dscli skills import path/to/skills.json`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("import命令暂未实现")
-		},
-	}
-
-	// export命令 - 导出技能到文件
-	exportCmd := &cobra.Command{
-		Use:   "export <file>",
-		Short: "导出技能到JSON文件",
-		Long: `导出所有技能到JSON文件。
-
-示例:
-  dscli skills export skills.json
-  dscli skills export backup/skills.json`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("export命令暂未实现")
-		},
-	}
-
-	// stats命令 - 显示技能统计信息
-	statsCmd := &cobra.Command{
-		Use:   "stats",
-		Short: "显示技能统计信息",
-		Long: `显示技能系统的统计信息。
-
-示例:
-  dscli skills stats`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("stats命令暂未实现")
-		},
-	}
-
-	// 添加所有子命令
-	skillsCmd.AddCommand(
-		listCmd,
-		showCmd,
-		createCmd,
-		updateCmd,
-		deleteCmd,
-		enableCmd,
-		disableCmd,
-		searchCmd,
-		importCmd,
-		exportCmd,
-		statsCmd,
-	)
-}
-
+// LoadSkills 加载技能到系统提示词中
+// 注意：此功能暂时未实现，保留接口
 func LoadSkills(ctx context.Context) ([]Message, error) {
 	return []Message{}, nil
 }
@@ -521,4 +279,83 @@ func RecordSkillUsage(skillID int64, projectPath string) error {
 	}
 
 	return nil
+}
+
+// handleSkillTool 处理Skill工具调用
+// handleSkillTool 处理Skill工具调用
+// handleSkillTool 处理Skill工具调用
+func handleSkillTool(ctx context.Context, args ToolArgs) (string, error) {
+	// 获取参数
+	skillID := int64(ToolArgsValue(args, "skill_id", 0))
+	skillName := ToolArgsValue(args, "skill_name", "")
+
+	if skillID == 0 && skillName == "" {
+		return "", fmt.Errorf("必须提供skill_id或skill_name参数")
+	}
+
+	var skill *Skill
+	var err error
+
+	if skillID > 0 {
+		skill, err = GetSkill(skillID)
+	} else {
+		skill, err = GetSkillByName(skillName)
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("获取技能失败: %w", err)
+	}
+
+	if skill == nil {
+		return "", fmt.Errorf("技能不存在")
+	}
+
+	// 记录技能使用
+	if err := RecordSkillUsage(skill.ID, ProjectRoot); err != nil {
+		// 只记录日志，不中断操作
+		fmt.Printf("警告：记录技能使用失败: %v\n", err)
+	}
+
+	// 格式化输出
+	var builder strings.Builder
+	builder.WriteString(strings.Repeat("=", 80) + "\n")
+	builder.WriteString(fmt.Sprintf("技能: %s\n", skill.Name))
+	builder.WriteString(strings.Repeat("=", 80) + "\n")
+
+	builder.WriteString(fmt.Sprintf("ID:               %d\n", skill.ID))
+	builder.WriteString(fmt.Sprintf("名称:             %s\n", skill.Name))
+	builder.WriteString(fmt.Sprintf("描述:             %s\n", skill.Description))
+	builder.WriteString(fmt.Sprintf("分类:             %s\n", skill.Category))
+	builder.WriteString(fmt.Sprintf("优先级:           %d\n", skill.Priority))
+	builder.WriteString(fmt.Sprintf("全局技能:         %v\n", skill.IsGlobal))
+	builder.WriteString(fmt.Sprintf("使用次数:         %d\n", skill.UsageCount))
+	builder.WriteString(fmt.Sprintf("创建时间:         %s\n", skill.CreatedAt.Format("2006-01-02 15:04:05")))
+	builder.WriteString(fmt.Sprintf("更新时间:         %s\n", skill.UpdatedAt.Format("2006-01-02 15:04:05")))
+
+	builder.WriteString(strings.Repeat("-", 80) + "\n")
+	builder.WriteString(formatSkillContent(skill.Content))
+	builder.WriteString(strings.Repeat("=", 80) + "\n")
+
+	return builder.String(), nil
+}
+
+func init() {
+	// 注册Skill工具
+	RegisterTool(ToolDef{
+		Name:        "skill",
+		DisplayName: "获取技能",
+		Description: "根据ID或名称获取技能内容。技能包含最佳实践、技巧、规范等知识。",
+		Parameters: map[string]any{
+			"skill_id": map[string]any{
+				"type":        "integer",
+				"description": "技能ID（与skill_name二选一）",
+			},
+			"skill_name": map[string]any{
+				"type":        "string",
+				"description": "技能名称（与skill_id二选一）",
+			},
+		},
+		Category: "skill",
+		Handler:  handleSkillTool,
+	})
 }
