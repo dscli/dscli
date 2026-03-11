@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -320,10 +321,33 @@ func isPathAllowed(path string, allowedPaths []string) bool {
 		return true
 	}
 
-	// 简单实现：检查路径是否以允许的路径开头
+	// 获取绝对路径
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+
+	// 检查路径是否在允许的路径范围内
 	for _, allowed := range allowedPaths {
-		if strings.HasPrefix(path, allowed) {
+		absAllowed, err := filepath.Abs(allowed)
+		if err != nil {
+			continue
+		}
+
+		// 检查路径是否以允许的路径开头
+		if strings.HasPrefix(absPath, absAllowed) {
 			return true
+		}
+
+		// 对于相对路径，检查是否在当前目录下
+		if allowed == "." {
+			cwd, err := os.Getwd()
+			if err == nil {
+				relPath, err := filepath.Rel(cwd, absPath)
+				if err == nil && !strings.HasPrefix(relPath, "..") {
+					return true
+				}
+			}
 		}
 	}
 
