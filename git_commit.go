@@ -56,8 +56,8 @@ func handleGitCommit(ctx context.Context, args ToolArgs) (string, error) {
 
 	// 更健壮的-m参数检查
 	// 检查 -m、-m[空格]、--message 等变体
-	optionWords := strings.FieldsSeq(options)
-	for word := range optionWords {
+	optionWords := strings.Fields(options)
+	for _, word := range optionWords {
 		if word == "-m" || word == "--message" || strings.HasPrefix(word, "-m") {
 			Error("检测到-m或--message参数")
 			Warn("提示: message参数已通过message字段提供，不要在options中包含-m或--message")
@@ -83,8 +83,8 @@ func handleGitCommit(ctx context.Context, args ToolArgs) (string, error) {
 
 	// 提取提交哈希（如果可能）
 	if strings.Contains(out, "[") && strings.Contains(out, "]") {
-		lines := strings.SplitSeq(out, "\n")
-		for line := range lines {
+		lines := strings.Split(out, "\n")
+		for _, line := range lines {
 			if strings.Contains(line, "[") && strings.Contains(line, "]") {
 				Success("提交成功: %s", strings.TrimSpace(line))
 				break

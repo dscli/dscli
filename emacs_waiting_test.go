@@ -96,7 +96,8 @@ func TestIsEmacsEnvironment(t *testing.T) {
 func TestShowEmacsAnimationIntegration(t *testing.T) {
 	// 这是一个集成测试，验证动画函数的基本功能
 	t.Run("正常完成", func(t *testing.T) {
-		ctx := t.Context()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 
 		done := make(chan bool)
 

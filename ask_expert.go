@@ -175,8 +175,8 @@ func extractExpertSummary(response string) string {
 	}
 
 	// 如果没有找到摘要标记，尝试提取第一段
-	lines := strings.SplitSeq(response, "\n")
-	for line := range lines {
+	lines := strings.Split(response, "\n")
+	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed != "" {
 			// 取第一段非空行作为摘要

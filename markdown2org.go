@@ -285,8 +285,8 @@ func (c *MarkdownToOrgConverter) convertItalicInBold(text string) string {
 
 // ConvertLines converts input to output line by line (simpler, more reliable)
 func (c *MarkdownToOrgConverter) ConvertLines(input string, output io.Writer) error {
-	lines := strings.SplitSeq(input, "\n")
-	for line := range lines {
+	lines := strings.Split(input, "\n")
+	for _, line := range lines {
 		converted := c.ConvertLine(line + "\n")
 		if _, err := output.Write([]byte(converted)); err != nil {
 			return fmt.Errorf("failed to write output: %w", err)

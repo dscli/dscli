@@ -343,8 +343,8 @@ func extractCodeReviewSummary(response string) string {
 	}
 
 	// 如果没有找到结构化摘要，提取第一段
-	paragraphs := strings.SplitSeq(response, "\n\n")
-	for para := range paragraphs {
+	paragraphs := strings.Split(response, "\n\n")
+	for _, para := range paragraphs {
 		trimmed := strings.TrimSpace(para)
 		if trimmed != "" && len(trimmed) > 20 {
 			// 排除太短的段落（可能是标题）
