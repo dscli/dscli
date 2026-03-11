@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -191,7 +192,6 @@ func extractExpertSummary(response string) string {
 }
 
 // generateUserSummary 从用户内容自动生成摘要
-// generateUserSummary 从用户内容自动生成摘要
 func generateUserSummary(content string) string {
 	// 如果内容很短，直接返回
 	if len(content) <= 100 {
@@ -255,12 +255,7 @@ func extractFirstSentences(content string, n int) []string {
 // isSentenceEnd 检查是否是句子结束标记
 func isSentenceEnd(r rune) bool {
 	sentenceEnds := []rune{'.', '。', '!', '！', '?', '？'}
-	for _, end := range sentenceEnds {
-		if r == end {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(sentenceEnds, r)
 }
 
 // smartTruncate 智能截断文本
