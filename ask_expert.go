@@ -14,28 +14,28 @@ var askExpertTool = ToolDef{
 	Description: `向专家发问，期望专家审阅方案，解答疑难问题
 
 参数说明：
-- summary: 问题摘要（必填），用于快速理解问题背景
 - content: 要询问的详细内容（必填）
+- summary: 问题摘要（可选），用于快速理解问题背景，如不提供会自动生成
 
 使用场景：
 1. 技术上有困难时
 2. 技术方案需审阅
 3. 需要专家深度分析时
 
-注意：专家会生成自己的摘要，放在回答的开头，格式为"摘要："`,
+注意：程序会自动从专家回答中提取摘要，无需专家手动生成。`,
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"summary": map[string]any{
 				"type":        "string",
-				"description": "问题摘要，用于快速理解问题背景",
+				"description": "问题摘要（可选），用于快速理解问题背景",
 			},
 			"content": map[string]any{
 				"type":        "string",
-				"description": "要询问的详细内容",
+				"description": "要询问的详细内容（必填）",
 			},
 		},
-		"required": []string{"summary", "content"},
+		"required": []string{"content"},
 	},
 	Category: "communication",
 	Timeout:  10 * time.Minute, // 给专家10分钟时间回答
@@ -46,25 +46,32 @@ func init() {
 	RegisterTool(askExpertTool)
 }
 
-// handleAsk 处理提问工具调用
-// handleAskExpert 处理提问工具调用
 // handleAskExpert 处理提问工具调用
 func handleAskExpert(ctx context.Context, args ToolArgs) (reply string, err error) {
+	// 向后兼容：支持旧参数名
 	summary := ToolArgsValue(args, "summary", "")
 	content := ToolArgsValue(args, "content", "")
 
-	if summary == "" {
-		return "", fmt.Errorf("问题摘要不能为空")
+	// 如果content为空，尝试使用旧参数名
+	if content == "" {
+		content = ToolArgsValue(args, "question", "")
 	}
+
 	if content == "" {
 		return "", fmt.Errorf("问题内容不能为空")
+	}
+
+	// 如果用户没有提供summary，自动从content生成
+	if summary == "" {
+		summary = generateUserSummary(content)
+		Println("📝 自动生成问题摘要:", summary)
 	}
 
 	// 输出咨询日志
 	Println("📞 正在向专家咨询...")
 	Println("  问题摘要:", summary)
 
-	// 构建结构化请求（告诉专家要生成摘要）
+	// 构建结构化请求（不再要求专家生成摘要）
 	structuredRequest := buildStructuredRequest(summary, content)
 
 	// expert 或 reasoner（已映射到 expert）
@@ -84,7 +91,7 @@ dscli chat --no-color --no-timestamp --model deepseek-reasoner <<`+eof+`
 		return
 	}
 
-	// 处理专家响应
+	// 智能处理专家响应（自动生成摘要）
 	processedReply := processExpertResponse(reply)
 
 	Println("✅ 专家咨询完成")
@@ -97,27 +104,22 @@ func buildStructuredRequest(userSummary string, originalContent string) string {
 	return `请以结构化格式回答以下问题。
 
 ## 问题背景
-用户提供的摘要：` + userSummary + `
+` + userSummary + `
 
 ## 详细问题
 ` + originalContent + `
 
 ## 回答要求
-请按以下格式组织您的回答：
-
-1. 首先，生成一个简洁的摘要（1-3句话），格式为：
-   摘要：[您的摘要内容]
-
-2. 然后，提供详细的分析和建议。
-
-3. 最后，提供置信度评分，格式为：
-   置信度：[0.0-1.0的评分]
+请提供详细的分析和建议，包括：
+1. 问题分析：深入分析问题的核心和关键点
+2. 解决方案：提供具体可行的解决方案
+3. 建议：给出可操作的建议和注意事项
+4. 风险评估：指出潜在的风险和应对措施
 
 ## 注意事项
-- 摘要要准确反映核心观点
 - 分析要逻辑严谨，考虑全面
-- 建议要具体可行
-- 置信度要真实反映您的把握程度
+- 建议要具体可行，有优先级
+- 风险评估要客观全面
 
 现在请开始您的回答：`
 }
@@ -186,4 +188,34 @@ func extractExpertSummary(response string) string {
 	}
 
 	return ""
+}
+
+// generateUserSummary 从用户内容自动生成摘要
+func generateUserSummary(content string) string {
+	// 如果内容很短，直接返回
+	if len(content) <= 100 {
+		return content
+	}
+
+	// 提取前100个字符作为摘要
+	runes := []rune(content)
+	if len(runes) <= 100 {
+		return content
+	}
+
+	// 确保摘要以完整句子结束
+	summary := string(runes[:100])
+
+	// 查找最后一个标点符号
+	punctuation := []rune{'.', '。', '!', '！', '?', '？', ';', '；'}
+	for i := 99; i >= 0; i-- {
+		for _, p := range punctuation {
+			if runes[i] == p {
+				return string(runes[:i+1])
+			}
+		}
+	}
+
+	// 如果没有找到标点，添加省略号
+	return summary + "..."
 }

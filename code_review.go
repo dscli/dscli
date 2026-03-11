@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -100,95 +101,216 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 
 	Println("📝 审查提交:", strings.TrimSpace(log))
 
-	// 构建审查脚本
-	eof := "EOFFOEOFEEFO"
-	script := `unset InsideShellExec
-# 生成patch并发送给专家审查
-(
-    echo "=== 代码审查请求 ==="
-    echo ""
-`
-
-	// 如果有summary，添加到脚本中
-	if summary != "" {
-		script += `    echo "提交背景说明："
-    echo "` + strings.ReplaceAll(summary, "\n", "\\n") + `"
-    echo ""
-`
+	// 如果用户没有提供summary，从提交信息生成
+	if summary == "" {
+		summary = generateCodeReviewSummary(log)
+		Println("📝 自动生成提交摘要:", summary)
 	}
 
-	script += `    echo "提交信息："
-    git log --oneline -1
-    echo ""
-    echo "=== 代码变更详情 ==="
-    git format-patch -1 --stdout
-) | dscli chat --no-color --model deepseek-reasoner`
+	// 获取完整的提交信息用于构建请求
+	fullLogScript := `git log --format="%B" -1`
+	fullLog, err := ShellExec(ctx, fullLogScript)
+	if err != nil {
+		fullLog = log // 如果失败，使用简短的log
+	}
+
+	// 生成patch
+	patchScript := `git format-patch -1 --stdout`
+	patch, err := ShellExec(ctx, patchScript)
+	if err != nil {
+		Println("❌ 生成patch失败")
+		return "", fmt.Errorf("生成patch失败: %v", err)
+	}
+
+	// 构建结构化请求
+	structuredRequest := buildCodeReviewRequest(summary, fullLog, patch)
 
 	// 确保EOF标记不会出现在内容中
-	for strings.Contains(script, eof) {
+	eof := "EOFFOEOFEEFO"
+	for strings.Contains(structuredRequest, eof) {
 		eof = Shuffle(eof)
 	}
 
 	// 执行审查
 	Println("📤 正在发送代码变更给专家...")
+	script := fmt.Sprintf(`unset InsideShellExec
+dscli chat --no-color --model deepseek-reasoner <<`+eof+`
+%s
+`+eof, structuredRequest)
+
 	reply, err = ShellExec(ctx, script)
 	if err != nil {
 		Println("❌ 代码审查失败")
 		return "", fmt.Errorf("代码审查失败: %v", err)
 	}
 
-	// 显示专家回答摘要
-	if reply != "" {
-		// 清理回复中的多余空白和换行
-		cleanReply := strings.TrimSpace(reply)
-
-		// 检查清理后的回复是否为空
-		if cleanReply == "" {
-			Println("  专家审查摘要: [空] - 专家回复只包含空白字符")
-			Println("⚠️  注意：专家可能没有生成有效的审查意见")
-		} else {
-			// 取前几行作为摘要
-			lines := strings.Split(cleanReply, "\n")
-			expertSummary := ""
-			nonEmptyLines := 0
-
-			// 收集前5个非空行
-			for i := 0; i < len(lines) && nonEmptyLines < 5; i++ {
-				line := strings.TrimSpace(lines[i])
-				if line != "" {
-					nonEmptyLines++
-					if expertSummary != "" {
-						expertSummary += " "
-					}
-					expertSummary += line
-				}
-			}
-
-			// 检查摘要是否为空
-			if expertSummary == "" {
-				Println("  专家审查摘要: [空] - 专家回复的前5行都是空白行")
-				Println("⚠️  注意：专家回复格式异常，建议检查完整回复")
-			} else {
-				// 如果摘要太长，截断
-				if len(expertSummary) > 200 {
-					expertSummary = expertSummary[:197] + "..."
-				}
-				Println("  专家审查摘要:", expertSummary)
-			}
-		}
-	} else {
-		Println("  专家审查摘要: [空] - 专家回复为空")
-		Println("⚠️  注意：专家没有返回任何内容，可能是网络或API问题")
-	}
+	// 处理专家响应（自动提取摘要）
+	processedReply := processCodeReviewResponse(reply)
 
 	Println("✅ 代码审查完成")
 
-	// 如果回复不为空，提示用户查看完整回复
-	if reply != "" && strings.TrimSpace(reply) != "" {
-		Println("💡 提示：请查看上面的完整专家回复，仔细考虑专家的建议")
-	} else {
-		Println("💡 提示：专家回复为空，建议检查网络连接或稍后重试")
+	return processedReply, nil
+}
+
+// generateCodeReviewSummary 从Git提交信息生成摘要
+func generateCodeReviewSummary(log string) string {
+	// 清理log
+	cleanLog := strings.TrimSpace(log)
+
+	// 如果log很短，直接返回
+	if len(cleanLog) <= 80 {
+		return cleanLog
 	}
 
-	return reply, nil
+	// 提取提交ID和提交信息
+	parts := strings.SplitN(cleanLog, " ", 2)
+	if len(parts) == 2 {
+		commitMsg := strings.TrimSpace(parts[1])
+
+		// 如果提交信息很长，截断
+		if len(commitMsg) > 80 {
+			runes := []rune(commitMsg)
+			return string(runes[:77]) + "..."
+		}
+		return commitMsg
+	}
+
+	// 如果格式不符合预期，直接截断
+	runes := []rune(cleanLog)
+	if len(runes) > 80 {
+		return string(runes[:77]) + "..."
+	}
+	return cleanLog
+}
+
+// buildCodeReviewRequest 构建代码审查请求
+func buildCodeReviewRequest(summary string, commitLog string, patch string) string {
+	return `请对以下代码提交进行审查，提供详细的改进建议。
+
+## 提交背景
+` + summary + `
+
+## 提交信息
+` + commitLog + `
+
+## 代码变更
+` + patch + `
+
+## 审查要求
+请按以下结构提供审查意见：
+
+### 1. 总体评价
+- 代码质量总体评价
+- 是否符合最佳实践
+- 是否有明显的设计问题
+
+### 2. 具体问题
+- 代码风格问题（命名、格式、注释等）
+- 逻辑错误或潜在bug
+- 性能问题
+- 安全问题
+- 可维护性问题
+
+### 3. 改进建议
+- 具体的修改建议
+- 重构建议（如有必要）
+- 测试建议
+
+### 4. 总结
+- 最重要的几点建议
+- 优先级建议（哪些需要立即修改，哪些可以后续优化）
+
+## 注意事项
+- 请具体指出问题所在的行号或代码片段
+- 提供具体的修改示例
+- 考虑代码的可读性、可维护性和性能
+- 如果是新功能，考虑其设计合理性
+
+现在请开始您的代码审查：`
+}
+
+// processCodeReviewResponse 处理代码审查响应
+func processCodeReviewResponse(response string) string {
+	// 清理响应
+	cleanResponse := strings.TrimSpace(response)
+
+	if cleanResponse == "" {
+		Println("⚠️  专家回复为空")
+		return "专家没有提供审查意见，请检查网络连接或稍后重试。"
+	}
+
+	// 提取专家摘要
+	expertSummary := extractCodeReviewSummary(cleanResponse)
+	if expertSummary != "" {
+		Println("  专家审查摘要:", expertSummary)
+	}
+
+	return cleanResponse
+}
+
+// extractCodeReviewSummary 从代码审查响应中提取摘要
+func extractCodeReviewSummary(response string) string {
+	// 查找摘要标记
+	summaryMarkers := []string{"总体评价", "总结", "摘要", "Summary", "Overall"}
+
+	// 首先尝试查找"总体评价"部分
+	for _, marker := range summaryMarkers {
+		// 查找标记（考虑中文和英文）
+		patterns := []string{
+			"###\\s*" + marker + "\\s*\n+(.+?)(?:\n\n|\n###|\n---|$)",
+			"##\\s*" + marker + "\\s*\n+(.+?)(?:\n\n|\n##|\n---|$)",
+			marker + "[：:]\n*(.+?)(?:\n\n|\n###|\n---|$)",
+		}
+
+		for _, pattern := range patterns {
+			re := regexp.MustCompile(pattern)
+			matches := re.FindStringSubmatch(response)
+			if matches != nil && len(matches) > 1 {
+				summary := strings.TrimSpace(matches[1])
+				if len(summary) > 10 { // 有效摘要
+					// 截断
+					runes := []rune(summary)
+					if len(runes) > 150 {
+						return string(runes[:147]) + "..."
+					}
+					return summary
+				}
+			}
+		}
+	}
+
+	// 如果没有找到结构化摘要，提取第一段
+	paragraphs := strings.Split(response, "\n\n")
+	for _, para := range paragraphs {
+		trimmed := strings.TrimSpace(para)
+		if trimmed != "" && len(trimmed) > 20 {
+			// 排除太短的段落（可能是标题）
+			runes := []rune(trimmed)
+			if len(runes) > 150 {
+				return string(runes[:147]) + "..."
+			}
+			return trimmed
+		}
+	}
+
+	// 最后尝试提取前几行
+	lines := strings.Split(response, "\n")
+	var summaryLines []string
+	for i := 0; i < len(lines) && i < 3; i++ {
+		line := strings.TrimSpace(lines[i])
+		if line != "" && !strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "###") {
+			summaryLines = append(summaryLines, line)
+		}
+	}
+
+	if len(summaryLines) > 0 {
+		summary := strings.Join(summaryLines, " ")
+		runes := []rune(summary)
+		if len(runes) > 150 {
+			return string(runes[:147]) + "..."
+		}
+		return summary
+	}
+
+	return ""
 }
