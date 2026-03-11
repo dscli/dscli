@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"math"
 	"strings"
 )
 
@@ -228,46 +227,16 @@ func RecordSkillUsage(skillID int64, projectPath string) error {
 // handleSkillTool 处理Skill工具调用
 func handleSkillTool(ctx context.Context, args ToolArgs) (string, error) {
 	// 获取参数
-	skillIDVal := ToolArgsValue[any](args, "skill_id", nil)
-	skillName := ToolArgsValue[string](args, "skill_name", "")
+	skillID := ToolArgsValue(args, "skill_id", int64(-1))
+	skillName := ToolArgsValue(args, "skill_name", "")
 
-	var skillID int64
 	var err error
-
-	// 处理skill_id参数
-	if skillIDVal != nil {
-		switch v := skillIDVal.(type) {
-		case int:
-			skillID = int64(v)
-		case int64:
-			skillID = v
-		case float64: // JSON数字可能被解析为float64
-			// 检查是否为整数
-			if v != math.Trunc(v) {
-				return "", fmt.Errorf("skill_id必须是整数，当前值: %v", v)
-			}
-
-			// 检查是否在int64范围内
-			if v < math.MinInt64 || v > math.MaxInt64 {
-				return "", fmt.Errorf("skill_id超出范围: %v", v)
-			}
-
-			skillID = int64(v)
-
-			// 再次检查转换后的值是否为正数
-			if skillID <= 0 {
-				return "", fmt.Errorf("skill_id必须是正整数，当前值: %v", v)
-			}
-		default:
-			return "", fmt.Errorf("skill_id必须是整数类型，当前类型: %T", skillIDVal)
-		}
-	}
 
 	// 清理skill_name
 	skillName = strings.TrimSpace(skillName)
 
 	// 验证参数组合
-	if skillID == 0 && skillName == "" {
+	if skillID == -1 && skillName == "" {
 		return "", fmt.Errorf("必须提供skill_id或skill_name参数")
 	}
 
@@ -341,14 +310,18 @@ func init() {
 - 技能名称区分大小写
 - skill_id必须是正整数`,
 		Parameters: map[string]any{
-			"skill_id": map[string]any{
-				"type":        "integer",
-				"description": "技能ID（正整数）",
+			"type": "object",
+			"properties": map[string]any{
+				"skill_id": map[string]any{
+					"type":        "integer",
+					"description": "技能ID（正整数）",
+				},
+				"skill_name": map[string]any{
+					"type":        "string",
+					"description": "技能名称（区分大小写）",
+				},
 			},
-			"skill_name": map[string]any{
-				"type":        "string",
-				"description": "技能名称（区分大小写）",
-			},
+			"required": []string{},
 		},
 		Category: "skill",
 		Handler:  handleSkillTool,
