@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -18,49 +19,54 @@ func parseSkillContent(content string) (map[string]any, error) {
 	return data, nil
 }
 
-// formatSkillContent 格式化技能内容显示
+// formatSkillContent 格式化技能内容
 func formatSkillContent(content string) string {
 	data, err := parseSkillContent(content)
 	if err != nil {
-		return fmt.Sprintf("（内容格式错误: %v）", err)
+		return fmt.Sprintf("解析技能内容失败: %v", err)
 	}
 
 	var builder strings.Builder
-	builder.WriteString("技能内容:\n")
 
-	// 显示触发词
-	if triggers, ok := data["trigger"].([]any); ok && len(triggers) > 0 {
-		builder.WriteString("  触发词: ")
-		for i, trigger := range triggers {
-			if i > 0 {
-				builder.WriteString(", ")
+	// 格式化标题
+	if title, ok := data["title"].(string); ok && title != "" {
+		builder.WriteString(fmt.Sprintf("标题: %s\n", title))
+	}
+
+	// 格式化描述
+	if description, ok := data["description"].(string); ok && description != "" {
+		builder.WriteString(fmt.Sprintf("描述: %s\n", description))
+	}
+
+	// 格式化章节
+	if sections, ok := data["sections"].([]any); ok {
+		for i, section := range sections {
+			if sectionMap, ok := section.(map[string]any); ok {
+				builder.WriteString(fmt.Sprintf("\n## %d. ", i+1))
+				if title, ok := sectionMap["title"].(string); ok {
+					builder.WriteString(title)
+				}
+				builder.WriteString("\n")
+
+				if content, ok := sectionMap["content"].(string); ok {
+					builder.WriteString(content)
+					builder.WriteString("\n")
+				}
 			}
-			builder.WriteString(fmt.Sprintf("%v", trigger))
-		}
-		builder.WriteString("\n")
-	}
-
-	// 显示规则
-	if rules, ok := data["rules"].([]any); ok && len(rules) > 0 {
-		builder.WriteString("  规则:\n")
-		for i, rule := range rules {
-			builder.WriteString(fmt.Sprintf("    %d. %v\n", i+1, rule))
 		}
 	}
 
-	// 显示示例
+	// 格式化示例
 	if examples, ok := data["examples"].([]any); ok && len(examples) > 0 {
-		builder.WriteString("  示例:\n")
+		builder.WriteString("\n示例:\n")
 		for i, example := range examples {
-			builder.WriteString(fmt.Sprintf("    %d. %v\n", i+1, example))
+			builder.WriteString(fmt.Sprintf("%d. %v\n", i+1, example))
 		}
 	}
 
 	return builder.String()
 }
 
-// PrintSkill 打印技能信息
-// PrintSkill 打印技能信息
 // formatSkillDetails 格式化技能详细信息
 func formatSkillDetails(skill *Skill, detailed bool) string {
 	var builder strings.Builder
@@ -108,40 +114,30 @@ func LoadSkills(ctx context.Context) ([]Message, error) {
 	return []Message{}, nil
 }
 
-// CreateSkill 创建新技能
-func CreateSkill(name, description, content, category string, priority int, isGlobal bool) (int64, error) {
-	db, err := OpenDB()
-	if err != nil {
-		return 0, err
-	}
-	defer db.Close()
-	result, err := db.Exec(`
-		INSERT INTO skills (name, description, content, category, priority, is_global)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		name, description, content, category, priority, isGlobal)
-	if err != nil {
-		return 0, fmt.Errorf("创建技能失败: %w", err)
-	}
-	return result.LastInsertId()
-}
-
 // GetSkill 根据ID获取技能
 func GetSkill(id int64) (*Skill, error) {
 	db, err := OpenDB()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
-
 	defer db.Close()
+
 	var skill Skill
 	err = db.QueryRow(`
 		SELECT id, name, description, content, category, priority, is_global, usage_count, created_at, updated_at
-		FROM skills WHERE id = ?`, id).Scan(
+		FROM skills WHERE id = ?
+	`, id).Scan(
 		&skill.ID, &skill.Name, &skill.Description, &skill.Content, &skill.Category,
-		&skill.Priority, &skill.IsGlobal, &skill.UsageCount, &skill.CreatedAt, &skill.UpdatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("获取技能失败: %w", err)
+		&skill.Priority, &skill.IsGlobal, &skill.UsageCount, &skill.CreatedAt, &skill.UpdatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
 	}
+	if err != nil {
+		return nil, fmt.Errorf("查询技能失败: %w", err)
+	}
+
 	return &skill, nil
 }
 
@@ -149,150 +145,86 @@ func GetSkill(id int64) (*Skill, error) {
 func GetSkillByName(name string) (*Skill, error) {
 	db, err := OpenDB()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
 	defer db.Close()
+
 	var skill Skill
 	err = db.QueryRow(`
 		SELECT id, name, description, content, category, priority, is_global, usage_count, created_at, updated_at
-		FROM skills WHERE name = ?`, name).Scan(
+		FROM skills WHERE name = ?
+	`, name).Scan(
 		&skill.ID, &skill.Name, &skill.Description, &skill.Content, &skill.Category,
-		&skill.Priority, &skill.IsGlobal, &skill.UsageCount, &skill.CreatedAt, &skill.UpdatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("获取技能失败: %w", err)
-	}
-	return &skill, nil
-}
+		&skill.Priority, &skill.IsGlobal, &skill.UsageCount, &skill.CreatedAt, &skill.UpdatedAt,
+	)
 
-// ListSkills 列出所有技能（可按分类过滤）
-func ListSkills(category string) ([]Skill, error) {
-	db, err := OpenDB()
-	if err != nil {
-		return nil, err
+	if err == sql.ErrNoRows {
+		return nil, nil
 	}
-	defer db.Close()
-	var rows *sql.Rows
-
-	if category == "" {
-		rows, err = db.Query(`
-			SELECT id, name, description, content, category, priority, is_global, usage_count, created_at, updated_at
-			FROM skills ORDER BY priority DESC, name`)
-	} else {
-		rows, err = db.Query(`
-			SELECT id, name, description, content, category, priority, is_global, usage_count, created_at, updated_at
-			FROM skills WHERE category = ? ORDER BY priority DESC, name`, category)
-	}
-
 	if err != nil {
 		return nil, fmt.Errorf("查询技能失败: %w", err)
 	}
-	defer rows.Close()
 
-	var skills []Skill
-	for rows.Next() {
-		var skill Skill
-		if err := rows.Scan(
-			&skill.ID, &skill.Name, &skill.Description, &skill.Content, &skill.Category,
-			&skill.Priority, &skill.IsGlobal, &skill.UsageCount, &skill.CreatedAt, &skill.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("扫描技能失败: %w", err)
-		}
-		skills = append(skills, skill)
-	}
-	return skills, nil
+	return &skill, nil
 }
 
-// EnableSkill 为项目启用技能
-func EnableSkill(skillID int64) error {
+// CreateSkill 创建新技能
+func CreateSkill(skill *Skill) error {
 	db, err := OpenDB()
 	if err != nil {
-		return err
+		return fmt.Errorf("打开数据库失败: %w", err)
 	}
 	defer db.Close()
-	_, err = db.Exec(`
-		INSERT OR REPLACE INTO project_skills (project_path, skill_id, is_enabled, enabled_at)
-		VALUES (?, ?, 1, CURRENT_TIMESTAMP)`, ProjectRoot, skillID)
+
+	result, err := db.Exec(`
+		INSERT INTO skills (name, description, content, category, priority, is_global)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, skill.Name, skill.Description, skill.Content, skill.Category, skill.Priority, skill.IsGlobal)
 	if err != nil {
-		return fmt.Errorf("启用技能失败: %w", err)
+		return fmt.Errorf("创建技能失败: %w", err)
 	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("获取技能ID失败: %w", err)
+	}
+
+	skill.ID = id
 	return nil
-}
-
-// DisableSkill 为项目禁用技能
-func DisableSkill(skillID int64) error {
-	db, err := OpenDB()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	_, err = db.Exec(`
-		UPDATE project_skills SET is_enabled = 0 WHERE project_path = ? AND skill_id = ?`,
-		ProjectRoot, skillID)
-	if err != nil {
-		return fmt.Errorf("禁用技能失败: %w", err)
-	}
-	return nil
-}
-
-// GetEnabledSkills 获取项目启用的技能
-func GetEnabledSkills() ([]Skill, error) {
-	db, err := OpenDB()
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-	rows, err := db.Query(`
-		SELECT s.id, s.name, s.description, s.content, s.category, s.priority, 
-		       s.is_global, s.usage_count, s.created_at, s.updated_at
-		FROM skills s
-		JOIN project_skills ps ON s.id = ps.skill_id
-		WHERE ps.project_path = ? AND ps.is_enabled = 1
-		ORDER BY s.priority DESC, s.name`, ProjectRoot)
-	if err != nil {
-		return nil, fmt.Errorf("查询启用技能失败: %w", err)
-	}
-	defer rows.Close()
-
-	var skills []Skill
-	for rows.Next() {
-		var skill Skill
-		if err := rows.Scan(
-			&skill.ID, &skill.Name, &skill.Description, &skill.Content, &skill.Category,
-			&skill.Priority, &skill.IsGlobal, &skill.UsageCount, &skill.CreatedAt, &skill.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("扫描技能失败: %w", err)
-		}
-		skills = append(skills, skill)
-	}
-	return skills, nil
 }
 
 // RecordSkillUsage 记录技能使用
 func RecordSkillUsage(skillID int64, projectPath string) error {
 	db, err := OpenDB()
 	if err != nil {
-		return err
+		return fmt.Errorf("打开数据库失败: %w", err)
 	}
 	defer db.Close()
+
 	// 更新技能使用次数
-	_, err = db.Exec("UPDATE skills SET usage_count = usage_count + 1 WHERE id = ?", skillID)
+	_, err = db.Exec(`
+		UPDATE skills 
+		SET usage_count = usage_count + 1, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, skillID)
 	if err != nil {
 		return fmt.Errorf("更新技能使用次数失败: %w", err)
 	}
 
-	// 更新最后使用时间
+	// 更新项目技能关联表的最后使用时间
 	_, err = db.Exec(`
-		UPDATE project_skills SET last_used = CURRENT_TIMESTAMP 
-		WHERE project_path = ? AND skill_id = ?`, projectPath, skillID)
+		UPDATE project_skills 
+		SET last_used = CURRENT_TIMESTAMP
+		WHERE skill_id = ? AND project_path = ?
+	`, skillID, projectPath)
 	if err != nil {
-		return fmt.Errorf("更新最后使用时间失败: %w", err)
+		// 如果更新失败，只记录日志，不中断操作
+		Println("更新项目技能关联失败:", err)
 	}
 
 	return nil
 }
 
-// handleSkillTool 处理Skill工具调用
-// handleSkillTool 处理Skill工具调用
-// handleSkillTool 处理Skill工具调用
-// handleSkillTool 处理Skill工具调用
 // handleSkillTool 处理Skill工具调用
 func handleSkillTool(ctx context.Context, args ToolArgs) (string, error) {
 	// 获取参数
@@ -310,13 +242,24 @@ func handleSkillTool(ctx context.Context, args ToolArgs) (string, error) {
 		case int64:
 			skillID = v
 		case float64: // JSON数字可能被解析为float64
+			// 检查是否为整数
+			if v != math.Trunc(v) {
+				return "", fmt.Errorf("skill_id必须是整数，当前值: %v", v)
+			}
+
+			// 检查是否在int64范围内
+			if v < math.MinInt64 || v > math.MaxInt64 {
+				return "", fmt.Errorf("skill_id超出范围: %v", v)
+			}
+
 			skillID = int64(v)
+
+			// 再次检查转换后的值是否为正数
+			if skillID <= 0 {
+				return "", fmt.Errorf("skill_id必须是正整数，当前值: %v", v)
+			}
 		default:
 			return "", fmt.Errorf("skill_id必须是整数类型，当前类型: %T", skillIDVal)
-		}
-
-		if skillID <= 0 {
-			return "", fmt.Errorf("skill_id必须是正整数，当前值: %d", skillID)
 		}
 	}
 
@@ -330,6 +273,16 @@ func handleSkillTool(ctx context.Context, args ToolArgs) (string, error) {
 
 	if skillID > 0 && skillName != "" {
 		Println("提示：同时提供了skill_id和skill_name，优先使用skill_id")
+	}
+
+	// 验证skill_name长度
+	if skillName != "" {
+		if len(skillName) < 2 {
+			return "", fmt.Errorf("skill_name太短，至少2个字符")
+		}
+		if len(skillName) > 100 {
+			return "", fmt.Errorf("skill_name太长，最多100个字符")
+		}
 	}
 
 	if skillName == "" && skillID == 0 {
@@ -350,9 +303,14 @@ func handleSkillTool(ctx context.Context, args ToolArgs) (string, error) {
 
 	if skill == nil {
 		if skillID > 0 {
-			return "", fmt.Errorf("技能不存在 (ID: %d)", skillID)
+			return "", fmt.Errorf("找不到ID为 %d 的技能，请检查技能ID是否正确", skillID)
 		} else {
-			return "", fmt.Errorf("技能不存在 (名称: %s)", skillName)
+			// 提供更友好的建议
+			suggestion := ""
+			if strings.Contains(skillName, " ") {
+				suggestion = "（提示：技能名称中不要包含空格）"
+			}
+			return "", fmt.Errorf("找不到名称为 '%s' 的技能%s，请检查技能名称是否正确", skillName, suggestion)
 		}
 	}
 
@@ -380,7 +338,8 @@ func init() {
 注意事项：
 - skill_id和skill_name至少提供一个
 - 如果同时提供，优先使用skill_id
-- 技能名称区分大小写`,
+- 技能名称区分大小写
+- skill_id必须是正整数`,
 		Parameters: map[string]any{
 			"skill_id": map[string]any{
 				"type":        "integer",
