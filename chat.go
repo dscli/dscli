@@ -64,8 +64,9 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 	ctx = context.WithValue(ctx, CurrentSessionID, sessionID)
-	ctx = context.WithValue(ctx, InsideShellExec, os.Getenv(string(InsideShellExec)) == "1")
+	ctx = context.WithValue(ctx, InsideShellExec, os.Getenv("InsideShellExec") == "1")
 	cmd.SetContext(ctx)
+	return
 	return
 }
 
