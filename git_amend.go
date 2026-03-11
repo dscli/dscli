@@ -70,8 +70,8 @@ func handleGitAmend(ctx context.Context, args ToolArgs) (string, error) {
 
 	// 提取提交哈希（如果可能）
 	if strings.Contains(out, "[") && strings.Contains(out, "]") {
-		lines := strings.Split(out, "\n")
-		for _, line := range lines {
+		lines := strings.SplitSeq(out, "\n")
+		for line := range lines {
 			if strings.Contains(line, "[") && strings.Contains(line, "]") {
 				Success("提交修改成功: %s", strings.TrimSpace(line))
 				break
@@ -131,8 +131,8 @@ func uncommittedChanges(ctx context.Context) (changes []string, err error) {
 	}
 
 	// 分割行
-	lines := strings.Split(out, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(out, "\n")
+	for line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

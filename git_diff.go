@@ -169,16 +169,11 @@ type diffStats struct {
 // analyzeDiffStats 分析差异统计
 // analyzeDiffStats 分析差异统计
 // analyzeDiffStats 分析差异统计
-// analyzeDiffStats 分析差异统计
-// analyzeDiffStats 分析差异统计
-// analyzeDiffStats 分析差异统计
-// analyzeDiffStats 分析差异统计
 func analyzeDiffStats(diffOutput string) diffStats {
 	stats := diffStats{}
 
-	// 使用Split分割行
-	lines := strings.Split(diffOutput, "\n")
-	for _, line := range lines {
+	// 使用高效的SplitSeq迭代，避免分配切片
+	for line := range strings.SplitSeq(diffOutput, "\n") {
 		if strings.HasPrefix(line, "diff --git") {
 			stats.files++
 		} else if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
