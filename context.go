@@ -19,6 +19,7 @@ var (
 	InputContent     = ContextKeyType("InputContent")
 	VerboseKey       = ContextKeyType("Verbose")
 	InsideShellExec  = ContextKeyType("InsideShellExec")
+	StreamKey        = ContextKeyType("Stream")
 )
 
 type ContextKeyType string

@@ -57,7 +57,7 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
-	ctx = context.WithValue(ctx, "streaming_enabled", stream)
+	ctx = context.WithValue(ctx, StreamKey, stream)
 
 	sessionID, err := CreateOrGetSessionID()
 	if err != nil {
@@ -308,16 +308,8 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 	stories := make([]Message, 0, len(inputs)+1)
 	stories = append(stories, inputs...)
 
-	// 获取stream标志
-	stream := false
-	if streamVal := ctx.Value("streaming_enabled"); streamVal != nil {
-		if s, ok := streamVal.(bool); ok {
-			stream = s
-		}
-	}
-
 	var resp *ChatResponse
-	resp, err = DeepseekClient.Chat(ctx, messages, GetAllTools(ctx), stream)
+	resp, err = DeepseekClient.Chat(ctx, messages, GetAllTools(ctx))
 	if err != nil {
 		err = fmt.Errorf("聊天请求失败: %w", err)
 		return
