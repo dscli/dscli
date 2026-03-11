@@ -222,6 +222,8 @@ func RecordSkillUsage(skillID int64, projectPath string) error {
 	}
 
 	return nil
+}
+
 // validateSkillID 验证skill_id参数
 func validateSkillID(skillID int64) error {
 	if skillID == -1 {
@@ -263,7 +265,7 @@ func safeAsyncRecordUsage(skillID int64, projectPath string) {
 				Println("记录技能使用panic:", r)
 			}
 		}()
-		
+
 		if err := RecordSkillUsage(skillID, projectPath); err != nil {
 			Println("警告：记录技能使用失败:", err)
 		}
