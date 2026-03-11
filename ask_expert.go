@@ -191,31 +191,99 @@ func extractExpertSummary(response string) string {
 }
 
 // generateUserSummary 从用户内容自动生成摘要
+// generateUserSummary 从用户内容自动生成摘要
 func generateUserSummary(content string) string {
 	// 如果内容很短，直接返回
 	if len(content) <= 100 {
 		return content
 	}
 
-	// 提取前100个字符作为摘要
+	// 策略1：尝试提取第一段
+	paragraphs := strings.Split(content, "\n\n")
+	if len(paragraphs) > 0 {
+		firstPara := strings.TrimSpace(paragraphs[0])
+		if len(firstPara) > 20 && len(firstPara) <= 150 {
+			return firstPara
+		}
+	}
+
+	// 策略2：提取前几个句子
+	sentences := extractFirstSentences(content, 2)
+	if len(sentences) > 0 {
+		summary := strings.Join(sentences, " ")
+		if len(summary) <= 150 {
+			return summary
+		}
+	}
+
+	// 策略3：智能截断
+	return smartTruncate(content, 100)
+}
+
+// extractFirstSentences 提取前n个句子
+func extractFirstSentences(content string, n int) []string {
+	var sentences []string
+	var currentSentence strings.Builder
+
+	for _, r := range content {
+		currentSentence.WriteRune(r)
+
+		// 检查句子结束标记
+		if isSentenceEnd(r) {
+			sentence := strings.TrimSpace(currentSentence.String())
+			if sentence != "" {
+				sentences = append(sentences, sentence)
+				if len(sentences) >= n {
+					break
+				}
+			}
+			currentSentence.Reset()
+		}
+	}
+
+	// 如果最后一个句子不完整但有内容，也添加
+	if currentSentence.Len() > 0 {
+		sentence := strings.TrimSpace(currentSentence.String())
+		if sentence != "" {
+			sentences = append(sentences, sentence)
+		}
+	}
+
+	return sentences
+}
+
+// isSentenceEnd 检查是否是句子结束标记
+func isSentenceEnd(r rune) bool {
+	sentenceEnds := []rune{'.', '。', '!', '！', '?', '？'}
+	for _, end := range sentenceEnds {
+		if r == end {
+			return true
+		}
+	}
+	return false
+}
+
+// smartTruncate 智能截断文本
+func smartTruncate(content string, maxLength int) string {
 	runes := []rune(content)
-	if len(runes) <= 100 {
+	if len(runes) <= maxLength {
 		return content
 	}
 
 	// 确保摘要以完整句子结束
-	summary := string(runes[:100])
-
-	// 查找最后一个标点符号
-	punctuation := []rune{'.', '。', '!', '！', '?', '？', ';', '；'}
-	for i := 99; i >= 0; i-- {
-		for _, p := range punctuation {
-			if runes[i] == p {
-				return string(runes[:i+1])
-			}
+	for i := maxLength - 1; i >= 0; i-- {
+		if isSentenceEnd(runes[i]) {
+			return string(runes[:i+1])
 		}
 	}
 
-	// 如果没有找到标点，添加省略号
-	return summary + "..."
+	// 如果没有找到句子结束标记，查找最后一个空格
+	for i := maxLength - 1; i >= 0; i-- {
+		if runes[i] == ' ' || runes[i] == '\n' || runes[i] == '\t' {
+			return string(runes[:i]) + "..."
+		}
+	}
+
+	// 如果连空格都没有，直接截断
+	return string(runes[:maxLength]) + "..."
 }

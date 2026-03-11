@@ -249,9 +249,10 @@ func processCodeReviewResponse(response string) string {
 }
 
 // extractCodeReviewSummary 从代码审查响应中提取摘要
+// extractCodeReviewSummary 从代码审查响应中提取摘要
 func extractCodeReviewSummary(response string) string {
 	// 查找摘要标记
-	summaryMarkers := []string{"总体评价", "总结", "摘要", "Summary", "Overall"}
+	summaryMarkers := []string{"总体评价", "总结", "摘要", "概要", "核心观点", "Summary", "Overall", "Conclusion", "Key Findings", "Executive Summary", "TL;DR", "要点"}
 
 	// 首先尝试查找"总体评价"部分
 	for _, marker := range summaryMarkers {
@@ -263,7 +264,12 @@ func extractCodeReviewSummary(response string) string {
 		}
 
 		for _, pattern := range patterns {
-			re := regexp.MustCompile(pattern)
+			re, err := regexp.Compile(pattern)
+			if err != nil {
+				// 正则表达式编译失败，跳过这个模式
+				continue
+			}
+
 			matches := re.FindStringSubmatch(response)
 			if matches != nil && len(matches) > 1 {
 				summary := strings.TrimSpace(matches[1])
