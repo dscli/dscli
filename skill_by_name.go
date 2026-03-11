@@ -13,8 +13,15 @@ func handleSkillByName(ctx context.Context, args ToolArgs) (content string, err 
 		err = fmt.Errorf("skill name can not be empty")
 		return
 	}
+	Printf("getting skill by name [%s]\n", skillName)
 	skill, err := GetSkillByName(skillName)
 	if err != nil {
+		err = fmt.Errorf("no skill found for %s: %w", skillName, err)
+		return
+	}
+
+	if skill == nil {
+		err = fmt.Errorf("no skill found for %s", skillName)
 		return
 	}
 	// 异步记录技能使用
