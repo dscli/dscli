@@ -5,6 +5,40 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 并且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.6.0] - 2026-03-13
+
+### 新增
+- **vimscript语言支持**：在parse.go中添加vimscript语言解析支持
+- **历史记录功能**：添加history.go和history_test.go，支持对话历史管理
+- **tabwrt功能**：添加tabwrt.go，支持制表符写入功能
+- **modernize工具集成**：使用modernize工具进行代码现代化改进
+
+### 变更
+- **代码现代化**：使用modernize工具自动修复代码，包括：
+  - 使用`strings.SplitSeq`替代`strings.Split`提高内存效率
+  - 使用`any`替代`interface{}`（Go 1.18+最佳实践）
+  - 使用`t.Context()`替代手动创建测试上下文（Go 1.21+最佳实践）
+- **web reader优化**：重构web.go，使用goquery和html2text提升网页内容提取质量
+- **parse.py改进**：优化Python解析器，提升代码解析准确性
+- **git工具增强**：改进git_amend.go和git_commit.go，增强错误处理和用户体验
+
+### 修复
+- **modernize工具问题**：修复modernize工具引入的strings.SplitSeq使用问题
+- **导入问题**：修复缺失的os/exec导入和未使用的regexp导入
+- **函数调用**：修复GetProjectRoot()函数调用问题
+- **变量作用域**：修复git命令执行中的变量作用域问题
+
+### 技术改进
+- **内存优化**：使用strings.SplitSeq迭代器减少内存分配
+- **代码质量**：通过modernize工具提升代码现代化水平
+- **测试改进**：使用t.Context()改进测试上下文管理
+- **依赖更新**：更新go.mod依赖版本
+
+## [0.5.5] - 2026-03-12
+
+### 修复
+- 修复modernize工具引入的问题，优化代码结构
+
 ## [0.5.4] - 2026-03-09
 
 ### 新增
@@ -136,6 +170,8 @@
 - 支持 models、balance、chat、fim 命令
 - 基本配置和日志系统
 
+[0.6.0]: https://gitcode.com/dscli/dscli/compare/v0.5.5...v0.6.0
+[0.5.5]: https://gitcode.com/dscli/dscli/compare/v0.5.4...v0.5.5
 [0.5.4]: https://gitcode.com/dscli/dscli/compare/v0.5.3...v0.5.4
 [0.5.3]: https://gitcode.com/dscli/dscli/compare/v0.5.2...v0.5.3
 [0.5.2]: https://gitcode.com/dscli/dscli/compare/v0.5.1...v0.5.2

@@ -13,9 +13,8 @@ var (
 		return godotenv.Load(EnvPath)
 	}()
 	// Version information - set via ldflags during build
-	Version = "0.5.5"
-	Build   = ""
-
+	Version               = "0.6.0"
+	Build                 = ""
 	ModelDeepseekChat     = Getenv("MODEL_DEEPSEEK_CHAT", "deepseek-chat")
 	ModelDeepseekReasoner = Getenv("MODEL_DEEPSEEK_REASONER", "deepseek-reasoner")
 
