@@ -18,30 +18,20 @@ const (
 	DeepseekReasoner = int64(1)
 )
 
-func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
-	ctx := cmd.Context()
+func chatCommonPreRunE(cmd *cobra.Command, args []string) (err error) {
 	model, err := cmd.Flags().GetString("model")
 	if err != nil {
 		return
 	}
-
-	if model == "" {
-		model = ModelDeepseekChat
-	}
-
-	ctx = context.WithValue(ctx, CurrentModelName, model)
-	// 调试：打印chatModel和ModelDeepseekChat的值
-	if verbose, _ := cmd.Flags().GetBool("verbose"); verbose {
-		fmt.Printf("[DEBUG] ChatPreRunE: chatModel='%s', ModelDeepseekChat='%s'\n",
-			model, ModelDeepseekChat)
-	}
-
-	// 设置ModelID
+	ctx := cmd.Context()
+	// ModelID
 	var modelID int64
 	switch model {
 	case ModelDeepseekChat:
+		ctx = context.WithValue(ctx, CurrentModelName, ModelDeepseekChat)
 		modelID = DeepseekChat
 	case ModelDeepseekReasoner:
+		ctx = context.WithValue(ctx, CurrentModelName, ModelDeepseekReasoner)
 		modelID = DeepseekReasoner
 	default:
 		err = fmt.Errorf("do not support %s", model)
@@ -52,19 +42,31 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 	ctx = context.WithValue(ctx, CurrentModelID, modelID)
 
+	// SessionID
+	sessionID, err := CreateOrGetSessionID()
+	if err != nil {
+		return
+	}
+	ctx = context.WithValue(ctx, CurrentSessionID, sessionID)
+	// InsideShellExec
+	ctx = context.WithValue(ctx, InsideShellExec, os.Getenv("InsideShellExec") == "1")
+	cmd.SetContext(ctx)
+
+	return
+}
+
+func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
+	err = chatCommonPreRunE(cmd, args)
+	if err != nil {
+		return
+	}
+	ctx := cmd.Context()
 	// 获取stream标志
 	stream, err := cmd.Flags().GetBool("stream")
 	if err != nil {
 		return
 	}
 	ctx = context.WithValue(ctx, StreamKey, stream)
-
-	sessionID, err := CreateOrGetSessionID()
-	if err != nil {
-		return
-	}
-	ctx = context.WithValue(ctx, CurrentSessionID, sessionID)
-	ctx = context.WithValue(ctx, InsideShellExec, os.Getenv("InsideShellExec") == "1")
 	cmd.SetContext(ctx)
 	return
 }
