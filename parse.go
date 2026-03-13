@@ -135,6 +135,8 @@ func guessLanguage(path string) string {
 		return "html"
 	case ".css":
 		return "css"
+	case ".vim":
+		return "vimscript"
 	default:
 		return "unknown"
 	}
@@ -371,8 +373,78 @@ func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (
 				}
 			}
 		}
+	} else if lang == "vimscript" {
+		// 特殊处理vimscript
+		// 解析函数
+		if functions, ok := pythonResult["functions"].([]interface{}); ok {
+			for _, f := range functions {
+				if funcMap, ok := f.(map[string]interface{}); ok {
+					symbol := &Symbol{
+						Name: getString(funcMap, "name"),
+						Type: getString(funcMap, "type"),
+					}
+					if line, ok := funcMap["lineno"].(float64); ok {
+						symbol.Line = int(line)
+					}
+					if endLine, ok := funcMap["end_lineno"].(float64); ok {
+						symbol.EndLine = int(endLine)
+					} else {
+						symbol.EndLine = symbol.Line
+					}
+					fs.Functions = append(fs.Functions, symbol)
+				}
+			}
+		}
+
+		// 解析命令（映射到Classes）
+		if commands, ok := pythonResult["commands"].([]interface{}); ok {
+			for _, c := range commands {
+				if cmdMap, ok := c.(map[string]interface{}); ok {
+					symbol := &Symbol{
+						Name: getString(cmdMap, "name"),
+						Type: getString(cmdMap, "type"),
+					}
+					if line, ok := cmdMap["lineno"].(float64); ok {
+						symbol.Line = int(line)
+						symbol.EndLine = int(line)
+					}
+					fs.Classes = append(fs.Classes, symbol)
+				}
+			}
+		}
+
+		// 解析变量（映射到Imports）
+		if variables, ok := pythonResult["variables"].([]interface{}); ok {
+			for _, v := range variables {
+				if varMap, ok := v.(map[string]interface{}); ok {
+					varName := getString(varMap, "name")
+					varType := getString(varMap, "type")
+					fs.Imports = append(fs.Imports, fmt.Sprintf("%s (%s)", varName, varType))
+				}
+			}
+		}
+
+		// 解析映射（也映射到Imports）
+		if mappings, ok := pythonResult["mappings"].([]interface{}); ok {
+			for _, m := range mappings {
+				if mapMap, ok := m.(map[string]interface{}); ok {
+					mapName := getString(mapMap, "name")
+					fs.Imports = append(fs.Imports, fmt.Sprintf("mapping: %s", mapName))
+				}
+			}
+		}
+
+		// 解析自动命令组（也映射到Imports）
+		if augroups, ok := pythonResult["augroups"].([]interface{}); ok {
+			for _, a := range augroups {
+				if augroupMap, ok := a.(map[string]interface{}); ok {
+					augroupName := getString(augroupMap, "name")
+					fs.Imports = append(fs.Imports, fmt.Sprintf("augroup: %s", augroupName))
+				}
+			}
+		}
 	} else {
-		// 对于编程语言，处理函数和类
+		// 对于其他编程语言，处理函数和类
 		// 解析函数
 		if functions, ok := pythonResult["functions"].([]interface{}); ok {
 			for _, f := range functions {
@@ -577,6 +649,76 @@ func ParseFileStructure(filePath, content string) (*FileStructure, error) {
 						symbol.EndLine = int(line)
 					}
 					fs.Functions = append(fs.Functions, symbol)
+				}
+			}
+		}
+	} else if lang == "vimscript" {
+		// 特殊处理vimscript
+		// 解析函数
+		if functions, ok := pythonResult["functions"].([]interface{}); ok {
+			for _, f := range functions {
+				if funcMap, ok := f.(map[string]interface{}); ok {
+					symbol := &Symbol{
+						Name: getString(funcMap, "name"),
+						Type: getString(funcMap, "type"),
+					}
+					if line, ok := funcMap["lineno"].(float64); ok {
+						symbol.Line = int(line)
+					}
+					if endLine, ok := funcMap["end_lineno"].(float64); ok {
+						symbol.EndLine = int(endLine)
+					} else {
+						symbol.EndLine = symbol.Line
+					}
+					fs.Functions = append(fs.Functions, symbol)
+				}
+			}
+		}
+
+		// 解析命令（映射到Classes）
+		if commands, ok := pythonResult["commands"].([]interface{}); ok {
+			for _, c := range commands {
+				if cmdMap, ok := c.(map[string]interface{}); ok {
+					symbol := &Symbol{
+						Name: getString(cmdMap, "name"),
+						Type: getString(cmdMap, "type"),
+					}
+					if line, ok := cmdMap["lineno"].(float64); ok {
+						symbol.Line = int(line)
+						symbol.EndLine = int(line)
+					}
+					fs.Classes = append(fs.Classes, symbol)
+				}
+			}
+		}
+
+		// 解析变量（映射到Imports）
+		if variables, ok := pythonResult["variables"].([]interface{}); ok {
+			for _, v := range variables {
+				if varMap, ok := v.(map[string]interface{}); ok {
+					varName := getString(varMap, "name")
+					varType := getString(varMap, "type")
+					fs.Imports = append(fs.Imports, fmt.Sprintf("%s (%s)", varName, varType))
+				}
+			}
+		}
+
+		// 解析映射（也映射到Imports）
+		if mappings, ok := pythonResult["mappings"].([]interface{}); ok {
+			for _, m := range mappings {
+				if mapMap, ok := m.(map[string]interface{}); ok {
+					mapName := getString(mapMap, "name")
+					fs.Imports = append(fs.Imports, fmt.Sprintf("mapping: %s", mapName))
+				}
+			}
+		}
+
+		// 解析自动命令组（也映射到Imports）
+		if augroups, ok := pythonResult["augroups"].([]interface{}); ok {
+			for _, a := range augroups {
+				if augroupMap, ok := a.(map[string]interface{}); ok {
+					augroupName := getString(augroupMap, "name")
+					fs.Imports = append(fs.Imports, fmt.Sprintf("augroup: %s", augroupName))
 				}
 			}
 		}

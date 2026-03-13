@@ -31,10 +31,13 @@ class FileStructureParser:
             'elisp': self.parse_elisp,
             'makefile': self.parse_makefile,
             'cmake': self.parse_cmake,
+            'vimscript': self.parse_vimscript,
+            'vim': self.parse_vimscript,  # alias for .vim files
         }
         # Check dependencies
         self.deps_ok = self._check_dependencies()
         self.enhanced_capabilities = self._get_enhanced_capabilities()
+    
     def parse(self, content: str, language: str) -> Dict[str, Any]:
         """Parse content with specified language"""
         if language not in self.language_parsers:
@@ -51,7 +54,6 @@ class FileStructureParser:
                 'error': f"Parsing error: {str(e)}",
                 'errors': [f"Parsing error: {str(e)}"]
             }
-    
     def parse_go(self, content: str) -> Dict[str, Any]:
         """Parse Go file structure using regex (Go AST parsing is done in Go)"""
         result = {
@@ -1187,6 +1189,167 @@ class FileStructureParser:
                     
         except Exception as e:
             result['errors'].append(f"CMake parsing error: {str(e)}")
+        
+        return result
+    
+    def parse_vimscript(self, content: str) -> Dict[str, Any]:
+        """Parse Vimscript file structure"""
+        result = {
+            'functions': [],
+            'commands': [],
+            'variables': [],
+            'mappings': [],
+            'autocommands': [],
+            'augroups': [],
+            'errors': []
+        }
+        
+        try:
+            lines = content.split('\n')
+            in_function = False
+            current_function = None
+            function_start_line = 0
+            
+            for i, line in enumerate(lines):
+                line_num = i + 1
+                stripped_line = line.strip()
+                
+                # Skip empty lines and comments
+                if not stripped_line or stripped_line.startswith('"'):
+                    continue
+                
+                # Parse function definitions
+                # Match: function! FunctionName() or function FunctionName()
+                func_match = re.match(r'^\s*(?:function!?|def)\s+([A-Za-z_][A-Za-z0-9_:]*)\s*\(', stripped_line)
+                if func_match and not in_function:
+                    func_name = func_match.group(1)
+                    # Check if it's a script-local function
+                    if func_name.startswith('s:'):
+                        func_type = 'script_function'
+                    else:
+                        func_type = 'function'
+                    
+                    # Vimscript functions end with 'endfunction'
+                    in_function = True
+                    current_function = func_name
+                    function_start_line = line_num
+                
+                # Check for endfunction
+                if in_function and stripped_line == 'endfunction':
+                    result['functions'].append({
+                        'name': current_function,
+                        'type': 'function',
+                        'lineno': function_start_line,
+                        'end_lineno': line_num
+                    })
+                    in_function = False
+                    current_function = None
+                
+                # Parse command definitions
+                # Match: command! CommandName
+                cmd_match = re.match(r'^\s*command!\s+([A-Za-z_][A-Za-z0-9_]*)', stripped_line)
+                if cmd_match:
+                    cmd_name = cmd_match.group(1)
+                    result['commands'].append({
+                        'name': cmd_name,
+                        'type': 'command',
+                        'lineno': line_num
+                    })
+                
+                # Parse variable definitions
+                # Match: let var = value or let g:var = value
+                var_match = re.match(r'^\s*let\s+([gs]:)?([A-Za-z_][A-Za-z0-9_]*)\s*=', stripped_line)
+                if var_match:
+                    scope = var_match.group(1) or ''
+                    var_name = var_match.group(2)
+                    var_type = 'variable'
+                    if scope == 'g:':
+                        var_type = 'global_variable'
+                    elif scope == 's:':
+                        var_type = 'script_variable'
+                    
+                    result['variables'].append({
+                        'name': var_name,
+                        'type': var_type,
+                        'lineno': line_num
+                    })
+                
+                # Parse mappings
+                # Match: nnoremap, inoremap, vnoremap, etc.
+                map_patterns = [
+                    (r'^\s*(nnoremap|inoremap|vnoremap|xnoremap|snoremap|onoremap|tnoremap|noremap|imap|vmap|xmap|smap|omap|tmap|map)\s+', 'mapping'),
+                    (r'^\s*(nunmap|iunmap|vunmap|xunmap|sunmap|ounmap|tunmap|unmap)\s+', 'unmap')
+                ]
+                
+                for pattern, map_type in map_patterns:
+                    map_match = re.match(pattern, stripped_line)
+                    if map_match:
+                        map_cmd = map_match.group(1)
+                        # Extract the mapping (skip the command part)
+                        mapping_part = stripped_line[len(map_cmd):].strip()
+                        # Split into lhs and rhs if possible
+                        parts = mapping_part.split(None, 1)
+                        if len(parts) >= 1:
+                            lhs = parts[0]
+                            rhs = parts[1] if len(parts) > 1 else ''
+                            result['mappings'].append({
+                                'name': f'{map_cmd} {lhs}',
+                                'type': map_type,
+                                'command': map_cmd,
+                                'lhs': lhs,
+                                'rhs': rhs,
+                                'lineno': line_num
+                            })
+                        break
+                
+                # Parse autocommand groups
+                augroup_match = re.match(r'^\s*augroup\s+([A-Za-z_][A-Za-z0-9_]*)', stripped_line)
+                if augroup_match:
+                    augroup_name = augroup_match.group(1)
+                    result['augroups'].append({
+                        'name': augroup_name,
+                        'type': 'augroup',
+                        'lineno': line_num
+                    })
+                
+                # Parse autocommands
+                autocmd_match = re.match(r'^\s*autocmd!\s*', stripped_line)
+                if autocmd_match:
+                    # autocmd! (clear autocommands)
+                    result['autocommands'].append({
+                        'name': 'autocmd_clear',
+                        'type': 'autocmd_clear',
+                        'lineno': line_num
+                    })
+                else:
+                    autocmd_match = re.match(r'^\s*autocmd\s+', stripped_line)
+                    if autocmd_match:
+                        # Parse autocmd with event and pattern
+                        autocmd_parts = stripped_line[7:].strip().split(None, 2)
+                        if len(autocmd_parts) >= 2:
+                            event = autocmd_parts[0]
+                            pattern = autocmd_parts[1]
+                            command = autocmd_parts[2] if len(autocmd_parts) > 2 else ''
+                            result['autocommands'].append({
+                                'name': f'autocmd {event} {pattern}',
+                                'type': 'autocmd',
+                                'event': event,
+                                'pattern': pattern,
+                                'command': command,
+                                'lineno': line_num
+                            })
+            
+            # Handle function that ends at EOF (missing endfunction)
+            if in_function and current_function:
+                result['functions'].append({
+                    'name': current_function,
+                    'type': 'function',
+                    'lineno': function_start_line,
+                    'end_lineno': len(lines)
+                })
+                
+        except Exception as e:
+            result['errors'].append(f"Vimscript parsing error: {str(e)}")
         
         return result
     
