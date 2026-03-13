@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 )
@@ -308,43 +307,46 @@ func processCodeReviewResponse(response string) string {
 
 // extractCodeReviewSummary 从代码审查响应中提取摘要
 func extractCodeReviewSummary(response string) string {
+	// 尝试从代码审查结果中提取摘要
+	// 代码审查通常以"## 摘要"或"**摘要**"开头
+
 	// 查找摘要标记
-	summaryMarkers := []string{"总体评价", "总结", "摘要", "概要", "核心观点", "Summary", "Overall", "Conclusion", "Key Findings", "Executive Summary", "TL;DR", "要点"}
+	summaryMarkers := []string{
+		"## 摘要",
+		"**摘要**",
+		"摘要：",
+		"Summary:",
+		"## Summary",
+		"**Summary**",
+		"## 审查摘要",
+		"**审查摘要**",
+	}
 
-	// 首先尝试查找"总体评价"部分
 	for _, marker := range summaryMarkers {
-		// 查找标记（考虑中文和英文）
-		patterns := []string{
-			"###\\s*" + marker + "\\s*\n+(.+?)(?:\n\n|\n###|\n---|$)",
-			"##\\s*" + marker + "\\s*\n+(.+?)(?:\n\n|\n##|\n---|$)",
-			marker + "[：:]\n*(.+?)(?:\n\n|\n###|\n---|$)",
-		}
-
-		for _, pattern := range patterns {
-			re, err := regexp.Compile(pattern)
-			if err != nil {
-				// 正则表达式编译失败，跳过这个模式
-				continue
+		idx := strings.Index(response, marker)
+		if idx != -1 {
+			// 找到摘要标记，提取摘要内容
+			summaryStart := idx + len(marker)
+			summaryEnd := strings.Index(response[summaryStart:], "\n\n")
+			if summaryEnd == -1 {
+				summaryEnd = len(response) - summaryStart
 			}
 
-			matches := re.FindStringSubmatch(response)
-			if matches != nil && len(matches) > 1 {
-				summary := strings.TrimSpace(matches[1])
-				if len(summary) > 10 { // 有效摘要
-					// 截断
-					runes := []rune(summary)
-					if len(runes) > 150 {
-						return string(runes[:147]) + "..."
-					}
-					return summary
+			summary := strings.TrimSpace(response[summaryStart : summaryStart+summaryEnd])
+			if summary != "" {
+				// 如果摘要太长，截断
+				runes := []rune(summary)
+				if len(runes) > 150 {
+					summary = string(runes[:147]) + "..."
 				}
+
+				return summary
 			}
 		}
 	}
 
 	// 如果没有找到结构化摘要，提取第一段
-	paragraphs := strings.Split(response, "\n\n")
-	for _, para := range paragraphs {
+	for para := range strings.SplitSeq(response, "\n\n") {
 		trimmed := strings.TrimSpace(para)
 		if trimmed != "" && len(trimmed) > 20 {
 			// 排除太短的段落（可能是标题）
@@ -356,24 +358,5 @@ func extractCodeReviewSummary(response string) string {
 		}
 	}
 
-	// 最后尝试提取前几行
-	lines := strings.Split(response, "\n")
-	var summaryLines []string
-	for i := 0; i < len(lines) && i < 3; i++ {
-		line := strings.TrimSpace(lines[i])
-		if line != "" && !strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "###") {
-			summaryLines = append(summaryLines, line)
-		}
-	}
-
-	if len(summaryLines) > 0 {
-		summary := strings.Join(summaryLines, " ")
-		runes := []rune(summary)
-		if len(runes) > 150 {
-			return string(runes[:147]) + "..."
-		}
-		return summary
-	}
-
-	return ""
+	return "代码审查完成"
 }

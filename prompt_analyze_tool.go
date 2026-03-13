@@ -403,8 +403,7 @@ func containsAnyString(s string, substrs []string) bool {
 func countPromptSections(prompt string) int {
 	// 简单统计章节标题数量
 	count := 0
-	lines := strings.Split(prompt, "\n")
-	for _, line := range lines {
+	for line := range strings.SplitSeq(prompt, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "##") ||
 			strings.HasPrefix(trimmed, "###") || strings.HasPrefix(trimmed, "####") {

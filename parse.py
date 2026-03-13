@@ -16,7 +16,7 @@ import importlib.util
 
 class FileStructureParser:
     """Main parser class for analyzing file structure"""
-    
+
     def __init__(self):
         self.language_parsers = {
             'go': self.parse_go,
@@ -31,10 +31,13 @@ class FileStructureParser:
             'elisp': self.parse_elisp,
             'makefile': self.parse_makefile,
             'cmake': self.parse_cmake,
+            'vimscript': self.parse_vimscript,
+            'vim': self.parse_vimscript,  # alias for .vim files
         }
         # Check dependencies
         self.deps_ok = self._check_dependencies()
         self.enhanced_capabilities = self._get_enhanced_capabilities()
+
     def parse(self, content: str, language: str) -> Dict[str, Any]:
         """Parse content with specified language"""
         if language not in self.language_parsers:
@@ -43,7 +46,7 @@ class FileStructureParser:
                 'supported_languages': list(self.language_parsers.keys()),
                 'errors': []
             }
-        
+
         try:
             return self.language_parsers[language](content)
         except Exception as e:
@@ -51,7 +54,6 @@ class FileStructureParser:
                 'error': f"Parsing error: {str(e)}",
                 'errors': [f"Parsing error: {str(e)}"]
             }
-    
     def parse_go(self, content: str) -> Dict[str, Any]:
         """Parse Go file structure using regex (Go AST parsing is done in Go)"""
         result = {
@@ -61,10 +63,10 @@ class FileStructureParser:
             'interfaces': [],
             'errors': []
         }
-        
+
         try:
             lines = content.split('\n')
-            
+
             # Parse imports
             for i, line in enumerate(lines):
                 # 检查单行导入
@@ -75,7 +77,7 @@ class FileStructureParser:
                         'type': 'import',
                         'lineno': i + 1
                     })
-                
+
                 # 检查多行导入开始
                 multi_import_match = re.match(r'^\s*import\s*\(', line)
                 if multi_import_match:
@@ -93,7 +95,7 @@ class FileStructureParser:
                                             'lineno': k + 1
                                         })
                             break
-            
+
             # Parse functions
             func_pattern = r'func\s+(?:\([^)]+\)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\([^)]*\)\s*(?:\([^)]*\))?\s*(?:\{[^}]*\})?'
             for i, line in enumerate(lines):
@@ -138,7 +140,7 @@ class FileStructureParser:
                                 'type': 'function',
                                 'lineno': i + 1
                             })
-            
+
             # Parse structs
             struct_pattern = r'type\s+([A-Za-z_][A-Za-z0-9_]*)\s+struct\s*\{'
             for i, line in enumerate(lines):
@@ -182,7 +184,7 @@ class FileStructureParser:
                                 'type': 'struct',
                                 'lineno': i + 1
                             })
-            
+
             # Parse interfaces
             interface_pattern = r'type\s+([A-Za-z_][A-Za-z0-9_]*)\s+interface\s*\{'
             for i, line in enumerate(lines):
@@ -226,12 +228,12 @@ class FileStructureParser:
                                 'type': 'interface',
                                 'lineno': i + 1
                             })
-                
+
         except Exception as e:
             result['errors'].append(f"Go parsing error: {str(e)}")
-        
+
         return result
-    
+
     def parse_python(self, content: str) -> Dict[str, Any]:
         """Parse Python file structure using AST"""
         result = {
@@ -240,10 +242,10 @@ class FileStructureParser:
             'imports': [],
             'errors': []
         }
-        
+
         try:
             tree = ast.parse(content)
-            
+
             # Parse imports
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
@@ -253,7 +255,7 @@ class FileStructureParser:
                     module = node.module or ''
                     for alias in node.names:
                         result['imports'].append(f"{module}.{alias.name}" if module else alias.name)
-            
+
             # Parse functions and classes
             for node in ast.iter_child_nodes(tree):
                 if isinstance(node, ast.FunctionDef):
@@ -266,7 +268,7 @@ class FileStructureParser:
                         for child in ast.walk(node):
                             if hasattr(child, 'lineno'):
                                 end_lineno = max(end_lineno, child.lineno)
-                    
+
                     result['functions'].append({
                         'name': node.name,
                         'type': 'function',
@@ -282,7 +284,7 @@ class FileStructureParser:
                         for child in ast.walk(node):
                             if hasattr(child, 'lineno'):
                                 end_lineno = max(end_lineno, child.lineno)
-                    
+
                     result['functions'].append({
                         'name': node.name,
                         'type': 'async_function',
@@ -298,7 +300,7 @@ class FileStructureParser:
                         for child in ast.walk(node):
                             if hasattr(child, 'lineno'):
                                 end_lineno = max(end_lineno, child.lineno)
-                    
+
                     result['classes'].append({
                         'name': node.name,
                         'type': 'class',
@@ -312,9 +314,9 @@ class FileStructureParser:
         except Exception as e:
             result['errors'].append(f"Python parsing error: {str(e)}")
             result['errors'].append(traceback.format_exc())
-        
+
         return result
-    
+
     def parse_javascript(self, content: str) -> Dict[str, Any]:
         """Parse JavaScript file structure using regex"""
         result = {
@@ -323,7 +325,7 @@ class FileStructureParser:
             'imports': [],
             'errors': []
         }
-        
+
         try:
             # Parse imports (ES6 modules)
             import_patterns = [
@@ -331,7 +333,7 @@ class FileStructureParser:
                 r'import\s+{([^}]+)}\s+from\s+["\']([^"\']+)["\']',
                 r'import\s+["\']([^"\']+)["\']'
             ]
-            
+
             for pattern in import_patterns:
                 matches = re.findall(pattern, content)
                 for match in matches:
@@ -349,7 +351,7 @@ class FileStructureParser:
                     else:
                         # import x from 'module'
                         result['imports'].append(f"{match}")
-            
+
             # Parse functions
             func_patterns = [
                 r'(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\([^)]*\)',
@@ -357,7 +359,7 @@ class FileStructureParser:
                 r'(?:export\s+)?(?:async\s+)?let\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:async\s+)?\([^)]*\)\s*=>',
                 r'(?:export\s+)?(?:async\s+)?var\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:async\s+)?\([^)]*\)\s*=>'
             ]
-            
+
             for pattern in func_patterns:
                 matches = re.findall(pattern, content)
                 for func_name in matches:
@@ -365,7 +367,7 @@ class FileStructureParser:
                         'name': func_name,
                         'type': 'function'
                     })
-            
+
             # Parse classes
             class_pattern = r'(?:export\s+)?class\s+([A-Za-z_$][A-Za-z0-9_$]*)'
             classes = re.findall(class_pattern, content)
@@ -374,17 +376,17 @@ class FileStructureParser:
                     'name': class_name,
                     'type': 'class'
                 })
-                
+
         except Exception as e:
             result['errors'].append(f"JavaScript parsing error: {str(e)}")
-        
+
         return result
-    
+
     def parse_typescript(self, content: str) -> Dict[str, Any]:
         """Parse TypeScript file structure (extends JavaScript parsing)"""
         result = self.parse_javascript(content)
         result['language'] = 'typescript'
-        
+
         try:
             # Additional TypeScript-specific parsing
             # Parse interfaces
@@ -397,7 +399,7 @@ class FileStructureParser:
                     'name': interface_name,
                     'type': 'interface'
                 })
-            
+
             # Parse types
             type_pattern = r'(?:export\s+)?type\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*='
             types = re.findall(type_pattern, content)
@@ -408,12 +410,12 @@ class FileStructureParser:
                     'name': type_name,
                     'type': 'type_alias'
                 })
-                
+
         except Exception as e:
             result['errors'].append(f"TypeScript parsing error: {str(e)}")
-        
+
         return result
-    
+
     def parse_java(self, content: str) -> Dict[str, Any]:
         """Parse Java file structure"""
         result = {
@@ -422,13 +424,13 @@ class FileStructureParser:
             'imports': [],
             'errors': []
         }
-        
+
         try:
             # Parse imports
             import_pattern = r'import\s+([\w.]+(?:\.[\w*]+)?)\s*;'
             imports = re.findall(import_pattern, content)
             result['imports'] = imports
-            
+
             # Parse classes and interfaces
             class_pattern = r'(?:public\s+|private\s+|protected\s+|abstract\s+|final\s+)*(?:class|interface|enum)\s+([A-Za-z_$][A-Za-z0-9_$]*)'
             classes = re.findall(class_pattern, content)
@@ -437,7 +439,7 @@ class FileStructureParser:
                     'name': class_name,
                     'type': 'class'
                 })
-            
+
             # Parse methods
             method_pattern = r'(?:public\s+|private\s+|protected\s+|static\s+|final\s+|abstract\s+|synchronized\s+)*([A-Za-z_$<>\[\]\s]+)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\([^)]*\)'
             methods = re.findall(method_pattern, content)
@@ -447,12 +449,12 @@ class FileStructureParser:
                     'type': 'method',
                     'return_type': return_type.strip()
                 })
-                
+
         except Exception as e:
             result['errors'].append(f"Java parsing error: {str(e)}")
-        
+
         return result
-    
+
     def parse_c(self, content: str) -> Dict[str, Any]:
         """Parse C file structure"""
         result = {
@@ -461,10 +463,10 @@ class FileStructureParser:
             'structs': [],
             'errors': []
         }
-        
+
         try:
             lines = content.split('\n')
-            
+
             # Parse includes
             include_pattern = r'#include\s+[<"]([^>"]+)[>"]'
             for i, line in enumerate(lines):
@@ -475,7 +477,7 @@ class FileStructureParser:
                         'type': 'include',
                         'lineno': i + 1
                     })
-            
+
             # Parse functions
             func_pattern = r'(?:[\w\s\*]+)\s+([\w]+)\s*\([^)]*\)\s*(?:\{[^}]*\})?'
             for i, line in enumerate(lines):
@@ -519,7 +521,7 @@ class FileStructureParser:
                                 'type': 'function',
                                 'lineno': i + 1
                             })
-            
+
             # Parse structs
             struct_pattern = r'struct\s+([\w]+)\s*\{'
             for i, line in enumerate(lines):
@@ -563,20 +565,20 @@ class FileStructureParser:
                                 'type': 'struct',
                                 'lineno': i + 1
                             })
-                
+
         except Exception as e:
             result['errors'].append(f"C parsing error: {str(e)}")
-        
+
         return result
-    
+
     def parse_cpp(self, content: str) -> Dict[str, Any]:
         """Parse C++ file structure (extends C parsing)"""
         result = self.parse_c(content)
         result['language'] = 'cpp'
-        
+
         try:
             lines = content.split('\n')
-            
+
             # Parse classes
             class_pattern = r'class\s+([\w]+)'
             for i, line in enumerate(lines):
@@ -620,7 +622,7 @@ class FileStructureParser:
                                 'type': 'class',
                                 'lineno': i + 1
                             })
-            
+
             # Parse namespaces
             namespace_pattern = r'namespace\s+([\w]+)'
             for i, line in enumerate(lines):
@@ -664,11 +666,11 @@ class FileStructureParser:
                                 'type': 'namespace',
                                 'lineno': i + 1
                             })
-                
+
         except Exception as e:
             result['errors'].append(f"C++ parsing error: {str(e)}")
         return result
-    
+
     def parse_markdown(self, content: str) -> Dict[str, Any]:
         """Parse Markdown file structure"""
         result = {
@@ -679,13 +681,13 @@ class FileStructureParser:
             'links': [],
             'errors': []
         }
-        
+
         try:
             lines = content.split('\n')
             in_code_block = False
             code_block_start = 0
             current_code_block_language = ''
-            
+
             for i, line in enumerate(lines):
                 # 解析标题
                 heading_match = re.match(r'^(#{1,6})\s+(.+)$', line)
@@ -697,7 +699,7 @@ class FileStructureParser:
                         'type': f'heading_{level}',
                         'lineno': i + 1
                     })
-                
+
                 # 解析代码块
                 if line.strip().startswith('```'):
                     if not in_code_block:
@@ -715,7 +717,7 @@ class FileStructureParser:
                             'end_lineno': i + 1,
                             'language': current_code_block_language
                         })
-                
+
                 # 解析列表项
                 list_match = re.match(r'^(\s*)[-*+]\s+(.+)$', line)
                 if list_match:
@@ -727,7 +729,7 @@ class FileStructureParser:
                         'lineno': i + 1,
                         'indent': indent
                     })
-                
+
                 # 解析链接
                 link_pattern = r'\[([^\]]+)\]\(([^)]+)\)'
                 for link_match in re.finditer(link_pattern, line):
@@ -737,7 +739,7 @@ class FileStructureParser:
                         'lineno': i + 1,
                         'url': link_match.group(2)
                     })
-            
+
             # 如果文件以未关闭的代码块结束
             if in_code_block:
                 result['code_blocks'].append({
@@ -747,12 +749,12 @@ class FileStructureParser:
                     'end_lineno': len(lines),
                     'language': current_code_block_language
                 })
-                
+
         except Exception as e:
             result['errors'].append(f"Markdown parsing error: {str(e)}")
-        
+
         return result
-    
+
     def parse_org(self, content: str) -> Dict[str, Any]:
         """Parse Org-mode file structure"""
         result = {
@@ -762,12 +764,12 @@ class FileStructureParser:
             'lists': [],
             'errors': []
         }
-        
+
         try:
             lines = content.split('\n')
             in_code_block = False
             code_block_start = 0
-            
+
             for i, line in enumerate(lines):
                 # 解析标题
                 heading_match = re.match(r'^(\*+)\s+(.+)$', line)
@@ -779,7 +781,7 @@ class FileStructureParser:
                         'type': f'heading_{level}',
                         'lineno': i + 1
                     })
-                
+
                 # 解析代码块
                 if line.strip().startswith('#+BEGIN_SRC'):
                     in_code_block = True
@@ -792,7 +794,7 @@ class FileStructureParser:
                         'lineno': code_block_start,
                         'end_lineno': i + 1
                     })
-                
+
                 # 解析表格
                 if line.strip().startswith('|'):
                     result['tables'].append({
@@ -800,7 +802,7 @@ class FileStructureParser:
                         'type': 'table',
                         'lineno': i + 1
                     })
-                
+
                 # 解析列表项
                 list_match = re.match(r'^(\s*)[-+]\s+(.+)$', line)
                 if list_match:
@@ -812,7 +814,7 @@ class FileStructureParser:
                         'lineno': i + 1,
                         'indent': indent
                     })
-            
+
             # 如果文件以未关闭的代码块结束
             if in_code_block:
                 result['code_blocks'].append({
@@ -821,13 +823,13 @@ class FileStructureParser:
                     'lineno': code_block_start,
                     'end_lineno': len(lines)
                 })
-                
+
         except Exception as e:
             result['errors'].append(f"Org-mode parsing error: {str(e)}")
-        
+
         return result
         return result
-    
+
     def parse_elisp(self, content: str) -> Dict[str, Any]:
         """Parse Emacs Lisp file structure"""
         result = {
@@ -838,14 +840,14 @@ class FileStructureParser:
             'provides': [],
             'errors': []
         }
-        
+
         try:
             lines = content.split('\n')
-            
+
             for i, line in enumerate(lines):
                 line_num = i + 1
                 stripped_line = line.strip()
-                
+
                 # 解析函数定义 (defun)
                 defun_match = re.match(r'\(defun\s+([^\s\(]+)', stripped_line)
                 if defun_match:
@@ -853,7 +855,7 @@ class FileStructureParser:
                     # 查找函数结束
                     paren_count = stripped_line.count('(') - stripped_line.count(')')
                     end_line = line_num
-                    
+
                     if paren_count > 0:
                         # 函数定义跨越多行
                         for j in range(i + 1, len(lines)):
@@ -861,14 +863,14 @@ class FileStructureParser:
                             if paren_count <= 0:
                                 end_line = j + 1
                                 break
-                    
+
                     result['functions'].append({
                         'name': func_name,
                         'type': 'function',
                         'lineno': line_num,
                         'end_lineno': end_line
                     })
-                
+
                 # 解析变量定义 (defvar)
                 defvar_match = re.match(r'\(defvar\s+([^\s\(]+)', stripped_line)
                 if defvar_match:
@@ -878,7 +880,7 @@ class FileStructureParser:
                         'type': 'variable',
                         'lineno': line_num
                     })
-                
+
                 # 解析自定义变量 (defcustom)
                 defcustom_match = re.match(r'\(defcustom\s+([^\s\(]+)', stripped_line)
                 if defcustom_match:
@@ -888,7 +890,7 @@ class FileStructureParser:
                         'type': 'custom_variable',
                         'lineno': line_num
                     })
-                
+
                 # 解析宏定义 (defmacro)
                 defmacro_match = re.match(r'\(defmacro\s+([^\s\(]+)', stripped_line)
                 if defmacro_match:
@@ -898,7 +900,7 @@ class FileStructureParser:
                         'type': 'macro',
                         'lineno': line_num
                     })
-                
+
                 # 解析提供模块 (provide)
                 provide_match = re.match(r'\(provide\s+\'([^\s\)]+)', stripped_line)
                 if provide_match:
@@ -908,7 +910,7 @@ class FileStructureParser:
                         'type': 'provide',
                         'lineno': line_num
                     })
-                
+
                 # 解析注释
                 if stripped_line.startswith(';;;'):
                     # 文件头注释
@@ -931,12 +933,12 @@ class FileStructureParser:
                         'type': 'inline_comment',
                         'lineno': line_num
                     })
-                    
+
         except Exception as e:
             result['errors'].append(f"Emacs Lisp parsing error: {str(e)}")
-        
+
         return result
-    
+
     def parse_makefile(self, content: str) -> Dict[str, Any]:
         """Parse Makefile structure"""
         result = {
@@ -947,18 +949,18 @@ class FileStructureParser:
             'conditionals': [],
             'errors': []
         }
-        
+
         try:
             lines = content.split('\n')
-            
+
             for i, line in enumerate(lines):
                 line_num = i + 1
                 stripped_line = line.strip()
-                
+
                 # 跳过空行和注释
                 if not stripped_line or stripped_line.startswith('#'):
                     continue
-                
+
                 # 解析变量定义 (VAR = value)
                 var_match = re.match(r'^([A-Za-z_][A-Za-z0-9_]*)\s*[:?+]?=\s*(.+)$', stripped_line)
                 if var_match:
@@ -971,13 +973,13 @@ class FileStructureParser:
                         'lineno': line_num
                     })
                     continue
-                
+
                 # 解析目标定义 (target: dependencies)
                 target_match = re.match(r'^([^:#=\s]+)\s*:(.*)$', stripped_line)
                 if target_match:
                     target_name = target_match.group(1).strip()
                     dependencies = target_match.group(2).strip()
-                    
+
                     # 检查是否是伪目标
                     if target_name == '.PHONY':
                         # 解析伪目标列表
@@ -996,7 +998,7 @@ class FileStructureParser:
                             'lineno': line_num
                         })
                     continue
-                
+
                 # 解析函数调用 ($(shell command) 或 $(function args))
                 function_match = re.search(r'\$\(([^)]+)\)', stripped_line)
                 if function_match:
@@ -1017,7 +1019,7 @@ class FileStructureParser:
                             'args': func_call,
                             'lineno': line_num
                         })
-                
+
                 # 解析条件语句 (ifeq, ifneq, ifdef, ifndef)
                 conditional_patterns = [
                     (r'^ifeq\s+\((.+)\)', 'ifeq'),
@@ -1027,7 +1029,7 @@ class FileStructureParser:
                     (r'^else', 'else'),
                     (r'^endif', 'endif')
                 ]
-                
+
                 for pattern, cond_type in conditional_patterns:
                     cond_match = re.match(pattern, stripped_line)
                     if cond_match:
@@ -1039,7 +1041,7 @@ class FileStructureParser:
                             'lineno': line_num
                         })
                         break
-                
+
                 # 解析包含 (include)
                 include_match = re.match(r'^include\s+(.+)$', stripped_line)
                 if include_match:
@@ -1049,12 +1051,12 @@ class FileStructureParser:
                         'type': 'include',
                         'lineno': line_num
                     })
-                    
+
         except Exception as e:
             result['errors'].append(f"Makefile parsing error: {str(e)}")
-        
+
         return result
-    
+
     def parse_cmake(self, content: str) -> Dict[str, Any]:
         """Parse CMake file structure"""
         result = {
@@ -1065,25 +1067,25 @@ class FileStructureParser:
             'installs': [],
             'errors': []
         }
-        
+
         try:
             lines = content.split('\n')
-            
+
             for i, line in enumerate(lines):
                 line_num = i + 1
                 stripped_line = line.strip()
-                
+
                 # 跳过空行和注释
                 if not stripped_line or stripped_line.startswith('#'):
                     continue
-                
+
                 # 解析CMake命令 (command(arg1 arg2 ...))
                 # 匹配命令名和参数
                 cmd_match = re.match(r'^([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)', stripped_line)
                 if cmd_match:
                     cmd_name = cmd_match.group(1)
                     cmd_args = cmd_match.group(2).strip()
-                    
+
                     # 根据命令类型分类
                     cmd_info = {
                         'name': cmd_name,
@@ -1091,7 +1093,7 @@ class FileStructureParser:
                         'args': cmd_args,
                         'lineno': line_num
                     }
-                    
+
                     # 特殊处理一些常见命令
                     if cmd_name == 'cmake_minimum_required':
                         cmd_info['type'] = 'minimum_version'
@@ -1172,9 +1174,9 @@ class FileStructureParser:
                         cmd_info['type'] = 'enable_testing'
                     elif cmd_name == 'add_custom_command':
                         cmd_info['type'] = 'custom_command'
-                    
+
                     result['commands'].append(cmd_info)
-                
+
                 # 解析变量引用 (${VAR})
                 var_ref_match = re.search(r'\$\{([^}]+)\}', stripped_line)
                 if var_ref_match:
@@ -1184,15 +1186,176 @@ class FileStructureParser:
                         'type': 'variable_reference',
                         'lineno': line_num
                     })
-                    
+
         except Exception as e:
             result['errors'].append(f"CMake parsing error: {str(e)}")
-        
+
         return result
-    
+
+    def parse_vimscript(self, content: str) -> Dict[str, Any]:
+        """Parse Vimscript file structure"""
+        result = {
+            'functions': [],
+            'commands': [],
+            'variables': [],
+            'mappings': [],
+            'autocommands': [],
+            'augroups': [],
+            'errors': []
+        }
+
+        try:
+            lines = content.split('\n')
+            in_function = False
+            current_function = None
+            function_start_line = 0
+
+            for i, line in enumerate(lines):
+                line_num = i + 1
+                stripped_line = line.strip()
+
+                # Skip empty lines and comments
+                if not stripped_line or stripped_line.startswith('"'):
+                    continue
+
+                # Parse function definitions
+                # Match: function! FunctionName() or function FunctionName()
+                func_match = re.match(r'^\s*(?:function!?|def)\s+([A-Za-z_][A-Za-z0-9_:]*)\s*\(', stripped_line)
+                if func_match and not in_function:
+                    func_name = func_match.group(1)
+                    # Check if it's a script-local function
+                    if func_name.startswith('s:'):
+                        func_type = 'script_function'
+                    else:
+                        func_type = 'function'
+
+                    # Vimscript functions end with 'endfunction'
+                    in_function = True
+                    current_function = func_name
+                    function_start_line = line_num
+
+                # Check for endfunction
+                if in_function and stripped_line == 'endfunction':
+                    result['functions'].append({
+                        'name': current_function,
+                        'type': 'function',
+                        'lineno': function_start_line,
+                        'end_lineno': line_num
+                    })
+                    in_function = False
+                    current_function = None
+
+                # Parse command definitions
+                # Match: command! CommandName
+                cmd_match = re.match(r'^\s*command!\s+([A-Za-z_][A-Za-z0-9_]*)', stripped_line)
+                if cmd_match:
+                    cmd_name = cmd_match.group(1)
+                    result['commands'].append({
+                        'name': cmd_name,
+                        'type': 'command',
+                        'lineno': line_num
+                    })
+
+                # Parse variable definitions
+                # Match: let var = value or let g:var = value
+                var_match = re.match(r'^\s*let\s+([gs]:)?([A-Za-z_][A-Za-z0-9_]*)\s*=', stripped_line)
+                if var_match:
+                    scope = var_match.group(1) or ''
+                    var_name = var_match.group(2)
+                    var_type = 'variable'
+                    if scope == 'g:':
+                        var_type = 'global_variable'
+                    elif scope == 's:':
+                        var_type = 'script_variable'
+
+                    result['variables'].append({
+                        'name': var_name,
+                        'type': var_type,
+                        'lineno': line_num
+                    })
+
+                # Parse mappings
+                # Match: nnoremap, inoremap, vnoremap, etc.
+                map_patterns = [
+                    (r'^\s*(nnoremap|inoremap|vnoremap|xnoremap|snoremap|onoremap|tnoremap|noremap|imap|vmap|xmap|smap|omap|tmap|map)\s+', 'mapping'),
+                    (r'^\s*(nunmap|iunmap|vunmap|xunmap|sunmap|ounmap|tunmap|unmap)\s+', 'unmap')
+                ]
+
+                for pattern, map_type in map_patterns:
+                    map_match = re.match(pattern, stripped_line)
+                    if map_match:
+                        map_cmd = map_match.group(1)
+                        # Extract the mapping (skip the command part)
+                        mapping_part = stripped_line[len(map_cmd):].strip()
+                        # Split into lhs and rhs if possible
+                        parts = mapping_part.split(None, 1)
+                        if len(parts) >= 1:
+                            lhs = parts[0]
+                            rhs = parts[1] if len(parts) > 1 else ''
+                            result['mappings'].append({
+                                'name': f'{map_cmd} {lhs}',
+                                'type': map_type,
+                                'command': map_cmd,
+                                'lhs': lhs,
+                                'rhs': rhs,
+                                'lineno': line_num
+                            })
+                        break
+
+                # Parse autocommand groups
+                augroup_match = re.match(r'^\s*augroup\s+([A-Za-z_][A-Za-z0-9_]*)', stripped_line)
+                if augroup_match:
+                    augroup_name = augroup_match.group(1)
+                    result['augroups'].append({
+                        'name': augroup_name,
+                        'type': 'augroup',
+                        'lineno': line_num
+                    })
+
+                # Parse autocommands
+                autocmd_match = re.match(r'^\s*autocmd!\s*', stripped_line)
+                if autocmd_match:
+                    # autocmd! (clear autocommands)
+                    result['autocommands'].append({
+                        'name': 'autocmd_clear',
+                        'type': 'autocmd_clear',
+                        'lineno': line_num
+                    })
+                else:
+                    autocmd_match = re.match(r'^\s*autocmd\s+', stripped_line)
+                    if autocmd_match:
+                        # Parse autocmd with event and pattern
+                        autocmd_parts = stripped_line[7:].strip().split(None, 2)
+                        if len(autocmd_parts) >= 2:
+                            event = autocmd_parts[0]
+                            pattern = autocmd_parts[1]
+                            command = autocmd_parts[2] if len(autocmd_parts) > 2 else ''
+                            result['autocommands'].append({
+                                'name': f'autocmd {event} {pattern}',
+                                'type': 'autocmd',
+                                'event': event,
+                                'pattern': pattern,
+                                'command': command,
+                                'lineno': line_num
+                            })
+
+            # Handle function that ends at EOF (missing endfunction)
+            if in_function and current_function:
+                result['functions'].append({
+                    'name': current_function,
+                    'type': 'function',
+                    'lineno': function_start_line,
+                    'end_lineno': len(lines)
+                })
+
+        except Exception as e:
+            result['errors'].append(f"Vimscript parsing error: {str(e)}")
+
+        return result
+
     def _check_dependencies(self) -> bool:
         required_deps = ['json', 're', 'ast', 'typing', 'traceback', 'importlib.util']
-        
+
         for dep in required_deps:
             try:
                 if dep == 'importlib.util':
@@ -1209,10 +1372,10 @@ class FileStructureParser:
                     import traceback
             except ImportError:
                 return False
-        
+
         return True
-        
-    
+
+
     def _get_enhanced_capabilities(self) -> List[str]:
         """Get enhanced parsing capabilities based on available optional dependencies"""
         capabilities = []
@@ -1221,14 +1384,14 @@ class FileStructureParser:
             capabilities.append('python_enhanced')
         except ImportError:
             pass
-        
+
         # Check for javalang (enhanced Java parsing)
         try:
             import javalang
             capabilities.append('java_enhanced')
         except ImportError:
             pass
-        
+
         # Check for pycparser (enhanced C/C++ parsing)
         try:
             import pycparser
@@ -1236,9 +1399,9 @@ class FileStructureParser:
             capabilities.append('cpp_enhanced')
         except ImportError:
             pass
-        
+
         return capabilities
-    
+
     def get_dependency_info(self) -> Dict[str, Any]:
         """Get information about dependencies and capabilities"""
         return {
@@ -1254,14 +1417,14 @@ def main():
     try:
         # Read input from stdin
         input_data = sys.stdin.read().strip()
-        
+
         if not input_data:
             print(json.dumps({
                 'error': 'No input provided',
                 'usage': 'echo \'{"content": "code", "language": "python"}\' | python3 parse.py'
             }, indent=2))
             sys.exit(1)
-        
+
         # Parse input JSON
         try:
             data = json.loads(input_data)
@@ -1271,37 +1434,37 @@ def main():
                 'input': input_data[:100] + '...' if len(input_data) > 100 else input_data
             }, indent=2))
             sys.exit(1)
-        
+
         # Check for dependency check request
         if data.get('action') == 'check_deps':
             parser = FileStructureParser()
             result = parser.get_dependency_info()
             print(json.dumps(result, indent=2))
             sys.exit(0)
-        
+
         # Validate input for parsing
         if 'content' not in data:
             print(json.dumps({
                 'error': 'Missing required field: content'
             }, indent=2))
             sys.exit(1)
-        
+
         if 'language' not in data:
             print(json.dumps({
                 'error': 'Missing required field: language'
             }, indent=2))
             sys.exit(1)
-        
+
         # Create parser and check dependencies
         parser = FileStructureParser()
-        
+
         # Add dependency info to result
         result = parser.parse(data['content'], data['language'])
         result['dependency_info'] = parser.get_dependency_info()
-        
+
         # Output result as JSON
         print(json.dumps(result, indent=2))
-        
+
     except Exception as e:
         print(json.dumps({
             'error': f'Unexpected error: {str(e)}',

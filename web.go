@@ -6,9 +6,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
+
+	"github.com/PuerkitoBio/goquery"
+	"golang.org/x/net/html/charset"
+
+	"jaytaylor.com/html2text"
 )
 
 // 创建HTTP客户端，设置超时
@@ -34,65 +38,39 @@ func handleWebReader(ctx context.Context, args ToolArgs) (string, error) {
 }
 
 // htmlToMarkdown 将HTML转换为简化的Markdown格式
-func htmlToMarkdown(html string) string {
-	// 移除脚本和样式标签
-	html = regexp.MustCompile(`(?is)<script.*?>.*?</script>`).ReplaceAllString(html, "")
-	html = regexp.MustCompile(`(?is)<style.*?>.*?</style>`).ReplaceAllString(html, "")
-
-	// 处理标题
-	html = regexp.MustCompile(`(?is)<h1.*?>(.*?)</h1>`).ReplaceAllString(html, "# $1\n\n")
-	html = regexp.MustCompile(`(?is)<h2.*?>(.*?)</h2>`).ReplaceAllString(html, "## $1\n\n")
-	html = regexp.MustCompile(`(?is)<h3.*?>(.*?)</h3>`).ReplaceAllString(html, "### $1\n\n")
-	html = regexp.MustCompile(`(?is)<h4.*?>(.*?)</h4>`).ReplaceAllString(html, "#### $1\n\n")
-	html = regexp.MustCompile(`(?is)<h5.*?>(.*?)</h5>`).ReplaceAllString(html, "##### $1\n\n")
-	html = regexp.MustCompile(`(?is)<h6.*?>(.*?)</h6>`).ReplaceAllString(html, "###### $1\n\n")
-
-	// 处理段落
-	html = regexp.MustCompile(`(?is)<p.*?>(.*?)</p>`).ReplaceAllString(html, "$1\n\n")
-
-	// 处理链接 [text](url)
-	html = regexp.MustCompile(`(?is)<a.*?href="(.*?)".*?>(.*?)</a>`).ReplaceAllString(html, "[$2]($1)")
-
-	// 处理图片 ![alt](src)
-	html = regexp.MustCompile(`(?is)<img.*?src="(.*?)".*?alt="(.*?)".*?>`).ReplaceAllString(html, "![$2]($1)")
-	html = regexp.MustCompile(`(?is)<img.*?src="(.*?)".*?>`).ReplaceAllString(html, "![]($1)")
-
-	// 处理列表项
-	html = regexp.MustCompile(`(?is)<li.*?>(.*?)</li>`).ReplaceAllString(html, "- $1\n")
-
-	// 处理代码块
-	html = regexp.MustCompile(`(?is)<pre.*?>(.*?)</pre>`).ReplaceAllString(html, "```\n$1\n```\n\n")
-	html = regexp.MustCompile(`(?is)<code.*?>(.*?)</code>`).ReplaceAllString(html, "`$1`")
-
-	// 处理加粗和斜体
-	html = regexp.MustCompile(`(?is)<strong.*?>(.*?)</strong>`).ReplaceAllString(html, "**$1**")
-	html = regexp.MustCompile(`(?is)<b.*?>(.*?)</b>`).ReplaceAllString(html, "**$1**")
-	html = regexp.MustCompile(`(?is)<em.*?>(.*?)</em>`).ReplaceAllString(html, "*$1*")
-	html = regexp.MustCompile(`(?is)<i.*?>(.*?)</i>`).ReplaceAllString(html, "*$1*")
-
-	// 移除所有HTML标签
-	html = regexp.MustCompile(`(?is)<.*?>`).ReplaceAllString(html, "")
-
-	// 处理HTML实体
-	html = strings.ReplaceAll(html, "&lt;", "<")
-	html = strings.ReplaceAll(html, "&gt;", ">")
-	html = strings.ReplaceAll(html, "&amp;", "&")
-	html = strings.ReplaceAll(html, "&quot;", "\"")
-	html = strings.ReplaceAll(html, "&#39;", "'")
-	html = strings.ReplaceAll(html, "&nbsp;", " ")
-
-	// 清理多余的空行
-	html = regexp.MustCompile(`\n{3,}`).ReplaceAllString(html, "\n\n")
-	html = strings.TrimSpace(html)
-
-	return html
+func htmlToMarkdown(inputHTML string) (text string) {
+	text, err := html2text.FromString(inputHTML, html2text.Options{PrettyTables: true, TextOnly: true})
+	if err != nil {
+		text = ""
+	}
+	return
 }
 
 // extractMainContent 尝试提取网页主要内容
-func extractMainContent(html string) string {
-	// 简单的启发式方法：找到包含最多文本的div
-	// 这里先使用简单的实现，后续可以改进
-	return html
+func extractMainContent(doc *goquery.Document) string {
+	removeSelectors := []string{
+		"header",
+		"footer",
+		".ad",
+		".quiz-module",
+		".subscribe-box",
+		"img",
+		"[style*='display:none']",
+		`[style*="display:none;"]`,
+		"[hidden]",
+		"img",
+		"script", // 删除所有脚本标签
+		"style",  // 删除所有样式标签
+	}
+
+	for _, sel := range removeSelectors {
+		doc.Find(sel).Remove()
+	}
+	ret, err := doc.Html()
+	if err != nil {
+		ret = ""
+	}
+	return ret
 }
 
 // Web2Markdown fetch web page and convert it to markdown
@@ -107,7 +85,6 @@ func Web2Markdown(ctx context.Context, url string) (string, error) {
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.5")
-	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
 	req.Header.Set("Connection", "close")
 
 	// 记录开始时间
@@ -125,28 +102,28 @@ func Web2Markdown(ctx context.Context, url string) (string, error) {
 		return "", fmt.Errorf("HTTP请求失败，状态码: %d", resp.StatusCode)
 	}
 
-	// 读取响应体
-	body, err := io.ReadAll(resp.Body)
+	utf8Reader, err := charset.NewReader(resp.Body, resp.Header.Get("Content-Type"))
 	if err != nil {
-		return "", fmt.Errorf("读取响应失败: %w", err)
+		return "", fmt.Errorf("创建编码转换reader失败: %w", err)
 	}
-
 	// 获取内容类型
 	contentType := resp.Header.Get("Content-Type")
-	contentLength := len(body)
+	contentLength := 0
 
 	// 处理不同类型的内容
 	var content string
 	var isMarkdown bool
 
 	if strings.Contains(contentType, "text/html") {
-		// HTML转Markdown
-		htmlContent := string(body)
+		doc, err := goquery.NewDocumentFromReader(utf8Reader)
+		if err != nil {
+			return "", err
+		}
+		contentLength = doc.Size()
 		// 提取主要内容
-		mainContent := extractMainContent(htmlContent)
+		mainContent := extractMainContent(doc)
 		// 转换为Markdown
 		markdownContent := htmlToMarkdown(mainContent)
-
 		// 如果内容太长，截取前一部分
 		if len(markdownContent) > 8000 {
 			markdownContent = markdownContent[:8000] + "\n\n...（内容已截断，只显示前8000字符）"
@@ -155,37 +132,45 @@ func Web2Markdown(ctx context.Context, url string) (string, error) {
 		content = markdownContent
 		isMarkdown = true
 
-	} else if strings.Contains(contentType, "application/json") {
-		// 如果是JSON，格式化输出
-		var jsonData any
-		rawContent := string(body)
-		trimmedBody := []byte(strings.TrimSpace(rawContent))
-		if len(trimmedBody) > 0 {
-			if trimmedBody[0] == '[' {
-				jsonData = []map[string]any{}
-			} else {
-				jsonData = map[string]any{}
-			}
-		}
-		if err := json.Unmarshal(trimmedBody, &jsonData); err == nil {
-			formatted, _ := json.MarshalIndent(jsonData, "", "  ")
-			content = string(formatted)
-		} else {
-			content = rawContent
-		}
-		isMarkdown = false
-
-	} else if strings.Contains(contentType, "text/plain") {
-		content = string(body)
-		// 如果内容太长，截取前一部分
-		if len(content) > 10000 {
-			content = content[:10000] + "\n\n...（内容已截断，只显示前10000字符）"
-		}
-		isMarkdown = strings.Contains(contentType, "markdown") || strings.HasSuffix(url, ".md")
-
 	} else {
-		content = fmt.Sprintf("二进制内容（Content-Type: %s，大小: %d 字节）", contentType, contentLength)
-		isMarkdown = false
+		// 如果是JSON，格式化输出
+		body, err := io.ReadAll(utf8Reader)
+		if err != nil {
+			return "", err
+		}
+
+		if strings.Contains(contentType, "application/json") {
+			var jsonData any
+			rawContent := string(body)
+			contentLength = len(rawContent)
+			trimmedBody := []byte(strings.TrimSpace(rawContent))
+			if len(trimmedBody) > 0 {
+				if trimmedBody[0] == '[' {
+					jsonData = []map[string]any{}
+				} else {
+					jsonData = map[string]any{}
+				}
+			}
+			if err := json.Unmarshal(trimmedBody, &jsonData); err == nil {
+				formatted, _ := json.MarshalIndent(jsonData, "", "  ")
+				content = string(formatted)
+			} else {
+				content = rawContent
+			}
+			isMarkdown = false
+
+		} else if strings.Contains(contentType, "text/plain") {
+			content = string(body)
+			// 如果内容太长，截取前一部分
+			if len(content) > 10000 {
+				content = content[:10000] + "\n\n...（内容已截断，只显示前10000字符）"
+			}
+			isMarkdown = strings.Contains(contentType, "markdown") || strings.HasSuffix(url, ".md")
+
+		} else {
+			content = fmt.Sprintf("二进制内容（Content-Type: %s，大小: %d 字节）", contentType, contentLength)
+			isMarkdown = false
+		}
 	}
 
 	// 计算执行时间

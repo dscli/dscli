@@ -46,6 +46,7 @@ clean:
 
 fmt:
 	find . -type f -name '*.go' -exec goimports -w {} \; -exec gofumpt -w {} \;
+	modernize -fix ./...
 
 # ==================== 测试相关 ====================
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -112,5 +113,29 @@ func TestNonRetryableError(t *testing.T) {
 	// 400错误不可重试，应该只尝试1次
 	if attempts != 1 {
 		t.Errorf("Expected 1 attempt (no retry for 400), got %d", attempts)
+	}
+}
+
+func Test_isRetryableError(t *testing.T) {
+	tests := []struct {
+		name string // description of this test case
+		// Named input parameters for target function.
+		err  error
+		want bool
+	}{
+		{
+			"400",
+			fmt.Errorf(`API 返回错误状态码 400: {"error":{"message":"An assistant message with 'tool_calls' must be followed by tool messages responding to each 'tool_call_id'. (insufficient tool messages following tool_calls message)","type":"invalid_request_error","param":null,"code":"invalid_request_error"}
+`),
+			false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isRetryableError(tt.err)
+			if got != tt.want {
+				t.Errorf("isRetryableError() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

@@ -6,8 +6,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"time"
 	"unicode/utf8"
 )
+
+// Message 扩展，支持工具调用（注意：Content 字段不再使用 omitempty）
+type Message struct {
+	ID               int        `json:"-"`
+	Role             string     `json:"role"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"`
+	Content          string     `json:"content"`                // 始终输出，即使为空字符串
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`   // 仅当有工具调用时输出
+	ToolCallID       string     `json:"tool_call_id,omitempty"` // 仅当 role="tool" 时输出
+	CreatedAt        time.Time  `json:"-"`
+}
 
 func init() {
 	RegisterTableSchema(
@@ -39,6 +51,28 @@ func init() {
 	)
 }
 
+func ToolCallsID(tcs []ToolCall) string {
+	if len(tcs) == 0 {
+		return ""
+	}
+	return tcs[0].ID
+}
+
+// UpdateHistory
+
+func UpdateHistory(ctx context.Context, id int64) (err error) {
+	db, err := OpenDB()
+	if err != nil {
+		return
+	}
+	defer db.Close()
+	_, err = db.ExecContext(ctx, `UPDATE messages SET session_id = 0 WHERE id = ?`, id)
+	if err != nil {
+		return
+	}
+	return
+}
+
 // LoadHistory 加载指定会话的所有历史消息，按时间升序返回
 func LoadHistory(ctx context.Context) ([]Message, error) {
 	sessionID := ContextValue(ctx, CurrentSessionID, int64(0))
@@ -50,7 +84,7 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 	}
 	defer db.Close()
 	rows, err := db.Query(`
-		SELECT role, content, tool_call_id, tool_calls, created_at
+		SELECT id, role, content, tool_call_id, tool_calls, created_at
 		FROM messages
 		WHERE session_id = ? AND model_id = ?
 		ORDER BY id DESC
@@ -65,7 +99,7 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 	for rows.Next() {
 		var m Message
 		var toolCallID, toolCalls sql.NullString
-		if err := rows.Scan(&m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt); err != nil {
 			return nil, fmt.Errorf("扫描消息失败: %w", err)
 		}
 		if toolCallID.Valid {
@@ -77,10 +111,12 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 				m.ToolCalls = toolCallsData
 			}
 		}
+
 		tokens += utf8.RuneCountInString(m.Content) / 2
 		if tokens > 131072 {
 			break
 		}
+
 		messages = append(messages, m)
 	}
 	if err := rows.Err(); err != nil {

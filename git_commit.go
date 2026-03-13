@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"strings"
 )
 
@@ -35,29 +36,17 @@ func init() {
 
 // handleGitCommit git提交
 func handleGitCommit(ctx context.Context, args ToolArgs) (string, error) {
-	message := ToolArgsValue(args, "message", "")
-	if message == "" {
-		return "", fmt.Errorf("no message specified")
+	message, ok := args["message"].(string)
+	if !ok || message == "" {
+		return "", fmt.Errorf("必须提供提交信息")
 	}
 
-	options := ToolArgsValue(args, "options", "")
-
-	// 显示操作标题
-	PrintGitSection("提交更改")
-
-	// 显示提交信息
-	Info("提交信息: %s", message)
-
-	if options != "" {
-		Info("提交选项: %s", options)
-	}
-
+	options, _ := args["options"].(string)
 	options = strings.TrimSpace(options)
 
 	// 更健壮的-m参数检查
 	// 检查 -m、-m[空格]、--message 等变体
-	optionWords := strings.Fields(options)
-	for _, word := range optionWords {
+	for word := range strings.FieldsSeq(options) {
 		if word == "-m" || word == "--message" || strings.HasPrefix(word, "-m") {
 			Error("检测到-m或--message参数")
 			Warn("提示: message参数已通过message字段提供，不要在options中包含-m或--message")
@@ -70,26 +59,32 @@ func handleGitCommit(ctx context.Context, args ToolArgs) (string, error) {
 		gitArgs = append(gitArgs, strings.Fields(options)...)
 	}
 
-	out, err := gitCommand(ctx, gitArgs...)
-	if err != nil {
-		return "", err
-	}
+	Info("执行: git %s", strings.Join(gitArgs, " "))
+	Info("执行: git %s", strings.Join(gitArgs, " "))
 
-	// 如果输出为空，显示成功消息
-	if out == "" || strings.Contains(out, "命令执行成功（无输出）") {
-		Success("提交成功: %s", message)
-		return "Git提交成功", nil
+	cmd := exec.Command("git", gitArgs...)
+	cmd.Dir = GetProjectRoot()
+	output, err := cmd.CombinedOutput()
+	out := string(output)
+
+	if err != nil {
+		Error("Git提交失败: %v", err)
+		if out != "" {
+			Error("输出: %s", out)
+		}
+		return "", fmt.Errorf("git commit失败: %v", err)
 	}
 
 	// 提取提交哈希（如果可能）
 	if strings.Contains(out, "[") && strings.Contains(out, "]") {
-		lines := strings.Split(out, "\n")
-		for _, line := range lines {
+		for line := range strings.SplitSeq(out, "\n") {
 			if strings.Contains(line, "[") && strings.Contains(line, "]") {
 				Success("提交成功: %s", strings.TrimSpace(line))
 				break
 			}
 		}
+	} else {
+		Success("提交成功")
 	}
 
 	return out, nil

@@ -20,7 +20,7 @@ func TestBoolValue(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			k := ContextKeyType("boolKey")
+			k := ContextKeyType[bool]{"boolKey"}
 			ctx := context.Background()
 			if tt.v != nil {
 				ctx = context.WithValue(ctx, k, tt.v)
@@ -47,7 +47,7 @@ func TestStringValue(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			k := ContextKeyType("stringKey")
+			k := ContextKeyType[string]{"stringKey"}
 			ctx := context.Background()
 			if tt.v != nil {
 				ctx = context.WithValue(ctx, k, tt.v)
@@ -73,7 +73,7 @@ func TestTimeValue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			k := ContextKeyType("timeKey")
+			k := ContextKeyType[time.Time]{"timeKey"}
 			if tt.v != nil {
 				ctx = context.WithValue(ctx, k, tt.v)
 			}

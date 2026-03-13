@@ -112,8 +112,9 @@ func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (e
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
-	// DebugHTTPClientDo(req, resp, err)
 	if err != nil {
+		// Since error found
+		SetVerbose(true)
 		// 检查是否是网络错误
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 			err = fmt.Errorf("网络请求超时: %w", err)
@@ -123,26 +124,33 @@ func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (e
 		return
 	}
 
+	SetVerbose(false)
+
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
+		SetVerbose(true)
 		err = fmt.Errorf("读取响应失败: %w", err)
 		return
 	}
+	SetVerbose(false)
 
 	defer DebugBytes("", respBody)
-
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		SetVerbose(true)
 		err = fmt.Errorf("API 返回错误状态码 %d: %s", resp.StatusCode, string(respBody))
 		return
 	}
+	SetVerbose(false)
 
 	if result != nil {
 		if err = json.Unmarshal(respBody, result); err != nil {
 			err = fmt.Errorf("解析响应失败: %w", err)
+			SetVerbose(true)
 			return
 		}
+		SetVerbose(false)
 	}
 	return
 }
@@ -151,8 +159,8 @@ func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (e
 func (c *Deepseek) doRequest(method, path string, body any, result any) (err error) {
 	defer StartWaiting(time.Second * 3)()
 	var lastErr error
-
-	for attempt := 0; attempt <= c.maxRetries; attempt++ {
+	attempt := 0
+	for attempt = 0; attempt <= c.maxRetries; attempt++ {
 		if attempt > 0 {
 			// 计算重试延迟（指数退避）
 			delay := min(time.Duration(1<<(attempt-1))*c.retryDelay,
@@ -183,8 +191,8 @@ func (c *Deepseek) doRequest(method, path string, body any, result any) (err err
 	}
 
 	// 所有重试都失败
-	if c.maxRetries > 0 {
-		return fmt.Errorf("经过%d次重试后仍然失败，最后错误: %w", c.maxRetries, lastErr)
+	if attempt > 0 {
+		return fmt.Errorf("经过%d次重试后仍然失败，最后错误: %w", attempt, lastErr)
 	}
 	return lastErr
 }
@@ -210,7 +218,7 @@ func (c *Deepseek) Balance() (*BalanceResponse, error) {
 
 // Chat 发送聊天请求
 func (c *Deepseek) Chat(ctx context.Context, messages []Message, tools []Tool) (*ChatResponse, error) {
-	model := ContextValue(ctx, CurrentModelID, ModelDeepseekChat)
+	model := ContextValue(ctx, CurrentModelName, ModelDeepseekChat)
 	insideShellExec := ContextValue(ctx, InsideShellExec, false)
 	stream := ContextValue(ctx, StreamKey, false)
 
