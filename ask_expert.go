@@ -142,41 +142,44 @@ func processExpertResponse(response string) string {
 
 // extractExpertSummary 从专家响应中提取摘要
 func extractExpertSummary(response string) string {
+	// 尝试从专家回答中提取摘要
+	// 专家回答通常以"## 摘要"或"**摘要**"开头
+
 	// 查找摘要标记
-	summaryMarkers := []string{"摘要：", "摘要:", "summary:", "Summary:"}
+	summaryMarkers := []string{
+		"## 摘要",
+		"**摘要**",
+		"摘要：",
+		"Summary:",
+		"## Summary",
+		"**Summary**",
+	}
 
 	for _, marker := range summaryMarkers {
-		if idx := strings.Index(response, marker); idx != -1 {
-			// 提取摘要内容（到换行或句号为止）
+		idx := strings.Index(response, marker)
+		if idx != -1 {
+			// 找到摘要标记，提取摘要内容
 			summaryStart := idx + len(marker)
-			summaryText := response[summaryStart:]
+			summaryEnd := strings.Index(response[summaryStart:], "\n\n")
+			if summaryEnd == -1 {
+				summaryEnd = len(response) - summaryStart
+			}
 
-			// 查找摘要结束位置
-			endMarkers := []string{"\n\n", "\n分析", "\n建议", "\n置信度", "\n1.", "\n2.", "\n3."}
-			var endPos int = len(summaryText)
-
-			for _, endMarker := range endMarkers {
-				if pos := strings.Index(summaryText, endMarker); pos != -1 && pos < endPos {
-					endPos = pos
+			summary := strings.TrimSpace(response[summaryStart : summaryStart+summaryEnd])
+			if summary != "" {
+				// 如果摘要太长，截断
+				runes := []rune(summary)
+				if len(runes) > 150 {
+					summary = string(runes[:147]) + "..."
 				}
+
+				return summary
 			}
-
-			// 提取摘要
-			summary := strings.TrimSpace(summaryText[:endPos])
-
-			// 如果摘要太长，截断
-			runes := []rune(summary)
-			if len(runes) > 150 {
-				summary = string(runes[:147]) + "..."
-			}
-
-			return summary
 		}
 	}
 
 	// 如果没有找到摘要标记，尝试提取第一段
-	lines := strings.Split(response, "\n")
-	for _, line := range lines {
+	for line := range strings.SplitSeq(response, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed != "" {
 			// 取第一段非空行作为摘要
@@ -188,7 +191,7 @@ func extractExpertSummary(response string) string {
 		}
 	}
 
-	return ""
+	return "专家未提供摘要"
 }
 
 // generateUserSummary 从用户内容自动生成摘要

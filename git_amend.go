@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 )
@@ -54,24 +54,43 @@ func handleGitAmend(ctx context.Context, args ToolArgs) (string, error) {
 		return "", fmt.Errorf("amend操作不安全: %s", reason)
 	}
 
+	// 获取参数
+	message, _ := args["message"].(string)
+	noEdit, _ := args["no_edit"].(bool)
+
 	// 构建git命令参数
-	gitArgs := []string{"commit", "-a", "--amend", "--no-edit"}
-	// 执行git命令
-	out, err := gitCommand(ctx, gitArgs...)
-	if err != nil {
-		return "", err
+	gitArgs := []string{"commit", "--amend"}
+	if noEdit {
+		gitArgs = append(gitArgs, "--no-edit")
+	} else if message != "" {
+		gitArgs = append(gitArgs, "-m", message)
 	}
 
-	// 处理输出
-	if out == "" || strings.Contains(out, "命令执行成功（无输出）") {
+	Info("执行: git %s", strings.Join(gitArgs, " "))
+
+	// 执行git命令
+	cmd := exec.Command("git", gitArgs...)
+	cmd.Dir = GetProjectRoot()
+	output, err := cmd.CombinedOutput()
+	out := string(output)
+
+	if err != nil {
+		Error("Git提交修改失败: %v", err)
+		if out != "" {
+			Error("输出: %s", out)
+		}
+		return "", fmt.Errorf("git commit --amend失败: %v", err)
+	}
+
+	// 如果输出为空，显示成功消息
+	if out == "" {
 		Success("提交修改成功")
 		return "Git提交修改成功", nil
 	}
 
 	// 提取提交哈希（如果可能）
 	if strings.Contains(out, "[") && strings.Contains(out, "]") {
-		lines := strings.SplitSeq(out, "\n")
-		for line := range lines {
+		for line := range strings.SplitSeq(out, "\n") {
 			if strings.Contains(line, "[") && strings.Contains(line, "]") {
 				Success("提交修改成功: %s", strings.TrimSpace(line))
 				break
@@ -115,47 +134,44 @@ func isGitRepository(ctx context.Context) bool {
 	return strings.TrimSpace(out) == "true"
 }
 
-// checkUncommittedChanges 检查是否有未提交的更改
 // uncommittedChanges 检查是否有未提交的更改
-func uncommittedChanges(ctx context.Context) (changes []string, err error) {
-	script := `git status --short`
-	out, err := ShellExec(ctx, script)
+func uncommittedChanges(ctx context.Context) (hasChanges bool, err error) {
+	// 执行git status --porcelain
+	cmd := exec.Command("git", "status", "--porcelain")
+	cmd.Dir = GetProjectRoot()
+	output, err := cmd.Output()
 	if err != nil {
-		err = fmt.Errorf("failed to run git status --short: %w", err)
+		err = fmt.Errorf("git status failed: %w", err)
 		return
 	}
-	out = strings.TrimSpace(out)
+
+	out := string(output)
 	if out == "" {
 		err = fmt.Errorf("no uncommitted changes")
 		return
 	}
 
 	// 分割行
-	lines := strings.SplitSeq(out, "\n")
-	for line := range lines {
+	for line := range strings.SplitSeq(out, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
+
+		// 检查是否为未提交的更改
+		// git status --porcelain格式: XY filename
+		// X: 暂存区状态, Y: 工作区状态
+		// 只要不是"??"（新文件）或"!!"（忽略文件），就认为有未提交的更改
+		if len(line) >= 2 {
+			status := line[:2]
+			if status != "??" && status != "!!" {
+				hasChanges = true
+				return
+			}
 		}
-		name := fields[1]
-		var fi os.FileInfo
-		fi, err = os.Stat(name)
-		if err != nil {
-			// 如果文件不存在，跳过而不是返回错误
-			continue
-		}
-		if size := fi.Size(); size >= 1024*1024 {
-			err = fmt.Errorf(`large file detected %s=%d,
-do not check in files larger than 1M,
-normally they are binary files`, name, size)
-			return
-		}
-		changes = append(changes, name)
 	}
+
+	err = fmt.Errorf("no uncommitted changes")
 	return
 }
 

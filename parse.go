@@ -299,9 +299,9 @@ func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (
 	// 对于Markdown等非编程语言，处理不同的结构
 	if lang == "markdown" || lang == "org" {
 		// 处理Markdown标题
-		if headings, ok := pythonResult["headings"].([]interface{}); ok {
+		if headings, ok := pythonResult["headings"].([]any); ok {
 			for _, h := range headings {
-				if headingMap, ok := h.(map[string]interface{}); ok {
+				if headingMap, ok := h.(map[string]any); ok {
 					symbol := &Symbol{
 						Name: getString(headingMap, "name"),
 						Type: getString(headingMap, "type"),
@@ -320,9 +320,9 @@ func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (
 		}
 
 		// 处理代码块
-		if codeBlocks, ok := pythonResult["code_blocks"].([]interface{}); ok {
+		if codeBlocks, ok := pythonResult["code_blocks"].([]any); ok {
 			for _, cb := range codeBlocks {
-				if cbMap, ok := cb.(map[string]interface{}); ok {
+				if cbMap, ok := cb.(map[string]any); ok {
 					symbol := &Symbol{
 						Name: getString(cbMap, "name"),
 						Type: getString(cbMap, "type"),
@@ -341,9 +341,9 @@ func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (
 		}
 
 		// 处理列表项
-		if lists, ok := pythonResult["lists"].([]interface{}); ok {
+		if lists, ok := pythonResult["lists"].([]any); ok {
 			for _, l := range lists {
-				if listMap, ok := l.(map[string]interface{}); ok {
+				if listMap, ok := l.(map[string]any); ok {
 					// 将列表项添加到Imports字段
 					listItem := getString(listMap, "name")
 					if listItem != "" {
@@ -354,9 +354,9 @@ func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (
 		}
 
 		// 处理链接
-		if links, ok := pythonResult["links"].([]interface{}); ok {
+		if links, ok := pythonResult["links"].([]any); ok {
 			for _, l := range links {
-				if linkMap, ok := l.(map[string]interface{}); ok {
+				if linkMap, ok := l.(map[string]any); ok {
 					symbol := &Symbol{
 						Name: getString(linkMap, "name"),
 						Type: getString(linkMap, "type"),
@@ -376,9 +376,9 @@ func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (
 	} else if lang == "vimscript" {
 		// 特殊处理vimscript
 		// 解析函数
-		if functions, ok := pythonResult["functions"].([]interface{}); ok {
+		if functions, ok := pythonResult["functions"].([]any); ok {
 			for _, f := range functions {
-				if funcMap, ok := f.(map[string]interface{}); ok {
+				if funcMap, ok := f.(map[string]any); ok {
 					symbol := &Symbol{
 						Name: getString(funcMap, "name"),
 						Type: getString(funcMap, "type"),
@@ -397,9 +397,9 @@ func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (
 		}
 
 		// 解析命令（映射到Classes）
-		if commands, ok := pythonResult["commands"].([]interface{}); ok {
+		if commands, ok := pythonResult["commands"].([]any); ok {
 			for _, c := range commands {
-				if cmdMap, ok := c.(map[string]interface{}); ok {
+				if cmdMap, ok := c.(map[string]any); ok {
 					symbol := &Symbol{
 						Name: getString(cmdMap, "name"),
 						Type: getString(cmdMap, "type"),
@@ -414,9 +414,9 @@ func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (
 		}
 
 		// 解析变量（映射到Imports）
-		if variables, ok := pythonResult["variables"].([]interface{}); ok {
+		if variables, ok := pythonResult["variables"].([]any); ok {
 			for _, v := range variables {
-				if varMap, ok := v.(map[string]interface{}); ok {
+				if varMap, ok := v.(map[string]any); ok {
 					varName := getString(varMap, "name")
 					varType := getString(varMap, "type")
 					fs.Imports = append(fs.Imports, fmt.Sprintf("%s (%s)", varName, varType))
@@ -425,9 +425,9 @@ func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (
 		}
 
 		// 解析映射（也映射到Imports）
-		if mappings, ok := pythonResult["mappings"].([]interface{}); ok {
+		if mappings, ok := pythonResult["mappings"].([]any); ok {
 			for _, m := range mappings {
-				if mapMap, ok := m.(map[string]interface{}); ok {
+				if mapMap, ok := m.(map[string]any); ok {
 					mapName := getString(mapMap, "name")
 					fs.Imports = append(fs.Imports, fmt.Sprintf("mapping: %s", mapName))
 				}
@@ -435,9 +435,9 @@ func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (
 		}
 
 		// 解析自动命令组（也映射到Imports）
-		if augroups, ok := pythonResult["augroups"].([]interface{}); ok {
+		if augroups, ok := pythonResult["augroups"].([]any); ok {
 			for _, a := range augroups {
-				if augroupMap, ok := a.(map[string]interface{}); ok {
+				if augroupMap, ok := a.(map[string]any); ok {
 					augroupName := getString(augroupMap, "name")
 					fs.Imports = append(fs.Imports, fmt.Sprintf("augroup: %s", augroupName))
 				}
@@ -446,9 +446,9 @@ func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (
 	} else {
 		// 对于其他编程语言，处理函数和类
 		// 解析函数
-		if functions, ok := pythonResult["functions"].([]interface{}); ok {
+		if functions, ok := pythonResult["functions"].([]any); ok {
 			for _, f := range functions {
-				if funcMap, ok := f.(map[string]interface{}); ok {
+				if funcMap, ok := f.(map[string]any); ok {
 					symbol := &Symbol{
 						Name: getString(funcMap, "name"),
 						Type: getString(funcMap, "type"),
@@ -468,9 +468,9 @@ func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (
 		}
 
 		// 解析类
-		if classes, ok := pythonResult["classes"].([]interface{}); ok {
+		if classes, ok := pythonResult["classes"].([]any); ok {
 			for _, c := range classes {
-				if classMap, ok := c.(map[string]interface{}); ok {
+				if classMap, ok := c.(map[string]any); ok {
 					symbol := &Symbol{
 						Name: getString(classMap, "name"),
 						Type: getString(classMap, "type"),
@@ -485,7 +485,7 @@ func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (
 		}
 
 		// 解析导入
-		if imports, ok := pythonResult["imports"].([]interface{}); ok {
+		if imports, ok := pythonResult["imports"].([]any); ok {
 			for _, imp := range imports {
 				if impStr, ok := imp.(string); ok {
 					fs.Imports = append(fs.Imports, impStr)
@@ -495,7 +495,7 @@ func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (
 	}
 
 	// 解析错误
-	if errors, ok := pythonResult["errors"].([]interface{}); ok {
+	if errors, ok := pythonResult["errors"].([]any); ok {
 		for _, err := range errors {
 			if errStr, ok := err.(string); ok {
 				fs.Errors = append(fs.Errors, errStr)
@@ -507,7 +507,7 @@ func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (
 }
 
 // getString 安全地从map中获取字符串
-func getString(m map[string]interface{}, key string) string {
+func getString(m map[string]any, key string) string {
 	if val, ok := m[key]; ok {
 		if str, ok := val.(string); ok {
 			return str
@@ -590,9 +590,9 @@ func ParseFileStructure(filePath, content string) (*FileStructure, error) {
 	// 对于Markdown等非编程语言，处理不同的结构
 	if lang == "markdown" || lang == "org" {
 		// 处理标题（映射到Classes）
-		if headings, ok := pythonResult["headings"].([]interface{}); ok {
+		if headings, ok := pythonResult["headings"].([]any); ok {
 			for _, h := range headings {
-				if headingMap, ok := h.(map[string]interface{}); ok {
+				if headingMap, ok := h.(map[string]any); ok {
 					symbol := &Symbol{
 						Name: getString(headingMap, "name"),
 						Type: getString(headingMap, "type"),
@@ -607,9 +607,9 @@ func ParseFileStructure(filePath, content string) (*FileStructure, error) {
 		}
 
 		// 处理代码块（映射到Functions）
-		if codeBlocks, ok := pythonResult["code_blocks"].([]interface{}); ok {
+		if codeBlocks, ok := pythonResult["code_blocks"].([]any); ok {
 			for _, cb := range codeBlocks {
-				if cbMap, ok := cb.(map[string]interface{}); ok {
+				if cbMap, ok := cb.(map[string]any); ok {
 					symbol := &Symbol{
 						Name: getString(cbMap, "name"),
 						Type: getString(cbMap, "type"),
@@ -628,18 +628,18 @@ func ParseFileStructure(filePath, content string) (*FileStructure, error) {
 		}
 
 		// 处理列表项（映射到Imports）
-		if lists, ok := pythonResult["lists"].([]interface{}); ok {
+		if lists, ok := pythonResult["lists"].([]any); ok {
 			for _, l := range lists {
-				if listMap, ok := l.(map[string]interface{}); ok {
+				if listMap, ok := l.(map[string]any); ok {
 					fs.Imports = append(fs.Imports, getString(listMap, "name"))
 				}
 			}
 		}
 
 		// 处理链接（映射到Functions）
-		if links, ok := pythonResult["links"].([]interface{}); ok {
+		if links, ok := pythonResult["links"].([]any); ok {
 			for _, l := range links {
-				if linkMap, ok := l.(map[string]interface{}); ok {
+				if linkMap, ok := l.(map[string]any); ok {
 					symbol := &Symbol{
 						Name: getString(linkMap, "name"),
 						Type: getString(linkMap, "type"),
@@ -655,9 +655,9 @@ func ParseFileStructure(filePath, content string) (*FileStructure, error) {
 	} else if lang == "vimscript" {
 		// 特殊处理vimscript
 		// 解析函数
-		if functions, ok := pythonResult["functions"].([]interface{}); ok {
+		if functions, ok := pythonResult["functions"].([]any); ok {
 			for _, f := range functions {
-				if funcMap, ok := f.(map[string]interface{}); ok {
+				if funcMap, ok := f.(map[string]any); ok {
 					symbol := &Symbol{
 						Name: getString(funcMap, "name"),
 						Type: getString(funcMap, "type"),
@@ -676,9 +676,9 @@ func ParseFileStructure(filePath, content string) (*FileStructure, error) {
 		}
 
 		// 解析命令（映射到Classes）
-		if commands, ok := pythonResult["commands"].([]interface{}); ok {
+		if commands, ok := pythonResult["commands"].([]any); ok {
 			for _, c := range commands {
-				if cmdMap, ok := c.(map[string]interface{}); ok {
+				if cmdMap, ok := c.(map[string]any); ok {
 					symbol := &Symbol{
 						Name: getString(cmdMap, "name"),
 						Type: getString(cmdMap, "type"),
@@ -693,9 +693,9 @@ func ParseFileStructure(filePath, content string) (*FileStructure, error) {
 		}
 
 		// 解析变量（映射到Imports）
-		if variables, ok := pythonResult["variables"].([]interface{}); ok {
+		if variables, ok := pythonResult["variables"].([]any); ok {
 			for _, v := range variables {
-				if varMap, ok := v.(map[string]interface{}); ok {
+				if varMap, ok := v.(map[string]any); ok {
 					varName := getString(varMap, "name")
 					varType := getString(varMap, "type")
 					fs.Imports = append(fs.Imports, fmt.Sprintf("%s (%s)", varName, varType))
@@ -704,9 +704,9 @@ func ParseFileStructure(filePath, content string) (*FileStructure, error) {
 		}
 
 		// 解析映射（也映射到Imports）
-		if mappings, ok := pythonResult["mappings"].([]interface{}); ok {
+		if mappings, ok := pythonResult["mappings"].([]any); ok {
 			for _, m := range mappings {
-				if mapMap, ok := m.(map[string]interface{}); ok {
+				if mapMap, ok := m.(map[string]any); ok {
 					mapName := getString(mapMap, "name")
 					fs.Imports = append(fs.Imports, fmt.Sprintf("mapping: %s", mapName))
 				}
@@ -714,9 +714,9 @@ func ParseFileStructure(filePath, content string) (*FileStructure, error) {
 		}
 
 		// 解析自动命令组（也映射到Imports）
-		if augroups, ok := pythonResult["augroups"].([]interface{}); ok {
+		if augroups, ok := pythonResult["augroups"].([]any); ok {
 			for _, a := range augroups {
-				if augroupMap, ok := a.(map[string]interface{}); ok {
+				if augroupMap, ok := a.(map[string]any); ok {
 					augroupName := getString(augroupMap, "name")
 					fs.Imports = append(fs.Imports, fmt.Sprintf("augroup: %s", augroupName))
 				}
@@ -725,9 +725,9 @@ func ParseFileStructure(filePath, content string) (*FileStructure, error) {
 	} else {
 		// 原有的编程语言处理逻辑
 		// 解析函数
-		if functions, ok := pythonResult["functions"].([]interface{}); ok {
+		if functions, ok := pythonResult["functions"].([]any); ok {
 			for _, f := range functions {
-				if funcMap, ok := f.(map[string]interface{}); ok {
+				if funcMap, ok := f.(map[string]any); ok {
 					symbol := &Symbol{
 						Name: getString(funcMap, "name"),
 						Type: getString(funcMap, "type"),
@@ -747,9 +747,9 @@ func ParseFileStructure(filePath, content string) (*FileStructure, error) {
 		}
 
 		// 解析类
-		if classes, ok := pythonResult["classes"].([]interface{}); ok {
+		if classes, ok := pythonResult["classes"].([]any); ok {
 			for _, c := range classes {
-				if classMap, ok := c.(map[string]interface{}); ok {
+				if classMap, ok := c.(map[string]any); ok {
 					symbol := &Symbol{
 						Name: getString(classMap, "name"),
 						Type: getString(classMap, "type"),
@@ -764,7 +764,7 @@ func ParseFileStructure(filePath, content string) (*FileStructure, error) {
 		}
 
 		// 解析导入
-		if imports, ok := pythonResult["imports"].([]interface{}); ok {
+		if imports, ok := pythonResult["imports"].([]any); ok {
 			for _, imp := range imports {
 				if impStr, ok := imp.(string); ok {
 					fs.Imports = append(fs.Imports, impStr)
@@ -774,7 +774,7 @@ func ParseFileStructure(filePath, content string) (*FileStructure, error) {
 	}
 
 	// 解析错误
-	if errors, ok := pythonResult["errors"].([]interface{}); ok {
+	if errors, ok := pythonResult["errors"].([]any); ok {
 		for _, err := range errors {
 			if errStr, ok := err.(string); ok {
 				fs.Errors = append(fs.Errors, errStr)

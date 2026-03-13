@@ -10,7 +10,13 @@ require (
 	modernc.org/sqlite v1.28.0
 	mvdan.cc/sh/v3 v3.13.0
 )
-
+ignore(
+    ./sandbox_prototype
+    ./docs
+    ./examples
+    ./notes
+    ./scripts
+)
 require (
 	github.com/PuerkitoBio/goquery v1.11.0 // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
