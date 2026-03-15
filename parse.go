@@ -645,12 +645,17 @@ func GetOrCreateCacheFile(ctx context.Context, script string) (cacheFile string,
 		if verbose {
 			fmt.Fprintf(os.Stderr, "缓存文件不存在，创建: %s\n", cacheFile)
 		}
-		if err = os.WriteFile(cacheFile, []byte(script), 0o644); err != nil {
+		// 设置文件权限：shell脚本需要执行权限，Python脚本不需要
+		perm := os.FileMode(0o644)
+		if scriptType == "bash" {
+			perm = os.FileMode(0o755)
+		}
+		if err = os.WriteFile(cacheFile, []byte(script), perm); err != nil {
 			err = fmt.Errorf("failed to write cache file: %w", err)
 			return
 		}
 		if verbose {
-			fmt.Fprintf(os.Stderr, "缓存文件创建完成，大小: %d bytes\n", len(script))
+			fmt.Fprintf(os.Stderr, "缓存文件创建完成，大小: %d bytes, 权限: %o\n", len(script), perm)
 		}
 	} else if err != nil {
 		err = fmt.Errorf("failed to stat cache file: %w", err)
