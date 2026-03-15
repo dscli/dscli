@@ -1,0 +1,86 @@
+{
+  "functions": [
+    {
+      "name": "main",
+      "type": "function",
+      "lineno": 1432,
+      "end_lineno": 1490,
+      "col_offset": 0
+    }
+  ],
+  "classes": [
+    {
+      "name": "FileStructureParser",
+      "type": "class",
+      "lineno": 17,
+      "end_lineno": 1428,
+      "col_offset": 0,
+      "methods": [
+        "__init__",
+        "parse",
+        "parse_go",
+        "parse_python",
+        "parse_javascript",
+        "parse_typescript",
+        "parse_java",
+        "parse_c",
+        "parse_cpp",
+        "parse_markdown",
+        "parse_org",
+        "parse_elisp",
+        "parse_makefile",
+        "parse_cmake",
+        "parse_vimscript",
+        "_check_dependencies",
+        "_get_enhanced_capabilities",
+        "get_dependency_info"
+      ]
+    }
+  ],
+  "imports": [
+    "sys",
+    "json",
+    "ast",
+    "re",
+    "typing.Dict",
+    "typing.List",
+    "typing.Any",
+    "typing.Optional",
+    "traceback",
+    "importlib.util",
+    "astroid",
+    "javalang",
+    "pycparser",
+    "importlib.util",
+    "json",
+    "re",
+    "ast",
+    "typing.Dict",
+    "typing.List",
+    "typing.Any",
+    "typing.Optional",
+    "traceback"
+  ],
+  "errors": [],
+  "dependency_info": {
+    "dependencies_ok": true,
+    "enhanced_capabilities": [],
+    "python_version": "3.7.3 (default, Nov  1 2022, 10:27:39) \n[GCC 8.3.0]",
+    "supported_languages": [
+      "go",
+      "python",
+      "javascript",
+      "typescript",
+      "java",
+      "c",
+      "cpp",
+      "markdown",
+      "org",
+      "elisp",
+      "makefile",
+      "cmake",
+      "vimscript",
+      "vim"
+    ]
+  }
+}

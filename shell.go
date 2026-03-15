@@ -202,14 +202,14 @@ func ShellExec(ctx context.Context, script string) (out string, err error) {
 		return "", fmt.Errorf("do not support %s %v", name, shellArgs)
 	}
 
-	// 检查是否在测试模式
-	if IsTesting() {
-		script = strings.ReplaceAll(script, "dscli", "echo dscli")
-	}
-
 	// 判断是否是 shell 命令
 	isShellCommand := isShellInterpreter(name)
 
+	if IsTesting() && isShellCommand {
+		script = strings.ReplaceAll(script, "dscli", "echo dscli")
+	}
+
+	// 检查是否在测试模式
 	if isShellCommand {
 		// 使用新的 shell 包执行
 		return executeWithShellPackage(ctx, name, shellArgs, script)

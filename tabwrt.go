@@ -12,7 +12,7 @@ type tabwrt struct {
 
 func NewTabwrt() *tabwrt {
 	return &tabwrt{
-		tabwriter.NewWriter(outputWriter, 0, 0, 2, ' ', tabwriter.AlignRight|tabwriter.TabIndent|tabwriter.Debug),
+		tabwriter.NewWriter(outputWriter, 0, 0, 2, ' ', tabwriter.TabIndent),
 	}
 }
 

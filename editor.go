@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -39,7 +40,7 @@ func createTempfile(initialContent string, ext string) (name string, err error) 
 	return
 }
 
-func OpenEditor(initialContent string) (content string, err error) {
+func OpenEditor(ctx context.Context, initialContent string) (content string, err error) {
 	editor, ext := getEditor()
 	path, err := createTempfile(initialContent, ext)
 	if err != nil {

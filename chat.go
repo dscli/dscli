@@ -18,7 +18,7 @@ const (
 	DeepseekReasoner = int64(1)
 )
 
-func chatCommonPreRunE(cmd *cobra.Command, args []string) (err error) {
+func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 	model, err := cmd.Flags().GetString("model")
 	if err != nil {
 		return
@@ -50,6 +50,21 @@ func chatCommonPreRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx = context.WithValue(ctx, CurrentSessionID, sessionID)
 	// InsideShellExec
 	ctx = context.WithValue(ctx, InsideShellExec, os.Getenv("InsideShellExec") == "1")
+
+	tools := GetAllTools(ctx)
+	tokens := 0
+	for _, tool := range tools {
+		tokens += tool.GetTokens()
+	}
+	skills, err := LoadSkills(ctx)
+	if err != nil {
+		return
+	}
+	for _, skill := range skills {
+		tokens += skill.GetTokens()
+	}
+
+	ctx = context.WithValue(ctx, LeftTokens, 131072-tokens)
 	cmd.SetContext(ctx)
 
 	return
@@ -124,8 +139,11 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		lastHist := history[len(history)-1]
 		tcs := lastHist.ToolCalls
 		if len(tcs) > 0 {
+			// Print reasoning content or content
+			PrintContent(ctx, lastHist.ReasoningContent, lastHist.Content)
+			toolInputs := HandleToolCalls(ctx, tcs)
 			// 执行工具调用
-			history = append(history, HandleToolCalls(ctx, tcs)...)
+			history = append(history, toolInputs...)
 
 			inputs := []Message{}
 			if content != "" {
@@ -343,7 +361,6 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 		PrintSessionStats(ctx)
 		return
 	}
-
 	toolInputs := HandleToolCalls(ctx, tcs)
 	if len(toolInputs) > 0 {
 		// Now tool call inputs saved in db

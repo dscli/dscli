@@ -9,6 +9,19 @@ import (
 	"time"
 )
 
+// Tool 定义可调用的工具
+type Tool struct {
+	Type     string   `json:"type"`
+	Function Function `json:"function"`
+	tokens   int      `json:"-"`
+}
+
+type Function struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Parameters  map[string]any `json:"parameters"` // JSON Schema 对象
+}
+
 var ToolDisplayName = &struct{}{}
 
 // toolRegistry 工具注册表
@@ -44,6 +57,21 @@ func init() {
 		`CREATE INDEX IF NOT EXISTS idx_tool_usage_tool ON tool_usage(tool_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_tool_usage_time ON tool_usage(used_at DESC)`,
 	)
+}
+
+func (t *Tool) GetTokens() int {
+	if t.tokens != 0 {
+		return t.tokens
+	}
+
+	b, err := json.Marshal(t)
+	if err != nil { // panic if the tool can not be marshal.
+		panic(err)
+	}
+
+	t.tokens = len([]rune(string(b))) / 2
+
+	return t.tokens
 }
 
 func GetToolDisplayName(name string) string {
@@ -172,6 +200,11 @@ which lead to the error:
 
 	if err := RecordToolUsage(toolID, success, errorMsg); err != nil {
 		return "", err
+	}
+
+	// 截断工具结果，避免API调用失败
+	if result != "" {
+		result = TruncateToolResult(result)
 	}
 
 	return result, err

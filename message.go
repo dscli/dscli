@@ -7,18 +7,34 @@ import (
 	"fmt"
 	"slices"
 	"time"
-	"unicode/utf8"
 )
 
 // Message 扩展，支持工具调用（注意：Content 字段不再使用 omitempty）
 type Message struct {
-	ID               int        `json:"-"`
+	ID               int64      `json:"-"`
+	SessionID        int64      `json:"-"`
+	ModelID          int64      `json:"-"`
 	Role             string     `json:"role"`
 	ReasoningContent string     `json:"reasoning_content,omitempty"`
 	Content          string     `json:"content"`                // 始终输出，即使为空字符串
 	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`   // 仅当有工具调用时输出
 	ToolCallID       string     `json:"tool_call_id,omitempty"` // 仅当 role="tool" 时输出
 	CreatedAt        time.Time  `json:"-"`
+	tokens           int        `json:"-"`
+	OK               bool       `json:"-"`
+}
+
+func (m *Message) GetTokens() int {
+	if m.tokens != 0 {
+		return m.tokens
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		panic(err)
+	}
+
+	m.tokens = len([]rune(string(b))) / 2
+	return m.tokens
 }
 
 func init() {
@@ -58,23 +74,83 @@ func ToolCallsID(tcs []ToolCall) string {
 	return tcs[0].ID
 }
 
-// UpdateHistory
-
-func UpdateHistory(ctx context.Context, id int64) (err error) {
+// Update message content
+func UpdateContent(ctx context.Context, id int64, content string) (err error) {
+	sessionID := ContextValue(ctx, CurrentSessionID, int64(0))
+	modelID := ContextValue(ctx, CurrentModelID, DeepseekChat)
 	db, err := OpenDB()
 	if err != nil {
 		return
 	}
 	defer db.Close()
-	_, err = db.ExecContext(ctx, `UPDATE messages SET session_id = 0 WHERE id = ?`, id)
+	res, err := db.ExecContext(ctx,
+		`UPDATE messages SET content = ? WHERE id = ? AND session_id = ? AND model_id = ?`,
+		content, id, sessionID, modelID)
+	if err != nil {
+		return
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return
+	}
+
+	if affected != 1 {
+		err = fmt.Errorf("failed to update message content")
+	}
+	return
+}
+
+// UpdateHistory update message session_id to 0
+func UpdateHistory(ctx context.Context, id int64) (err error) {
+	sessionID := ContextValue(ctx, CurrentSessionID, int64(0))
+	modelID := ContextValue(ctx, CurrentModelID, DeepseekChat)
+	db, err := OpenDB()
+	if err != nil {
+		return
+	}
+	defer db.Close()
+	_, err = db.ExecContext(ctx,
+		`UPDATE messages SET session_id = 0 WHERE id = ? AND session_id = ? and model_id = ?`,
+		id, sessionID, modelID)
 	if err != nil {
 		return
 	}
 	return
 }
 
-// LoadHistory 加载指定会话的所有历史消息，按时间升序返回
-func LoadHistory(ctx context.Context) ([]Message, error) {
+func ShowMessage(ctx context.Context, id int64) (message *Message, err error) {
+	sessionID := ContextValue(ctx, CurrentSessionID, int64(0))
+	modelID := ContextValue(ctx, CurrentModelID, DeepseekChat)
+	db, err := OpenDB()
+	if err != nil {
+		return
+	}
+	defer db.Close()
+	var toolCalls sql.NullString
+	var toolCallID sql.NullString
+	message = &Message{}
+	err = db.QueryRowContext(ctx, `SELECT id, session_id, role, content, tool_call_id, `+
+		`tool_calls, created_at, model_id, reasoning_content FROM messages WHERE `+
+		`session_id = ? AND model_id = ? AND id = ?`, sessionID, modelID, id).Scan(&message.ID,
+		&message.SessionID, &message.Role, &message.Content, &toolCallID,
+		&toolCalls, &message.CreatedAt, &message.ModelID, &message.ReasoningContent)
+	if err != nil {
+		return
+	}
+	if toolCalls.Valid {
+		err = json.Unmarshal([]byte(toolCalls.String), &message.ToolCalls)
+		if err != nil {
+			return
+		}
+	}
+	if toolCallID.Valid {
+		message.ToolCallID = toolCallID.String
+	}
+	return message, nil
+}
+
+// ListHistory 加载指定会话的所有历史消息，按时间升序返回
+func ListHistory(ctx context.Context) ([]*Message, error) {
 	sessionID := ContextValue(ctx, CurrentSessionID, int64(0))
 	modelID := ContextValue(ctx, CurrentModelID, DeepseekChat)
 	histSize := ContextValue(ctx, HistSize, 8)
@@ -88,14 +164,70 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 		FROM messages
 		WHERE session_id = ? AND model_id = ?
 		ORDER BY id DESC
-        LIMIT ?`, sessionID, modelID, histSize*2)
+        LIMIT ?`, sessionID, modelID, histSize+2) // histSize + 2就可
+	// 以，因为主要就是最后两个。注意我们按降低排的序：{100, 99, 98,
+	// ...} 最大ID在前面应用LIMIT，总能把最新消息的找出来。但我们提交
+	// 给大语言模型时，最新消息要在最后: {...,98, 99, 100}。
 	if err != nil {
 		return nil, fmt.Errorf("查询历史消息失败: %w", err)
 	}
+
+	defer rows.Close()
+
+	var messages []*Message
+	for rows.Next() {
+		m := &Message{}
+		var toolCallID, toolCalls sql.NullString
+		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt); err != nil {
+			return nil, fmt.Errorf("扫描消息失败: %w", err)
+		}
+		if toolCallID.Valid {
+			m.ToolCallID = toolCallID.String
+		}
+		if toolCalls.Valid {
+			var toolCallsData []ToolCall
+			if err := json.Unmarshal([]byte(toolCalls.String), &toolCallsData); err == nil {
+				m.ToolCalls = toolCallsData
+			}
+		}
+		messages = append(messages, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("遍历消息失败: %w", err)
+	}
+
+	JudgeHistory(messages)
+	slices.Reverse(messages)
+	return messages, nil
+}
+
+// LoadHistory 加载指定会话的所有历史消息，按时间升序返回
+func LoadHistory(ctx context.Context) ([]Message, error) {
+	sessionID := ContextValue(ctx, CurrentSessionID, int64(0))
+	modelID := ContextValue(ctx, CurrentModelID, DeepseekChat)
+	histSize := ContextValue(ctx, HistSize, 8)
+	leftTokens := ContextValue(ctx, LeftTokens, 0)
+	db, err := OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	rows, err := db.Query(`
+		SELECT id, role, content, tool_call_id, tool_calls, created_at
+		FROM messages
+		WHERE session_id = ? AND model_id = ?
+		ORDER BY id DESC
+        LIMIT ?`, sessionID, modelID, histSize+2) // histSize + 2就可
+	// 以，因为主要就是最后两个。注意我们按降低排的序：{100, 99, 98,
+	// ...} 最大ID在前面应用LIMIT，总能把最新消息的找出来。但我们提交
+	// 给大语言模型时，最新消息要在最后: {...,98, 99, 100}。
+	if err != nil {
+		return nil, fmt.Errorf("查询历史消息失败: %w", err)
+	}
+
 	defer rows.Close()
 
 	var messages []Message
-	tokens := 0
 	for rows.Next() {
 		var m Message
 		var toolCallID, toolCalls sql.NullString
@@ -111,9 +243,9 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 				m.ToolCalls = toolCallsData
 			}
 		}
-
-		tokens += utf8.RuneCountInString(m.Content) / 2
-		if tokens > 131072 {
+		tokens := m.GetTokens()
+		leftTokens -= tokens
+		if leftTokens <= tokens*2 { // 我们还要给后面的user消息留下些tokens。
 			break
 		}
 
@@ -142,6 +274,43 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 	return messages[idx:], nil
 }
 
+// JudgeHistory - Cleanup the history
+func JudgeHistory(messages []*Message) {
+	// The messages is in decrease order {100, 99, 98, ...}
+	l := len(messages)
+	for i, message := range messages[0 : l-1] {
+		nextMessage := messages[i+1]
+		message.OK = true
+		if message.Role == "assistant" {
+			if i > 0 {
+				prevMessage := messages[i-1]
+				if len(message.ToolCalls) == 1 {
+					if !prevMessage.OK && prevMessage.Role == "tool" {
+						message.OK = false
+					}
+					if prevMessage.Role != "tool" {
+						message.OK = false
+					}
+				}
+			}
+			continue
+		}
+
+		if message.Role == "user" || message.Role == "system" {
+			continue
+		}
+
+		// handle the left role = tool
+		message.OK = false
+		if message.ToolCallID != "" &&
+			nextMessage.Role == "assistant" &&
+			len(nextMessage.ToolCalls) != 0 &&
+			message.ToolCallID == nextMessage.ToolCalls[0].ID {
+			message.OK = true
+		}
+	}
+}
+
 // CleanupReverse - make the messages clean, remove the mistake message
 func CleanupReverse(messages []Message) (cleaned []Message) {
 	// The messages is in reverse order, say
@@ -161,9 +330,10 @@ outloop:
 				flag = true
 			}
 		}
-		if flag && m.Role != "assistant" {
+		if flag && m.Role != "assistant" { // 把非assistant消息都加进来
 			tms = append(tms, m)
 		}
+
 		if flag && m.Role == "assistant" {
 			toolCalls := m.ToolCalls
 			if len(toolCalls) != len(tms) { // skill all the messages in tms

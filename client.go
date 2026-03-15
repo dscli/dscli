@@ -114,7 +114,6 @@ func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (e
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		// Since error found
-		SetVerbose(true)
 		// 检查是否是网络错误
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 			err = fmt.Errorf("网络请求超时: %w", err)
@@ -124,33 +123,25 @@ func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (e
 		return
 	}
 
-	SetVerbose(false)
-
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		SetVerbose(true)
 		err = fmt.Errorf("读取响应失败: %w", err)
 		return
 	}
-	SetVerbose(false)
 
 	defer DebugBytes("", respBody)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		SetVerbose(true)
 		err = fmt.Errorf("API 返回错误状态码 %d: %s", resp.StatusCode, string(respBody))
 		return
 	}
-	SetVerbose(false)
 
 	if result != nil {
 		if err = json.Unmarshal(respBody, result); err != nil {
 			err = fmt.Errorf("解析响应失败: %w", err)
-			SetVerbose(true)
 			return
 		}
-		SetVerbose(false)
 	}
 	return
 }

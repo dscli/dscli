@@ -63,6 +63,7 @@ Thumbs.db
 
 # 测试相关
 _test.go
+test_*.*
 
 # 学习类
 sandbox_prototype
@@ -74,3 +75,6 @@ dscli_new
 *.db
 *.sqlite3
 *.db3
+
+# Python类
+__pycache__

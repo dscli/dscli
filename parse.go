@@ -18,6 +18,9 @@ import (
 //go:embed parse.py
 var pythonScript string
 
+//go:embed parse.py.structure
+var pythonScriptStructure string
+
 // FileStructure 表示文件结构
 type FileStructure struct {
 	Language  string    `json:"language"`
@@ -76,9 +79,10 @@ func runParse(cmd *cobra.Command, args []string) error {
 
 	verbose, _ := cmd.Flags().GetBool("verbose")
 	usePython, _ := cmd.Flags().GetBool("use-python")
-
+	ctx := cmd.Context()
+	ctx = context.WithValue(ctx, VerboseKey, verbose)
 	// 解析文件结构
-	fs, err := parseFileStructure(cmd.Context(), filePath, lang, verbose, usePython)
+	fs, err := parseFileStructure(ctx, filePath, lang, usePython)
 	if err != nil {
 		return fmt.Errorf("failed to parse file: %w", err)
 	}
@@ -143,14 +147,14 @@ func guessLanguage(path string) string {
 }
 
 // parseFileStructure 解析文件结构
-func parseFileStructure(ctx context.Context, filePath, lang string, verbose, usePython bool) (*FileStructure, error) {
+func parseFileStructure(ctx context.Context, filePath, lang string, usePython bool) (*FileStructure, error) {
 	// 如果是Go语言且不强制使用Python，使用Go内置解析器
 	if lang == "go" && !usePython {
 		return parseGoStructure(filePath)
 	}
 
 	// 其他语言使用Python解析器
-	return parseWithPython(ctx, filePath, lang, verbose)
+	return parseWithPython(ctx, filePath, lang)
 }
 
 // parseGoStructure 使用Go内置AST解析器解析Go文件结构
@@ -233,12 +237,12 @@ func parseGoStructure(path string) (*FileStructure, error) {
 	return fs, nil
 }
 
-// parseWithPython 使用Python脚本解析文件结构
-func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (structure *FileStructure, err error) {
+func runPythonParsePy(ctx context.Context, filePath string, lang string) (output string, err error) {
 	// 读取文件内容
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read file: %w", err)
+		err = fmt.Errorf("failed to read file: %w", err)
+		return
 	}
 
 	// 准备输入数据
@@ -249,7 +253,8 @@ func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (
 
 	jsonInput, err := json.Marshal(inputData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal input data: %w", err)
+		err = fmt.Errorf("failed to marshal input data: %w", err)
+		return
 	}
 
 	if verbose {
@@ -258,16 +263,28 @@ func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (
 	}
 	r, w, err := os.Pipe()
 	if err != nil {
-		return nil, err
+		return
 	}
 	_, err = w.Write(jsonInput)
 	if err != nil {
-		return nil, err
+		return
 	}
 	w.Close()
 	ctx = context.WithValue(ctx, ShellStdin, r)
-	output, err := ShellExec(ctx, pythonScript)
+	output, err = ShellExec(ctx, pythonScript)
 	r.Close()
+	return
+}
+
+// parseWithPython 使用Python脚本解析文件结构
+func parseWithPython(ctx context.Context, filePath, lang string) (structure *FileStructure, err error) {
+	output := ""
+	if lang == "python" && filePath == "parse.py" {
+		output = pythonScriptStructure
+	} else {
+		output, err = runPythonParsePy(ctx, filePath, lang)
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute Python script: %w", err)
 	}
@@ -285,9 +302,9 @@ func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (
 	// 检查Python解析是否成功
 	if success, ok := pythonResult["success"].(bool); ok && !success {
 		if errMsg, ok := pythonResult["error"].(string); ok {
-			return nil, fmt.Errorf("Python parser error: %s", errMsg)
+			return nil, fmt.Errorf("python parser error: %s", errMsg)
 		}
-		return nil, fmt.Errorf("Python parser failed without error message")
+		return nil, fmt.Errorf("python parser failed without error message")
 	}
 
 	// 转换为FileStructure格式
@@ -297,7 +314,8 @@ func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (
 	}
 
 	// 对于Markdown等非编程语言，处理不同的结构
-	if lang == "markdown" || lang == "org" {
+	switch lang {
+	case "markdown", "org":
 		// 处理Markdown标题
 		if headings, ok := pythonResult["headings"].([]any); ok {
 			for _, h := range headings {
@@ -373,7 +391,7 @@ func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (
 				}
 			}
 		}
-	} else if lang == "vimscript" {
+	case "vimscript":
 		// 特殊处理vimscript
 		// 解析函数
 		if functions, ok := pythonResult["functions"].([]any); ok {
@@ -443,7 +461,7 @@ func parseWithPython(ctx context.Context, filePath, lang string, verbose bool) (
 				}
 			}
 		}
-	} else {
+	default:
 		// 对于其他编程语言，处理函数和类
 		// 解析函数
 		if functions, ok := pythonResult["functions"].([]any); ok {
@@ -517,270 +535,14 @@ func getString(m map[string]any, key string) string {
 }
 
 // ParseFileStructure 公共接口：解析文件结构
-func ParseFileStructure(filePath, content string) (*FileStructure, error) {
+func ParseFileStructure(ctx context.Context, filePath string) (*FileStructure, error) {
 	// 猜测语言
 	lang := guessLanguage(filePath)
 
 	// 如果是Go语言，使用Go解析器
 	if lang == "go" {
-		// 创建临时文件
-		tmpFile, err := os.CreateTemp("", "parse_*.go")
-		if err != nil {
-			return nil, fmt.Errorf("failed to create temp file: %w", err)
-		}
-		defer os.Remove(tmpFile.Name())
-
-		// 写入内容
-		if _, err := tmpFile.WriteString(content); err != nil {
-			return nil, fmt.Errorf("failed to write temp file: %w", err)
-		}
-		tmpFile.Close()
-
-		// 解析Go结构
-		return parseGoStructure(tmpFile.Name())
+		return parseGoStructure(filePath)
 	}
 
-	// 其他语言使用Python解析器
-	ctx := context.Background()
-	inputData := map[string]any{
-		"content":  content,
-		"language": lang,
-	}
-
-	jsonInput, err := json.Marshal(inputData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal input data: %w", err)
-	}
-
-	r, w, err := os.Pipe()
-	if err != nil {
-		return nil, err
-	}
-	_, err = w.Write(jsonInput)
-	if err != nil {
-		return nil, err
-	}
-	w.Close()
-	ctx = context.WithValue(ctx, ShellStdin, r)
-	output, err := ShellExec(ctx, pythonScript)
-	r.Close()
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute Python script: %w", err)
-	}
-
-	// 解析Python输出
-	var pythonResult map[string]any
-	if err := json.Unmarshal([]byte(output), &pythonResult); err != nil {
-		return nil, fmt.Errorf("failed to parse Python output: %w", err)
-	}
-
-	// 检查Python解析是否成功
-	if success, ok := pythonResult["success"].(bool); ok && !success {
-		if errMsg, ok := pythonResult["error"].(string); ok {
-			return nil, fmt.Errorf("Python parser error: %s", errMsg)
-		}
-		return nil, fmt.Errorf("Python parser failed without error message")
-	}
-	// 转换为FileStructure格式
-	fs := &FileStructure{
-		Language: lang,
-		FilePath: filePath,
-	}
-
-	// 对于Markdown等非编程语言，处理不同的结构
-	if lang == "markdown" || lang == "org" {
-		// 处理标题（映射到Classes）
-		if headings, ok := pythonResult["headings"].([]any); ok {
-			for _, h := range headings {
-				if headingMap, ok := h.(map[string]any); ok {
-					symbol := &Symbol{
-						Name: getString(headingMap, "name"),
-						Type: getString(headingMap, "type"),
-					}
-					if line, ok := headingMap["lineno"].(float64); ok {
-						symbol.Line = int(line)
-						symbol.EndLine = int(line)
-					}
-					fs.Classes = append(fs.Classes, symbol)
-				}
-			}
-		}
-
-		// 处理代码块（映射到Functions）
-		if codeBlocks, ok := pythonResult["code_blocks"].([]any); ok {
-			for _, cb := range codeBlocks {
-				if cbMap, ok := cb.(map[string]any); ok {
-					symbol := &Symbol{
-						Name: getString(cbMap, "name"),
-						Type: getString(cbMap, "type"),
-					}
-					if line, ok := cbMap["lineno"].(float64); ok {
-						symbol.Line = int(line)
-					}
-					if endLine, ok := cbMap["end_lineno"].(float64); ok {
-						symbol.EndLine = int(endLine)
-					} else {
-						symbol.EndLine = symbol.Line
-					}
-					fs.Functions = append(fs.Functions, symbol)
-				}
-			}
-		}
-
-		// 处理列表项（映射到Imports）
-		if lists, ok := pythonResult["lists"].([]any); ok {
-			for _, l := range lists {
-				if listMap, ok := l.(map[string]any); ok {
-					fs.Imports = append(fs.Imports, getString(listMap, "name"))
-				}
-			}
-		}
-
-		// 处理链接（映射到Functions）
-		if links, ok := pythonResult["links"].([]any); ok {
-			for _, l := range links {
-				if linkMap, ok := l.(map[string]any); ok {
-					symbol := &Symbol{
-						Name: getString(linkMap, "name"),
-						Type: getString(linkMap, "type"),
-					}
-					if line, ok := linkMap["lineno"].(float64); ok {
-						symbol.Line = int(line)
-						symbol.EndLine = int(line)
-					}
-					fs.Functions = append(fs.Functions, symbol)
-				}
-			}
-		}
-	} else if lang == "vimscript" {
-		// 特殊处理vimscript
-		// 解析函数
-		if functions, ok := pythonResult["functions"].([]any); ok {
-			for _, f := range functions {
-				if funcMap, ok := f.(map[string]any); ok {
-					symbol := &Symbol{
-						Name: getString(funcMap, "name"),
-						Type: getString(funcMap, "type"),
-					}
-					if line, ok := funcMap["lineno"].(float64); ok {
-						symbol.Line = int(line)
-					}
-					if endLine, ok := funcMap["end_lineno"].(float64); ok {
-						symbol.EndLine = int(endLine)
-					} else {
-						symbol.EndLine = symbol.Line
-					}
-					fs.Functions = append(fs.Functions, symbol)
-				}
-			}
-		}
-
-		// 解析命令（映射到Classes）
-		if commands, ok := pythonResult["commands"].([]any); ok {
-			for _, c := range commands {
-				if cmdMap, ok := c.(map[string]any); ok {
-					symbol := &Symbol{
-						Name: getString(cmdMap, "name"),
-						Type: getString(cmdMap, "type"),
-					}
-					if line, ok := cmdMap["lineno"].(float64); ok {
-						symbol.Line = int(line)
-						symbol.EndLine = int(line)
-					}
-					fs.Classes = append(fs.Classes, symbol)
-				}
-			}
-		}
-
-		// 解析变量（映射到Imports）
-		if variables, ok := pythonResult["variables"].([]any); ok {
-			for _, v := range variables {
-				if varMap, ok := v.(map[string]any); ok {
-					varName := getString(varMap, "name")
-					varType := getString(varMap, "type")
-					fs.Imports = append(fs.Imports, fmt.Sprintf("%s (%s)", varName, varType))
-				}
-			}
-		}
-
-		// 解析映射（也映射到Imports）
-		if mappings, ok := pythonResult["mappings"].([]any); ok {
-			for _, m := range mappings {
-				if mapMap, ok := m.(map[string]any); ok {
-					mapName := getString(mapMap, "name")
-					fs.Imports = append(fs.Imports, fmt.Sprintf("mapping: %s", mapName))
-				}
-			}
-		}
-
-		// 解析自动命令组（也映射到Imports）
-		if augroups, ok := pythonResult["augroups"].([]any); ok {
-			for _, a := range augroups {
-				if augroupMap, ok := a.(map[string]any); ok {
-					augroupName := getString(augroupMap, "name")
-					fs.Imports = append(fs.Imports, fmt.Sprintf("augroup: %s", augroupName))
-				}
-			}
-		}
-	} else {
-		// 原有的编程语言处理逻辑
-		// 解析函数
-		if functions, ok := pythonResult["functions"].([]any); ok {
-			for _, f := range functions {
-				if funcMap, ok := f.(map[string]any); ok {
-					symbol := &Symbol{
-						Name: getString(funcMap, "name"),
-						Type: getString(funcMap, "type"),
-					}
-					if line, ok := funcMap["lineno"].(float64); ok {
-						symbol.Line = int(line)
-					}
-					if endLine, ok := funcMap["end_lineno"].(float64); ok {
-						symbol.EndLine = int(endLine)
-					} else {
-						// 如果没有end_lineno，使用lineno作为默认值
-						symbol.EndLine = symbol.Line
-					}
-					fs.Functions = append(fs.Functions, symbol)
-				}
-			}
-		}
-
-		// 解析类
-		if classes, ok := pythonResult["classes"].([]any); ok {
-			for _, c := range classes {
-				if classMap, ok := c.(map[string]any); ok {
-					symbol := &Symbol{
-						Name: getString(classMap, "name"),
-						Type: getString(classMap, "type"),
-					}
-					if line, ok := classMap["lineno"].(float64); ok {
-						symbol.Line = int(line)
-						symbol.EndLine = int(line)
-					}
-					fs.Classes = append(fs.Classes, symbol)
-				}
-			}
-		}
-
-		// 解析导入
-		if imports, ok := pythonResult["imports"].([]any); ok {
-			for _, imp := range imports {
-				if impStr, ok := imp.(string); ok {
-					fs.Imports = append(fs.Imports, impStr)
-				}
-			}
-		}
-	}
-
-	// 解析错误
-	if errors, ok := pythonResult["errors"].([]any); ok {
-		for _, err := range errors {
-			if errStr, ok := err.(string); ok {
-				fs.Errors = append(fs.Errors, errStr)
-			}
-		}
-	}
-
-	return fs, nil
+	return parseWithPython(ctx, filePath, lang)
 }

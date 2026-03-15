@@ -10,20 +10,20 @@ import (
 
 // 这个工具让LLM能够获取代码文件的结构信息（函数、类、方法等），
 // 为后续的代码操作提供基础。
-func readCodeStructure(path string) (string, error) {
+func readCodeStructure(ctx context.Context, path string) (string, error) {
 	// 检查文件是否存在
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return "", fmt.Errorf("文件不存在: %s", path)
 	}
 
 	// 读取文件内容
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return "", fmt.Errorf("读取文件失败: %w", err)
-	}
+	// content, err := os.ReadFile(path)
+	// if err != nil {
+	// 	return "", fmt.Errorf("读取文件失败: %w", err)
+	// }
 
 	// 解析文件结构
-	structure, err := ParseFileStructure(path, string(content))
+	structure, err := ParseFileStructure(ctx, path)
 	if err != nil {
 		return "", fmt.Errorf("解析文件结构失败: %w", err)
 	}
@@ -172,5 +172,5 @@ func handleReadCodeStructure(ctx context.Context, args ToolArgs) (string, error)
 		return "", fmt.Errorf("参数 'path' 缺失")
 	}
 	Printf("查看%s文件结构体定义\n", path)
-	return readCodeStructure(path)
+	return readCodeStructure(ctx, path)
 }

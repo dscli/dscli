@@ -15,7 +15,7 @@ import (
 //	contextLines: 上下文行数（前后各N行）
 //	caseSensitive: 是否区分大小写
 //	maxMatches: 最大匹配数
-func searchCodeSemantic(path string, pattern string, contextLines int, caseSensitive bool, maxMatches int) (string, error) {
+func searchCodeSemantic(ctx context.Context, path string, pattern string, contextLines int, caseSensitive bool, maxMatches int) (string, error) {
 	// 检查文件是否存在
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return "", fmt.Errorf("文件不存在: %s", path)
@@ -28,11 +28,10 @@ func searchCodeSemantic(path string, pattern string, contextLines int, caseSensi
 	}
 
 	// 解析文件结构
-	structure, err := ParseFileStructure(path, string(content))
+	structure, err := ParseFileStructure(ctx, path)
 	if err != nil {
 		return "", fmt.Errorf("解析文件结构失败: %w", err)
 	}
-
 	// 搜索匹配项
 	lines := strings.Split(string(content), "\n")
 	matches := searchMatches(lines, pattern, caseSensitive, maxMatches)
@@ -240,6 +239,6 @@ func handleSearchCodeSemantic(ctx context.Context, args ToolArgs) (string, error
 	contextLines := ToolArgsValue(args, "context_lines", 5)
 	caseSensitive := ToolArgsValue(args, "case_sensitive", false)
 	maxMatches := ToolArgsValue(args, "max_matches", 0)
-	Printf("搜索文件%s中匹配指定模式%s的行", path, pattern)
-	return searchCodeSemantic(path, pattern, contextLines, caseSensitive, maxMatches)
+	Printf("搜索文件%s中匹配指定模式%s的行%d", path, pattern, contextLines)
+	return searchCodeSemantic(ctx, path, pattern, contextLines, caseSensitive, maxMatches)
 }

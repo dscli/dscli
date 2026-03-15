@@ -22,6 +22,7 @@ var (
 	VerboseKey       = ContextKeyType[bool]{"Verbose"}
 	InsideShellExec  = ContextKeyType[bool]{"InsideShellExec"}
 	StreamKey        = ContextKeyType[bool]{"Stream"}
+	LeftTokens       = ContextKeyType[int]{"LeftTokens"}
 )
 
 type ContextKeyType[T any] struct {

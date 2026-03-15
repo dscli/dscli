@@ -17,7 +17,7 @@ import (
 //	lines:开始行-结束行  - 修改指定行范围（后备方案）
 //
 // dryRun: true表示只预览不实际写入
-func writeCodeSection(path string, selector string, newContent string, dryRun bool) (string, error) {
+func writeCodeSection(ctx context.Context, path string, selector string, newContent string, dryRun bool) (string, error) {
 	// 检查文件是否存在
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return "", fmt.Errorf("文件不存在: %s", path)
@@ -30,7 +30,7 @@ func writeCodeSection(path string, selector string, newContent string, dryRun bo
 	}
 
 	// 解析文件结构
-	structure, err := ParseFileStructure(path, string(content))
+	structure, err := ParseFileStructure(ctx, path)
 	if err != nil {
 		return "", fmt.Errorf("解析文件结构失败: %w", err)
 	}
@@ -285,7 +285,7 @@ func handleWriteCodeSection(ctx context.Context, args ToolArgs) (string, error) 
 	dryRun := ToolArgsValue(args, "dry_run", false)
 	PrintWriteSession(path, selector, dryRun)
 
-	return writeCodeSection(path, selector, newContent, dryRun)
+	return writeCodeSection(ctx, path, selector, newContent, dryRun)
 }
 
 func PrintWriteSession(path string, selector string, dryRun bool) {

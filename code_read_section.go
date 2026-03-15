@@ -15,7 +15,7 @@ import (
 //	class:类名          - 读取指定类/结构体
 //	method:类名.方法名   - 读取指定方法
 //	lines:开始行-结束行  - 读取指定行范围（后备方案）
-func readCodeSection(path string, selector string) (string, error) {
+func readCodeSection(ctx context.Context, path string, selector string) (string, error) {
 	// 检查文件是否存在
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return "", fmt.Errorf("文件不存在: %s", path)
@@ -28,7 +28,7 @@ func readCodeSection(path string, selector string) (string, error) {
 	}
 
 	// 解析文件结构
-	structure, err := ParseFileStructure(path, string(content))
+	structure, err := ParseFileStructure(ctx, path)
 	if err != nil {
 		return "", fmt.Errorf("解析文件结构失败: %w", err)
 	}
@@ -215,5 +215,5 @@ func handleReadCodeSection(ctx context.Context, args ToolArgs) (string, error) {
 		return "", fmt.Errorf("参数 'selector' 缺失")
 	}
 	Printf("读取%s文件代码片段%s\n", path, selector)
-	return readCodeSection(path, selector)
+	return readCodeSection(ctx, path, selector)
 }

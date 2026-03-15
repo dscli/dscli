@@ -339,25 +339,31 @@ class FileStructureParser:
                 for match in matches:
                     if isinstance(match, tuple):
                         if len(match) == 2:
-                            # import {x, y} from 'module'
-                            imports = match[0].split(',')
-                            for imp in imports:
-                                imp = imp.strip()
-                                if imp:
-                                    result['imports'].append(f"{imp} from {match[1]}")
+                            # import {x, y} from 'module' or import x from 'module'
+                            if ',' in match[0]:
+                                # Multiple imports: import {x, y} from 'module'
+                                imports = match[0].split(',')
+                                for imp in imports:
+                                    imp = imp.strip()
+                                    if imp:
+                                        result['imports'].append(f"{imp} from {match[1]}")
+                            else:
+                                # Single import: import x from 'module'
+                                result['imports'].append(f"{match[0]} from {match[1]}")
                         else:
                             # import 'module'
-                            result['imports'].append(match)
+                            result['imports'].append(match[0])
                     else:
-                        # import x from 'module'
+                        # import x from 'module' (non-tuple match)
                         result['imports'].append(f"{match}")
 
             # Parse functions
             func_patterns = [
-                r'(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\([^)]*\)',
-                r'(?:export\s+)?(?:async\s+)?const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:async\s+)?\([^)]*\)\s*=>',
-                r'(?:export\s+)?(?:async\s+)?let\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:async\s+)?\([^)]*\)\s*=>',
-                r'(?:export\s+)?(?:async\s+)?var\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:async\s+)?\([^)]*\)\s*=>'
+                r'(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:<[^>]*>)?\s*\([^)]*\)',
+                r'(?:export\s+)?(?:async\s+)?const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?::\s*[^=]+)?\s*=\s*(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][A-Za-z0-9_$]*)\s*=>',
+                r'(?:export\s+)?(?:async\s+)?let\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?::\s*[^=]+)?\s*=\s*(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][A-Za-z0-9_$]*)\s*=>',
+                r'(?:export\s+)?(?:async\s+)?var\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?::\s*[^=]+)?\s*=\s*(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][A-Za-z0-9_$]*)\s*=>',
+                r'(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*<[^>]*>\s*\([^)]*\)'  # Generic functions
             ]
 
             for pattern in func_patterns:
@@ -390,7 +396,7 @@ class FileStructureParser:
         try:
             # Additional TypeScript-specific parsing
             # Parse interfaces
-            interface_pattern = r'(?:export\s+)?interface\s+([A-Za-z_$][A-Za-z0-9_$]*)'
+            interface_pattern = r'(?:export\s+)?interface\s+([A-Za-z_$][A-Za-z0-9_$]+)(?:\s*<[^>]*>)?\s*{'
             interfaces = re.findall(interface_pattern, content)
             if 'interfaces' not in result:
                 result['interfaces'] = []
@@ -401,7 +407,7 @@ class FileStructureParser:
                 })
 
             # Parse types
-            type_pattern = r'(?:export\s+)?type\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*='
+            type_pattern = r'(?:export\s+)?type\s+([A-Za-z_$][A-Za-z0-9_$]+)(?:\s*<[^>]*>)?\s*='
             types = re.findall(type_pattern, content)
             if 'types' not in result:
                 result['types'] = []
@@ -409,6 +415,17 @@ class FileStructureParser:
                 result['types'].append({
                     'name': type_name,
                     'type': 'type_alias'
+                })
+
+            # Parse enums
+            enum_pattern = r'(?:export\s+)?enum\s+([A-Za-z_$][A-Za-z0-9_$]+)\s*{'
+            enums = re.findall(enum_pattern, content)
+            if 'enums' not in result:
+                result['enums'] = []
+            for enum_name in enums:
+                result['enums'].append({
+                    'name': enum_name,
+                    'type': 'enum'
                 })
 
         except Exception as e:

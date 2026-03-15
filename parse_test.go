@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -39,8 +40,12 @@ func main() {
 
 > 引用块内容
 `
-
-	fs, err := ParseFileStructure("test.md", content)
+	err := os.WriteFile("test.md", []byte(content), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove("test.md")
+	fs, err := ParseFileStructure(t.Context(), "test.md")
 	if err != nil {
 		t.Fatalf("ParseFileStructure失败: %v", err)
 	}
