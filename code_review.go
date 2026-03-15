@@ -217,24 +217,13 @@ func generateCodeReviewSummary(log string) string {
 	parts := strings.SplitN(cleanLog, " ", 2)
 	if len(parts) == 2 {
 		commitMsg := strings.TrimSpace(parts[1])
-
-		// 如果提交信息很长，截断
-		if len(commitMsg) > 80 {
-			runes := []rune(commitMsg)
-			return string(runes[:77]) + "..."
-		}
-		return commitMsg
+		return truncateString(commitMsg, 80)
 	}
 
 	// 如果格式不符合预期，直接截断
-	runes := []rune(cleanLog)
-	if len(runes) > 80 {
-		return string(runes[:77]) + "..."
-	}
-	return cleanLog
+	return truncateString(cleanLog, 80)
 }
 
-// buildCodeReviewRequest 构建代码审查请求
 func buildCodeReviewRequest(summary string, commitLog string, patch string) string {
 	return `请对以下代码提交进行审查，提供详细的改进建议。
 
