@@ -74,7 +74,7 @@ func ToolCallsID(tcs []ToolCall) string {
 	return tcs[0].ID
 }
 
-// Update message content
+// UpdateContent update message content
 func UpdateContent(ctx context.Context, id int64, content string) (err error) {
 	sessionID := ContextValue(ctx, CurrentSessionID, int64(0))
 	modelID := ContextValue(ctx, CurrentModelID, DeepseekChat)
@@ -86,6 +86,39 @@ func UpdateContent(ctx context.Context, id int64, content string) (err error) {
 	res, err := db.ExecContext(ctx,
 		`UPDATE messages SET content = ? WHERE id = ? AND session_id = ? AND model_id = ?`,
 		content, id, sessionID, modelID)
+	if err != nil {
+		return
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return
+	}
+
+	if affected != 1 {
+		err = fmt.Errorf("failed to update message content")
+	}
+	return
+}
+
+// UpdateToolCalls update message content
+func UpdateToolCalls(ctx context.Context, id int64, tcs []ToolCall) (err error) {
+	sessionID := ContextValue(ctx, CurrentSessionID, int64(0))
+	modelID := ContextValue(ctx, CurrentModelID, DeepseekChat)
+	db, err := OpenDB()
+	if err != nil {
+		return
+	}
+	defer db.Close()
+	var toolCalls sql.NullString
+	data, err := JSONMarshal(tcs)
+	if err != nil {
+		return
+	}
+	toolCalls.String = string(data)
+	toolCalls.Valid = true
+	res, err := db.ExecContext(ctx,
+		`UPDATE messages SET tool_calls = ? WHERE id = ? AND session_id = ? AND model_id = ?`,
+		&toolCalls, id, sessionID, modelID)
 	if err != nil {
 		return
 	}

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/md5"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -9,6 +11,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -17,9 +20,6 @@ import (
 
 //go:embed parse.py
 var pythonScript string
-
-//go:embed parse.py.structure
-var pythonScriptStructure string
 
 // FileStructure 表示文件结构
 type FileStructure struct {
@@ -238,6 +238,12 @@ func parseGoStructure(path string) (*FileStructure, error) {
 }
 
 func runPythonParsePy(ctx context.Context, filePath string, lang string) (output string, err error) {
+	// 从上下文中获取verbose标志
+	verbose := false
+	if v, ok := ctx.Value(VerboseKey).(bool); ok {
+		verbose = v
+	}
+
 	// 读取文件内容
 	content, err := os.ReadFile(filePath)
 	if err != nil {
@@ -261,30 +267,114 @@ func runPythonParsePy(ctx context.Context, filePath string, lang string) (output
 		fmt.Fprintf(os.Stderr, "Using Python parser for language: %s\n", lang)
 		fmt.Fprintf(os.Stderr, "Input size: %d bytes\n", len(jsonInput))
 	}
-	r, w, err := os.Pipe()
-	if err != nil {
+
+	// 计算pythonScript的MD5哈希
+	hash := fmt.Sprintf("%x", md5.Sum([]byte(pythonScript)))
+
+	cacheDir := filepath.Join(ConfigDir, "scripts", "python")
+	cacheFile := filepath.Join(cacheDir, hash+".py")
+
+	if verbose {
+		fmt.Fprintf(os.Stderr, "Cache file: %s\n", cacheFile)
+		fmt.Fprintf(os.Stderr, "pythonScript length: %d bytes\n", len(pythonScript))
+		fmt.Fprintf(os.Stderr, "pythonScript MD5: %s\n", hash)
+	}
+
+	// 确保缓存目录存在
+	if mkdirErr := os.MkdirAll(cacheDir, 0o755); mkdirErr != nil {
+		err = fmt.Errorf("failed to create cache directory: %w", mkdirErr)
 		return
 	}
-	_, err = w.Write(jsonInput)
-	if err != nil {
+
+	// 检查缓存文件是否存在，不存在则创建
+	if _, statErr := os.Stat(cacheFile); os.IsNotExist(statErr) {
+		if verbose {
+			fmt.Fprintf(os.Stderr, "缓存文件不存在，创建: %s\n", cacheFile)
+		}
+		if writeErr := os.WriteFile(cacheFile, []byte(pythonScript), 0o644); writeErr != nil {
+			err = fmt.Errorf("failed to write cache file: %w", writeErr)
+			return
+		}
+		if verbose {
+			fmt.Fprintf(os.Stderr, "缓存文件创建完成，大小: %d bytes\n", len(pythonScript))
+		}
+	} else if statErr != nil {
+		err = fmt.Errorf("failed to stat cache file: %w", statErr)
+		return
+	} else if verbose {
+		fmt.Fprintf(os.Stderr, "使用缓存文件: %s\n", cacheFile)
+	}
+
+	// 创建临时文件来存储输入数据
+	tmpFile, tmpErr := os.CreateTemp("", "dscli-input-*.json")
+	if tmpErr != nil {
+		err = fmt.Errorf("failed to create temp file: %w", tmpErr)
 		return
 	}
-	w.Close()
-	ctx = context.WithValue(ctx, ShellStdin, r)
-	output, err = ShellExec(ctx, pythonScript)
-	r.Close()
+	defer os.Remove(tmpFile.Name())
+
+	// 写入数据到临时文件
+	if _, writeErr := tmpFile.Write(jsonInput); writeErr != nil {
+		tmpFile.Close()
+		err = fmt.Errorf("failed to write to temp file: %w", writeErr)
+		return
+	}
+	tmpFile.Close()
+
+	if verbose {
+		fmt.Fprintf(os.Stderr, "临时文件创建完成: %s\n", tmpFile.Name())
+	}
+
+	// 执行缓存的Python脚本
+	cmd := exec.CommandContext(ctx, "python3", "-u", cacheFile)
+
+	// 打开临时文件作为stdin
+	stdinFile, openErr := os.Open(tmpFile.Name())
+	if openErr != nil {
+		err = fmt.Errorf("failed to open temp file for stdin: %w", openErr)
+		return
+	}
+	defer stdinFile.Close()
+
+	cmd.Stdin = stdinFile
+
+	// 捕获输出
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if verbose {
+		fmt.Fprintf(os.Stderr, "开始执行Python脚本...\n")
+		fmt.Fprintf(os.Stderr, "命令: python3 -u %s < %s\n", cacheFile, tmpFile.Name())
+	}
+
+	// 执行命令
+	if runErr := cmd.Run(); runErr != nil {
+		if stderr.Len() > 0 {
+			err = fmt.Errorf("python脚本执行失败: %v\nstderr: %s", runErr, stderr.String())
+		} else {
+			err = fmt.Errorf("python脚本执行失败: %v", runErr)
+		}
+		return
+	}
+
+	output = stdout.String()
+	if verbose {
+		fmt.Fprintf(os.Stderr, "Python脚本执行完成，输出大小: %d 字节\n", len(output))
+		if stderr.Len() > 0 {
+			fmt.Fprintf(os.Stderr, "Python脚本stderr: %s\n", stderr.String())
+		}
+	}
+
 	return
 }
 
 // parseWithPython 使用Python脚本解析文件结构
 func parseWithPython(ctx context.Context, filePath, lang string) (structure *FileStructure, err error) {
-	output := ""
-	if lang == "python" && filePath == "parse.py" {
-		output = pythonScriptStructure
-	} else {
-		output, err = runPythonParsePy(ctx, filePath, lang)
-	}
+	// 从上下文中获取verbose标志
+	verbose := ContextValue(ctx, VerboseKey, false)
 
+	output, err := runPythonParsePy(ctx, filePath, lang)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute Python script: %w", err)
 	}

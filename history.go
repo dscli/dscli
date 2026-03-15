@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -32,7 +33,7 @@ func init() {
 		RunE: historyShowRunE,
 	})
 
-	_ = AddCommand(historyCmd, &cobra.Command{
+	editCmd := AddCommand(historyCmd, &cobra.Command{
 		Use:  "edit",
 		Args: cobra.ExactArgs(1),
 		RunE: historyEditRunE,
@@ -41,6 +42,7 @@ func init() {
 	historyCmd.PersistentFlags().Int("histsize", 32, "history size")
 	historyCmd.PersistentFlags().String("filter", "all", "filter true, false, all")
 	historyCmd.PersistentFlags().String("model", ModelDeepseekChat, "model")
+	editCmd.Flags().String("column", "content", "column name to edit, default content, others like tool_calls can be edited too.")
 }
 
 func historyShowRunE(cmd *cobra.Command, args []string) (err error) {
@@ -72,19 +74,47 @@ func historyEditRunE(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
+	column, err := cmd.Flags().GetString("column")
+	if err != nil {
+		return
+	}
+	if !slices.Contains([]string{"content", "tool_calls"}, column) {
+		err = fmt.Errorf("not support %s", column)
+		return
+	}
 
 	message, err := ShowMessage(ctx, int64(id))
 	if err != nil {
 		return
 	}
-
-	content, err := OpenEditor(ctx, message.Content)
-	if err != nil {
-		return
-	}
-	err = UpdateContent(ctx, int64(id), content)
-	if err != nil {
-		return
+	switch column {
+	case "content":
+		content := message.Content
+		content, err = OpenEditor(ctx, content)
+		if err != nil {
+			return
+		}
+		err = UpdateContent(ctx, int64(id), content)
+		if err != nil {
+			return
+		}
+	case "tool_calls":
+		tcs := message.ToolCalls
+		if len(tcs) == 0 {
+			tcs = append(tcs, ToolCall{})
+		}
+		tc := tcs[0]
+		arguments := tc.Function.Arguments
+		arguments, err = OpenEditor(ctx, arguments)
+		if err != nil {
+			return
+		}
+		tc.Function.Arguments = arguments
+		tcs = []ToolCall{tc}
+		err = UpdateToolCalls(ctx, int64(id), tcs)
+		if err != nil {
+			return
+		}
 	}
 	return
 }
