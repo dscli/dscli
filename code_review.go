@@ -12,10 +12,6 @@ var codeReviewTool = ToolDef{
 	Name:        "code_review",
 	DisplayName: "代码审查",
 	Description: `对当前最新的Git提交进行代码审查，由专家提供改进建议。
-
-参数说明：
-- summary: 可选，提供本次提交的背景说明，帮助专家理解上下文
-           （例如：修复了什么bug、实现了什么功能、为什么这样设计等）
 - test_command: 可选，单元测试命令，默认为空，跳过测试
 
 使用场景：
@@ -172,22 +168,21 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 	}
 
 	// 输出审查日志
+	// 输出审查日志
 	Println("🔍 正在请求专家进行代码审查...")
 	// 构建结构化请求
 	structuredRequest := buildCodeReviewRequest(summary, fullLog, patch)
 
-	// 确保EOF标记不会出现在内容中
-	eof := "EOFFOEOFEEFO"
-	for strings.Contains(structuredRequest, eof) {
-		eof = Shuffle(eof)
-	}
-
 	// 执行审查
 	Println("📤 正在发送代码变更给专家...")
-	script := fmt.Sprintf(`unset InsideShellExec
-dscli chat --no-color --model deepseek-reasoner <<`+eof+`
-%s
-`+eof, structuredRequest)
+
+	// 方案一：使用ShellStdin特性，避免EOF标记问题
+	// 创建简单的shell脚本，使用stdin传递内容
+	script := `unset InsideShellExec
+dscli chat --no-color --model deepseek-reasoner`
+
+	// 设置ShellStdin为structuredRequest的reader
+	ctx = context.WithValue(ctx, ShellStdin, strings.NewReader(structuredRequest))
 
 	reply, err = ShellExec(ctx, script)
 	if err != nil {
@@ -197,7 +192,6 @@ dscli chat --no-color --model deepseek-reasoner <<`+eof+`
 
 	// 处理专家响应（自动提取摘要）
 	processedReply := processCodeReviewResponse(reply)
-
 	Println("✅ 代码审查完成")
 
 	return processedReply, nil
