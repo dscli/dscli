@@ -10,7 +10,7 @@ import (
 
 var (
 	_ = func() error {
-		return godotenv.Load(EnvPath)
+		return godotenv.Load(filepath.Join(ConfigDir, "dscli.env"))
 	}()
 	// Version information - set via ldflags during build
 	Version               = "0.6.0"
@@ -22,8 +22,6 @@ var (
 	ProjectRoot    = GetProjectRoot()
 
 	ConfigDir = GetConfigDir()
-	EnvPath   = filepath.Join(ConfigDir, "dscli.env")
-	LogPath   = filepath.Join(ConfigDir, "dscli.log")
 )
 
 func GetConfigDir() (configDir string) {

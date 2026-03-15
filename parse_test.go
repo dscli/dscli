@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/md5"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -110,4 +112,13 @@ func main() {
 	} else {
 		t.Errorf("未找到Go代码块")
 	}
+}
+
+func TestPythonScript(t *testing.T) {
+	hash1 := fmt.Sprintf("%x", md5.Sum([]byte(pythonScript)))
+	t.Log(hash1)
+	script := `#!/usr/bin/env python
+print("OK")`
+	hash2 := fmt.Sprintf("%x", md5.Sum([]byte(script)))
+	t.Log(hash2)
 }

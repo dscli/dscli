@@ -267,42 +267,10 @@ func runPythonParsePy(ctx context.Context, filePath string, lang string) (output
 		fmt.Fprintf(os.Stderr, "Using Python parser for language: %s\n", lang)
 		fmt.Fprintf(os.Stderr, "Input size: %d bytes\n", len(jsonInput))
 	}
-
-	// 计算pythonScript的MD5哈希
-	hash := fmt.Sprintf("%x", md5.Sum([]byte(pythonScript)))
-
-	cacheDir := filepath.Join(ConfigDir, "scripts", "python")
-	cacheFile := filepath.Join(cacheDir, hash+".py")
-
-	if verbose {
-		fmt.Fprintf(os.Stderr, "Cache file: %s\n", cacheFile)
-		fmt.Fprintf(os.Stderr, "pythonScript length: %d bytes\n", len(pythonScript))
-		fmt.Fprintf(os.Stderr, "pythonScript MD5: %s\n", hash)
-	}
-
-	// 确保缓存目录存在
-	if mkdirErr := os.MkdirAll(cacheDir, 0o755); mkdirErr != nil {
-		err = fmt.Errorf("failed to create cache directory: %w", mkdirErr)
+	ctx = context.WithValue(ctx, ShellName, "python")
+	cacheFile, err := GetOrCreateCacheFile(ctx, pythonScript)
+	if err != nil {
 		return
-	}
-
-	// 检查缓存文件是否存在，不存在则创建
-	if _, statErr := os.Stat(cacheFile); os.IsNotExist(statErr) {
-		if verbose {
-			fmt.Fprintf(os.Stderr, "缓存文件不存在，创建: %s\n", cacheFile)
-		}
-		if writeErr := os.WriteFile(cacheFile, []byte(pythonScript), 0o644); writeErr != nil {
-			err = fmt.Errorf("failed to write cache file: %w", writeErr)
-			return
-		}
-		if verbose {
-			fmt.Fprintf(os.Stderr, "缓存文件创建完成，大小: %d bytes\n", len(pythonScript))
-		}
-	} else if statErr != nil {
-		err = fmt.Errorf("failed to stat cache file: %w", statErr)
-		return
-	} else if verbose {
-		fmt.Fprintf(os.Stderr, "使用缓存文件: %s\n", cacheFile)
 	}
 
 	// 创建临时文件来存储输入数据
@@ -635,4 +603,60 @@ func ParseFileStructure(ctx context.Context, filePath string) (*FileStructure, e
 	}
 
 	return parseWithPython(ctx, filePath, lang)
+}
+
+func GetOrCreateCacheFile(ctx context.Context, script string) (cacheFile string, err error) {
+	verbose := ContextValue(ctx, VerboseKey, false)
+	shellName := ContextValue(ctx, ShellName, "")
+	shellArgs := ContextValue(ctx, ShellArgs, []string{})
+	isPython := strings.Contains(shellName, "python")
+	if strings.HasSuffix(shellName, "env") {
+		if len(shellArgs) > 0 {
+			if strings.Contains(shellArgs[0], "python") {
+				isPython = true
+			}
+		}
+	}
+	scriptType, fileExt := "bash", ".sh"
+	if isPython {
+		scriptType, fileExt = "python", ".py"
+	}
+
+	// 计算script的MD5哈希
+	hash := fmt.Sprintf("%x", md5.Sum([]byte(script)))
+
+	cacheDir := filepath.Join(ConfigDir, "scripts", scriptType)
+	cacheFile = filepath.Join(cacheDir, hash+fileExt)
+
+	if verbose {
+		fmt.Fprintf(os.Stderr, "Cache file: %s\n", cacheFile)
+		fmt.Fprintf(os.Stderr, "script length: %d bytes\n", len(script))
+		fmt.Fprintf(os.Stderr, "script MD5: %s\n", hash)
+	}
+
+	// 确保缓存目录存在
+	if err = os.MkdirAll(cacheDir, 0o755); err != nil {
+		err = fmt.Errorf("failed to create cache directory: %w", err)
+		return
+	}
+
+	// 检查缓存文件是否存在，不存在则创建
+	if _, err = os.Stat(cacheFile); os.IsNotExist(err) {
+		if verbose {
+			fmt.Fprintf(os.Stderr, "缓存文件不存在，创建: %s\n", cacheFile)
+		}
+		if err = os.WriteFile(cacheFile, []byte(script), 0o644); err != nil {
+			err = fmt.Errorf("failed to write cache file: %w", err)
+			return
+		}
+		if verbose {
+			fmt.Fprintf(os.Stderr, "缓存文件创建完成，大小: %d bytes\n", len(script))
+		}
+	} else if err != nil {
+		err = fmt.Errorf("failed to stat cache file: %w", err)
+		return
+	} else if verbose {
+		fmt.Fprintf(os.Stderr, "使用缓存文件: %s\n", cacheFile)
+	}
+	return
 }

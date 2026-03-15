@@ -38,7 +38,7 @@ func TestRunScriptShebang(t *testing.T) {
 	if os.Getenv("InsideShellExec") != "" {
 		t.SkipNow()
 	}
-
+	SetVerbose(true)
 	tcs := []struct {
 		script   string
 		expected string
@@ -55,6 +55,7 @@ print("OK")`, "OK\n", nil},
 		t.Run("", func(t *testing.T) {
 			// 创建包含ToolDisplayName的context
 			ctx := context.WithValue(context.Background(), ToolDisplayName, "test-tool")
+			ctx = context.WithValue(ctx, VerboseKey, true)
 			out, err := ShellExec(ctx, tc.script)
 
 			if tc.checkErr == nil {

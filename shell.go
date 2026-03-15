@@ -154,32 +154,38 @@ func shortenSimple(script string) string {
 	return strings.Join(lines, "; ")
 }
 
-func ArrangeArgs(name string, args []string) ([]string, bool) {
+func ArrangeArgs(ctx context.Context, cacheFile string) (context.Context, bool) {
+	name := ContextValue(ctx, ShellName, "")
+	args := ContextValue(ctx, ShellArgs, []string{})
 	if strings.HasSuffix(name, "env") {
 		if len(args) == 0 {
-			return args, false
+			return ctx, false
 		}
 		arg := args[0]
 		switch arg {
 		case "bash": // support bash
-			args = append([]string{"bash", "/dev/fd/3"}, args[1:]...)
-			return args, true
+			args = append([]string{"bash", cacheFile}, args[1:]...)
+			ctx = context.WithValue(ctx, ShellArgs, args)
+			return ctx, true
 		case "python", "python3": // support python
-			args = append([]string{args[0], "-u", "/dev/fd/3"}, args[1:]...)
-			return args, true
+			args = append([]string{args[0], "-u", cacheFile}, args[1:]...)
+			ctx = context.WithValue(ctx, ShellArgs, args)
+			return ctx, true
 		default:
-			return args, false
+			return ctx, false
 		}
 	}
 	if strings.HasSuffix(name, "bash") {
-		args = append([]string{"/dev/fd/3"}, args...)
-		return args, true
+		args = append([]string{cacheFile}, args...)
+		ctx = context.WithValue(ctx, ShellArgs, args)
+		return ctx, true
 	}
 	if strings.HasSuffix(name, "python") || strings.HasSuffix(name, "python3") {
-		args = append([]string{"-u", "/dev/fd/3"}, args...)
-		return args, true
+		args = append([]string{"-u", cacheFile}, args...)
+		ctx = context.WithValue(ctx, ShellArgs, args)
+		return ctx, true
 	}
-	return args, false
+	return ctx, false
 }
 
 // ShellExec 是混合实现的 Shell 执行函数
@@ -194,23 +200,29 @@ func ShellExec(ctx context.Context, script string) (out string, err error) {
 	// 如果未指定解释器，解析 shebang
 	if name == "" {
 		name, shellArgs = Shebang(script)
+		ctx = context.WithValue(ctx, ShellName, name)
+		ctx = context.WithValue(ctx, ShellArgs, shellArgs)
 	}
 
+	cacheFile, err := GetOrCreateCacheFile(ctx, script)
+	if err != nil {
+		return
+	}
 	// 使用 ArrangeArgs 处理参数
-	shellArgs, ok := ArrangeArgs(name, shellArgs)
+	ctx, ok := ArrangeArgs(ctx, cacheFile)
 	if !ok {
 		return "", fmt.Errorf("do not support %s %v", name, shellArgs)
 	}
 
 	// 判断是否是 shell 命令
-	isShellCommand := isShellInterpreter(name)
+	isShellCommand := isShellInterpreter(name) // here /usr/bin/env is determined as non shell
 
-	if IsTesting() && isShellCommand {
+	if IsTesting() {
 		script = strings.ReplaceAll(script, "dscli", "echo dscli")
 	}
 
 	// 检查是否在测试模式
-	if isShellCommand {
+	if isShellCommand { // So, never go to this brance
 		// 使用新的 shell 包执行
 		return executeWithShellPackage(ctx, name, shellArgs, script)
 	} else {
@@ -295,22 +307,11 @@ func executeWithShellPackage(ctx context.Context, name string, args []string, sc
 }
 
 // executeWithOSExec 使用原始的 os/exec 实现执行命令
+// executeWithOSExec 使用原始的 os/exec 实现执行命令
 func executeWithOSExec(ctx context.Context, name string, args []string, script string, stdin io.Reader) (out string, err error) {
 	// 这是原始的 ShellExec 实现的核心部分
-	r, w, err := os.Pipe()
-	if err != nil {
-		return "", err
-	}
-
-	defer func() {
-		if r != nil {
-			r.Close()
-		}
-		if w != nil {
-			w.Close()
-		}
-	}()
-
+	name = ContextValue(ctx, ShellName, name)
+	args = ContextValue(ctx, ShellArgs, args)
 	buf := bytes.NewBuffer([]byte{})
 	subproc := exec.CommandContext(ctx, name, args...)
 	subproc.Dir = ProjectRoot
@@ -318,22 +319,9 @@ func executeWithOSExec(ctx context.Context, name string, args []string, script s
 	subproc.Stderr = buf
 	subproc.Stdin = stdin
 	subproc.Env = append(os.Environ(), "InsideShellExec=1")
-	subproc.ExtraFiles = []*os.File{r}
 	err = subproc.Start()
 	if err != nil {
 		err = fmt.Errorf("failed to start %s: %w", name, err)
-		return
-	}
-	_ = r.Close()
-	r = nil
-	_, err = io.WriteString(w, script)
-	if err != nil {
-		err = fmt.Errorf("failed to write stdin: %w", err)
-		return
-	}
-	_ = w.Close()
-	w = nil
-	if err != nil {
 		return
 	}
 	err = subproc.Wait()
@@ -357,14 +345,4 @@ func executeWithOSExec(ctx context.Context, name string, args []string, script s
 	}
 
 	return out, nil
-}
-
-// ShellExecSimple 简化的 Shell 执行函数
-func ShellExecSimple(ctx context.Context, script string) (out string, err error) {
-	return shell.SimpleExecute(ctx, script)
-}
-
-// ShellExecSafe 安全的 Shell 执行函数
-func ShellExecSafe(ctx context.Context, script string) (out string, err error) {
-	return shell.SafeExecute(ctx, script)
 }
