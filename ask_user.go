@@ -55,7 +55,7 @@ func handleAskUser(ctx context.Context, args ToolArgs) (reply string, err error)
 	}
 	Println("  问题摘要:", string(summary))
 
-	reply, err = OpenEditor(content)
+	reply, err = OpenEditor(ctx, content)
 	if err != nil {
 		Println("❌ 获取用户回答失败")
 		return "", fmt.Errorf("获取用户回答失败: %v", err)

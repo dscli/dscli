@@ -17,7 +17,7 @@ func TestOpenEditor(t *testing.T) {
 		t.Run(tt.editor, func(t *testing.T) {
 			os.Setenv("EDITOR", tt.editor)
 			defer os.Unsetenv("EDITOR")
-			got, err := OpenEditor(tt.initialContent)
+			got, err := OpenEditor(t.Context(), tt.initialContent)
 			if err != nil {
 				t.Fatal(err)
 			}
