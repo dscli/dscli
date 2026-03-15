@@ -158,10 +158,6 @@ func TestToolRegistration(t *testing.T) {
 
 // TestDocumentationCompleteness tests that all required documentation is present
 func TestDocumentationCompleteness(t *testing.T) {
-	if os.Getenv("InsideShellExec") != "" {
-		t.SkipNow()
-	}
-
 	desc := codeReviewTool.Description
 
 	// Check for key sections in documentation

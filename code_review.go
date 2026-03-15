@@ -3,15 +3,18 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 )
 
-// codeReviewTool 代码审查工具定义
 var codeReviewTool = ToolDef{
 	Name:        "code_review",
 	DisplayName: "代码审查",
 	Description: `对当前最新的Git提交进行代码审查，由专家提供改进建议。
+
+参数说明：
+- summary: 必选，提供本次提交的背景说明，关注重点，帮助专家理解上下文
 - test_command: 可选，单元测试命令，默认为空，跳过测试
 
 使用场景：
@@ -71,32 +74,34 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 	statusScript := `git status --short`
 	ctx = context.WithValue(ctx, ShellName, "/usr/bin/env")
 	ctx = context.WithValue(ctx, ShellArgs, []string{"bash"})
+	// 添加os.Stdin使用传统分支OSExec
+	ctx = context.WithValue(ctx, ShellStdin, os.Stdin)
 
 	status, err := ShellExec(ctx, statusScript)
 	if err != nil {
-		Println("❌ 获取Git状态失败")
+		fmt.Println("❌ 获取Git状态失败")
 		return "", fmt.Errorf("获取Git状态失败: %v", err)
 	}
 	// 检查是否有未提交的更改
 	if strings.Contains(status, "Changes not staged for commit") ||
 		strings.Contains(status, "Changes to be committed") ||
 		(status != "" && !strings.Contains(status, "nothing to commit")) {
-		Println("❌ 检测到未提交的更改")
+		fmt.Println("❌ 检测到未提交的更改")
 		return "", fmt.Errorf("检测到未提交的更改，请先提交所有更改再审查。当前状态：\n%s", status)
 	}
 
 	// 检查是否为小于等于3个commit（没有多个未push的提交）
-	Println("🔍 检查是否为单一commit...")
+	fmt.Println("🔍 检查是否为单一commit...")
 	singleCommitScript := `git log --oneline @{u}..HEAD`
-	unpushedCommits, err := ShellExec(ctx, singleCommitScript)
-	if err != nil {
-		err = fmt.Errorf("failed to check single commit: %w", err)
+	unpushedCommits, shellErr := ShellExec(ctx, singleCommitScript)
+	if shellErr != nil {
+		err = fmt.Errorf("failed to check single commit: %w", shellErr)
 		return
 	}
 
 	unpushedCommits = strings.TrimSpace(unpushedCommits)
 	if unpushedCommits == "" {
-		Println("📝 未发现未push的提交，不必代码审查")
+		fmt.Println("📝 未发现未push的提交，不必代码审查")
 		reply = "No unpushed commits found, no need to do code review"
 		return
 	}
@@ -106,16 +111,16 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 
 	// 如果有多个未push的提交，建议用户先rebase
 	if commitCount > 3 {
-		Printf("❌ 检测到%d个未push的提交\n", commitCount)
+		fmt.Printf("❌ 检测到%d个未push的提交\n", commitCount)
 		return "", fmt.Errorf("more than 3 unpushed commit found")
 	}
 
-	Println("✅ 不多于3个commit检查通过")
+	fmt.Println("✅ 不多于3个commit检查通过")
 	if testCommand != "" {
-		Println("🔍 运行单元测试:", testCommand)
+		fmt.Println("🔍 运行单元测试:", testCommand)
 		testOutput, err := ShellExec(ctx, testCommand)
 		if err != nil {
-			Println("❌ 单元测试未通过")
+			fmt.Println("❌ 单元测试未通过")
 			errorMsg := fmt.Sprintf("单元测试未通过，请修复测试后再审查。\n测试命令：%s\n", testCommand)
 			if testOutput != "" {
 				// 截断过长的输出
@@ -129,27 +134,27 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 			}
 			return "", fmt.Errorf("%s", errorMsg)
 		}
-		Println("✅ 单元测试通过")
+		fmt.Println("✅ 单元测试通过")
 	}
 	// 获取最新的提交信息
 	logScript := `git log --oneline -` + fmt.Sprint(commitCount)
 	log, err := ShellExec(ctx, logScript)
 	if err != nil {
-		Println("❌ 获取提交历史失败")
+		fmt.Println("❌ 获取提交历史失败")
 		return "", fmt.Errorf("获取提交历史失败: %v", err)
 	}
 
 	if strings.TrimSpace(log) == "" {
-		Println("❌ 没有找到提交记录")
+		fmt.Println("❌ 没有找到提交记录")
 		return "", fmt.Errorf("没有找到提交记录，请先提交代码")
 	}
 
-	Println("📝 审查提交:", strings.TrimSpace(log))
+	fmt.Println("📝 审查提交:", strings.TrimSpace(log))
 
 	// 如果用户没有提供summary，从提交信息生成
 	if summary == "" {
 		summary = generateCodeReviewSummary(log)
-		Println("📝 自动生成提交摘要:", summary)
+		fmt.Println("📝 自动生成提交摘要:", summary)
 	}
 
 	// 获取完整的提交信息用于构建请求
@@ -163,38 +168,27 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 	patchScript := `git --no-pager format-patch --stdout -` + fmt.Sprint(commitCount)
 	patch, err := ShellExec(ctx, patchScript)
 	if err != nil {
-		Println("❌ 生成patch失败")
+		fmt.Println("❌ 生成patch失败")
 		return "", fmt.Errorf("生成patch失败: %v", err)
 	}
 
-	// 输出审查日志
-	// 输出审查日志
-	Println("🔍 正在请求专家进行代码审查...")
-	// 构建结构化请求
+	// 构建审查请求
 	structuredRequest := buildCodeReviewRequest(summary, fullLog, patch)
+	fmt.Println("📤 发送代码审查请求...")
 
-	// 执行审查
-	Println("📤 正在发送代码变更给专家...")
-
-	// 方案一：使用ShellStdin特性，避免EOF标记问题
+	// 使用ShellStdin特性，避免EOF标记问题
 	// 创建简单的shell脚本，使用stdin传递内容
 	script := `unset InsideShellExec
 dscli chat --no-color --model deepseek-reasoner`
-
 	// 设置ShellStdin为structuredRequest的reader
-	ctx = context.WithValue(ctx, ShellStdin, strings.NewReader(structuredRequest))
-
-	reply, err = ShellExec(ctx, script)
+	reply, err = ShellExec(context.WithValue(ctx, ShellStdin, strings.NewReader(structuredRequest)), script)
 	if err != nil {
-		Println("❌ 代码审查失败")
-		return "", fmt.Errorf("代码审查失败: %v", err)
+		return
 	}
-
-	// 处理专家响应（自动提取摘要）
-	processedReply := processCodeReviewResponse(reply)
-	Println("✅ 代码审查完成")
-
-	return processedReply, nil
+	// 处理响应
+	processedResponse := processCodeReviewResponse(reply)
+	fmt.Println("✅ 代码审查完成")
+	return processedResponse, nil
 }
 
 // generateCodeReviewSummary 从Git提交信息生成摘要
@@ -280,14 +274,14 @@ func processCodeReviewResponse(response string) string {
 	cleanResponse := strings.TrimSpace(response)
 
 	if cleanResponse == "" {
-		Println("⚠️  专家回复为空")
+		fmt.Println("⚠️  专家回复为空")
 		return "专家没有提供审查意见，请检查网络连接或稍后重试。"
 	}
 
 	// 提取专家摘要
 	expertSummary := extractCodeReviewSummary(cleanResponse)
 	if expertSummary != "" {
-		Println("  专家审查摘要:", expertSummary)
+		fmt.Println("  专家审查摘要:", expertSummary)
 	}
 
 	return cleanResponse
