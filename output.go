@@ -471,9 +471,7 @@ func IsVerbose() bool {
 	return outputVerbose
 }
 
-// TruncateString 截断字符串
 // TruncateString 截断字符串，并在末尾添加省略号
-// 使用[]rune处理Unicode字符，避免截断时出现乱码
 // 参数：
 //
 //	s: 要截断的字符串

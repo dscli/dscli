@@ -416,9 +416,9 @@ func TestTruncateString(t *testing.T) {
 		{"MaxLen negative", "hello", -1, ""},
 		{"MaxLen exactly 3", "hello", 3, "..."},
 		{"MaxLen 2 with Chinese", "你好", 2, ""},
-		{"MaxLen 4 with Chinese", "你好世界", 4, "你..."},
-		{"Emoji", "Hello 😊 World", 8, "Hello ..."},
-		{"Emoji truncate", "Hello 😊 World", 7, "He..."},
+		{"MaxLen 4 with Chinese", "你好世界", 4, "你好世界"},
+		{"Emoji", "Hello 😊 World", 8, "Hello..."},
+		{"Emoji truncate", "Hello 😊 World", 7, "Hell..."},
 		{"Long string", strings.Repeat("a", 100), 50, strings.Repeat("a", 47) + "..."},
 	}
 	for _, tt := range tests {
