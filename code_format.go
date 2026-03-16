@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -43,36 +44,24 @@ func init() {
 
 参数：
   command: 可选，格式化命令。如果不提供，则使用上下文中的配置命令（默认为"make fmt"）
-  timeout: 可选，超时时间（秒）。默认为30秒
 
 功能：
 1. 执行代码格式化命令，格式化项目代码
 2. 支持自定义格式化命令
-3. 提供超时控制，避免格式化命令卡住
-4. 返回格式化输出，包括错误信息
+3. 返回格式化输出，包括错误信息
 
 示例：
   # 使用默认格式化命令
   code_format()
   
   # 使用自定义格式化命令
-  code_format(command="go fmt ./...")
-  
-  # 设置超时时间
-  code_format(timeout=60)
-  
-  # 结合自定义命令和超时
-  code_format(command="make format-all", timeout=120)`,
+  code_format(command="go fmt ./...")`,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"command": map[string]any{
 					"type":        "string",
 					"description": "格式化命令，可选，如果不提供则使用配置的默认命令",
-				},
-				"timeout": map[string]any{
-					"type":        "integer",
-					"description": "超时时间（秒），可选，默认为30秒",
 				},
 			},
 			"additionalProperties": false,
@@ -85,26 +74,53 @@ func init() {
 // handleCodeFormat 处理代码格式化请求
 func handleCodeFormat(ctx context.Context, args ToolArgs) (string, error) {
 	// 检查是否提供了自定义命令
-	userCmd := ToolArgsValue(args, "command", "")
-	timeout := ToolArgsValue(args, "timeout", 30)
+	command := ToolArgsValue(args, "command", "")
 
 	var output string
 	var err error
 
-	if userCmd != "" {
-		// 使用用户提供的命令
-		ctx = context.WithValue(ctx, ShellStdinKey, os.Stdin)
-		ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-		defer cancel()
-
-		output, err = ShellExec(ctx, userCmd)
-	} else {
-		// 使用配置的格式化命令
-		output, err = CodeMakeFormatWithTimeout(ctx, time.Duration(timeout)*time.Second)
+	if command == "" {
+		command = ContextValue(ctx, CodeFormatKey, "make fmt")
 	}
 
+	Printf("代码格式化 %s", command)
+	// 使用用户提供的命令
+	ctx = context.WithValue(ctx, ShellStdinKey, os.Stdin)
+	output, err = ShellExec(ctx, command)
 	if err != nil {
-		return "", fmt.Errorf("代码格式化失败: %w\n输出:\n%s", err, output)
+		// 构建详细的错误信息
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "❌ 代码格式化失败\n")
+		fmt.Fprintf(&sb, "📝 使用的命令: %s\n", command)
+		fmt.Fprintf(&sb, "💥 错误信息: %v\n", err)
+		fmt.Fprintf(&sb, "📄 输出内容:\n%s", output)
+		return sb.String(), fmt.Errorf("代码格式化失败")
 	}
-	return fmt.Sprintf("✅ 代码格式化完成\n输出:\n%s", output), nil
+
+	// 构建成功信息
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "✅ 代码格式化完成\n")
+	fmt.Fprintf(&sb, "📝 使用的命令: %s\n", command)
+
+	// 分析输出内容
+	outputLines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(outputLines) == 0 || (len(outputLines) == 1 && outputLines[0] == "") {
+		sb.WriteString("📊 格式化结果: 没有输出（可能是静默模式或无更改）\n")
+	} else {
+		fmt.Fprintf(&sb, "📊 格式化结果: %d 行输出\n", len(outputLines))
+		sb.WriteString("📄 输出内容:\n")
+		for i, line := range outputLines {
+			if line != "" {
+				sb.WriteString(fmt.Sprintf("  %d. %s\n", i+1, line))
+			}
+		}
+	}
+
+	// 添加建议
+	sb.WriteString("\n💡 建议:\n")
+	sb.WriteString("1. 使用 git diff 查看格式化后的代码变更\n")
+	sb.WriteString("2. 使用 git status 查看是否有未提交的更改\n")
+	sb.WriteString("3. 使用 make_test() 确保格式化后测试仍然通过\n")
+
+	return sb.String(), nil
 }

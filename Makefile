@@ -38,7 +38,7 @@ $(BUILD_DIR)/$(BINARY_NAME): $(shell find . -name "*.go")
 	CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(SOURCE_DIR)
 
 install:
-	@echo "安装 dscli v$(VERSION)"
+	@echo "安装 dscli $(VERSION)"
 	go install $(GOFLAGS) $(LDFLAGS) $(SOURCE_DIR)
 
 clean:

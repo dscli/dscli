@@ -41,10 +41,12 @@ func readCodeStructure(ctx context.Context, path string) (string, error) {
 }
 
 // buildStructureSummary 构建结构摘要
+// buildStructureSummary 构建结构摘要
 func buildStructureSummary(structure *FileStructure) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("📁 文件: %s\n", structure.FilePath))
+	// 添加搜索图标，表明这是一个读取/搜索操作
+	sb.WriteString(fmt.Sprintf("🔍 读取文件结构: %s\n", structure.FilePath))
 	sb.WriteString(fmt.Sprintf("📝 语言: %s\n", structure.Language))
 
 	if structure.Package != "" {
@@ -171,6 +173,5 @@ func handleReadCodeStructure(ctx context.Context, args ToolArgs) (string, error)
 	if path == "" {
 		return "", fmt.Errorf("参数 'path' 缺失")
 	}
-	Printf("查看%s文件结构体定义\n", path)
 	return readCodeStructure(ctx, path)
 }

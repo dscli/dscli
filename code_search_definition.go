@@ -76,7 +76,7 @@ func handleSearchCodeDefinition(ctx context.Context, args ToolArgs) (string, err
 	}
 	typeFilter := ToolArgsValue(args, "type_filter", "")
 	caseSensitive := ToolArgsValue(args, "case_sensitive", false)
-
+	Printf("🔍 搜索代码定义: path=%s pattern=%s typeFilter=%s caseSensitive=%v\n", path, pattern, typeFilter, caseSensitive)
 	// 解析文件结构
 	structure, err := ParseFileStructure(ctx, path)
 	if err != nil {
@@ -113,36 +113,62 @@ func handleSearchCodeDefinition(ctx context.Context, args ToolArgs) (string, err
 
 	// 构建结果
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("🔍 在文件 %s 中搜索定义\n", path))
-	sb.WriteString(fmt.Sprintf("📝 搜索模式: %s\n", pattern))
+	fmt.Fprintf(&sb, "🔍 在文件 %s 中搜索定义\n", path)
+	fmt.Fprintf(&sb, "📝 搜索模式: %s\n", pattern)
+
 	if typeFilter != "" {
-		sb.WriteString(fmt.Sprintf("⚙️  类型过滤: %s\n", typeFilter))
+		fmt.Fprintf(&sb, "⚙️  类型过滤: %s\n", typeFilter)
 	}
-	sb.WriteString(fmt.Sprintf("📊 匹配结果: %d 个\n\n", matchCount))
+
+	if caseSensitive {
+		sb.WriteString("🔤 大小写敏感: 是\n")
+	} else {
+		sb.WriteString("🔤 大小写敏感: 否\n")
+	}
+
+	fmt.Fprintf(&sb, "📊 匹配结果: %d 个\n\n", matchCount)
 
 	if matchCount == 0 {
 		sb.WriteString("❌ 未找到匹配的定义\n")
+
+		// 显示文件中的可用定义类型
+		sb.WriteString("\n📋 文件中的定义类型:\n")
+		if len(structure.Functions) > 0 {
+			fmt.Fprintf(&sb, "  - 函数: %d 个\n", len(structure.Functions))
+		}
+		if len(structure.Classes) > 0 {
+			fmt.Fprintf(&sb, "  - 类/结构体: %d 个\n", len(structure.Classes))
+		}
+
 		// 提供一些建议
 		sb.WriteString("\n💡 建议:\n")
 		sb.WriteString("1. 检查搜索模式是否正确\n")
 		sb.WriteString("2. 尝试不区分大小写搜索\n")
 		sb.WriteString("3. 尝试不使用类型过滤器\n")
 		sb.WriteString("4. 使用 search_code_semantic 进行文本搜索\n")
+		sb.WriteString("5. 查看文件结构: read_code_structure(path=\"" + path + "\")\n")
 		return sb.String(), nil
 	}
 
 	// 显示所有匹配结果
 	for i, result := range results {
-		sb.WriteString(fmt.Sprintf("### 匹配项 %d\n", i+1))
+		fmt.Fprintf(&sb, "### 匹配项 %d\n", i+1)
 		sb.WriteString(result)
 		sb.WriteString("\n")
 	}
 
 	// 显示统计信息
 	sb.WriteString("📈 搜索统计:\n")
-	sb.WriteString(fmt.Sprintf("  - 总函数数: %d\n", len(structure.Functions)))
-	sb.WriteString(fmt.Sprintf("  - 总类/结构体数: %d\n", len(structure.Classes)))
-	sb.WriteString(fmt.Sprintf("  - 匹配定义数: %d\n", matchCount))
+	fmt.Fprintf(&sb, "  - 总函数数: %d\n", len(structure.Functions))
+	fmt.Fprintf(&sb, "  - 总类/结构体数: %d\n", len(structure.Classes))
+	fmt.Fprintf(&sb, "  - 匹配定义数: %d\n", matchCount)
+
+	// 显示搜索效率
+	totalDefinitions := len(structure.Functions) + len(structure.Classes)
+	if totalDefinitions > 0 {
+		efficiency := float64(matchCount) / float64(totalDefinitions) * 100
+		fmt.Fprintf(&sb, "  - 搜索效率: %.1f%%\n", efficiency)
+	}
 
 	return sb.String(), nil
 }
@@ -169,21 +195,33 @@ func matchesDefinition(symbol *Symbol, pattern, typeFilter string, caseSensitive
 func formatSymbolResult(symbol *Symbol, symbolType, filePath string) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("📋 类型: %s\n", symbolType))
-	sb.WriteString(fmt.Sprintf("📝 名称: %s\n", symbol.Name))
+	fmt.Fprintf(&sb, "📋 类型: %s\n", symbolType)
+	fmt.Fprintf(&sb, "📝 名称: %s\n", symbol.Name)
 
+	// 显示函数/方法的详细信息
 	if symbol.Signature != "" {
-		sb.WriteString(fmt.Sprintf("🖋️  签名: %s\n", symbol.Signature))
+		fmt.Fprintf(&sb, "🖋️  签名: %s\n", symbol.Signature)
 	}
 
-	sb.WriteString(fmt.Sprintf("📍 位置: %s:%d:%d\n", filePath, symbol.Line, symbol.Column))
+	fmt.Fprintf(&sb, "📍 位置: %s:%d:%d\n", filePath, symbol.Line, symbol.Column)
 
 	if symbol.EndLine > symbol.Line {
-		sb.WriteString(fmt.Sprintf("📏 范围: 第%d行 - 第%d行\n", symbol.Line, symbol.EndLine))
+		fmt.Fprintf(&sb, "📏 范围: 第%d行 - 第%d行\n", symbol.Line, symbol.EndLine)
 	}
 
 	if symbol.Receiver != "" {
-		sb.WriteString(fmt.Sprintf("🎯 接收器: %s\n", symbol.Receiver))
+		fmt.Fprintf(&sb, "🎯 接收器: %s\n", symbol.Receiver)
+	}
+
+	// 添加更多上下文信息
+	if symbol.Type != "" {
+		fmt.Fprintf(&sb, "🔧 符号类型: %s\n", symbol.Type)
+	}
+
+	// 计算代码行数
+	if symbol.EndLine > symbol.Line {
+		lineCount := symbol.EndLine - symbol.Line + 1
+		fmt.Fprintf(&sb, "📊 代码行数: %d 行\n", lineCount)
 	}
 
 	return sb.String()
