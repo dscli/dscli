@@ -64,6 +64,7 @@ func init() {
 }
 
 // handleMakeTest 处理测试运行请求
+// handleMakeTest 处理测试运行请求
 func handleMakeTest(ctx context.Context, args ToolArgs) (string, error) {
 	// 检查是否提供了自定义命令
 	userCmd := ToolArgsValue(args, "command", "")
@@ -85,11 +86,20 @@ func handleMakeTest(ctx context.Context, args ToolArgs) (string, error) {
 		finalCmd = fmt.Sprintf("%s -run %s", finalCmd, testPattern)
 	}
 
+	// 记录使用的命令
+	Printf("执行测试命令: %s", finalCmd)
+
 	// 执行测试命令
 	ctx = context.WithValue(ctx, ShellStdinKey, os.Stdin)
 	output, err := ShellExec(ctx, finalCmd)
 	if err != nil {
-		return "", fmt.Errorf("测试失败: %w\n输出:\n%s", err, output)
+		return "", fmt.Errorf("测试失败: %w\n命令: %s\n输出:\n%s", err, finalCmd, output)
 	}
-	return fmt.Sprintf("✅ 测试完成\n输出:\n%s", output), nil
+
+	// 如果输出为空，添加提示信息
+	if output == "" {
+		output = "（测试命令执行成功，但无输出）"
+	}
+
+	return fmt.Sprintf("✅ 测试完成\n命令: %s\n输出:\n%s", finalCmd, output), nil
 }
