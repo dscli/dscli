@@ -239,6 +239,6 @@ func handleSearchCodeSemantic(ctx context.Context, args ToolArgs) (string, error
 	contextLines := ToolArgsValue(args, "context_lines", 5)
 	caseSensitive := ToolArgsValue(args, "case_sensitive", false)
 	maxMatches := ToolArgsValue(args, "max_matches", 0)
-	Printf("搜索文件%s中匹配指定模式%s的行%d", path, pattern, contextLines)
+	Printf("搜索文件%s中匹配指定模式%s的行", path, pattern)
 	return searchCodeSemantic(ctx, path, pattern, contextLines, caseSensitive, maxMatches)
 }
