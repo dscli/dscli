@@ -89,29 +89,6 @@ func handleAskExpert(ctx context.Context, args ToolArgs) (reply string, err erro
 	return processedReply, nil
 }
 
-// AskExpert - 问专家
-// AskExpert - 问专家
-//
-// 参数:
-//
-//	ctx: 上下文，用于传递执行环境信息
-//	input: 要发送给专家的输入内容
-//
-// 返回值:
-//
-//	reply: 专家的回复内容
-//	err: 错误信息，如果执行成功则为nil
-//
-// 功能说明:
-//
-//	调用deepseek-reasoner模型进行专家咨询，支持结构化输入输出
-//	使用ShellStdin传递输入，避免命令行长度限制
-//
-// 注意事项:
-//   - 需要确保dscli工具可用
-//   - 上下文中的ShellName和ShellArgs会被设置
-//   - 输入内容不应包含特殊EOF标记
-//
 // AskExpert 调用AI专家模型进行咨询并返回回复
 //
 // 该函数通过执行shell命令调用AI模型来处理输入内容，并将模型回复返回给调用者。
@@ -119,9 +96,9 @@ func handleAskExpert(ctx context.Context, args ToolArgs) (reply string, err erro
 //
 // 参数:
 //
-//	ctx: 上下文对象，用于传递执行环境配置。函数会设置以下上下文值（如果尚未设置）:
-//	     - ShellName: shell执行器名称，默认为"/usr/bin/env"
-//	     - ShellArgs: shell参数，默认为[]string{"bash"}
+//	ctx: 上下文对象，用于传递执行环境配置。函数会设置以下上下文值（将覆盖原有值）:
+//	     - ShellName: shell执行器名称，设置为"/usr/bin/env"
+//	     - ShellArgs: shell参数，设置为[]string{"bash"}
 //	     - ShellStdin: 包含输入内容的io.Reader
 //	input: 要发送给AI模型的输入文本，可以是任意长度（受系统内存限制）
 //
@@ -141,8 +118,7 @@ func handleAskExpert(ctx context.Context, args ToolArgs) (reply string, err erro
 //
 // 注意事项:
 //   - 确保dscli命令行工具已正确安装并配置
-//   - 函数会设置上下文中的ShellName、ShellArgs和ShellStdin值
-//   - 如果调用者已在上下文中设置了这些值，函数会使用已有值（不覆盖）
+//   - 函数会覆盖上下文中的ShellName、ShellArgs和ShellStdin值
 //   - 输入内容通过标准输入传递，可以包含任意字符，没有EOF标记限制
 //
 // 示例:
