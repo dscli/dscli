@@ -60,7 +60,7 @@ func handlePython(ctx context.Context, args ToolArgs) (out string, err error) {
 	if !strings.HasPrefix(strings.TrimSpace(script), "#!") {
 		script = "#!/usr/bin/env python3\n" + script
 	}
-
+	Printf("运行以下Python脚本：\n```python\n%s\n```\n", script)
 	out, err = runShell(ctx, script)
 	return
 }
