@@ -185,13 +185,7 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 	// 构建审查请求
 	structuredRequest := buildCodeReviewRequest(summary, fullLog, patch)
 	Println("📤 发送代码审查请求...")
-
-	// 使用ShellStdin特性，避免EOF标记问题
-	// 创建简单的shell脚本，使用stdin传递内容
-	script := `unset InsideShellExec
-dscli chat --no-color --model deepseek-reasoner`
-	// 设置ShellStdin为structuredRequest的reader
-	reply, err = ShellExec(context.WithValue(ctx, ShellStdin, strings.NewReader(structuredRequest)), script)
+	reply, err = AskExpert(ctx, structuredRequest)
 	if err != nil {
 		Println("❌ 代码提交失败")
 		err = fmt.Errorf("代码提交失败: %w", err)

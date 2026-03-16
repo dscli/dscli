@@ -75,18 +75,7 @@ func handleAskExpert(ctx context.Context, args ToolArgs) (reply string, err erro
 	// 构建结构化请求（不再要求专家生成摘要）
 	structuredRequest := buildStructuredRequest(summary, content)
 
-	// expert 或 reasoner（已映射到 expert）
-	eof := "EOFFOEOFEEFO"
-	for strings.Contains(structuredRequest, eof) {
-		eof = Shuffle(eof)
-	}
-	script := fmt.Sprintf(`unset InsideShellExec
-dscli chat --no-color --no-timestamp --model deepseek-reasoner <<`+eof+`
-%s
-`+eof, structuredRequest)
-	ctx = context.WithValue(ctx, ShellName, "/usr/bin/env")
-	ctx = context.WithValue(ctx, ShellArgs, []string{"bash"})
-	reply, err = ShellExec(ctx, script)
+	reply, err = AskExpert(ctx, structuredRequest)
 	if err != nil {
 		Println("❌ 专家咨询失败")
 		return
@@ -98,6 +87,16 @@ dscli chat --no-color --no-timestamp --model deepseek-reasoner <<`+eof+`
 	Println("✅ 专家咨询完成")
 
 	return processedReply, nil
+}
+
+func AskExpert(ctx context.Context, input string) (reply string, err error) {
+	script := `unset InsideShellExec
+dscli chat --no-color --no-timestamp --model deepseek-reasoner`
+	ctx = context.WithValue(ctx, ShellName, "/usr/bin/env")
+	ctx = context.WithValue(ctx, ShellArgs, []string{"bash"})
+	ctx = context.WithValue(ctx, ShellStdin, strings.NewReader(input))
+	reply, err = ShellExec(ctx, script)
+	return
 }
 
 // buildStructuredRequest 构建结构化请求
