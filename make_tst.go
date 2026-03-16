@@ -87,7 +87,7 @@ func handleMakeTest(ctx context.Context, args ToolArgs) (string, error) {
 	}
 
 	// 记录使用的命令
-	Printf("执行测试命令: %s", finalCmd)
+	Printf("🧪 执行测试命令: %s", finalCmd)
 
 	// 执行测试命令
 	ctx = context.WithValue(ctx, ShellStdinKey, os.Stdin)

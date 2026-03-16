@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -50,6 +51,7 @@ func init() { // 注册shell工具
 }
 
 // handleShell 执行Shell脚本
+// handleShell 执行Shell脚本
 func handleShell(ctx context.Context, args ToolArgs) (out string, err error) {
 	script := ToolArgsValue(args, "script", "")
 
@@ -57,7 +59,7 @@ func handleShell(ctx context.Context, args ToolArgs) (out string, err error) {
 		return
 	}
 
-	Notice("Shell: %s", ShortenShellScript(script))
+	Notice("💻 Shell: %s", ShortenShellScript(script))
 	out, err = runShell(ctx, script)
 	return
 }
@@ -73,15 +75,29 @@ func runShell(ctx context.Context, script string) (result string, err error) {
 	// 记录调试信息（不在用户输出中显示）
 	Debug("Shell命令执行时间: %v", executionTime)
 
+	// 判断是Python还是Shell调用
+	isPython := false
+	if strings.Contains(strings.ToLower(script), "python") ||
+		strings.Contains(strings.ToLower(name), "python") {
+		isPython = true
+	}
+
 	if err != nil {
 		// 简化错误输出，不显示执行时间
-		result := fmt.Sprintf("❌ 执行失败:\n错误: %v\n\n输出内容:\n%s",
-			err, out)
+		if isPython {
+			result = fmt.Sprintf("🐍 Python执行失败:\n错误: %v\n\n输出内容:\n%s", err, out)
+		} else {
+			result = fmt.Sprintf("💻 Shell执行失败:\n错误: %v\n\n输出内容:\n%s", err, out)
+		}
 		return result, nil
 	}
 
 	// 简化成功输出，不显示执行时间
-	result = fmt.Sprintf("📝 执行结果:\n%s", out)
+	if isPython {
+		result = fmt.Sprintf("🐍 Python执行结果:\n%s", out)
+	} else {
+		result = fmt.Sprintf("💻 Shell执行结果:\n%s", out)
+	}
 
 	return
 }

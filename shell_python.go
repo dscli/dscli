@@ -49,6 +49,7 @@ func init() {
 }
 
 // handlePython 执行Python脚本
+// handlePython 执行Python脚本
 func handlePython(ctx context.Context, args ToolArgs) (out string, err error) {
 	script := ToolArgsValue(args, "script", "")
 	// 检查危险命令（Python脚本也可能包含shell命令）
@@ -60,7 +61,7 @@ func handlePython(ctx context.Context, args ToolArgs) (out string, err error) {
 	if !strings.HasPrefix(strings.TrimSpace(script), "#!") {
 		script = "#!/usr/bin/env python3\n" + script
 	}
-	Printf("运行以下Python脚本：\n```python\n%s\n```\n", script)
+	Printf("🐍 运行以下Python脚本：\n```python\n%s\n```\n", script)
 	out, err = runShell(ctx, script)
 	return
 }
