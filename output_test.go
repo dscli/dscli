@@ -406,7 +406,7 @@ func TestTruncateString(t *testing.T) {
 		want   string
 	}{
 		{"Empty", "", 5, ""},
-		{"Short", "hello world", 12, "hello world"},
+		{"Short", "he", 1, ""},
 		{"Pure English", "hello world", 11, "hello world"},
 		{"English Truncate", "hello world", 10, "hello w..."},
 		{"Chinese", "世界，你好", 5, "世界，你好"},
