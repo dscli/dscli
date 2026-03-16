@@ -400,8 +400,7 @@ func TestJSONMarshal(t *testing.T) {
 
 func TestTruncateString(t *testing.T) {
 	tests := []struct {
-		name string // description of this test case
-		// Named input parameters for target function.
+		name   string // description of this test case
 		s      string
 		maxLen int
 		want   string
@@ -411,13 +410,23 @@ func TestTruncateString(t *testing.T) {
 		{"Pure English", "hello world", 11, "hello world"},
 		{"English Truncate", "hello world", 10, "hello w..."},
 		{"Chinese", "世界，你好", 5, "世界，你好"},
-		{"Chines Truncate", "世界，你好！", 4, "世..."},
+		{"Chinese Truncate", "世界，你好！", 4, "世..."},
+		{"MaxLen less than 3", "hello", 2, ""},
+		{"MaxLen zero", "hello", 0, ""},
+		{"MaxLen negative", "hello", -1, ""},
+		{"MaxLen exactly 3", "hello", 3, "..."},
+		{"MaxLen 2 with Chinese", "你好", 2, ""},
+		{"MaxLen 4 with Chinese", "你好世界", 4, "你..."},
+		{"Emoji", "Hello 😊 World", 8, "Hello ..."},
+		{"Emoji truncate", "Hello 😊 World", 7, "He..."},
+		{"Long string", strings.Repeat("a", 100), 50, strings.Repeat("a", 47) + "..."},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := TruncateString(tt.s, tt.maxLen)
 			if got != tt.want {
-				t.Errorf("TruncateString() = %v,\n want %v", got, tt.want)
+				t.Errorf("TruncateString(%q, %d) = %q, want %q",
+					tt.s, tt.maxLen, got, tt.want)
 			}
 		})
 	}

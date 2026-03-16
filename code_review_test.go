@@ -42,11 +42,10 @@ func TestCodeReviewToolStructure(t *testing.T) {
 			t.Errorf("Tool description missing required keyword: %s", keyword)
 		}
 	}
-	if codeReviewTool.Timeout != 60*5*time.Second {
-		t.Errorf("Expected timeout 120s, got %v", codeReviewTool.Timeout)
+	if codeReviewTool.Timeout != 5*time.Minute {
+		t.Errorf("Expected timeout 5 minutes, got %v", codeReviewTool.Timeout)
 	}
 
-	// Check category
 	if codeReviewTool.Category != "git" {
 		t.Errorf("Expected category 'git', got '%s'", codeReviewTool.Category)
 	}
@@ -181,7 +180,6 @@ func TestDocumentationCompleteness(t *testing.T) {
 		!strings.Contains(desc, "如果单元测试未通过，工具会返回错误") {
 		t.Error("Documentation should mention error returns for various checks")
 	}
-	// Check that user guidance is provided
 	// Check that user guidance is provided
 	if !strings.Contains(desc, "用户需要先解决所有问题") {
 		t.Error("Documentation should instruct users to resolve all issues first")

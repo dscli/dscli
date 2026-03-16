@@ -472,7 +472,26 @@ func IsVerbose() bool {
 }
 
 // TruncateString 截断字符串
+// TruncateString 截断字符串，并在末尾添加省略号
+// 使用[]rune处理Unicode字符，避免截断时出现乱码
+// 参数：
+//
+//	s: 要截断的字符串
+//	maxLen: 最大长度（包括省略号）
+//
+// 返回值：
+//
+//	截断后的字符串，如果maxLen小于3则返回空字符串
+//
+// 示例：
+//
+//	TruncateString("你好世界", 5) 返回 "你好..."
+//	TruncateString("Hello World", 8) 返回 "Hello..."
 func TruncateString(s string, maxLen int) string {
+	if maxLen < 3 {
+		// 如果maxLen小于3，无法添加省略号，返回空字符串
+		return ""
+	}
 	runes := []rune(s)
 	if len(runes) <= maxLen {
 		return s
