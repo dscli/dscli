@@ -16,7 +16,7 @@ func TestCodeMakeFormat(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.WithValue(t.Context(), MakeFormatKey, "echo done")
+			ctx := context.WithValue(t.Context(), CodeFormatKey, "echo done")
 			got, gotErr := CodeMakeFormat(ctx)
 			if gotErr != nil {
 				if !tt.wantErr {
@@ -36,7 +36,7 @@ func TestCodeMakeFormat(t *testing.T) {
 
 func TestCodeMakeFormatWithTimeout(t *testing.T) {
 	t.Run("normal timeout", func(t *testing.T) {
-		ctx := context.WithValue(t.Context(), MakeFormatKey, "echo done")
+		ctx := context.WithValue(t.Context(), CodeFormatKey, "echo done")
 		_, err := CodeMakeFormatWithTimeout(ctx, 1*time.Second)
 		if err != nil {
 			t.Errorf("CodeMakeFormatWithTimeout() failed: %v", err)
@@ -44,7 +44,7 @@ func TestCodeMakeFormatWithTimeout(t *testing.T) {
 	})
 
 	t.Run("very short timeout", func(t *testing.T) {
-		ctx := context.WithValue(t.Context(), MakeFormatKey, "sleep 0.01\necho done")
+		ctx := context.WithValue(t.Context(), CodeFormatKey, "sleep 0.01\necho done")
 		// 使用极短的超时，期望超时错误
 		_, err := CodeMakeFormatWithTimeout(ctx, 50*time.Microsecond)
 		if err == nil {
@@ -55,7 +55,7 @@ func TestCodeMakeFormatWithTimeout(t *testing.T) {
 
 func TestCodeMakeFormatSafe(t *testing.T) {
 	t.Run("safe version", func(t *testing.T) {
-		ctx := context.WithValue(t.Context(), MakeFormatKey, "echo done")
+		ctx := context.WithValue(t.Context(), CodeFormatKey, "echo done")
 		_, err := CodeMakeFormatSafe(ctx)
 		if err != nil {
 			t.Errorf("CodeMakeFormatSafe() failed: %v", err)
@@ -63,7 +63,7 @@ func TestCodeMakeFormatSafe(t *testing.T) {
 	})
 
 	t.Run("context cancellation", func(t *testing.T) {
-		ctx := context.WithValue(t.Context(), MakeFormatKey, "sleep 0.01\necho done")
+		ctx := context.WithValue(t.Context(), CodeFormatKey, "sleep 0.01\necho done")
 		ctx, cancel := context.WithCancel(ctx)
 		cancel() // 立即取消
 

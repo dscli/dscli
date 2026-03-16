@@ -141,8 +141,6 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (string, e
 		return "", fmt.Errorf("failed to open file: %w", err)
 	}
 
-	defer CodeMakeFormat(ctx)
-
 	defer file.Close()
 
 	// 读取所有行
@@ -234,5 +232,24 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (string, e
 
 	Notice("%s文件 \"%s\" 行范围 %s，影响 %d 行", operation, path, rangeDesc, linesChanged)
 
-	return fmt.Sprintf("成功%s文件 \"%s\" 行范围 %s", operation, path, rangeDesc), nil
+	// 运行make format并捕获结果
+	formatOutput, formatErr := CodeMakeFormat(ctx)
+
+	// 构建最终结果
+	result := fmt.Sprintf("成功%s文件 \"%s\" 行范围 %s", operation, path, rangeDesc)
+
+	// 添加格式化结果信息
+	if formatErr != nil {
+		// 格式化失败，但文件写入成功
+		result += fmt.Sprintf("\n⚠️ 代码格式化失败: %v", formatErr)
+	} else if formatOutput != "" {
+		// 格式化成功且有输出
+		formatOutput = strings.TrimSpace(formatOutput)
+		result += fmt.Sprintf("\n✅ 代码格式化完成: %s", formatOutput)
+	} else {
+		// 格式化成功但无输出
+		result += "\n✅ 代码格式化完成"
+	}
+
+	return result, nil
 }

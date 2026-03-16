@@ -23,7 +23,9 @@ var (
 	InsideShellExecKey  = ContextKeyType[bool]{"InsideShellExec"}
 	StreamKey           = ContextKeyType[bool]{"Stream"}
 	LeftTokensKey       = ContextKeyType[int]{"LeftTokens"}
-	MakeFormatKey       = ContextKeyType[string]{"MakeFormat"}
+	CodeFormatKey       = ContextKeyType[string]{"CodeFormat"}
+	MakeTestKey         = ContextKeyType[string]{"MakeTest"}
+	MakeBuildKey        = ContextKeyType[string]{"MakeBuild"}
 )
 
 type ContextKeyType[T any] struct {

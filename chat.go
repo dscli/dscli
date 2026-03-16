@@ -41,12 +41,23 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 		return
 	}
 	ctx = context.WithValue(ctx, CurrentModelIDKey, modelID)
-	makefmt, err := cmd.Flags().GetString("makefmt")
+	codeformat, err := cmd.Flags().GetString("codeformat")
+	if err != nil {
+		return
+	}
+	ctx = context.WithValue(ctx, CodeFormatKey, codeformat)
+
+	maketest, err := cmd.Flags().GetString("maketest")
+	if err != nil {
+		return
+	}
+	ctx = context.WithValue(ctx, MakeTestKey, maketest)
+	makebuild, err := cmd.Flags().GetString("makebuild")
 	if err != nil {
 		return
 	}
 
-	ctx = context.WithValue(ctx, MakeFormatKey, makefmt)
+	ctx = context.WithValue(ctx, MakeBuildKey, makebuild)
 
 	// SessionID
 	sessionID, err := CreateOrGetSessionID()
@@ -396,5 +407,7 @@ func init() {
 	chatCmd.Flags().Int("histsize", 8, "history size loaded")
 	chatCmd.Flags().String("input", "", "read content from input file or read content from stdin if input file empty")
 	chatCmd.Flags().Bool("stream", false, "启用流式输出（SSE）")
-	chatCmd.Flags().String("makefmt", "make fmt", "command to format source code")
+	chatCmd.Flags().String("codeformat", "make fmt", "command to format source code")
+	chatCmd.Flags().String("maketest", "make test", "command to test source code")
+	chatCmd.Flags().String("makebuild", "make build", "command to build source code")
 }

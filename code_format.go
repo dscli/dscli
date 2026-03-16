@@ -12,7 +12,7 @@ import (
 // 而不是在internal/shell沙箱中执行。因为mkfmt脚本由用户提供，是可信任的，
 // 可能包含沙箱不允许的命令，但由于用户指定，是安全的。
 func CodeMakeFormat(ctx context.Context) (output string, err error) {
-	mkfmt := ContextValue(ctx, MakeFormatKey, "make fmt")
+	mkfmt := ContextValue(ctx, CodeFormatKey, "make fmt")
 	ctx = context.WithValue(ctx, ShellStdinKey, os.Stdin)
 	output, err = ShellExec(ctx, mkfmt)
 	if err != nil {

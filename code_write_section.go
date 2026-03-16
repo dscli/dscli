@@ -17,46 +17,62 @@ import (
 //	lines:开始行-结束行  - 修改指定行范围（后备方案）
 //
 // dryRun: true表示只预览不实际写入
-func writeCodeSection(ctx context.Context, path string, selector string, newContent string, dryRun bool) (string, error) {
+// writeCodeSection 基于代码结构定位并修改特定代码片段
+func writeCodeSection(ctx context.Context, path string, selector string, newContent string, dryRun bool) (result string, err error) {
 	// 检查文件是否存在
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return "", fmt.Errorf("文件不存在: %s", path)
+	if _, err = os.Stat(path); os.IsNotExist(err) {
+		err = fmt.Errorf("文件不存在: %s", path)
+		return
 	}
 
 	// 读取文件内容
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("读取文件失败: %w", err)
+		err = fmt.Errorf("读取文件失败: %w", err)
+		return
 	}
 
-	defer CodeMakeFormat(ctx)
+	defer func() {
+		output, fmtErr := CodeMakeFormat(ctx)
+		if fmtErr != nil {
+			err = fmt.Errorf("original error: %w, make format error: %w", err, fmtErr)
+		}
+		output = strings.TrimSpace(output)
+		if output != "" {
+			result = fmt.Sprintf("%s\nmake format result:\n%s", result, output)
+		}
+	}()
+
 	// 解析文件结构
 	structure, err := ParseFileStructure(ctx, path)
 	if err != nil {
-		return "", fmt.Errorf("解析文件结构失败: %w", err)
+		err = fmt.Errorf("解析文件结构失败: %w", err)
+		return
 	}
 
 	// 根据selector定位代码片段
 	lines := strings.Split(string(content), "\n")
 	startLine, endLine, err := locateSectionRange(structure, lines, selector)
 	if err != nil {
-		return "", err
+		err = fmt.Errorf("获取区域范围失败: %w", err)
+		return
 	}
 
 	// 构建结果
-	result := buildWriteResult(path, selector, startLine, endLine, lines, newContent, dryRun)
+	result = buildWriteResult(path, selector, startLine, endLine, lines, newContent, dryRun)
 
 	// 如果不是dry-run模式，实际写入文件
 	if !dryRun {
-		if err := writeToFile(path, lines, startLine, endLine, newContent); err != nil {
-			return "", fmt.Errorf("写入文件失败: %w", err)
+		if err = writeToFile(path, lines, startLine, endLine, newContent); err != nil {
+			err = fmt.Errorf("写入文件失败: %w", err)
+			return
 		}
 		result += "\n✅ 文件已成功更新"
 	} else {
 		result += "\n⚠️  dry-run模式：文件未实际修改"
 	}
 
-	return result, nil
+	return
 }
 
 // locateSectionRange 根据selector定位代码片段的范围
