@@ -101,5 +101,5 @@ func handleMakeTest(ctx context.Context, args ToolArgs) (string, error) {
 		output = "（测试命令执行成功，但无输出）"
 	}
 
-	return fmt.Sprintf("✅ 测试完成\n命令: %s\n输出:\n%s", finalCmd, output), nil
+	return fmt.Sprintf("🧪 测试完成\n命令: %s\n输出:\n%s", finalCmd, output), nil
 }

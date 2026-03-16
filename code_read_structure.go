@@ -41,32 +41,31 @@ func readCodeStructure(ctx context.Context, path string) (string, error) {
 }
 
 // buildStructureSummary 构建结构摘要
-// buildStructureSummary 构建结构摘要
 func buildStructureSummary(structure *FileStructure) string {
 	var sb strings.Builder
 
 	// 添加搜索图标，表明这是一个读取/搜索操作
-	sb.WriteString(fmt.Sprintf("🔍 读取文件结构: %s\n", structure.FilePath))
-	sb.WriteString(fmt.Sprintf("📝 语言: %s\n", structure.Language))
+	fmt.Fprintf(&sb, "🔍 读取文件结构: %s\n", structure.FilePath)
+	fmt.Fprintf(&sb, "📝 语言: %s\n", structure.Language)
 
 	if structure.Package != "" {
-		sb.WriteString(fmt.Sprintf("📦 包名: %s\n", structure.Package))
+		fmt.Fprintf(&sb, "📦 包名: %s\n", structure.Package)
 	}
 
 	if len(structure.Imports) > 0 {
-		sb.WriteString(fmt.Sprintf("📚 导入: %d 个\n", len(structure.Imports)))
+		fmt.Fprintf(&sb, "📚 导入: %d 个\n", len(structure.Imports))
 		for i, imp := range structure.Imports {
 			if i < 3 { // 只显示前3个
-				sb.WriteString(fmt.Sprintf("  - %s\n", imp))
+				fmt.Fprintf(&sb, "  - %s\n", imp)
 			}
 		}
 		if len(structure.Imports) > 3 {
-			sb.WriteString(fmt.Sprintf("  ... 还有 %d 个导入\n", len(structure.Imports)-3))
+			fmt.Fprintf(&sb, "  ... 还有 %d 个导入\n", len(structure.Imports)-3)
 		}
 	}
 
 	if len(structure.Functions) > 0 {
-		sb.WriteString(fmt.Sprintf("⚙️  函数: %d 个\n", len(structure.Functions)))
+		fmt.Fprintf(&sb, "⚙️  函数: %d 个\n", len(structure.Functions))
 		for i, fn := range structure.Functions {
 			if i < 5 { // 只显示前5个
 				lineInfo := fmt.Sprintf("(第%d行", fn.Line)
@@ -75,19 +74,19 @@ func buildStructureSummary(structure *FileStructure) string {
 				}
 				lineInfo += ")"
 
-				sb.WriteString(fmt.Sprintf("  - %s %s\n", fn.Name, lineInfo))
+				fmt.Fprintf(&sb, "  - %s %s\n", fn.Name, lineInfo)
 				if fn.Signature != "" {
-					sb.WriteString(fmt.Sprintf("    签名: %s\n", fn.Signature))
+					fmt.Fprintf(&sb, "    签名: %s\n", fn.Signature)
 				}
 			}
 		}
 		if len(structure.Functions) > 5 {
-			sb.WriteString(fmt.Sprintf("  ... 还有 %d 个函数\n", len(structure.Functions)-5))
+			fmt.Fprintf(&sb, "  ... 还有 %d 个函数\n", len(structure.Functions)-5)
 		}
 	}
 
 	if len(structure.Classes) > 0 {
-		sb.WriteString(fmt.Sprintf("🏗️  类/结构体: %d 个\n", len(structure.Classes)))
+		fmt.Fprintf(&sb, "🏗️  类/结构体: %d 个\n", len(structure.Classes))
 		for i, cls := range structure.Classes {
 			if i < 5 { // 只显示前5个
 				lineInfo := fmt.Sprintf("(第%d行", cls.Line)
@@ -96,19 +95,19 @@ func buildStructureSummary(structure *FileStructure) string {
 				}
 				lineInfo += ")"
 
-				sb.WriteString(fmt.Sprintf("  - %s %s\n", cls.Name, lineInfo))
+				fmt.Fprintf(&sb, "  - %s %s\n", cls.Name, lineInfo)
 			}
 		}
 		if len(structure.Classes) > 5 {
-			sb.WriteString(fmt.Sprintf("  ... 还有 %d 个类/结构体\n", len(structure.Classes)-5))
+			fmt.Fprintf(&sb, "  ... 还有 %d 个类/结构体\n", len(structure.Classes)-5)
 		}
 	}
 
 	if len(structure.Errors) > 0 {
-		sb.WriteString(fmt.Sprintf("⚠️  解析警告: %d 个\n", len(structure.Errors)))
+		fmt.Fprintf(&sb, "⚠️  解析警告: %d 个\n", len(structure.Errors))
 		for i, err := range structure.Errors {
 			if i < 3 {
-				sb.WriteString(fmt.Sprintf("  - %s\n", err))
+				fmt.Fprintf(&sb, "  - %s\n", err)
 			}
 		}
 	}

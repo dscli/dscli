@@ -59,7 +59,6 @@ func init() {
 }
 
 // handleMakeBuild 处理构建检查请求
-// handleMakeBuild 处理构建检查请求
 func handleMakeBuild(ctx context.Context, args ToolArgs) (string, error) {
 	// 检查是否提供了自定义命令
 	userCmd := ToolArgsValue(args, "command", "")
@@ -69,7 +68,7 @@ func handleMakeBuild(ctx context.Context, args ToolArgs) (string, error) {
 	if cmdToUse == "" {
 		cmdToUse = ContextValue(ctx, MakeBuildKey, "make build")
 	}
-	Printf("执行构建命令: %s", cmdToUse)
+	Printf("🔨 执行构建命令: %s", cmdToUse)
 
 	if userCmd != "" {
 		// 使用用户提供的命令
@@ -82,7 +81,7 @@ func handleMakeBuild(ctx context.Context, args ToolArgs) (string, error) {
 		if output == "" {
 			output = "（构建命令执行成功，但无输出）"
 		}
-		return fmt.Sprintf("✅ 构建成功\n命令: %s\n输出:\n%s", userCmd, output), nil
+		return fmt.Sprintf("🔨 构建成功\n命令: %s\n输出:\n%s", userCmd, output), nil
 	}
 
 	// 使用配置的构建命令
@@ -94,5 +93,5 @@ func handleMakeBuild(ctx context.Context, args ToolArgs) (string, error) {
 	if output == "" {
 		output = "（构建命令执行成功，但无输出）"
 	}
-	return fmt.Sprintf("✅ 构建成功\n命令: %s\n输出:\n%s", cmdToUse, output), nil
+	return fmt.Sprintf("🔨 构建成功\n命令: %s\n输出:\n%s", cmdToUse, output), nil
 }
