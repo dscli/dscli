@@ -40,10 +40,22 @@ func init() { // 注册shell工具
 4. Git操作：git status
 `,
 				},
+				"summary": map[string]any{
+					"type": "string",
+					"description": `要执行的Shell脚本要做什么的总结。
+别太长，40个字以内。可选，脚本很短（比如40个字以内）可以不加。
+
+示例：
+1. 查找包含Hello方法Go文件
+2. 处理Json数据
+3. 读文件
+`,
+				},
 			},
 			"required":             []string{"script"},
 			"additionalProperties": false,
 		},
+
 		Category: "system",
 		Timeout:  60 * time.Second, // 设置60秒超时
 		Handler:  handleShell,
@@ -51,15 +63,17 @@ func init() { // 注册shell工具
 }
 
 // handleShell 执行Shell脚本
-// handleShell 执行Shell脚本
 func handleShell(ctx context.Context, args ToolArgs) (out string, err error) {
 	script := ToolArgsValue(args, "script", "")
 
 	if err = validateShell(script); err != nil {
 		return
 	}
-
-	Notice("💻 Shell: %s", ShortenShellScript(script))
+	summary := ToolArgsValue(args, "summary", "")
+	if summary == "" {
+		summary = "\n```bash\n" + script + "\n```\n"
+	}
+	Notice("💻 执行Shell%s", summary)
 	out, err = runShell(ctx, script)
 	return
 }
@@ -76,11 +90,8 @@ func runShell(ctx context.Context, script string) (result string, err error) {
 	Debug("Shell命令执行时间: %v", executionTime)
 
 	// 判断是Python还是Shell调用
-	isPython := false
-	if strings.Contains(strings.ToLower(script), "python") ||
-		strings.Contains(strings.ToLower(name), "python") {
-		isPython = true
-	}
+	isPython := strings.Contains(strings.ToLower(script), "python") ||
+		strings.Contains(strings.ToLower(name), "python")
 
 	if err != nil {
 		// 简化错误输出，不显示执行时间

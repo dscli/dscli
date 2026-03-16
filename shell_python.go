@@ -38,6 +38,17 @@ func init() {
 3. 文件操作：with open("file.txt", "r") as f: print(f.read())
 `,
 				},
+				"summary": map[string]any{
+					"type": "string",
+					"description": `要执行的Python脚本要做什么的总结。
+别太长，40个字以内。可选，脚本很短（比如40个字以内）可以不加。
+
+示例：
+1. 查找包含Hello方法Go文件
+2. 处理Json数据
+3. 读文件
+`,
+				},
 			},
 			"required":             []string{"script"},
 			"additionalProperties": false,
@@ -49,19 +60,25 @@ func init() {
 }
 
 // handlePython 执行Python脚本
-// handlePython 执行Python脚本
 func handlePython(ctx context.Context, args ToolArgs) (out string, err error) {
 	script := ToolArgsValue(args, "script", "")
+	summary := ToolArgsValue(args, "summary", "")
 	// 检查危险命令（Python脚本也可能包含shell命令）
 	if err := checkDangerousCommands(script); err != nil {
 		return "", err
+	}
+
+	if summary == "" {
+		summary = "\n```python\n" + script + "\n```\n"
 	}
 
 	// 如果没有shebang，添加默认的python shebang
 	if !strings.HasPrefix(strings.TrimSpace(script), "#!") {
 		script = "#!/usr/bin/env python3\n" + script
 	}
-	Printf("🐍 运行以下Python脚本：\n```python\n%s\n```\n", script)
+	Printf("🐍 运行Python脚本%s\n", summary)
 	out, err = runShell(ctx, script)
 	return
 }
+
+// shortenPythonScript 缩短Python脚本显示
