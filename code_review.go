@@ -203,7 +203,7 @@ dscli chat --no-color --model deepseek-reasoner`
 	return processedResponse, nil
 }
 
-// generateCodeReviewSummary 从Git提交信息生成摘要
+// generateCodeReviewSummary 从Git提交信息生成摘要（重构版本）
 func generateCodeReviewSummary(log string) string {
 	// 清理log
 	cleanLog := strings.TrimSpace(log)
