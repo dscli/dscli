@@ -268,6 +268,10 @@ func segmentEditRunE(cmd *cobra.Command, args []string) error {
 }
 
 // TruncateString 截断字符串
+// TruncateString 截断字符串
+// 使用[]rune处理Unicode字符，避免截断时出现乱码
+// TruncateString 截断字符串
+// 使用[]rune处理Unicode字符，避免截断时出现乱码
 func TruncateString(s string, maxLen int) string {
 	runes := []rune(s)
 	if len(runes) <= maxLen {

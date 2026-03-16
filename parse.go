@@ -274,37 +274,29 @@ func runPythonParsePy(ctx context.Context, filePath string, lang string) (output
 	}
 
 	// 创建临时文件来存储输入数据
-	tmpFile, tmpErr := os.CreateTemp("", "dscli-input-*.json")
-	if tmpErr != nil {
-		err = fmt.Errorf("failed to create temp file: %w", tmpErr)
-		return
-	}
-	defer os.Remove(tmpFile.Name())
+	// tmpFile, tmpErr := os.CreateTemp("", "dscli-input-*.json")
+	// if tmpErr != nil {
+	// 	err = fmt.Errorf("failed to create temp file: %w", tmpErr)
+	// 	return
+	// }
+	// defer os.Remove(tmpFile.Name())
 
 	// 写入数据到临时文件
-	if _, writeErr := tmpFile.Write(jsonInput); writeErr != nil {
-		tmpFile.Close()
-		err = fmt.Errorf("failed to write to temp file: %w", writeErr)
-		return
-	}
-	tmpFile.Close()
+	// if _, writeErr := tmpFile.Write(jsonInput); writeErr != nil {
+	// 	tmpFile.Close()
+	// 	err = fmt.Errorf("failed to write to temp file: %w", writeErr)
+	// 	return
+	// }
+	// tmpFile.Close()
 
-	if verbose {
-		fmt.Fprintf(os.Stderr, "临时文件创建完成: %s\n", tmpFile.Name())
-	}
+	// if verbose {
+	// 	fmt.Fprintf(os.Stderr, "临时文件创建完成: %s\n", tmpFile.Name())
+	// }
 
 	// 执行缓存的Python脚本
 	cmd := exec.CommandContext(ctx, "python3", "-u", cacheFile)
 
-	// 打开临时文件作为stdin
-	stdinFile, openErr := os.Open(tmpFile.Name())
-	if openErr != nil {
-		err = fmt.Errorf("failed to open temp file for stdin: %w", openErr)
-		return
-	}
-	defer stdinFile.Close()
-
-	cmd.Stdin = stdinFile
+	cmd.Stdin = strings.NewReader(string(jsonInput))
 
 	// 捕获输出
 	var stdout, stderr bytes.Buffer
@@ -313,7 +305,7 @@ func runPythonParsePy(ctx context.Context, filePath string, lang string) (output
 
 	if verbose {
 		fmt.Fprintf(os.Stderr, "开始执行Python脚本...\n")
-		fmt.Fprintf(os.Stderr, "命令: python3 -u %s < %s\n", cacheFile, tmpFile.Name())
+		fmt.Fprintf(os.Stderr, "命令: python3 -u %s < %s\n", cacheFile)
 	}
 
 	// 执行命令
