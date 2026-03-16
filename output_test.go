@@ -405,20 +405,34 @@ func TestTruncateString(t *testing.T) {
 		maxLen int
 		want   string
 	}{
+		// 空字符串和边界情况
 		{"Empty", "", 5, ""},
-		{"Short", "he", 1, ""},
+		{"MaxLen negative", "hello", -1, ""},
+		{"MaxLen zero", "hello", 0, ""},
+		{"MaxLen 1", "he", 1, ""},
+		{"MaxLen 2", "hello", 2, ""},
+
+		// 不截断情况
+		{"MaxLen greater than length", "hello world", 12, "hello world"},
 		{"Pure English", "hello world", 11, "hello world"},
+		{"Short string", "short", 10, "short"},
+
+		// 需要截断的情况
 		{"English Truncate", "hello world", 10, "hello w..."},
 		{"Chinese", "世界，你好", 5, "世界，你好"},
 		{"Chinese Truncate", "世界，你好！", 4, "世..."},
-		{"MaxLen less than 3", "hello", 2, ""},
-		{"MaxLen zero", "hello", 0, ""},
-		{"MaxLen negative", "hello", -1, ""},
-		{"MaxLen exactly 3", "hello", 3, "..."},
-		{"MaxLen 2 with Chinese", "你好", 2, ""},
+
+		// 边界精确值
+		{"MaxLen exactly 3, string longer", "hello", 3, "..."},
+		{"MaxLen exactly 3, string shorter", "Hi", 3, "Hi"},
 		{"MaxLen 4 with Chinese", "你好世界", 4, "你好世界"},
+
+		// Unicode特殊情况
 		{"Emoji", "Hello 😊 World", 8, "Hello..."},
 		{"Emoji truncate", "Hello 😊 World", 7, "Hell..."},
+		{"MaxLen 2 with Chinese", "你好", 2, ""},
+
+		// 长字符串性能
 		{"Long string", strings.Repeat("a", 100), 50, strings.Repeat("a", 47) + "..."},
 	}
 	for _, tt := range tests {
