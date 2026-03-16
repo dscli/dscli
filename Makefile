@@ -45,10 +45,20 @@ clean:
 	rm -rf $(BUILD_DIR)
 
 fmt:
-	find . -type f -name '*.go' -exec goimports -w {} \; -exec gofumpt -w {} \; || true
-	modernize -any=true -fix ./... || true
+	@echo "运行 goimports 和 gofumpt 格式化..."
+	@find . -type f -name '*.go' -exec goimports -w {} \; -exec gofumpt -w {} \;
+	@echo "运行 modernize 现代化工具..."
+	@modernize -any -fix ./...
 
-# ==================== 测试相关 ====================
+fmt-check:
+	@echo "检查代码格式（不修改文件）..."
+	@echo "检查 goimports..."
+	@find . -type f -name '*.go' -exec goimports -d {} \; | grep -v "^$" || true
+	@echo "检查 gofumpt..."
+	@find . -type f -name '*.go' -exec gofumpt -d {} \; | grep -v "^$" || true
+	@echo "检查 modernize..."
+	@echo "注意：modernize 不支持 -check 参数，使用 -any -fix 但只显示不修改"
+	@modernize -any ./... || true
 
 # test: 运行测试（默认）
 test: fmt
