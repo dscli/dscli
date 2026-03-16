@@ -13,7 +13,7 @@ var (
 		return godotenv.Load(filepath.Join(ConfigDir, "dscli.env"))
 	}()
 	// Version information - set via ldflags during build
-	Version               = "0.6.0"
+	Version               = "0.7.0"
 	Build                 = ""
 	ModelDeepseekChat     = Getenv("MODEL_DEEPSEEK_CHAT", "deepseek-chat")
 	ModelDeepseekReasoner = Getenv("MODEL_DEEPSEEK_REASONER", "deepseek-reasoner")

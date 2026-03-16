@@ -5,6 +5,24 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 并且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.7.0] - 2026-03-16
+
+### 新增
+- **自动代码格式修正工具链**：集成goimports、gofumpt、modernize工具
+- **Makefile改进**：添加`make fmt`和`make fmt-check`目标
+- **超时控制**：为CodeMakeFormat添加超时控制和安全版本
+- **代码结构重构**：分离shell命令判断逻辑到validator.go
+
+### 变更
+- **重构shell命令判断**：使用IsShellScript替代简单的shebang判断
+- **改进CodeMakeFormat**：添加详细注释说明设计意图
+- **优化modernize配置**：修正参数格式，添加检查模式
+- **清理无用脚本**：删除scripts/目录下的5个无用脚本文件
+
+### 修复
+- **Makefile错误处理**：移除`|| true`避免隐藏错误
+- **专家review建议**：根据专家建议改进代码质量和安全性
+
 ## [0.6.0] - 2026-03-13
 
 ### 新增
@@ -17,17 +35,6 @@
 - **代码现代化**：使用modernize工具自动修复代码，包括：
   - 使用`strings.SplitSeq`替代`strings.Split`提高内存效率
   - 使用`any`替代`interface{}`（Go 1.18+最佳实践）
-  - 使用`t.Context()`替代手动创建测试上下文（Go 1.21+最佳实践）
-- **web reader优化**：重构web.go，使用goquery和html2text提升网页内容提取质量
-- **parse.py改进**：优化Python解析器，提升代码解析准确性
-- **git工具增强**：改进git_amend.go和git_commit.go，增强错误处理和用户体验
-
-### 修复
-- **modernize工具问题**：修复modernize工具引入的strings.SplitSeq使用问题
-- **导入问题**：修复缺失的os/exec导入和未使用的regexp导入
-- **函数调用**：修复GetProjectRoot()函数调用问题
-- **变量作用域**：修复git命令执行中的变量作用域问题
-
 ### 技术改进
 - **内存优化**：使用strings.SplitSeq迭代器减少内存分配
 - **代码质量**：通过modernize工具提升代码现代化水平
