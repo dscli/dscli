@@ -45,8 +45,8 @@ clean:
 	rm -rf $(BUILD_DIR)
 
 fmt:
-	find . -type f -name '*.go' -exec goimports -w {} \; -exec gofumpt -w {} \;
-	modernize -fix ./...
+	find . -type f -name '*.go' -exec goimports -w {} \; -exec gofumpt -w {} \; || true
+	modernize -any=true -fix ./... || true
 
 # ==================== 测试相关 ====================
 

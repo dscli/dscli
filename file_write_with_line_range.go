@@ -83,7 +83,7 @@ func init() {
 
 // handleWriteFileWithLineRange 写入文件指定行范围的内容
 // 如果 content 为空字符串，则删除指定行范围
-func handleWriteFileWithLineRange(_ context.Context, args ToolArgs) (string, error) {
+func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (string, error) {
 	// 检查必需参数
 	path := ToolArgsValue(args, "path", "")
 	if path == "" {
@@ -140,6 +140,9 @@ func handleWriteFileWithLineRange(_ context.Context, args ToolArgs) (string, err
 		}
 		return "", fmt.Errorf("failed to open file: %w", err)
 	}
+
+	defer CodeMakeFormat(ctx)
+
 	defer file.Close()
 
 	// 读取所有行

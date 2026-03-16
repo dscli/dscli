@@ -246,7 +246,7 @@ func ShellExec(ctx context.Context, script string) (out string, err error) {
 
 	// 使用IsShellScript判断是否是有效的Shell脚本
 	isShellScript, shellScriptErr := shell.IsShellScript(ctx, script)
-	
+
 	// 判断是否是 shell 命令
 	// 逻辑优先级：
 	// 1. 如果是Python命令，肯定不是shell命令

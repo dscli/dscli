@@ -29,6 +29,7 @@ func writeCodeSection(ctx context.Context, path string, selector string, newCont
 		return "", fmt.Errorf("读取文件失败: %w", err)
 	}
 
+	defer CodeMakeFormat(ctx)
 	// 解析文件结构
 	structure, err := ParseFileStructure(ctx, path)
 	if err != nil {
@@ -149,15 +150,15 @@ func locateLinesRange(lines []string, lineSelector string) (int, int, error) {
 func buildWriteResult(path, selector string, startLine, endLine int, lines []string, newContent string, dryRun bool) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("📝 文件: %s\n", path))
-	sb.WriteString(fmt.Sprintf("🎯 选择器: %s\n", selector))
-	sb.WriteString(fmt.Sprintf("📏 范围: 第%d行 - 第%d行\n", startLine, endLine))
+	fmt.Fprintf(&sb, "📝 文件: %s\n", path)
+	fmt.Fprintf(&sb, "🎯 选择器: %s\n", selector)
+	fmt.Fprintf(&sb, "📏 范围: 第%d行 - 第%d行\n", startLine, endLine)
 
 	// 显示原内容
 	sb.WriteString("\n📄 原内容:\n")
 	sb.WriteString("```\n")
 	for i := startLine - 1; i < endLine; i++ {
-		sb.WriteString(fmt.Sprintf("%d: %s\n", i+1, lines[i]))
+		fmt.Fprintf(&sb, "%d: %s\n", i+1, lines[i])
 	}
 	sb.WriteString("```\n")
 
@@ -166,7 +167,7 @@ func buildWriteResult(path, selector string, startLine, endLine int, lines []str
 	sb.WriteString("```\n")
 	newLines := strings.Split(newContent, "\n")
 	for i, line := range newLines {
-		sb.WriteString(fmt.Sprintf("%d: %s\n", startLine+i, line))
+		fmt.Fprintf(&sb, "%d: %s\n", startLine+i, line)
 	}
 	sb.WriteString("```\n")
 
@@ -174,10 +175,10 @@ func buildWriteResult(path, selector string, startLine, endLine int, lines []str
 	sb.WriteString("\n📊 差异:\n")
 	oldLineCount := endLine - startLine + 1
 	newLineCount := len(newLines)
-	sb.WriteString(fmt.Sprintf("  - 原行数: %d\n", oldLineCount))
-	sb.WriteString(fmt.Sprintf("  - 新行数: %d\n", newLineCount))
+	fmt.Fprintf(&sb, "  - 原行数: %d\n", oldLineCount)
+	fmt.Fprintf(&sb, "  - 新行数: %d\n", newLineCount)
 	if oldLineCount != newLineCount {
-		sb.WriteString(fmt.Sprintf("  - 行数变化: %+d\n", newLineCount-oldLineCount))
+		fmt.Fprintf(&sb, "  - 行数变化: %+d\n", newLineCount-oldLineCount)
 	}
 
 	return sb.String()
