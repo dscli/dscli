@@ -58,7 +58,7 @@ var codeReviewTool = ToolDef{
 		"required": []string{"summary"},
 	},
 	Category: "git",
-	Timeout:  120 * time.Second, // 2分钟超时
+	Timeout:  5 * time.Minute, // 2分钟超时
 	Handler:  handleCodeReview,
 }
 

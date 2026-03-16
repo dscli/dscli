@@ -42,7 +42,7 @@ func TestCodeReviewToolStructure(t *testing.T) {
 			t.Errorf("Tool description missing required keyword: %s", keyword)
 		}
 	}
-	if codeReviewTool.Timeout != 120*time.Second {
+	if codeReviewTool.Timeout != 60*5*time.Second {
 		t.Errorf("Expected timeout 120s, got %v", codeReviewTool.Timeout)
 	}
 

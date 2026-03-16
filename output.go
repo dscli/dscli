@@ -470,3 +470,12 @@ func (s *Spinner) StopWithMessage(message string, success bool) {
 func IsVerbose() bool {
 	return outputVerbose
 }
+
+// TruncateString 截断字符串
+func TruncateString(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	return string(runes[:maxLen-3]) + "..."
+}

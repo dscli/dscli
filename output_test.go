@@ -397,3 +397,28 @@ func TestJSONMarshal(t *testing.T) {
 		t.Errorf("verbose=true时JSON应该格式化:\n期望: %s\n实际: %s", expectedFormatted, string(formattedJSON))
 	}
 }
+
+func TestTruncateString(t *testing.T) {
+	tests := []struct {
+		name string // description of this test case
+		// Named input parameters for target function.
+		s      string
+		maxLen int
+		want   string
+	}{
+		{"Empty", "", 5, ""},
+		{"Short", "hello world", 12, "hello world"},
+		{"Pure English", "hello world", 11, "hello world"},
+		{"English Truncate", "hello world", 10, "hello w..."},
+		{"Chinese", "世界，你好", 5, "世界，你好"},
+		{"Chines Truncate", "世界，你好！", 4, "世..."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := TruncateString(tt.s, tt.maxLen)
+			if got != tt.want {
+				t.Errorf("TruncateString() = %v,\n want %v", got, tt.want)
+			}
+		})
+	}
+}
