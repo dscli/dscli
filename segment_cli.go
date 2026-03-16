@@ -180,7 +180,7 @@ func segmentDeleteRunE(cmd *cobra.Command, args []string) error {
 
 	// 确认删除
 	Printf("⚠️  确认删除段落: [%d] %s\n", segment.ID, segment.Name)
-	Printf("   内容预览: %s\n\n", truncateString(strings.TrimSpace(segment.Content), 80))
+	Printf("   内容预览: %s\n\n", TruncateString(strings.TrimSpace(segment.Content), 80))
 	Printf("确定要删除吗？(y/N): ")
 
 	var confirm string
@@ -267,10 +267,11 @@ func segmentEditRunE(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// truncateString 截断字符串
-func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
+// TruncateString 截断字符串
+func TruncateString(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
 		return s
 	}
-	return s[:maxLen-3] + "..."
+	return string(runes[:maxLen-3]) + "..."
 }

@@ -217,11 +217,11 @@ func generateCodeReviewSummary(log string) string {
 	parts := strings.SplitN(cleanLog, " ", 2)
 	if len(parts) == 2 {
 		commitMsg := strings.TrimSpace(parts[1])
-		return truncateString(commitMsg, 80)
+		return TruncateString(commitMsg, 80)
 	}
 
 	// 如果格式不符合预期，直接截断
-	return truncateString(cleanLog, 80)
+	return TruncateString(cleanLog, 80)
 }
 
 func buildCodeReviewRequest(summary string, commitLog string, patch string) string {
