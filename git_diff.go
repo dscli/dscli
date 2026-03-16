@@ -44,24 +44,7 @@ func handleGitDiff(ctx context.Context, args ToolArgs) (string, error) {
 	}
 
 	// 分析状态：是否有已暂存的文件？
-	hasStagedChanges := false
-	hasUnstagedChanges := false
-	lines := strings.Split(strings.TrimSpace(statusOut), "\n")
-	for _, line := range lines {
-		if len(line) >= 2 {
-			// 第一个字符表示暂存区状态
-			stagedStatus := line[0]
-			// 第二个字符表示工作区状态
-			unstagedStatus := line[1]
-
-			if stagedStatus != ' ' && stagedStatus != '?' {
-				hasStagedChanges = true
-			}
-			if unstagedStatus != ' ' && unstagedStatus != '?' {
-				hasUnstagedChanges = true
-			}
-		}
-	}
+	hasStagedChanges, hasUnstagedChanges := hasStagedUnstagedChanges(statusOut)
 
 	// 智能选择diff模式
 	if hasStagedChanges && !hasUnstagedChanges {
@@ -101,7 +84,7 @@ func handleGitDiff(ctx context.Context, args ToolArgs) (string, error) {
 	}
 
 	// 解析差异输出
-	lines = strings.Split(strings.TrimSpace(out), "\n")
+	lines := strings.Split(strings.TrimSpace(out), "\n")
 
 	PrintSubSection("差异详情")
 
@@ -157,6 +140,26 @@ func handleGitDiff(ctx context.Context, args ToolArgs) (string, error) {
 	}
 
 	return out, nil
+}
+
+func hasStagedUnstagedChanges(statusOut string) (hasStagedChanges bool, hasUnstagedChanges bool) {
+	lines := strings.Split(statusOut, "\n")
+	for _, line := range lines {
+		if len(line) >= 2 {
+			// 第一个字符表示暂存区状态
+			stagedStatus := line[0]
+			// 第二个字符表示工作区状态
+			unstagedStatus := line[1]
+
+			if stagedStatus != ' ' && stagedStatus != '?' {
+				hasStagedChanges = true
+			}
+			if unstagedStatus != ' ' && unstagedStatus != '?' {
+				hasUnstagedChanges = true
+			}
+		}
+	}
+	return
 }
 
 // diffStats 差异统计

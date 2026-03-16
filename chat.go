@@ -41,24 +41,6 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 		return
 	}
 	ctx = context.WithValue(ctx, CurrentModelIDKey, modelID)
-	codeformat, err := cmd.Flags().GetString("codeformat")
-	if err != nil {
-		return
-	}
-	ctx = context.WithValue(ctx, CodeFormatKey, codeformat)
-
-	maketest, err := cmd.Flags().GetString("maketest")
-	if err != nil {
-		return
-	}
-	ctx = context.WithValue(ctx, MakeTestKey, maketest)
-	makebuild, err := cmd.Flags().GetString("makebuild")
-	if err != nil {
-		return
-	}
-
-	ctx = context.WithValue(ctx, MakeBuildKey, makebuild)
-
 	// SessionID
 	sessionID, err := CreateOrGetSessionID()
 	if err != nil {
@@ -93,6 +75,24 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 	ctx := cmd.Context()
+	codeformat, err := cmd.Flags().GetString("codeformat")
+	if err != nil {
+		return
+	}
+	ctx = context.WithValue(ctx, CodeFormatKey, codeformat)
+
+	maketest, err := cmd.Flags().GetString("maketest")
+	if err != nil {
+		return
+	}
+	ctx = context.WithValue(ctx, MakeTestKey, maketest)
+	makebuild, err := cmd.Flags().GetString("makebuild")
+	if err != nil {
+		return
+	}
+
+	ctx = context.WithValue(ctx, MakeBuildKey, makebuild)
+
 	// 获取stream标志
 	stream, err := cmd.Flags().GetBool("stream")
 	if err != nil {
