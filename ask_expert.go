@@ -90,6 +90,27 @@ func handleAskExpert(ctx context.Context, args ToolArgs) (reply string, err erro
 }
 
 // AskExpert - 问专家
+// AskExpert - 问专家
+//
+// 参数:
+//
+//	ctx: 上下文，用于传递执行环境信息
+//	input: 要发送给专家的输入内容
+//
+// 返回值:
+//
+//	reply: 专家的回复内容
+//	err: 错误信息，如果执行成功则为nil
+//
+// 功能说明:
+//
+//	调用deepseek-reasoner模型进行专家咨询，支持结构化输入输出
+//	使用ShellStdin传递输入，避免命令行长度限制
+//
+// 注意事项:
+//   - 需要确保dscli工具可用
+//   - 上下文中的ShellName和ShellArgs会被设置
+//   - 输入内容不应包含特殊EOF标记
 func AskExpert(ctx context.Context, input string) (reply string, err error) {
 	script := fmt.Sprintf(`unset InsideShellExec
 dscli chat --no-color --no-timestamp --model %s`, ModelDeepseekReasoner)
