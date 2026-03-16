@@ -111,6 +111,53 @@ func handleAskExpert(ctx context.Context, args ToolArgs) (reply string, err erro
 //   - 需要确保dscli工具可用
 //   - 上下文中的ShellName和ShellArgs会被设置
 //   - 输入内容不应包含特殊EOF标记
+//
+// AskExpert 调用AI专家模型进行咨询并返回回复
+//
+// 该函数通过执行shell命令调用AI模型来处理输入内容，并将模型回复返回给调用者。
+// 函数使用标准输入(stdin)传递输入内容，避免了命令行长度限制。
+//
+// 参数:
+//
+//	ctx: 上下文对象，用于传递执行环境配置。函数会设置以下上下文值（如果尚未设置）:
+//	     - ShellName: shell执行器名称，默认为"/usr/bin/env"
+//	     - ShellArgs: shell参数，默认为[]string{"bash"}
+//	     - ShellStdin: 包含输入内容的io.Reader
+//	input: 要发送给AI模型的输入文本，可以是任意长度（受系统内存限制）
+//
+// 返回值:
+//
+//	reply: AI模型的回复文本。如果执行失败且没有获得回复，返回空字符串。
+//	err: 执行过程中的错误。如果执行成功，返回nil。常见错误包括：
+//	     - dscli命令执行失败
+//	     - shell命令执行失败
+//	     - 上下文配置错误
+//
+// 功能说明:
+//
+//	函数通过执行以下命令调用AI模型:
+//	     dscli chat --no-color --no-timestamp --model <模型名称>
+//	其中模型名称由ModelDeepseekReasoner变量指定，默认为"deepseek-reasoner"。
+//
+// 注意事项:
+//   - 确保dscli命令行工具已正确安装并配置
+//   - 函数会设置上下文中的ShellName、ShellArgs和ShellStdin值
+//   - 如果调用者已在上下文中设置了这些值，函数会使用已有值（不覆盖）
+//   - 输入内容通过标准输入传递，可以包含任意字符，没有EOF标记限制
+//
+// 示例:
+//
+//	ctx := context.Background()
+//	reply, err := AskExpert(ctx, "请分析这段代码的质量")
+//	if err != nil {
+//	    log.Printf("咨询失败: %v", err)
+//	} else {
+//	    fmt.Println(reply)
+//	}
+//
+// 参见:
+//   - ShellExec: 执行shell命令的函数
+//   - handleAskExpert: 使用此函数的工具处理函数
 func AskExpert(ctx context.Context, input string) (reply string, err error) {
 	script := fmt.Sprintf(`unset InsideShellExec
 dscli chat --no-color --no-timestamp --model %s`, ModelDeepseekReasoner)
