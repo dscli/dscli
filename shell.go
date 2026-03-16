@@ -165,8 +165,8 @@ func shortenSimple(script string) string {
 }
 
 func ArrangeArgs(ctx context.Context, cacheFile string) (context.Context, bool) {
-	name := ContextValue(ctx, ShellName, "")
-	args := ContextValue(ctx, ShellArgs, []string{})
+	name := ContextValue(ctx, ShellNameKey, "")
+	args := ContextValue(ctx, ShellArgsKey, []string{})
 	verbose := ContextValue(ctx, VerboseKey, false)
 
 	if verbose {
@@ -181,16 +181,16 @@ func ArrangeArgs(ctx context.Context, cacheFile string) (context.Context, bool) 
 		switch arg {
 		case "bash": // support bash
 			args = append([]string{cacheFile}, args[1:]...)
-			ctx = context.WithValue(ctx, ShellName, "bash")
-			ctx = context.WithValue(ctx, ShellArgs, args)
+			ctx = context.WithValue(ctx, ShellNameKey, "bash")
+			ctx = context.WithValue(ctx, ShellArgsKey, args)
 			if verbose {
 				fmt.Fprintf(os.Stderr, "ArrangeArgs处理后: name=bash, args=%#v\n", args)
 			}
 			return ctx, true
 		case "python", "python3": // support python
 			args = append([]string{"-u", cacheFile}, args[1:]...)
-			ctx = context.WithValue(ctx, ShellName, arg)
-			ctx = context.WithValue(ctx, ShellArgs, args)
+			ctx = context.WithValue(ctx, ShellNameKey, arg)
+			ctx = context.WithValue(ctx, ShellArgsKey, args)
 			if verbose {
 				fmt.Fprintf(os.Stderr, "ArrangeArgs处理后: name=%s, args=%#v\n", arg, args)
 			}
@@ -201,7 +201,7 @@ func ArrangeArgs(ctx context.Context, cacheFile string) (context.Context, bool) 
 	}
 	if strings.HasSuffix(name, "bash") {
 		args = append([]string{cacheFile}, args...)
-		ctx = context.WithValue(ctx, ShellArgs, args)
+		ctx = context.WithValue(ctx, ShellArgsKey, args)
 		if verbose {
 			fmt.Fprintf(os.Stderr, "ArrangeArgs处理后: name=%s, args=%#v\n", name, args)
 		}
@@ -209,7 +209,7 @@ func ArrangeArgs(ctx context.Context, cacheFile string) (context.Context, bool) 
 	}
 	if strings.HasSuffix(name, "python") || strings.HasSuffix(name, "python3") {
 		args = append([]string{"-u", cacheFile}, args...)
-		ctx = context.WithValue(ctx, ShellArgs, args)
+		ctx = context.WithValue(ctx, ShellArgsKey, args)
 		if verbose {
 			fmt.Fprintf(os.Stderr, "ArrangeArgs处理后: name=%s, args=%#v\n", name, args)
 		}
@@ -232,10 +232,10 @@ func ShellExec(ctx context.Context, script string) (out string, err error) {
 
 	// 移除 shebang 行
 	script = removeShebang(script)
-	name, shellArgs = ContextValue(ctx, ShellName, name), ContextValue(ctx, ShellArgs, shellArgs)
+	name, shellArgs = ContextValue(ctx, ShellNameKey, name), ContextValue(ctx, ShellArgsKey, shellArgs)
 	// 设置上下文值
-	ctx = context.WithValue(ctx, ShellName, name)
-	ctx = context.WithValue(ctx, ShellArgs, shellArgs)
+	ctx = context.WithValue(ctx, ShellNameKey, name)
+	ctx = context.WithValue(ctx, ShellArgsKey, shellArgs)
 
 	// 判断是否是 Python 命令
 	isPythonCommand := strings.Contains(name, "python")
@@ -244,14 +244,36 @@ func ShellExec(ctx context.Context, script string) (out string, err error) {
 		isPythonCommand = true
 	}
 
-	// 判断是否是 shell 命令（简化逻辑：不是Python就是Shell）
-	isShellCommand := !isPythonCommand
+	// 使用IsShellScript判断是否是有效的Shell脚本
+	isShellScript, shellScriptErr := shell.IsShellScript(ctx, script)
+	
+	// 判断是否是 shell 命令
+	// 逻辑优先级：
+	// 1. 如果是Python命令，肯定不是shell命令
+	// 2. 如果不是Python命令，且是有效的Shell脚本，则是shell命令
+	// 3. 如果不是Python命令，但不是有效的Shell脚本，则使用原来的简单逻辑（不是Python就是Shell）
+	//    这是为了向后兼容，因为有些简单的命令可能被误判
+	isShellCommand := false
+	if isPythonCommand {
+		isShellCommand = false
+	} else if isShellScript {
+		isShellCommand = true
+	} else {
+		// 使用原来的简单逻辑：不是Python就是Shell
+		isShellCommand = true
+		if verbose && shellScriptErr != nil {
+			fmt.Fprintf(os.Stderr, "警告：脚本不是有效的Shell语法，但为了兼容性仍然按Shell处理: %v\n", shellScriptErr)
+		}
+	}
 
 	// 检查是否需要stdin
-	hasStdin := ContextValue(ctx, ShellStdin, io.Reader(nil)) != nil
+	hasStdin := ContextValue(ctx, ShellStdinKey, io.Reader(nil)) != nil
 
 	if verbose {
 		fmt.Fprintf(os.Stderr, "命令: %s, 参数: %v, 是shell命令: %v, 是Python命令: %v, 需要stdin: %v\n", name, shellArgs, isShellCommand, isPythonCommand, hasStdin)
+		if shellScriptErr != nil {
+			fmt.Fprintf(os.Stderr, "Shell脚本检查错误: %v\n", shellScriptErr)
+		}
 	}
 
 	// 测试模式下不允许执行dscli，避免引起递归调用
@@ -280,11 +302,11 @@ func ShellExec(ctx context.Context, script string) (out string, err error) {
 			return "", fmt.Errorf("do not support %s %v", name, shellArgs)
 		}
 
-		name = ContextValue(ctx, ShellName, "")
-		shellArgs = ContextValue(ctx, ShellArgs, []string{})
+		name = ContextValue(ctx, ShellNameKey, "")
+		shellArgs = ContextValue(ctx, ShellArgsKey, []string{})
 
 		// 获取stdin
-		stdin := ContextValue(ctx, ShellStdin, io.Reader(nil))
+		stdin := ContextValue(ctx, ShellStdinKey, io.Reader(nil))
 		if stdin == nil {
 			stdin = strings.NewReader("")
 		}
@@ -343,8 +365,8 @@ func executeWithShellPackage(ctx context.Context, script string) (out string, er
 // executeWithOSExec 使用原始的 os/exec 实现执行命令
 func executeWithOSExec(ctx context.Context, name string, args []string, script string, stdin io.Reader) (out string, err error) {
 	// 这是原始的 ShellExec 实现的核心部分
-	name = ContextValue(ctx, ShellName, name)
-	args = ContextValue(ctx, ShellArgs, args)
+	name = ContextValue(ctx, ShellNameKey, name)
+	args = ContextValue(ctx, ShellArgsKey, args)
 	buf := bytes.NewBuffer([]byte{})
 	subproc := exec.CommandContext(ctx, name, args...)
 	subproc.Dir = ProjectRoot

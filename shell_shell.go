@@ -65,8 +65,8 @@ func handleShell(ctx context.Context, args ToolArgs) (out string, err error) {
 func runShell(ctx context.Context, script string) (result string, err error) {
 	startTime := time.Now()
 	name, arg := Shebang(script)
-	ctx = context.WithValue(ctx, ShellName, name)
-	ctx = context.WithValue(ctx, ShellArgs, arg)
+	ctx = context.WithValue(ctx, ShellNameKey, name)
+	ctx = context.WithValue(ctx, ShellArgsKey, arg)
 	out, err := ShellExec(ctx, script)
 	executionTime := time.Since(startTime)
 

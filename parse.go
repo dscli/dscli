@@ -267,7 +267,7 @@ func runPythonParsePy(ctx context.Context, filePath string, lang string) (output
 		fmt.Fprintf(os.Stderr, "Using Python parser for language: %s\n", lang)
 		fmt.Fprintf(os.Stderr, "Input size: %d bytes\n", len(jsonInput))
 	}
-	ctx = context.WithValue(ctx, ShellName, "python")
+	ctx = context.WithValue(ctx, ShellNameKey, "python")
 	cacheFile, err := GetOrCreateCacheFile(ctx, pythonScript)
 	if err != nil {
 		return
@@ -579,8 +579,8 @@ func ParseFileStructure(ctx context.Context, filePath string) (*FileStructure, e
 
 func GetOrCreateCacheFile(ctx context.Context, script string) (cacheFile string, err error) {
 	verbose := ContextValue(ctx, VerboseKey, false)
-	shellName := ContextValue(ctx, ShellName, "")
-	shellArgs := ContextValue(ctx, ShellArgs, []string{})
+	shellName := ContextValue(ctx, ShellNameKey, "")
+	shellArgs := ContextValue(ctx, ShellArgsKey, []string{})
 	isPython := strings.Contains(shellName, "python")
 	if strings.HasSuffix(shellName, "env") {
 		if len(shellArgs) > 0 {

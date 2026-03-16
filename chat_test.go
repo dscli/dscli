@@ -10,9 +10,9 @@ import (
 
 func TestPrintContent(t *testing.T) {
 	ctx := context.Background()
-	ctx = context.WithValue(ctx, StartTime, time.Now())
+	ctx = context.WithValue(ctx, StartTimeKey, time.Now())
 	// make sure two keys  no overlap
-	ctx = context.WithValue(ctx, CurrentModelID, ModelDeepseekChat)
+	ctx = context.WithValue(ctx, CurrentModelIDKey, ModelDeepseekChat)
 	buf := bytes.NewBuffer([]byte{})
 	SetOutputWriter(buf)
 	PrintContent(ctx, "reasoning", "content")
@@ -35,14 +35,14 @@ func TestPrintToolCalls(t *testing.T) {
 
 func TestPrintSessionStats(t *testing.T) {
 	ctx := context.Background()
-	ctx = context.WithValue(ctx, StartTime, time.Now().Add(-30*time.Second))
+	ctx = context.WithValue(ctx, StartTimeKey, time.Now().Add(-30*time.Second))
 
 	// 设置起始余额
 	startBalance := BalanceInfo{
 		Currency:     "CNY",
 		TotalBalance: "100.00",
 	}
-	ctx = context.WithValue(ctx, StartBalance, startBalance)
+	ctx = context.WithValue(ctx, StartBalanceKey, startBalance)
 
 	// 模拟DeepseekClient.Balance响应
 	originalClient := DeepseekClient

@@ -72,10 +72,10 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 	testCommand := ToolArgsValue(args, "test_command", "")
 	// 获取Git状态，确保有提交可审查
 	statusScript := `git status --short`
-	ctx = context.WithValue(ctx, ShellName, "/usr/bin/env")
-	ctx = context.WithValue(ctx, ShellArgs, []string{"bash"})
+	ctx = context.WithValue(ctx, ShellNameKey, "/usr/bin/env")
+	ctx = context.WithValue(ctx, ShellArgsKey, []string{"bash"})
 	// 添加os.Stdin使用传统分支OSExec
-	ctx = context.WithValue(ctx, ShellStdin, os.Stdin)
+	ctx = context.WithValue(ctx, ShellStdinKey, os.Stdin)
 
 	status, err := ShellExec(ctx, statusScript)
 	if err != nil {

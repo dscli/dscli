@@ -138,7 +138,7 @@ func historyPreRunE(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
-	ctx = context.WithValue(ctx, HistSize, histsize)
+	ctx = context.WithValue(ctx, HistSizeKey, histsize)
 	cmd.SetContext(ctx)
 	return
 }

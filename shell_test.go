@@ -279,7 +279,7 @@ func TestShellExec(t *testing.T) {
 			}
 			w.Close()
 			ctx := context.Background()
-			ctx = context.WithValue(ctx, ShellStdin, r)
+			ctx = context.WithValue(ctx, ShellStdinKey, r)
 			out, err := ShellExec(ctx, tc.script)
 			r.Close()
 			if err != nil {

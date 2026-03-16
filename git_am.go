@@ -105,8 +105,8 @@ func handleGitAm(ctx context.Context, args ToolArgs) (string, error) {
 		Info("正在应用patch...")
 
 		// 设置context值，指定使用git作为解释器
-		ctx = context.WithValue(ctx, ShellName, "git")
-		ctx = context.WithValue(ctx, ShellArgs, gitArgs)
+		ctx = context.WithValue(ctx, ShellNameKey, "git")
+		ctx = context.WithValue(ctx, ShellArgsKey, gitArgs)
 
 		PrintGitCommand(gitArgs...)
 		return ShellExec(ctx, patch)

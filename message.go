@@ -76,8 +76,8 @@ func ToolCallsID(tcs []ToolCall) string {
 
 // UpdateContent update message content
 func UpdateContent(ctx context.Context, id int64, content string) (err error) {
-	sessionID := ContextValue(ctx, CurrentSessionID, int64(0))
-	modelID := ContextValue(ctx, CurrentModelID, DeepseekChat)
+	sessionID := ContextValue(ctx, CurrentSessionIDKey, int64(0))
+	modelID := ContextValue(ctx, CurrentModelIDKey, DeepseekChat)
 	db, err := OpenDB()
 	if err != nil {
 		return
@@ -102,8 +102,8 @@ func UpdateContent(ctx context.Context, id int64, content string) (err error) {
 
 // UpdateToolCalls update message content
 func UpdateToolCalls(ctx context.Context, id int64, tcs []ToolCall) (err error) {
-	sessionID := ContextValue(ctx, CurrentSessionID, int64(0))
-	modelID := ContextValue(ctx, CurrentModelID, DeepseekChat)
+	sessionID := ContextValue(ctx, CurrentSessionIDKey, int64(0))
+	modelID := ContextValue(ctx, CurrentModelIDKey, DeepseekChat)
 	db, err := OpenDB()
 	if err != nil {
 		return
@@ -135,8 +135,8 @@ func UpdateToolCalls(ctx context.Context, id int64, tcs []ToolCall) (err error) 
 
 // UpdateHistory update message session_id to 0
 func UpdateHistory(ctx context.Context, id int64) (err error) {
-	sessionID := ContextValue(ctx, CurrentSessionID, int64(0))
-	modelID := ContextValue(ctx, CurrentModelID, DeepseekChat)
+	sessionID := ContextValue(ctx, CurrentSessionIDKey, int64(0))
+	modelID := ContextValue(ctx, CurrentModelIDKey, DeepseekChat)
 	db, err := OpenDB()
 	if err != nil {
 		return
@@ -152,8 +152,8 @@ func UpdateHistory(ctx context.Context, id int64) (err error) {
 }
 
 func ShowMessage(ctx context.Context, id int64) (message *Message, err error) {
-	sessionID := ContextValue(ctx, CurrentSessionID, int64(0))
-	modelID := ContextValue(ctx, CurrentModelID, DeepseekChat)
+	sessionID := ContextValue(ctx, CurrentSessionIDKey, int64(0))
+	modelID := ContextValue(ctx, CurrentModelIDKey, DeepseekChat)
 	db, err := OpenDB()
 	if err != nil {
 		return
@@ -184,9 +184,9 @@ func ShowMessage(ctx context.Context, id int64) (message *Message, err error) {
 
 // ListHistory 加载指定会话的所有历史消息，按时间升序返回
 func ListHistory(ctx context.Context) ([]*Message, error) {
-	sessionID := ContextValue(ctx, CurrentSessionID, int64(0))
-	modelID := ContextValue(ctx, CurrentModelID, DeepseekChat)
-	histSize := ContextValue(ctx, HistSize, 8)
+	sessionID := ContextValue(ctx, CurrentSessionIDKey, int64(0))
+	modelID := ContextValue(ctx, CurrentModelIDKey, DeepseekChat)
+	histSize := ContextValue(ctx, HistSizeKey, 8)
 	db, err := OpenDB()
 	if err != nil {
 		return nil, err
@@ -236,10 +236,10 @@ func ListHistory(ctx context.Context) ([]*Message, error) {
 
 // LoadHistory 加载指定会话的所有历史消息，按时间升序返回
 func LoadHistory(ctx context.Context) ([]Message, error) {
-	sessionID := ContextValue(ctx, CurrentSessionID, int64(0))
-	modelID := ContextValue(ctx, CurrentModelID, DeepseekChat)
-	histSize := ContextValue(ctx, HistSize, 8)
-	leftTokens := ContextValue(ctx, LeftTokens, 0)
+	sessionID := ContextValue(ctx, CurrentSessionIDKey, int64(0))
+	modelID := ContextValue(ctx, CurrentModelIDKey, DeepseekChat)
+	histSize := ContextValue(ctx, HistSizeKey, 8)
+	leftTokens := ContextValue(ctx, LeftTokensKey, 0)
 	db, err := OpenDB()
 	if err != nil {
 		return nil, err
@@ -406,8 +406,8 @@ outloop:
 
 // SaveMessages 保存消息（事务）
 func SaveMessages(ctx context.Context, msgs ...Message) error {
-	sessionID := ContextValue(ctx, CurrentSessionID, int64(0))
-	modelID := ContextValue(ctx, CurrentModelID, DeepseekChat)
+	sessionID := ContextValue(ctx, CurrentSessionIDKey, int64(0))
+	modelID := ContextValue(ctx, CurrentModelIDKey, DeepseekChat)
 	db, err := OpenDB()
 	if err != nil {
 		return err

@@ -38,7 +38,7 @@ type SystemPromptConfig struct {
 
 // NewSystemPromptConfig 创建系统提示词配置
 func NewSystemPromptConfig(ctx context.Context) *SystemPromptConfig {
-	modelID := ContextValue(ctx, CurrentModelID, int64(0))
+	modelID := ContextValue(ctx, CurrentModelIDKey, int64(0))
 	config := &SystemPromptConfig{
 		CurrentDate:      time.Now().Format("2006年01月02日"),
 		ProjectRoot:      ProjectRoot,

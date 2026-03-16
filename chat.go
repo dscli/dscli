@@ -28,10 +28,10 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 	var modelID int64
 	switch model {
 	case ModelDeepseekChat:
-		ctx = context.WithValue(ctx, CurrentModelName, ModelDeepseekChat)
+		ctx = context.WithValue(ctx, CurrentModelNameKey, ModelDeepseekChat)
 		modelID = DeepseekChat
 	case ModelDeepseekReasoner:
-		ctx = context.WithValue(ctx, CurrentModelName, ModelDeepseekReasoner)
+		ctx = context.WithValue(ctx, CurrentModelNameKey, ModelDeepseekReasoner)
 		modelID = DeepseekReasoner
 	default:
 		err = fmt.Errorf("do not support %s", model)
@@ -40,16 +40,16 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 		}
 		return
 	}
-	ctx = context.WithValue(ctx, CurrentModelID, modelID)
+	ctx = context.WithValue(ctx, CurrentModelIDKey, modelID)
 
 	// SessionID
 	sessionID, err := CreateOrGetSessionID()
 	if err != nil {
 		return
 	}
-	ctx = context.WithValue(ctx, CurrentSessionID, sessionID)
+	ctx = context.WithValue(ctx, CurrentSessionIDKey, sessionID)
 	// InsideShellExec
-	ctx = context.WithValue(ctx, InsideShellExec, os.Getenv("InsideShellExec") == "1")
+	ctx = context.WithValue(ctx, InsideShellExecKey, os.Getenv("InsideShellExec") == "1")
 
 	tools := GetAllTools(ctx)
 	tokens := 0
@@ -64,7 +64,7 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 		tokens += skill.GetTokens()
 	}
 
-	ctx = context.WithValue(ctx, LeftTokens, 131072-tokens)
+	ctx = context.WithValue(ctx, LeftTokensKey, 131072-tokens)
 	cmd.SetContext(ctx)
 
 	return
@@ -97,7 +97,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		if err != nil {
 			return
 		}
-		ctx = context.WithValue(ctx, InputContent, input)
+		ctx = context.WithValue(ctx, InputContentKey, input)
 
 		content, err = ReadContentWithTimeout(ctx)
 		if err != nil {
@@ -108,15 +108,15 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
-	ctx = context.WithValue(ctx, HistSize, histSize)
-	ctx = context.WithValue(ctx, StartTime, time.Now())
+	ctx = context.WithValue(ctx, HistSizeKey, histSize)
+	ctx = context.WithValue(ctx, StartTimeKey, time.Now())
 
 	// 获取开始余额
 	var startBalance BalanceInfo
 	if resp, err := DeepseekClient.Balance(); err == nil && len(resp.BalanceInfos) > 0 {
 		// 使用第一个余额信息（通常是CNY）
 		startBalance = resp.BalanceInfos[0]
-		ctx = context.WithValue(ctx, StartBalance, startBalance)
+		ctx = context.WithValue(ctx, StartBalanceKey, startBalance)
 	}
 
 	prompts, err := LoadPrompts(ctx)
@@ -188,7 +188,7 @@ func ReadContentWithTimeout(ctx context.Context) (string, error) {
 }
 
 func ReadContent(ctx context.Context) (content string, err error) {
-	input := ContextValue(ctx, InputContent, "")
+	input := ContextValue(ctx, InputContentKey, "")
 	var b []byte
 	if input == "" || input == "-" {
 		reader := bufio.NewReader(os.Stdin)
@@ -257,8 +257,8 @@ func parseBalance(balanceStr string) (float64, error) {
 
 // PrintSessionStats 打印会话统计信息
 func PrintSessionStats(ctx context.Context) {
-	startTime := ContextValue(ctx, StartTime, time.Time{})
-	startBalance := ContextValue(ctx, StartBalance, BalanceInfo{})
+	startTime := ContextValue(ctx, StartTimeKey, time.Time{})
+	startBalance := ContextValue(ctx, StartBalanceKey, BalanceInfo{})
 
 	// 收集要显示的信息
 	var stats []string
@@ -390,4 +390,5 @@ func init() {
 	chatCmd.Flags().Int("histsize", 8, "history size loaded")
 	chatCmd.Flags().String("input", "", "read content from input file or read content from stdin if input file empty")
 	chatCmd.Flags().Bool("stream", false, "启用流式输出（SSE）")
+	chatCmd.Flags().String("mkfmt", "make fmt", "command to format source code")
 }

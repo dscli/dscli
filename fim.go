@@ -62,7 +62,7 @@ func FimRunE(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 	ctx := cmd.Context()
-	ctx = context.WithValue(ctx, CurrentModelID, fimModel)
+	ctx = context.WithValue(ctx, CurrentModelIDKey, fimModel)
 	resp, err := DeepseekClient.FIM(ctx, prompt, fimSuffix, fimMaxTokens, fimTemp)
 	log.Printf("FIM请求成功，生成 %d 个补全结果", len(resp.Choices))
 	if err != nil {

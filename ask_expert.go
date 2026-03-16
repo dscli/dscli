@@ -137,9 +137,9 @@ func handleAskExpert(ctx context.Context, args ToolArgs) (reply string, err erro
 func AskExpert(ctx context.Context, input string) (reply string, err error) {
 	script := fmt.Sprintf(`unset InsideShellExec
 dscli chat --no-color --no-timestamp --model %s`, ModelDeepseekReasoner)
-	ctx = context.WithValue(ctx, ShellName, "/usr/bin/env")
-	ctx = context.WithValue(ctx, ShellArgs, []string{"bash"})
-	ctx = context.WithValue(ctx, ShellStdin, strings.NewReader(input))
+	ctx = context.WithValue(ctx, ShellNameKey, "/usr/bin/env")
+	ctx = context.WithValue(ctx, ShellArgsKey, []string{"bash"})
+	ctx = context.WithValue(ctx, ShellStdinKey, strings.NewReader(input))
 	reply, err = ShellExec(ctx, script)
 	return
 }

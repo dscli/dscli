@@ -35,10 +35,10 @@ func LoadPrompts(ctx context.Context) ([]Message, error) {
 
 // GetCurrentDomainID 获取当前项目的领域ID
 func GetCurrentDomainID(ctx context.Context) int64 {
-	return ContextValue(ctx, CurrentDomainID, int64(0))
+	return ContextValue(ctx, CurrentDomainIDKey, int64(0))
 }
 
 // GetCurrentModelID 获取当前模型ID
 func GetCurrentModelID(ctx context.Context) int64 {
-	return ContextValue(ctx, CurrentModelID, DeepseekChat)
+	return ContextValue(ctx, CurrentModelIDKey, DeepseekChat)
 }
