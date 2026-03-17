@@ -16,29 +16,26 @@ import (
 //	caseSensitive: 是否区分大小写
 //	maxMatches: 最大匹配数
 //
-// searchCodeSemantic 基于语义搜索代码中的特定模式
-// 参数：
+// 返回值：
 //
-//	path: 文件路径
-//	searchPattern: 搜索模式（字符串包含匹配）
-//	contextLines: 上下文行数（前后各N行）
-//	caseSensitive: 是否区分大小写
-//	maxMatches: 最大匹配数
-func searchCodeSemantic(ctx context.Context, path string, searchPattern string, contextLines int, caseSensitive bool, maxMatches int) (string, error) {
+//	result: 搜索结果字符串
+//	matchCount: 匹配行数
+//	error: 错误信息
+func searchCodeSemantic(ctx context.Context, path string, searchPattern string, contextLines int, caseSensitive bool, maxMatches int) (string, int, error) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return "", fmt.Errorf("文件不存在: %s", path)
+		return "", 0, fmt.Errorf("文件不存在: %s", path)
 	}
 
 	// 读取文件内容
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("读取文件失败: %w", err)
+		return "", 0, fmt.Errorf("读取文件失败: %w", err)
 	}
 
 	// 解析文件结构
 	structure, err := ParseFileStructure(ctx, path)
 	if err != nil {
-		return "", fmt.Errorf("解析文件结构失败: %w", err)
+		return "", 0, fmt.Errorf("解析文件结构失败: %w", err)
 	}
 	// 搜索匹配项
 	lines := strings.Split(string(content), "\n")
@@ -47,10 +44,9 @@ func searchCodeSemantic(ctx context.Context, path string, searchPattern string, 
 	// 构建结果
 	result := buildSearchResult(path, searchPattern, contextLines, caseSensitive, maxMatches, matches, lines, structure)
 
-	return result, nil
+	return result, len(matches), nil
 }
 
-// searchMatches 搜索匹配项
 // searchMatches 搜索匹配项
 func searchMatches(lines []string, searchPattern string, caseSensitive bool, maxMatches int) []int {
 	var matches []int
@@ -78,7 +74,6 @@ func searchMatches(lines []string, searchPattern string, caseSensitive bool, max
 	return matches
 }
 
-// buildSearchResult 构建搜索结果
 // buildSearchResult 构建搜索结果
 func buildSearchResult(path, searchPattern string, contextLines int, caseSensitive bool, maxMatches int, matches []int, lines []string, structure *FileStructure) string {
 	var sb strings.Builder
@@ -262,26 +257,12 @@ func handleSearchCodeSemantic(ctx context.Context, args ToolArgs) (string, error
 	totalMatches := 0
 
 	for _, file := range files {
-		result, err := searchCodeSemantic(ctx, file, searchPattern, contextLines, caseSensitive, maxMatches)
+		result, matchCount, err := searchCodeSemantic(ctx, file, searchPattern, contextLines, caseSensitive, maxMatches)
 		if err != nil {
 			errors = append(errors, fmt.Sprintf("❌ 搜索文件 %s 失败: %v", file, err))
 		} else {
 			results = append(results, result)
-			// 统计匹配数
-			if strings.Contains(result, "📊 匹配结果:") {
-				// 提取匹配数
-				lines := strings.Split(result, "\n")
-				for _, line := range lines {
-					if strings.Contains(line, "📊 匹配结果:") {
-						parts := strings.Split(line, ":")
-						if len(parts) > 1 {
-							var matches int
-							fmt.Sscanf(strings.TrimSpace(parts[1]), "%d 个", &matches)
-							totalMatches += matches
-						}
-					}
-				}
-			}
+			totalMatches += matchCount
 		}
 
 		// 检查全局匹配数限制
