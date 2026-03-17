@@ -16,9 +16,8 @@ import (
 //	method:类名.方法名   - 修改指定方法
 //	lines:开始行-结束行  - 修改指定行范围（后备方案）
 //
-// dryRun: true表示只预览不实际写入
 // writeCodeSection 基于代码结构定位并修改特定代码片段
-func writeCodeSection(ctx context.Context, path string, selector string, newContent string, dryRun bool) (result string, err error) {
+func writeCodeSection(ctx context.Context, path string, selector string, newContent string) (result string, err error) {
 	// 检查文件是否存在
 	if _, err = os.Stat(path); os.IsNotExist(err) {
 		err = fmt.Errorf("文件不存在: %s", path)
@@ -59,18 +58,13 @@ func writeCodeSection(ctx context.Context, path string, selector string, newCont
 	}
 
 	// 构建结果
-	result = buildWriteResult(path, selector, startLine, endLine, lines, newContent, dryRun)
+	result = buildWriteResult(path, selector, startLine, endLine, lines, newContent)
 
-	// 如果不是dry-run模式，实际写入文件
-	if !dryRun {
-		if err = writeToFile(path, lines, startLine, endLine, newContent); err != nil {
-			err = fmt.Errorf("写入文件失败: %w", err)
-			return
-		}
-		result += "\n✅ 文件已成功更新"
-	} else {
-		result += "\n⚠️  dry-run模式：文件未实际修改"
+	if err = writeToFile(path, lines, startLine, endLine, newContent); err != nil {
+		err = fmt.Errorf("写入文件失败: %w", err)
+		return
 	}
+	result += "\n✅ 文件已成功更新"
 
 	return
 }
@@ -163,7 +157,7 @@ func locateLinesRange(lines []string, lineSelector string) (int, int, error) {
 }
 
 // buildWriteResult 构建写入结果信息
-func buildWriteResult(path, selector string, startLine, endLine int, lines []string, newContent string, dryRun bool) string {
+func buildWriteResult(path, selector string, startLine, endLine int, lines []string, newContent string) string {
 	var sb strings.Builder
 
 	fmt.Fprintf(&sb, "📝 文件: %s\n", path)
@@ -223,13 +217,12 @@ func init() {
 	// 注册 writeCodeSection 工具
 	RegisterTool(ToolDef{
 		Name: "write_code_section",
-		Description: `基于代码结构定位并修改特定代码片段。支持function:函数名、class:类名、method:类名.方法名、lines:开始行-结束行等选择器。提供dry-run模式预览修改。
+		Description: `基于代码结构定位并修改特定代码片段。支持function:函数名、class:类名、method:类名.方法名、lines:开始行-结束行等选择器。
 
 参数：
   path: 文件路径（相对于项目根目录）
   selector: 代码片段选择器，例如：function:main、class:User、method:User.GetName、lines:10-20
   new_content: 要写入的新内容
-  dry_run: 是否只预览不实际写入（默认false）
 
 选择器语法：
   function:函数名      - 修改指定函数
@@ -240,14 +233,13 @@ func init() {
 优势：
 1. 基于代码结构，能理解函数、类、方法的语义
 2. 自动定位代码片段，无需手动计算行号
-3. 提供dry-run模式，安全预览修改
 
 示例：
   # 修改main函数
   write_code_section(path="main.go", selector="function:main", new_content="func main() {\n    fmt.Println(\"Hello\")\n}")
   
   # 修改User类的GetName方法
-  write_code_section(path="user.go", selector="method:User.GetName", new_content="func (u *User) GetName() string {\n    return u.Name\n}", dry_run=true)`,
+  write_code_section(path="user.go", selector="method:User.GetName", new_content="func (u *User) GetName() string {\n    return u.Name\n}")`,
 		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",
@@ -265,11 +257,6 @@ func init() {
 					"type":        "string",
 					"description": "要写入的新内容, 建议不超过4096字符",
 					"pattern":     ContentLikePattern(4096),
-				},
-				"dry_run": map[string]any{
-					"type":        "boolean",
-					"description": "是否只预览不实际写入（默认false）",
-					"default":     false,
 				},
 			},
 			"required":             []string{"path", "selector", "new_content"},
@@ -296,17 +283,12 @@ func handleWriteCodeSection(ctx context.Context, args ToolArgs) (string, error) 
 		return "", fmt.Errorf("参数 'new_content' 缺失")
 	}
 
-	// 解析dry_run参数
-	dryRun := ToolArgsValue(args, "dry_run", false)
-	PrintWriteSession(path, selector, dryRun)
+	PrintWriteSession(path, selector)
 
-	return writeCodeSection(ctx, path, selector, newContent, dryRun)
+	return writeCodeSection(ctx, path, selector, newContent)
 }
 
-func PrintWriteSession(path string, selector string, dryRun bool) {
+func PrintWriteSession(path string, selector string) {
 	run := ""
-	if dryRun {
-		run = "（空跑）"
-	}
 	Printf("修改文件%s代码片段%s%s\n", path, selector, run)
 }

@@ -86,6 +86,9 @@ func TestGetAllTools(t *testing.T) {
 			}
 			return false
 		}},
+		{"not too large", func(tool Tool) bool {
+			return tool.GetTokens() <= 512+256 // around 1.5K
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
