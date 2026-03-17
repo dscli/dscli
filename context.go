@@ -26,6 +26,7 @@ var (
 	CodeFormatKey       = ContextKeyType[string]{"CodeFormat"}
 	MakeTestKey         = ContextKeyType[string]{"MakeTest"}
 	MakeBuildKey        = ContextKeyType[string]{"MakeBuild"}
+	WechatFormatKey     = ContextKeyType[string]{"WechatFormat"}
 )
 
 type ContextKeyType[T any] struct {
