@@ -51,12 +51,12 @@ func (f *MessageFormatter) formatSimple(messages []Message) string {
 	var builder strings.Builder
 
 	for _, msg := range messages {
-		builder.WriteString(fmt.Sprintf("%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(&builder, "%s\t%s\t%s\t%s\t%s\n",
 			msg.ID,
 			msg.CreatedAt.Format("15:04"),
 			truncate(msg.From, 15),
 			truncate(msg.To, 15),
-			truncate(msg.Content, 50)))
+			truncate(msg.Content, 50))
 	}
 
 	return builder.String()
@@ -94,13 +94,13 @@ func (f *MessageFormatter) formatMarkdown(messages []Message) string {
 	builder.WriteString("|----|------|--------|--------|------|------|\n")
 
 	for _, msg := range messages {
-		builder.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s |\n",
+		fmt.Fprintf(&builder, "| %s | %s | %s | %s | %s | %s |\n",
 			msg.ID,
 			msg.CreatedAt.Format("15:04"),
 			escapeMarkdown(truncate(msg.From, 15)),
 			escapeMarkdown(truncate(msg.To, 15)),
 			escapeMarkdown(truncate(msg.Content, 50)),
-			msg.Status))
+			msg.Status)
 	}
 
 	return builder.String()
@@ -114,13 +114,13 @@ func (f *MessageFormatter) formatOrg(messages []Message) string {
 	builder.WriteString("|----+------+--------+--------+------+------|\n")
 
 	for _, msg := range messages {
-		builder.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s |\n",
+		fmt.Fprintf(&builder, "| %s | %s | %s | %s | %s | %s |\n",
 			msg.ID,
 			msg.CreatedAt.Format("15:04"),
 			truncate(msg.From, 15),
 			truncate(msg.To, 15),
 			truncate(msg.Content, 50),
-			msg.Status))
+			msg.Status)
 	}
 
 	return builder.String()
@@ -132,67 +132,68 @@ func (f *MessageFormatter) FormatMessageDetail(msg *Message) string {
 
 	switch f.format {
 	case FormatSimple:
-		builder.WriteString(fmt.Sprintf("ID: %s\n", msg.ID))
-		builder.WriteString(fmt.Sprintf("微信消息ID: %s\n", msg.WxMsgID))
-		builder.WriteString(fmt.Sprintf("方向: %s\n", msg.Direction))
-		builder.WriteString(fmt.Sprintf("发送者: %s\n", msg.From))
-		builder.WriteString(fmt.Sprintf("接收者: %s\n", msg.To))
-		builder.WriteString(fmt.Sprintf("类型: %s\n", msg.Type))
-		builder.WriteString(fmt.Sprintf("状态: %s\n", msg.Status))
-		builder.WriteString(fmt.Sprintf("时间: %s\n", msg.CreatedAt.Format("2006-01-02 15:04:05")))
+		fmt.Fprintf(&builder, "ID: %s\n", msg.ID)
+		fmt.Fprintf(&builder, "微信消息ID: %s\n", msg.WxMsgID)
+		fmt.Fprintf(&builder, "方向: %s\n", msg.Direction)
+		fmt.Fprintf(&builder, "发送者: %s\n", msg.From)
+		fmt.Fprintf(&builder, "接收者: %s\n", msg.To)
+		fmt.Fprintf(&builder, "类型: %s\n", msg.Type)
+		fmt.Fprintf(&builder, "状态: %s\n", msg.Status)
+		fmt.Fprintf(&builder, "时间: %s\n", msg.CreatedAt.Format("2006-01-02 15:04:05"))
 		if !msg.RepliedAt.IsZero() {
-			builder.WriteString(fmt.Sprintf("回复时间: %s\n", msg.RepliedAt.Format("2006-01-02 15:04:05")))
+			fmt.Fprintf(&builder, "回复时间: %s\n", msg.RepliedAt.Format("2006-01-02 15:04:05"))
 		}
-		builder.WriteString(fmt.Sprintf("\n内容:\n%s\n", msg.Content))
+
+		fmt.Fprintf(&builder, "\n内容:\n%s\n", msg.Content)
 
 	case FormatMarkdown:
 		builder.WriteString("## 消息详情\n\n")
-		builder.WriteString(fmt.Sprintf("**ID**: %s  \n", msg.ID))
-		builder.WriteString(fmt.Sprintf("**微信消息ID**: %s  \n", msg.WxMsgID))
-		builder.WriteString(fmt.Sprintf("**方向**: %s  \n", msg.Direction))
-		builder.WriteString(fmt.Sprintf("**发送者**: %s  \n", msg.From))
-		builder.WriteString(fmt.Sprintf("**接收者**: %s  \n", msg.To))
-		builder.WriteString(fmt.Sprintf("**类型**: %s  \n", msg.Type))
-		builder.WriteString(fmt.Sprintf("**状态**: %s  \n", msg.Status))
-		builder.WriteString(fmt.Sprintf("**时间**: %s  \n", msg.CreatedAt.Format("2006-01-02 15:04:05")))
+		fmt.Fprintf(&builder, "**ID**: %s  \n", msg.ID)
+		fmt.Fprintf(&builder, "**微信消息ID**: %s  \n", msg.WxMsgID)
+		fmt.Fprintf(&builder, "**方向**: %s  \n", msg.Direction)
+		fmt.Fprintf(&builder, "**发送者**: %s  \n", msg.From)
+		fmt.Fprintf(&builder, "**接收者**: %s  \n", msg.To)
+		fmt.Fprintf(&builder, "**类型**: %s  \n", msg.Type)
+		fmt.Fprintf(&builder, "**状态**: %s  \n", msg.Status)
+		fmt.Fprintf(&builder, "**时间**: %s  \n", msg.CreatedAt.Format("2006-01-02 15:04:05"))
 		if !msg.RepliedAt.IsZero() {
-			builder.WriteString(fmt.Sprintf("**回复时间**: %s  \n", msg.RepliedAt.Format("2006-01-02 15:04:05")))
+			fmt.Fprintf(&builder, "**回复时间**: %s  \n", msg.RepliedAt.Format("2006-01-02 15:04:05"))
 		}
 		builder.WriteString("\n**内容**:\n\n")
-		builder.WriteString(fmt.Sprintf("%s\n", msg.Content))
+		fmt.Fprintf(&builder, "%s\n", msg.Content)
 
 	case FormatOrg:
 		builder.WriteString("* 消息详情\n")
-		builder.WriteString(fmt.Sprintf("  - ID: %s\n", msg.ID))
-		builder.WriteString(fmt.Sprintf("  - 微信消息ID: %s\n", msg.WxMsgID))
-		builder.WriteString(fmt.Sprintf("  - 方向: %s\n", msg.Direction))
-		builder.WriteString(fmt.Sprintf("  - 发送者: %s\n", msg.From))
-		builder.WriteString(fmt.Sprintf("  - 接收者: %s\n", msg.To))
-		builder.WriteString(fmt.Sprintf("  - 类型: %s\n", msg.Type))
-		builder.WriteString(fmt.Sprintf("  - 状态: %s\n", msg.Status))
-		builder.WriteString(fmt.Sprintf("  - 时间: %s\n", msg.CreatedAt.Format("2006-01-02 15:04:05")))
+		fmt.Fprintf(&builder, "  - ID: %s\n", msg.ID)
+		fmt.Fprintf(&builder, "  - 微信消息ID: %s\n", msg.WxMsgID)
+		fmt.Fprintf(&builder, "  - 方向: %s\n", msg.Direction)
+		fmt.Fprintf(&builder, "  - 发送者: %s\n", msg.From)
+		fmt.Fprintf(&builder, "  - 接收者: %s\n", msg.To)
+		fmt.Fprintf(&builder, "  - 类型: %s\n", msg.Type)
+		fmt.Fprintf(&builder, "  - 状态: %s\n", msg.Status)
+		fmt.Fprintf(&builder, "  - 时间: %s\n", msg.CreatedAt.Format("2006-01-02 15:04:05"))
 		if !msg.RepliedAt.IsZero() {
-			builder.WriteString(fmt.Sprintf("  - 回复时间: %s\n", msg.RepliedAt.Format("2006-01-02 15:04:05")))
+			fmt.Fprintf(&builder, "  - 回复时间: %s\n", msg.RepliedAt.Format("2006-01-02 15:04:05"))
 		}
-		builder.WriteString(fmt.Sprintf("\n* 内容\n%s\n", msg.Content))
+		fmt.Fprintf(&builder, "\n* 内容\n%s\n", msg.Content)
 
 	default: // FormatTable
 		builder.WriteString("📱 消息详情\n")
 		builder.WriteString("─────────────────────────────\n")
-		builder.WriteString(fmt.Sprintf("ID:           %s\n", msg.ID))
-		builder.WriteString(fmt.Sprintf("微信消息ID:   %s\n", msg.WxMsgID))
-		builder.WriteString(fmt.Sprintf("方向:         %s\n", msg.Direction))
-		builder.WriteString(fmt.Sprintf("发送者:       %s\n", msg.From))
-		builder.WriteString(fmt.Sprintf("接收者:       %s\n", msg.To))
-		builder.WriteString(fmt.Sprintf("类型:         %s\n", msg.Type))
-		builder.WriteString(fmt.Sprintf("状态:         %s\n", msg.Status))
-		builder.WriteString(fmt.Sprintf("时间:         %s\n", msg.CreatedAt.Format("2006-01-02 15:04:05")))
+		fmt.Fprintf(&builder, "ID:           %s\n", msg.ID)
+		fmt.Fprintf(&builder, "微信消息ID:   %s\n", msg.WxMsgID)
+		fmt.Fprintf(&builder, "方向:         %s\n", msg.Direction)
+		fmt.Fprintf(&builder, "发送者:       %s\n", msg.From)
+		fmt.Fprintf(&builder, "接收者:       %s\n", msg.To)
+		fmt.Fprintf(&builder, "类型:         %s\n", msg.Type)
+		fmt.Fprintf(&builder, "状态:         %s\n", msg.Status)
+		fmt.Fprintf(&builder, "时间:         %s\n", msg.CreatedAt.Format("2006-01-02 15:04:05"))
 		if !msg.RepliedAt.IsZero() {
-			builder.WriteString(fmt.Sprintf("回复时间:     %s\n", msg.RepliedAt.Format("2006-01-02 15:04:05")))
+			fmt.Fprintf(&builder, "回复时间:     %s\n", msg.RepliedAt.Format("2006-01-02 15:04:05"))
 		}
 		builder.WriteString("─────────────────────────────\n")
 		builder.WriteString("内容:\n")
-		builder.WriteString(fmt.Sprintf("%s\n", msg.Content))
+		fmt.Fprintf(&builder, "%s\n", msg.Content)
 	}
 
 	return builder.String()

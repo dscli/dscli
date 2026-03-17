@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // SQLiteHotReloadStorage 实现 openwechat.HotReloadStorage 接口

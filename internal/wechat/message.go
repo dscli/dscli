@@ -19,7 +19,7 @@ type Message struct {
 	Type      string    `json:"type"`   // "text", "image", "voice", etc.
 	Status    string    `json:"status"` // "unread", "read", "replied", "archived"
 	CreatedAt time.Time `json:"created_at"`
-	RepliedAt time.Time `json:"replied_at,omitempty"`
+	RepliedAt time.Time `json:"replied_at"`
 }
 
 // MessageManager 消息管理器
