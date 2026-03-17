@@ -34,7 +34,11 @@ func writeCodeSection(ctx context.Context, path string, selector string, newCont
 	defer func() {
 		output, fmtErr := CodeMakeFormat(ctx)
 		if fmtErr != nil {
-			err = fmt.Errorf("original error: %w, make format error: %w", err, fmtErr)
+			if err != nil {
+				err = fmt.Errorf("original error: %w, make format error: %w, make format output: %s", err, fmtErr, output)
+			} else {
+				err = fmt.Errorf("make format error: %w, make format output: %s", fmtErr, output)
+			}
 		}
 		output = strings.TrimSpace(output)
 		if output != "" {
