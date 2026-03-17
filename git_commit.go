@@ -11,12 +11,14 @@ func init() {
 	RegisterTool(ToolDef{
 		Name:        "git_commit",
 		Description: "提交暂存区更改，需要提供提交信息。注意：不要在options中包含-m或--message参数。",
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"message": map[string]any{
 					"type":        "string",
-					"description": "提交信息（不要在options中包含-m或--message参数）",
+					"description": "提交信息（不要在options中包含-m或--message参数）,长度1-1024字符",
+					"pattern":     ContentLikePattern(1024),
 				},
 				"options": map[string]any{
 					"type": "string",

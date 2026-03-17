@@ -19,15 +19,18 @@ var askUserTool = ToolDef{
 使用场景：
 需求不明确，资源不到位问用户
 `,
+	Strict: true,
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"content": map[string]any{
 				"type":        "string",
 				"description": "要咨询的内容",
+				"pattern":     ContentLikePattern(4096),
 			},
 		},
-		"required": []string{"content"},
+		"required":             []string{"content"},
+		"additionalProperties": false,
 	},
 	Category: "communication",
 	Timeout:  1 * time.Hour, // 给用户一小时回答

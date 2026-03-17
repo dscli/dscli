@@ -9,6 +9,7 @@ func init() {
 	RegisterTool(ToolDef{
 		Name:        "sqlite",
 		Description: "执行SQLite数据库查询和操作。脚本内容为SQL语句。",
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -18,6 +19,7 @@ func init() {
 例如：
 1. .schema messages      Show the CREATE statements matching PATTERN
 2. select id, role from messages where id > 1000 order by created_at desc;`,
+					"pattern": ContentLikePattern(4096),
 				},
 			},
 			"required":             []string{"script"},

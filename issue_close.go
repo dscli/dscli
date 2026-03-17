@@ -24,11 +24,12 @@ func init() {
 	RegisterTool(ToolDef{
 		Name:        "issue_close",
 		Description: "关闭指定的issue",
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"number": map[string]any{
-					"type":        "string",
+					"type":        "integer",
 					"description": "issue编号，必须是数字",
 				},
 			},

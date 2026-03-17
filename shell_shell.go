@@ -25,6 +25,7 @@ func init() { // 注册shell工具
 4. Git操作：git status
 
 注意：谨慎使用，避免破坏性操作。确保脚本在项目目录内执行。`,
+		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -39,6 +40,7 @@ func init() { // 注册shell工具
 3. 文件操作：cat file.txt
 4. Git操作：git status
 `,
+					"pattern": ContentLikePattern(4096),
 				},
 				"summary": map[string]any{
 					"type": "string",
@@ -50,6 +52,7 @@ func init() { // 注册shell工具
 2. 处理Json数据
 3. 读文件
 `,
+					"pattern": TitleLikePattern(40),
 				},
 			},
 			"required":             []string{"script"},

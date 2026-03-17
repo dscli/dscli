@@ -28,12 +28,14 @@ func init() {
 3. 放弃应用：git_am(options="--abort")
 
 注意：patch内容较长时建议通过标准输入传递，避免命令行长度限制。`,
+		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"patch": map[string]any{
 					"type":        "string",
-					"description": "patch内容（RFC 2822格式），通过git format-patch生成",
+					"description": "patch内容（RFC 2822格式），通过git format-patch生成, 长度1-4096字符",
+					"pattern":     ContentLikePattern(4096),
 				},
 				"options": map[string]any{
 					"type": "string",

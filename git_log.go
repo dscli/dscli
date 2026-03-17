@@ -10,6 +10,7 @@ func init() {
 	RegisterTool(ToolDef{
 		Name:        "git_log",
 		Description: "查看提交历史",
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

@@ -10,6 +10,7 @@ func init() {
 	RegisterTool(ToolDef{
 		Name:        "git_status",
 		Description: "查看 Git 仓库状态",
+		Strict:      true,
 		Parameters: map[string]any{
 			"type":                 "object",
 			"properties":           map[string]any{},

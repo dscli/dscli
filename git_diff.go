@@ -10,12 +10,14 @@ func init() {
 	RegisterTool(ToolDef{
 		Name:        "git_diff",
 		Description: "查看文件或暂存区的差异",
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "文件路径（相对于项目根目录），多个文件用空格分隔",
+					"description": "文件路径（相对于项目根目录），多个文件用空格分隔, 长度1-1024字符",
+					"pattern":     TitleLikePattern(1024),
 				},
 			},
 			"required":             []string{},

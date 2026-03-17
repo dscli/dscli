@@ -10,6 +10,7 @@ func init() {
 	RegisterTool(ToolDef{
 		Name:        "git_push",
 		Description: "推送 Git 分支到远程",
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

@@ -13,7 +13,7 @@ func init() {
 		Description: `搜索代码文件中的定义（函数、方法、类、结构体等）。
 
 参数：
-  path: 必需，文件路径
+  path: 必需，文件路径，长度1-128字符
   pattern: 必需，搜索模式（支持部分匹配）
   type_filter: 可选，类型过滤器，如 "function", "method", "class", "struct" 等
   case_sensitive: 可选，是否区分大小写，默认为 false
@@ -36,12 +36,14 @@ func init() {
   
   # 搜索所有方法
   search_code_definition(path="service.go", pattern="", type_filter="method")`,
+		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径，如main.go",
+					"pattern":     TitleLikePattern(128),
 				},
 				"pattern": map[string]any{
 					"type":        "string",

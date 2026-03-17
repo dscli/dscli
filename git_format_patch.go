@@ -10,6 +10,7 @@ func init() {
 	RegisterTool(ToolDef{
 		Name:        "git_format_patch",
 		Description: "生成指定Git提交的patch格式描述（RFC 2822标准格式）。patch包含完整的提交信息、作者、日期和代码差异，可用于代码审查、变更记录或通过`git apply`应用补丁。默认生成当前HEAD提交的patch。",
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

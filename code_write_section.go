@@ -260,6 +260,7 @@ func init() {
 				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径（相对于项目根目录）",
+					"pattern":     TitleLikePattern(128),
 				},
 				"selector": map[string]any{
 					"type":        "string",
@@ -268,7 +269,7 @@ func init() {
 				"new_content": map[string]any{
 					"type":        "string",
 					"description": "要写入的新内容, 建议不超过4096字符",
-					"pattern":     "^[\\s\\S]{1,4096}$",
+					"pattern":     ContentLikePattern(4096),
 				},
 				"dry_run": map[string]any{
 					"type":        "boolean",

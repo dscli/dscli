@@ -60,11 +60,12 @@ func init() {
 				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径，如main.go",
+					"pattern":     TitleLikePattern(128),
 				},
 				"content": map[string]any{
 					"type":        "string",
 					"description": "要写入的内容，可以为空字符串表示删除, 建议不超过4096个字符",
-					"pattern":     "^[\\s\\S]{1,4096}$",
+					"pattern":     ContentLikePattern(4096),
 				},
 				"start_line": map[string]any{
 					"type":        "integer",

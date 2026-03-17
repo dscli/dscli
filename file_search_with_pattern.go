@@ -50,12 +50,14 @@ func init() {
 3. 避免重复输出重叠的上下文区域
 4. 支持大小写敏感/不敏感搜索
 5. 可限制最大匹配数，避免输出过多内容`,
+		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径，如main.go",
+					"pattern":     TitleLikePattern(128),
 				},
 				"pattern": map[string]any{
 					"type":        "string",

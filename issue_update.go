@@ -10,20 +10,23 @@ func init() {
 	RegisterTool(ToolDef{
 		Name:        "issue_update",
 		Description: "更新指定的issue",
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"number": map[string]any{
-					"type":        "string",
+					"type":        "integer",
 					"description": "issue编号，必须是数字",
 				},
 				"title": map[string]any{
 					"type":        "string",
-					"description": "更新issue标题（可选）",
+					"description": "更新issue标题（可选）,不可有回车，长度1-128字符",
+					"pattern":     TitleLikePattern(128),
 				},
 				"body": map[string]any{
 					"type":        "string",
-					"description": "更新issue内容（可选）",
+					"description": "更新issue内容（可选），长度1-4096字符",
+					"pattern":     ContentLikePattern(4096),
 				},
 				"state": map[string]any{
 					"type":        "string",
@@ -75,22 +78,22 @@ func handleIssueUpdate(ctx context.Context, args ToolArgs) (string, error) {
 	result.WriteString("✅ Issue 更新成功!\n\n")
 
 	result.WriteString(strings.Repeat("=", 80) + "\n")
-	result.WriteString(fmt.Sprintf("Issue #%s: %s\n", issue.Number, issue.Title))
+	fmt.Fprintf(&result, "Issue #%s: %s\n", issue.Number, issue.Title)
 	result.WriteString(strings.Repeat("=", 80) + "\n\n")
 
-	result.WriteString(fmt.Sprintf("ID:         %d\n", issue.ID))
-	result.WriteString(fmt.Sprintf("Number:     %s\n", issue.Number))
-	result.WriteString(fmt.Sprintf("State:      %s\n", issue.State))
-	result.WriteString(fmt.Sprintf("Updated:    %s\n", formatTime(issue.UpdatedAt)))
+	fmt.Fprintf(&result, "ID:         %d\n", issue.ID)
+	fmt.Fprintf(&result, "Number:     %s\n", issue.Number)
+	fmt.Fprintf(&result, "State:      %s\n", issue.State)
+	fmt.Fprintf(&result, "Updated:    %s\n", formatTime(issue.UpdatedAt))
 
 	if title != "" {
-		result.WriteString(fmt.Sprintf("标题已更新\n"))
+		fmt.Fprintf(&result, "标题已更新\n")
 	}
 	if body != "" {
-		result.WriteString(fmt.Sprintf("内容已更新\n"))
+		fmt.Fprintf(&result, "内容已更新\n")
 	}
 	if state != "" {
-		result.WriteString(fmt.Sprintf("状态已更新为: %s\n", state))
+		fmt.Fprintf(&result, "状态已更新为: %s\n", state)
 	}
 
 	result.WriteString(strings.Repeat("=", 80) + "\n")

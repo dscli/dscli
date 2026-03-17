@@ -39,6 +39,19 @@ var promptAnalyzeTool = ToolDef{
 示例：
 - prompt_analyze: 分析当前Chat模型的提示词
 - prompt_analyze model=reasoner: 分析Reasoner模型的提示词`,
+	Strict: true,
+	Parameters: map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"model": map[string]any{
+				"type":        "string",
+				"description": `模型名字。`,
+				"pattern":     TitleLikePattern(40),
+			},
+		},
+		"required":             []string{},
+		"additionalProperties": false,
+	},
 	Category: "debug",
 	Timeout:  10 * time.Second,
 	Handler:  handlePromptAnalyze,
@@ -76,19 +89,18 @@ type PromptSuggestion struct {
 func handlePromptAnalyze(ctx context.Context, args ToolArgs) (reply string, err error) {
 	// 解析参数
 	modelID := int64(0) // 默认Deepseek Chat
-	if modelArg, ok := args["model"]; ok {
-		modelStr, ok := modelArg.(string)
-		if !ok {
-			return "", fmt.Errorf("model参数必须是字符串")
-		}
-		switch strings.ToLower(modelStr) {
-		case "chat", "deepseek-chat", "0":
-			modelID = 0
-		case "reasoner", "deepseek-reasoner", "1":
-			modelID = 1
-		default:
-			return "", fmt.Errorf("不支持的模型: %s。支持: chat(0), reasoner(1)", modelStr)
-		}
+	model := ToolArgsValue(args, "model", ModelDeepseekChat)
+	if model == "" {
+		return "", fmt.Errorf("model参数必须是字符串")
+	}
+
+	switch strings.ToLower(model) {
+	case "chat", "deepseek-chat", "0":
+		modelID = 0
+	case "reasoner", "deepseek-reasoner", "1":
+		modelID = 1
+	default:
+		return "", fmt.Errorf("不支持的模型: %s。支持: chat(0), reasoner(1)", model)
 	}
 
 	// 获取指定模型的系统提示词
@@ -281,7 +293,7 @@ func generatePromptSuggestions(issues []PromptIssue, modelID int64) []PromptSugg
 func checkPromptCompleteness(prompt string, modelID int64) string {
 	var sb strings.Builder
 
-	requiredParts := []string{}
+	var requiredParts []string
 	if modelID == 0 {
 		requiredParts = []string{"身份", "工作流程", "工具", "质量", "注意事项"}
 	} else {
@@ -292,14 +304,14 @@ func checkPromptCompleteness(prompt string, modelID int64) string {
 	for _, part := range requiredParts {
 		if strings.Contains(prompt, part) {
 			foundCount++
-			sb.WriteString(fmt.Sprintf("✅ 包含'%s'相关内容\n", part))
+			fmt.Fprintf(&sb, "✅ 包含'%s'相关内容\n", part)
 		} else {
-			sb.WriteString(fmt.Sprintf("⚠️  缺少'%s'相关内容\n", part))
+			fmt.Fprintf(&sb, "⚠️  缺少'%s'相关内容\n", part)
 		}
 	}
 
 	coverage := float64(foundCount) / float64(len(requiredParts)) * 100
-	sb.WriteString(fmt.Sprintf("\n完整性覆盖率: %.1f%%\n", coverage))
+	fmt.Fprintf(&sb, "\n完整性覆盖率: %.1f%%\n", coverage)
 
 	if coverage < 80 {
 		sb.WriteString("建议：补充缺失的关键部分\n")
@@ -340,7 +352,7 @@ func checkPromptClarity(prompt string) string {
 	if longLineCount == 0 {
 		sb.WriteString("✅ 句子长度适中\n")
 	} else {
-		sb.WriteString(fmt.Sprintf("⚠️  有 %d 行超过100字符\n", longLineCount))
+		fmt.Fprintf(&sb, "⚠️  有 %d 行超过100字符\n", longLineCount)
 		sb.WriteString("建议：拆分过长的句子，提高可读性\n")
 	}
 
@@ -360,7 +372,7 @@ func checkPromptEffectiveness(prompt string, modelID int64) string {
 		}
 	}
 
-	sb.WriteString(fmt.Sprintf("行动指导词汇: %d 个\n", actionCount))
+	fmt.Fprintf(&sb, "行动指导词汇: %d 个\n", actionCount)
 	if actionCount < 3 {
 		sb.WriteString("⚠️  行动指导可能不够具体\n")
 		sb.WriteString("建议：添加更多具体的行动指导\n")
@@ -378,7 +390,7 @@ func checkPromptEffectiveness(prompt string, modelID int64) string {
 			}
 		}
 
-		sb.WriteString(fmt.Sprintf("质量要求相关: %d 项\n", qualityCount))
+		fmt.Fprintf(&sb, "质量要求相关: %d 项\n", qualityCount)
 		if qualityCount < 2 {
 			sb.WriteString("⚠️  质量要求可能不够全面\n")
 			sb.WriteString("建议：明确代码质量和最佳实践要求\n")

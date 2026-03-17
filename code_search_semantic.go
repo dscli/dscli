@@ -73,10 +73,10 @@ func searchMatches(lines []string, pattern string, caseSensitive bool, maxMatche
 func buildSearchResult(path, pattern string, contextLines int, caseSensitive bool, maxMatches int, matches []int, lines []string, structure *FileStructure) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("🔍 搜索文件: %s\n", path))
-	sb.WriteString(fmt.Sprintf("📝 搜索模式: %s\n", pattern))
-	sb.WriteString(fmt.Sprintf("⚙️  参数: 上下文行数=%d, 大小写敏感=%v, 最大匹配数=%d\n", contextLines, caseSensitive, maxMatches))
-	sb.WriteString(fmt.Sprintf("📊 匹配结果: %d 个\n\n", len(matches)))
+	fmt.Fprintf(&sb, "🔍 搜索文件: %s\n", path)
+	fmt.Fprintf(&sb, "📝 搜索模式: %s\n", pattern)
+	fmt.Fprintf(&sb, "⚙️  参数: 上下文行数=%d, 大小写敏感=%v, 最大匹配数=%d\n", contextLines, caseSensitive, maxMatches)
+	fmt.Fprintf(&sb, "📊 匹配结果: %d 个\n\n", len(matches))
 
 	if len(matches) == 0 {
 		sb.WriteString("❌ 未找到匹配项\n")
@@ -86,7 +86,7 @@ func buildSearchResult(path, pattern string, contextLines int, caseSensitive boo
 	// 显示每个匹配项
 	displayedLines := make(map[int]bool)
 	for i, matchLine := range matches {
-		sb.WriteString(fmt.Sprintf("### 匹配项 %d (第%d行)\n", i+1, matchLine))
+		fmt.Fprintf(&sb, "### 匹配项 %d (第%d行)\n", i+1, matchLine)
 
 		// 显示上下文
 		startLine := max(1, matchLine-contextLines)
@@ -101,9 +101,9 @@ func buildSearchResult(path, pattern string, contextLines int, caseSensitive boo
 
 			// 如果是匹配行，用 > 标记
 			if lineNum == matchLine {
-				sb.WriteString(fmt.Sprintf("> %d: %s\n", lineNum, lines[lineNum-1]))
+				fmt.Fprintf(&sb, "> %d: %s\n", lineNum, lines[lineNum-1])
 			} else {
-				sb.WriteString(fmt.Sprintf("  %d: %s\n", lineNum, lines[lineNum-1]))
+				fmt.Fprintf(&sb, "  %d: %s\n", lineNum, lines[lineNum-1])
 			}
 		}
 
@@ -118,10 +118,10 @@ func buildSearchResult(path, pattern string, contextLines int, caseSensitive boo
 
 	// 显示统计信息
 	sb.WriteString("📈 搜索统计:\n")
-	sb.WriteString(fmt.Sprintf("  - 总行数: %d\n", len(lines)))
-	sb.WriteString(fmt.Sprintf("  - 匹配数: %d\n", len(matches)))
+	fmt.Fprintf(&sb, "  - 总行数: %d\n", len(lines))
+	fmt.Fprintf(&sb, "  - 匹配数: %d\n", len(matches))
 	if maxMatches > 0 && len(matches) >= maxMatches {
-		sb.WriteString(fmt.Sprintf("  - 注意: 已达到最大匹配数限制 (%d)\n", maxMatches))
+		fmt.Fprintf(&sb, "  - 注意: 已达到最大匹配数限制 (%d)\n", maxMatches)
 	}
 
 	return sb.String()
@@ -193,12 +193,14 @@ func init() {
   
   # 只显示前10个匹配项
   search_code_semantic(path="large.go", pattern="warning", max_matches="10")`,
+		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "文件路径，如main.go",
+					"description": "文件路径，如main.go, 1-128字符",
+					"pattern":     TitleLikePattern(128),
 				},
 				"pattern": map[string]any{
 					"type":        "string",

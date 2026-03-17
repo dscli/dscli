@@ -32,19 +32,21 @@ func init() {
   # 显示单行：read_file_with_line_range(path="file.txt", start_line=3, end_line=3)
   # 显示范围：read_file_with_line_range(path="file.txt", start_line=10, end_line=20)
   # 从某行到末尾：read_file_with_line_range(path="file.txt", start_line=50)`,
+		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径，如main.go",
+					"pattern":     TitleLikePattern(128),
 				},
 				"start_line": map[string]any{
-					"type":        "string",
+					"type":        "integer",
 					"description": "起始行号（从1开始），可选，默认1",
 				},
 				"end_line": map[string]any{
-					"type":        "string",
+					"type":        "integer",
 					"description": "结束行号，可选，默认到文件末尾",
 				},
 			},

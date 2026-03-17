@@ -151,12 +151,14 @@ func init() {
   
   # 读取user.py文件的结构信息
   read_code_structure(path="user.py")`,
+		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径（相对于项目根目录）",
+					"pattern":     TitleLikePattern(128),
 				},
 			},
 			"required":             []string{"path"},

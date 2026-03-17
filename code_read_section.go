@@ -185,12 +185,14 @@ func init() {
   
   # 读取第10-20行（后备方案）
   read_code_section(path="config.yaml", selector="lines:10-20")`,
+		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径（相对于项目根目录）",
+					"pattern":     TitleLikePattern(128),
 				},
 				"selector": map[string]any{
 					"type":        "string",

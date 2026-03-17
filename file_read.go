@@ -8,12 +8,14 @@ func init() {
 	RegisterTool(ToolDef{
 		Name:        "read_file",
 		Description: "读取项目内指定文件的内容，返回文件内容和元数据信息（大小、权限、修改时间等）",
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径，如main.go",
+					"pattern":     TitleLikePattern(128),
 				},
 			},
 			"required":             []string{"path"},

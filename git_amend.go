@@ -32,6 +32,7 @@ func init() {
 1. 修改提交内容但不修改信息：git_amend()
 2. 修改提交内容和信息：git_amend(message="修复拼写错误")
 3. 修改提交内容但不编辑信息：git_amend(no_edit=true)`,
+		Strict: true,
 		Parameters: map[string]any{
 			"type":                 "object",
 			"properties":           map[string]any{},

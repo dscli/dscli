@@ -44,12 +44,14 @@ func init() {
   
   # 使用测试模式筛选
   make_test(command="go test ./... -v -run TestUser")`,
+		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"command": map[string]any{
 					"type":        "string",
 					"description": "测试命令，可选，如果不提供则使用配置的默认命令",
+					"pattern":     TitleLikePattern(128),
 				},
 				"test_pattern": map[string]any{
 					"type":        "string",

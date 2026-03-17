@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 )
 
@@ -65,6 +66,27 @@ func TestShuffleExported(t *testing.T) {
 			for _, r := range result {
 				if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && r != '-' {
 					t.Errorf("结果包含非字母字符: %c", r)
+				}
+			}
+		})
+	}
+}
+
+func TestGetAllTools(t *testing.T) {
+	tests := []struct {
+		name    string // description of this test case
+		checker func(Tool) bool
+	}{
+		{"every tool should in strict", func(tool Tool) bool {
+			return tool.Function.Strict
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GetAllTools(context.Background())
+			for _, tool := range got {
+				if !tt.checker(tool) {
+					t.Fatal(tool.Function.Strict, tool.Function.Name, tool.Function.Description)
 				}
 			}
 		})

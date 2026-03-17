@@ -43,14 +43,14 @@ func init() {
 
 注意事项：
 - skill_name长度2-100字符，区分大小写`,
+		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"skill_name": map[string]any{
 					"type":        "string",
 					"description": "技能名称（区分大小写）",
-					"minLength":   2,
-					"maxLength":   100,
+					"pattern":     TitleLikePattern(128),
 				},
 			},
 			"required":             []string{"skill_name"},

@@ -216,12 +216,14 @@ func init() {
 	RegisterTool(ToolDef{
 		Name:        "web_reader",
 		Description: "从互联网获取网页内容并智能转换为Markdown格式。支持HTTP/HTTPS URL，特别适合技术文档阅读和整理。",
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"url": map[string]any{
 					"type":        "string",
 					"description": "网页URL，如 https://www.baidu.com/s?wd=Golang+教程 或 https://github.com/golang/go",
+					"pattern":     TitleLikePattern(1024),
 				},
 			},
 			"required":             []string{"url"},

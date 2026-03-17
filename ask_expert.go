@@ -24,19 +24,23 @@ var askExpertTool = ToolDef{
 3. 需要专家深度分析时
 
 注意：程序会自动从专家回答中提取摘要，无需专家手动生成。`,
+	Strict: true,
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"summary": map[string]any{
 				"type":        "string",
 				"description": "问题摘要（可选），用于快速理解问题背景",
+				"pattern":     TitleLikePattern(128),
 			},
 			"content": map[string]any{
 				"type":        "string",
 				"description": "要询问的详细内容（必填）",
+				"pattern":     ContentLikePattern(4096),
 			},
 		},
-		"required": []string{"content"},
+		"required":             []string{"content"},
+		"additionalProperties": false,
 	},
 	Category: "communication",
 	Timeout:  10 * time.Minute, // 给专家10分钟时间回答

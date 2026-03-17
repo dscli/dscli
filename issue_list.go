@@ -26,7 +26,7 @@ func handleIssueList(ctx context.Context, args ToolArgs) (string, error) {
 
 	// 构建结果
 	var result strings.Builder
-	result.WriteString(fmt.Sprintf("📋 Issues (状态: %s, 总数: %d):\n\n", state, len(issues)))
+	fmt.Fprintf(&result, "📋 Issues (状态: %s, 总数: %d):\n\n", state, len(issues))
 
 	for _, issue := range issues {
 		assigneeInfo := "-"
@@ -47,19 +47,19 @@ func handleIssueList(ctx context.Context, args ToolArgs) (string, error) {
 			labelsInfo = strings.Join(labelNames, ", ")
 		}
 
-		result.WriteString(fmt.Sprintf("## #%s [%s] %s\n", issue.Number, issue.State, issue.Title))
-		result.WriteString(fmt.Sprintf("  ID: %d | 作者: %s | 负责人: %s\n",
-			issue.ID, issue.User.Login, assigneeInfo))
-		result.WriteString(fmt.Sprintf("  创建时间: %s | 更新时间: %s\n",
-			formatTime(issue.CreatedAt), formatTime(issue.UpdatedAt)))
-		result.WriteString(fmt.Sprintf("  标签: %s\n", labelsInfo))
+		fmt.Fprintf(&result, "## #%s [%s] %s\n", issue.Number, issue.State, issue.Title)
+		fmt.Fprintf(&result, "  ID: %d | 作者: %s | 负责人: %s\n",
+			issue.ID, issue.User.Login, assigneeInfo)
+		fmt.Fprintf(&result, "  创建时间: %s | 更新时间: %s\n",
+			formatTime(issue.CreatedAt), formatTime(issue.UpdatedAt))
+		fmt.Fprintf(&result, "  标签: %s\n", labelsInfo)
 
 		if issue.Body != "" {
 			preview := issue.Body
 			if len(preview) > 100 {
 				preview = preview[:100] + "..."
 			}
-			result.WriteString(fmt.Sprintf("  预览: %s\n", preview))
+			fmt.Fprintf(&result, "  预览: %s\n", preview)
 		}
 		result.WriteString("\n")
 	}
@@ -72,6 +72,7 @@ func init() {
 	RegisterTool(ToolDef{
 		Name:        "issue_list",
 		Description: "列出项目中的issues，支持按状态过滤",
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

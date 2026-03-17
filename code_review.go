@@ -14,8 +14,8 @@ var codeReviewTool = ToolDef{
 	Description: `对当前最新的Git提交进行代码审查，由专家提供改进建议。
 
 参数说明：
-- summary: 必选，提供本次提交的背景说明，关注重点，帮助专家理解上下文
-- test_command: 可选，单元测试命令，默认为空，跳过测试
+- summary: 必选，提供本次提交的背景说明，关注重点，帮助专家理解上下文，长度1-1024字符
+- test_command: 可选，单元测试命令，默认为空，跳过测试，长度1-128字符
 
 使用场景：
 1. 提交代码前，让专家review一下
@@ -43,16 +43,19 @@ var codeReviewTool = ToolDef{
 - 专家会看到完整的代码变更
 - 建议在push之前使用此工具
 - 确保所有更改都已提交，否则工具会返回错误`,
+	Strict: true,
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"summary": map[string]any{
 				"type":        "string",
-				"description": "必选，提供本次提交的背景说明，关注重点，帮助专家理解上下文",
+				"description": "必选，提供本次提交的背景说明，关注重点，帮助专家理解上下文, 长度1-1024字符",
+				"pattern":     ContentLikePattern(1024),
 			},
 			"test_command": map[string]any{
 				"type":        "string",
-				"description": "可选，单元测试命令，默认为空，跳过测试",
+				"description": "可选，单元测试命令，默认为空，跳过测试, 长度1-128字符",
+				"pattern":     ContentLikePattern(128),
 			},
 		},
 		"required": []string{"summary"},

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 )
@@ -93,4 +94,12 @@ func convertValue[T any](value any, defaultValue T) T {
 	}
 
 	return result
+}
+
+func TitleLikePattern(maxLength int) string {
+	return fmt.Sprintf("^[^\\n\\r]{1,%d}$", maxLength)
+}
+
+func ContentLikePattern(maxLength int) string {
+	return fmt.Sprintf("^[\\s\\S]{1,%d}$", maxLength)
 }

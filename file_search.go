@@ -10,6 +10,7 @@ func init() {
 	RegisterTool(ToolDef{
 		Name:        "search_files",
 		Description: "在项目目录中搜索文件，支持文件名模式匹配（如*.go）和文件内容搜索。自动排除.git目录。",
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -19,7 +20,8 @@ func init() {
 				},
 				"content": map[string]any{
 					"type":        "string",
-					"description": "要搜索的内容（如果提供则搜索文件内容）",
+					"description": "要搜索的内容（如果提供则搜索文件内容）,长度1-4096字符",
+					"pattern":     ContentLikePattern(4096),
 				},
 			},
 			"required":             []string{},

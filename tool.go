@@ -109,6 +109,7 @@ func GetAllTools(ctx context.Context) []Tool {
 				Name:        name,
 				Description: def.Description,
 				Parameters:  def.Parameters,
+				Strict:      def.Strict,
 			},
 		})
 	}

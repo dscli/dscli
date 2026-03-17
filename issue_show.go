@@ -21,20 +21,20 @@ func handleIssueShow(ctx context.Context, args ToolArgs) (string, error) {
 	// 构建详细结果
 	var result strings.Builder
 	result.WriteString(strings.Repeat("=", 80) + "\n")
-	result.WriteString(fmt.Sprintf("Issue #%s: %s\n", issue.Number, issue.Title))
+	fmt.Fprintf(&result, "Issue #%s: %s\n", issue.Number, issue.Title)
 	result.WriteString(strings.Repeat("=", 80) + "\n\n")
 
-	result.WriteString(fmt.Sprintf("ID:         %d\n", issue.ID))
-	result.WriteString(fmt.Sprintf("Number:     %s\n", issue.Number))
-	result.WriteString(fmt.Sprintf("State:      %s\n", issue.State))
-	result.WriteString(fmt.Sprintf("Created:    %s\n", formatTime(issue.CreatedAt)))
-	result.WriteString(fmt.Sprintf("Updated:    %s\n", formatTime(issue.UpdatedAt)))
+	fmt.Fprintf(&result, "ID:         %d\n", issue.ID)
+	fmt.Fprintf(&result, "Number:     %s\n", issue.Number)
+	fmt.Fprintf(&result, "State:      %s\n", issue.State)
+	fmt.Fprintf(&result, "Created:    %s\n", formatTime(issue.CreatedAt))
+	fmt.Fprintf(&result, "Updated:    %s\n", formatTime(issue.UpdatedAt))
 
 	if !issue.ClosedAt.IsZero() {
-		result.WriteString(fmt.Sprintf("Closed:     %s\n", formatTime(issue.ClosedAt)))
+		fmt.Fprintf(&result, "Closed:     %s\n", formatTime(issue.ClosedAt))
 	}
 
-	result.WriteString(fmt.Sprintf("Author:     %s (%s)\n", issue.User.Name, issue.User.Login))
+	fmt.Fprintf(&result, "Author:     %s (%s)\n", issue.User.Name, issue.User.Login)
 
 	assigneeInfo := "-"
 	if issue.Assignee != nil {
@@ -44,7 +44,7 @@ func handleIssueShow(ctx context.Context, args ToolArgs) (string, error) {
 			assigneeInfo = issue.Assignee.Login
 		}
 	}
-	result.WriteString(fmt.Sprintf("Assignee:   %s\n", assigneeInfo))
+	fmt.Fprintf(&result, "Assignee:   %s\n", assigneeInfo)
 
 	labelsInfo := "-"
 	if len(issue.Labels) > 0 {
@@ -54,7 +54,7 @@ func handleIssueShow(ctx context.Context, args ToolArgs) (string, error) {
 		}
 		labelsInfo = strings.Join(labelNames, ", ")
 	}
-	result.WriteString(fmt.Sprintf("Labels:     %s\n", labelsInfo))
+	fmt.Fprintf(&result, "Labels:     %s\n", labelsInfo)
 
 	result.WriteString("\n" + strings.Repeat("-", 80) + "\n")
 	result.WriteString("内容:\n")
@@ -75,6 +75,7 @@ func init() {
 	RegisterTool(ToolDef{
 		Name:        "issue_show",
 		Description: "显示指定编号的issue详情",
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

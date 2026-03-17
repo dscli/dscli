@@ -10,12 +10,14 @@ func init() {
 	RegisterTool(ToolDef{
 		Name:        "git_add",
 		Description: "将文件添加到 Git 暂存区",
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径（相对于项目根目录），多个文件用空格分隔",
+					"pattern":     TitleLikePattern(128),
 				},
 			},
 			"required":             []string{"path"},
@@ -26,7 +28,6 @@ func init() {
 	})
 }
 
-// handleGitAdd git添加
 // handleGitAdd git添加
 func handleGitAdd(ctx context.Context, args ToolArgs) (string, error) {
 	path := ToolArgsValue(args, "path", "")

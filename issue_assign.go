@@ -34,11 +34,12 @@ func init() {
 	RegisterTool(ToolDef{
 		Name:        "issue_assign",
 		Description: "分配issue给指定用户",
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"number": map[string]any{
-					"type":        "string",
+					"type":        "integer",
 					"description": "issue编号，必须是数字",
 				},
 				"username": map[string]any{

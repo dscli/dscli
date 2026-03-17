@@ -31,6 +31,13 @@ var systemPromptTool = ToolDef{
 - system_prompt: 显示当前Chat模型的提示词
 - system_prompt model=reasoner: 显示Reasoner模型的提示词
 - system_prompt model=1: 显示Reasoner模型的提示词`,
+	Strict: true,
+	Parameters: map[string]any{
+		"type":                 "object",
+		"properties":           map[string]any{},
+		"required":             []string{},
+		"additionalProperties": false,
+	},
 	Category: "debug",
 	Timeout:  5 * time.Second,
 	Handler:  handleSystemPrompt,
