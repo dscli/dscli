@@ -10,19 +10,141 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func wechatPersistentPreRunE(cmd *cobra.Command, args []string) error {
-	// 获取命令行标志
-	simple, _ := cmd.Flags().GetBool("simple")
-	markdown, _ := cmd.Flags().GetBool("markdown")
-	org, _ := cmd.Flags().GetBool("org")
+func init() {
+	wechatCmd := AddRootCommand(&cobra.Command{
+		Use:   "wechat",
+		Short: "微信AI工具接口（供dscli chat使用）",
+		Long: `微信AI工具接口 - 为AI提供微信交互能力
+
+这个工具主要供 dscli chat 使用，让AI能够通过微信与人类进行交互。
+支持智能登录、消息收发、联系人管理等功能。`,
+		PersistentPreRunE: wechatPersistentPreRunE,
+	})
+	// 将wechat命令添加到根命令
+	AddRootCommand(wechatCmd)
+
+	// 添加子命令
+	_ = AddCommand(wechatCmd, &cobra.Command{
+		Use:   "login",
+		Short: "登录微信",
+		Long: `智能登录微信，自动尝试最优登录方式：
+1. 优先尝试免扫码登录（PushLogin）
+2. 失败则尝试热登录（HotLogin）
+3. 最后使用扫码登录`,
+		RunE: wechatLoginRunE,
+	})
+	_ = AddCommand(wechatCmd, &cobra.Command{
+		Use:   "logout",
+		Short: "退出登录",
+		RunE:  wechatLogoutRunE,
+	})
+
+	_ = AddCommand(wechatCmd, &cobra.Command{
+		Use:   "status",
+		Short: "查看微信状态",
+		RunE:  wechatStatusRunE,
+	})
+
+	wechatMessagesCmd := AddCommand(wechatCmd, &cobra.Command{
+		Use:   "messages",
+		Short: "查看消息",
+		Long: `查看微信消息，支持多种输出格式：
+- 默认：表格格式（人类友好）
+- --simple：制表符分隔（AI友好）
+- --markdown：Markdown表格
+- --org：Org mode表格`,
+		RunE: wechatMessagesRunE,
+	})
+	_ = AddCommand(wechatCmd, &cobra.Command{
+		Use:   "message <消息ID>",
+		Short: "查看单条消息详情",
+		Args:  cobra.ExactArgs(1),
+		RunE:  wechatMessageRunE,
+	})
+	wechatSendCmd := AddCommand(wechatCmd, &cobra.Command{
+		Use:   "send <微信号/昵称>",
+		Short: "发送消息",
+		Long: `发送消息给指定的微信号或昵称。
+支持从命令行参数或标准输入读取消息内容。`,
+		Args: cobra.ExactArgs(1),
+		RunE: wechatSendRunE,
+	})
+	wechatReplyCmd := AddCommand(wechatCmd, &cobra.Command{
+		Use:   "reply <消息ID>",
+		Short: "回复消息",
+		Long: `回复指定的消息。
+支持从命令行参数或标准输入读取回复内容。`,
+		Args: cobra.ExactArgs(1),
+		RunE: wechatReplyRunE,
+	})
+	_ = AddCommand(wechatCmd, &cobra.Command{
+		Use:   "mark-read <消息ID>",
+		Short: "标记消息为已读",
+		Args:  cobra.ExactArgs(1),
+		RunE:  wechatMarkReadRunE,
+	})
+	_ = AddCommand(wechatCmd, &cobra.Command{
+		Use:   "friends",
+		Short: "查看好友列表",
+		RunE:  wechatFriendsRunE,
+	})
+	_ = AddCommand(wechatCmd, &cobra.Command{
+		Use:   "groups",
+		Short: "查看群组列表",
+		RunE:  wechatGroupsRunE,
+	})
+	wechatConfigCmd := AddCommand(wechatCmd, &cobra.Command{
+		Use:   "config",
+		Short: "管理配置",
+		Long: `管理微信客户端配置。
+如果不指定配置文件路径，使用默认路径：~/.dscli/wechat.json`,
+		RunE: wechatConfigRunE,
+	})
+
+	// 全局标志
+	wechatCmd.PersistentFlags().String("format", "table", "输出格式: simple, table, makdown, org")
+	wechatCmd.PersistentFlags().Bool("simple", false, "简洁格式（制表符分隔）")
+	wechatCmd.PersistentFlags().Bool("markdown", false, "Markdown格式")
+	wechatCmd.PersistentFlags().Bool("org", false, "Org mode格式")
+	wechatCmd.PersistentFlags().String("config", "", "配置文件路径")
+
+	// messages命令标志
+	wechatMessagesCmd.Flags().Bool("unread", false, "只显示未读消息")
+	wechatMessagesCmd.Flags().Int("limit", 50, "显示消息数量限制")
+
+	// send/reply命令标志
+	wechatSendCmd.Flags().String("text", "t", "消息内容")
+	wechatSendCmd.Flags().Bool("stdin", false, "从标准输入读取消息内容")
+	wechatReplyCmd.Flags().String("text", "t", "回复内容")
+	wechatReplyCmd.Flags().Bool("stdin", false, "从标准输入读取回复内容")
+
+	// config命令标志
+	wechatConfigCmd.Flags().String("config", "", "配置文件路径")
+}
+
+func wechatPersistentPreRunE(cmd *cobra.Command, args []string) (err error) {
+	wechatSimple, err := cmd.Flags().GetBool("simple")
+	if err != nil {
+		return
+	}
+
+	wechatMarkdown, err := cmd.Flags().GetBool("markdown")
+	if err != nil {
+		return
+	}
+
+	wechatOrg, err := cmd.Flags().GetBool("org")
+	if err != nil {
+		return
+	}
 
 	// 设置输出格式
 	var format string
-	if simple {
+	if wechatSimple {
 		format = "simple"
-	} else if markdown {
+	} else if wechatMarkdown {
 		format = "markdown"
-	} else if org {
+	} else if wechatOrg {
 		format = "org"
 	} else {
 		format = "table"
