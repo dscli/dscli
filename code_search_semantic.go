@@ -11,12 +11,11 @@ import (
 // 参数：
 //
 //	path: 文件路径
-//	pattern: 搜索模式（字符串包含匹配）
+//	searchPattern: 搜索模式（字符串包含匹配）
 //	contextLines: 上下文行数（前后各N行）
 //	caseSensitive: 是否区分大小写
 //	maxMatches: 最大匹配数
 func searchCodeSemantic(ctx context.Context, path string, pattern string, contextLines int, caseSensitive bool, maxMatches int) (string, error) {
-	// 检查文件是否存在
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return "", fmt.Errorf("文件不存在: %s", path)
 	}
@@ -158,11 +157,15 @@ func init() {
 	RegisterTool(ToolDef{
 		Name: "search_code_semantic",
 		Description: `搜索文件中匹配指定模式的行，并显示上下文内容。
-✅ 推荐：这是基于语义的新工具，比基于行号的搜索更智能、更准确。
 
 参数：
-  path: 文件路径（必需）
-  pattern: 搜索模式（必需）
+  file_pattern: 文件搜索模式（必需），支持：
+    1. 单个文件：main.go
+    2. 通配符：*.go (当前目录)
+    3. 多个文件：main.go root.go
+    4. 当前目录：. (当前目录所有非隐藏文件)
+    5. 递归搜索：**/*.go (所有子目录)
+  search_pattern: 搜索模式（必需）
   context_lines: 上下文行数（可选，默认5）
   case_sensitive: 是否区分大小写（可选，默认false）
   max_matches: 最大匹配数（可选，默认无限制）
@@ -171,38 +174,26 @@ func init() {
 1. 基于语义搜索，能理解代码结构
 2. 显示匹配行所在的函数、类、方法信息
 3. 提供丰富的上下文信息
-4. 比 search_file_with_pattern 更智能、更准确
-
-功能特点：
-1. 支持简单的字符串包含匹配
-2. 显示匹配行及其上下文，便于理解上下文
-3. 避免重复输出重叠的上下文区域
-4. 支持大小写敏感/不敏感搜索
-5. 可限制最大匹配数，避免输出过多内容
-6. 显示匹配行所在的代码结构信息（函数、类、方法）
 
 示例：
-  # 搜索包含"error"的行，显示前后5行上下文
-  search_code_semantic(path="main.go", pattern="error")
+  # 搜索当前目录所有.go文件中的"error"
+  search_code_semantic(file_pattern="*.go", search_pattern="error")
   
-  # 搜索"TODO"注释，显示前后3行上下文
-  search_code_semantic(path="main.go", pattern="TODO", context_lines="3")
+  # 搜索main.go和root.go中的"TODO"注释
+  search_code_semantic(file_pattern="main.go root.go", search_pattern="TODO", context_lines="3")
   
-  # 区分大小写搜索"Config"
-  search_code_semantic(path="config.go", pattern="Config", case_sensitive="true")
-  
-  # 只显示前10个匹配项
-  search_code_semantic(path="large.go", pattern="warning", max_matches="10")`,
+  # 搜索当前目录所有文件中的"Config"（区分大小写）
+  search_code_semantic(file_pattern=".", search_pattern="Config", case_sensitive="true")`,
 		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"path": map[string]any{
+				"file_pattern": map[string]any{
 					"type":        "string",
-					"description": "文件路径，如main.go, 1-128字符",
+					"description": "文件搜索模式，支持：单个文件、通配符、多个文件、当前目录、递归搜索",
 					"pattern":     TitleLikePattern(128),
 				},
-				"pattern": map[string]any{
+				"search_pattern": map[string]any{
 					"type":        "string",
 					"description": "搜索模式（字符串包含匹配）",
 				},
@@ -219,7 +210,7 @@ func init() {
 					"description": "最大匹配数，可选，默认无限制",
 				},
 			},
-			"required":             []string{"path", "pattern"},
+			"required":             []string{"file_pattern", "search_pattern"},
 			"additionalProperties": false,
 		},
 		Category: "code_ops",
@@ -228,19 +219,42 @@ func init() {
 }
 
 func handleSearchCodeSemantic(ctx context.Context, args ToolArgs) (string, error) {
-	path := ToolArgsValue(args, "path", "")
-	if path == "" {
-		return "", fmt.Errorf("参数 'path' 缺失")
+	filePattern := ToolArgsValue(args, "file_pattern", "")
+	if filePattern == "" {
+		return "", fmt.Errorf("参数 'file_pattern' 缺失")
 	}
-	pattern := ToolArgsValue(args, "pattern", "")
-	if pattern == "" {
-		return "", fmt.Errorf("参数 'pattern' 缺失")
+	searchPattern := ToolArgsValue(args, "search_pattern", "")
+	if searchPattern == "" {
+		return "", fmt.Errorf("参数 'search_pattern' 缺失")
 	}
 
 	// 解析可选参数
 	contextLines := ToolArgsValue(args, "context_lines", 5)
 	caseSensitive := ToolArgsValue(args, "case_sensitive", false)
 	maxMatches := ToolArgsValue(args, "max_matches", 0)
-	Printf("🔍 搜索文件%s中匹配指定模式%s的行\n", path, pattern)
-	return searchCodeSemantic(ctx, path, pattern, contextLines, caseSensitive, maxMatches)
+
+	// 扩展文件模式
+	files, err := expandFilePattern(filePattern)
+	if err != nil {
+		return "", fmt.Errorf("扩展文件模式失败: %w", err)
+	}
+
+	if len(files) == 0 {
+		return "❌ 未找到匹配的文件", nil
+	}
+
+	Printf("🔍 搜索%d个文件中匹配指定模式%s的行\n", len(files), searchPattern)
+
+	// 搜索所有文件
+	var results []string
+	for _, file := range files {
+		result, err := searchCodeSemantic(ctx, file, searchPattern, contextLines, caseSensitive, maxMatches)
+		if err != nil {
+			results = append(results, fmt.Sprintf("❌ 搜索文件 %s 失败: %v", file, err))
+		} else {
+			results = append(results, result)
+		}
+	}
+
+	return strings.Join(results, "\n\n---\n\n"), nil
 }

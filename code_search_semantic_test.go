@@ -7,9 +7,9 @@ import (
 func TestHandleSearchCodeSemantic(t *testing.T) {
 	ctx := t.Context()
 	args := ToolArgs{
-		"path":          "parse.py",
-		"pattern":       "def parse_java",
-		"context_lines": 5,
+		"file_pattern":   "parse.py",
+		"search_pattern": "def parse_java",
+		"context_lines":  5,
 	}
 	result, err := handleSearchCodeSemantic(ctx, args)
 	if err != nil {
