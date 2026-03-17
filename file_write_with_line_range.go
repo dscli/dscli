@@ -40,19 +40,7 @@ func init() {
   write_file_with_line_range(path="file.txt", start_line=5, end_line=10, content="")
   
   # 从第5行开始替换到文件末尾
-  write_file_with_line_range(path="file.txt", start_line=5, content="新内容")
-  
-  # 删除从第5行到文件末尾的内容
-  write_file_with_line_range(path="file.txt", start_line=5, content="")
-  
-  # 替换整个文件
-  write_file_with_line_range(path="file.txt", content="全新内容")
-  
-  # 清空文件
-  write_file_with_line_range(path="file.txt", content="")
-  
-  # 创建新文件并写入内容
-  write_file_with_line_range(path="new.txt", content="文件内容")`,
+  write_file_with_line_range(path="file.txt", start_line=5, content="新内容")`,
 		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",
