@@ -20,15 +20,15 @@ type Client struct {
 }
 
 // NewClient 创建新的微信客户端
+// NewClient 创建新的微信客户端
 func NewClient(config *Config) (*Client, error) {
 	// 确保数据库目录存在
 	dbDir := filepath.Dir(config.DBPath)
 	if err := os.MkdirAll(dbDir, 0o755); err != nil {
 		return nil, wrapErr(err, "创建数据库目录失败")
 	}
-
 	// 打开数据库
-	db, err := sql.Open("sqlite3", config.DBPath+"?_journal=WAL&_timeout=5000&_fk=1")
+	db, err := sql.Open("sqlite", config.DBPath+"?_journal=WAL&_timeout=5000&_fk=1")
 	if err != nil {
 		return nil, wrapErr(err, "打开数据库失败")
 	}
@@ -42,7 +42,6 @@ func NewClient(config *Config) (*Client, error) {
 
 	// 创建消息管理器
 	msgMgr := NewMessageManager(db, bot)
-
 	return &Client{
 		config: config,
 		bot:    bot,

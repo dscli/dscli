@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	_ "modernc.org/sqlite"
+	"gitcode.com/dscli/dscli/internal/sqlite"
 )
 
 // SQLiteHotReloadStorage 实现 openwechat.HotReloadStorage 接口
@@ -19,7 +19,7 @@ type SQLiteHotReloadStorage struct {
 
 // NewSQLiteHotReloadStorage 创建SQLite热存储
 func NewSQLiteHotReloadStorage(dbPath, account string) (*SQLiteHotReloadStorage, error) {
-	db, err := sql.Open("sqlite3", dbPath+"?_journal=WAL&_timeout=5000&_fk=1")
+	db, err := sqlite.Open(dbPath)
 	if err != nil {
 		return nil, err
 	}

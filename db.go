@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	_ "modernc.org/sqlite"
+	"gitcode.com/dscli/dscli/internal/sqlite"
 )
 
 var (
@@ -95,7 +95,7 @@ func initDatabase(db *sql.DB) error {
 // OpenDB 打开数据库连接（确保数据库已初始化）
 func OpenDB(elem ...string) (*sql.DB, error) {
 	var err error
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sqlite.Open(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
@@ -111,7 +111,7 @@ func OpenDB(elem ...string) (*sql.DB, error) {
 	// 如果指定了其他数据库路径
 	if len(elem) > 0 {
 		dbPath := filepath.Join(elem...)
-		return sql.Open("sqlite", dbPath)
+		return sqlite.Open(dbPath)
 	}
 
 	return db, nil
