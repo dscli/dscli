@@ -15,7 +15,16 @@ import (
 //	contextLines: 上下文行数（前后各N行）
 //	caseSensitive: 是否区分大小写
 //	maxMatches: 最大匹配数
-func searchCodeSemantic(ctx context.Context, path string, pattern string, contextLines int, caseSensitive bool, maxMatches int) (string, error) {
+//
+// searchCodeSemantic 基于语义搜索代码中的特定模式
+// 参数：
+//
+//	path: 文件路径
+//	searchPattern: 搜索模式（字符串包含匹配）
+//	contextLines: 上下文行数（前后各N行）
+//	caseSensitive: 是否区分大小写
+//	maxMatches: 最大匹配数
+func searchCodeSemantic(ctx context.Context, path string, searchPattern string, contextLines int, caseSensitive bool, maxMatches int) (string, error) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return "", fmt.Errorf("文件不存在: %s", path)
 	}
@@ -33,20 +42,21 @@ func searchCodeSemantic(ctx context.Context, path string, pattern string, contex
 	}
 	// 搜索匹配项
 	lines := strings.Split(string(content), "\n")
-	matches := searchMatches(lines, pattern, caseSensitive, maxMatches)
+	matches := searchMatches(lines, searchPattern, caseSensitive, maxMatches)
 
 	// 构建结果
-	result := buildSearchResult(path, pattern, contextLines, caseSensitive, maxMatches, matches, lines, structure)
+	result := buildSearchResult(path, searchPattern, contextLines, caseSensitive, maxMatches, matches, lines, structure)
 
 	return result, nil
 }
 
 // searchMatches 搜索匹配项
-func searchMatches(lines []string, pattern string, caseSensitive bool, maxMatches int) []int {
+// searchMatches 搜索匹配项
+func searchMatches(lines []string, searchPattern string, caseSensitive bool, maxMatches int) []int {
 	var matches []int
-	searchPattern := pattern
+	pattern := searchPattern
 	if !caseSensitive {
-		searchPattern = strings.ToLower(pattern)
+		pattern = strings.ToLower(searchPattern)
 	}
 
 	for i, line := range lines {
@@ -60,7 +70,7 @@ func searchMatches(lines []string, pattern string, caseSensitive bool, maxMatche
 			searchLine = strings.ToLower(line)
 		}
 
-		if strings.Contains(searchLine, searchPattern) {
+		if strings.Contains(searchLine, pattern) {
 			matches = append(matches, i+1) // 行号从1开始
 		}
 	}
@@ -69,11 +79,12 @@ func searchMatches(lines []string, pattern string, caseSensitive bool, maxMatche
 }
 
 // buildSearchResult 构建搜索结果
-func buildSearchResult(path, pattern string, contextLines int, caseSensitive bool, maxMatches int, matches []int, lines []string, structure *FileStructure) string {
+// buildSearchResult 构建搜索结果
+func buildSearchResult(path, searchPattern string, contextLines int, caseSensitive bool, maxMatches int, matches []int, lines []string, structure *FileStructure) string {
 	var sb strings.Builder
 
 	fmt.Fprintf(&sb, "🔍 搜索文件: %s\n", path)
-	fmt.Fprintf(&sb, "📝 搜索模式: %s\n", pattern)
+	fmt.Fprintf(&sb, "📝 搜索模式: %s\n", searchPattern)
 	fmt.Fprintf(&sb, "⚙️  参数: 上下文行数=%d, 大小写敏感=%v, 最大匹配数=%d\n", contextLines, caseSensitive, maxMatches)
 	fmt.Fprintf(&sb, "📊 匹配结果: %d 个\n\n", len(matches))
 
@@ -247,14 +258,66 @@ func handleSearchCodeSemantic(ctx context.Context, args ToolArgs) (string, error
 
 	// 搜索所有文件
 	var results []string
+	var errors []string
+	totalMatches := 0
+
 	for _, file := range files {
 		result, err := searchCodeSemantic(ctx, file, searchPattern, contextLines, caseSensitive, maxMatches)
 		if err != nil {
-			results = append(results, fmt.Sprintf("❌ 搜索文件 %s 失败: %v", file, err))
+			errors = append(errors, fmt.Sprintf("❌ 搜索文件 %s 失败: %v", file, err))
 		} else {
 			results = append(results, result)
+			// 统计匹配数
+			if strings.Contains(result, "📊 匹配结果:") {
+				// 提取匹配数
+				lines := strings.Split(result, "\n")
+				for _, line := range lines {
+					if strings.Contains(line, "📊 匹配结果:") {
+						parts := strings.Split(line, ":")
+						if len(parts) > 1 {
+							var matches int
+							fmt.Sscanf(strings.TrimSpace(parts[1]), "%d 个", &matches)
+							totalMatches += matches
+						}
+					}
+				}
+			}
+		}
+
+		// 检查全局匹配数限制
+		if maxMatches > 0 && totalMatches >= maxMatches {
+			Printf("⚠️ 已达到全局最大匹配数限制 (%d)，停止搜索", maxMatches)
+			break
 		}
 	}
 
-	return strings.Join(results, "\n\n---\n\n"), nil
+	// 构建最终结果
+	var sb strings.Builder
+
+	// 显示错误信息
+	if len(errors) > 0 {
+		sb.WriteString("❌ 错误信息:\n")
+		for _, err := range errors {
+			sb.WriteString(fmt.Sprintf("  - %s\n", err))
+		}
+		sb.WriteString("\n")
+	}
+
+	// 显示搜索结果
+	if len(results) > 0 {
+		sb.WriteString("✅ 搜索结果:\n")
+		sb.WriteString(strings.Join(results, "\n\n---\n\n"))
+	}
+
+	// 显示统计信息
+	sb.WriteString(fmt.Sprintf("\n📈 全局统计:\n"))
+	sb.WriteString(fmt.Sprintf("  - 搜索文件数: %d\n", len(files)))
+	sb.WriteString(fmt.Sprintf("  - 成功搜索文件数: %d\n", len(results)))
+	sb.WriteString(fmt.Sprintf("  - 失败文件数: %d\n", len(errors)))
+	sb.WriteString(fmt.Sprintf("  - 总匹配数: %d\n", totalMatches))
+	if maxMatches > 0 && totalMatches >= maxMatches {
+		sb.WriteString(fmt.Sprintf("  - 注意: 已达到全局最大匹配数限制 (%d)\n", maxMatches))
+	}
+
+	return sb.String(), nil
 }
