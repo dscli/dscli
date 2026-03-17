@@ -1,13 +1,14 @@
 package wechat
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // Client 微信客户端API
@@ -71,31 +72,31 @@ func NewClientFromConfig() (*Client, error) {
 }
 
 // Login 登录微信
-func (c *Client) Login() error {
+func (c *Client) Login(ctx context.Context) error {
 	if c.bot.IsLoggedIn() {
 		return fmt.Errorf("已经登录")
 	}
 
-	return c.bot.SmartLogin()
+	return c.bot.SmartLogin(ctx)
 }
 
 // Logout 退出登录
-func (c *Client) Logout() error {
+func (c *Client) Logout(ctx context.Context) error {
 	if !c.bot.IsLoggedIn() {
 		return fmt.Errorf("未登录")
 	}
 
-	return c.bot.Logout()
+	return c.bot.Logout(ctx)
 }
 
 // Status 获取状态
-func (c *Client) Status() (map[string]any, error) {
+func (c *Client) Status(ctx context.Context) (map[string]any, error) {
 	status := make(map[string]any)
 
 	status["logged_in"] = c.bot.IsLoggedIn()
 
 	if c.bot.IsLoggedIn() {
-		if self, err := c.bot.GetCurrentUser(); err == nil {
+		if self, err := c.bot.GetCurrentUser(ctx); err == nil {
 			status["user"] = self.NickName
 			status["username"] = self.UserName
 		}
@@ -106,7 +107,7 @@ func (c *Client) Status() (map[string]any, error) {
 
 	// 获取未读消息数量
 	if c.bot.IsLoggedIn() {
-		messages, err := c.msgMgr.GetUnreadMessages(1000)
+		messages, err := c.msgMgr.GetUnreadMessages(ctx, 1000)
 		if err == nil {
 			status["unread_count"] = len(messages)
 		}
@@ -116,28 +117,28 @@ func (c *Client) Status() (map[string]any, error) {
 }
 
 // GetMessages 获取消息
-func (c *Client) GetMessages(unread bool, limit int) ([]Message, error) {
+func (c *Client) GetMessages(ctx context.Context, unread bool, limit int) ([]Message, error) {
 	if !c.bot.IsLoggedIn() {
 		return nil, ErrNotLoggedIn
 	}
 
 	if unread {
-		return c.msgMgr.GetUnreadMessages(limit)
+		return c.msgMgr.GetUnreadMessages(ctx, limit)
 	}
-	return c.msgMgr.GetRecentMessages(limit)
+	return c.msgMgr.GetRecentMessages(ctx, limit)
 }
 
 // GetMessage 获取单条消息
-func (c *Client) GetMessage(messageID string) (*Message, error) {
+func (c *Client) GetMessage(ctx context.Context, messageID string) (*Message, error) {
 	if !c.bot.IsLoggedIn() {
 		return nil, ErrNotLoggedIn
 	}
 
-	return c.msgMgr.GetMessageByID(messageID)
+	return c.msgMgr.GetMessageByID(ctx, messageID)
 }
 
 // SendMessage 发送消息
-func (c *Client) SendMessage(to, content string) error {
+func (c *Client) SendMessage(ctx context.Context, to, content string) error {
 	if !c.bot.IsLoggedIn() {
 		return ErrNotLoggedIn
 	}
@@ -149,7 +150,7 @@ func (c *Client) SendMessage(to, content string) error {
 	}
 
 	// 发送消息
-	if err := c.bot.SendText(to, content); err != nil {
+	if err := c.bot.SendText(ctx, to, content); err != nil {
 		return wrapErr(err, "发送消息失败")
 	}
 
@@ -165,7 +166,7 @@ func (c *Client) SendMessage(to, content string) error {
 		CreatedAt: time.Now(),
 	}
 
-	if err := c.msgMgr.SaveMessage(msg); err != nil {
+	if err := c.msgMgr.SaveMessage(ctx, msg); err != nil {
 		// 记录错误但不影响发送
 		fmt.Fprintf(os.Stderr, "警告: 保存消息记录失败: %v\n", err)
 	}
@@ -174,24 +175,24 @@ func (c *Client) SendMessage(to, content string) error {
 }
 
 // ReplyMessage 回复消息
-func (c *Client) ReplyMessage(messageID, content string) error {
+func (c *Client) ReplyMessage(ctx context.Context, messageID, content string) error {
 	if !c.bot.IsLoggedIn() {
 		return ErrNotLoggedIn
 	}
 
 	// 获取原消息
-	msg, err := c.msgMgr.GetMessageByID(messageID)
+	msg, err := c.msgMgr.GetMessageByID(ctx, messageID)
 	if err != nil {
 		return wrapErr(err, "获取原消息失败")
 	}
 
 	// 发送回复
-	if err := c.SendMessage(msg.From, content); err != nil {
+	if err := c.SendMessage(ctx, msg.From, content); err != nil {
 		return wrapErr(err, "发送回复失败")
 	}
 
 	// 标记为已回复
-	if err := c.msgMgr.MarkAsReplied(messageID, content); err != nil {
+	if err := c.msgMgr.MarkAsReplied(ctx, messageID, content); err != nil {
 		return wrapErr(err, "标记消息为已回复失败")
 	}
 
@@ -199,21 +200,21 @@ func (c *Client) ReplyMessage(messageID, content string) error {
 }
 
 // MarkAsRead 标记消息为已读
-func (c *Client) MarkAsRead(messageID string) error {
+func (c *Client) MarkAsRead(ctx context.Context, messageID string) error {
 	if !c.bot.IsLoggedIn() {
 		return ErrNotLoggedIn
 	}
 
-	return c.msgMgr.MarkAsRead(messageID)
+	return c.msgMgr.MarkAsRead(ctx, messageID)
 }
 
 // GetFriends 获取好友列表
-func (c *Client) GetFriends() ([]map[string]string, error) {
+func (c *Client) GetFriends(ctx context.Context) ([]map[string]string, error) {
 	if !c.bot.IsLoggedIn() {
 		return nil, ErrNotLoggedIn
 	}
 
-	wxFriends, err := c.bot.GetFriends(false)
+	wxFriends, err := c.bot.GetFriends(ctx, false)
 	if err != nil {
 		return nil, wrapErr(err, "获取好友列表失败")
 	}
@@ -232,12 +233,12 @@ func (c *Client) GetFriends() ([]map[string]string, error) {
 }
 
 // GetGroups 获取群组列表
-func (c *Client) GetGroups() ([]map[string]string, error) {
+func (c *Client) GetGroups(ctx context.Context) ([]map[string]string, error) {
 	if !c.bot.IsLoggedIn() {
 		return nil, ErrNotLoggedIn
 	}
 
-	wxGroups, err := c.bot.GetGroups(false)
+	wxGroups, err := c.bot.GetGroups(ctx, false)
 	if err != nil {
 		return nil, wrapErr(err, "获取群组列表失败")
 	}

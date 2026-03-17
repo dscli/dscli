@@ -1,6 +1,7 @@
 package wechat
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/eatmoreapple/openwechat"
@@ -45,20 +46,25 @@ func NewBot(config *Config) (*Bot, error) {
 }
 
 // SmartLogin 智能登录：尝试最优登录方式
-func (b *Bot) SmartLogin() error {
+func (b *Bot) SmartLogin(ctx context.Context) error {
+	// 检查上下文是否已取消
+	if err := ctx.Err(); err != nil {
+		return wrapErr(err, "上下文已取消")
+	}
+
 	// 如果配置了优先使用免扫码登录
 	if b.config.PushLogin {
 		// 尝试免扫码登录
 		err := b.bot.PushLogin(b.storage, openwechat.NewRetryLoginOption())
 		if err == nil {
-			return b.afterLogin()
+			return b.afterLogin(ctx)
 		}
 	}
 
 	// 尝试热登录
 	err := b.bot.HotLogin(b.storage, openwechat.NewRetryLoginOption())
 	if err == nil {
-		return b.afterLogin()
+		return b.afterLogin(ctx)
 	}
 
 	// 都失败，需要扫码登录
@@ -78,11 +84,16 @@ func (b *Bot) SmartLogin() error {
 		return wrapErr(err, "扫码登录失败")
 	}
 
-	return b.afterLogin()
+	return b.afterLogin(ctx)
 }
 
 // afterLogin 登录后的处理
-func (b *Bot) afterLogin() error {
+func (b *Bot) afterLogin(ctx context.Context) error {
+	// 检查上下文是否已取消
+	if err := ctx.Err(); err != nil {
+		return wrapErr(err, "上下文已取消")
+	}
+
 	// 获取当前用户
 	self, err := b.bot.GetCurrentUser()
 	if err != nil {
@@ -111,7 +122,11 @@ func (b *Bot) IsLoggedIn() bool {
 }
 
 // GetCurrentUser 获取当前用户信息
-func (b *Bot) GetCurrentUser() (*openwechat.Self, error) {
+func (b *Bot) GetCurrentUser(ctx context.Context) (*openwechat.Self, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, wrapErr(err, "上下文已取消")
+	}
+
 	if b.self == nil {
 		return nil, ErrNotLoggedIn
 	}
@@ -119,7 +134,11 @@ func (b *Bot) GetCurrentUser() (*openwechat.Self, error) {
 }
 
 // Logout 退出登录
-func (b *Bot) Logout() error {
+func (b *Bot) Logout(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return wrapErr(err, "上下文已取消")
+	}
+
 	if b.storage != nil {
 		defer b.storage.Close()
 	}
@@ -136,7 +155,11 @@ func (b *Bot) Logout() error {
 }
 
 // Block 阻塞等待消息
-func (b *Bot) Block() error {
+func (b *Bot) Block(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return wrapErr(err, "上下文已取消")
+	}
+
 	if !b.IsLoggedIn() {
 		return ErrNotLoggedIn
 	}
@@ -144,7 +167,11 @@ func (b *Bot) Block() error {
 }
 
 // GetFriends 获取好友列表
-func (b *Bot) GetFriends(refresh bool) (openwechat.Friends, error) {
+func (b *Bot) GetFriends(ctx context.Context, refresh bool) (openwechat.Friends, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, wrapErr(err, "上下文已取消")
+	}
+
 	if !b.IsLoggedIn() {
 		return nil, ErrNotLoggedIn
 	}
@@ -158,7 +185,11 @@ func (b *Bot) GetFriends(refresh bool) (openwechat.Friends, error) {
 }
 
 // GetGroups 获取群组列表
-func (b *Bot) GetGroups(refresh bool) (openwechat.Groups, error) {
+func (b *Bot) GetGroups(ctx context.Context, refresh bool) (openwechat.Groups, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, wrapErr(err, "上下文已取消")
+	}
+
 	if !b.IsLoggedIn() {
 		return nil, ErrNotLoggedIn
 	}
@@ -172,7 +203,11 @@ func (b *Bot) GetGroups(refresh bool) (openwechat.Groups, error) {
 }
 
 // GetMps 获取公众号列表
-func (b *Bot) GetMps(refresh bool) (openwechat.Mps, error) {
+func (b *Bot) GetMps(ctx context.Context, refresh bool) (openwechat.Mps, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, wrapErr(err, "上下文已取消")
+	}
+
 	if !b.IsLoggedIn() {
 		return nil, ErrNotLoggedIn
 	}
@@ -186,7 +221,11 @@ func (b *Bot) GetMps(refresh bool) (openwechat.Mps, error) {
 }
 
 // SendText 发送文本消息
-func (b *Bot) SendText(to, content string) error {
+func (b *Bot) SendText(ctx context.Context, to, content string) error {
+	if err := ctx.Err(); err != nil {
+		return wrapErr(err, "上下文已取消")
+	}
+
 	if !b.IsLoggedIn() {
 		return ErrNotLoggedIn
 	}
@@ -199,7 +238,7 @@ func (b *Bot) SendText(to, content string) error {
 	// 查找联系人（这里简化处理，实际需要根据to查找具体联系人）
 	// 在实际实现中，需要根据to参数查找好友、群组或公众号
 	// 这里先返回一个占位错误
-	return fmt.Errorf("发送消息功能待实现: to=%s, content=%s", to, content[:min(50, len(content))])
+	return fmt.Errorf("发送消息功能待实现: to=%s, content=%s", to, truncate(content, 50))
 }
 
 // Close 关闭资源
@@ -208,4 +247,12 @@ func (b *Bot) Close() error {
 		return b.storage.Close()
 	}
 	return nil
+}
+
+// truncate 截断字符串，辅助函数
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

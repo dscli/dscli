@@ -1,6 +1,7 @@
 package wechat
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -37,10 +38,14 @@ func NewMessageManager(db *sql.DB, bot *Bot) *MessageManager {
 }
 
 // SaveMessage 保存消息到数据库
-func (m *MessageManager) SaveMessage(msg *Message) error {
+func (m *MessageManager) SaveMessage(ctx context.Context, msg *Message) error {
+	if err := ctx.Err(); err != nil {
+		return wrapErr(err, "上下文已取消")
+	}
+
 	// 获取当前会话ID
 	var sessionID int64
-	err := m.db.QueryRow(`
+	err := m.db.QueryRowContext(ctx, `
 		SELECT id FROM wechat_sessions 
 		WHERE account = ? AND is_active = 1 
 		ORDER BY updated_at DESC LIMIT 1
@@ -49,7 +54,7 @@ func (m *MessageManager) SaveMessage(msg *Message) error {
 		return wrapErr(err, "获取会话ID失败")
 	}
 
-	_, err = m.db.Exec(`
+	_, err = m.db.ExecContext(ctx, `
 		INSERT INTO wechat_messages 
 		(session_id, wx_msg_id, direction, from_user, to_user, content, msg_type, status, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -62,9 +67,13 @@ func (m *MessageManager) SaveMessage(msg *Message) error {
 }
 
 // GetUnreadMessages 获取未读消息
-func (m *MessageManager) GetUnreadMessages(limit int) ([]Message, error) {
+func (m *MessageManager) GetUnreadMessages(ctx context.Context, limit int) ([]Message, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, wrapErr(err, "上下文已取消")
+	}
+
 	var sessionID int64
-	err := m.db.QueryRow(`
+	err := m.db.QueryRowContext(ctx, `
 		SELECT id FROM wechat_sessions 
 		WHERE account = ? AND is_active = 1 
 		ORDER BY updated_at DESC LIMIT 1
@@ -77,7 +86,7 @@ func (m *MessageManager) GetUnreadMessages(limit int) ([]Message, error) {
 		return nil, wrapErr(err, "获取会话ID失败")
 	}
 
-	rows, err := m.db.Query(`
+	rows, err := m.db.QueryContext(ctx, `
 		SELECT id, wx_msg_id, direction, from_user, to_user, content, msg_type, status, created_at
 		FROM wechat_messages
 		WHERE session_id = ? AND status = 'unread'
@@ -106,9 +115,13 @@ func (m *MessageManager) GetUnreadMessages(limit int) ([]Message, error) {
 }
 
 // GetRecentMessages 获取最近消息
-func (m *MessageManager) GetRecentMessages(limit int) ([]Message, error) {
+func (m *MessageManager) GetRecentMessages(ctx context.Context, limit int) ([]Message, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, wrapErr(err, "上下文已取消")
+	}
+
 	var sessionID int64
-	err := m.db.QueryRow(`
+	err := m.db.QueryRowContext(ctx, `
 		SELECT id FROM wechat_sessions 
 		WHERE account = ? AND is_active = 1 
 		ORDER BY updated_at DESC LIMIT 1
@@ -121,7 +134,7 @@ func (m *MessageManager) GetRecentMessages(limit int) ([]Message, error) {
 		return nil, wrapErr(err, "获取会话ID失败")
 	}
 
-	rows, err := m.db.Query(`
+	rows, err := m.db.QueryContext(ctx, `
 		SELECT id, wx_msg_id, direction, from_user, to_user, content, msg_type, status, created_at
 		FROM wechat_messages
 		WHERE session_id = ?
@@ -150,8 +163,12 @@ func (m *MessageManager) GetRecentMessages(limit int) ([]Message, error) {
 }
 
 // MarkAsRead 标记消息为已读
-func (m *MessageManager) MarkAsRead(messageID string) error {
-	_, err := m.db.Exec(`
+func (m *MessageManager) MarkAsRead(ctx context.Context, messageID string) error {
+	if err := ctx.Err(); err != nil {
+		return wrapErr(err, "上下文已取消")
+	}
+
+	_, err := m.db.ExecContext(ctx, `
 		UPDATE wechat_messages 
 		SET status = 'read'
 		WHERE id = ?
@@ -164,8 +181,12 @@ func (m *MessageManager) MarkAsRead(messageID string) error {
 }
 
 // MarkAsReplied 标记消息为已回复
-func (m *MessageManager) MarkAsReplied(messageID, replyContent string) error {
-	_, err := m.db.Exec(`
+func (m *MessageManager) MarkAsReplied(ctx context.Context, messageID, replyContent string) error {
+	if err := ctx.Err(); err != nil {
+		return wrapErr(err, "上下文已取消")
+	}
+
+	_, err := m.db.ExecContext(ctx, `
 		UPDATE wechat_messages 
 		SET status = 'replied', reply_content = ?, replied_at = ?
 		WHERE id = ?
@@ -178,11 +199,15 @@ func (m *MessageManager) MarkAsReplied(messageID, replyContent string) error {
 }
 
 // GetMessageByID 根据ID获取消息
-func (m *MessageManager) GetMessageByID(messageID string) (*Message, error) {
+func (m *MessageManager) GetMessageByID(ctx context.Context, messageID string) (*Message, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, wrapErr(err, "上下文已取消")
+	}
+
 	var msg Message
 	var dbID int64
 
-	err := m.db.QueryRow(`
+	err := m.db.QueryRowContext(ctx, `
 		SELECT id, wx_msg_id, direction, from_user, to_user, content, msg_type, status, created_at
 		FROM wechat_messages
 		WHERE id = ?
@@ -201,7 +226,11 @@ func (m *MessageManager) GetMessageByID(messageID string) (*Message, error) {
 }
 
 // ConvertOpenWechatMessage 转换openwechat消息到内部格式
-func ConvertOpenWechatMessage(wxMsg *openwechat.Message, direction string) (*Message, error) {
+func ConvertOpenWechatMessage(ctx context.Context, wxMsg *openwechat.Message, direction string) (*Message, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, wrapErr(err, "上下文已取消")
+	}
+
 	msg := &Message{
 		WxMsgID:   wxMsg.MsgId, // MsgId是字符串类型
 		Direction: direction,
