@@ -58,7 +58,8 @@ var codeReviewTool = ToolDef{
 				"pattern":     ContentLikePattern(128),
 			},
 		},
-		"required": []string{"summary"},
+		"required":             []string{"summary"},
+		"additionalProperties": false,
 	},
 	Category: "git",
 	Timeout:  5 * time.Minute, // 5分钟超时

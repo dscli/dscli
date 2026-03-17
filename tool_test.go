@@ -77,8 +77,14 @@ func TestGetAllTools(t *testing.T) {
 		name    string // description of this test case
 		checker func(Tool) bool
 	}{
-		{"every tool should in strict", func(tool Tool) bool {
+		{"in strict", func(tool Tool) bool {
 			return tool.Function.Strict
+		}},
+		{"no additional property", func(tool Tool) bool {
+			if additionalProperties, ok := tool.Function.Parameters["additionalProperties"]; ok {
+				return !additionalProperties.(bool)
+			}
+			return false
 		}},
 	}
 	for _, tt := range tests {
