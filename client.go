@@ -224,26 +224,47 @@ func (c *Deepseek) Chat(ctx context.Context, messages []Message, tools []Tool) (
 			},
 		}, nil
 	}
+	maxTokens := 4096
+	maxAttempts := 2
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		// reset reasoning
+		req := ChatRequest{
+			Model:     model,
+			Messages:  messages,
+			Tools:     tools,
+			MaxTokens: maxTokens,
+			Stream:    stream,
+		}
 
-	// reset reasoning
-	req := ChatRequest{
-		Model:    model,
-		Messages: messages,
-		Tools:    tools,
-		Stream:   stream,
-	}
+		// 如果是streaming请求，使用不同的处理方式
+		if stream {
+			return c.chatStream(ctx, req)
+		}
 
-	// 如果是streaming请求，使用不同的处理方式
-	if stream {
-		return c.chatStream(ctx, req)
-	}
+		var resp ChatResponse
+		err := c.doRequest("POST", "/chat/completions", req, &resp)
+		if err != nil {
+			return nil, err
+		}
 
-	var resp ChatResponse
-	err := c.doRequest("POST", "/chat/completions", req, &resp)
-	if err != nil {
-		return nil, err
+		if len(resp.Choices) == 0 {
+			return nil, fmt.Errorf("no choices in response")
+		}
+
+		choice := resp.Choices[0]
+		if choice.FinishReason != "length" {
+			return &resp, err
+		}
+		// 如果是 length，且还有尝试次数，则增加 maxTokens 继续
+		if attempt < maxAttempts {
+			maxTokens = 8192
+			// 注意：此时不应将本次截断的响应加入 messages，所以 messages 保持不变
+			continue
+		}
+		// 最后一次尝试仍 length，返回响应（或自定义错误）
+		return &resp, fmt.Errorf("response truncated after %d attempts", maxAttempts)
 	}
-	return &resp, err
+	return nil, fmt.Errorf("unexpected loop exit")
 }
 
 // chatStream 处理streaming聊天请求

@@ -100,6 +100,16 @@ func UpdateContent(ctx context.Context, id int64, content string) (err error) {
 	return
 }
 
+func ToSQLNullString(tcs []ToolCall) (toolCalls sql.NullString) {
+	data, err := JSONMarshal(tcs)
+	if err != nil {
+		return
+	}
+	toolCalls.String = string(data)
+	toolCalls.Valid = true
+	return
+}
+
 // UpdateToolCalls update message content
 func UpdateToolCalls(ctx context.Context, id int64, tcs []ToolCall) (err error) {
 	sessionID := ContextValue(ctx, CurrentSessionIDKey, int64(0))
@@ -109,13 +119,7 @@ func UpdateToolCalls(ctx context.Context, id int64, tcs []ToolCall) (err error) 
 		return
 	}
 	defer db.Close()
-	var toolCalls sql.NullString
-	data, err := JSONMarshal(tcs)
-	if err != nil {
-		return
-	}
-	toolCalls.String = string(data)
-	toolCalls.Valid = true
+	toolCalls := ToSQLNullString(tcs)
 	res, err := db.ExecContext(ctx,
 		`UPDATE messages SET tool_calls = ? WHERE id = ? AND session_id = ? AND model_id = ?`,
 		&toolCalls, id, sessionID, modelID)

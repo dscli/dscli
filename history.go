@@ -62,7 +62,7 @@ func historyShowRunE(cmd *cobra.Command, args []string) (err error) {
 	wrt.Println("SessionID", fmt.Sprint(message.SessionID))
 	wrt.Println("Role", message.Role)
 	wrt.Println("ToolCallID", message.ToolCallID)
-	wrt.Println("ToolCalls", fmt.Sprint(message.ToolCalls))
+	wrt.Println("ToolCalls", ToSQLNullString(message.ToolCalls).String)
 	wrt.Println("ReasoningContent", message.ReasoningContent)
 	wrt.Println("Content", message.Content)
 	return

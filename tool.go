@@ -19,6 +19,7 @@ type Tool struct {
 type Function struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
+	Strict      bool           `json:"strict,omitempty"`
 	Parameters  map[string]any `json:"parameters"` // JSON Schema 对象
 }
 
