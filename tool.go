@@ -184,12 +184,41 @@ which lead to the error:
 		return tool.Handler(ctx, args)
 	}
 
+	// ✅ 新增：显示工具执行开始
+	displayName := tool.DisplayName
+	if displayName == "" {
+		displayName = tool.Name
+	}
+	Printf("🔄 正在执行 %s...\n", displayName)
+
 	// 执行工具
 	result, err := tool.Handler(ctx, args)
 
 	// 检查是否超时
 	if ctx.Err() == context.DeadlineExceeded {
 		err = fmt.Errorf("工具执行超时（%v）", tool.Timeout)
+	}
+
+	// ✅ 新增：立即显示执行结果
+	if err != nil {
+		Printf("❌ %s 执行失败: %v\n", displayName, err)
+	} else {
+		Printf("✅ %s 执行成功\n", displayName)
+		// 如果结果简短，显示结果摘要
+		if result != "" {
+			// 清理结果，移除多余空白
+			cleanResult := strings.TrimSpace(result)
+			if len(cleanResult) > 0 {
+				// 显示前200个字符作为摘要
+				summary := cleanResult
+				if len(summary) > 200 {
+					summary = summary[:197] + "..."
+				}
+				// 移除换行符，使输出更紧凑
+				summary = strings.ReplaceAll(summary, "\n", " ")
+				Printf("   结果: %s\n", summary)
+			}
+		}
 	}
 
 	// 记录使用情况

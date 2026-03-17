@@ -253,6 +253,7 @@ func init() {
   
   # 修改第10-20行（后备方案）
   write_code_section(path="config.yaml", selector="lines:10-20", new_content="new config content")`,
+		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -266,7 +267,8 @@ func init() {
 				},
 				"new_content": map[string]any{
 					"type":        "string",
-					"description": "要写入的新内容",
+					"description": "要写入的新内容, 建议不超过4096字符",
+					"pattern":     "^[\\s\\S]{1,4096}$",
 				},
 				"dry_run": map[string]any{
 					"type":        "boolean",

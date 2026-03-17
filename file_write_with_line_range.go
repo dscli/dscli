@@ -17,7 +17,7 @@ func init() {
 
 参数：
   path: 文件路径（必需）
-  content: 要写入的内容（必需，可以为空字符串表示删除）
+  content: 要写入的内容（必需，可以为空字符串表示删除, 建议不超过4096字符）
   start_line: 起始行号（可选，默认1）
   end_line: 结束行号（可选，默认到文件末尾）
 
@@ -53,6 +53,7 @@ func init() {
   
   # 创建新文件并写入内容
   write_file_with_line_range(path="new.txt", content="文件内容")`,
+		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -62,7 +63,8 @@ func init() {
 				},
 				"content": map[string]any{
 					"type":        "string",
-					"description": "要写入的内容，可以为空字符串表示删除",
+					"description": "要写入的内容，可以为空字符串表示删除, 建议不超过4096个字符",
+					"pattern":     "^[\\s\\S]{1,4096}$",
 				},
 				"start_line": map[string]any{
 					"type":        "integer",
