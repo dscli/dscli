@@ -211,10 +211,7 @@ which lead to the error:
 			cleanResult := strings.TrimSpace(result)
 			if len(cleanResult) > 0 {
 				// 显示前200个字符作为摘要
-				summary := cleanResult
-				if len(summary) > 200 {
-					summary = summary[:197] + "..."
-				}
+				summary := TruncateString(cleanResult, 200)
 				// 移除换行符，使输出更紧凑
 				summary = strings.ReplaceAll(summary, "\n", " ")
 				Printf("   结果: %s\n", summary)
