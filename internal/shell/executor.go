@@ -327,6 +327,11 @@ func isPathAllowed(path string, allowedPaths []string) bool {
 		return false
 	}
 
+	// 特殊处理 /dev/null，这是一个安全的特殊设备文件
+	if absPath == "/dev/null" {
+		return true
+	}
+
 	// 检查路径是否在允许的路径范围内
 	for _, allowed := range allowedPaths {
 		absAllowed, err := filepath.Abs(allowed)

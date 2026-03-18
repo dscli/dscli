@@ -332,6 +332,7 @@ func executeWithShellPackage(ctx context.Context, script string) (out string, er
 				"head", "tail", "wc", "sort", "uniq", "cut", "tr", "sed", "awk",
 				"mkdir", "rm", "cp", "mv", "chmod", "chown",
 				"curl", "wget", "tar", "gzip", "unzip",
+				"go", "date", "python", "python3",
 				"/usr/bin/env", "/bin/bash", "/bin/sh",
 			},
 			AllowedPaths: []string{ProjectRoot},
