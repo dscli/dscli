@@ -33,7 +33,7 @@ func handleIssueReopen(ctx context.Context, args ToolArgs) (string, error) {
 		return "", fmt.Errorf("必须提供issue编号")
 	}
 
-	issue, err := ReopenIssue(number)
+	issue, err := ReopenIssue(ctx, number)
 	if err != nil {
 		return "", err
 	}

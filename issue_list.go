@@ -15,7 +15,7 @@ func handleIssueList(ctx context.Context, args ToolArgs) (string, error) {
 		return "", fmt.Errorf("状态必须是 'open'、'closed' 或 'all'，收到: %s", state)
 	}
 
-	issues, err := ListIssues(state)
+	issues, err := ListIssues(ctx, state)
 	if err != nil {
 		return "", err
 	}

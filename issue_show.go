@@ -13,7 +13,7 @@ func handleIssueShow(ctx context.Context, args ToolArgs) (string, error) {
 		return "", fmt.Errorf("必须提供issue编号")
 	}
 
-	issue, err := ShowIssue(number)
+	issue, err := ShowIssue(ctx, number)
 	if err != nil {
 		return "", err
 	}

@@ -17,7 +17,7 @@ func handleIssueAssign(ctx context.Context, args ToolArgs) (string, error) {
 		return "", fmt.Errorf("必须提供用户名")
 	}
 
-	issue, err := AssignIssue(number, username)
+	issue, err := AssignIssue(ctx, number, username)
 	if err != nil {
 		return "", err
 	}

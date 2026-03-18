@@ -643,7 +643,6 @@ func (g *defaultTokenGetter) GetToken(host string) (string, error) {
 }
 
 // issueAPIBaseURLWithDeps 可测试的版本，接受依赖注入
-// issueAPIBaseURLWithDeps 可测试的版本，接受依赖注入
 func issueAPIBaseURLWithDeps(originURL string, getter tokenGetter) (baseURL string, token string, repo string, err error) {
 	originURL = strings.TrimSpace(originURL)
 
@@ -746,7 +745,7 @@ func TestIssueAPIBaseURLWithDeps(t *testing.T) {
 			name:          "SSH格式-gitcode.com-成功",
 			originURL:     "git@gitcode.com:owner/repo.git",
 			tokenMap:      map[string]string{"gitcode.com": "test-token-123"},
-			expectBaseURL: "https://api.gitcode.com/api/v5/repos/owner/repo/issues",
+			expectBaseURL: "https://api.gitcode.com/api/v5/repos/owner/issues",
 			expectToken:   "test-token-123",
 			expectErr:     false,
 		},
@@ -754,7 +753,7 @@ func TestIssueAPIBaseURLWithDeps(t *testing.T) {
 			name:          "HTTPS格式-gitcode.com-成功",
 			originURL:     "https://gitcode.com/owner/repo.git",
 			tokenMap:      map[string]string{"gitcode.com": "test-token-456"},
-			expectBaseURL: "https://api.gitcode.com/api/v5/repos/owner/repo/issues",
+			expectBaseURL: "https://api.gitcode.com/api/v5/repos/owner/issues",
 			expectToken:   "test-token-456",
 			expectErr:     false,
 		},
@@ -762,7 +761,7 @@ func TestIssueAPIBaseURLWithDeps(t *testing.T) {
 			name:          "无.git后缀",
 			originURL:     "https://gitcode.com/owner/repo",
 			tokenMap:      map[string]string{"gitcode.com": "test-token-789"},
-			expectBaseURL: "https://api.gitcode.com/api/v5/repos/owner/repo/issues",
+			expectBaseURL: "https://api.gitcode.com/api/v5/repos/owner/issues",
 			expectToken:   "test-token-789",
 			expectErr:     false,
 		},
@@ -770,7 +769,7 @@ func TestIssueAPIBaseURLWithDeps(t *testing.T) {
 			name:          "HTTP格式",
 			originURL:     "http://gitcode.com/owner/repo.git",
 			tokenMap:      map[string]string{"gitcode.com": "test-token-http"},
-			expectBaseURL: "https://api.gitcode.com/api/v5/repos/owner/repo/issues",
+			expectBaseURL: "https://api.gitcode.com/api/v5/repos/owner/issues",
 			expectToken:   "test-token-http",
 			expectErr:     false,
 		},
@@ -861,7 +860,7 @@ func TestIssueAPIBaseURLWithDeps(t *testing.T) {
 			}
 
 			if baseURL != tc.expectBaseURL {
-				t.Errorf("baseURL不匹配: 期望='%s', 实际='%s'", tc.expectBaseURL, baseURL)
+				t.Errorf("baseURL不匹配: \n期望='%s', \n实际='%s'", tc.expectBaseURL, baseURL)
 			}
 
 			if token != tc.expectToken {
@@ -888,7 +887,8 @@ func TestIssueAPIBaseURLCompatibility(t *testing.T) {
 		t.Run(url, func(t *testing.T) {
 			// 由于 GetTokenFromNetrc 可能失败（没有 .netrc 文件）
 			// 我们只测试URL解析部分，忽略token错误
-			_, _, _, err1 := IssueAPIBaseURL(url)
+			ic1 := &IssueConfig{}
+			err1 := IssueAPIBaseURL(url, ic1)
 			_, _, _, err2 := issueAPIBaseURLWithDeps(url, getter)
 
 			// 如果两个都成功或都失败（且错误类型相同），则通过

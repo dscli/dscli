@@ -15,7 +15,7 @@ func handleIssueCreate(ctx context.Context, args ToolArgs) (string, error) {
 
 	body := ToolArgsValue(args, "body", "")
 
-	issue, err := CreateIssue(CreateIssueOptions{
+	issue, err := CreateIssue(ctx, CreateIssueOptions{
 		Title: title,
 		Body:  body,
 	})

@@ -11,35 +11,31 @@ import (
 )
 
 // GetIssueConfig 获取issue配置信息
-func GetIssueConfig() (*IssueConfig, error) {
+func GetIssueConfig(ctx context.Context) (issueConfig *IssueConfig, err error) {
 	// 使用context.Background()，因为CLI命令可能没有传递context
 	// 在实际调用中，ShellExec会处理context
-	originURL, err := ShellExec(context.Background(), `git remote get-url origin`)
+	issueConfig = &IssueConfig{}
+	originURL, err := ShellExec(ctx, `git remote get-url origin`)
 	if err != nil {
 		return nil, fmt.Errorf("获取git远程URL失败: %w", err)
 	}
 
-	baseURL, token, repo, err := IssueAPIBaseURL(originURL)
+	err = IssueAPIBaseURL(originURL, issueConfig)
 	if err != nil {
 		return nil, fmt.Errorf("解析API URL失败: %w", err)
 	}
-
-	return &IssueConfig{
-		BaseURL: baseURL,
-		Token:   token,
-		Repo:    repo,
-	}, nil
+	return
 }
 
 // ListIssues 列出issues
-func ListIssues(state string) ([]Issue, error) {
-	config, err := GetIssueConfig()
+func ListIssues(ctx context.Context, state string) ([]Issue, error) {
+	config, err := GetIssueConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	// 构建URL
-	url := fmt.Sprintf("%s?access_token=%s&state=%s", config.BaseURL, config.Token, state)
+	url := fmt.Sprintf("%s/issues?access_token=%s&state=%s", config.BaseURL, config.Token, state)
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("请求issue列表失败: %w", err)
@@ -79,17 +75,21 @@ func ListIssues(state string) ([]Issue, error) {
 }
 
 // ShowIssue 显示单个issue详情
-func ShowIssue(number int) (*Issue, error) {
-	config, err := GetIssueConfig()
+func ShowIssue(ctx context.Context, number int) (*Issue, error) {
+	if number == 0 {
+		return nil, fmt.Errorf("必须提供issue编号")
+	}
+
+	config, err := GetIssueConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	// 构建URL
-	url := fmt.Sprintf("%s/%d?access_token=%s", config.BaseURL, number, config.Token)
+	url := fmt.Sprintf("%s/issues/%d?access_token=%s", config.BaseURL, number, config.Token)
 	resp, err := http.Get(url)
 	if err != nil {
-		return nil, fmt.Errorf("请求issue失败: %w", err)
+		return nil, fmt.Errorf("请求issue详情失败: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -130,32 +130,29 @@ type CreateIssueOptions struct {
 	Body  string
 }
 
-func CreateIssue(opts CreateIssueOptions) (*Issue, error) {
+func CreateIssue(ctx context.Context, opts CreateIssueOptions) (*Issue, error) {
 	if opts.Title == "" {
-		return nil, fmt.Errorf("必须提供标题")
+		return nil, fmt.Errorf("必须提供issue标题")
 	}
 
-	config, err := GetIssueConfig()
+	config, err := GetIssueConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	// 准备请求数据
 	requestData := map[string]any{
-		"title": opts.Title,
+		"repo":        config.Repo,
+		"title":       opts.Title,
+		"description": opts.Body,
 	}
-	if opts.Body != "" {
-		requestData["body"] = opts.Body
-	}
-
-	// 转换为JSON
 	jsonData, err := JSONMarshal(requestData)
 	if err != nil {
 		return nil, fmt.Errorf("序列化请求数据失败: %w", err)
 	}
 
 	// 发送POST请求
-	url := fmt.Sprintf("%s?access_token=%s", config.BaseURL, config.Token)
+	url := fmt.Sprintf("%s/issues?access_token=%s", config.BaseURL, config.Token)
 	req, err := http.NewRequest("POST", url, strings.NewReader(string(jsonData)))
 	if err != nil {
 		return nil, fmt.Errorf("创建请求失败: %w", err)
@@ -170,7 +167,7 @@ func CreateIssue(opts CreateIssueOptions) (*Issue, error) {
 	defer resp.Body.Close()
 
 	// 检查HTTP状态码
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+	if resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, &IssueAPIError{
 			StatusCode: resp.StatusCode,
@@ -208,7 +205,7 @@ type UpdateIssueOptions struct {
 	State  string
 }
 
-func UpdateIssue(opts UpdateIssueOptions) (*Issue, error) {
+func UpdateIssue(ctx context.Context, opts UpdateIssueOptions) (*Issue, error) {
 	if opts.Number == 0 {
 		return nil, fmt.Errorf("必须提供issue编号")
 	}
@@ -223,7 +220,7 @@ func UpdateIssue(opts UpdateIssueOptions) (*Issue, error) {
 		return nil, fmt.Errorf("状态必须是 'open' 或 'closed'，收到: %s", opts.State)
 	}
 
-	config, err := GetIssueConfig()
+	config, err := GetIssueConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -263,14 +260,10 @@ func UpdateIssue(opts UpdateIssueOptions) (*Issue, error) {
 		return nil, fmt.Errorf("序列化请求数据失败: %w", err)
 	}
 
-	// 调试：打印请求数据
-	fmt.Printf("调试: 发送的请求数据: %s\n", string(jsonData))
-	fmt.Printf("调试: URL: %s\n", fmt.Sprintf("%s/%d?access_token=%s", config.BaseURL, opts.Number, config.Token))
-
 	// 发送PATCH请求
 	// GitCode API格式: PATCH /api/v5/repos/:owner/issues/:number
 	// 注意：URL中不包含repo，repo在请求体中
-	url := fmt.Sprintf("%s/%d?access_token=%s", config.BaseURL, opts.Number, config.Token)
+	url := fmt.Sprintf("%s/issues/%d?access_token=%s", config.BaseURL, opts.Number, config.Token)
 	req, err := http.NewRequest("PATCH", url, strings.NewReader(string(jsonData)))
 	if err != nil {
 		return nil, fmt.Errorf("创建请求失败: %w", err)
@@ -317,23 +310,33 @@ func UpdateIssue(opts UpdateIssueOptions) (*Issue, error) {
 }
 
 // CloseIssue 关闭issue
-func CloseIssue(number int) (*Issue, error) {
-	return UpdateIssue(UpdateIssueOptions{
+func CloseIssue(ctx context.Context, number int) (issue *Issue, err error) {
+	// 使用UpdateIssue来关闭issue，这样可以利用已有的逻辑
+	issue, err = UpdateIssue(ctx, UpdateIssueOptions{
 		Number: number,
 		State:  "closed",
 	})
+	if err != nil {
+		return nil, fmt.Errorf("关闭issue失败: %w", err)
+	}
+	return issue, nil
 }
 
 // ReopenIssue 重新打开issue
-func ReopenIssue(number int) (*Issue, error) {
-	return UpdateIssue(UpdateIssueOptions{
+func ReopenIssue(ctx context.Context, number int) (issue *Issue, err error) {
+	// 使用UpdateIssue来重新打开issue
+	issue, err = UpdateIssue(ctx, UpdateIssueOptions{
 		Number: number,
 		State:  "open",
 	})
+	if err != nil {
+		return nil, fmt.Errorf("重新打开issue失败: %w", err)
+	}
+	return issue, nil
 }
 
 // AssignIssue 分配issue给用户
-func AssignIssue(number int, username string) (*Issue, error) {
+func AssignIssue(ctx context.Context, number int, username string) (*Issue, error) {
 	if number == 0 {
 		return nil, fmt.Errorf("必须提供issue编号")
 	}
@@ -341,13 +344,14 @@ func AssignIssue(number int, username string) (*Issue, error) {
 		return nil, fmt.Errorf("必须提供用户名")
 	}
 
-	config, err := GetIssueConfig()
+	config, err := GetIssueConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	// 准备请求数据 - 分配issue
 	requestData := map[string]any{
+		"repo":         config.Repo,
 		"assignee_ids": []string{username},
 	}
 
@@ -357,9 +361,9 @@ func AssignIssue(number int, username string) (*Issue, error) {
 		return nil, fmt.Errorf("序列化请求数据失败: %w", err)
 	}
 
-	// 发送PUT请求（GitLab API使用PUT来更新assignee）
-	url := fmt.Sprintf("%s/%d?access_token=%s", config.BaseURL, number, config.Token)
-	req, err := http.NewRequest("PUT", url, strings.NewReader(string(jsonData)))
+	// 发送PATCH请求
+	url := fmt.Sprintf("%s/issues/%d?access_token=%s", config.BaseURL, number, config.Token)
+	req, err := http.NewRequest("PATCH", url, strings.NewReader(string(jsonData)))
 	if err != nil {
 		return nil, fmt.Errorf("创建请求失败: %w", err)
 	}

@@ -1,11 +1,91 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// ==================== Issue 相关类型 ====================
+
+// RawIssue 用于接收原始JSON数据
+type RawIssue struct {
+	ID        json.RawMessage `json:"id"`
+	Number    string          `json:"number"`
+	State     string          `json:"state"`
+	Title     string          `json:"title"`
+	Body      string          `json:"body"`
+	CreatedAt string          `json:"created_at"`
+	UpdatedAt string          `json:"updated_at"`
+	ClosedAt  string          `json:"closed_at"`
+	Labels    []Label         `json:"labels"`
+	Assignee  *RawUser        `json:"assignee"`
+	User      RawUser         `json:"user"`
+}
+
+// RawUser 原始用户数据
+type RawUser struct {
+	ID        json.RawMessage `json:"id"`
+	Login     string          `json:"login"`
+	Name      string          `json:"name"`
+	AvatarURL string          `json:"avatar_url"`
+}
+
+// Label 表示issue的标签
+type Label struct {
+	ID          int    `json:"id"`
+	Name        string `json:"name"`
+	Color       string `json:"color"`
+	Description string `json:"description"`
+}
+
+// Issue 处理后的issue数据结构
+type Issue struct {
+	ID        int
+	Number    string
+	State     string
+	Title     string
+	Body      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	ClosedAt  time.Time
+	Labels    []Label
+	Assignee  *User
+	User      User
+}
+
+// User 处理后的用户信息
+type User struct {
+	ID        int
+	Login     string
+	Name      string
+	AvatarURL string
+}
+
+// IssueAPIError 表示issue API调用错误
+type IssueAPIError struct {
+	StatusCode int
+	Message    string
+	Details    string
+}
+
+func (e *IssueAPIError) Error() string {
+	if e.Details != "" {
+		return fmt.Sprintf("issue API错误 (状态码: %d): %s\n详情: %s", e.StatusCode, e.Message, e.Details)
+	}
+	return fmt.Sprintf("issue API错误 (状态码: %d): %s", e.StatusCode, e.Message)
+}
+
+// IssueConfig 包含issue操作的配置信息
+type IssueConfig struct {
+	APIHost string
+	BaseURL string
+	Token   string
+	Owner   string
+	Repo    string // 仓库名称，用于GitCode API请求体
+}
 
 // parseRawIssue 将RawIssue转换为Issue
 func parseRawIssue(raw RawIssue) (Issue, error) {
@@ -168,14 +248,14 @@ func PrintIssue(issue Issue, detailed bool) {
 	}
 }
 
-func IssueAPIBaseURL(originURL string) (baseURL string, token string, repo string, err error) {
+func IssueAPIBaseURL(originURL string, issueConfig *IssueConfig) (err error) {
 	originURL = strings.TrimSpace(originURL)
 
 	// 移除.git后缀
 	originURL = strings.TrimSuffix(originURL, ".git")
 
 	// 解析URL，支持SSH和HTTPS格式
-	var host, owner string
+	var host, owner, repo string
 
 	if strings.HasPrefix(originURL, "git@") {
 		// SSH格式: git@gitcode.com:nanjunjie/dscli
@@ -222,7 +302,7 @@ func IssueAPIBaseURL(originURL string) (baseURL string, token string, repo strin
 	}
 
 	// 使用纯Go实现从.netrc获取token
-	token, err = GetTokenFromNetrc(host)
+	token, err := GetTokenFromNetrc(host)
 	if err != nil {
 		return
 	}
@@ -230,9 +310,11 @@ func IssueAPIBaseURL(originURL string) (baseURL string, token string, repo strin
 		err = fmt.Errorf("no token found for %s in ~/.netrc", host)
 		return
 	}
-	// GitCode API格式: /api/v5/repos/:owner/issues
-	// 注意：URL中不包含repo，repo在请求体中
-	baseURL = fmt.Sprintf("https://%s/repos/%s/issues",
-		apiHost, owner)
+	issueConfig.APIHost = apiHost
+	// 尝试使用/repos/:owner/:repo/issues格式
+	issueConfig.BaseURL = fmt.Sprintf("https://%s/repos/%s/%s", apiHost, owner, repo)
+	issueConfig.Token = token
+	issueConfig.Owner = owner
+	issueConfig.Repo = repo
 	return
 }

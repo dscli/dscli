@@ -63,7 +63,7 @@ func handleIssueUpdate(ctx context.Context, args ToolArgs) (string, error) {
 		return "", fmt.Errorf("状态必须是 'open' 或 'closed'，收到: %s", state)
 	}
 
-	issue, err := UpdateIssue(UpdateIssueOptions{
+	issue, err := UpdateIssue(ctx, UpdateIssueOptions{
 		Number: number,
 		Title:  title,
 		Body:   body,

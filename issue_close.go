@@ -12,7 +12,7 @@ func handleIssueClose(ctx context.Context, args ToolArgs) (string, error) {
 		return "", fmt.Errorf("必须提供issue编号")
 	}
 
-	issue, err := CloseIssue(number)
+	issue, err := CloseIssue(ctx, number)
 	if err != nil {
 		return "", err
 	}
