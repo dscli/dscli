@@ -10,13 +10,14 @@ import (
 )
 
 // newTestClient 创建测试用的客户端，使用较短的重试延迟
+// newTestClient 创建测试用的客户端，使用极短的重试延迟
 func newTestClient(apiKey, baseURL string) *Deepseek {
 	return &Deepseek{
 		apiKey:     apiKey,
 		baseURL:    baseURL,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 		maxRetries: 3,
-		retryDelay: 100 * time.Millisecond, // 测试使用较短延迟
+		retryDelay: 10 * time.Millisecond, // 测试使用极短延迟
 	}
 }
 

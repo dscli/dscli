@@ -109,11 +109,11 @@ func TestShowEmacsAnimationIntegration(t *testing.T) {
 		}()
 
 		// 立即发送完成信号
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 		done <- true
 
 		// 给一点时间让goroutine结束
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 
 		os.Unsetenv("EMACS")
 	})
@@ -132,11 +132,11 @@ func TestShowEmacsAnimationIntegration(t *testing.T) {
 		}()
 
 		// 立即取消
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 		cancel()
 
 		// 给一点时间让goroutine结束
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 
 		os.Unsetenv("EMACS")
 	})
