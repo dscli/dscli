@@ -76,7 +76,7 @@ func handleShell(ctx context.Context, args ToolArgs) (out string, err error) {
 	if summary == "" {
 		summary = "\n```bash\n" + script + "\n```\n"
 	}
-	Notice("💻 执行Shell%s", summary)
+	Notice("💻 执行Shell%s", TruncateString(summary, 100))
 	out, err = runShell(ctx, script)
 	return
 }

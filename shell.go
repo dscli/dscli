@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 
@@ -221,7 +222,6 @@ func ArrangeArgs(ctx context.Context, cacheFile string) (context.Context, bool) 
 // ShellExec 是混合实现的 Shell 执行函数
 // 对于 shell 命令使用新的 internal/shell 包
 // 对于非 shell 命令回退到原始的 os/exec 实现
-// ShellExec 执行 shell 脚本
 func ShellExec(ctx context.Context, script string) (out string, err error) {
 	verbose := ContextValue(ctx, VerboseKey, false)
 	// 解析 shebang
@@ -316,28 +316,33 @@ func ShellExec(ctx context.Context, script string) (out string, err error) {
 	}
 }
 
+func ShellExecConfig() *shell.Config {
+	config := shell.DefaultConfig()
+	for _, command := range []string{
+		"bash", "sh", "zsh",
+		"echo", "ls", "cat", "git", "find", "grep",
+		"head", "tail", "wc", "sort", "uniq", "cut", "tr", "sed", "awk",
+		"mkdir", "rm", "cp", "mv", "chmod", "chown", "which",
+		"curl", "wget", "tar", "gzip", "unzip",
+		"go", "date", "python", "python3", "make",
+		"/usr/bin/env", "/bin/bash", "/bin/sh",
+	} {
+		if !slices.Contains(config.SandboxConfig.AllowedCommands, command) {
+			config.SandboxConfig.AllowedCommands = append(config.SandboxConfig.AllowedCommands, command)
+		}
+	}
+	config.SandboxConfig.AllowedPaths = append(config.SandboxConfig.AllowedPaths, ProjectRoot)
+	config.WorkingDir = ProjectRoot
+	config.Timeout = 60 * time.Second
+	config.SandboxMode = !IsTesting()
+	config.EnvVars = append(os.Environ(), "InsideShellExec=1")
+	return config
+}
+
 // executeWithShellPackage 使用新的 shell 包执行命令
 func executeWithShellPackage(ctx context.Context, script string) (out string, err error) {
 	// 创建 shell 配置
-	config := &shell.Config{
-		WorkingDir:  ProjectRoot,
-		Timeout:     60 * time.Second,
-		StrictMode:  true,
-		SandboxMode: !IsTesting(),
-		EnvVars:     append(os.Environ(), "InsideShellExec=1"),
-		SandboxConfig: &shell.SandboxConfig{
-			AllowedCommands: []string{
-				"bash", "sh", "zsh",
-				"echo", "ls", "cat", "git", "find", "grep",
-				"head", "tail", "wc", "sort", "uniq", "cut", "tr", "sed", "awk",
-				"mkdir", "rm", "cp", "mv", "chmod", "chown",
-				"curl", "wget", "tar", "gzip", "unzip",
-				"go", "date", "python", "python3",
-				"/usr/bin/env", "/bin/bash", "/bin/sh",
-			},
-			AllowedPaths: []string{ProjectRoot},
-		},
-	}
+	config := ShellExecConfig()
 
 	// 创建执行器
 	executor := shell.NewExecutor(config)
@@ -363,7 +368,6 @@ func executeWithShellPackage(ctx context.Context, script string) (out string, er
 	return result.Stdout, nil
 }
 
-// executeWithOSExec 使用原始的 os/exec 实现执行命令
 // executeWithOSExec 使用原始的 os/exec 实现执行命令
 func executeWithOSExec(ctx context.Context, name string, args []string, script string, stdin io.Reader) (out string, err error) {
 	// 这是原始的 ShellExec 实现的核心部分
