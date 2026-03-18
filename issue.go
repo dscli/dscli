@@ -178,7 +178,7 @@ func IssueAPIBaseURL(originURL string) (baseURL string, token string, repo strin
 	var host, owner string
 
 	if strings.HasPrefix(originURL, "git@") {
-		// SSH格式: git@gitcode.com:dscli/dscli
+		// SSH格式: git@gitcode.com:nanjunjie/dscli
 		parts := strings.Split(originURL, ":")
 		if len(parts) != 2 {
 			err = fmt.Errorf("invalid SSH URL format: %s", originURL)
@@ -194,7 +194,7 @@ func IssueAPIBaseURL(originURL string) (baseURL string, token string, repo strin
 		owner = pathParts[0]
 		repo = pathParts[1] // 需要repo参数用于请求体
 	} else if strings.HasPrefix(originURL, "http") {
-		// HTTPS格式: https://gitcode.com/dscli/dscli
+		// HTTPS格式: https://gitcode.com/nanjunjie/dscli
 		// 移除协议前缀
 		urlWithoutProtocol := strings.TrimPrefix(originURL, "https://")
 		urlWithoutProtocol = strings.TrimPrefix(urlWithoutProtocol, "http://")

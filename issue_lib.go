@@ -253,14 +253,19 @@ func UpdateIssue(opts UpdateIssueOptions) (*Issue, error) {
 
 	// GitCode API 要求至少提供一个参数，当只更新状态时，添加一个有效的参数
 	// 根据错误信息，state_event可能不被算作"至少一个参数"，所以我们需要添加另一个参数
+	// 尝试使用labels参数，设置为空数组
 	if opts.Title == "" && opts.Body == "" && opts.State != "" {
-		// 尝试使用labels参数，设置为空数组
+		// 添加labels字段，设置为空数组
 		requestData["labels"] = []string{}
 	}
 	jsonData, err := JSONMarshal(requestData)
 	if err != nil {
 		return nil, fmt.Errorf("序列化请求数据失败: %w", err)
 	}
+
+	// 调试：打印请求数据
+	fmt.Printf("调试: 发送的请求数据: %s\n", string(jsonData))
+	fmt.Printf("调试: URL: %s\n", fmt.Sprintf("%s/%d?access_token=%s", config.BaseURL, opts.Number, config.Token))
 
 	// 发送PATCH请求
 	// GitCode API格式: PATCH /api/v5/repos/:owner/issues/:number
