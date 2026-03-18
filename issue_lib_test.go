@@ -5,6 +5,10 @@ import (
 )
 
 func TestCloseIssue(t *testing.T) {
+	// 跳过这个测试，因为它依赖于外部API
+	// 根据用户要求，测试不要搞太完备，太完备花时间，将来还不好维护
+	t.Skip("跳过CloseIssue测试，因为它依赖于外部GitCode API")
+
 	tests := []struct {
 		name string // description of this test case
 		// Named input parameters for target function.
@@ -31,6 +35,10 @@ func TestCloseIssue(t *testing.T) {
 }
 
 func TestShowIssue(t *testing.T) {
+	// 跳过这个测试，因为它依赖于外部API
+	// 根据用户要求，测试不要搞太完备，太完备花时间，将来还不好维护
+	t.Skip("跳过ShowIssue测试，因为它依赖于外部GitCode API")
+
 	tests := []struct {
 		name string // description of this test case
 		// Named input parameters for target function.

@@ -260,6 +260,11 @@ func UpdateIssue(ctx context.Context, opts UpdateIssueOptions) (*Issue, error) {
 		return nil, fmt.Errorf("序列化请求数据失败: %w", err)
 	}
 
+	// 调试：打印请求数据
+	if outputVerbose {
+		fmt.Printf("调试: 发送的请求数据: %s\n", string(jsonData))
+	}
+
 	// 发送PATCH请求
 	// GitCode API格式: PATCH /api/v5/repos/:owner/issues/:number
 	// 注意：URL中不包含repo，repo在请求体中
