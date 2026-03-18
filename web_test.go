@@ -205,14 +205,16 @@ func TestWeb2Markdown(t *testing.T) {
 func TestWeb2Markdown_ContextCancellation(t *testing.T) {
 	// 创建慢速服务器
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(50 * time.Millisecond) // 模拟慢速响应
+		time.Sleep(200 * time.Millisecond) // 模拟慢速响应（从50ms调整为200ms）
 		w.Write([]byte("content"))
 	}))
 	defer server.Close()
 
 	// 创建会很快取消的上下文
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond) // 从20ms调整为50ms
 	defer cancel()
+
+	// 调用Web2Markdown，应该因为超时而失败
 
 	// 调用Web2Markdown，应该因为超时而失败
 	_, err := Web2Markdown(ctx, server.URL)
