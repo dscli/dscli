@@ -329,6 +329,7 @@ func executeWithShellPackage(ctx context.Context, script string) (out string, er
 			AllowedCommands: []string{
 				"bash", "sh", "zsh",
 				"echo", "ls", "cat", "git", "find", "grep",
+				"head", "tail", "wc", "sort", "uniq", "cut", "tr", "sed", "awk",
 				"mkdir", "rm", "cp", "mv", "chmod", "chown",
 				"curl", "wget", "tar", "gzip", "unzip",
 				"/usr/bin/env", "/bin/bash", "/bin/sh",
