@@ -19,7 +19,7 @@ func GetIssueConfig() (*IssueConfig, error) {
 		return nil, fmt.Errorf("获取git远程URL失败: %w", err)
 	}
 
-	baseURL, token, err := IssueAPIBaseURL(originURL)
+	baseURL, token, repo, err := IssueAPIBaseURL(originURL)
 	if err != nil {
 		return nil, fmt.Errorf("解析API URL失败: %w", err)
 	}
@@ -27,6 +27,7 @@ func GetIssueConfig() (*IssueConfig, error) {
 	return &IssueConfig{
 		BaseURL: baseURL,
 		Token:   token,
+		Repo:    repo,
 	}, nil
 }
 
@@ -229,11 +230,16 @@ func UpdateIssue(opts UpdateIssueOptions) (*Issue, error) {
 
 	// 准备请求数据
 	requestData := make(map[string]any)
+	// GitCode API要求包含repo字段
+	if config.Repo != "" {
+		requestData["repo"] = config.Repo
+	}
+
 	if opts.Title != "" {
 		requestData["title"] = opts.Title
 	}
 	if opts.Body != "" {
-		requestData["body"] = opts.Body
+		requestData["description"] = opts.Body
 	}
 	if opts.State != "" {
 		// GitCode API 使用 "state_event" 而不是 "state"
@@ -245,13 +251,20 @@ func UpdateIssue(opts UpdateIssueOptions) (*Issue, error) {
 		}
 	}
 
-	// 转换为JSON
+	// GitCode API 要求至少提供一个参数，当只更新状态时，添加一个有效的参数
+	// 根据错误信息，state_event可能不被算作"至少一个参数"，所以我们需要添加另一个参数
+	if opts.Title == "" && opts.Body == "" && opts.State != "" {
+		// 尝试使用labels参数，设置为空数组
+		requestData["labels"] = []string{}
+	}
 	jsonData, err := JSONMarshal(requestData)
 	if err != nil {
 		return nil, fmt.Errorf("序列化请求数据失败: %w", err)
 	}
 
 	// 发送PATCH请求
+	// GitCode API格式: PATCH /api/v5/repos/:owner/issues/:number
+	// 注意：URL中不包含repo，repo在请求体中
 	url := fmt.Sprintf("%s/%d?access_token=%s", config.BaseURL, opts.Number, config.Token)
 	req, err := http.NewRequest("PATCH", url, strings.NewReader(string(jsonData)))
 	if err != nil {

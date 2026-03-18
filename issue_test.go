@@ -643,14 +643,15 @@ func (g *defaultTokenGetter) GetToken(host string) (string, error) {
 }
 
 // issueAPIBaseURLWithDeps 可测试的版本，接受依赖注入
-func issueAPIBaseURLWithDeps(originURL string, getter tokenGetter) (baseURL string, token string, err error) {
+// issueAPIBaseURLWithDeps 可测试的版本，接受依赖注入
+func issueAPIBaseURLWithDeps(originURL string, getter tokenGetter) (baseURL string, token string, repo string, err error) {
 	originURL = strings.TrimSpace(originURL)
 
 	// 移除.git后缀
 	originURL = strings.TrimSuffix(originURL, ".git")
 
 	// 解析URL，支持SSH和HTTPS格式
-	var host, owner, repo string
+	var host, owner string
 
 	if strings.HasPrefix(originURL, "git@") {
 		// SSH格式: git@gitcode.com:dscli/dscli
@@ -666,7 +667,8 @@ func issueAPIBaseURLWithDeps(originURL string, getter tokenGetter) (baseURL stri
 			err = fmt.Errorf("invalid path in SSH URL: %s", path)
 			return
 		}
-		owner, repo = pathParts[0], pathParts[1]
+		owner = pathParts[0]
+		repo = pathParts[1] // 需要repo参数用于请求体
 	} else if strings.HasPrefix(originURL, "http") {
 		// HTTPS格式: https://gitcode.com/dscli/dscli
 		// 移除协议前缀
@@ -679,7 +681,8 @@ func issueAPIBaseURLWithDeps(originURL string, getter tokenGetter) (baseURL stri
 			return
 		}
 		host = parts[0]
-		owner, repo = parts[1], parts[2]
+		owner = parts[1]
+		repo = parts[2] // 需要repo参数用于请求体
 	} else {
 		err = fmt.Errorf("unsupported URL format: %s", originURL)
 		return
@@ -704,8 +707,10 @@ func issueAPIBaseURLWithDeps(originURL string, getter tokenGetter) (baseURL stri
 		return
 	}
 
-	baseURL = fmt.Sprintf("https://%s/repos/%s/%s/issues",
-		apiHost, owner, repo)
+	// GitCode API格式: /api/v5/repos/:owner/issues
+	// 注意：URL中不包含repo，repo在请求体中
+	baseURL = fmt.Sprintf("https://%s/repos/%s/issues",
+		apiHost, owner)
 	return
 }
 
@@ -835,7 +840,7 @@ func TestIssueAPIBaseURLWithDeps(t *testing.T) {
 			}
 
 			// 执行测试
-			baseURL, token, err := issueAPIBaseURLWithDeps(tc.originURL, getter)
+			baseURL, token, _, err := issueAPIBaseURLWithDeps(tc.originURL, getter)
 
 			// 验证错误
 			if tc.expectErr {
@@ -883,8 +888,8 @@ func TestIssueAPIBaseURLCompatibility(t *testing.T) {
 		t.Run(url, func(t *testing.T) {
 			// 由于 GetTokenFromNetrc 可能失败（没有 .netrc 文件）
 			// 我们只测试URL解析部分，忽略token错误
-			_, _, err1 := IssueAPIBaseURL(url)
-			_, _, err2 := issueAPIBaseURLWithDeps(url, getter)
+			_, _, _, err1 := IssueAPIBaseURL(url)
+			_, _, _, err2 := issueAPIBaseURLWithDeps(url, getter)
 
 			// 如果两个都成功或都失败（且错误类型相同），则通过
 			if (err1 == nil && err2 == nil) ||

@@ -211,4 +211,5 @@ func (e *IssueAPIError) Error() string {
 type IssueConfig struct {
 	BaseURL string
 	Token   string
+	Repo    string // 仓库名称，用于GitCode API请求体
 }

@@ -168,14 +168,14 @@ func PrintIssue(issue Issue, detailed bool) {
 	}
 }
 
-func IssueAPIBaseURL(originURL string) (baseURL string, token string, err error) {
+func IssueAPIBaseURL(originURL string) (baseURL string, token string, repo string, err error) {
 	originURL = strings.TrimSpace(originURL)
 
 	// 移除.git后缀
 	originURL = strings.TrimSuffix(originURL, ".git")
 
 	// 解析URL，支持SSH和HTTPS格式
-	var host, owner, repo string
+	var host, owner string
 
 	if strings.HasPrefix(originURL, "git@") {
 		// SSH格式: git@gitcode.com:dscli/dscli
@@ -191,7 +191,8 @@ func IssueAPIBaseURL(originURL string) (baseURL string, token string, err error)
 			err = fmt.Errorf("invalid path in SSH URL: %s", path)
 			return
 		}
-		owner, repo = pathParts[0], pathParts[1]
+		owner = pathParts[0]
+		repo = pathParts[1] // 需要repo参数用于请求体
 	} else if strings.HasPrefix(originURL, "http") {
 		// HTTPS格式: https://gitcode.com/dscli/dscli
 		// 移除协议前缀
@@ -204,7 +205,8 @@ func IssueAPIBaseURL(originURL string) (baseURL string, token string, err error)
 			return
 		}
 		host = parts[0]
-		owner, repo = parts[1], parts[2]
+		owner = parts[1]
+		repo = parts[2] // 需要repo参数用于请求体
 	} else {
 		err = fmt.Errorf("unsupported URL format: %s", originURL)
 		return
@@ -228,7 +230,9 @@ func IssueAPIBaseURL(originURL string) (baseURL string, token string, err error)
 		err = fmt.Errorf("no token found for %s in ~/.netrc", host)
 		return
 	}
-	baseURL = fmt.Sprintf("https://%s/repos/%s/%s/issues",
-		apiHost, owner, repo)
+	// GitCode API格式: /api/v5/repos/:owner/issues
+	// 注意：URL中不包含repo，repo在请求体中
+	baseURL = fmt.Sprintf("https://%s/repos/%s/issues",
+		apiHost, owner)
 	return
 }
