@@ -5,6 +5,109 @@ import (
 	"unicode/utf8"
 )
 
+// 默认省略号（可根据需要修改为常量或配置）
+const ellipsis = "..."
+
+// ellipsisRuneLen 是省略号的字符长度（即 rune 数量），用于计算
+var ellipsisRuneLen = utf8.RuneCountInString(ellipsis)
+
+// TruncateString 截断字符串，并在末尾添加省略号
+// 参数:
+//
+//	s: 要截断的字符串
+//	maxLen: 截断后的最大字符数（包括省略号）
+//
+// 返回值:
+//
+//	截断后的字符串。如果字符串长度不超过maxLen，则返回原字符串。
+//	如果maxLen小于3，返回空字符串。
+//	否则返回前(maxLen-3)个字符加上"..."。
+//
+// 注意:
+//   - 使用[]rune处理Unicode字符，避免截断时出现乱码
+//   - 省略号"..."占用3个字符位置
+//   - 当maxLen < 3时，无法添加省略号，返回空字符串
+//
+// 示例:
+//
+//	TruncateString("Hello World", 8)  // 返回 "Hello..."
+//	TruncateString("你好世界", 4)      // 返回 "你好世界"
+//	TruncateString("Test", 2)         // 返回 "" (maxLen < 3)
+func TruncateString(s string, maxLen int) string {
+	if maxLen < 3 {
+		// 如果maxLen小于3，无法添加省略号，返回空字符串
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	return string(runes[:maxLen-3]) + ellipsis
+}
+
+// TruncateHead 截取字符串头部，超出部分用省略号代替。
+// 若原字符串长度 <= maxLen，直接返回原串。
+// 若 maxLen <= 省略号长度，返回省略号的前 maxLen 个字符。
+// 否则返回 "原串前若干字符" + "..."
+func TruncateHead(s string, maxLen int) string {
+	if maxLen < 0 {
+		return ""
+	}
+	// 将字符串转为 rune 切片，便于按字符截取
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	if maxLen <= ellipsisRuneLen {
+		// 返回省略号的前 maxLen 个字符
+		return string([]rune(ellipsis)[:maxLen])
+	}
+	keepLen := maxLen - ellipsisRuneLen
+	return string(runes[:keepLen]) + ellipsis
+}
+
+// TruncateTail 截取字符串尾部，超出部分用省略号代替。
+// 若原字符串长度 <= maxLen，直接返回原串。
+// 若 maxLen <= 省略号长度，返回省略号的前 maxLen 个字符。
+// 否则返回 "..." + "原串后若干字符"
+func TruncateTail(s string, maxLen int) string {
+	if maxLen < 0 {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	if maxLen <= ellipsisRuneLen {
+		return string([]rune(ellipsis)[:maxLen])
+	}
+	keepLen := maxLen - ellipsisRuneLen
+	return ellipsis + string(runes[len(runes)-keepLen:])
+}
+
+// TruncateHeadTail 截取字符串头部和尾部，中间用省略号连接。
+// 若原字符串长度 <= maxLen，直接返回原串。
+// 若 maxLen <= 省略号长度，返回省略号的前 maxLen 个字符。
+// 否则将可用字符数（maxLen - 省略号长度）平均分配给头尾（尾部可能多一个字符），返回 "头" + "..." + "尾"
+func TruncateHeadTail(s string, maxLen int) string {
+	if maxLen < 0 {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	if maxLen <= ellipsisRuneLen {
+		return string([]rune(ellipsis)[:maxLen])
+	}
+	avail := maxLen - ellipsisRuneLen
+	headLen := avail / 2
+	tailLen := avail - headLen // 当 avail 为奇数时，尾部多一个字符
+	head := runes[:headLen]
+	tail := runes[len(runes)-tailLen:]
+	return string(head) + ellipsis + string(tail)
+}
+
 // ToolResultTruncator 工具结果截断器
 type ToolResultTruncator struct {
 	// 最大字符数（rune数量）
@@ -89,8 +192,8 @@ func (t *ToolResultTruncator) truncateFromEnd(runes []rune) string {
 	return string(runes)
 }
 
-// SmartTruncateWithSummary 智能截断并添加摘要
-func SmartTruncateWithSummary(result string, maxRunes int) string {
+// TruncateSummary 智能截断并添加摘要
+func TruncateSummary(result string, maxRunes int) string {
 	if result == "" {
 		return result
 	}
@@ -105,11 +208,11 @@ func SmartTruncateWithSummary(result string, maxRunes int) string {
 
 	switch contentType {
 	case "json":
-		return truncateJSON(result, maxRunes)
+		return TruncateJSON(result, maxRunes)
 	case "markdown":
-		return truncateMarkdown(result, maxRunes)
+		return TruncateMarkdown(result, maxRunes)
 	case "log":
-		return truncateLog(result, maxRunes)
+		return TruncateHeadTail(result, maxRunes)
 	default:
 		return DefaultToolResultTruncator.truncateKeepBothEnds(runes)
 	}
@@ -145,8 +248,8 @@ func detectContentType(content string) string {
 	return "text"
 }
 
-// truncateJSON 截断JSON内容
-func truncateJSON(content string, maxRunes int) string {
+// TruncateJSON 截断JSON内容
+func TruncateJSON(content string, maxRunes int) string {
 	runes := []rune(content)
 	if len(runes) <= maxRunes {
 		return content
@@ -175,8 +278,8 @@ func truncateJSON(content string, maxRunes int) string {
 	return truncated + "\n\n[...JSON内容已截断...]\n"
 }
 
-// truncateMarkdown 截断Markdown内容
-func truncateMarkdown(content string, maxRunes int) string {
+// TruncateMarkdown 截断Markdown内容
+func TruncateMarkdown(content string, maxRunes int) string {
 	runes := []rune(content)
 	if len(runes) <= maxRunes {
 		return content
@@ -201,38 +304,4 @@ func truncateMarkdown(content string, maxRunes int) string {
 	}
 
 	return strings.Join(resultLines, "\n")
-}
-
-// truncateLog 截断日志内容
-func truncateLog(content string, maxRunes int) string {
-	runes := []rune(content)
-	if len(runes) <= maxRunes {
-		return content
-	}
-
-	// 对于日志，我们保留开头和结尾
-	// 开头保留40%，结尾保留40%，中间20%用标记替换
-	startRunes := int(float64(maxRunes) * 0.4)
-	endRunes := int(float64(maxRunes) * 0.4)
-	middleRunes := maxRunes - startRunes - endRunes - len([]rune("\n\n[...日志已截断...]\n\n"))
-
-	if startRunes <= 0 || endRunes <= 0 || middleRunes < 10 {
-		// 如果空间不足，只保留开头
-		return string(runes[:maxRunes]) + "\n[...日志已截断...]"
-	}
-
-	startPart := string(runes[:startRunes])
-	endPart := string(runes[len(runes)-endRunes:])
-
-	return startPart + "\n\n[...日志已截断...]\n\n" + endPart
-}
-
-// CountRunes 统计rune数量（UTF-8安全）
-func CountRunes(s string) int {
-	return utf8.RuneCountInString(s)
-}
-
-// CountBytes 统计字节数
-func CountBytes(s string) int {
-	return len(s)
 }

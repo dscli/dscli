@@ -470,37 +470,3 @@ func (s *Spinner) StopWithMessage(message string, success bool) {
 func IsVerbose() bool {
 	return outputVerbose
 }
-
-// TruncateString 截断字符串，并在末尾添加省略号
-// 参数:
-//
-//	s: 要截断的字符串
-//	maxLen: 截断后的最大字符数（包括省略号）
-//
-// 返回值:
-//
-//	截断后的字符串。如果字符串长度不超过maxLen，则返回原字符串。
-//	如果maxLen小于3，返回空字符串。
-//	否则返回前(maxLen-3)个字符加上"..."。
-//
-// 注意:
-//   - 使用[]rune处理Unicode字符，避免截断时出现乱码
-//   - 省略号"..."占用3个字符位置
-//   - 当maxLen < 3时，无法添加省略号，返回空字符串
-//
-// 示例:
-//
-//	TruncateString("Hello World", 8)  // 返回 "Hello..."
-//	TruncateString("你好世界", 4)      // 返回 "你好世界"
-//	TruncateString("Test", 2)         // 返回 "" (maxLen < 3)
-func TruncateString(s string, maxLen int) string {
-	if maxLen < 3 {
-		// 如果maxLen小于3，无法添加省略号，返回空字符串
-		return ""
-	}
-	runes := []rune(s)
-	if len(runes) <= maxLen {
-		return s
-	}
-	return string(runes[:maxLen-3]) + "..."
-}

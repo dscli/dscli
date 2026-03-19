@@ -207,7 +207,7 @@ func Web2Markdown(ctx context.Context, url string) (string, error) {
 		formatInfo,
 		executionTime)
 
-	Notice("读取网页: \"%s\"（%d字节，转换为%s）", url, contentLength, formatInfo)
+	Notice("读取网页: %q", url)
 	return result, nil
 }
 

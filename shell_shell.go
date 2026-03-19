@@ -105,12 +105,12 @@ func runShell(ctx context.Context, script string) (result string, err error) {
 		}
 		return result, nil
 	}
-
+	summary := TruncateString(out, 50)
 	// 简化成功输出，不显示执行时间
 	if isPython {
-		result = fmt.Sprintf("🐍 Python执行结果:\n%s", out)
+		result = fmt.Sprintf("🐍 Python执行结果:\n%s", summary)
 	} else {
-		result = fmt.Sprintf("💻 Shell执行结果:\n%s", out)
+		result = fmt.Sprintf("💻 Shell执行结果:\n%s", summary)
 	}
 
 	return
