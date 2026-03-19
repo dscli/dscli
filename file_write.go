@@ -101,11 +101,12 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (output string, err err
 		if formatErr != nil {
 			result += fmt.Sprintf("\n⚠️ 代码格式化失败: %v", formatErr)
 		} else if formatOutput != "" {
+			// 格式化成功且有输出
 			formatOutput = strings.TrimSpace(formatOutput)
 			result += fmt.Sprintf("\n✅ 代码格式化完成: %s", formatOutput)
-		} else {
-			result += "\n✅ 代码格式化完成"
 		}
+		// 注意：如果formatOutput为空且formatErr为nil，表示不需要格式化
+		// 这种情况下不添加任何格式化相关的消息
 
 		return result, nil
 	}
