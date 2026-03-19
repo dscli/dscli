@@ -407,7 +407,7 @@ func init() {
 	chatCmd.Flags().Int("histsize", 8, "history size loaded")
 	chatCmd.Flags().String("input", "", "read content from input file or read content from stdin if input file empty")
 	chatCmd.Flags().Bool("stream", false, "启用流式输出（SSE）")
-	chatCmd.Flags().String("codeformat", "make gofmt", "command to format source code")
+	chatCmd.Flags().String("codeformat", "go fmt ./...", "command to format source code")
 	chatCmd.Flags().String("maketest", "make test", "command to test source code")
 	chatCmd.Flags().String("makebuild", "make build", "command to build source code")
 }

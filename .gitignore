@@ -78,3 +78,4 @@ dscli_new
 
 # Python类
 __pycache__
+!test_*.go

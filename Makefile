@@ -49,7 +49,6 @@ gofmt:
 	@find . -type f -name '*.go' -exec goimports -w {} \; -exec gofumpt -w {} \;
 	@echo "运行 modernize 现代化工具..."
 	@modernize -any -fix ./...
-
 fmt-check:
 	@echo "检查代码格式（不修改文件）..."
 	@echo "检查 goimports..."

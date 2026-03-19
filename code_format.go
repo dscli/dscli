@@ -12,6 +12,10 @@ import (
 // 注意：这里设置ShellStdinKey为os.Stdin是有意的，目的是让mkfmt命令在OSExec中执行，
 // 而不是在internal/shell沙箱中执行。因为mkfmt脚本由用户提供，是可信任的，
 // 可能包含沙箱不允许的命令，但由于用户指定，是安全的。
+// CodeMakeFormat - run code format command provided in the context
+// 注意：这里设置ShellStdinKey为os.Stdin是有意的，目的是让mkfmt命令在OSExec中执行，
+// 而不是在internal/shell沙箱中执行。因为mkfmt脚本由用户提供，是可信任的，
+// 可能包含沙箱不允许的命令，但由于用户指定，是安全的。
 func CodeMakeFormat(ctx context.Context, exts ...string) (output string, err error) {
 	mkfmt := ContextValue(ctx, CodeFormatKey, "")
 
@@ -29,8 +33,8 @@ func CodeMakeFormat(ctx context.Context, exts ...string) (output string, err err
 			if ext == "" {
 				continue
 			}
-			ext = strings.TrimLeft(ext, ".")
-			if strings.Contains(mkfmt, ext) {
+			// 检查是否是Go文件扩展名
+			if strings.HasSuffix(ext, ".go") || ext == "go" {
 				needFmt = true
 				break
 			}
@@ -38,7 +42,7 @@ func CodeMakeFormat(ctx context.Context, exts ...string) (output string, err err
 	}
 
 	if !needFmt {
-		output = "no need run format"
+		// 不需要格式化，返回空字符串，不显示消息
 		return
 	}
 	ctx = context.WithValue(ctx, ShellStdinKey, os.Stdin)
@@ -142,7 +146,7 @@ func handleCodeFormat(ctx context.Context, args ToolArgs) (output string, err er
 		sb.WriteString("📄 输出内容:\n")
 		for i, line := range outputLines {
 			if line != "" {
-				sb.WriteString(fmt.Sprintf("  %d. %s\n", i+1, line))
+				fmt.Fprintf(&sb, "  %d. %s\n", i+1, line)
 			}
 		}
 	}
