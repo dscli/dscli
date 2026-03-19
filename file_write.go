@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 )
 
 func init() {
@@ -48,11 +50,63 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (output string, err err
 
 	append := ToolArgsValue(args, "append", false)
 	delete(args, "append")
-	if !append {
-		return handleWriteFileWithLineRange(ctx, args)
+
+	fullPath := resolvePath(path)
+
+	if append {
+		// 追加模式：打开文件并追加内容
+		file, err := os.OpenFile(fullPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			return "", fmt.Errorf("无法打开文件进行追加: %w", err)
+		}
+		defer file.Close()
+
+		// 如果文件不为空且最后一行没有换行，先添加换行
+		if fi, err := file.Stat(); err == nil && fi.Size() > 0 {
+			// 检查最后字符是否是换行
+			file.Seek(-1, os.SEEK_END)
+			var lastChar [1]byte
+			if _, err := file.Read(lastChar[:]); err == nil && lastChar[0] != '\n' {
+				// 最后字符不是换行，先写入换行
+				if _, err := file.WriteString("\n"); err != nil {
+					return "", fmt.Errorf("写入换行符失败: %w", err)
+				}
+			}
+			// 回到文件末尾
+			file.Seek(0, os.SEEK_END)
+		}
+
+		// 写入内容
+		if _, err := file.WriteString(content); err != nil {
+			return "", fmt.Errorf("写入内容失败: %w", err)
+		}
+
+		lines := strings.Count(content, "\n") + 1
+		if content == "" || strings.HasSuffix(content, "\n") {
+			lines = strings.Count(content, "\n")
+		}
+
+		Notice("追加内容到文件 \"%s\"，添加 %d 行", path, lines)
+
+		// 运行make format并捕获结果
+		formatOutput, formatErr := CodeMakeFormat(ctx)
+
+		// 构建最终结果
+		result := fmt.Sprintf("成功追加内容到文件 \"%s\"，添加 %d 行", path, lines)
+
+		// 添加格式化结果信息
+		if formatErr != nil {
+			result += fmt.Sprintf("\n⚠️ 代码格式化失败: %v", formatErr)
+		} else if formatOutput != "" {
+			formatOutput = strings.TrimSpace(formatOutput)
+			result += fmt.Sprintf("\n✅ 代码格式化完成: %s", formatOutput)
+		} else {
+			result += "\n✅ 代码格式化完成"
+		}
+
+		return result, nil
 	}
 
-	// append = true 时追加
-	args["start_line"] = -1
+	// 非追加模式：使用现有的行范围写入
 	return handleWriteFileWithLineRange(ctx, args)
 }
