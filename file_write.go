@@ -61,19 +61,18 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (output string, err err
 		}
 		defer file.Close()
 
-		// 如果文件不为空且最后一行没有换行，先添加换行
-		if fi, err := file.Stat(); err == nil && fi.Size() > 0 {
-			// 检查最后字符是否是换行
-			file.Seek(-1, os.SEEK_END)
-			var lastChar [1]byte
-			if _, err := file.Read(lastChar[:]); err == nil && lastChar[0] != '\n' {
-				// 最后字符不是换行，先写入换行
-				if _, err := file.WriteString("\n"); err != nil {
-					return "", fmt.Errorf("写入换行符失败: %w", err)
-				}
+		// 检查文件是否为空
+		fi, err := os.Stat(fullPath)
+		if err != nil && !os.IsNotExist(err) {
+			return "", fmt.Errorf("获取文件信息失败: %w", err)
+		}
+
+		// 如果文件存在且不为空，先添加换行符
+		if err == nil && fi.Size() > 0 {
+			// 总是添加换行符，确保追加内容在新行
+			if _, err := file.WriteString("\n"); err != nil {
+				return "", fmt.Errorf("写入换行符失败: %w", err)
 			}
-			// 回到文件末尾
-			file.Seek(0, os.SEEK_END)
 		}
 
 		// 写入内容
