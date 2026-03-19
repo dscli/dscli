@@ -237,9 +237,6 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (string, e
 		// 格式化成功且有输出
 		formatOutput = strings.TrimSpace(formatOutput)
 		result += fmt.Sprintf("\n✅ 代码格式化完成: %s", formatOutput)
-	} else {
-		// 格式化成功但无输出
-		result += "\n✅ 代码格式化完成"
 	}
 
 	return result, nil

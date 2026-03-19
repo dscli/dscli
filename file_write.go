@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"path/filepath"
 )
 
 func init() {
@@ -67,11 +68,14 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (output string, err err
 			return "", fmt.Errorf("获取文件信息失败: %w", err)
 		}
 
-		// 如果文件存在且不为空，先添加换行符
+		// 如果文件存在且不为空，先添加换行符（除非追加内容以换行符开头）
 		if err == nil && fi.Size() > 0 {
-			// 总是添加换行符，确保追加内容在新行
-			if _, err := file.WriteString("\n"); err != nil {
-				return "", fmt.Errorf("写入换行符失败: %w", err)
+			// 检查追加内容是否以换行符开头
+			if !strings.HasPrefix(content, "\n") {
+				// 总是添加换行符，确保追加内容在新行
+				if _, err := file.WriteString("\n"); err != nil {
+					return "", fmt.Errorf("写入换行符失败: %w", err)
+				}
 			}
 		}
 
@@ -88,7 +92,7 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (output string, err err
 		Notice("追加内容到文件 \"%s\"，添加 %d 行", path, lines)
 
 		// 运行make format并捕获结果
-		formatOutput, formatErr := CodeMakeFormat(ctx)
+		formatOutput, formatErr := CodeMakeFormat(ctx, filepath.Ext(path))
 
 		// 构建最终结果
 		result := fmt.Sprintf("成功追加内容到文件 \"%s\"，添加 %d 行", path, lines)
