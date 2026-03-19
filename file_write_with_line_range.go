@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -224,8 +225,7 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (string, e
 	Notice("%s文件 \"%s\" 行范围 %s，影响 %d 行", operation, path, rangeDesc, linesChanged)
 
 	// 运行make format并捕获结果
-	formatOutput, formatErr := CodeMakeFormat(ctx)
-
+	formatOutput, formatErr := CodeMakeFormat(ctx, filepath.Ext(path))
 	// 构建最终结果
 	result := fmt.Sprintf("成功%s文件 \"%s\" 行范围 %s", operation, path, rangeDesc)
 

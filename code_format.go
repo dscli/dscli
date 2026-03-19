@@ -12,36 +12,39 @@ import (
 // 注意：这里设置ShellStdinKey为os.Stdin是有意的，目的是让mkfmt命令在OSExec中执行，
 // 而不是在internal/shell沙箱中执行。因为mkfmt脚本由用户提供，是可信任的，
 // 可能包含沙箱不允许的命令，但由于用户指定，是安全的。
-// CodeMakeFormat - run code format command provided in the context
-// 注意：这里设置ShellStdinKey为os.Stdin是有意的，目的是让mkfmt命令在OSExec中执行，
-// 而不是在internal/shell沙箱中执行。因为mkfmt脚本由用户提供，是可信任的，
-// 可能包含沙箱不允许的命令，但由于用户指定，是安全的。
 func CodeMakeFormat(ctx context.Context, exts ...string) (output string, err error) {
-	mkfmt := ContextValue(ctx, CodeFormatKey, "make gofmt")
-	
+	mkfmt := ContextValue(ctx, CodeFormatKey, "")
+
+	if mkfmt == "" {
+		err = fmt.Errorf("no format command specified")
+		return
+	}
+
 	// 如果没有指定扩展名，或者扩展名包含.go，则执行格式化
 	needFmt := len(exts) == 0 // 默认需要格式化
-	
+
 	if len(exts) > 0 {
 		needFmt = false
 		for _, ext := range exts {
 			if ext == "" {
 				continue
 			}
-			// 检查是否是Go文件扩展名
-			if strings.HasSuffix(ext, ".go") || ext == "go" {
+			ext = strings.TrimLeft(ext, ".")
+			if strings.Contains(mkfmt, ext) {
 				needFmt = true
 				break
 			}
 		}
 	}
-	
-	if needFmt {
-		ctx = context.WithValue(ctx, ShellStdinKey, os.Stdin)
-		output, err = ShellExec(ctx, mkfmt)
-		if err != nil {
-			err = fmt.Errorf("failed to make code format: %w", err)
-		}
+
+	if !needFmt {
+		output = "no need run format"
+		return
+	}
+	ctx = context.WithValue(ctx, ShellStdinKey, os.Stdin)
+	output, err = ShellExec(ctx, mkfmt)
+	if err != nil {
+		err = fmt.Errorf("failed to make code format: %w", err)
 	}
 	return
 }
@@ -67,7 +70,7 @@ func init() {
 		Description: `运行代码格式化命令，格式化项目代码。
 
 参数：
-  command: 可选，格式化命令。如果不提供，则使用上下文中的配置命令（默认为"make fmt"）
+  command: 可选，格式化命令。如果不提供，则使用上下文中的配置命令（默认为"make gofmt"）
 
 功能：
 1. 执行代码格式化命令，格式化项目代码
@@ -98,15 +101,17 @@ func init() {
 }
 
 // handleCodeFormat 处理代码格式化请求
-func handleCodeFormat(ctx context.Context, args ToolArgs) (string, error) {
+func handleCodeFormat(ctx context.Context, args ToolArgs) (output string, err error) {
 	// 检查是否提供了自定义命令
 	command := ToolArgsValue(args, "command", "")
 
-	var output string
-	var err error
+	if command == "" {
+		command = ContextValue(ctx, CodeFormatKey, "")
+	}
 
 	if command == "" {
-		command = ContextValue(ctx, CodeFormatKey, "make fmt")
+		err = fmt.Errorf("no format command specified")
+		return
 	}
 
 	Printf("代码格式化 %s", command)
