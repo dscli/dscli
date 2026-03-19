@@ -1,19 +1,15 @@
 package main
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
-	"encoding/base64"
 	"fmt"
-	"io"
 )
 
 func init() {
 	RegisterTool(ToolDef{
 		Name: "write_file",
 		Description: `将内容写入文件，如果文件不存在则创建，如果文件存在，append=false 覆盖，append=true 追加。
-支持创建目录结构。如果 compressed=true，则为 base64 编码的 gzip 压缩数据。`,
+支持创建目录结构。`,
 		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",
@@ -25,16 +21,12 @@ func init() {
 				},
 				"content": map[string]any{
 					"type":        "string",
-					"description": "要新建或追加的内容，建议不超过4096个字符，如果 compressed=true，则为 base64 编码的 gzip 压缩数据",
+					"description": "要新建或追加的内容，建议不超过4096个字符",
 					"pattern":     ContentLikePattern(4096),
 				},
 				"append": map[string]any{
 					"type":        "boolean",
 					"description": "是否以追加模式写入，默认为 false",
-				},
-				"compressed": map[string]any{
-					"type":        "boolean",
-					"description": "content 是否为 gzip 压缩后的 base64 编码，默认为 false",
 				},
 			},
 			"required":             []string{"path", "content", "append"},
@@ -52,29 +44,6 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (output string, err err
 	if path == "" || content == "" {
 		err = fmt.Errorf("文件路径 path 和文件内容 content 都不能为空")
 		return
-	}
-	compressed := ToolArgsValue(args, "compressed", false)
-	if compressed {
-		var compressedData []byte
-		compressedData, err = base64.StdEncoding.DecodeString(content)
-		if err != nil {
-			err = fmt.Errorf("base64 解码失败: %w", err)
-			return
-		}
-		var reader *gzip.Reader
-		reader, err = gzip.NewReader(bytes.NewReader(compressedData))
-		if err != nil {
-			err = fmt.Errorf("gzip 解压失败: %w", err)
-			return
-		}
-		defer reader.Close()
-		var data []byte
-		data, err = io.ReadAll(reader)
-		if err != nil {
-			err = fmt.Errorf("读取解压数据失败: %w", err)
-			return
-		}
-		args["content"] = string(data)
 	}
 
 	append := ToolArgsValue(args, "append", false)
