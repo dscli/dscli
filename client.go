@@ -261,8 +261,9 @@ func (c *Deepseek) Chat(ctx context.Context, messages []Message, tools []Tool) (
 			// 注意：此时不应将本次截断的响应加入 messages，所以 messages 保持不变
 			continue
 		}
-		// 最后一次尝试仍 length，返回响应（或自定义错误）
-		return &resp, fmt.Errorf("response truncated after %d attempts", maxAttempts)
+		// 最后一次尝试仍 length，返回响应（即使被截断）
+		// 而不是返回错误，这样用户至少能看到部分响应
+		return &resp, nil
 	}
 	return nil, fmt.Errorf("unexpected loop exit")
 }

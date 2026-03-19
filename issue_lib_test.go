@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -15,20 +16,31 @@ func TestCloseIssue(t *testing.T) {
 		number  int
 		wantErr bool
 	}{
-		{"Close", 14, false},
+		{"Close", 4, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, gotErr := CloseIssue(t.Context(), tt.number)
+			ctx := t.Context()
+			got, gotErr := CloseIssue(ctx, tt.number)
 			if gotErr != nil {
 				if !tt.wantErr {
 					t.Errorf("CloseIssue() failed: %v", gotErr)
 				}
 				return
 			}
-			t.Log(got)
 			if tt.wantErr {
 				t.Fatal("CloseIssue() succeeded unexpectedly")
+			}
+			if got.State != "closed" {
+				t.Fatal(got)
+			}
+			got, gotErr = ReopenIssue(ctx, tt.number)
+			if gotErr != nil {
+				t.Fatal(gotErr)
+			}
+
+			if got.State != "open" {
+				t.Fatal(got)
 			}
 		})
 	}
@@ -45,7 +57,7 @@ func TestShowIssue(t *testing.T) {
 		number  int
 		wantErr bool
 	}{
-		{"show issue", 5, false},
+		{"show issue", 4, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -59,7 +71,42 @@ func TestShowIssue(t *testing.T) {
 			if tt.wantErr {
 				t.Fatal("ShowIssue() succeeded unexpectedly")
 			}
-			t.Log(got.ID)
+
+			if got.Number != fmt.Sprint(tt.number) {
+				t.Fatal(got)
+			}
+		})
+	}
+}
+
+func TestAssignIssue(t *testing.T) {
+	t.Skip("跳过AssignIssue测试，因为它依赖于外部GitCode API")
+	tests := []struct {
+		name string // description of this test case
+		// Named input parameters for target function.
+		number   int
+		username string
+		want     *Issue
+		wantErr  bool
+	}{
+		{"assign", 4, "nanjunjie", nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, gotErr := AssignIssue(t.Context(), tt.number, tt.username)
+			if gotErr != nil {
+				if !tt.wantErr {
+					t.Errorf("AssignIssue() failed: %v", gotErr)
+				}
+				return
+			}
+
+			if tt.wantErr {
+				t.Fatal("AssignIssue() succeeded unexpectedly")
+			}
+			if got.Assignee == nil {
+				t.Errorf("AssignIssue() = %v, want %v", got, tt.want)
+			}
 		})
 	}
 }

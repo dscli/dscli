@@ -312,7 +312,7 @@ func IssueAPIBaseURL(originURL string, issueConfig *IssueConfig) (err error) {
 	}
 	issueConfig.APIHost = apiHost
 	// 尝试使用/repos/:owner/:repo/issues格式
-	issueConfig.BaseURL = fmt.Sprintf("https://%s/repos/%s/%s", apiHost, owner, repo)
+	issueConfig.BaseURL = fmt.Sprintf("https://%s/repos/%s", apiHost, owner)
 	issueConfig.Token = token
 	issueConfig.Owner = owner
 	issueConfig.Repo = repo

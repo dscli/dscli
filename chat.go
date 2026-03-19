@@ -359,6 +359,11 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 	}
 
 	story := resp.Choices[0].Message
+
+	// 检查响应是否被截断
+	if resp.Choices[0].FinishReason == "length" {
+		Warn("注意：响应因长度限制被截断，可能不完整。")
+	}
 	PrintContent(ctx, story.ReasoningContent, story.Content)
 	stories = append(stories, story)
 	// save stories here

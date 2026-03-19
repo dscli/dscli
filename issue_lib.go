@@ -35,7 +35,7 @@ func ListIssues(ctx context.Context, state string) ([]Issue, error) {
 	}
 
 	// 构建URL
-	url := fmt.Sprintf("%s/issues?access_token=%s&state=%s", config.BaseURL, config.Token, state)
+	url := fmt.Sprintf("%s/%s/issues?access_token=%s&state=%s", config.BaseURL, config.Repo, config.Token, state)
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("请求issue列表失败: %w", err)
@@ -86,7 +86,7 @@ func ShowIssue(ctx context.Context, number int) (*Issue, error) {
 	}
 
 	// 构建URL
-	url := fmt.Sprintf("%s/issues/%d?access_token=%s", config.BaseURL, number, config.Token)
+	url := fmt.Sprintf("%s/%s/issues/%d?access_token=%s", config.BaseURL, config.Repo, number, config.Token)
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("请求issue详情失败: %w", err)
@@ -199,10 +199,11 @@ func CreateIssue(ctx context.Context, opts CreateIssueOptions) (*Issue, error) {
 }
 
 type UpdateIssueOptions struct {
-	Number int
-	Title  string
-	Body   string
-	State  string
+	Number   int
+	Title    string
+	Body     string
+	State    string
+	Assignee string
 }
 
 func UpdateIssue(ctx context.Context, opts UpdateIssueOptions) (*Issue, error) {
@@ -216,8 +217,8 @@ func UpdateIssue(ctx context.Context, opts UpdateIssueOptions) (*Issue, error) {
 	}
 
 	// 验证状态参数
-	if opts.State != "" && opts.State != "open" && opts.State != "closed" {
-		return nil, fmt.Errorf("状态必须是 'open' 或 'closed'，收到: %s", opts.State)
+	if opts.State != "" && opts.State != "reopen" && opts.State != "close" {
+		return nil, fmt.Errorf("状态必须是 'reopen' 或 'close'，收到: %s", opts.State)
 	}
 
 	config, err := GetIssueConfig(ctx)
@@ -235,17 +236,17 @@ func UpdateIssue(ctx context.Context, opts UpdateIssueOptions) (*Issue, error) {
 	if opts.Title != "" {
 		requestData["title"] = opts.Title
 	}
+
 	if opts.Body != "" {
 		requestData["description"] = opts.Body
 	}
+
 	if opts.State != "" {
-		// GitCode API 使用 "state_event" 而不是 "state"
-		switch opts.State {
-		case "closed":
-			requestData["state_event"] = "close"
-		case "open":
-			requestData["state_event"] = "reopen"
-		}
+		requestData["state"] = opts.State
+	}
+
+	if opts.Assignee != "" {
+		requestData["assignee"] = opts.Assignee
 	}
 
 	// GitCode API 要求至少提供一个参数，当只更新状态时，添加一个有效的参数
@@ -255,6 +256,7 @@ func UpdateIssue(ctx context.Context, opts UpdateIssueOptions) (*Issue, error) {
 		// 添加labels字段，设置为空数组
 		requestData["labels"] = []string{}
 	}
+
 	jsonData, err := JSONMarshal(requestData)
 	if err != nil {
 		return nil, fmt.Errorf("序列化请求数据失败: %w", err)
@@ -317,22 +319,38 @@ func UpdateIssue(ctx context.Context, opts UpdateIssueOptions) (*Issue, error) {
 // CloseIssue 关闭issue
 func CloseIssue(ctx context.Context, number int) (issue *Issue, err error) {
 	// 使用UpdateIssue来关闭issue，这样可以利用已有的逻辑
+	issue, err = ShowIssue(ctx, number)
+	if err != nil {
+		err = fmt.Errorf("failed to get issue before close it: %w", err)
+		return
+	}
+
 	issue, err = UpdateIssue(ctx, UpdateIssueOptions{
 		Number: number,
-		State:  "closed",
+		State:  "close",
+		Title:  issue.Title,
+		Body:   issue.Body,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("关闭issue失败: %w", err)
+		err = fmt.Errorf("关闭issue失败: %w", err)
+		return
 	}
 	return issue, nil
 }
 
 // ReopenIssue 重新打开issue
 func ReopenIssue(ctx context.Context, number int) (issue *Issue, err error) {
+	issue, err = ShowIssue(ctx, number)
+	if err != nil {
+		err = fmt.Errorf("failed to get issue before reopen it: %w", err)
+		return
+	}
 	// 使用UpdateIssue来重新打开issue
 	issue, err = UpdateIssue(ctx, UpdateIssueOptions{
+		Title:  issue.Title,
+		Body:   issue.Body,
 		Number: number,
-		State:  "open",
+		State:  "reopen",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("重新打开issue失败: %w", err)
@@ -341,76 +359,30 @@ func ReopenIssue(ctx context.Context, number int) (issue *Issue, err error) {
 }
 
 // AssignIssue 分配issue给用户
-func AssignIssue(ctx context.Context, number int, username string) (*Issue, error) {
+func AssignIssue(ctx context.Context, number int, username string) (issue *Issue, err error) {
 	if number == 0 {
 		return nil, fmt.Errorf("必须提供issue编号")
 	}
+
 	if username == "" {
 		return nil, fmt.Errorf("必须提供用户名")
 	}
 
-	config, err := GetIssueConfig(ctx)
+	issue, err = ShowIssue(ctx, number)
 	if err != nil {
-		return nil, err
+		err = fmt.Errorf("failed to get issue before assign: %w", err)
+		return
 	}
 
-	// 准备请求数据 - 分配issue
-	requestData := map[string]any{
-		"repo":         config.Repo,
-		"assignee_ids": []string{username},
+	opts := UpdateIssueOptions{
+		Number:   number,
+		Assignee: username,
+		Title:    issue.Title,
+		Body:     issue.Body,
 	}
 
-	// 转换为JSON
-	jsonData, err := JSONMarshal(requestData)
-	if err != nil {
-		return nil, fmt.Errorf("序列化请求数据失败: %w", err)
-	}
-
-	// 发送PATCH请求
-	url := fmt.Sprintf("%s/issues/%d?access_token=%s", config.BaseURL, number, config.Token)
-	req, err := http.NewRequest("PATCH", url, strings.NewReader(string(jsonData)))
-	if err != nil {
-		return nil, fmt.Errorf("创建请求失败: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("发送请求失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// 检查HTTP状态码
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, &IssueAPIError{
-			StatusCode: resp.StatusCode,
-			Message:    "分配issue失败",
-			Details:    string(body),
-		}
-	}
-
-	// 读取响应
-	b, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("读取响应失败: %w", err)
-	}
-
-	// 解析为RawIssue
-	var rawIssue RawIssue
-	err = json.Unmarshal(b, &rawIssue)
-	if err != nil {
-		return nil, fmt.Errorf("解析响应数据失败: %w", err)
-	}
-
-	// 转换为Issue
-	issue, err := parseRawIssue(rawIssue)
-	if err != nil {
-		return nil, fmt.Errorf("处理issue数据失败: %w", err)
-	}
-
-	return &issue, nil
+	issue, err = UpdateIssue(ctx, opts)
+	return
 }
 
 // ReadBodyFromStdinOrFile 从标准输入或文件读取内容
