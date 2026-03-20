@@ -1,9 +1,10 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
+
+	"gitcode.com/dscli/dscli/internal/context"
 )
 
 // CodeMakeBuild - run build command provided in the context
@@ -11,8 +12,8 @@ import (
 // 而不是在internal/shell沙箱中执行。因为构建脚本由用户提供，是可信任的，
 // 可能包含沙箱不允许的命令，但由于用户指定，是安全的。
 func CodeMakeBuild(ctx context.Context) (output string, err error) {
-	buildCmd := ContextValue(ctx, MakeBuildKey, "make build")
-	ctx = context.WithValue(ctx, ShellStdinKey, os.Stdin)
+	buildCmd := context.ContextValue(ctx, context.MakeBuildKey, "make build")
+	ctx = context.WithValue(ctx, context.ShellStdinKey, os.Stdin)
 	output, err = ShellExec(ctx, buildCmd)
 	if err != nil {
 		err = fmt.Errorf("failed to make build: %w", err)
@@ -68,13 +69,13 @@ func handleMakeBuild(ctx context.Context, args ToolArgs) (string, error) {
 	// 记录使用的命令
 	cmdToUse := userCmd
 	if cmdToUse == "" {
-		cmdToUse = ContextValue(ctx, MakeBuildKey, "make build")
+		cmdToUse = context.ContextValue(ctx, context.MakeBuildKey, "make build")
 	}
 	Printf("🔨 执行构建命令: %s", cmdToUse)
 
 	if userCmd != "" {
 		// 使用用户提供的命令
-		ctx = context.WithValue(ctx, ShellStdinKey, os.Stdin)
+		ctx = context.WithValue(ctx, context.ShellStdinKey, os.Stdin)
 		output, err := ShellExec(ctx, userCmd)
 		if err != nil {
 			return "", fmt.Errorf("构建失败: %w\n输出:\n%s", err, output)

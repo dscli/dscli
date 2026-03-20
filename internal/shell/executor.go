@@ -4,13 +4,14 @@ package shell
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"gitcode.com/dscli/dscli/internal/context"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
@@ -87,7 +88,7 @@ type Result struct {
 }
 
 // DefaultConfig 返回默认配置
-func DefaultConfig() *Config {
+func DefaultConfig(ctx context.Context) *Config {
 	return &Config{
 		WorkingDir:    ".",
 		EnvVars:       os.Environ(),
@@ -95,19 +96,15 @@ func DefaultConfig() *Config {
 		MaxOutputSize: 1024 * 1024, // 1MB
 		StrictMode:    true,
 		SandboxMode:   false,
-		SandboxConfig: DefaultSandboxConfig(),
+		SandboxConfig: DefaultSandboxConfig(ctx),
 	}
 }
 
 // DefaultSandboxConfig 返回默认沙箱配置
-func DefaultSandboxConfig() *SandboxConfig {
+// DefaultSandboxConfig 返回默认沙箱配置
+func DefaultSandboxConfig(ctx context.Context) *SandboxConfig {
 	return &SandboxConfig{
-		AllowedCommands: []string{
-			"echo", "cat", "ls", "pwd", "grep", "wc", "find",
-			"mkdir", "rmdir", "touch", "rm", "cp", "mv",
-			"head", "tail", "sort", "uniq", "cut", "paste",
-			"tr", "sed", "awk", "xargs",
-		},
+		AllowedCommands:   getAllowedCommands(),
 		AllowedPaths:      []string{"."},
 		AllowedEnvVars:    []string{"PATH", "HOME", "USER", "PWD", "LANG", "TERM"},
 		AllowNetwork:      false,
@@ -115,10 +112,86 @@ func DefaultSandboxConfig() *SandboxConfig {
 	}
 }
 
+// getAllowedCommands 返回完整的允许命令列表
+func getAllowedCommands() []string {
+	// 基础命令（来自 DefaultSandboxConfig）
+	baseCommands := []string{
+		"echo", "cat", "ls", "pwd", "grep", "wc", "find",
+		"mkdir", "rmdir", "touch", "rm", "cp", "mv",
+		"head", "tail", "sort", "uniq", "cut", "paste",
+		"tr", "sed", "awk", "xargs",
+	}
+
+	// 扩展命令（项目特定需求）
+	extendedCommands := []string{
+		// 文件系统工具
+		"du", "basename", "which", "chmod", "chown",
+
+		// 文档处理工具
+		"pandoc", "bc",
+
+		// 版本控制工具
+		"git",
+
+		// 网络工具
+		"curl", "wget",
+
+		// 压缩工具
+		"tar", "gzip", "unzip",
+
+		// 开发工具
+		"go", "make", "python", "python3",
+
+		// 系统工具
+		"date",
+	}
+
+	// 合并命令列表，去重
+	allCommands := make([]string, 0, len(baseCommands)+len(extendedCommands))
+	commandSet := make(map[string]bool)
+
+	// 添加基础命令
+	for _, cmd := range baseCommands {
+		if !commandSet[cmd] {
+			commandSet[cmd] = true
+			allCommands = append(allCommands, cmd)
+		}
+	}
+
+	// 添加扩展命令
+	for _, cmd := range extendedCommands {
+		if !commandSet[cmd] {
+			commandSet[cmd] = true
+			allCommands = append(allCommands, cmd)
+		}
+	}
+
+	return allCommands
+}
+
+func ShellExecConfig(ctx context.Context) *Config {
+	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
+	if projectRoot == "" {
+		panic("project root not set")
+	}
+	isTesting := context.ContextValue(ctx, context.IsTestingKey, false)
+	config := DefaultConfig(ctx)
+
+	// 使用完整的允许命令列表
+	config.SandboxConfig.AllowedCommands = getAllowedCommands()
+
+	config.SandboxConfig.AllowedPaths = append(config.SandboxConfig.AllowedPaths, projectRoot)
+	config.WorkingDir = projectRoot
+	config.Timeout = 60 * time.Second
+	config.SandboxMode = isTesting
+	config.EnvVars = append(os.Environ(), "InsideShellExec=1")
+	return config
+}
+
 // NewExecutor 创建新的执行器
-func NewExecutor(config *Config) *Executor {
+func NewExecutor(ctx context.Context, config *Config) *Executor {
 	if config == nil {
-		config = DefaultConfig()
+		config = DefaultConfig(ctx)
 	}
 
 	// 确保工作目录存在
@@ -374,7 +447,7 @@ func extractExitCode(err error) int {
 
 // SimpleExecute 简单执行 Shell 脚本（使用默认配置）
 func SimpleExecute(ctx context.Context, script string) (string, error) {
-	executor := NewExecutor(DefaultConfig())
+	executor := NewExecutor(ctx, DefaultConfig(ctx))
 	result, err := executor.Execute(ctx, script)
 	if err != nil {
 		return "", err
@@ -389,11 +462,11 @@ func SimpleExecute(ctx context.Context, script string) (string, error) {
 
 // SafeExecute 安全执行 Shell 脚本（启用沙箱模式）
 func SafeExecute(ctx context.Context, script string) (string, error) {
-	config := DefaultConfig()
+	config := DefaultConfig(ctx)
 	config.SandboxMode = true
-	config.SandboxConfig = DefaultSandboxConfig()
+	config.SandboxConfig = DefaultSandboxConfig(ctx)
 
-	executor := NewExecutor(config)
+	executor := NewExecutor(ctx, config)
 	result, err := executor.Execute(ctx, script)
 	if err != nil {
 		return "", err

@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"crypto/md5"
 	_ "embed"
 	"encoding/json"
@@ -14,6 +13,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"gitcode.com/dscli/dscli/internal/context"
 
 	"github.com/spf13/cobra"
 )
@@ -80,7 +81,7 @@ func runParse(cmd *cobra.Command, args []string) error {
 	verbose, _ := cmd.Flags().GetBool("verbose")
 	usePython, _ := cmd.Flags().GetBool("use-python")
 	ctx := cmd.Context()
-	ctx = context.WithValue(ctx, VerboseKey, verbose)
+	ctx = context.WithValue(ctx, context.VerboseKey, verbose)
 	// 解析文件结构
 	fs, err := parseFileStructure(ctx, filePath, lang, usePython)
 	if err != nil {
@@ -239,10 +240,7 @@ func parseGoStructure(path string) (*FileStructure, error) {
 
 func runPythonParsePy(ctx context.Context, filePath string, lang string) (output string, err error) {
 	// 从上下文中获取verbose标志
-	verbose := false
-	if v, ok := ctx.Value(VerboseKey).(bool); ok {
-		verbose = v
-	}
+	verbose := context.ContextValue(ctx, context.VerboseKey, false)
 
 	// 读取文件内容
 	content, err := os.ReadFile(filePath)
@@ -267,7 +265,7 @@ func runPythonParsePy(ctx context.Context, filePath string, lang string) (output
 		fmt.Fprintf(os.Stderr, "Using Python parser for language: %s\n", lang)
 		fmt.Fprintf(os.Stderr, "Input size: %d bytes\n", len(jsonInput))
 	}
-	ctx = context.WithValue(ctx, ShellNameKey, "python")
+	ctx = context.WithValue(ctx, context.ShellNameKey, "python")
 	cacheFile, err := GetOrCreateCacheFile(ctx, pythonScript)
 	if err != nil {
 		return
@@ -312,7 +310,7 @@ func runPythonParsePy(ctx context.Context, filePath string, lang string) (output
 // parseWithPython 使用Python脚本解析文件结构
 func parseWithPython(ctx context.Context, filePath, lang string) (structure *FileStructure, err error) {
 	// 从上下文中获取verbose标志
-	verbose := ContextValue(ctx, VerboseKey, false)
+	verbose := context.ContextValue(ctx, context.VerboseKey, false)
 
 	output, err := runPythonParsePy(ctx, filePath, lang)
 	if err != nil {
@@ -578,9 +576,9 @@ func ParseFileStructure(ctx context.Context, filePath string) (*FileStructure, e
 }
 
 func GetOrCreateCacheFile(ctx context.Context, script string) (cacheFile string, err error) {
-	verbose := ContextValue(ctx, VerboseKey, false)
-	shellName := ContextValue(ctx, ShellNameKey, "")
-	shellArgs := ContextValue(ctx, ShellArgsKey, []string{})
+	verbose := context.ContextValue(ctx, context.VerboseKey, false)
+	shellName := context.ContextValue(ctx, context.ShellNameKey, "")
+	shellArgs := context.ContextValue(ctx, context.ShellArgsKey, []string{})
 	isPython := strings.Contains(shellName, "python")
 	if strings.HasSuffix(shellName, "env") {
 		if len(shellArgs) > 0 {

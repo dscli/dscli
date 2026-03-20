@@ -2,17 +2,18 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"strings"
 	"testing"
 	"time"
+
+	"gitcode.com/dscli/dscli/internal/context"
 )
 
 func TestPrintContent(t *testing.T) {
-	ctx := context.Background()
-	ctx = context.WithValue(ctx, StartTimeKey, time.Now())
+	ctx := t.Context()
+	ctx = context.WithValue(ctx, context.StartTimeKey, time.Now())
 	// make sure two keys  no overlap
-	ctx = context.WithValue(ctx, CurrentModelIDKey, ModelDeepseekChat)
+	ctx = context.WithValue(ctx, context.CurrentModelIDKey, ModelDeepseekChat)
 	buf := bytes.NewBuffer([]byte{})
 	SetOutputWriter(buf)
 	PrintContent(ctx, "reasoning", "content")
@@ -34,15 +35,15 @@ func TestPrintToolCalls(t *testing.T) {
 }
 
 func TestPrintSessionStats(t *testing.T) {
-	ctx := context.Background()
-	ctx = context.WithValue(ctx, StartTimeKey, time.Now().Add(-30*time.Second))
+	ctx := t.Context()
+	ctx = context.WithValue(ctx, context.StartTimeKey, time.Now().Add(-30*time.Second))
 
 	// 设置起始余额
-	startBalance := BalanceInfo{
+	startBalance := context.BalanceInfo{
 		Currency:     "CNY",
 		TotalBalance: "100.00",
 	}
-	ctx = context.WithValue(ctx, StartBalanceKey, startBalance)
+	ctx = context.WithValue(ctx, context.StartBalanceKey, startBalance)
 
 	// 模拟DeepseekClient.Balance响应
 	originalClient := DeepseekClient
@@ -51,7 +52,7 @@ func TestPrintSessionStats(t *testing.T) {
 	// 创建模拟客户端
 	mockClient := &MockDeepseekClient{
 		balanceResponse: &BalanceResponse{
-			BalanceInfos: []BalanceInfo{
+			BalanceInfos: []context.BalanceInfo{
 				{
 					Currency:     "CNY",
 					TotalBalance: "95.50", // 模拟花费4.5元后的余额
@@ -86,7 +87,7 @@ func TestPrintSessionStats(t *testing.T) {
 	// 测试低余额提醒
 	lowBalanceClient := &MockDeepseekClient{
 		balanceResponse: &BalanceResponse{
-			BalanceInfos: []BalanceInfo{
+			BalanceInfos: []context.BalanceInfo{
 				{
 					Currency:     "CNY",
 					TotalBalance: "5.00", // 低于10元

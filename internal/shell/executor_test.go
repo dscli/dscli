@@ -1,14 +1,13 @@
 package shell
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
 )
 
 func TestSimpleExecute(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name     string
@@ -78,7 +77,7 @@ func TestSimpleExecute(t *testing.T) {
 }
 
 func TestSafeExecute(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name        string
@@ -126,12 +125,12 @@ func TestSafeExecute(t *testing.T) {
 }
 
 func TestExecutor_ExecuteWithTimeout(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// 使用无沙箱配置测试超时
-	config := DefaultConfig()
+	config := DefaultConfig(ctx)
 	config.SandboxMode = false
-	executor := NewExecutor(config)
+	executor := NewExecutor(ctx, config)
 
 	// 测试正常执行
 	t.Run("正常执行", func(t *testing.T) {
@@ -157,7 +156,7 @@ func TestExecutor_ExecuteWithTimeout(t *testing.T) {
 }
 
 func TestSandboxConfig(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name        string
@@ -210,7 +209,8 @@ func TestSandboxConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			executor := NewExecutor(tt.config)
+			ctx = t.Context()
+			executor := NewExecutor(ctx, tt.config)
 			result, err := executor.Execute(ctx, tt.script)
 
 			if tt.expectError {
@@ -230,9 +230,9 @@ func TestSandboxConfig(t *testing.T) {
 }
 
 func TestEnvironmentFiltering(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
-	config := DefaultConfig()
+	config := DefaultConfig(ctx)
 	config.SandboxMode = true
 	config.SandboxConfig = &SandboxConfig{
 		AllowedEnvVars: []string{"TEST_VAR", "PATH"},
@@ -245,7 +245,7 @@ func TestEnvironmentFiltering(t *testing.T) {
 		"SENSITIVE_VAR=secret",
 	}
 
-	executor := NewExecutor(config)
+	executor := NewExecutor(ctx, config)
 	script := "echo $TEST_VAR; echo $SENSITIVE_VAR"
 
 	result, err := executor.Execute(ctx, script)
@@ -264,7 +264,7 @@ func TestEnvironmentFiltering(t *testing.T) {
 }
 
 func BenchmarkSimpleExecute(b *testing.B) {
-	ctx := context.Background()
+	ctx := b.Context()
 	script := "echo '性能测试'"
 
 	b.ResetTimer()
@@ -277,7 +277,7 @@ func BenchmarkSimpleExecute(b *testing.B) {
 }
 
 func BenchmarkSafeExecute(b *testing.B) {
-	ctx := context.Background()
+	ctx := b.Context()
 	script := "echo '安全性能测试'"
 
 	b.ResetTimer()

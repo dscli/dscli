@@ -1,11 +1,11 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"slices"
 	"strconv"
 
+	"gitcode.com/dscli/dscli/internal/context"
 	"github.com/spf13/cobra"
 )
 
@@ -138,7 +138,7 @@ func historyPreRunE(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
-	ctx = context.WithValue(ctx, HistSizeKey, histsize)
+	ctx = context.WithValue(ctx, context.HistSizeKey, histsize)
 	cmd.SetContext(ctx)
 	return
 }

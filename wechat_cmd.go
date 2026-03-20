@@ -1,10 +1,11 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
+
+	"gitcode.com/dscli/dscli/internal/context"
 
 	"gitcode.com/dscli/dscli/internal/wechat"
 	"github.com/spf13/cobra"
@@ -152,7 +153,7 @@ func wechatPersistentPreRunE(cmd *cobra.Command, args []string) (err error) {
 
 	// 将格式设置到上下文中
 	ctx := cmd.Context()
-	ctx = context.WithValue(ctx, WechatFormatKey, format)
+	ctx = context.WithValue(ctx, context.WechatFormatKey, format)
 	cmd.SetContext(ctx)
 
 	return nil
@@ -253,7 +254,7 @@ func wechatMessagesRunE(cmd *cobra.Command, args []string) error {
 	}
 
 	// 从上下文中获取格式
-	format := ContextValue(ctx, WechatFormatKey, "table")
+	format := context.ContextValue(ctx, context.WechatFormatKey, "table")
 	formatter := wechat.NewMessageFormatter(wechat.OutputFormat(format))
 	fmt.Print(formatter.FormatMessages(messages))
 
@@ -283,7 +284,7 @@ func wechatMessageRunE(cmd *cobra.Command, args []string) error {
 	}
 
 	// 从上下文中获取格式
-	format := ContextValue(ctx, WechatFormatKey, "table")
+	format := context.ContextValue(ctx, context.WechatFormatKey, "table")
 	formatter := wechat.NewMessageFormatter(wechat.OutputFormat(format))
 	fmt.Print(formatter.FormatMessageDetail(msg))
 

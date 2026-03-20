@@ -1,9 +1,10 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
+
+	"gitcode.com/dscli/dscli/internal/context"
 )
 
 // CodeMakeTest - run test command provided in the context
@@ -11,8 +12,8 @@ import (
 // 而不是在internal/shell沙箱中执行。因为测试脚本由用户提供，是可信任的，
 // 可能包含沙箱不允许的命令，但由于用户指定，是安全的。
 func CodeMakeTest(ctx context.Context) (output string, err error) {
-	testCmd := ContextValue(ctx, MakeTestKey, "make test")
-	ctx = context.WithValue(ctx, ShellStdinKey, os.Stdin)
+	testCmd := context.ContextValue(ctx, context.MakeTestKey, "make test")
+	ctx = context.WithValue(ctx, context.ShellStdinKey, os.Stdin)
 	output, err = ShellExec(ctx, testCmd)
 	if err != nil {
 		err = fmt.Errorf("failed to make test: %w", err)
@@ -77,7 +78,7 @@ func handleMakeTest(ctx context.Context, args ToolArgs) (string, error) {
 		finalCmd = userCmd
 	} else {
 		// 使用配置的测试命令
-		finalCmd = ContextValue(ctx, MakeTestKey, "make test")
+		finalCmd = context.ContextValue(ctx, context.MakeTestKey, "make test")
 	}
 
 	// 如果提供了测试模式，尝试添加到命令中
@@ -92,7 +93,7 @@ func handleMakeTest(ctx context.Context, args ToolArgs) (string, error) {
 	Printf("🧪 执行测试命令: %s", finalCmd)
 
 	// 执行测试命令
-	ctx = context.WithValue(ctx, ShellStdinKey, os.Stdin)
+	ctx = context.WithValue(ctx, context.ShellStdinKey, os.Stdin)
 	output, err := ShellExec(ctx, finalCmd)
 	if err != nil {
 		return "", fmt.Errorf("测试失败: %w\n命令: %s\n输出:\n%s", err, finalCmd, output)

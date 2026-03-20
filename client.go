@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"gitcode.com/dscli/dscli/internal/context"
 )
 
 type Deepseek struct {
@@ -209,9 +210,9 @@ func (c *Deepseek) Balance() (*BalanceResponse, error) {
 
 // Chat 发送聊天请求
 func (c *Deepseek) Chat(ctx context.Context, messages []Message, tools []Tool) (*ChatResponse, error) {
-	model := ContextValue(ctx, CurrentModelNameKey, ModelDeepseekChat)
-	insideShellExec := ContextValue(ctx, InsideShellExecKey, false)
-	stream := ContextValue(ctx, StreamKey, false)
+	model := context.ContextValue(ctx, context.CurrentModelNameKey, ModelDeepseekChat)
+	insideShellExec := context.ContextValue(ctx, context.InsideShellExecKey, false)
+	stream := context.ContextValue(ctx, context.StreamKey, false)
 
 	// 如果是streaming请求，即使InsideShellExec为true也测试streaming逻辑
 	if insideShellExec && !stream {

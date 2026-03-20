@@ -1,11 +1,12 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
 	"time"
+
+	"gitcode.com/dscli/dscli/internal/context"
 )
 
 var codeReviewTool = ToolDef{
@@ -76,10 +77,10 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 	testCommand := ToolArgsValue(args, "test_command", "")
 	// 获取Git状态，确保有提交可审查
 	statusScript := `git status --short`
-	ctx = context.WithValue(ctx, ShellNameKey, "/usr/bin/env")
-	ctx = context.WithValue(ctx, ShellArgsKey, []string{"bash"})
+	ctx = context.WithValue(ctx, context.ShellNameKey, "/usr/bin/env")
+	ctx = context.WithValue(ctx, context.ShellArgsKey, []string{"bash"})
 	// 添加os.Stdin使用传统分支OSExec
-	ctx = context.WithValue(ctx, ShellStdinKey, os.Stdin)
+	ctx = context.WithValue(ctx, context.ShellStdinKey, os.Stdin)
 
 	status, err := ShellExec(ctx, statusScript)
 	if err != nil {

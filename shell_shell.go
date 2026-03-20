@@ -1,10 +1,11 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"time"
+
+	"gitcode.com/dscli/dscli/internal/context"
 )
 
 func init() { // 注册shell工具
@@ -84,8 +85,8 @@ func handleShell(ctx context.Context, args ToolArgs) (out string, err error) {
 func runShell(ctx context.Context, script string) (result string, err error) {
 	startTime := time.Now()
 	name, arg := Shebang(script)
-	ctx = context.WithValue(ctx, ShellNameKey, name)
-	ctx = context.WithValue(ctx, ShellArgsKey, arg)
+	ctx = context.WithValue(ctx, context.ShellNameKey, name)
+	ctx = context.WithValue(ctx, context.ShellArgsKey, arg)
 	out, err := ShellExec(ctx, script)
 	executionTime := time.Since(startTime)
 

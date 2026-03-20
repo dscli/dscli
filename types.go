@@ -3,6 +3,8 @@ package main
 import (
 	"database/sql"
 	"time"
+
+	"gitcode.com/dscli/dscli/internal/context"
 )
 
 // ChatRequest 扩展，支持 tools
@@ -96,15 +98,8 @@ type Model struct {
 }
 
 type BalanceResponse struct {
-	IsAvailable  bool          `json:"is_available"`
-	BalanceInfos []BalanceInfo `json:"balance_infos"`
-}
-
-type BalanceInfo struct {
-	Currency        string `json:"currency"`
-	TotalBalance    string `json:"total_balance"`
-	GrantedBalance  string `json:"granted_balance"`
-	ToppedUpBalance string `json:"topped_up_balance"`
+	IsAvailable  bool                  `json:"is_available"`
+	BalanceInfos []context.BalanceInfo `json:"balance_infos"`
 }
 
 // ChatResponse 响应

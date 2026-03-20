@@ -1,12 +1,13 @@
 package main
 
 import (
-	"context"
 	"io"
 	"os"
 	"reflect"
 	"strings"
 	"testing"
+
+	"gitcode.com/dscli/dscli/internal/context"
 )
 
 func TestShebang(t *testing.T) {
@@ -54,8 +55,9 @@ print("OK")`, "OK\n", nil},
 	for _, tc := range tcs {
 		t.Run("", func(t *testing.T) {
 			// 创建包含ToolDisplayName的context
-			ctx := context.WithValue(context.Background(), ToolDisplayName, "test-tool")
-			ctx = context.WithValue(ctx, VerboseKey, true)
+			ctx := context.WithValue(t.Context(), ToolDisplayName, "test-tool")
+			ctx = context.WithValue(ctx, context.VerboseKey, true)
+			ctx = context.WithValue(ctx, context.ProjectRootKey, ProjectRoot)
 			out, err := ShellExec(ctx, tc.script)
 
 			if tc.checkErr == nil {
@@ -278,8 +280,8 @@ func TestShellExec(t *testing.T) {
 				t.Fatal(err)
 			}
 			w.Close()
-			ctx := context.Background()
-			ctx = context.WithValue(ctx, ShellStdinKey, r)
+			ctx := t.Context()
+			ctx = context.WithValue(ctx, context.ShellStdinKey, r)
 			out, err := ShellExec(ctx, tc.script)
 			r.Close()
 			if err != nil {

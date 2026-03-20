@@ -1,10 +1,11 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"time"
+
+	"gitcode.com/dscli/dscli/internal/context"
 )
 
 func init() {
@@ -107,8 +108,8 @@ func handleGitAm(ctx context.Context, args ToolArgs) (string, error) {
 		Info("正在应用patch...")
 
 		// 设置context值，指定使用git作为解释器
-		ctx = context.WithValue(ctx, ShellNameKey, "git")
-		ctx = context.WithValue(ctx, ShellArgsKey, gitArgs)
+		ctx = context.WithValue(ctx, context.ShellNameKey, "git")
+		ctx = context.WithValue(ctx, context.ShellArgsKey, gitArgs)
 
 		PrintGitCommand(gitArgs...)
 		return ShellExec(ctx, patch)

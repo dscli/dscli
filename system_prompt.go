@@ -1,13 +1,14 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"gitcode.com/dscli/dscli/internal/context"
 )
 
 // SystemPromptConfig 系统提示词配置
@@ -38,7 +39,7 @@ type SystemPromptConfig struct {
 
 // NewSystemPromptConfig 创建系统提示词配置
 func NewSystemPromptConfig(ctx context.Context) *SystemPromptConfig {
-	modelID := ContextValue(ctx, CurrentModelIDKey, int64(0))
+	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, int64(0))
 	config := &SystemPromptConfig{
 		CurrentDate:      time.Now().Format("2006年01月02日"),
 		ProjectRoot:      ProjectRoot,

@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"gitcode.com/dscli/dscli/internal/context"
 	"github.com/spf13/cobra"
 )
 
@@ -28,10 +28,10 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 	var modelID int64
 	switch model {
 	case ModelDeepseekChat:
-		ctx = context.WithValue(ctx, CurrentModelNameKey, ModelDeepseekChat)
+		ctx = context.WithValue(ctx, context.CurrentModelNameKey, ModelDeepseekChat)
 		modelID = DeepseekChat
 	case ModelDeepseekReasoner:
-		ctx = context.WithValue(ctx, CurrentModelNameKey, ModelDeepseekReasoner)
+		ctx = context.WithValue(ctx, context.CurrentModelNameKey, ModelDeepseekReasoner)
 		modelID = DeepseekReasoner
 	default:
 		err = fmt.Errorf("do not support %s", model)
@@ -40,15 +40,15 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 		}
 		return
 	}
-	ctx = context.WithValue(ctx, CurrentModelIDKey, modelID)
+	ctx = context.WithValue(ctx, context.CurrentModelIDKey, modelID)
 	// SessionID
 	sessionID, err := CreateOrGetSessionID()
 	if err != nil {
 		return
 	}
-	ctx = context.WithValue(ctx, CurrentSessionIDKey, sessionID)
+	ctx = context.WithValue(ctx, context.CurrentSessionIDKey, sessionID)
 	// InsideShellExec
-	ctx = context.WithValue(ctx, InsideShellExecKey, os.Getenv("InsideShellExec") == "1")
+	ctx = context.WithValue(ctx, context.InsideShellExecKey, os.Getenv("InsideShellExec") == "1")
 
 	tools := GetAllTools(ctx)
 	tokens := 0
@@ -63,7 +63,7 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 		tokens += skill.GetTokens()
 	}
 
-	ctx = context.WithValue(ctx, LeftTokensKey, 131072-tokens)
+	ctx = context.WithValue(ctx, context.LeftTokensKey, 131072-tokens)
 	cmd.SetContext(ctx)
 
 	return
@@ -79,26 +79,26 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
-	ctx = context.WithValue(ctx, CodeFormatKey, codeformat)
+	ctx = context.WithValue(ctx, context.CodeFormatKey, codeformat)
 
 	maketest, err := cmd.Flags().GetString("maketest")
 	if err != nil {
 		return
 	}
-	ctx = context.WithValue(ctx, MakeTestKey, maketest)
+	ctx = context.WithValue(ctx, context.MakeTestKey, maketest)
 	makebuild, err := cmd.Flags().GetString("makebuild")
 	if err != nil {
 		return
 	}
 
-	ctx = context.WithValue(ctx, MakeBuildKey, makebuild)
+	ctx = context.WithValue(ctx, context.MakeBuildKey, makebuild)
 
 	// 获取stream标志
 	stream, err := cmd.Flags().GetBool("stream")
 	if err != nil {
 		return
 	}
-	ctx = context.WithValue(ctx, StreamKey, stream)
+	ctx = context.WithValue(ctx, context.StreamKey, stream)
 	cmd.SetContext(ctx)
 	return
 }
@@ -114,7 +114,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		if err != nil {
 			return
 		}
-		ctx = context.WithValue(ctx, InputContentKey, input)
+		ctx = context.WithValue(ctx, context.InputContentKey, input)
 
 		content, err = ReadContentWithTimeout(ctx)
 		if err != nil {
@@ -125,15 +125,15 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
-	ctx = context.WithValue(ctx, HistSizeKey, histSize)
-	ctx = context.WithValue(ctx, StartTimeKey, time.Now())
+	ctx = context.WithValue(ctx, context.HistSizeKey, histSize)
+	ctx = context.WithValue(ctx, context.StartTimeKey, time.Now())
 
 	// 获取开始余额
-	var startBalance BalanceInfo
+	var startBalance context.BalanceInfo
 	if resp, err := DeepseekClient.Balance(); err == nil && len(resp.BalanceInfos) > 0 {
 		// 使用第一个余额信息（通常是CNY）
 		startBalance = resp.BalanceInfos[0]
-		ctx = context.WithValue(ctx, StartBalanceKey, startBalance)
+		ctx = context.WithValue(ctx, context.StartBalanceKey, startBalance)
 	}
 
 	prompts, err := LoadPrompts(ctx)
@@ -205,7 +205,7 @@ func ReadContentWithTimeout(ctx context.Context) (string, error) {
 }
 
 func ReadContent(ctx context.Context) (content string, err error) {
-	input := ContextValue(ctx, InputContentKey, "")
+	input := context.ContextValue(ctx, context.InputContentKey, "")
 	var b []byte
 	if input == "" || input == "-" {
 		reader := bufio.NewReader(os.Stdin)
@@ -226,7 +226,7 @@ func ReadContent(ctx context.Context) (content string, err error) {
 
 func PrintContent(ctx context.Context, reasoning string, content string) {
 	// 检查是否是streaming模式
-	stream := ContextValue(ctx, StreamKey, false)
+	stream := context.ContextValue(ctx, context.StreamKey, false)
 
 	reasoning = strings.TrimSpace(reasoning)
 	if reasoning != "" {
@@ -243,7 +243,7 @@ func PrintContent(ctx context.Context, reasoning string, content string) {
 }
 
 // calculateCost 计算花费
-func calculateCost(startBalance, endBalance BalanceInfo) string {
+func calculateCost(startBalance, endBalance context.BalanceInfo) string {
 	// 解析余额字符串为浮点数
 	startTotal, err1 := parseBalance(startBalance.TotalBalance)
 	endTotal, err2 := parseBalance(endBalance.TotalBalance)
@@ -274,8 +274,8 @@ func parseBalance(balanceStr string) (float64, error) {
 
 // PrintSessionStats 打印会话统计信息
 func PrintSessionStats(ctx context.Context) {
-	startTime := ContextValue(ctx, StartTimeKey, time.Time{})
-	startBalance := ContextValue(ctx, StartBalanceKey, BalanceInfo{})
+	startTime := context.ContextValue(ctx, context.StartTimeKey, time.Time{})
+	startBalance := context.ContextValue(ctx, context.StartBalanceKey, context.BalanceInfo{})
 
 	// 收集要显示的信息
 	var stats []string

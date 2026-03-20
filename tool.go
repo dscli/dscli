@@ -1,12 +1,13 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
+
+	"gitcode.com/dscli/dscli/internal/context"
 )
 
 // Tool 定义可调用的工具
@@ -96,7 +97,7 @@ func RegisterTool(tool ToolDef) {
 
 // GetAllTools 获取所有工具定义（用于API调用）
 func GetAllTools(ctx context.Context) []Tool {
-	modelID := ContextValue(ctx, CurrentModelIDKey, DeepseekChat)
+	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, DeepseekChat)
 	if modelID == DeepseekReasoner {
 		return nil
 	}

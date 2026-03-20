@@ -1,11 +1,12 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
 	"time"
+
+	"gitcode.com/dscli/dscli/internal/context"
 )
 
 // CodeMakeFormat - run code format command provided in the context
@@ -17,7 +18,7 @@ import (
 // 而不是在internal/shell沙箱中执行。因为mkfmt脚本由用户提供，是可信任的，
 // 可能包含沙箱不允许的命令，但由于用户指定，是安全的。
 func CodeMakeFormat(ctx context.Context, exts ...string) (output string, err error) {
-	mkfmt := ContextValue(ctx, CodeFormatKey, "")
+	mkfmt := context.ContextValue(ctx, context.CodeFormatKey, "")
 
 	if mkfmt == "" {
 		err = fmt.Errorf("no format command specified")
@@ -45,7 +46,7 @@ func CodeMakeFormat(ctx context.Context, exts ...string) (output string, err err
 		// 不需要格式化，返回空字符串，不显示消息
 		return
 	}
-	ctx = context.WithValue(ctx, ShellStdinKey, os.Stdin)
+	ctx = context.WithValue(ctx, context.ShellStdinKey, os.Stdin)
 	output, err = ShellExec(ctx, mkfmt)
 	if err != nil {
 		err = fmt.Errorf("failed to make code format: %w", err)
@@ -110,7 +111,7 @@ func handleCodeFormat(ctx context.Context, args ToolArgs) (output string, err er
 	command := ToolArgsValue(args, "command", "")
 
 	if command == "" {
-		command = ContextValue(ctx, CodeFormatKey, "")
+		command = context.ContextValue(ctx, context.CodeFormatKey, "")
 	}
 
 	if command == "" {
@@ -120,7 +121,7 @@ func handleCodeFormat(ctx context.Context, args ToolArgs) (output string, err er
 
 	Printf("代码格式化 %s", command)
 	// 使用用户提供的命令
-	ctx = context.WithValue(ctx, ShellStdinKey, os.Stdin)
+	ctx = context.WithValue(ctx, context.ShellStdinKey, os.Stdin)
 	output, err = ShellExec(ctx, command)
 	if err != nil {
 		// 构建详细的错误信息
