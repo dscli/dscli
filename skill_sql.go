@@ -1,9 +1,10 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
+
+	"gitcode.com/dscli/dscli/internal/context"
 )
 
 func init() {
@@ -35,6 +36,7 @@ func init() {
 }
 
 func GetProjectSkills(ctx context.Context) (skills []*Skill, err error) {
+	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
 	db, err := OpenDB()
 	if err != nil {
 		return
@@ -42,7 +44,7 @@ func GetProjectSkills(ctx context.Context) (skills []*Skill, err error) {
 	defer db.Close()
 	rows, err := db.QueryContext(ctx,
 		`SELECT id, name, description, category FROM skills WHERE id IN
- (SELECT skill_id FROM project_skills WHERE project_PATH = ?)`, ProjectRoot)
+ (SELECT skill_id FROM project_skills WHERE project_PATH = ?)`, projectRoot)
 	if err != nil {
 		return
 	}
@@ -137,13 +139,14 @@ func CreateSkill(ctx context.Context, skill *Skill) error {
 }
 
 func CreateProjectSkill(ctx context.Context, id int64) (err error) {
+	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
 	db, err := OpenDB()
 	if err != nil {
 		return
 	}
 
 	_, err = db.ExecContext(ctx,
-		"INSERT OR REPLACE INTO project_skills (skill_id, project_path) VALUES(?, ?)", id, ProjectRoot)
+		"INSERT OR REPLACE INTO project_skills (skill_id, project_path) VALUES(?, ?)", id, projectRoot)
 	if err != nil {
 		return
 	}

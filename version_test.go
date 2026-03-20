@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"gitcode.com/dscli/dscli/internal/context"
 )
 
 func TestBoolToString(t *testing.T) {
@@ -32,7 +34,6 @@ func TestVersionCommandOutput(t *testing.T) {
 	originalVersion := Version
 	originalBuild := Build
 	originalConfigDir := ConfigDir
-	originalProjectRoot := ProjectRoot
 	originalMode := mode
 	originalVerbose := verbose
 	originalColorEnabled := colorEnabled
@@ -46,7 +47,6 @@ func TestVersionCommandOutput(t *testing.T) {
 		Version = originalVersion
 		Build = originalBuild
 		ConfigDir = originalConfigDir
-		ProjectRoot = originalProjectRoot
 		mode = originalMode
 		verbose = originalVerbose
 		colorEnabled = originalColorEnabled
@@ -59,7 +59,6 @@ func TestVersionCommandOutput(t *testing.T) {
 	Version = "1.0.0-test"
 	Build = "test-build-123"
 	ConfigDir = "/tmp/.dscli-test"
-	ProjectRoot = "/tmp/project-test"
 	mode = "markdown"
 	verbose = true
 	colorEnabled = true
@@ -70,9 +69,11 @@ func TestVersionCommandOutput(t *testing.T) {
 	// 设置测试输出缓冲区
 	var buf bytes.Buffer
 	SetOutputWriter(&buf)
+	ctx := t.Context()
 
+	ctx = context.WithValue(ctx, context.ProjectRootKey, context.GetProjectRoot())
 	// 执行version命令
-	VersionRun(nil, nil)
+	versionRunE(ctx)
 
 	output := buf.String()
 
@@ -142,9 +143,9 @@ func TestVersionCommandWithoutBuild(t *testing.T) {
 	// 设置测试输出缓冲区
 	var buf bytes.Buffer
 	SetOutputWriter(&buf)
-
+	ctx := context.WithValue(t.Context(), context.ProjectRootKey, context.GetProjectRoot())
 	// 执行version命令
-	VersionRun(nil, nil)
+	versionRunE(ctx)
 
 	output := buf.String()
 
@@ -166,9 +167,10 @@ func TestVersionCommandIntegration(t *testing.T) {
 	// 设置测试输出缓冲区
 	var buf bytes.Buffer
 	SetOutputWriter(&buf)
+	ctx := context.WithValue(t.Context(), context.ProjectRootKey, context.GetProjectRoot())
 
 	// 执行命令
-	VersionRun(nil, nil)
+	versionRunE(ctx)
 
 	output := buf.String()
 

@@ -42,7 +42,7 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 	}
 	ctx = context.WithValue(ctx, context.CurrentModelIDKey, modelID)
 	// SessionID
-	sessionID, err := CreateOrGetSessionID()
+	sessionID, err := CreateOrGetSessionID(ctx)
 	if err != nil {
 		return
 	}

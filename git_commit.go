@@ -1,10 +1,11 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"gitcode.com/dscli/dscli/internal/context"
 )
 
 func init() {
@@ -65,7 +66,7 @@ func handleGitCommit(ctx context.Context, args ToolArgs) (string, error) {
 	Info("执行: git %s", strings.Join(gitArgs, " "))
 
 	cmd := exec.Command("git", gitArgs...)
-	cmd.Dir = GetProjectRoot()
+	cmd.Dir = context.ContextValue(ctx, context.ProjectRootKey, "")
 	output, err := cmd.CombinedOutput()
 	out := string(output)
 

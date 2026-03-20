@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"os"
 
+	"gitcode.com/dscli/dscli/internal/context"
 	"github.com/spf13/cobra"
 )
 
@@ -48,6 +48,9 @@ func AddRootCommand(child *cobra.Command) *cobra.Command {
 }
 
 func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
+	ctx := cmd.Context()
+	ctx = context.WithValue(ctx, context.ProjectRootKey, context.GetProjectRoot())
+	defer cmd.SetContext(ctx)
 	// 配置输出系统
 	configureOutput()
 	SetOutputWriter(cmd.OutOrStdout())
@@ -73,17 +76,13 @@ func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 		return fmt.Errorf("数据库初始化失败: %w", err)
 	}
 
-	key := Getenv("DEEPSEEK_API_KEY", "")
+	key := context.Getenv("DEEPSEEK_API_KEY", "")
 	if key == "" {
 		err = fmt.Errorf("no api key specified")
 		return
 	}
 
-	url := os.Getenv("DEEPSEEK_BASE_URL")
-	if url == "" {
-		url = "https://api.deepseek.com" // 默认值
-	}
-
+	url := context.Getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 	DeepseekClient = NewClient(key, url)
 	return nil
 }

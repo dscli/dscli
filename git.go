@@ -2,11 +2,12 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"os/exec"
 	"strings"
 	"time"
+
+	"gitcode.com/dscli/dscli/internal/context"
 )
 
 // gitCommand 执行git命令（直接使用exec.Command）
@@ -18,7 +19,7 @@ func gitCommand(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 
 	// 设置工作目录
-	cmd.Dir = ProjectRoot
+	cmd.Dir = context.ContextValue(ctx, context.ProjectRootKey, "")
 
 	// 捕获输出
 	var stdoutBuf, stderrBuf bytes.Buffer

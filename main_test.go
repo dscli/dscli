@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"gitcode.com/dscli/dscli/internal/context"
 )
 
 func TestMain(t *testing.T) {
@@ -25,7 +27,7 @@ func TestGetenv(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := Getenv(tt.key, tt.dvalue)
+			got := context.Getenv(tt.key, tt.dvalue)
 			if got != tt.want {
 				t.Fatalf("Getenv() = %v, want %v", got, tt.want)
 			}
@@ -69,7 +71,7 @@ func TestGetProjectRoot(t *testing.T) {
 					t.Fatal(err)
 				}
 			}()
-			got := GetProjectRoot()
+			got := context.GetProjectRoot()
 			if got != tt.want {
 				t.Fatalf("GetProjectRoot() = %v, want %v", got, tt.want)
 			}

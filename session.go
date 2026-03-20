@@ -1,6 +1,10 @@
 package main
 
-import "database/sql"
+import (
+	"database/sql"
+
+	"gitcode.com/dscli/dscli/internal/context"
+)
 
 // var SessionID = int64(0)
 
@@ -16,7 +20,8 @@ func init() {
 }
 
 // CreateOrGetSessionID 获取或创建会话ID
-func CreateOrGetSessionID() (sessionID int64, err error) {
+func CreateOrGetSessionID(ctx context.Context) (sessionID int64, err error) {
+	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
 	db, err := OpenDB()
 	if err != nil {
 		return
@@ -25,7 +30,7 @@ func CreateOrGetSessionID() (sessionID int64, err error) {
 
 	var id int64
 	err = db.QueryRow("SELECT id FROM sessions WHERE project_path = ?",
-		ProjectRoot).Scan(&id)
+		projectRoot).Scan(&id)
 	if err != nil {
 		if err != sql.ErrNoRows {
 			return
@@ -36,7 +41,7 @@ func CreateOrGetSessionID() (sessionID int64, err error) {
 	}
 
 	result, err := db.Exec("INSERT INTO sessions (project_path) VALUES (?)",
-		ProjectRoot)
+		projectRoot)
 	if err != nil {
 		return
 	}

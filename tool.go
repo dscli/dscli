@@ -227,7 +227,7 @@ which lead to the error:
 		errorMsg = err.Error()
 	}
 
-	if err := RecordToolUsage(toolID, success, errorMsg); err != nil {
+	if err := RecordToolUsage(ctx, toolID, success, errorMsg); err != nil {
 		return "", err
 	}
 
@@ -340,7 +340,8 @@ func ListTools(category string) ([]ToolDesc, error) {
 }
 
 // RecordToolUsage 记录工具使用
-func RecordToolUsage(toolID int64, success bool, errorMsg string) error {
+func RecordToolUsage(ctx context.Context, toolID int64, success bool, errorMsg string) error {
+	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
 	db, err := OpenDB()
 	if err != nil {
 		return err
@@ -355,7 +356,7 @@ func RecordToolUsage(toolID int64, success bool, errorMsg string) error {
 	// 记录使用详情
 	_, err = db.Exec(`
 		INSERT INTO tool_usage (project_path, tool_id, success, error_msg)
-		VALUES (?, ?, ?, ?)`, ProjectRoot, toolID, success, errorMsg)
+		VALUES (?, ?, ?, ?)`, projectRoot, toolID, success, errorMsg)
 	if err != nil {
 		return fmt.Errorf("记录工具使用详情失败: %w", err)
 	}
@@ -413,8 +414,9 @@ func GetToolUsageStats(days int) ([]ToolUsageStat, error) {
 }
 
 // GetProjectToolUsage 获取项目工具使用情况
-func GetProjectToolUsage(days int) ([]ToolUsageStat, error,
+func GetProjectToolUsage(ctx context.Context, days int) ([]ToolUsageStat, error,
 ) {
+	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
 	db, err := OpenDB()
 	if err != nil {
 		return nil, err
@@ -434,9 +436,9 @@ func GetProjectToolUsage(days int) ([]ToolUsageStat, error,
 
 	if days > 0 {
 		query += " AND tu.used_at >= datetime('now', '-' || ? || ' days')"
-		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", ProjectRoot, days)
+		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", projectRoot, days)
 	} else {
-		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", ProjectRoot)
+		rows, err = db.Query(query+" GROUP BY t.id ORDER BY usage_count DESC", projectRoot)
 	}
 
 	if err != nil {

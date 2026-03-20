@@ -2,7 +2,10 @@ package context
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -60,4 +63,73 @@ func ContextValue[T any](ctx context.Context, k ContextKeyType[T], d T) (v T) {
 		return v
 	}
 	return d
+}
+
+func GetProjectRoot() (projectRoot string) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+	gitRoot, err := findGitRoot(cwd)
+	if err != nil {
+		gitRoot = cwd
+	}
+	projectRoot, err = filepath.Abs(gitRoot)
+	if err != nil {
+		panic(err)
+	}
+
+	if cwd != projectRoot {
+		err = os.Chdir(projectRoot)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	cwd, err = os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+
+	if cwd != projectRoot {
+		err = fmt.Errorf("cwd(%s) != ProjectRoot(%s)", cwd, projectRoot)
+		panic(err)
+	}
+	return projectRoot
+}
+
+func findGitRoot(dir string) (string, error) {
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	for {
+		gitPath := filepath.Join(absDir, ".git")
+		if _, err := os.Stat(gitPath); err == nil {
+			return absDir, nil
+		}
+		parent := filepath.Dir(absDir)
+		if parent == absDir {
+			break
+		}
+		absDir = parent
+	}
+	return "", fmt.Errorf("未找到 Git 仓库根目录")
+}
+
+func GetConfigDir() (configDir string) {
+	configDir = filepath.Join(os.Getenv("HOME"), ".dscli")
+	err := os.MkdirAll(configDir, 0o755)
+	if err != nil {
+		panic(err)
+	}
+	return
+}
+
+func Getenv(key, dvalue string) (value string) {
+	value = os.Getenv(key)
+	if value == "" {
+		value = dvalue
+	}
+	return
 }

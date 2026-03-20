@@ -1,9 +1,15 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"gitcode.com/dscli/dscli/internal/context"
+)
 
 func TestGetSessionID(t *testing.T) {
-	sessionID, err := CreateOrGetSessionID()
+	ctx := t.Context()
+	ctx = context.WithValue(ctx, context.ProjectRootKey, context.GetProjectRoot())
+	sessionID, err := CreateOrGetSessionID(ctx)
 	if err != nil || sessionID == 0 {
 		t.Fatal(err, sessionID)
 	}

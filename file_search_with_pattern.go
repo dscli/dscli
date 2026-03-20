@@ -86,7 +86,7 @@ func init() {
 
 // handleSearchFileWithPattern 搜索文件中匹配指定模式的行，并显示上下文
 // 输出格式与 awk 类似，保持一致性
-func handleSearchFileWithPattern(_ context.Context, args ToolArgs) (string, error) {
+func handleSearchFileWithPattern(ctx context.Context, args ToolArgs) (string, error) {
 	path := ToolArgsValue(args, "path", "")
 	if path == "" {
 		return "", fmt.Errorf("parameter error: no path specified")
@@ -97,7 +97,7 @@ func handleSearchFileWithPattern(_ context.Context, args ToolArgs) (string, erro
 		return "", fmt.Errorf("parameter error: no pattern specified")
 	}
 
-	fullPath := resolvePath(path)
+	fullPath := resolvePath(ctx, path)
 
 	// 解析上下文行数参数
 	contextLines := ToolArgsValue(args, "context_lines", 5) // 默认上下文行数

@@ -42,15 +42,17 @@ func removeShebang(script string) string {
 }
 
 // ShortenShellScript 生成脚本的简短摘要
-func ShortenShellScript(script string) string {
+func ShortenShellScript(ctx context.Context, script string) string {
 	// 处理空字符串
 	if script == "" {
 		return ""
 	}
 
+	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
+
 	// 移除项目根目录路径（只有在ProjectRoot不为空时）
-	if ProjectRoot != "" {
-		script = strings.ReplaceAll(script, ProjectRoot, ".")
+	if projectRoot != "" {
+		script = strings.ReplaceAll(script, projectRoot, ".")
 	}
 
 	// 移除非ASCII字符
@@ -345,12 +347,13 @@ func executeWithShellPackage(ctx context.Context, script string) (out string, er
 
 // executeWithOSExec 使用原始的 os/exec 实现执行命令
 func executeWithOSExec(ctx context.Context, name string, args []string, script string, stdin io.Reader) (out string, err error) {
+	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
 	// 这是原始的 ShellExec 实现的核心部分
 	name = context.ContextValue(ctx, context.ShellNameKey, name)
 	args = context.ContextValue(ctx, context.ShellArgsKey, args)
 	buf := bytes.NewBuffer([]byte{})
 	subproc := exec.CommandContext(ctx, name, args...)
-	subproc.Dir = ProjectRoot
+	subproc.Dir = projectRoot
 	subproc.Stdout = buf
 	subproc.Stderr = buf
 	subproc.Stdin = stdin

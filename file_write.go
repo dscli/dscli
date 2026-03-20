@@ -52,7 +52,7 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (output string, err err
 	append := ToolArgsValue(args, "append", false)
 	delete(args, "append")
 
-	fullPath := resolvePath(path)
+	fullPath := resolvePath(ctx, path)
 
 	if append {
 		// 追加模式：打开文件并追加内容

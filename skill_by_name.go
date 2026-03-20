@@ -1,8 +1,9 @@
 package main
 
 import (
-	"context"
 	"fmt"
+
+	"gitcode.com/dscli/dscli/internal/context"
 )
 
 // handleSkillByName 处理Skill工具调用
@@ -24,8 +25,9 @@ func handleSkillByName(ctx context.Context, args ToolArgs) (content string, err 
 		err = fmt.Errorf("no skill found for %s", skillName)
 		return
 	}
+	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
 	// 异步记录技能使用
-	safeAsyncRecordUsage(skill.ID, ProjectRoot)
+	safeAsyncRecordUsage(skill.ID, projectRoot)
 	// 格式化输出
 
 	return skill.Content, nil

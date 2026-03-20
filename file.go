@@ -4,17 +4,20 @@ import (
 	"fmt"
 	"math/rand"
 	"path/filepath"
+
+	"gitcode.com/dscli/dscli/internal/context"
 )
 
 func init() {
 }
 
 // 解析文件路径：如果是相对路径，则拼接项目根目录；否则直接使用
-func resolvePath(path string) string {
+func resolvePath(ctx context.Context, path string) string {
+	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
 	if filepath.IsAbs(path) {
 		return path
 	}
-	return filepath.Join(ProjectRoot, path)
+	return filepath.Join(projectRoot, path)
 }
 
 func Shuffle(in string) (out string) {

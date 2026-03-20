@@ -86,7 +86,7 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (string, e
 
 	// content 可以为空字符串，表示删除
 
-	fullPath := resolvePath(path)
+	fullPath := resolvePath(ctx, path)
 
 	// 解析起始行号
 	startLine, endLine, err := parseLineRange(args)

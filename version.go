@@ -3,6 +3,7 @@ package main
 import (
 	"runtime"
 
+	"gitcode.com/dscli/dscli/internal/context"
 	"github.com/spf13/cobra"
 )
 
@@ -19,11 +20,17 @@ func init() {
 		Use:   "version",
 		Short: "显示版本信息",
 		Long:  `显示 dscli 的版本信息、构建信息和运行时信息。`,
-		Run:   VersionRun,
+		RunE:  VersionRunE,
 	})
 }
 
-func VersionRun(cmd *cobra.Command, args []string) {
+func VersionRunE(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+	return versionRunE(ctx)
+}
+
+func versionRunE(ctx context.Context) (err error) {
+	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
 	PrintHeader("dscli 版本信息")
 
 	PrintSection("基本信息")
@@ -40,7 +47,7 @@ func VersionRun(cmd *cobra.Command, args []string) {
 
 	PrintSection("配置信息")
 	PrintKeyValue("配置目录", ConfigDir)
-	PrintKeyValue("项目根目录", ProjectRoot)
+	PrintKeyValue("项目根目录", projectRoot)
 	PrintKeyValue("输出模式", mode)
 	PrintKeyValue("详细输出", boolToString(verbose))
 	PrintKeyValue("颜色输出", boolToString(!colorEnabled))
@@ -48,4 +55,5 @@ func VersionRun(cmd *cobra.Command, args []string) {
 	PrintSection("模型配置")
 	PrintKeyValue("聊天模型", ModelDeepseekChat)
 	PrintKeyValue("推理模型", ModelDeepseekReasoner)
+	return
 }
