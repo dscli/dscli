@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"gitcode.com/dscli/dscli/internal/outfmt"
 	"github.com/eatmoreapple/openwechat"
 )
 
@@ -68,15 +69,15 @@ func (b *Bot) SmartLogin(ctx context.Context) error {
 	}
 
 	// 都失败，需要扫码登录
-	fmt.Println("⚠️  需要扫码登录...")
-	fmt.Println("请使用微信扫描二维码登录")
+	outfmt.Println("⚠️  需要扫码登录...")
+	outfmt.Println("请使用微信扫描二维码登录")
 
 	// 设置更友好的二维码显示
 	b.bot.UUIDCallback = func(uuid string) {
 		qrURL := "https://login.weixin.qq.com/l/" + uuid
-		fmt.Printf("\n📱 请扫码登录: %s\n", qrURL)
-		fmt.Println("或者打开以下链接扫描二维码:")
-		fmt.Println(qrURL)
+		outfmt.Printf("\n📱 请扫码登录: %s\n", qrURL)
+		outfmt.Println("或者打开以下链接扫描二维码:")
+		outfmt.Println(qrURL)
 	}
 
 	// 执行扫码登录
@@ -101,13 +102,13 @@ func (b *Bot) afterLogin(ctx context.Context) error {
 	}
 
 	b.self = self
-	fmt.Printf("✅ 登录成功: %s\n", self.NickName)
+	outfmt.Printf("✅ 登录成功: %s\n", self.NickName)
 
 	// 设置消息处理器（只接收，不自动回复）
 	b.bot.MessageHandler = func(msg *openwechat.Message) {
 		// 这里只记录收到消息，不自动回复
 		// 回复由AI通过命令行控制
-		fmt.Printf("📨 收到消息: %s\n", msg.Content)
+		outfmt.Printf("📨 收到消息: %s\n", msg.Content)
 	}
 
 	return nil
@@ -150,7 +151,7 @@ func (b *Bot) Logout(ctx context.Context) error {
 	}
 
 	b.self = nil
-	fmt.Println("✅ 已退出登录")
+	outfmt.Println("✅ 已退出登录")
 	return nil
 }
 
