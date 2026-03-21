@@ -18,7 +18,7 @@ func TestRootPreRunE(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotErr := RootPreRunE(tt.cmd, tt.args)
+			gotErr := RootPersistentPreRunE(tt.cmd, tt.args)
 			if gotErr != nil {
 				if !tt.wantErr {
 					t.Errorf("RootPreRunE() failed: %v", gotErr)

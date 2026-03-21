@@ -12,7 +12,7 @@ func init() {
 
 // 解析文件路径：如果是相对路径，则拼接项目根目录；否则直接使用
 func resolvePath(ctx context.Context, path string) string {
-	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
+	projectRoot := context.ProjectRoot
 	if filepath.IsAbs(path) {
 		return path
 	}

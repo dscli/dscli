@@ -238,6 +238,9 @@ Line 3`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Cleanup(func() {
+				os.RemoveAll("test.txt")
+			})
 			// 设置测试文件
 			filePath := filepath.Join(tmpDir, ToolArgsValue(tt.args, "path", ""))
 

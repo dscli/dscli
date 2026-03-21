@@ -26,7 +26,7 @@ func handleSkillByName(ctx context.Context, args ToolArgs) (content string, err 
 		err = fmt.Errorf("no skill found for %s", skillName)
 		return
 	}
-	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
+	projectRoot := context.ProjectRoot
 	// 异步记录技能使用
 	safeAsyncRecordUsage(skill.ID, projectRoot)
 	// 格式化输出

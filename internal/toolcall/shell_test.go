@@ -57,8 +57,6 @@ print("OK")`, "OK\n", nil},
 		t.Run("", func(t *testing.T) {
 			// 创建包含ToolDisplayName的context
 			ctx := context.WithValue(t.Context(), ToolDisplayName, "test-tool")
-			ctx = context.WithValue(ctx, context.VerboseKey, true)
-			ctx = context.WithValue(ctx, context.ProjectRootKey, context.GetProjectRoot())
 			out, err := ShellExec(ctx, tc.script)
 
 			if tc.checkErr == nil {
@@ -202,7 +200,6 @@ echo "执行完成"`,
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
-			ctx = context.WithValue(ctx, context.ProjectRootKey, context.GetProjectRoot())
 			got := ShortenShellScript(ctx, tt.script)
 			if got != tt.want {
 				t.Errorf("ShortenShellScript() = %v, want %v", got, tt.want)
@@ -249,7 +246,6 @@ func TestShortenShellScriptEdgeCases(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
-			ctx = context.WithValue(ctx, context.ProjectRootKey, context.GetProjectRoot())
 			got := ShortenShellScript(ctx, tt.script)
 			if got != tt.want {
 				t.Errorf("ShortenShellScript() = %v, want %v", got, tt.want)

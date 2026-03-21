@@ -17,22 +17,18 @@ var (
 	CurrentModelIDKey   = ContextKeyType[int64]{"CurrentModelID"}
 	CurrentModelNameKey = ContextKeyType[string]{"CurrentModelName"}
 	CurrentDomainIDKey  = ContextKeyType[int64]{"CurrentDomainID"}
-	CurrentSessionIDKey = ContextKeyType[int64]{"CurrentSessionID"}
 	ToolCallIDKey       = ContextKeyType[string]{"ToolCallID"}
 	ShellNameKey        = ContextKeyType[string]{"ShellName"}
 	ShellArgsKey        = ContextKeyType[[]string]{"ShellArgs"}
 	ShellStdinKey       = ContextKeyType[io.Reader]{"ShellStdin"}
 	InputContentKey     = ContextKeyType[string]{"InputContent"}
-	VerboseKey          = ContextKeyType[bool]{"Verbose"}
 	InsideShellExecKey  = ContextKeyType[bool]{"InsideShellExec"}
-	IsTestingKey        = ContextKeyType[bool]{"IsTesting"}
 	StreamKey           = ContextKeyType[bool]{"Stream"}
 	LeftTokensKey       = ContextKeyType[int]{"LeftTokens"}
 	CodeFormatKey       = ContextKeyType[string]{"CodeFormat"}
 	MakeTestKey         = ContextKeyType[string]{"MakeTest"}
 	MakeBuildKey        = ContextKeyType[string]{"MakeBuild"}
 	WechatFormatKey     = ContextKeyType[string]{"WechatFormat"}
-	ProjectRootKey      = ContextKeyType[string]{"ProjectRoot"}
 )
 
 var (
@@ -44,6 +40,7 @@ var (
 
 var (
 	ConfigDir             = GetConfigDir()
+	ProjectRoot           = GetProjectRoot()
 	ModelDeepseekChat     = Getenv("MODEL_DEEPSEEK_CHAT", "deepseek-chat")
 	ModelDeepseekReasoner = Getenv("MODEL_DEEPSEEK_REASONER", "deepseek-reasoner")
 )

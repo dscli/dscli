@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 
-	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 
 	"github.com/spf13/cobra"
@@ -24,7 +23,6 @@ Supports Go files with built-in parser, other languages with Python-based parsin
 
 	// 添加选项
 	parseCmd.Flags().StringP("language", "l", "", "Specify language (auto-detected by default)")
-	parseCmd.Flags().BoolP("verbose", "v", false, "Verbose output")
 	parseCmd.Flags().BoolP("use-python", "p", false, "Force use Python parser (for non-Go languages)")
 
 	AddRootCommand(parseCmd)
@@ -45,10 +43,8 @@ func runParse(cmd *cobra.Command, args []string) error {
 		lang = toolcall.GuessLanguage(filePath)
 	}
 
-	verbose, _ := cmd.Flags().GetBool("verbose")
 	usePython, _ := cmd.Flags().GetBool("use-python")
 	ctx := cmd.Context()
-	ctx = context.WithValue(ctx, context.VerboseKey, verbose)
 	// 解析文件结构
 	fs, err := toolcall.ParseFileStructure0(ctx, filePath, lang, usePython)
 	if err != nil {

@@ -21,8 +21,6 @@ func init() {
 支持智能登录、消息收发、联系人管理等功能。`,
 		PersistentPreRunE: wechatPersistentPreRunE,
 	})
-	// 将wechat命令添加到根命令
-	AddRootCommand(wechatCmd)
 
 	// 添加子命令
 	_ = AddCommand(wechatCmd, &cobra.Command{

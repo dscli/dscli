@@ -170,11 +170,12 @@ func getAllowedCommands() []string {
 }
 
 func ShellExecConfig(ctx context.Context) *Config {
-	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
+	projectRoot := context.ProjectRoot
 	if projectRoot == "" {
 		panic("project root not set")
 	}
-	isTesting := context.ContextValue(ctx, context.IsTestingKey, false)
+
+	isTesting := context.IsTesting()
 	config := DefaultConfig(ctx)
 
 	// 使用完整的允许命令列表

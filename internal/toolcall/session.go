@@ -1,4 +1,4 @@
-package main
+package toolcall
 
 import (
 	"database/sql"
@@ -18,9 +18,27 @@ func init() {
 		)`)
 }
 
+var currentSessionID int64
+
+func GetCurrentSessionID(ctx context.Context) (sessionID int64) {
+	if currentSessionID != 0 {
+		sessionID = currentSessionID
+		return
+	}
+	sessionID, err := CreateOrGetSessionID(ctx)
+	if err != nil {
+		panic(err)
+	}
+	currentSessionID = sessionID
+	return
+}
+
 // CreateOrGetSessionID 获取或创建会话ID
 func CreateOrGetSessionID(ctx context.Context) (sessionID int64, err error) {
-	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
+	projectRoot := context.ProjectRoot
+	if projectRoot == "" {
+		panic("project root is empty, please set")
+	}
 	db, err := sqlite.OpenDB()
 	if err != nil {
 		return

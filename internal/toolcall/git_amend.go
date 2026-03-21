@@ -73,7 +73,7 @@ func handleGitAmend(ctx context.Context, args ToolArgs) (string, error) {
 
 	// 执行git命令
 	cmd := exec.Command("git", gitArgs...)
-	cmd.Dir = context.ContextValue(ctx, context.ProjectRootKey, "")
+	cmd.Dir = context.ProjectRoot
 	output, err := cmd.CombinedOutput()
 	out := string(output)
 
@@ -141,7 +141,7 @@ func isGitRepository(ctx context.Context) bool {
 func uncommittedChanges(ctx context.Context) (hasChanges bool, err error) {
 	// 执行git status --porcelain
 	cmd := exec.Command("git", "status", "--porcelain")
-	cmd.Dir = context.ContextValue(ctx, context.ProjectRootKey, "")
+	cmd.Dir = context.ProjectRoot
 	output, err := cmd.Output()
 	if err != nil {
 		err = fmt.Errorf("git status failed: %w", err)

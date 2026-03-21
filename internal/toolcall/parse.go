@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 //go:embed parse.py
@@ -188,7 +189,7 @@ func parseGoStructure(path string) (*FileStructure, error) {
 
 func runPythonParsePy(ctx context.Context, filePath string, lang string) (output string, err error) {
 	// 从上下文中获取verbose标志
-	verbose := context.ContextValue(ctx, context.VerboseKey, false)
+	verbose := outfmt.GetVerbose()
 
 	// 读取文件内容
 	content, err := os.ReadFile(filePath)
@@ -258,7 +259,7 @@ func runPythonParsePy(ctx context.Context, filePath string, lang string) (output
 // parseWithPython 使用Python脚本解析文件结构
 func parseWithPython(ctx context.Context, filePath, lang string) (structure *FileStructure, err error) {
 	// 从上下文中获取verbose标志
-	verbose := context.ContextValue(ctx, context.VerboseKey, false)
+	verbose := outfmt.GetVerbose()
 
 	output, err := runPythonParsePy(ctx, filePath, lang)
 	if err != nil {

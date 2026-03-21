@@ -10,10 +10,7 @@ import (
 )
 
 var (
-	mode          string
-	colorEnabled  bool
-	showTimestamp bool
-	verbose       bool
+	DeepseekClient Client
 
 	rootCmd = &cobra.Command{
 		Use:   "dscli",
@@ -27,16 +24,16 @@ var (
   --no-color      禁用颜色输出
   --no-timestamp  禁用时间戳显示
   --db            数据库文件路径（默认：~/.dscli/sqlite.db）`,
-		PersistentPreRunE: RootPreRunE,
+		PersistentPreRunE: RootPersistentPreRunE,
 		Version:           Version,
 	}
 )
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&mode, "mode", "markdown", "输出模式：markdown（Markdown格式）、org（Org模式格式）")
-	rootCmd.PersistentFlags().BoolVar(&colorEnabled, "no-color", false, "禁用颜色输出")
-	rootCmd.PersistentFlags().BoolVar(&showTimestamp, "no-timestamp", false, "禁用时间戳显示")
-	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "打开调试选项（显示详细输出）")
+	rootCmd.PersistentFlags().String("mode", "markdown", "输出模式：markdown（Markdown格式）、org（Org模式格式）")
+	rootCmd.PersistentFlags().Bool("no-color", false, "禁用颜色输出")
+	rootCmd.PersistentFlags().Bool("no-timestamp", false, "禁用时间戳显示")
+	rootCmd.PersistentFlags().Bool("verbose", false, "打开调试选项（显示详细输出）")
 	rootCmd.PersistentFlags().String("db", "", "数据库文件路径（默认：~/.dscli/sqlite.db）")
 }
 
@@ -49,12 +46,37 @@ func AddRootCommand(child *cobra.Command) *cobra.Command {
 	return AddCommand(rootCmd, child)
 }
 
-func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
-	ctx := cmd.Context()
-	ctx = context.WithValue(ctx, context.ProjectRootKey, context.GetProjectRoot())
-	defer cmd.SetContext(ctx)
+func RootPersistentPreRunE(cmd *cobra.Command, args []string) (err error) {
+	verbose, err := cmd.Flags().GetBool("verbose")
+	if err != nil {
+		return
+	}
+
+	mode, err := cmd.Flags().GetString("mode")
+	if err != nil {
+		return
+	}
+
+	colorEnabled, err := cmd.Flags().GetBool("no-color")
+	if err != nil {
+		return
+	}
+
+	showTimestamp, err := cmd.Flags().GetBool("no-timestamp")
+	if err != nil {
+		return
+	}
+
+	// 设置颜色输出
+	outfmt.SetColorEnabled(!colorEnabled) // 注意：--no-color 为 true 时禁用颜色
+
+	// 设置时间戳显示
+	outfmt.SetShowTimestamp(!showTimestamp) // 注意：--no-timestamp 为 true 时禁用时间戳
+
+	// 设置详细输出
+	outfmt.SetVerbose(verbose)
+
 	// 配置输出系统
-	configureOutput()
 	outfmt.SetOutputWriter(cmd.OutOrStdout())
 	switch mode {
 	case "markdown":
@@ -87,18 +109,6 @@ func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 	url := context.Getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 	DeepseekClient = NewClient(key, url)
 	return nil
-}
-
-// configureOutput 配置输出系统
-func configureOutput() {
-	// 设置颜色输出
-	outfmt.SetColorEnabled(!colorEnabled) // 注意：--no-color 为 true 时禁用颜色
-
-	// 设置时间戳显示
-	outfmt.SetShowTimestamp(!showTimestamp) // 注意：--no-timestamp 为 true 时禁用时间戳
-
-	// 设置详细输出
-	outfmt.SetVerbose(verbose)
 }
 
 func RootExecute() error { return rootCmd.Execute() }

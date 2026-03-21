@@ -43,12 +43,6 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 		return
 	}
 	ctx = context.WithValue(ctx, context.CurrentModelIDKey, modelID)
-	// SessionID
-	sessionID, err := CreateOrGetSessionID(ctx)
-	if err != nil {
-		return
-	}
-	ctx = context.WithValue(ctx, context.CurrentSessionIDKey, sessionID)
 	// InsideShellExec
 	ctx = context.WithValue(ctx, context.InsideShellExecKey, os.Getenv("InsideShellExec") == "1")
 

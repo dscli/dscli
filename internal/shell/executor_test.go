@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -105,6 +106,7 @@ func TestSafeExecute(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Cleanup(func() { os.RemoveAll("test.txt") })
 			output, err := SafeExecute(ctx, tt.script)
 
 			if tt.wantErr {

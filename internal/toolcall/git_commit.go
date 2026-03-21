@@ -67,7 +67,7 @@ func handleGitCommit(ctx context.Context, args ToolArgs) (string, error) {
 	outfmt.Info("执行: git %s", strings.Join(gitArgs, " "))
 
 	cmd := exec.Command("git", gitArgs...)
-	cmd.Dir = context.ContextValue(ctx, context.ProjectRootKey, "")
+	cmd.Dir = context.ProjectRoot
 	output, err := cmd.CombinedOutput()
 	out := string(output)
 

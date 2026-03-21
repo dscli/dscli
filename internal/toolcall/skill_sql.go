@@ -38,7 +38,7 @@ func init() {
 }
 
 func GetProjectSkills(ctx context.Context) (skills []*Skill, err error) {
-	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
+	projectRoot := context.ProjectRoot
 	db, err := sqlite.OpenDB()
 	if err != nil {
 		return
@@ -141,7 +141,7 @@ func CreateSkill(ctx context.Context, skill *Skill) error {
 }
 
 func CreateProjectSkill(ctx context.Context, id int64) (err error) {
-	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
+	projectRoot := context.ProjectRoot
 	db, err := sqlite.OpenDB()
 	if err != nil {
 		return

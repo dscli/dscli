@@ -79,7 +79,7 @@ func ToolCallsID(tcs []ToolCall) string {
 
 // UpdateContent update message content
 func UpdateContent(ctx context.Context, id int64, content string) (err error) {
-	sessionID := context.ContextValue(ctx, context.CurrentSessionIDKey, int64(0))
+	sessionID := GetCurrentSessionID(ctx)
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	db, err := sqlite.OpenDB()
 	if err != nil {
@@ -115,7 +115,7 @@ func ToSQLNullString(tcs []ToolCall) (toolCalls sql.NullString) {
 
 // UpdateToolCalls update message content
 func UpdateToolCalls(ctx context.Context, id int64, tcs []ToolCall) (err error) {
-	sessionID := context.ContextValue(ctx, context.CurrentSessionIDKey, int64(0))
+	sessionID := GetCurrentSessionID(ctx)
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	db, err := sqlite.OpenDB()
 	if err != nil {
@@ -142,7 +142,7 @@ func UpdateToolCalls(ctx context.Context, id int64, tcs []ToolCall) (err error) 
 
 // UpdateHistory update message session_id to 0
 func UpdateHistory(ctx context.Context, id int64) (err error) {
-	sessionID := context.ContextValue(ctx, context.CurrentSessionIDKey, int64(0))
+	sessionID := GetCurrentSessionID(ctx)
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	db, err := sqlite.OpenDB()
 	if err != nil {
@@ -159,7 +159,7 @@ func UpdateHistory(ctx context.Context, id int64) (err error) {
 }
 
 func ShowMessage(ctx context.Context, id int64) (message *Message, err error) {
-	sessionID := context.ContextValue(ctx, context.CurrentSessionIDKey, int64(0))
+	sessionID := GetCurrentSessionID(ctx)
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	db, err := sqlite.OpenDB()
 	if err != nil {
@@ -191,23 +191,24 @@ func ShowMessage(ctx context.Context, id int64) (message *Message, err error) {
 
 // ListHistory 加载指定会话的所有历史消息，按时间升序返回
 func ListHistory(ctx context.Context) ([]*Message, error) {
-	sessionID := context.ContextValue(ctx, context.CurrentSessionIDKey, int64(0))
+	sessionID := GetCurrentSessionID(ctx)
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	histSize := context.ContextValue(ctx, context.HistSizeKey, 8)
+	fmt.Printf("sessionID=%d, modelID=%d, histSize=%d\n", sessionID, modelID, histSize)
 	db, err := sqlite.OpenDB()
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
-	rows, err := db.Query(`
-		SELECT id, role, content, tool_call_id, tool_calls, created_at
+	rows, err := db.QueryContext(ctx, `SELECT id, role, content, tool_call_id, tool_calls, created_at
 		FROM messages
 		WHERE session_id = ? AND model_id = ?
 		ORDER BY id DESC
-        LIMIT ?`, sessionID, modelID, histSize+2) // histSize + 2就可
-	// 以，因为主要就是最后两个。注意我们按降低排的序：{100, 99, 98,
-	// ...} 最大ID在前面应用LIMIT，总能把最新消息的找出来。但我们提交
-	// 给大语言模型时，最新消息要在最后: {...,98, 99, 100}。
+        LIMIT ?`, sessionID, modelID, histSize+2)
+	// histSize + 2就可以，因为主要就是最后两个。
+	// 注意我们按降低排的序：{100, 99, 98, ...} 最大ID在前面
+	// 应用LIMIT，总能把最新消息的找出来。但我们提交给大语言模型时，
+	// 最新消息要在最后: {...,98, 99, 100}。
 	if err != nil {
 		return nil, fmt.Errorf("查询历史消息失败: %w", err)
 	}
@@ -243,7 +244,7 @@ func ListHistory(ctx context.Context) ([]*Message, error) {
 
 // LoadHistory 加载指定会话的所有历史消息，按时间升序返回
 func LoadHistory(ctx context.Context) ([]Message, error) {
-	sessionID := context.ContextValue(ctx, context.CurrentSessionIDKey, int64(0))
+	sessionID := GetCurrentSessionID(ctx)
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	histSize := context.ContextValue(ctx, context.HistSizeKey, 8)
 	leftTokens := context.ContextValue(ctx, context.LeftTokensKey, 0)
@@ -318,6 +319,10 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 func JudgeHistory(messages []*Message) {
 	// The messages is in decrease order {100, 99, 98, ...}
 	l := len(messages)
+	if l == 0 {
+		return
+	}
+
 	for i, message := range messages[0 : l-1] {
 		nextMessage := messages[i+1]
 		message.OK = true
@@ -413,7 +418,7 @@ outloop:
 
 // SaveMessages 保存消息（事务）
 func SaveMessages(ctx context.Context, msgs ...Message) error {
-	sessionID := context.ContextValue(ctx, context.CurrentSessionIDKey, int64(0))
+	sessionID := GetCurrentSessionID(ctx)
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	db, err := sqlite.OpenDB()
 	if err != nil {

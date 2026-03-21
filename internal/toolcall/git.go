@@ -20,7 +20,7 @@ func gitCommand(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 
 	// 设置工作目录
-	cmd.Dir = context.ContextValue(ctx, context.ProjectRootKey, "")
+	cmd.Dir = context.ProjectRoot
 
 	// 捕获输出
 	var stdoutBuf, stderrBuf bytes.Buffer

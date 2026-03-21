@@ -35,11 +35,11 @@ func TestVersionCommandOutput(t *testing.T) {
 	originalWriter := os.Stdout
 	originalVersion := Version
 	originalBuild := Build
-	originalConfigDir := ConfigDir
-	originalMode := mode
-	originalVerbose := verbose
-	originalColorEnabled := colorEnabled
-	originalShowTimestamp := showTimestamp
+	originalConfigDir := context.ConfigDir
+	originalMode := outfmt.GetOutputMode()
+	originalVerbose := outfmt.GetVerbose()
+	originalColorEnabled := outfmt.GetColorEnabled()
+	originalShowTimestamp := outfmt.GetShowTimestamp()
 	originalModelChat := context.ModelDeepseekChat
 	originalModelReasoner := context.ModelDeepseekReasoner
 
@@ -48,11 +48,11 @@ func TestVersionCommandOutput(t *testing.T) {
 		outfmt.SetOutputWriter(originalWriter)
 		Version = originalVersion
 		Build = originalBuild
-		ConfigDir = originalConfigDir
-		mode = originalMode
-		verbose = originalVerbose
-		colorEnabled = originalColorEnabled
-		showTimestamp = originalShowTimestamp
+		context.ConfigDir = originalConfigDir
+		outfmt.SetOutputMode(originalMode)
+		outfmt.SetVerbose(originalVerbose)
+		outfmt.SetColorEnabled(originalColorEnabled)
+		outfmt.SetShowTimestamp(originalShowTimestamp)
 		context.ModelDeepseekChat = originalModelChat
 		context.ModelDeepseekReasoner = originalModelReasoner
 	}()
@@ -60,11 +60,11 @@ func TestVersionCommandOutput(t *testing.T) {
 	// 设置测试值
 	Version = "1.0.0-test"
 	Build = "test-build-123"
-	ConfigDir = "/tmp/.dscli-test"
-	mode = "markdown"
-	verbose = true
-	colorEnabled = true
-	showTimestamp = false
+	context.ConfigDir = "/tmp/.dscli-test"
+	outfmt.SetOutputMode("markdown")
+	outfmt.SetVerbose(true)
+	outfmt.SetColorEnabled(true)
+	outfmt.SetShowTimestamp(false)
 	context.ModelDeepseekChat = "deepseek-chat-test"
 	context.ModelDeepseekReasoner = "deepseek-reasoner-test"
 
@@ -73,7 +73,6 @@ func TestVersionCommandOutput(t *testing.T) {
 	outfmt.SetOutputWriter(&buf)
 	ctx := t.Context()
 
-	ctx = context.WithValue(ctx, context.ProjectRootKey, context.GetProjectRoot())
 	// 执行version命令
 	versionRunE(ctx)
 
@@ -145,7 +144,7 @@ func TestVersionCommandWithoutBuild(t *testing.T) {
 	// 设置测试输出缓冲区
 	var buf bytes.Buffer
 	outfmt.SetOutputWriter(&buf)
-	ctx := context.WithValue(t.Context(), context.ProjectRootKey, context.GetProjectRoot())
+	ctx := t.Context()
 	// 执行version命令
 	versionRunE(ctx)
 
@@ -169,7 +168,7 @@ func TestVersionCommandIntegration(t *testing.T) {
 	// 设置测试输出缓冲区
 	var buf bytes.Buffer
 	outfmt.SetOutputWriter(&buf)
-	ctx := context.WithValue(t.Context(), context.ProjectRootKey, context.GetProjectRoot())
+	ctx := t.Context()
 
 	// 执行命令
 	versionRunE(ctx)

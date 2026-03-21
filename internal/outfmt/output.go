@@ -161,14 +161,27 @@ func SetColorEnabled(enabled bool) {
 	outputColorEnabled = enabled
 }
 
+// GetColorEnabled returns output color enabled
+func GetColorEnabled() bool {
+	return outputColorEnabled
+}
+
 // SetShowTimestamp 设置是否显示时间戳
 func SetShowTimestamp(show bool) {
 	outputShowTimestamp = show
 }
 
+func GetShowTimestamp() bool {
+	return outputShowTimestamp
+}
+
 // SetVerbose 设置是否显示详细输出
 func SetVerbose(verbose bool) {
 	outputVerbose = verbose
+}
+
+func GetVerbose() bool {
+	return outputVerbose
 }
 
 // SetErrorWriter 设置错误输出写入器

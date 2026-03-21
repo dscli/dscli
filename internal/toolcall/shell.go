@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/shell"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -46,7 +47,7 @@ func ShortenShellScript(ctx context.Context, script string) string {
 		return ""
 	}
 
-	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
+	projectRoot := context.ProjectRoot
 
 	// 移除项目根目录路径（只有在ProjectRoot不为空时）
 	if projectRoot != "" {
@@ -166,7 +167,7 @@ func shortenSimple(script string) string {
 func ArrangeArgs(ctx context.Context, cacheFile string) (context.Context, bool) {
 	name := context.ContextValue(ctx, context.ShellNameKey, "")
 	args := context.ContextValue(ctx, context.ShellArgsKey, []string{})
-	verbose := context.ContextValue(ctx, context.VerboseKey, false)
+	verbose := outfmt.GetVerbose()
 
 	if verbose {
 		fmt.Fprintf(os.Stderr, "ArrangeArgs: name=%s, args=%v, cacheFile=%s\n", name, args, cacheFile)
@@ -221,7 +222,7 @@ func ArrangeArgs(ctx context.Context, cacheFile string) (context.Context, bool) 
 // 对于 shell 命令使用新的 internal/shell 包
 // 对于非 shell 命令回退到原始的 os/exec 实现
 func ShellExec(ctx context.Context, script string) (out string, err error) {
-	verbose := context.ContextValue(ctx, context.VerboseKey, false)
+	verbose := outfmt.GetVerbose()
 	// 解析 shebang
 	name, shellArgs := Shebang(script)
 	if verbose {
@@ -345,7 +346,7 @@ func executeWithShellPackage(ctx context.Context, script string) (out string, er
 
 // executeWithOSExec 使用原始的 os/exec 实现执行命令
 func executeWithOSExec(ctx context.Context, name string, args []string, script string, stdin io.Reader) (out string, err error) {
-	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
+	projectRoot := context.ProjectRoot
 	// 这是原始的 ShellExec 实现的核心部分
 	name = context.ContextValue(ctx, context.ShellNameKey, name)
 	args = context.ContextValue(ctx, context.ShellArgsKey, args)
@@ -385,7 +386,7 @@ func executeWithOSExec(ctx context.Context, name string, args []string, script s
 }
 
 func GetOrCreateCacheFile(ctx context.Context, script string) (cacheFile string, err error) {
-	verbose := context.ContextValue(ctx, context.VerboseKey, false)
+	verbose := outfmt.GetVerbose()
 	shellName := context.ContextValue(ctx, context.ShellNameKey, "")
 	shellArgs := context.ContextValue(ctx, context.ShellArgsKey, []string{})
 	isPython := strings.Contains(shellName, "python")

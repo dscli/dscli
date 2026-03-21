@@ -383,7 +383,7 @@ func ListTools(category string) ([]ToolDesc, error) {
 
 // RecordToolUsage 记录工具使用
 func RecordToolUsage(ctx context.Context, toolID int64, success bool, errorMsg string) error {
-	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
+	projectRoot := context.ProjectRoot
 	db, err := sqlite.OpenDB()
 	if err != nil {
 		return err
@@ -458,7 +458,7 @@ func GetToolUsageStats(days int) ([]ToolUsageStat, error) {
 // GetProjectToolUsage 获取项目工具使用情况
 func GetProjectToolUsage(ctx context.Context, days int) ([]ToolUsageStat, error,
 ) {
-	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
+	projectRoot := context.ProjectRoot
 	db, err := sqlite.OpenDB()
 	if err != nil {
 		return nil, err

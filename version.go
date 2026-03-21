@@ -31,7 +31,8 @@ func VersionRunE(cmd *cobra.Command, args []string) error {
 }
 
 func versionRunE(ctx context.Context) (err error) {
-	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
+	projectRoot := context.ProjectRoot
+
 	outfmt.PrintHeader("dscli 版本信息")
 
 	outfmt.PrintSection("基本信息")
@@ -47,12 +48,12 @@ func versionRunE(ctx context.Context) (err error) {
 	outfmt.PrintKeyValue("编译器", runtime.Compiler)
 
 	outfmt.PrintSection("配置信息")
-	outfmt.PrintKeyValue("配置目录", ConfigDir)
+	outfmt.PrintKeyValue("配置目录", context.ConfigDir)
 	outfmt.PrintKeyValue("项目根目录", projectRoot)
-	outfmt.PrintKeyValue("输出模式", mode)
-	outfmt.PrintKeyValue("详细输出", boolToString(verbose))
-	outfmt.PrintKeyValue("颜色输出", boolToString(!colorEnabled))
-	outfmt.PrintKeyValue("时间戳显示", boolToString(!showTimestamp))
+	outfmt.PrintKeyValue("输出模式", outfmt.GetOutputMode())
+	outfmt.PrintKeyValue("详细输出", boolToString(outfmt.GetVerbose()))
+	outfmt.PrintKeyValue("颜色输出", boolToString(!outfmt.GetColorEnabled()))
+	outfmt.PrintKeyValue("时间戳显示", boolToString(!outfmt.GetShowTimestamp()))
 	outfmt.PrintSection("模型配置")
 	outfmt.PrintKeyValue("聊天模型", context.ModelDeepseekChat)
 	outfmt.PrintKeyValue("推理模型", context.ModelDeepseekReasoner)
