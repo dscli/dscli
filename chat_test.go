@@ -8,13 +8,14 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 func TestPrintContent(t *testing.T) {
 	ctx := t.Context()
 	ctx = context.WithValue(ctx, context.StartTimeKey, time.Now())
 	// make sure two keys  no overlap
-	ctx = context.WithValue(ctx, context.CurrentModelIDKey, ModelDeepseekChat)
+	ctx = context.WithValue(ctx, context.CurrentModelIDKey, toolcall.ModelDeepseekChat)
 	buf := bytes.NewBuffer([]byte{})
 	outfmt.SetOutputWriter(buf)
 	PrintContent(ctx, "reasoning", "content")
@@ -125,6 +126,6 @@ func (m *MockDeepseekClient) FIM(ctx context.Context, prompt, suffix string, max
 	return nil, nil
 }
 
-func (m *MockDeepseekClient) Chat(ctx context.Context, messages []Message, tools []Tool) (*ChatResponse, error) {
+func (m *MockDeepseekClient) Chat(ctx context.Context, messages []toolcall.Message, tools []toolcall.Tool) (*ChatResponse, error) {
 	return nil, nil
 }

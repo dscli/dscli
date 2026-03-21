@@ -8,6 +8,7 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 func TestBoolToString(t *testing.T) {
@@ -40,8 +41,8 @@ func TestVersionCommandOutput(t *testing.T) {
 	originalVerbose := verbose
 	originalColorEnabled := colorEnabled
 	originalShowTimestamp := showTimestamp
-	originalModelChat := ModelDeepseekChat
-	originalModelReasoner := ModelDeepseekReasoner
+	originalModelChat := toolcall.ModelDeepseekChat
+	originalModelReasoner := toolcall.ModelDeepseekReasoner
 
 	// 设置测试环境
 	defer func() {
@@ -53,8 +54,8 @@ func TestVersionCommandOutput(t *testing.T) {
 		verbose = originalVerbose
 		colorEnabled = originalColorEnabled
 		showTimestamp = originalShowTimestamp
-		ModelDeepseekChat = originalModelChat
-		ModelDeepseekReasoner = originalModelReasoner
+		toolcall.ModelDeepseekChat = originalModelChat
+		toolcall.ModelDeepseekReasoner = originalModelReasoner
 	}()
 
 	// 设置测试值
@@ -65,8 +66,8 @@ func TestVersionCommandOutput(t *testing.T) {
 	verbose = true
 	colorEnabled = true
 	showTimestamp = false
-	ModelDeepseekChat = "deepseek-chat-test"
-	ModelDeepseekReasoner = "deepseek-reasoner-test"
+	toolcall.ModelDeepseekChat = "deepseek-chat-test"
+	toolcall.ModelDeepseekReasoner = "deepseek-reasoner-test"
 
 	// 设置测试输出缓冲区
 	var buf bytes.Buffer

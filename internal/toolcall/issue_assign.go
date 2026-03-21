@@ -1,0 +1,56 @@
+package toolcall
+
+import (
+	"context"
+	"fmt"
+)
+
+// handleIssueAssign 处理分配issue（Tool Calling）
+func handleIssueAssign(ctx context.Context, args ToolArgs) (string, error) {
+	number := ToolArgsValue(args, "number", 0)
+	if number == 0 {
+		return "", fmt.Errorf("必须提供issue编号")
+	}
+
+	username := ToolArgsValue(args, "username", "")
+	if username == "" {
+		return "", fmt.Errorf("必须提供用户名")
+	}
+
+	issue, err := AssignIssue(ctx, number, username)
+	if err != nil {
+		return "", err
+	}
+
+	assigneeInfo := username
+	if issue.Assignee != nil && issue.Assignee.Name != "" {
+		assigneeInfo = fmt.Sprintf("%s (%s)", issue.Assignee.Name, issue.Assignee.Login)
+	}
+
+	return fmt.Sprintf("✅ Issue #%s 已分配给用户: %s", issue.Number, assigneeInfo), nil
+}
+
+func init() {
+	RegisterTool(ToolDef{
+		Name:        "issue_assign",
+		Description: "分配issue给指定用户",
+		Strict:      true,
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"number": map[string]any{
+					"type":        "integer",
+					"description": "issue编号，必须是数字",
+				},
+				"username": map[string]any{
+					"type":        "string",
+					"description": "用户名",
+				},
+			},
+			"required":             []string{"number", "username"},
+			"additionalProperties": false,
+		},
+		Category: "issue",
+		Handler:  handleIssueAssign,
+	})
+}

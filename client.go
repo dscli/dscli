@@ -13,6 +13,7 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 type Deepseek struct {
@@ -27,7 +28,7 @@ type Client interface {
 	Models() (*ModelsResponse, error)
 	Balance() (*BalanceResponse, error)
 	FIM(ctx context.Context, prompt, suffix string, maxTokens int, temperature float64) (*FIMResponse, error)
-	Chat(ctx context.Context, messages []Message, tools []Tool) (*ChatResponse, error)
+	Chat(ctx context.Context, messages []toolcall.Message, tools []toolcall.Tool) (*ChatResponse, error)
 }
 
 // httpClient 单例HTTP客户端，避免创建多个连接池
@@ -210,8 +211,8 @@ func (c *Deepseek) Balance() (*BalanceResponse, error) {
 }
 
 // Chat 发送聊天请求
-func (c *Deepseek) Chat(ctx context.Context, messages []Message, tools []Tool) (*ChatResponse, error) {
-	model := context.ContextValue(ctx, context.CurrentModelNameKey, ModelDeepseekChat)
+func (c *Deepseek) Chat(ctx context.Context, messages []toolcall.Message, tools []toolcall.Tool) (*ChatResponse, error) {
+	model := context.ContextValue(ctx, context.CurrentModelNameKey, toolcall.ModelDeepseekChat)
 	insideShellExec := context.ContextValue(ctx, context.InsideShellExecKey, false)
 	stream := context.ContextValue(ctx, context.StreamKey, false)
 
@@ -221,7 +222,7 @@ func (c *Deepseek) Chat(ctx context.Context, messages []Message, tools []Tool) (
 			ID: "id",
 			Choices: []Choice{
 				{
-					Message: Message{Role: "assistant", Content: "yes, here I heard"},
+					Message: toolcall.Message{Role: "assistant", Content: "yes, here I heard"},
 				},
 			},
 		}, nil
@@ -358,7 +359,7 @@ func (c *Deepseek) chatStream(ctx context.Context, req ChatRequest) (*ChatRespon
 		ID: "streaming-response-" + time.Now().Format("20060102150405"),
 		Choices: []Choice{
 			{
-				Message: Message{
+				Message: toolcall.Message{
 					Role:    "assistant",
 					Content: fullContent.String(),
 				},

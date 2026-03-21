@@ -11,6 +11,7 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 	"github.com/spf13/cobra"
 )
 
@@ -28,11 +29,11 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 	// ModelID
 	var modelID int64
 	switch model {
-	case ModelDeepseekChat:
-		ctx = context.WithValue(ctx, context.CurrentModelNameKey, ModelDeepseekChat)
+	case toolcall.ModelDeepseekChat:
+		ctx = context.WithValue(ctx, context.CurrentModelNameKey, toolcall.ModelDeepseekChat)
 		modelID = DeepseekChat
-	case ModelDeepseekReasoner:
-		ctx = context.WithValue(ctx, context.CurrentModelNameKey, ModelDeepseekReasoner)
+	case toolcall.ModelDeepseekReasoner:
+		ctx = context.WithValue(ctx, context.CurrentModelNameKey, toolcall.ModelDeepseekReasoner)
 		modelID = DeepseekReasoner
 	default:
 		err = fmt.Errorf("do not support %s", model)
@@ -51,12 +52,12 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 	// InsideShellExec
 	ctx = context.WithValue(ctx, context.InsideShellExecKey, os.Getenv("InsideShellExec") == "1")
 
-	tools := GetAllTools(ctx)
+	tools := toolcall.GetAllTools(ctx)
 	tokens := 0
 	for _, tool := range tools {
 		tokens += tool.GetTokens()
 	}
-	skills, err := LoadSkills(ctx)
+	skills, err := toolcall.LoadSkills(ctx)
 	if err != nil {
 		return
 	}
@@ -137,17 +138,17 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		ctx = context.WithValue(ctx, context.StartBalanceKey, startBalance)
 	}
 
-	prompts, err := LoadPrompts(ctx)
+	prompts, err := toolcall.LoadPrompts(ctx)
 	if err != nil {
 		return
 	}
 
-	skills, err := LoadSkills(ctx)
+	skills, err := toolcall.LoadSkills(ctx)
 	if err != nil {
 		return
 	}
 
-	history, err := LoadHistory(ctx)
+	history, err := toolcall.LoadHistory(ctx)
 	if err != nil {
 		return
 	}
@@ -159,13 +160,13 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		if len(tcs) > 0 {
 			// Print reasoning content or content
 			PrintContent(ctx, lastHist.ReasoningContent, lastHist.Content)
-			toolInputs := HandleToolCalls(ctx, tcs)
+			toolInputs := toolcall.HandleToolCalls(ctx, tcs)
 			// 执行工具调用
 			history = append(history, toolInputs...)
 
-			inputs := []Message{}
+			inputs := []toolcall.Message{}
 			if content != "" {
-				inputs = append(inputs, Message{
+				inputs = append(inputs, toolcall.Message{
 					Role:    "user",
 					Content: content,
 				})
@@ -176,7 +177,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	return ChatRound(ctx, prompts, skills, history,
-		Message{Role: "user", Content: content})
+		toolcall.Message{Role: "user", Content: content})
 }
 
 func ReadContentWithTimeout(ctx context.Context) (string, error) {
@@ -334,9 +335,9 @@ func PrintSessionStats(ctx context.Context) {
 	}
 }
 
-func ChatRound(ctx context.Context, prompts []Message, skills []Message, history []Message, inputs ...Message) (err error) {
+func ChatRound(ctx context.Context, prompts []toolcall.Message, skills []toolcall.Message, history []toolcall.Message, inputs ...toolcall.Message) (err error) {
 	// 1. 构造 messages 切片（包含历史）
-	messages := make([]Message, 0, len(history)+len(prompts)+len(skills))
+	messages := make([]toolcall.Message, 0, len(history)+len(prompts)+len(skills))
 	messages = append(messages, prompts...)
 	messages = append(messages, history...)
 
@@ -344,11 +345,11 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 	messages = append(messages, inputs...)
 
 	// 3. 记录本轮新增的消息（用于存储）
-	stories := make([]Message, 0, len(inputs)+1)
+	stories := make([]toolcall.Message, 0, len(inputs)+1)
 	stories = append(stories, inputs...)
 
 	var resp *ChatResponse
-	resp, err = DeepseekClient.Chat(ctx, messages, GetAllTools(ctx))
+	resp, err = DeepseekClient.Chat(ctx, messages, toolcall.GetAllTools(ctx))
 	if err != nil {
 		err = fmt.Errorf("聊天请求失败: %w", err)
 		return
@@ -368,7 +369,7 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 	PrintContent(ctx, story.ReasoningContent, story.Content)
 	stories = append(stories, story)
 	// save stories here
-	err = SaveMessages(ctx, stories...)
+	err = toolcall.SaveMessages(ctx, stories...)
 	story.ReasoningContent = "" // reset reasoning content
 
 	if err != nil {
@@ -384,7 +385,7 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 		PrintSessionStats(ctx)
 		return
 	}
-	toolInputs := HandleToolCalls(ctx, tcs)
+	toolInputs := toolcall.HandleToolCalls(ctx, tcs)
 	if len(toolInputs) > 0 {
 		// Now tool call inputs saved in db
 		// move them to history
@@ -409,7 +410,7 @@ func init() {
 		PreRunE: ChatPreRunE,
 		RunE:    ChatRunE,
 	})
-	chatCmd.Flags().String("model", ModelDeepseekChat, "使用的模型名称")
+	chatCmd.Flags().String("model", toolcall.ModelDeepseekChat, "使用的模型名称")
 	chatCmd.Flags().Int("histsize", 8, "history size loaded")
 	chatCmd.Flags().String("input", "", "read content from input file or read content from stdin if input file empty")
 	chatCmd.Flags().Bool("stream", false, "启用流式输出（SSE）")

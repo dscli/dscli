@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 	"github.com/spf13/cobra"
 )
 
@@ -66,7 +67,7 @@ func init() {
 
 func segmentListRunE(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
-	sm := &SegmentManager{}
+	sm := &toolcall.SegmentManager{}
 
 	domainID, _ := cmd.Flags().GetInt64("domain")
 	modelID, _ := cmd.Flags().GetInt64("model")
@@ -77,7 +78,7 @@ func segmentListRunE(cmd *cobra.Command, args []string) error {
 	}
 
 	// 过滤结果
-	var filtered []PromptSegment
+	var filtered []toolcall.PromptSegment
 	for _, seg := range segments {
 		if domainID != 0 && seg.DomainID != domainID {
 			continue
@@ -132,7 +133,7 @@ func segmentListRunE(cmd *cobra.Command, args []string) error {
 
 func segmentCreateRunE(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
-	sm := &SegmentManager{}
+	sm := &toolcall.SegmentManager{}
 
 	domainID, _ := cmd.Flags().GetInt64("domain")
 	modelID, _ := cmd.Flags().GetInt64("model")
@@ -165,7 +166,7 @@ func segmentCreateRunE(cmd *cobra.Command, args []string) error {
 
 func segmentDeleteRunE(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
-	sm := &SegmentManager{}
+	sm := &toolcall.SegmentManager{}
 
 	// 解析ID
 	id, err := strconv.ParseInt(args[0], 10, 64)
@@ -181,7 +182,7 @@ func segmentDeleteRunE(cmd *cobra.Command, args []string) error {
 
 	// 确认删除
 	outfmt.Printf("⚠️  确认删除段落: [%d] %s\n", segment.ID, segment.Name)
-	outfmt.Printf("   内容预览: %s\n\n", TruncateString(strings.TrimSpace(segment.Content), 80))
+	outfmt.Printf("   内容预览: %s\n\n", toolcall.TruncateString(strings.TrimSpace(segment.Content), 80))
 	outfmt.Printf("确定要删除吗？(y/N): ")
 
 	var confirm string
@@ -203,7 +204,7 @@ func segmentDeleteRunE(cmd *cobra.Command, args []string) error {
 
 func segmentEditRunE(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
-	sm := &SegmentManager{}
+	sm := &toolcall.SegmentManager{}
 
 	// 解析ID
 	id, err := strconv.ParseInt(args[0], 10, 64)

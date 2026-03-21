@@ -7,6 +7,7 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 	"github.com/spf13/cobra"
 )
 
@@ -42,7 +43,7 @@ func init() {
 
 	historyCmd.PersistentFlags().Int("histsize", 32, "history size")
 	historyCmd.PersistentFlags().String("filter", "all", "filter true, false, all")
-	historyCmd.PersistentFlags().String("model", ModelDeepseekChat, "model")
+	historyCmd.PersistentFlags().String("model", toolcall.ModelDeepseekChat, "model")
 	editCmd.Flags().String("column", "content", "column name to edit, default content, others like tool_calls can be edited too.")
 }
 
@@ -52,7 +53,7 @@ func historyShowRunE(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
-	message, err := ShowMessage(ctx, int64(id))
+	message, err := toolcall.ShowMessage(ctx, int64(id))
 	if err != nil {
 		return
 	}
@@ -63,7 +64,7 @@ func historyShowRunE(cmd *cobra.Command, args []string) (err error) {
 	wrt.Println("SessionID", fmt.Sprint(message.SessionID))
 	wrt.Println("Role", message.Role)
 	wrt.Println("ToolCallID", message.ToolCallID)
-	wrt.Println("ToolCalls", ToSQLNullString(message.ToolCalls).String)
+	wrt.Println("ToolCalls", toolcall.ToSQLNullString(message.ToolCalls).String)
 	wrt.Println("ReasoningContent", message.ReasoningContent)
 	wrt.Println("Content", message.Content)
 	return
@@ -84,35 +85,35 @@ func historyEditRunE(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 
-	message, err := ShowMessage(ctx, int64(id))
+	message, err := toolcall.ShowMessage(ctx, int64(id))
 	if err != nil {
 		return
 	}
 	switch column {
 	case "content":
 		content := message.Content
-		content, err = OpenEditor(ctx, content)
+		content, err = toolcall.OpenEditor(ctx, content)
 		if err != nil {
 			return
 		}
-		err = UpdateContent(ctx, int64(id), content)
+		err = toolcall.UpdateContent(ctx, int64(id), content)
 		if err != nil {
 			return
 		}
 	case "tool_calls":
 		tcs := message.ToolCalls
 		if len(tcs) == 0 {
-			tcs = append(tcs, ToolCall{})
+			tcs = append(tcs, toolcall.ToolCall{})
 		}
 		tc := tcs[0]
 		arguments := tc.Function.Arguments
-		arguments, err = OpenEditor(ctx, arguments)
+		arguments, err = toolcall.OpenEditor(ctx, arguments)
 		if err != nil {
 			return
 		}
 		tc.Function.Arguments = arguments
-		tcs = []ToolCall{tc}
-		err = UpdateToolCalls(ctx, int64(id), tcs)
+		tcs = []toolcall.ToolCall{tc}
+		err = toolcall.UpdateToolCalls(ctx, int64(id), tcs)
 		if err != nil {
 			return
 		}
@@ -126,7 +127,7 @@ func historyUpdateRunE(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
-	return UpdateHistory(ctx, int64(id))
+	return toolcall.UpdateHistory(ctx, int64(id))
 }
 
 func historyPreRunE(cmd *cobra.Command, args []string) (err error) {
@@ -146,7 +147,7 @@ func historyPreRunE(cmd *cobra.Command, args []string) (err error) {
 
 func historyListRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
-	history, err := ListHistory(ctx)
+	history, err := toolcall.ListHistory(ctx)
 	if err != nil {
 		return
 	}
@@ -156,14 +157,14 @@ func historyListRunE(cmd *cobra.Command, args []string) (err error) {
 	for _, hist := range history {
 		switch filter {
 		case "all":
-			wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, ToolCallsID(hist.ToolCalls), fmt.Sprint(hist.OK))
+			wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, toolcall.ToolCallsID(hist.ToolCalls), fmt.Sprint(hist.OK))
 		case "true":
 			if hist.OK {
-				wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, ToolCallsID(hist.ToolCalls), fmt.Sprint(hist.OK))
+				wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, toolcall.ToolCallsID(hist.ToolCalls), fmt.Sprint(hist.OK))
 			}
 		default:
 			if !hist.OK {
-				wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, ToolCallsID(hist.ToolCalls), fmt.Sprint(hist.OK))
+				wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, toolcall.ToolCallsID(hist.ToolCalls), fmt.Sprint(hist.OK))
 			}
 		}
 	}
@@ -172,7 +173,7 @@ func historyListRunE(cmd *cobra.Command, args []string) (err error) {
 
 func historyLoadRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
-	history, err := LoadHistory(ctx)
+	history, err := toolcall.LoadHistory(ctx)
 	if err != nil {
 		return
 	}
@@ -183,7 +184,7 @@ func historyLoadRunE(cmd *cobra.Command, args []string) (err error) {
 		role := hist.Role
 		pass := true
 		if role == "assistant" {
-			toolCallID := ToolCallsID(hist.ToolCalls)
+			toolCallID := toolcall.ToolCallsID(hist.ToolCalls)
 			if toolCallID != "" {
 				nextToolCallID := history[i+1].ToolCallID
 				if toolCallID != nextToolCallID {
@@ -193,14 +194,14 @@ func historyLoadRunE(cmd *cobra.Command, args []string) (err error) {
 		}
 		switch filter {
 		case "all":
-			wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
+			wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, toolcall.ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
 		case "true":
 			if pass {
-				wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
+				wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, toolcall.ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
 			}
 		default:
 			if !pass {
-				wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
+				wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, toolcall.ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
 			}
 
 		}
@@ -210,14 +211,14 @@ func historyLoadRunE(cmd *cobra.Command, args []string) (err error) {
 	hist := history[len(history)-1]
 	switch filter {
 	case "all":
-		wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
+		wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, toolcall.ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
 	case "true":
 		if pass {
-			wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
+			wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, toolcall.ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
 		}
 	default:
 		if !pass {
-			wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
+			wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, toolcall.ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
 		}
 	}
 	return
