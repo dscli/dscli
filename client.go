@@ -212,7 +212,7 @@ func (c *Deepseek) Balance() (*BalanceResponse, error) {
 
 // Chat 发送聊天请求
 func (c *Deepseek) Chat(ctx context.Context, messages []toolcall.Message, tools []toolcall.Tool) (*ChatResponse, error) {
-	model := context.ContextValue(ctx, context.CurrentModelNameKey, toolcall.ModelDeepseekChat)
+	model := context.ContextValue(ctx, context.CurrentModelNameKey, context.ModelDeepseekChat)
 	insideShellExec := context.ContextValue(ctx, context.InsideShellExecKey, false)
 	stream := context.ContextValue(ctx, context.StreamKey, false)
 

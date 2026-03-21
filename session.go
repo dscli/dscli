@@ -7,8 +7,6 @@ import (
 	"gitcode.com/dscli/dscli/internal/sqlite"
 )
 
-// var SessionID = int64(0)
-
 func init() {
 	sqlite.RegisterTableSchema(
 		// 会话表

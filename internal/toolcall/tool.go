@@ -139,8 +139,8 @@ func RegisterTool(tool ToolDef) {
 
 // GetAllTools 获取所有工具定义（用于API调用）
 func GetAllTools(ctx context.Context) []Tool {
-	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, DeepseekChat)
-	if modelID == DeepseekReasoner {
+	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
+	if modelID == context.DeepseekReasoner {
 		return nil
 	}
 

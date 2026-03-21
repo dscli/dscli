@@ -42,6 +42,17 @@ var (
 	DeadlineExceeded = context.DeadlineExceeded
 )
 
+var (
+	ConfigDir             = GetConfigDir()
+	ModelDeepseekChat     = Getenv("MODEL_DEEPSEEK_CHAT", "deepseek-chat")
+	ModelDeepseekReasoner = Getenv("MODEL_DEEPSEEK_REASONER", "deepseek-reasoner")
+)
+
+const (
+	DeepseekChat     = int64(0)
+	DeepseekReasoner = int64(1)
+)
+
 type (
 	Context    = context.Context
 	CancelFunc = context.CancelFunc

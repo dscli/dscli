@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/sqlite"
 )
@@ -89,7 +90,7 @@ func initSegmentsHook(db *sql.DB) error {
 5. 尊重版权和许可证要求
 
 请基于以上信息，为用户提供专业的编程帮助。`,
-			modelID:   DeepseekChat,
+			modelID:   context.DeepseekChat,
 			sortOrder: 10,
 		},
 		{
@@ -116,7 +117,7 @@ func initSegmentsHook(db *sql.DB) error {
 5. 系统思维：从整体和系统的角度分析问题
 
 请基于以上原则，为用户提供深入的编程思考和洞察。`,
-			modelID:   DeepseekReasoner,
+			modelID:   context.DeepseekReasoner,
 			sortOrder: 20,
 		},
 	}

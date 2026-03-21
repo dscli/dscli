@@ -29,11 +29,11 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 	// ModelID
 	var modelID int64
 	switch model {
-	case toolcall.ModelDeepseekChat:
-		ctx = context.WithValue(ctx, context.CurrentModelNameKey, toolcall.ModelDeepseekChat)
+	case context.ModelDeepseekChat:
+		ctx = context.WithValue(ctx, context.CurrentModelNameKey, context.ModelDeepseekChat)
 		modelID = DeepseekChat
-	case toolcall.ModelDeepseekReasoner:
-		ctx = context.WithValue(ctx, context.CurrentModelNameKey, toolcall.ModelDeepseekReasoner)
+	case context.ModelDeepseekReasoner:
+		ctx = context.WithValue(ctx, context.CurrentModelNameKey, context.ModelDeepseekReasoner)
 		modelID = DeepseekReasoner
 	default:
 		err = fmt.Errorf("do not support %s", model)
@@ -410,7 +410,7 @@ func init() {
 		PreRunE: ChatPreRunE,
 		RunE:    ChatRunE,
 	})
-	chatCmd.Flags().String("model", toolcall.ModelDeepseekChat, "使用的模型名称")
+	chatCmd.Flags().String("model", context.ModelDeepseekChat, "使用的模型名称")
 	chatCmd.Flags().Int("histsize", 8, "history size loaded")
 	chatCmd.Flags().String("input", "", "read content from input file or read content from stdin if input file empty")
 	chatCmd.Flags().Bool("stream", false, "启用流式输出（SSE）")

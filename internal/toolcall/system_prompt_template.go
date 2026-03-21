@@ -2,10 +2,11 @@ package toolcall
 
 import (
 	"bytes"
-	"context"
 	"log"
 	"strings"
 	"text/template"
+
+	"gitcode.com/dscli/dscli/internal/context"
 )
 
 // SystemPromptTemplate 系统提示词模板
@@ -64,12 +65,12 @@ func NewTemplateData(config *SystemPromptConfig) *TemplateData {
 // GetTemplateForModel 获取指定模型的模板
 func GetTemplateForModel(modelID int64) *SystemPromptTemplate {
 	switch modelID {
-	case DeepseekChat:
+	case context.DeepseekChat:
 		return &SystemPromptTemplate{
 			Name:     "deepseek-chat",
 			Template: deepseekChatTemplate,
 		}
-	case DeepseekReasoner:
+	case context.DeepseekReasoner:
 		return &SystemPromptTemplate{
 			Name:     "deepseek-reasoner",
 			Template: deepseekReasonerTemplate,

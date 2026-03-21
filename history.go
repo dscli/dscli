@@ -43,7 +43,7 @@ func init() {
 
 	historyCmd.PersistentFlags().Int("histsize", 32, "history size")
 	historyCmd.PersistentFlags().String("filter", "all", "filter true, false, all")
-	historyCmd.PersistentFlags().String("model", toolcall.ModelDeepseekChat, "model")
+	historyCmd.PersistentFlags().String("model", context.ModelDeepseekChat, "model")
 	editCmd.Flags().String("column", "content", "column name to edit, default content, others like tool_calls can be edited too.")
 }
 

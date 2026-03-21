@@ -5,7 +5,6 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/toolcall"
 	"github.com/spf13/cobra"
 )
 
@@ -55,7 +54,7 @@ func versionRunE(ctx context.Context) (err error) {
 	outfmt.PrintKeyValue("颜色输出", boolToString(!colorEnabled))
 	outfmt.PrintKeyValue("时间戳显示", boolToString(!showTimestamp))
 	outfmt.PrintSection("模型配置")
-	outfmt.PrintKeyValue("聊天模型", toolcall.ModelDeepseekChat)
-	outfmt.PrintKeyValue("推理模型", toolcall.ModelDeepseekReasoner)
+	outfmt.PrintKeyValue("聊天模型", context.ModelDeepseekChat)
+	outfmt.PrintKeyValue("推理模型", context.ModelDeepseekReasoner)
 	return
 }

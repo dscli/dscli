@@ -44,7 +44,7 @@ func NewSystemPromptConfig(ctx context.Context) *SystemPromptConfig {
 	config := &SystemPromptConfig{
 		CurrentDate:      time.Now().Format("2006年01月02日"),
 		ProjectRoot:      projectRoot,
-		ConfigDir:        context.GetConfigDir(),
+		ConfigDir:        context.ConfigDir,
 		WorkingDirectory: getWorkingDirectory(),
 		Hostname:         getHostname(),
 		Username:         getUsername(),

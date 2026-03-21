@@ -40,5 +40,5 @@ func GetCurrentDomainID(ctx context.Context) int64 {
 
 // GetCurrentModelID 获取当前模型ID
 func GetCurrentModelID(ctx context.Context) int64 {
-	return context.ContextValue(ctx, context.CurrentModelIDKey, DeepseekChat)
+	return context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 }

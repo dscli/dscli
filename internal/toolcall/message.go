@@ -12,16 +12,6 @@ import (
 	"gitcode.com/dscli/dscli/internal/sqlite"
 )
 
-const (
-	DeepseekChat     = int64(0)
-	DeepseekReasoner = int64(1)
-)
-
-var (
-	ModelDeepseekChat     = context.Getenv("MODEL_DEEPSEEK_CHAT", "deepseek-chat")
-	ModelDeepseekReasoner = context.Getenv("MODEL_DEEPSEEK_REASONER", "deepseek-reasoner")
-)
-
 // Message 扩展，支持工具调用（注意：Content 字段不再使用 omitempty）
 type Message struct {
 	ID               int64      `json:"-"`
@@ -90,7 +80,7 @@ func ToolCallsID(tcs []ToolCall) string {
 // UpdateContent update message content
 func UpdateContent(ctx context.Context, id int64, content string) (err error) {
 	sessionID := context.ContextValue(ctx, context.CurrentSessionIDKey, int64(0))
-	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, DeepseekChat)
+	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	db, err := sqlite.OpenDB()
 	if err != nil {
 		return
@@ -126,7 +116,7 @@ func ToSQLNullString(tcs []ToolCall) (toolCalls sql.NullString) {
 // UpdateToolCalls update message content
 func UpdateToolCalls(ctx context.Context, id int64, tcs []ToolCall) (err error) {
 	sessionID := context.ContextValue(ctx, context.CurrentSessionIDKey, int64(0))
-	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, DeepseekChat)
+	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	db, err := sqlite.OpenDB()
 	if err != nil {
 		return
@@ -153,7 +143,7 @@ func UpdateToolCalls(ctx context.Context, id int64, tcs []ToolCall) (err error) 
 // UpdateHistory update message session_id to 0
 func UpdateHistory(ctx context.Context, id int64) (err error) {
 	sessionID := context.ContextValue(ctx, context.CurrentSessionIDKey, int64(0))
-	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, DeepseekChat)
+	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	db, err := sqlite.OpenDB()
 	if err != nil {
 		return
@@ -170,7 +160,7 @@ func UpdateHistory(ctx context.Context, id int64) (err error) {
 
 func ShowMessage(ctx context.Context, id int64) (message *Message, err error) {
 	sessionID := context.ContextValue(ctx, context.CurrentSessionIDKey, int64(0))
-	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, DeepseekChat)
+	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	db, err := sqlite.OpenDB()
 	if err != nil {
 		return
@@ -202,7 +192,7 @@ func ShowMessage(ctx context.Context, id int64) (message *Message, err error) {
 // ListHistory 加载指定会话的所有历史消息，按时间升序返回
 func ListHistory(ctx context.Context) ([]*Message, error) {
 	sessionID := context.ContextValue(ctx, context.CurrentSessionIDKey, int64(0))
-	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, DeepseekChat)
+	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	histSize := context.ContextValue(ctx, context.HistSizeKey, 8)
 	db, err := sqlite.OpenDB()
 	if err != nil {
@@ -254,7 +244,7 @@ func ListHistory(ctx context.Context) ([]*Message, error) {
 // LoadHistory 加载指定会话的所有历史消息，按时间升序返回
 func LoadHistory(ctx context.Context) ([]Message, error) {
 	sessionID := context.ContextValue(ctx, context.CurrentSessionIDKey, int64(0))
-	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, DeepseekChat)
+	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	histSize := context.ContextValue(ctx, context.HistSizeKey, 8)
 	leftTokens := context.ContextValue(ctx, context.LeftTokensKey, 0)
 	db, err := sqlite.OpenDB()
@@ -424,7 +414,7 @@ outloop:
 // SaveMessages 保存消息（事务）
 func SaveMessages(ctx context.Context, msgs ...Message) error {
 	sessionID := context.ContextValue(ctx, context.CurrentSessionIDKey, int64(0))
-	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, DeepseekChat)
+	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	db, err := sqlite.OpenDB()
 	if err != nil {
 		return err

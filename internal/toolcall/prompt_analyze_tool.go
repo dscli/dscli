@@ -1,11 +1,11 @@
 package toolcall
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"time"
 
+	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
@@ -91,7 +91,7 @@ type PromptSuggestion struct {
 func handlePromptAnalyze(ctx context.Context, args ToolArgs) (reply string, err error) {
 	// 解析参数
 	modelID := int64(0) // 默认Deepseek Chat
-	model := ToolArgsValue(args, "model", ModelDeepseekChat)
+	model := ToolArgsValue(args, "model", context.ModelDeepseekChat)
 	if model == "" {
 		return "", fmt.Errorf("model参数必须是字符串")
 	}

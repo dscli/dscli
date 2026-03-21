@@ -389,7 +389,7 @@ func GetOrCreateCacheFile(ctx context.Context, script string) (cacheFile string,
 	shellName := context.ContextValue(ctx, context.ShellNameKey, "")
 	shellArgs := context.ContextValue(ctx, context.ShellArgsKey, []string{})
 	isPython := strings.Contains(shellName, "python")
-	configDir := context.GetConfigDir()
+	configDir := context.ConfigDir
 	if strings.HasSuffix(shellName, "env") {
 		if len(shellArgs) > 0 {
 			if strings.Contains(shellArgs[0], "python") {
