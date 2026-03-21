@@ -7,6 +7,8 @@ import (
 	"log"
 	"strings"
 	"text/template"
+
+	"gitcode.com/dscli/dscli/internal/sqlite"
 )
 
 // SegmentManager 段落管理器
@@ -43,7 +45,7 @@ func (sm *SegmentManager) GetSystemPrompt(ctx context.Context, modelID int64, do
 
 // GetSegmentsForPrompt 获取用于生成提示词的段落
 func (sm *SegmentManager) GetSegmentsForPrompt(ctx context.Context, modelID int64, domainID int64) ([]PromptSegment, error) {
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +126,7 @@ func (sm *SegmentManager) RenderSystemPrompt(ctx context.Context, modelID int64,
 
 // ListSegments 列出所有段落
 func (sm *SegmentManager) ListSegments(ctx context.Context) ([]PromptSegment, error) {
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +157,7 @@ func (sm *SegmentManager) ListSegments(ctx context.Context) ([]PromptSegment, er
 
 // UpdateSegment 更新段落
 func (sm *SegmentManager) UpdateSegment(ctx context.Context, id int64, name, content string, sortOrder int, enabled bool) error {
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return err
 	}
@@ -171,7 +173,7 @@ func (sm *SegmentManager) UpdateSegment(ctx context.Context, id int64, name, con
 
 // DeleteSegment 删除段落
 func (sm *SegmentManager) DeleteSegment(ctx context.Context, id int64) error {
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return err
 	}
@@ -186,7 +188,7 @@ func (sm *SegmentManager) DeleteSegment(ctx context.Context, id int64) error {
 
 // CreateSegment 创建段落
 func (sm *SegmentManager) CreateSegment(ctx context.Context, domainID, modelID int64, name, content string, sortOrder int) error {
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return err
 	}
@@ -201,7 +203,7 @@ func (sm *SegmentManager) CreateSegment(ctx context.Context, domainID, modelID i
 
 // GetSegmentByID 根据ID获取段落
 func (sm *SegmentManager) GetSegmentByID(ctx context.Context, id int64) (*PromptSegment, error) {
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +223,7 @@ func (sm *SegmentManager) GetSegmentByID(ctx context.Context, id int64) (*Prompt
 
 // ListDomains 列出所有领域
 func (sm *SegmentManager) ListDomains(ctx context.Context) ([]Domain, error) {
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +254,7 @@ func (sm *SegmentManager) ListDomains(ctx context.Context) ([]Domain, error) {
 
 // GetDomainByID 根据ID获取领域
 func (sm *SegmentManager) GetDomainByID(ctx context.Context, id int64) (*Domain, error) {
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return nil, err
 	}

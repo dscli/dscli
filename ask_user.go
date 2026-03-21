@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 // AskTool 工具定义
@@ -49,18 +51,18 @@ func handleAskUser(ctx context.Context, args ToolArgs) (reply string, err error)
 	}
 
 	// 输出咨询日志
-	Println("📞 正在向用户咨询...")
+	outfmt.Println("📞 正在向用户咨询...")
 
 	// 生成问题摘要（避免过长）
 	summary := []rune(content)
 	if len(summary) > 100 {
 		summary = append(summary[:97], []rune("...")...)
 	}
-	Println("  问题摘要:", string(summary))
+	outfmt.Println("  问题摘要:", string(summary))
 
 	reply, err = OpenEditor(ctx, content)
 	if err != nil {
-		Println("❌ 获取用户回答失败")
+		outfmt.Println("❌ 获取用户回答失败")
 		return "", fmt.Errorf("获取用户回答失败: %v", err)
 	}
 
@@ -70,9 +72,9 @@ func handleAskUser(ctx context.Context, args ToolArgs) (reply string, err error)
 		if len(replySummary) > 100 {
 			replySummary = append(replySummary[:97], []rune("...")...)
 		}
-		Println("  用户回答摘要:", string(replySummary))
+		outfmt.Println("  用户回答摘要:", string(replySummary))
 	}
 
-	Println("✅ 用户咨询完成")
+	outfmt.Println("✅ 用户咨询完成")
 	return reply, nil
 }

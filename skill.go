@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 // LoadSkills 加载技能到系统提示词中
@@ -32,12 +34,12 @@ func safeAsyncRecordUsage(skillID int64, projectPath string) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				Println("记录技能使用panic:", r)
+				outfmt.Println("记录技能使用panic:", r)
 			}
 		}()
 
 		if err := RecordSkillUsage(skillID, projectPath); err != nil {
-			Println("警告：记录技能使用失败:", err)
+			outfmt.Println("警告：记录技能使用失败:", err)
 		}
 	}()
 }

@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 func init() {
@@ -112,7 +114,7 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (string, e
 					return "", fmt.Errorf("failed to create file: %w", err)
 				}
 				newFile.Close()
-				Notice("创建空文件 \"%s\"", path)
+				outfmt.Notice("创建空文件 \"%s\"", path)
 				return "成功创建空文件", nil
 			}
 
@@ -127,7 +129,7 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (string, e
 				lines = strings.Count(content, "\n")
 			}
 
-			Notice("创建文件 \"%s\" 并写入 %d 行内容", path, lines)
+			outfmt.Notice("创建文件 \"%s\" 并写入 %d 行内容", path, lines)
 			return fmt.Sprintf("成功创建文件并写入 %d 行内容", lines), nil
 		}
 		return "", fmt.Errorf("failed to open file: %w", err)
@@ -222,7 +224,7 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (string, e
 		linesChanged = contentLineCount
 	}
 
-	Notice("%s文件 \"%s\" 行范围 %s，影响 %d 行", operation, path, rangeDesc, linesChanged)
+	outfmt.Notice("%s文件 \"%s\" 行范围 %s，影响 %d 行", operation, path, rangeDesc, linesChanged)
 
 	// 运行make format并捕获结果
 	formatOutput, formatErr := CodeMakeFormat(ctx, filepath.Ext(path))

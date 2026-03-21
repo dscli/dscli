@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"gitcode.com/dscli/dscli/internal/outfmt"
 	"github.com/PuerkitoBio/goquery"
 	"golang.org/x/net/html/charset"
 
@@ -207,7 +208,7 @@ func Web2Markdown(ctx context.Context, url string) (string, error) {
 		formatInfo,
 		executionTime)
 
-	Notice("读取网页: %q", url)
+	outfmt.Notice("读取网页: %q", url)
 	return result, nil
 }
 

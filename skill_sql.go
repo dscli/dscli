@@ -5,10 +5,12 @@ import (
 	"fmt"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/sqlite"
 )
 
 func init() {
-	RegisterTableSchema(
+	sqlite.RegisterTableSchema(
 		// 技能表
 		`CREATE TABLE IF NOT EXISTS skills (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -37,7 +39,7 @@ func init() {
 
 func GetProjectSkills(ctx context.Context) (skills []*Skill, err error) {
 	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return
 	}
@@ -62,7 +64,7 @@ func GetProjectSkills(ctx context.Context) (skills []*Skill, err error) {
 
 // GetSkillByID 根据ID获取技能
 func GetSkillByID(id int64) (*Skill, error) {
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
@@ -89,7 +91,7 @@ func GetSkillByID(id int64) (*Skill, error) {
 
 // GetSkillByName 根据名称获取技能
 func GetSkillByName(name string) (*Skill, error) {
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
@@ -116,7 +118,7 @@ func GetSkillByName(name string) (*Skill, error) {
 
 // CreateSkill 创建新技能
 func CreateSkill(ctx context.Context, skill *Skill) error {
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return fmt.Errorf("打开数据库失败: %w", err)
 	}
@@ -140,7 +142,7 @@ func CreateSkill(ctx context.Context, skill *Skill) error {
 
 func CreateProjectSkill(ctx context.Context, id int64) (err error) {
 	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return
 	}
@@ -155,7 +157,7 @@ func CreateProjectSkill(ctx context.Context, id int64) (err error) {
 
 // RecordSkillUsage 记录技能使用
 func RecordSkillUsage(skillID int64, projectPath string) error {
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return fmt.Errorf("打开数据库失败: %w", err)
 	}
@@ -179,7 +181,7 @@ func RecordSkillUsage(skillID int64, projectPath string) error {
 	`, skillID, projectPath)
 	if err != nil {
 		// 如果更新失败，只记录日志，不中断操作
-		Println("更新项目技能关联失败:", err)
+		outfmt.Println("更新项目技能关联失败:", err)
 	}
 
 	return nil

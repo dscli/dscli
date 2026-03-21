@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 	"github.com/spf13/cobra"
 )
 
@@ -73,6 +74,7 @@ func FimRunE(cmd *cobra.Command, args []string) (err error) {
 		fmt.Fprintln(os.Stderr, "错误: 未收到回复")
 		os.Exit(1)
 	}
-	Println(resp.Choices[0].Text)
+
+	outfmt.Println(resp.Choices[0].Text)
 	return
 }

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 func init() {
@@ -157,7 +159,7 @@ func handleSearchFileWithPattern(ctx context.Context, args ToolArgs) (string, er
 
 	// 如果没有匹配项
 	if len(matches) == 0 {
-		Notice("在文件 \"%s\" 中搜索模式 \"%s\"，未找到匹配项", path, pattern)
+		outfmt.Notice("在文件 \"%s\" 中搜索模式 \"%s\"，未找到匹配项", path, pattern)
 		return "", nil
 	}
 
@@ -205,7 +207,7 @@ func handleSearchFileWithPattern(ctx context.Context, args ToolArgs) (string, er
 	result := resultBuilder.String()
 
 	// 记录日志
-	Notice("在文件 \"%s\" 中搜索模式 \"%s\"，找到 %d 个匹配项，显示上下文 ±%d 行",
+	outfmt.Notice("在文件 \"%s\" 中搜索模式 \"%s\"，找到 %d 个匹配项，显示上下文 ±%d 行",
 		path, pattern, len(matches), contextLines)
 
 	return result, nil

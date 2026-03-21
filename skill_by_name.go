@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 // handleSkillByName 处理Skill工具调用
@@ -14,7 +15,7 @@ func handleSkillByName(ctx context.Context, args ToolArgs) (content string, err 
 		err = fmt.Errorf("skill name can not be empty")
 		return
 	}
-	Printf("getting skill by name [%s]\n", skillName)
+	outfmt.Printf("getting skill by name [%s]\n", skillName)
 	skill, err := GetSkillByName(skillName)
 	if err != nil {
 		err = fmt.Errorf("no skill found for %s: %w", skillName, err)

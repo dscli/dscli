@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 func init() {
@@ -65,7 +66,7 @@ func handleGitAm(ctx context.Context, args ToolArgs) (string, error) {
 
 	// 如果没有提供patch和options，返回错误
 	if patch == "" && options == "" {
-		Error("必须提供patch内容或options参数")
+		outfmt.Error("必须提供patch内容或options参数")
 		return "", fmt.Errorf("必须提供patch内容或options参数")
 	}
 
@@ -76,36 +77,36 @@ func handleGitAm(ctx context.Context, args ToolArgs) (string, error) {
 	if options != "" {
 		optionList := strings.Fields(options)
 		gitArgs = append(gitArgs, optionList...)
-		Info("应用选项: %s", options)
+		outfmt.Info("应用选项: %s", options)
 	}
 
 	// 如果提供了patch内容，通过标准输入传递
 	if patch != "" {
 		// 显示patch信息
-		PrintSubSection("Patch信息")
+		outfmt.PrintSubSection("Patch信息")
 
 		// 解析patch头部信息
 		lines := strings.SplitN(patch, "\n", 10)
 		for i := 0; i < min(8, len(lines)); i++ {
 			line := lines[i]
 			if strings.HasPrefix(line, "From ") {
-				Info("提交: %s", strings.TrimSpace(line[5:]))
+				outfmt.Info("提交: %s", strings.TrimSpace(line[5:]))
 			} else if strings.HasPrefix(line, "Date: ") {
-				Info("日期: %s", strings.TrimSpace(line[6:]))
+				outfmt.Info("日期: %s", strings.TrimSpace(line[6:]))
 			} else if strings.HasPrefix(line, "Subject: ") {
-				Info("主题: %s", strings.TrimSpace(line[9:]))
+				outfmt.Info("主题: %s", strings.TrimSpace(line[9:]))
 			}
 		}
 
 		// 分析patch统计
-		PrintSubSection("Patch统计")
+		outfmt.PrintSubSection("Patch统计")
 		diffStats := analyzeDiffStats(patch)
-		Info("Patch包含 %d 个文件", diffStats.files)
-		Success("新增行: %d", diffStats.additions)
-		Error("删除行: %d", diffStats.deletions)
-		Notice("变更行总计: %d", diffStats.additions+diffStats.deletions)
+		outfmt.Info("Patch包含 %d 个文件", diffStats.files)
+		outfmt.Success("新增行: %d", diffStats.additions)
+		outfmt.Error("删除行: %d", diffStats.deletions)
+		outfmt.Notice("变更行总计: %d", diffStats.additions+diffStats.deletions)
 
-		Info("正在应用patch...")
+		outfmt.Info("正在应用patch...")
 
 		// 设置context值，指定使用git作为解释器
 		ctx = context.WithValue(ctx, context.ShellNameKey, "git")
@@ -115,7 +116,7 @@ func handleGitAm(ctx context.Context, args ToolArgs) (string, error) {
 		return ShellExec(ctx, patch)
 	} else {
 		// 如果没有patch内容，直接执行git am命令（用于--continue等操作）
-		Info("执行git am命令: %s", strings.Join(gitArgs, " "))
+		outfmt.Info("执行git am命令: %s", strings.Join(gitArgs, " "))
 		PrintGitCommand(gitArgs...)
 		return gitCommand(ctx, gitArgs...)
 	}

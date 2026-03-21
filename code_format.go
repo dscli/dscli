@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 // CodeMakeFormat - run code format command provided in the context
@@ -119,7 +120,7 @@ func handleCodeFormat(ctx context.Context, args ToolArgs) (output string, err er
 		return
 	}
 
-	Printf("代码格式化 %s", command)
+	outfmt.Printf("代码格式化 %s", command)
 	// 使用用户提供的命令
 	ctx = context.WithValue(ctx, context.ShellStdinKey, os.Stdin)
 	output, err = ShellExec(ctx, command)

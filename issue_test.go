@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 // TestFormatFunctions 测试格式化辅助函数
@@ -960,10 +963,10 @@ Labels:     bug, fixed
 			buf := bytes.NewBuffer([]byte{})
 
 			// 保存原始设置
-			oldWriter := outputWriter
+			oldWriter := os.Stdout
 
 			// 设置测试环境
-			SetOutputWriter(buf)
+			outfmt.SetOutputWriter(buf)
 
 			PrintIssue(tc.issue, tc.detailed)
 
@@ -974,7 +977,7 @@ Labels:     bug, fixed
 				t.Fatal()
 			}
 
-			SetOutputWriter(oldWriter)
+			outfmt.SetOutputWriter(oldWriter)
 		})
 	}
 }

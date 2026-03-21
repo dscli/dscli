@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 type Deepseek struct {
@@ -93,13 +94,13 @@ func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (e
 	var reqBody io.Reader
 	var data []byte
 	if body != nil {
-		data, err = JSONMarshal(body)
+		data, err = outfmt.JSONMarshal(body)
 		if err != nil {
 			err = fmt.Errorf("序列化请求失败: %w", err)
 			return
 		}
 
-		defer DebugBytes("json", data)
+		defer outfmt.DebugBytes("json", data)
 
 		reqBody = bytes.NewReader(data)
 	}
@@ -132,7 +133,7 @@ func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (e
 		return
 	}
 
-	defer DebugBytes("", respBody)
+	defer outfmt.DebugBytes("", respBody)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		err = fmt.Errorf("API 返回错误状态码 %d: %s", resp.StatusCode, string(respBody))
 		return
@@ -149,7 +150,7 @@ func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (e
 
 // doRequest 请求方法（自动重试）
 func (c *Deepseek) doRequest(method, path string, body any, result any) (err error) {
-	defer StartWaiting(time.Second * 3)()
+	defer outfmt.StartWaiting(time.Second * 3)()
 	var lastErr error
 	attempt := 0
 	for attempt = 0; attempt <= c.maxRetries; attempt++ {
@@ -158,7 +159,7 @@ func (c *Deepseek) doRequest(method, path string, body any, result any) (err err
 			delay := min(time.Duration(1<<(attempt-1))*c.retryDelay,
 				300*time.Second)
 			// 简洁通知用户（不超过20字）
-			Notice("网络异常，%d秒后重试...", int(delay.Seconds()))
+			outfmt.Notice("网络异常，%d秒后重试...", int(delay.Seconds()))
 			time.Sleep(delay)
 		}
 
@@ -168,7 +169,7 @@ func (c *Deepseek) doRequest(method, path string, body any, result any) (err err
 		if lastErr == nil {
 			// 成功，返回
 			if attempt > 0 {
-				Success("重试成功！")
+				outfmt.Success("重试成功！")
 			}
 			return nil
 		}
@@ -273,7 +274,7 @@ func (c *Deepseek) Chat(ctx context.Context, messages []Message, tools []Tool) (
 func (c *Deepseek) chatStream(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
 	url := c.baseURL + "/chat/completions"
 
-	data, err := JSONMarshal(req)
+	data, err := outfmt.JSONMarshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("序列化请求失败: %w", err)
 	}

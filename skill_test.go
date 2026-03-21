@@ -7,13 +7,15 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gitcode.com/dscli/dscli/internal/sqlite"
 )
 
 // TestSkillsDatabase 测试Skills数据库表结构
 func TestSkillsDatabase(t *testing.T) {
 	// 使用测试数据库，避免影响生产数据
 	testDBPath := filepath.Join(t.TempDir(), "test_skills.db")
-	db, err := OpenDB(testDBPath)
+	db, err := sqlite.OpenDB(testDBPath)
 	// 创建测试数据库
 	if err != nil {
 		t.Fatalf("无法打开测试数据库: %v", err)
@@ -266,7 +268,7 @@ func TestRealSkillsIntegration(t *testing.T) {
 	}
 
 	// 连接到真实数据库
-	db, err := OpenDB(dbPath)
+	db, err := sqlite.OpenDB(dbPath)
 	if err != nil {
 		t.Fatalf("无法连接到Skills数据库: %v", err)
 	}
@@ -419,7 +421,7 @@ func Example_skillUsage() {
 
 		// 1. 连接到数据库
 		dbPath := "/home/nanjj/.dscli/sqlite.db"
-		db, err := OpenDB(dbPath)
+		db, err := sqlite.OpenDB(dbPath)
 		if err != nil {
 			fmt.Printf("连接数据库失败: %v\n", err)
 			return
@@ -469,7 +471,7 @@ func TestCreateSkillSQL(t *testing.T) {
 	testDBPath := filepath.Join(tempDir, "test_create_skill_sql.db")
 
 	// 创建数据库连接
-	db, err := OpenDB(testDBPath)
+	db, err := sqlite.OpenDB(testDBPath)
 	if err != nil {
 		t.Fatalf("无法打开测试数据库: %v", err)
 	}

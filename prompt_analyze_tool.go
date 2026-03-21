@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 // PromptAnalyzeTool 提示词分析工具
@@ -177,7 +179,7 @@ func handlePromptAnalyze(ctx context.Context, args ToolArgs) (reply string, err 
 	sb.WriteString("3. 建议小范围测试后再全面应用\n")
 
 	reply = sb.String()
-	Println(reply)
+	outfmt.Println(reply)
 	return
 }
 

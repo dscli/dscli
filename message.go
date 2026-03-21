@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/sqlite"
 )
 
 // Message 扩展，支持工具调用（注意：Content 字段不再使用 omitempty）
@@ -39,7 +41,7 @@ func (m *Message) GetTokens() int {
 }
 
 func init() {
-	RegisterTableSchema(
+	sqlite.RegisterTableSchema(
 		// 消息表
 		`CREATE TABLE IF NOT EXISTS messages (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,12 +57,12 @@ func init() {
 		)`,
 	)
 
-	RegisterIndexSchema(
+	sqlite.RegisterIndexSchema(
 		// 创建索引
 		`CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id)`,
 	)
 
-	RegisterUpgradeSchema(
+	sqlite.RegisterUpgradeSchema(
 		// 增加 model ID
 		`ALTER TABLE messages ADD COLUMN model_id INTEGER NOT NULL DEFAULT 0`,
 		// 增加 reasoning content
@@ -79,7 +81,7 @@ func ToolCallsID(tcs []ToolCall) string {
 func UpdateContent(ctx context.Context, id int64, content string) (err error) {
 	sessionID := context.ContextValue(ctx, context.CurrentSessionIDKey, int64(0))
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, DeepseekChat)
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return
 	}
@@ -102,7 +104,7 @@ func UpdateContent(ctx context.Context, id int64, content string) (err error) {
 }
 
 func ToSQLNullString(tcs []ToolCall) (toolCalls sql.NullString) {
-	data, err := JSONMarshal(tcs)
+	data, err := outfmt.JSONMarshal(tcs)
 	if err != nil {
 		return
 	}
@@ -115,7 +117,7 @@ func ToSQLNullString(tcs []ToolCall) (toolCalls sql.NullString) {
 func UpdateToolCalls(ctx context.Context, id int64, tcs []ToolCall) (err error) {
 	sessionID := context.ContextValue(ctx, context.CurrentSessionIDKey, int64(0))
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, DeepseekChat)
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return
 	}
@@ -142,7 +144,7 @@ func UpdateToolCalls(ctx context.Context, id int64, tcs []ToolCall) (err error) 
 func UpdateHistory(ctx context.Context, id int64) (err error) {
 	sessionID := context.ContextValue(ctx, context.CurrentSessionIDKey, int64(0))
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, DeepseekChat)
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return
 	}
@@ -159,7 +161,7 @@ func UpdateHistory(ctx context.Context, id int64) (err error) {
 func ShowMessage(ctx context.Context, id int64) (message *Message, err error) {
 	sessionID := context.ContextValue(ctx, context.CurrentSessionIDKey, int64(0))
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, DeepseekChat)
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return
 	}
@@ -192,7 +194,7 @@ func ListHistory(ctx context.Context) ([]*Message, error) {
 	sessionID := context.ContextValue(ctx, context.CurrentSessionIDKey, int64(0))
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, DeepseekChat)
 	histSize := context.ContextValue(ctx, context.HistSizeKey, 8)
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +247,7 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, DeepseekChat)
 	histSize := context.ContextValue(ctx, context.HistSizeKey, 8)
 	leftTokens := context.ContextValue(ctx, context.LeftTokensKey, 0)
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return nil, err
 	}
@@ -413,7 +415,7 @@ outloop:
 func SaveMessages(ctx context.Context, msgs ...Message) error {
 	sessionID := context.ContextValue(ctx, context.CurrentSessionIDKey, int64(0))
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, DeepseekChat)
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return err
 	}
@@ -441,7 +443,7 @@ func SaveMessages(ctx context.Context, msgs ...Message) error {
 		}
 		if len(m.ToolCalls) > 0 {
 			var data json.RawMessage
-			data, err = JSONMarshal(&m.ToolCalls)
+			data, err = outfmt.JSONMarshal(&m.ToolCalls)
 			if err != nil {
 				return err
 			}

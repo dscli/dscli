@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 func init() {
@@ -46,9 +48,9 @@ func handleGitFormatPatch(ctx context.Context, args ToolArgs) (string, error) {
 
 	// 显示要生成patch的提交
 	if revision == "" {
-		Info("生成当前HEAD提交的patch")
+		outfmt.Info("生成当前HEAD提交的patch")
 	} else {
-		Info("生成提交 %s 的patch", revision)
+		outfmt.Info("生成提交 %s 的patch", revision)
 	}
 
 	// 构建git format-patch命令参数
@@ -65,25 +67,25 @@ func handleGitFormatPatch(ctx context.Context, args ToolArgs) (string, error) {
 
 	// 如果输出为空，返回提示信息
 	if out == "" {
-		Warn("git format-patch成功但没有输出（可能没有变更？）")
+		outfmt.Warn("git format-patch成功但没有输出（可能没有变更？）")
 		return "git format-patch succeed without output (maybe no changes?)", nil
 	}
 
 	// 解析patch内容
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 
-	PrintSubSection("Patch信息")
+	outfmt.PrintSubSection("Patch信息")
 
 	// 提取patch头部信息
 	var patchInfo []string
 	for i, line := range lines {
 		if i < 20 { // 只显示前20行作为摘要
 			if strings.HasPrefix(line, "From ") {
-				Info("提交: %s", strings.TrimSpace(line[5:]))
+				outfmt.Info("提交: %s", strings.TrimSpace(line[5:]))
 			} else if strings.HasPrefix(line, "Date: ") {
-				Info("日期: %s", strings.TrimSpace(line[6:]))
+				outfmt.Info("日期: %s", strings.TrimSpace(line[6:]))
 			} else if strings.HasPrefix(line, "Subject: ") {
-				Info("主题: %s", strings.TrimSpace(line[9:]))
+				outfmt.Info("主题: %s", strings.TrimSpace(line[9:]))
 			} else if strings.HasPrefix(line, "diff --git") {
 				break
 			}
@@ -92,16 +94,14 @@ func handleGitFormatPatch(ctx context.Context, args ToolArgs) (string, error) {
 	}
 
 	// 显示patch统计
-	PrintSubSection("Patch统计")
+	outfmt.PrintSubSection("Patch统计")
 	diffStats := analyzeDiffStats(out)
-	Info("Patch包含 %d 个文件", diffStats.files)
-	Success("新增行: %d", diffStats.additions)
-	Error("删除行: %d", diffStats.deletions)
-	Notice("变更行总计: %d", diffStats.additions+diffStats.deletions)
+	outfmt.Info("Patch包含 %d 个文件", diffStats.files)
+	outfmt.Success("新增行: %d", diffStats.additions)
+	outfmt.Error("删除行: %d", diffStats.deletions)
+	outfmt.Notice("变更行总计: %d", diffStats.additions+diffStats.deletions)
 
 	// 显示完整的patch内容
-	PrintSubSection("完整Patch内容")
-	fmt.Fprintln(outputWriter, out)
-
+	outfmt.PrintSubSection("完整Patch内容")
 	return out, nil
 }

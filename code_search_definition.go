@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 func init() {
@@ -78,7 +80,7 @@ func handleSearchCodeDefinition(ctx context.Context, args ToolArgs) (string, err
 	}
 	typeFilter := ToolArgsValue(args, "type_filter", "")
 	caseSensitive := ToolArgsValue(args, "case_sensitive", false)
-	Printf("🔍 搜索代码定义: path=%s pattern=%s typeFilter=%s caseSensitive=%v\n", path, pattern, typeFilter, caseSensitive)
+	outfmt.Printf("🔍 搜索代码定义: path=%s pattern=%s typeFilter=%s caseSensitive=%v\n", path, pattern, typeFilter, caseSensitive)
 	// 解析文件结构
 	structure, err := ParseFileStructure(ctx, path)
 	if err != nil {

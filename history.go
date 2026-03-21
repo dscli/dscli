@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 	"github.com/spf13/cobra"
 )
 
@@ -55,7 +56,7 @@ func historyShowRunE(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
-	wrt := NewTabwrt()
+	wrt := outfmt.NewTabwrt()
 	defer wrt.Flush()
 	wrt.Println("ID", fmt.Sprint(message.ID))
 	wrt.Println("ModelID", fmt.Sprint(message.ModelID))
@@ -150,7 +151,7 @@ func historyListRunE(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 	filter, err := cmd.Flags().GetString("filter")
-	wrt := NewTabwrt()
+	wrt := outfmt.NewTabwrt()
 	defer wrt.Flush()
 	for _, hist := range history {
 		switch filter {
@@ -176,7 +177,7 @@ func historyLoadRunE(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 	filter, err := cmd.Flags().GetString("filter")
-	wrt := NewTabwrt()
+	wrt := outfmt.NewTabwrt()
 	defer wrt.Flush()
 	for i, hist := range history[0 : len(history)-1] {
 		role := hist.Role

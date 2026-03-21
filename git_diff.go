@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 func init() {
@@ -51,27 +53,27 @@ func handleGitDiff(ctx context.Context, args ToolArgs) (string, error) {
 	// 智能选择diff模式
 	if hasStagedChanges && !hasUnstagedChanges {
 		// 只有暂存的文件，没有工作区修改
-		Info("检测到只有暂存的文件，使用 --cached 查看暂存区与HEAD的差异")
+		outfmt.Info("检测到只有暂存的文件，使用 --cached 查看暂存区与HEAD的差异")
 		gitArgs = append(gitArgs, "--cached")
 	} else if hasStagedChanges && hasUnstagedChanges {
 		// 既有暂存的文件，又有工作区修改
-		Info("检测到既有暂存文件又有工作区修改")
-		Info("默认显示工作区与暂存区的差异")
-		Notice("使用 --cached 查看暂存区与HEAD的差异")
+		outfmt.Info("检测到既有暂存文件又有工作区修改")
+		outfmt.Info("默认显示工作区与暂存区的差异")
+		outfmt.Notice("使用 --cached 查看暂存区与HEAD的差异")
 	} else if !hasStagedChanges && hasUnstagedChanges {
 		// 只有工作区修改，没有暂存文件
-		Info("检测到只有工作区修改，显示工作区与HEAD的差异")
+		outfmt.Info("检测到只有工作区修改，显示工作区与HEAD的差异")
 	}
 
 	// 显示要比较的文件
 	if len(names) > 0 {
-		Info("要比较的文件:")
+		outfmt.Info("要比较的文件:")
 		for i, name := range names {
-			PrintBullet(fmt.Sprintf("[%d] %s", i+1, name))
+			outfmt.PrintBullet(fmt.Sprintf("[%d] %s", i+1, name))
 		}
 		gitArgs = append(gitArgs, names...)
 	} else {
-		Info("比较所有变更的文件")
+		outfmt.Info("比较所有变更的文件")
 	}
 
 	out, err := gitCommand(ctx, gitArgs...)
@@ -81,17 +83,17 @@ func handleGitDiff(ctx context.Context, args ToolArgs) (string, error) {
 
 	// 格式化输出
 	if out == "" {
-		Success("没有差异")
+		outfmt.Success("没有差异")
 		return "没有差异", nil
 	}
 
 	// 解析差异输出
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 
-	PrintSubSection("差异详情")
+	outfmt.PrintSubSection("差异详情")
 
 	// 使用Markdown格式显示差异
-	Println("```diff")
+	outfmt.Println("```diff")
 
 	for _, line := range lines {
 		if strings.TrimSpace(line) == "" {
@@ -103,42 +105,42 @@ func handleGitDiff(ctx context.Context, args ToolArgs) (string, error) {
 		switch {
 		case strings.HasPrefix(line, "diff --git"):
 			// 文件差异标题
-			coloredLine = colorize(ColorBoldCyan, line)
+			coloredLine = outfmt.Colorize(outfmt.ColorBoldCyan, line)
 		case strings.HasPrefix(line, "index "):
 			// 索引信息
-			coloredLine = colorize(ColorGray, line)
+			coloredLine = outfmt.Colorize(outfmt.ColorGray, line)
 		case strings.HasPrefix(line, "---"):
 			// 旧文件
-			coloredLine = colorize(ColorRed, line)
+			coloredLine = outfmt.Colorize(outfmt.ColorRed, line)
 		case strings.HasPrefix(line, "+++"):
 			// 新文件
-			coloredLine = colorize(ColorGreen, line)
+			coloredLine = outfmt.Colorize(outfmt.ColorGreen, line)
 		case strings.HasPrefix(line, "@@"):
 			// 差异块标题
-			coloredLine = colorize(ColorBoldBlue, line)
+			coloredLine = outfmt.Colorize(outfmt.ColorBoldBlue, line)
 		case strings.HasPrefix(line, "+"):
 			// 新增行
-			coloredLine = colorize(ColorGreen, line)
+			coloredLine = outfmt.Colorize(outfmt.ColorGreen, line)
 		case strings.HasPrefix(line, "-"):
 			// 删除行
-			coloredLine = colorize(ColorRed, line)
+			coloredLine = outfmt.Colorize(outfmt.ColorRed, line)
 		default:
 			// 上下文行
-			coloredLine = colorize(ColorWhite, line)
+			coloredLine = outfmt.Colorize(outfmt.ColorWhite, line)
 		}
 
-		Println(coloredLine)
+		outfmt.Println(coloredLine)
 	}
 
-	Println("```")
+	outfmt.Println("```")
 	// 显示统计信息
-	PrintSubSection("统计信息")
+	outfmt.PrintSubSection("统计信息")
 	diffStats := analyzeDiffStats(out)
 	if diffStats.files > 0 {
-		Info("共比较 %d 个文件", diffStats.files)
-		Success("新增行: %d", diffStats.additions)
-		Error("删除行: %d", diffStats.deletions)
-		Notice("变更行总计: %d", diffStats.additions+diffStats.deletions)
+		outfmt.Info("共比较 %d 个文件", diffStats.files)
+		outfmt.Success("新增行: %d", diffStats.additions)
+		outfmt.Error("删除行: %d", diffStats.deletions)
+		outfmt.Notice("变更行总计: %d", diffStats.additions+diffStats.deletions)
 	}
 
 	return out, nil

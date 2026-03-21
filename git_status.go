@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 func init() {
@@ -27,7 +29,7 @@ func handleGitStatus(ctx context.Context, args ToolArgs) (string, error) {
 	// 显示操作标题
 	PrintGitSection("仓库状态")
 
-	Info("正在检查Git仓库状态...")
+	outfmt.Info("正在检查Git仓库状态...")
 
 	out, err := gitCommand(ctx, "status", "--short")
 	if err != nil {
@@ -36,7 +38,7 @@ func handleGitStatus(ctx context.Context, args ToolArgs) (string, error) {
 
 	// 格式化输出
 	if out == "" || strings.Contains(out, "工作区干净，无变更") {
-		Success("工作区干净，无变更")
+		outfmt.Success("工作区干净，无变更")
 		return "工作区干净，无变更", nil
 	}
 
@@ -67,31 +69,31 @@ func handleGitStatus(ctx context.Context, args ToolArgs) (string, error) {
 	}
 
 	// 显示统计信息
-	PrintSubSection("变更统计")
+	outfmt.PrintSubSection("变更统计")
 	if len(staged) > 0 {
-		Success("暂存区变更 (%d 个文件):", len(staged))
+		outfmt.Success("暂存区变更 (%d 个文件):", len(staged))
 		for _, file := range staged {
-			PrintBullet(file)
+			outfmt.PrintBullet(file)
 		}
 	}
 
 	if len(unstaged) > 0 {
-		Warn("工作区变更 (%d 个文件):", len(unstaged))
+		outfmt.Warn("工作区变更 (%d 个文件):", len(unstaged))
 		for _, file := range unstaged {
-			PrintBullet(file)
+			outfmt.PrintBullet(file)
 		}
 	}
 
 	if len(untracked) > 0 {
-		Notice("未跟踪文件 (%d 个):", len(untracked))
+		outfmt.Notice("未跟踪文件 (%d 个):", len(untracked))
 		for _, file := range untracked {
-			PrintBullet(file)
+			outfmt.PrintBullet(file)
 		}
 	}
 
 	// 显示原始输出
-	PrintSubSection("原始输出")
-	fmt.Fprintln(outputWriter, out)
+	outfmt.PrintSubSection("原始输出")
+	outfmt.Println(out)
 
 	return out, nil
 }

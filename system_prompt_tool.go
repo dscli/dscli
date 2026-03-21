@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 // SystemPromptTool 系统提示词工具 - 简化实用版
@@ -95,7 +97,7 @@ func handleSystemPrompt(ctx context.Context, args ToolArgs) (reply string, err e
 	sb.WriteString(prompt)
 	sb.WriteString("\n```")
 	reply = sb.String()
-	Println(reply)
+	outfmt.Println(reply)
 	return
 }
 

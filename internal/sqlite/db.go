@@ -1,4 +1,4 @@
-package main
+package sqlite
 
 import (
 	"database/sql"
@@ -7,20 +7,23 @@ import (
 	"path/filepath"
 	"sync"
 
-	"gitcode.com/dscli/dscli/internal/sqlite"
+	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 var (
 	// ModelID = int64(0)
 	dbPath = func() string {
+		configDir := context.GetConfigDir()
+		isTesting := context.IsTesting()
 		dbname := "sqlite.db"
-		if IsTesting() {
+		if isTesting {
 			dbname = fmt.Sprintf("%s.db", filepath.Base(os.Args[0]))
 		}
-		path := filepath.Join(ConfigDir, dbname)
+		path := filepath.Join(configDir, dbname)
 		insideShellExec := os.Getenv("InsideShellExec")
 		if insideShellExec != "" {
-			dir := filepath.Join(ConfigDir, "inside-shell-exec")
+			dir := filepath.Join(configDir, "inside-shell-exec")
 			err := os.MkdirAll(dir, 0o755)
 			if err != nil {
 				panic(err)
@@ -78,14 +81,14 @@ func initDatabase(db *sql.DB) error {
 	// 3. 执行升级脚本
 	for _, query := range upgradeSchemas {
 		if _, err := db.Exec(query); err == nil {
-			Debug("升级完成: %s\n", query)
+			outfmt.Debug("升级完成: %s\n", query)
 		}
 	}
 
 	// 4. 执行后初始化钩子
 	for _, hook := range postInitHooks {
 		if err := hook(db); err != nil {
-			Debug("后初始化钩子失败: %v\n", err)
+			outfmt.Debug("后初始化钩子失败: %v\n", err)
 		}
 	}
 
@@ -95,7 +98,7 @@ func initDatabase(db *sql.DB) error {
 // OpenDB 打开数据库连接（确保数据库已初始化）
 func OpenDB(elem ...string) (*sql.DB, error) {
 	var err error
-	db, err := sqlite.Open(dbPath)
+	db, err := Open(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
@@ -111,7 +114,7 @@ func OpenDB(elem ...string) (*sql.DB, error) {
 	// 如果指定了其他数据库路径
 	if len(elem) > 0 {
 		dbPath := filepath.Join(elem...)
-		return sqlite.Open(dbPath)
+		return Open(dbPath)
 	}
 
 	return db, nil

@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 func init() {
@@ -89,7 +91,7 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (output string, err err
 			lines = strings.Count(content, "\n")
 		}
 
-		Notice("追加内容到文件 \"%s\"，添加 %d 行", path, lines)
+		outfmt.Notice("追加内容到文件 \"%s\"，添加 %d 行", path, lines)
 
 		// 运行make format并捕获结果
 		formatOutput, formatErr := CodeMakeFormat(ctx, filepath.Ext(path))

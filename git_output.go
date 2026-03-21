@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 // GitOutput 封装Git命令的输出功能
@@ -29,12 +31,12 @@ func (g *GitOutput) PrintCommand() {
 		fullCommand = fmt.Sprintf("%s %s", fullCommand, strings.Join(g.args, " "))
 	}
 
-	Notice("执行Git命令: %s", fullCommand)
+	outfmt.Notice("执行Git命令: %s", fullCommand)
 
 	// 显示详细参数信息（如果verbose模式）
-	if outputVerbose && len(g.args) > 0 {
+	if len(g.args) > 0 {
 		for i, arg := range g.args {
-			Debug("  参数[%d]: %s", i, arg)
+			outfmt.Debug("  参数[%d]: %s", i, arg)
 		}
 	}
 }
@@ -44,57 +46,57 @@ func (g *GitOutput) PrintResult(output string, err error) {
 	executionTime := time.Since(g.start)
 
 	if err != nil {
-		Error("Git命令执行失败: %v", err)
-		Debug("执行时间: %v", executionTime)
+		outfmt.Error("Git命令执行失败: %v", err)
+		outfmt.Debug("执行时间: %v", executionTime)
 		return
 	}
 
 	// 如果输出为空，显示成功消息
 	if strings.TrimSpace(output) == "" {
-		Success("Git命令执行成功")
+		outfmt.Success("Git命令执行成功")
 	} else {
 		// 格式化输出
-		PrintSection("Git命令输出")
-		fmt.Fprintln(outputWriter, output)
+		outfmt.PrintSection("Git命令输出")
+		outfmt.Println(output)
 	}
 
-	Info("执行时间: %v", executionTime)
+	outfmt.Info("执行时间: %v", executionTime)
 }
 
 // PrintError 打印错误消息
 func (g *GitOutput) PrintError(err error) {
-	Error("Git命令执行失败: %v", err)
-	Debug("执行时间: %v", time.Since(g.start))
+	outfmt.Error("Git命令执行失败: %v", err)
+	outfmt.Debug("执行时间: %v", time.Since(g.start))
 }
 
 // PrintInfo 打印信息消息
 func (g *GitOutput) PrintInfo(format string, args ...any) {
-	Info(format, args...)
+	outfmt.Info(format, args...)
 }
 
 // PrintDebug 打印调试消息
 func (g *GitOutput) PrintDebug(format string, args ...any) {
-	Debug(format, args...)
+	outfmt.Debug(format, args...)
 }
 
 // PrintWarning 打印警告消息
 func (g *GitOutput) PrintWarning(format string, args ...any) {
-	Warn(format, args...)
+	outfmt.Warn(format, args...)
 }
 
 // PrintGitHeader 打印Git操作标题
 func PrintGitHeader(operation string) {
-	PrintHeader(fmt.Sprintf("Git %s", strings.ToUpper(operation)))
+	outfmt.PrintHeader(fmt.Sprintf("Git %s", strings.ToUpper(operation)))
 }
 
 // PrintGitSection 打印Git操作章节
 func PrintGitSection(operation string) {
-	PrintSection(fmt.Sprintf("Git %s", operation))
+	outfmt.PrintSection(fmt.Sprintf("Git %s", operation))
 }
 
 // PrintGitSubSection 打印Git操作子章节
 func PrintGitSubSection(operation string) {
-	PrintSubSection(fmt.Sprintf("Git %s", operation))
+	outfmt.PrintSubSection(fmt.Sprintf("Git %s", operation))
 }
 
 // FormatGitOutput 格式化Git输出
@@ -129,5 +131,5 @@ func PrintGitCommand(args ...string) {
 		fullCommand = fmt.Sprintf("%s %s", fullCommand, strings.Join(commandArgs, " "))
 	}
 
-	Notice("执行: %s", fullCommand)
+	outfmt.Notice("执行: %s", fullCommand)
 }

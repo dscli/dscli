@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"gitcode.com/dscli/dscli/internal/sqlite"
 )
 
 // Domain 领域定义
@@ -39,7 +41,7 @@ type ProjectDomain struct {
 // 初始化函数
 func init() {
 	// 注册表结构
-	RegisterTableSchema(
+	sqlite.RegisterTableSchema(
 		`CREATE TABLE IF NOT EXISTS domains (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
@@ -69,7 +71,7 @@ func init() {
 	)
 
 	// 注册索引
-	RegisterIndexSchema(
+	sqlite.RegisterIndexSchema(
 		`CREATE INDEX IF NOT EXISTS idx_prompt_segments_domain_model 
 		ON prompt_segments(domain_id, model_id, sort_order) WHERE enabled = true`,
 		`CREATE INDEX IF NOT EXISTS idx_prompt_segments_enabled 
@@ -77,7 +79,7 @@ func init() {
 	)
 
 	// 注册升级脚本
-	RegisterUpgradeSchema(
+	sqlite.RegisterUpgradeSchema(
 		`DROP INDEX IF EXISTS idx_project_domains_root`,
 		`ALTER TABLE project_domains RENAME COLUMN project_root TO project_path`,
 		`CREATE INDEX IF NOT EXISTS idx_project_domains_path
@@ -92,7 +94,7 @@ func init() {
 	)
 
 	// 注册后初始化钩子
-	RegisterPostInitHook(func(db *sql.DB) error {
+	sqlite.RegisterPostInitHook(func(db *sql.DB) error {
 		return initDefaultSegments(db)
 	})
 }

@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/sqlite"
 	"github.com/spf13/cobra"
 )
 
@@ -53,11 +55,11 @@ func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 	defer cmd.SetContext(ctx)
 	// 配置输出系统
 	configureOutput()
-	SetOutputWriter(cmd.OutOrStdout())
+	outfmt.SetOutputWriter(cmd.OutOrStdout())
 	switch mode {
 	case "markdown":
 	case "org":
-		SetOutputMode(mode)
+		outfmt.SetOutputMode(mode)
 	default:
 		err = fmt.Errorf("do not support %s", mode)
 		return
@@ -68,11 +70,11 @@ func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 	// 设置数据库路径（如果指定了--db选项）
 	if path != "" {
-		SetDBPath(path)
+		sqlite.SetDBPath(path)
 	}
 
 	// 初始化数据库（确保所有init()函数已执行）
-	if _, err := OpenDB(); err != nil {
+	if _, err := sqlite.OpenDB(); err != nil {
 		return fmt.Errorf("数据库初始化失败: %w", err)
 	}
 
@@ -90,13 +92,13 @@ func RootPreRunE(cmd *cobra.Command, args []string) (err error) {
 // configureOutput 配置输出系统
 func configureOutput() {
 	// 设置颜色输出
-	SetColorEnabled(!colorEnabled) // 注意：--no-color 为 true 时禁用颜色
+	outfmt.SetColorEnabled(!colorEnabled) // 注意：--no-color 为 true 时禁用颜色
 
 	// 设置时间戳显示
-	SetShowTimestamp(!showTimestamp) // 注意：--no-timestamp 为 true 时禁用时间戳
+	outfmt.SetShowTimestamp(!showTimestamp) // 注意：--no-timestamp 为 true 时禁用时间戳
 
 	// 设置详细输出
-	SetVerbose(verbose)
+	outfmt.SetVerbose(verbose)
 }
 
 func RootExecute() error { return rootCmd.Execute() }

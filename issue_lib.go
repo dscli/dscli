@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 // GetIssueConfig 获取issue配置信息
@@ -146,7 +148,7 @@ func CreateIssue(ctx context.Context, opts CreateIssueOptions) (*Issue, error) {
 		"title":       opts.Title,
 		"description": opts.Body,
 	}
-	jsonData, err := JSONMarshal(requestData)
+	jsonData, err := outfmt.JSONMarshal(requestData)
 	if err != nil {
 		return nil, fmt.Errorf("序列化请求数据失败: %w", err)
 	}
@@ -257,15 +259,13 @@ func UpdateIssue(ctx context.Context, opts UpdateIssueOptions) (*Issue, error) {
 		requestData["labels"] = []string{}
 	}
 
-	jsonData, err := JSONMarshal(requestData)
+	jsonData, err := outfmt.JSONMarshal(requestData)
 	if err != nil {
 		return nil, fmt.Errorf("序列化请求数据失败: %w", err)
 	}
 
 	// 调试：打印请求数据
-	if outputVerbose {
-		fmt.Printf("调试: 发送的请求数据: %s\n", string(jsonData))
-	}
+	outfmt.Debug("调试: 发送的请求数据: %s\n", string(jsonData))
 
 	// 发送PATCH请求
 	// GitCode API格式: PATCH /api/v5/repos/:owner/issues/:number

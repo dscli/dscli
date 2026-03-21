@@ -3,11 +3,14 @@ package main
 import (
 	"database/sql"
 	"fmt"
+
+	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/sqlite"
 )
 
 func init() {
 	// 注册段落初始化钩子
-	RegisterPostInitHook(initSegmentsHook)
+	sqlite.RegisterPostInitHook(initSegmentsHook)
 }
 
 // initSegmentsHook 段落初始化钩子
@@ -21,7 +24,7 @@ func initSegmentsHook(db *sql.DB) error {
 
 	// 如果已有编程领域段落，跳过初始化
 	if count > 0 {
-		Debug("编程领域段落已存在，跳过初始化")
+		outfmt.Debug("编程领域段落已存在，跳过初始化")
 		return nil
 	}
 
@@ -134,7 +137,7 @@ func initSegmentsHook(db *sql.DB) error {
 		if err != nil {
 			return fmt.Errorf("插入编程领域段落失败: %w", err)
 		}
-		Debug("已插入编程领域段落: %s (模型: %d)", segment.name, segment.modelID)
+		outfmt.Debug("已插入编程领域段落: %s (模型: %d)", segment.name, segment.modelID)
 	}
 
 	// 提交事务
@@ -142,7 +145,7 @@ func initSegmentsHook(db *sql.DB) error {
 		return fmt.Errorf("提交事务失败: %w", err)
 	}
 
-	Println("✅ 编程领域段落初始化完成")
+	outfmt.Println("✅ 编程领域段落初始化完成")
 	return nil
 }
 

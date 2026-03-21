@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 func init() { // 注册shell工具
@@ -77,7 +78,7 @@ func handleShell(ctx context.Context, args ToolArgs) (out string, err error) {
 	if summary == "" {
 		summary = "\n```bash\n" + script + "\n```\n"
 	}
-	Notice("💻 执行Shell%s", TruncateString(summary, 100))
+	outfmt.Notice("💻 执行Shell%s", TruncateString(summary, 100))
 	out, err = runShell(ctx, script)
 	return
 }
@@ -91,7 +92,7 @@ func runShell(ctx context.Context, script string) (result string, err error) {
 	executionTime := time.Since(startTime)
 
 	// 记录调试信息（不在用户输出中显示）
-	Debug("Shell命令执行时间: %v", executionTime)
+	outfmt.Debug("Shell命令执行时间: %v", executionTime)
 
 	// 判断是Python还是Shell调用
 	isPython := strings.Contains(strings.ToLower(script), "python") ||

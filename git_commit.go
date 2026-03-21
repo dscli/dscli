@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 func init() {
@@ -51,8 +52,8 @@ func handleGitCommit(ctx context.Context, args ToolArgs) (string, error) {
 	// 检查 -m、-m[空格]、--message 等变体
 	for word := range strings.FieldsSeq(options) {
 		if word == "-m" || word == "--message" || strings.HasPrefix(word, "-m") {
-			Error("检测到-m或--message参数")
-			Warn("提示: message参数已通过message字段提供，不要在options中包含-m或--message")
+			outfmt.Error("检测到-m或--message参数")
+			outfmt.Warn("提示: message参数已通过message字段提供，不要在options中包含-m或--message")
 			return "", fmt.Errorf("message参数已通过message字段提供，不要在options中包含-m或--message")
 		}
 	}
@@ -62,8 +63,8 @@ func handleGitCommit(ctx context.Context, args ToolArgs) (string, error) {
 		gitArgs = append(gitArgs, strings.Fields(options)...)
 	}
 
-	Info("执行: git %s", strings.Join(gitArgs, " "))
-	Info("执行: git %s", strings.Join(gitArgs, " "))
+	outfmt.Info("执行: git %s", strings.Join(gitArgs, " "))
+	outfmt.Info("执行: git %s", strings.Join(gitArgs, " "))
 
 	cmd := exec.Command("git", gitArgs...)
 	cmd.Dir = context.ContextValue(ctx, context.ProjectRootKey, "")
@@ -71,9 +72,9 @@ func handleGitCommit(ctx context.Context, args ToolArgs) (string, error) {
 	out := string(output)
 
 	if err != nil {
-		Error("Git提交失败: %v", err)
+		outfmt.Error("Git提交失败: %v", err)
 		if out != "" {
-			Error("输出: %s", out)
+			outfmt.Error("输出: %s", out)
 		}
 		return "", fmt.Errorf("git commit失败: %v", err)
 	}
@@ -82,12 +83,12 @@ func handleGitCommit(ctx context.Context, args ToolArgs) (string, error) {
 	if strings.Contains(out, "[") && strings.Contains(out, "]") {
 		for line := range strings.SplitSeq(out, "\n") {
 			if strings.Contains(line, "[") && strings.Contains(line, "]") {
-				Success("提交成功: %s", strings.TrimSpace(line))
+				outfmt.Success("提交成功: %s", strings.TrimSpace(line))
 				break
 			}
 		}
 	} else {
-		Success("提交成功")
+		outfmt.Success("提交成功")
 	}
 
 	return out, nil

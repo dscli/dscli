@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 func TestBoolToString(t *testing.T) {
@@ -30,7 +32,7 @@ func TestBoolToString(t *testing.T) {
 
 func TestVersionCommandOutput(t *testing.T) {
 	// 保存原始输出写入器和变量
-	originalWriter := outputWriter
+	originalWriter := os.Stdout
 	originalVersion := Version
 	originalBuild := Build
 	originalConfigDir := ConfigDir
@@ -43,7 +45,7 @@ func TestVersionCommandOutput(t *testing.T) {
 
 	// 设置测试环境
 	defer func() {
-		SetOutputWriter(originalWriter)
+		outfmt.SetOutputWriter(originalWriter)
 		Version = originalVersion
 		Build = originalBuild
 		ConfigDir = originalConfigDir
@@ -68,7 +70,7 @@ func TestVersionCommandOutput(t *testing.T) {
 
 	// 设置测试输出缓冲区
 	var buf bytes.Buffer
-	SetOutputWriter(&buf)
+	outfmt.SetOutputWriter(&buf)
 	ctx := t.Context()
 
 	ctx = context.WithValue(ctx, context.ProjectRootKey, context.GetProjectRoot())
@@ -125,13 +127,13 @@ func TestVersionCommandOutput(t *testing.T) {
 
 func TestVersionCommandWithoutBuild(t *testing.T) {
 	// 保存原始输出写入器和变量
-	originalWriter := outputWriter
+	originalWriter := os.Stdout
 	originalVersion := Version
 	originalBuild := Build
 
 	// 恢复原始值
 	defer func() {
-		SetOutputWriter(originalWriter)
+		outfmt.SetOutputWriter(originalWriter)
 		Version = originalVersion
 		Build = originalBuild
 	}()
@@ -142,7 +144,7 @@ func TestVersionCommandWithoutBuild(t *testing.T) {
 
 	// 设置测试输出缓冲区
 	var buf bytes.Buffer
-	SetOutputWriter(&buf)
+	outfmt.SetOutputWriter(&buf)
 	ctx := context.WithValue(t.Context(), context.ProjectRootKey, context.GetProjectRoot())
 	// 执行version命令
 	versionRunE(ctx)
@@ -161,12 +163,12 @@ func TestVersionCommandWithoutBuild(t *testing.T) {
 func TestVersionCommandIntegration(t *testing.T) {
 	// 这是一个集成测试，验证命令可以正常执行
 	// 保存原始输出写入器
-	originalWriter := outputWriter
-	defer SetOutputWriter(originalWriter)
+	originalWriter := os.Stdout
+	defer outfmt.SetOutputWriter(originalWriter)
 
 	// 设置测试输出缓冲区
 	var buf bytes.Buffer
-	SetOutputWriter(&buf)
+	outfmt.SetOutputWriter(&buf)
 	ctx := context.WithValue(t.Context(), context.ProjectRootKey, context.GetProjectRoot())
 
 	// 执行命令

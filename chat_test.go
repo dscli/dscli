@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 func TestPrintContent(t *testing.T) {
@@ -15,7 +16,7 @@ func TestPrintContent(t *testing.T) {
 	// make sure two keys  no overlap
 	ctx = context.WithValue(ctx, context.CurrentModelIDKey, ModelDeepseekChat)
 	buf := bytes.NewBuffer([]byte{})
-	SetOutputWriter(buf)
+	outfmt.SetOutputWriter(buf)
 	PrintContent(ctx, "reasoning", "content")
 	s := buf.String()
 
@@ -64,7 +65,7 @@ func TestPrintSessionStats(t *testing.T) {
 
 	// 捕获输出
 	buf := bytes.NewBuffer([]byte{})
-	SetOutputWriter(buf)
+	outfmt.SetOutputWriter(buf)
 
 	// 调用函数
 	PrintSessionStats(ctx)

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"text/template"
+
+	"gitcode.com/dscli/dscli/internal/sqlite"
 )
 
 // SegmentTemplateRenderer 段落模板渲染器
@@ -24,7 +26,7 @@ func NewSegmentTemplateRenderer(ctx context.Context) *SegmentTemplateRenderer {
 func (r *SegmentTemplateRenderer) GetSegmentsForProject() (segment []PromptSegment, err error) {
 	// 获取项目对应的领域ID
 	var domainID int64
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return
 	}
@@ -162,7 +164,7 @@ func (c *SystemPromptConfig) IsGitClean() bool {
 
 // UpdateSegmentContent 更新段落内容（支持模板）
 func UpdateSegmentContent(id int64, content string) (err error) {
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return
 	}
@@ -177,7 +179,7 @@ func UpdateSegmentContent(id int64, content string) (err error) {
 
 // CreateSegment 创建新段落
 func CreateSegment(domainID, modelID int64, name, content string, sortOrder int) (err error) {
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return
 	}

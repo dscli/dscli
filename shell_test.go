@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 func TestShebang(t *testing.T) {
@@ -39,7 +40,7 @@ func TestRunScriptShebang(t *testing.T) {
 	if os.Getenv("InsideShellExec") != "" {
 		t.SkipNow()
 	}
-	SetVerbose(true)
+	outfmt.SetVerbose(true)
 	tcs := []struct {
 		script   string
 		expected string
@@ -307,7 +308,7 @@ func TestIsTesting(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := IsTesting()
+			got := context.IsTesting()
 			if got != tt.want {
 				t.Errorf("IsTesting() = %v, want %v", got, tt.want)
 			}

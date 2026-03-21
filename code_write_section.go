@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 // writeCodeSection 基于代码结构定位并修改特定代码片段
@@ -294,5 +296,5 @@ func handleWriteCodeSection(ctx context.Context, args ToolArgs) (string, error) 
 
 func PrintWriteSession(path string, selector string) {
 	run := ""
-	Printf("修改文件%s代码片段%s%s\n", path, selector, run)
+	outfmt.Printf("修改文件%s代码片段%s%s\n", path, selector, run)
 }

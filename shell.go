@@ -13,10 +13,6 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
-func IsTesting() bool {
-	return strings.HasSuffix(os.Args[0], ".test")
-}
-
 func Shebang(script string) (name string, arg []string) {
 	shebang := []string{"/usr/bin/env", "bash"}
 	before, _, ok := strings.Cut(script, "\n")
@@ -277,7 +273,7 @@ func ShellExec(ctx context.Context, script string) (out string, err error) {
 	}
 
 	// 测试模式下不允许执行dscli，避免引起递归调用
-	if IsTesting() && isShellCommand {
+	if context.IsTesting() && isShellCommand {
 		script = strings.ReplaceAll(script, "dscli", "echo dscli")
 	}
 

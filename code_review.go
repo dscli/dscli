@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 var codeReviewTool = ToolDef{
@@ -84,7 +85,7 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 
 	status, err := ShellExec(ctx, statusScript)
 	if err != nil {
-		Println("❌ 获取Git状态失败")
+		outfmt.Println("❌ 获取Git状态失败")
 		err = fmt.Errorf("获取Git状态失败: %w", err)
 		return
 	}
@@ -92,7 +93,7 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 	if strings.Contains(status, "Changes not staged for commit") ||
 		strings.Contains(status, "Changes to be committed") ||
 		(status != "" && !strings.Contains(status, "nothing to commit")) {
-		Println("❌ 检测到未提交的更改")
+		outfmt.Println("❌ 检测到未提交的更改")
 		err = fmt.Errorf("检测到未提交的更改，请先提交所有更改再审查。当前状态：\n%s", status)
 		return
 	}
@@ -102,14 +103,14 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 	singleCommitScript := `git log --oneline @{u}..HEAD`
 	unpushedCommits, shellErr := ShellExec(ctx, singleCommitScript)
 	if shellErr != nil {
-		Println("❌ Git 出错，无法进行代码审查")
+		outfmt.Println("❌ Git 出错，无法进行代码审查")
 		err = fmt.Errorf("failed to check single commit: %w", shellErr)
 		return
 	}
 
 	unpushedCommits = strings.TrimSpace(unpushedCommits)
 	if unpushedCommits == "" {
-		Println("📝 未发现未push的提交，不必代码审查")
+		outfmt.Println("📝 未发现未push的提交，不必代码审查")
 		reply = "No unpushed commits found, no need to do code review"
 		return
 	}
@@ -119,18 +120,18 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 
 	// 如果有多个未push的提交，建议用户先rebase
 	if commitCount > 3 {
-		Printf("❌ 检测到%d个未push的提交\n", commitCount)
+		outfmt.Printf("❌ 检测到%d个未push的提交\n", commitCount)
 		return "", fmt.Errorf("more than 3 unpushed commit found")
 	}
 
-	Println("✅ 不多于3个commit检查通过")
+	outfmt.Println("✅ 不多于3个commit检查通过")
 	if testCommand != "" {
-		Println("🔍 运行单元测试:", testCommand)
+		outfmt.Println("🔍 运行单元测试:", testCommand)
 		testOutput := ""
 
 		testOutput, err = ShellExec(ctx, testCommand)
 		if err != nil {
-			Println("❌ 单元测试未通过")
+			outfmt.Println("❌ 单元测试未通过")
 			errorMsg := fmt.Sprintf("单元测试未通过，请修复测试后再审查。\n测试命令：%s\n", testCommand)
 			if testOutput != "" {
 				// 截断过长的输出
@@ -142,33 +143,33 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 					errorMsg += "测试输出：\n" + testOutput
 				}
 			}
-			Println("❌ 单元测试失败")
+			outfmt.Println("❌ 单元测试失败")
 			err = fmt.Errorf("%s: %w", errorMsg, err)
 			return
 		}
-		Println("✅ 单元测试通过")
+		outfmt.Println("✅ 单元测试通过")
 	}
 	// 获取最新的提交信息
 	logScript := `git log --oneline -` + fmt.Sprint(commitCount)
 	log, err := ShellExec(ctx, logScript)
 	if err != nil {
-		Println("❌ 获取提交历史失败")
+		outfmt.Println("❌ 获取提交历史失败")
 		err = fmt.Errorf("获取提交历史失败: %w", err)
 		return
 	}
 
 	if strings.TrimSpace(log) == "" {
-		Println("❌ 没有找到提交记录")
+		outfmt.Println("❌ 没有找到提交记录")
 		err = fmt.Errorf("没有找到提交记录，请先提交代码")
 		return
 	}
 
-	Println("📝 审查提交:", strings.TrimSpace(log))
+	outfmt.Println("📝 审查提交:", strings.TrimSpace(log))
 
 	// 如果用户没有提供summary，从提交信息生成
 	if summary == "" {
 		summary = generateCodeReviewSummary(log)
-		Println("📝 自动生成提交摘要:", summary)
+		outfmt.Println("📝 自动生成提交摘要:", summary)
 	}
 
 	// 获取完整的提交信息用于构建请求
@@ -189,16 +190,16 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 
 	// 构建审查请求
 	structuredRequest := buildCodeReviewRequest(summary, fullLog, patch)
-	Println("📤 发送代码审查请求...")
+	outfmt.Println("📤 发送代码审查请求...")
 	reply, err = AskExpert(ctx, structuredRequest)
 	if err != nil {
-		Println("❌ 代码提交失败")
+		outfmt.Println("❌ 代码提交失败")
 		err = fmt.Errorf("代码提交失败: %w", err)
 		return
 	}
 	// 处理响应
 	processedResponse := processCodeReviewResponse(reply)
-	Println("✅ 代码审查完成")
+	outfmt.Println("✅ 代码审查完成")
 	return processedResponse, nil
 }
 

@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"unicode/utf8"
+
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 // 默认省略号（可根据需要修改为常量或配置）
@@ -150,7 +152,7 @@ func (t *ToolResultTruncator) Truncate(result string) string {
 	}
 
 	// 记录截断信息
-	Debug("工具结果需要截断: runes=%d (max=%d), bytes=%d (max=%d)",
+	outfmt.Debug("工具结果需要截断: runes=%d (max=%d), bytes=%d (max=%d)",
 		len(runes), t.MaxRunes, bytesLen, t.MaxBytes)
 
 	// 根据配置进行截断

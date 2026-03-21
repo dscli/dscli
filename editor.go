@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 func getEditor() (editor string, ext string) {
@@ -14,7 +16,7 @@ func getEditor() (editor string, ext string) {
 		return
 	}
 	editor = os.Getenv("EDITOR")
-	mode := GetOutputMode()
+	mode := outfmt.GetOutputMode()
 	if mode == "markdown" {
 		ext = "md"
 	} else {
@@ -57,7 +59,7 @@ func OpenEditor(ctx context.Context, initialContent string) (content string, err
 	args := cmdParts[1:]
 	args = append(args, path)
 	cmd := exec.Command(name, args...)
-	Println(cmd.String())
+	outfmt.Println(cmd.String())
 	if err = cmd.Run(); err != nil {
 		return
 	}

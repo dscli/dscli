@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 // gitCommand 执行git命令（直接使用exec.Command）
@@ -33,7 +34,7 @@ func gitCommand(ctx context.Context, args ...string) (string, error) {
 	executionTime := time.Since(startTime)
 
 	// 记录调试信息
-	Debug("Git命令执行时间: %v", executionTime)
+	outfmt.Debug("Git命令执行时间: %v", executionTime)
 
 	if err != nil {
 		// 命令执行失败
@@ -41,7 +42,7 @@ func gitCommand(ctx context.Context, args ...string) (string, error) {
 		if errorMsg == "" {
 			errorMsg = err.Error()
 		}
-		Error("Git命令执行失败: %s", errorMsg)
+		outfmt.Error("Git命令执行失败: %s", errorMsg)
 		return stdout, fmt.Errorf("failed to execute git command: %s", errorMsg)
 	}
 
@@ -49,7 +50,7 @@ func gitCommand(ctx context.Context, args ...string) (string, error) {
 	if stdout == "" && stderr == "" {
 		stdout = "命令执行成功（无输出）"
 	} else {
-		Success("Git命令执行成功")
+		outfmt.Success("Git命令执行成功")
 	}
 
 	// 简化输出，不显示执行时间

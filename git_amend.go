@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 func init() {
@@ -52,7 +53,7 @@ func handleGitAmend(ctx context.Context, args ToolArgs) (string, error) {
 
 	// 安全检查
 	if safe, reason := checkAmendSafety(ctx); !safe {
-		Error("安全检查失败: %s", reason)
+		outfmt.Error("安全检查失败: %s", reason)
 		return "", fmt.Errorf("amend操作不安全: %s", reason)
 	}
 
@@ -68,7 +69,7 @@ func handleGitAmend(ctx context.Context, args ToolArgs) (string, error) {
 		gitArgs = append(gitArgs, "-m", message)
 	}
 
-	Info("执行: git %s", strings.Join(gitArgs, " "))
+	outfmt.Info("执行: git %s", strings.Join(gitArgs, " "))
 
 	// 执行git命令
 	cmd := exec.Command("git", gitArgs...)
@@ -77,16 +78,16 @@ func handleGitAmend(ctx context.Context, args ToolArgs) (string, error) {
 	out := string(output)
 
 	if err != nil {
-		Error("Git提交修改失败: %v", err)
+		outfmt.Error("Git提交修改失败: %v", err)
 		if out != "" {
-			Error("输出: %s", out)
+			outfmt.Error("输出: %s", out)
 		}
 		return "", fmt.Errorf("git commit --amend失败: %v", err)
 	}
 
 	// 如果输出为空，显示成功消息
 	if out == "" {
-		Success("提交修改成功")
+		outfmt.Success("提交修改成功")
 		return "Git提交修改成功", nil
 	}
 
@@ -94,7 +95,7 @@ func handleGitAmend(ctx context.Context, args ToolArgs) (string, error) {
 	if strings.Contains(out, "[") && strings.Contains(out, "]") {
 		for line := range strings.SplitSeq(out, "\n") {
 			if strings.Contains(line, "[") && strings.Contains(line, "]") {
-				Success("提交修改成功: %s", strings.TrimSpace(line))
+				outfmt.Success("提交修改成功: %s", strings.TrimSpace(line))
 				break
 			}
 		}
@@ -118,8 +119,8 @@ func checkAmendSafety(ctx context.Context) (bool, string) {
 
 	// 检查3：是否已推送
 	if isCommitPushed(ctx) {
-		Error("⚠️  警告：当前提交可能已推送到远程仓库")
-		Error("   已推送的提交不可修改！")
+		outfmt.Error("⚠️  警告：当前提交可能已推送到远程仓库")
+		outfmt.Error("   已推送的提交不可修改！")
 		return false, "当前提交已推送到远程仓库，已推送提交不可修改"
 	}
 

@@ -1,4 +1,4 @@
-package main
+package outfmt
 
 import (
 	"encoding/json"
@@ -176,8 +176,8 @@ func SetErrorWriter(w io.Writer) {
 	outputErrorWriter = w
 }
 
-// colorize 根据是否启用颜色返回带颜色的字符串
-func colorize(color, text string) string {
+// Colorize 根据是否启用颜色返回带颜色的字符串
+func Colorize(color, text string) string {
 	if outputColorEnabled {
 		return color + text + ColorReset
 	}
@@ -196,9 +196,9 @@ func getTimestamp() string {
 func formatMessage(level, color, message string) string {
 	timestamp := getTimestamp()
 	if timestamp != "" {
-		return fmt.Sprintf("%s [%s] %s", timestamp, colorize(color, level), message)
+		return fmt.Sprintf("%s [%s] %s", timestamp, Colorize(color, level), message)
 	}
-	return fmt.Sprintf("[%s] %s", colorize(color, level), message)
+	return fmt.Sprintf("[%s] %s", Colorize(color, level), message)
 }
 
 func JSONMarshal(v any) ([]byte, error) {
@@ -258,48 +258,48 @@ func Fatal(format string, a ...any) {
 // Success 输出成功信息
 func Success(format string, a ...any) {
 	message := fmt.Sprintf(format, a...)
-	formatted := colorize(ColorBoldGreen, "✓ "+message)
+	formatted := Colorize(ColorBoldGreen, "✓ "+message)
 	Println(formatted)
 }
 
 // Notice 输出注意信息
 func Notice(format string, a ...any) {
 	message := fmt.Sprintf(format, a...)
-	formatted := colorize(ColorBoldCyan, "→ "+message)
+	formatted := Colorize(ColorBoldCyan, "→ "+message)
 	Println(formatted)
 }
 
 // PrintHeader 输出标题
 func PrintHeader(title string) {
 	line := strings.Repeat("=", len(title)+4)
-	Println(colorize(ColorBoldCyan, line))
-	Println(colorize(ColorBoldCyan, "  "+title+"  "))
-	Println(colorize(ColorBoldCyan, line))
+	Println(Colorize(ColorBoldCyan, line))
+	Println(Colorize(ColorBoldCyan, "  "+title+"  "))
+	Println(Colorize(ColorBoldCyan, line))
 }
 
 // PrintSection 输出章节标题
 func PrintSection(title string) {
 	Println()
-	Println(colorize(ColorBoldBlue, "▶ "+title))
-	Println(colorize(ColorGray, strings.Repeat("─", len(title)+2)))
+	Println(Colorize(ColorBoldBlue, "▶ "+title))
+	Println(Colorize(ColorGray, strings.Repeat("─", len(title)+2)))
 }
 
 // PrintSubSection 输出子章节标题
 func PrintSubSection(title string) {
 	Println()
-	Println(colorize(ColorBoldPurple, "  • "+title))
+	Println(Colorize(ColorBoldPurple, "  • "+title))
 }
 
 // PrintBullet 输出项目符号
 func PrintBullet(text string) {
-	Println(colorize(ColorWhite, "  ◦ "+text))
+	Println(Colorize(ColorWhite, "  ◦ "+text))
 }
 
 // PrintKeyValue 输出键值对
 func PrintKeyValue(key, value string) {
 	Printf("%s: %s\n",
-		colorize(ColorBoldWhite, key),
-		colorize(ColorCyan, value))
+		Colorize(ColorBoldWhite, key),
+		Colorize(ColorCyan, value))
 }
 
 // PrintJSON 输出JSON格式数据
@@ -308,7 +308,7 @@ func PrintJSON(data any) error {
 	if err != nil {
 		return err
 	}
-	Println(colorize(ColorGray, string(jsonStr)))
+	Println(Colorize(ColorGray, string(jsonStr)))
 	return nil
 }
 
@@ -368,8 +368,8 @@ func (pb *ProgressBar) render() {
 	empty := pb.width - filled
 
 	// 构建进度条字符串
-	bar := colorize(ColorGreen, strings.Repeat("█", filled)) +
-		colorize(ColorGray, strings.Repeat("░", empty))
+	bar := Colorize(ColorGreen, strings.Repeat("█", filled)) +
+		Colorize(ColorGray, strings.Repeat("░", empty))
 
 	// 构建信息字符串
 	info := fmt.Sprintf(" %.1f%%", percent)
@@ -436,7 +436,7 @@ func (s *Spinner) run() {
 			frame := s.frames[i%len(s.frames)]
 			elapsed := time.Since(s.startTime).Round(time.Second)
 			Printf("\r%s %s [%v]",
-				colorize(ColorYellow, frame),
+				Colorize(ColorYellow, frame),
 				s.message,
 				elapsed)
 			time.Sleep(s.interval)

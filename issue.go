@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 // ==================== Issue 相关类型 ====================
@@ -202,49 +204,49 @@ func formatLabels(labels []Label) string {
 func PrintIssue(issue Issue, detailed bool) {
 	if detailed {
 		// 详细显示模式（用于show命令）
-		Println(strings.Repeat("=", 80))
-		Printf("Issue #%s: %s\n", issue.Number, issue.Title)
-		Println(strings.Repeat("=", 80))
+		outfmt.Println(strings.Repeat("=", 80))
+		outfmt.Printf("Issue #%s: %s\n", issue.Number, issue.Title)
+		outfmt.Println(strings.Repeat("=", 80))
 
-		Printf("ID:         %d\n", issue.ID)
-		Printf("Number:     %s\n", issue.Number)
-		Printf("State:      %s\n", issue.State)
-		Printf("Created:    %s\n", formatTime(issue.CreatedAt))
-		Printf("Updated:    %s\n", formatTime(issue.UpdatedAt))
-		Printf("Closed:     %s\n", formatTime(issue.ClosedAt))
-		Printf("Author:     %s (%s)\n", issue.User.Name, issue.User.Login)
-		Printf("Assignee:   %s\n", formatAssignee(issue.Assignee))
-		Printf("Labels:     %s\n", formatLabels(issue.Labels))
+		outfmt.Printf("ID:         %d\n", issue.ID)
+		outfmt.Printf("Number:     %s\n", issue.Number)
+		outfmt.Printf("State:      %s\n", issue.State)
+		outfmt.Printf("Created:    %s\n", formatTime(issue.CreatedAt))
+		outfmt.Printf("Updated:    %s\n", formatTime(issue.UpdatedAt))
+		outfmt.Printf("Closed:     %s\n", formatTime(issue.ClosedAt))
+		outfmt.Printf("Author:     %s (%s)\n", issue.User.Name, issue.User.Login)
+		outfmt.Printf("Assignee:   %s\n", formatAssignee(issue.Assignee))
+		outfmt.Printf("Labels:     %s\n", formatLabels(issue.Labels))
 
-		Println(strings.Repeat("-", 80))
-		Println("内容:")
-		Println(strings.Repeat("-", 80))
+		outfmt.Println(strings.Repeat("-", 80))
+		outfmt.Println("内容:")
+		outfmt.Println(strings.Repeat("-", 80))
 		if issue.Body != "" {
-			Println(issue.Body)
+			outfmt.Println(issue.Body)
 		} else {
-			Println("（无内容）")
+			outfmt.Println("（无内容）")
 		}
-		Println(strings.Repeat("=", 80))
+		outfmt.Println(strings.Repeat("=", 80))
 	} else {
 		// 简洁显示模式（用于list命令）
 		assigneeInfo := formatAssignee(issue.Assignee)
 		labelsInfo := formatLabels(issue.Labels)
 
-		Printf("#%s [%s] %s\n", issue.Number, issue.State, issue.Title)
-		Printf("  ID: %d | Author: %s | Assignee: %s\n",
+		outfmt.Printf("#%s [%s] %s\n", issue.Number, issue.State, issue.Title)
+		outfmt.Printf("  ID: %d | Author: %s | Assignee: %s\n",
 			issue.ID, issue.User.Login, assigneeInfo)
-		Printf("  Created: %s | Updated: %s\n",
+		outfmt.Printf("  Created: %s | Updated: %s\n",
 			formatTime(issue.CreatedAt), formatTime(issue.UpdatedAt))
-		Printf("  Labels: %s\n", labelsInfo)
+		outfmt.Printf("  Labels: %s\n", labelsInfo)
 		if issue.Body != "" {
 			// 显示内容的前100个字符
 			preview := issue.Body
 			if len(preview) > 100 {
 				preview = preview[:100] + "..."
 			}
-			Printf("  Preview: %s\n", preview)
+			outfmt.Printf("  Preview: %s\n", preview)
 		}
-		Println()
+		outfmt.Println()
 	}
 }
 

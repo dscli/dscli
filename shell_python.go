@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 func init() {
@@ -79,7 +81,7 @@ func handlePython(ctx context.Context, args ToolArgs) (out string, err error) {
 	if !strings.HasPrefix(strings.TrimSpace(script), "#!") {
 		script = "#!/usr/bin/env python3\n" + script
 	}
-	Printf("🐍 运行Python脚本%s\n", TruncateString(summary, 100))
+	outfmt.Printf("🐍 运行Python脚本%s\n", TruncateString(summary, 100))
 	out, err = runShell(ctx, script)
 	return
 }

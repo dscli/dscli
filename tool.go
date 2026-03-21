@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/sqlite"
 )
 
 // Tool 定义可调用的工具
@@ -24,13 +26,24 @@ type Function struct {
 	Parameters  map[string]any `json:"parameters"` // JSON Schema 对象
 }
 
+type ToolCall struct {
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Function ToolCallFunction `json:"function"`
+}
+
+type ToolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"` // JSON 字符串
+}
+
 var ToolDisplayName = &struct{}{}
 
 // toolRegistry 工具注册表
 var toolRegistry = map[string]ToolDef{}
 
 func init() {
-	RegisterTableSchema(
+	sqlite.RegisterTableSchema(
 		// 工具表
 		`CREATE TABLE IF NOT EXISTS tools (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,7 +148,7 @@ func HandleToolCalls(ctx context.Context, tcs []ToolCall) (inputs []Message) {
 		}
 		err = SaveMessages(ctx, input)
 		if err != nil {
-			Debug("failed to save: %v", err)
+			outfmt.Debug("failed to save: %v", err)
 		}
 		inputs = append(inputs, input)
 
@@ -181,7 +194,7 @@ which lead to the error:
 	ctx = context.WithValue(ctx, ToolDisplayName, tool.DisplayName)
 	toolID, err := GetOrCreateTool(tool.Name, tool.Description, tool.Category)
 	if err != nil {
-		Error(err.Error(), "name", tool.Name)
+		outfmt.Error(err.Error(), "name", tool.Name)
 		// 继续执行工具，但不记录统计
 		return tool.Handler(ctx, args)
 	}
@@ -191,7 +204,7 @@ which lead to the error:
 	if displayName == "" {
 		displayName = tool.Name
 	}
-	Printf("🔄 正在执行 %s...\n", displayName)
+	outfmt.Printf("🔄 正在执行 %s...\n", displayName)
 
 	// 执行工具
 	result, err := tool.Handler(ctx, args)
@@ -203,9 +216,9 @@ which lead to the error:
 
 	// ✅ 新增：立即显示执行结果
 	if err != nil {
-		Printf("❌ %s 执行失败: %v\n", displayName, err)
+		outfmt.Printf("❌ %s 执行失败: %v\n", displayName, err)
 	} else {
-		Printf("✅ %s 执行成功\n", displayName)
+		outfmt.Printf("✅ %s 执行成功\n", displayName)
 		// 如果结果简短，显示结果摘要
 		if result != "" {
 			// 清理结果，移除多余空白
@@ -215,7 +228,7 @@ which lead to the error:
 				summary := TruncateString(cleanResult, 200)
 				// 移除换行符，使输出更紧凑
 				summary = strings.ReplaceAll(summary, "\n", " ")
-				Printf("   结果: %s\n", summary)
+				outfmt.Printf("   结果: %s\n", summary)
 			}
 		}
 	}
@@ -241,7 +254,7 @@ which lead to the error:
 
 // GetOrCreateTool 获取或创建工具
 func GetOrCreateTool(name, description, category string) (int64, error) {
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return 0, err
 	}
@@ -266,7 +279,7 @@ func GetOrCreateTool(name, description, category string) (int64, error) {
 
 // GetTool 根据ID获取工具
 func GetTool(id int64) (*ToolDesc, error) {
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +298,7 @@ func GetTool(id int64) (*ToolDesc, error) {
 
 // GetToolByName 根据名称获取工具
 func GetToolByName(name string) (*ToolDesc, error) {
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return nil, err
 	}
@@ -304,7 +317,7 @@ func GetToolByName(name string) (*ToolDesc, error) {
 
 // ListTools 列出所有工具（可按分类过滤）
 func ListTools(category string) ([]ToolDesc, error) {
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return nil, err
 	}
@@ -342,7 +355,7 @@ func ListTools(category string) ([]ToolDesc, error) {
 // RecordToolUsage 记录工具使用
 func RecordToolUsage(ctx context.Context, toolID int64, success bool, errorMsg string) error {
 	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return err
 	}
@@ -366,7 +379,7 @@ func RecordToolUsage(ctx context.Context, toolID int64, success bool, errorMsg s
 
 // GetToolUsageStats 获取工具使用统计
 func GetToolUsageStats(days int) ([]ToolUsageStat, error) {
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return nil, err
 	}
@@ -417,7 +430,7 @@ func GetToolUsageStats(days int) ([]ToolUsageStat, error) {
 func GetProjectToolUsage(ctx context.Context, days int) ([]ToolUsageStat, error,
 ) {
 	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return nil, err
 	}

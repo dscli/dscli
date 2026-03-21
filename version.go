@@ -4,6 +4,7 @@ import (
 	"runtime"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 	"github.com/spf13/cobra"
 )
 
@@ -31,29 +32,29 @@ func VersionRunE(cmd *cobra.Command, args []string) error {
 
 func versionRunE(ctx context.Context) (err error) {
 	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
-	PrintHeader("dscli 版本信息")
+	outfmt.PrintHeader("dscli 版本信息")
 
-	PrintSection("基本信息")
-	PrintKeyValue("版本", Version)
+	outfmt.PrintSection("基本信息")
+	outfmt.PrintKeyValue("版本", Version)
 	if Build != "" {
-		PrintKeyValue("构建信息", Build)
+		outfmt.PrintKeyValue("构建信息", Build)
 	}
 
-	PrintSection("运行时信息")
-	PrintKeyValue("Go 版本", runtime.Version())
-	PrintKeyValue("操作系统", runtime.GOOS)
-	PrintKeyValue("处理器架构", runtime.GOARCH)
-	PrintKeyValue("编译器", runtime.Compiler)
+	outfmt.PrintSection("运行时信息")
+	outfmt.PrintKeyValue("Go 版本", runtime.Version())
+	outfmt.PrintKeyValue("操作系统", runtime.GOOS)
+	outfmt.PrintKeyValue("处理器架构", runtime.GOARCH)
+	outfmt.PrintKeyValue("编译器", runtime.Compiler)
 
-	PrintSection("配置信息")
-	PrintKeyValue("配置目录", ConfigDir)
-	PrintKeyValue("项目根目录", projectRoot)
-	PrintKeyValue("输出模式", mode)
-	PrintKeyValue("详细输出", boolToString(verbose))
-	PrintKeyValue("颜色输出", boolToString(!colorEnabled))
-	PrintKeyValue("时间戳显示", boolToString(!showTimestamp))
-	PrintSection("模型配置")
-	PrintKeyValue("聊天模型", ModelDeepseekChat)
-	PrintKeyValue("推理模型", ModelDeepseekReasoner)
+	outfmt.PrintSection("配置信息")
+	outfmt.PrintKeyValue("配置目录", ConfigDir)
+	outfmt.PrintKeyValue("项目根目录", projectRoot)
+	outfmt.PrintKeyValue("输出模式", mode)
+	outfmt.PrintKeyValue("详细输出", boolToString(verbose))
+	outfmt.PrintKeyValue("颜色输出", boolToString(!colorEnabled))
+	outfmt.PrintKeyValue("时间戳显示", boolToString(!showTimestamp))
+	outfmt.PrintSection("模型配置")
+	outfmt.PrintKeyValue("聊天模型", ModelDeepseekChat)
+	outfmt.PrintKeyValue("推理模型", ModelDeepseekReasoner)
 	return
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 // CodeMakeBuild - run build command provided in the context
@@ -71,7 +72,7 @@ func handleMakeBuild(ctx context.Context, args ToolArgs) (string, error) {
 	if cmdToUse == "" {
 		cmdToUse = context.ContextValue(ctx, context.MakeBuildKey, "make build")
 	}
-	Printf("🔨 执行构建命令: %s", cmdToUse)
+	outfmt.Printf("🔨 执行构建命令: %s", cmdToUse)
 
 	if userCmd != "" {
 		// 使用用户提供的命令

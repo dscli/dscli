@@ -75,17 +75,6 @@ type ProjectSkill struct {
 	LastUsed    sql.NullTime
 }
 
-type ToolCall struct {
-	ID       string           `json:"id"`
-	Type     string           `json:"type"`
-	Function ToolCallFunction `json:"function"`
-}
-
-type ToolCallFunction struct {
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"` // JSON 字符串
-}
-
 type ModelsResponse struct {
 	Object string  `json:"object"`
 	Data   []Model `json:"data"`

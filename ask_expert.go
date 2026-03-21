@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 // askExpertTool 工具定义
@@ -70,26 +71,26 @@ func handleAskExpert(ctx context.Context, args ToolArgs) (reply string, err erro
 	// 如果用户没有提供summary，自动从content生成
 	if summary == "" {
 		summary = generateUserSummary(content)
-		Println("📝 自动生成问题摘要:", summary)
+		outfmt.Println("📝 自动生成问题摘要:", summary)
 	}
 
 	// 输出咨询日志
-	Println("📞 正在向专家咨询...")
-	Println("  问题摘要:", summary)
+	outfmt.Println("📞 正在向专家咨询...")
+	outfmt.Println("  问题摘要:", summary)
 
 	// 构建结构化请求（不再要求专家生成摘要）
 	structuredRequest := buildStructuredRequest(summary, content)
 
 	reply, err = AskExpert(ctx, structuredRequest)
 	if err != nil {
-		Println("❌ 专家咨询失败")
+		outfmt.Println("❌ 专家咨询失败")
 		return
 	}
 
 	// 智能处理专家响应（自动生成摘要）
 	processedReply := processExpertResponse(reply)
 
-	Println("✅ 专家咨询完成")
+	outfmt.Println("✅ 专家咨询完成")
 
 	return processedReply, nil
 }
@@ -182,7 +183,7 @@ func processExpertResponse(response string) string {
 	// 提取专家生成的摘要
 	expertSummary := extractExpertSummary(cleanResponse)
 	if expertSummary != "" {
-		Println("  专家回答摘要:", expertSummary)
+		outfmt.Println("  专家回答摘要:", expertSummary)
 	}
 
 	// 返回完整的响应

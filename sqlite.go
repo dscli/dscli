@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+
+	"gitcode.com/dscli/dscli/internal/sqlite"
 )
 
 func init() {
@@ -37,7 +39,7 @@ func handleSqlite(ctx context.Context, args ToolArgs) (string, error) {
 		return "", fmt.Errorf("sql script can not be empty")
 	}
 	// 构建完整的shebang脚本
-	fullScript := fmt.Sprintf("#!/usr/bin/env sqlite3 %s\n%s", GetDBPath(), script)
+	fullScript := fmt.Sprintf("#!/usr/bin/env sqlite3 %s\n%s", sqlite.GetDBPath(), script)
 
 	// 使用现有的runBash执行
 	return runShell(ctx, fullScript)

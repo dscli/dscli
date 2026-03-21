@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 // searchCodeSemantic 基于语义搜索代码中的特定模式
@@ -249,7 +251,7 @@ func handleSearchCodeSemantic(ctx context.Context, args ToolArgs) (string, error
 		return "❌ 未找到匹配的文件", nil
 	}
 
-	Printf("🔍 搜索%d个文件中匹配指定模式%s的行\n", len(files), searchPattern)
+	outfmt.Printf("🔍 搜索%d个文件中匹配指定模式%s的行\n", len(files), searchPattern)
 
 	// 搜索所有文件
 	var results []string
@@ -267,7 +269,7 @@ func handleSearchCodeSemantic(ctx context.Context, args ToolArgs) (string, error
 
 		// 检查全局匹配数限制
 		if maxMatches > 0 && totalMatches >= maxMatches {
-			Printf("⚠️ 已达到全局最大匹配数限制 (%d)，停止搜索", maxMatches)
+			outfmt.Printf("⚠️ 已达到全局最大匹配数限制 (%d)，停止搜索", maxMatches)
 			break
 		}
 	}

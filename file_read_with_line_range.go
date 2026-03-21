@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 func init() {
@@ -119,7 +121,7 @@ func handleReadFileWithLineRange(ctx context.Context, args ToolArgs) (string, er
 	if endLine == -1 {
 		rangeDesc = fmt.Sprintf("第%d行 - 末尾", startLine)
 	}
-	Notice("读取文件 \"%s\" 行范围 %s，共 %d 行", path, rangeDesc, linesRead)
+	outfmt.Notice("读取文件 \"%s\" 行范围 %s，共 %d 行", path, rangeDesc, linesRead)
 
 	return result, nil
 }

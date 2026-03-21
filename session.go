@@ -4,12 +4,13 @@ import (
 	"database/sql"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/sqlite"
 )
 
 // var SessionID = int64(0)
 
 func init() {
-	RegisterTableSchema(
+	sqlite.RegisterTableSchema(
 		// 会话表
 		`CREATE TABLE IF NOT EXISTS sessions (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -22,7 +23,7 @@ func init() {
 // CreateOrGetSessionID 获取或创建会话ID
 func CreateOrGetSessionID(ctx context.Context) (sessionID int64, err error) {
 	projectRoot := context.ContextValue(ctx, context.ProjectRootKey, "")
-	db, err := OpenDB()
+	db, err := sqlite.OpenDB()
 	if err != nil {
 		return
 	}

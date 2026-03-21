@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 // CodeMakeTest - run test command provided in the context
@@ -90,7 +91,7 @@ func handleMakeTest(ctx context.Context, args ToolArgs) (string, error) {
 	}
 
 	// 记录使用的命令
-	Printf("🧪 执行测试命令: %s", finalCmd)
+	outfmt.Printf("🧪 执行测试命令: %s", finalCmd)
 
 	// 执行测试命令
 	ctx = context.WithValue(ctx, context.ShellStdinKey, os.Stdin)

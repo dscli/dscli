@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -132,4 +133,8 @@ func Getenv(key, dvalue string) (value string) {
 		value = dvalue
 	}
 	return
+}
+
+func IsTesting() bool {
+	return strings.HasSuffix(os.Args[0], ".test")
 }

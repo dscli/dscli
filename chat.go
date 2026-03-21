@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 	"github.com/spf13/cobra"
 )
 
@@ -230,14 +231,14 @@ func PrintContent(ctx context.Context, reasoning string, content string) {
 
 	reasoning = strings.TrimSpace(reasoning)
 	if reasoning != "" {
-		Println(reasoning)
+		outfmt.Println(reasoning)
 	}
 
 	content = strings.TrimSpace(content)
 	if content != "" {
 		// 在streaming模式下，内容已经在streaming过程中输出，这里不需要再次输出
 		if !stream {
-			Println(content)
+			outfmt.Println(content)
 		}
 	}
 }
@@ -329,7 +330,7 @@ func PrintSessionStats(ctx context.Context) {
 
 	// 在一行中显示所有统计信息
 	if len(stats) > 0 {
-		Println(strings.Join(stats, "  "))
+		outfmt.Println(strings.Join(stats, "  "))
 	}
 }
 
@@ -362,7 +363,7 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 
 	// 检查响应是否被截断
 	if resp.Choices[0].FinishReason == "length" {
-		Warn("注意：响应因长度限制被截断，可能不完整。")
+		outfmt.Warn("注意：响应因长度限制被截断，可能不完整。")
 	}
 	PrintContent(ctx, story.ReasoningContent, story.Content)
 	stories = append(stories, story)
@@ -371,7 +372,7 @@ func ChatRound(ctx context.Context, prompts []Message, skills []Message, history
 	story.ReasoningContent = "" // reset reasoning content
 
 	if err != nil {
-		Error("%v", err)
+		outfmt.Error("%v", err)
 	}
 	if len(stories) > 0 {
 		history = append(history, stories...)

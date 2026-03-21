@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 // readCodeSection 基于代码结构定位并读取特定代码片段
@@ -216,6 +218,6 @@ func handleReadCodeSection(ctx context.Context, args ToolArgs) (string, error) {
 	if selector == "" {
 		return "", fmt.Errorf("参数 'selector' 缺失")
 	}
-	Printf("读取%s文件代码片段%s\n", path, selector)
+	outfmt.Printf("读取%s文件代码片段%s\n", path, selector)
 	return readCodeSection(ctx, path, selector)
 }
