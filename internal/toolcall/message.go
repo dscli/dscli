@@ -194,7 +194,6 @@ func ListHistory(ctx context.Context) ([]*Message, error) {
 	sessionID := GetCurrentSessionID(ctx)
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	histSize := context.ContextValue(ctx, context.HistSizeKey, 8)
-	fmt.Printf("sessionID=%d, modelID=%d, histSize=%d\n", sessionID, modelID, histSize)
 	db, err := sqlite.OpenDB()
 	if err != nil {
 		return nil, err

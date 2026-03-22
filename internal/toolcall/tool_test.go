@@ -1,7 +1,6 @@
 package toolcall
 
 import (
-	"context"
 	"testing"
 )
 
@@ -66,36 +65,6 @@ func TestShuffleExported(t *testing.T) {
 			for _, r := range result {
 				if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && r != '-' {
 					t.Errorf("结果包含非字母字符: %c", r)
-				}
-			}
-		})
-	}
-}
-
-func TestGetAllTools(t *testing.T) {
-	tests := []struct {
-		name    string // description of this test case
-		checker func(Tool) bool
-	}{
-		{"in strict", func(tool Tool) bool {
-			return tool.Function.Strict
-		}},
-		{"no additional property", func(tool Tool) bool {
-			if additionalProperties, ok := tool.Function.Parameters["additionalProperties"]; ok {
-				return !additionalProperties.(bool)
-			}
-			return false
-		}},
-		{"not too large", func(tool Tool) bool {
-			return tool.GetTokens() <= 512+256 // around 1.5K
-		}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := GetAllTools(context.Background())
-			for _, tool := range got {
-				if !tt.checker(tool) {
-					t.Fatal(tool.Function.Strict, tool.Function.Name, tool.Function.Description)
 				}
 			}
 		})

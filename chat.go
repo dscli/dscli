@@ -12,6 +12,7 @@ import (
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
+	"gitcode.com/dscli/dscli/internal/toolcall/alltools"
 	"github.com/spf13/cobra"
 )
 
@@ -46,7 +47,7 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 	// InsideShellExec
 	ctx = context.WithValue(ctx, context.InsideShellExecKey, os.Getenv("InsideShellExec") == "1")
 
-	tools := toolcall.GetAllTools(ctx)
+	tools := alltools.GetAllTools(ctx)
 	tokens := 0
 	for _, tool := range tools {
 		tokens += tool.GetTokens()
@@ -341,9 +342,9 @@ func ChatRound(ctx context.Context, prompts []toolcall.Message, skills []toolcal
 	// 3. 记录本轮新增的消息（用于存储）
 	stories := make([]toolcall.Message, 0, len(inputs)+1)
 	stories = append(stories, inputs...)
-
+	tools := alltools.GetAllTools(ctx)
 	var resp *ChatResponse
-	resp, err = DeepseekClient.Chat(ctx, messages, toolcall.GetAllTools(ctx))
+	resp, err = DeepseekClient.Chat(ctx, messages, tools)
 	if err != nil {
 		err = fmt.Errorf("聊天请求失败: %w", err)
 		return
