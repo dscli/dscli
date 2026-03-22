@@ -1,4 +1,4 @@
-package toolcall
+package code
 
 import (
 	"context"
@@ -6,11 +6,12 @@ import (
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 func init() {
 	// 注册代码定义搜索工具
-	RegisterTool(ToolDef{
+	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "search_code_definition",
 		Description: `搜索代码文件中的定义（函数、方法、类、结构体等）。
 
@@ -45,7 +46,7 @@ func init() {
 				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径，如main.go",
-					"pattern":     TitleLikePattern(128),
+					"pattern":     toolcall.TitleLikePattern(128),
 				},
 				"pattern": map[string]any{
 					"type":        "string",
@@ -69,20 +70,20 @@ func init() {
 }
 
 // handleSearchCodeDefinition 处理代码定义搜索请求
-func handleSearchCodeDefinition(ctx context.Context, args ToolArgs) (string, error) {
-	path := ToolArgsValue(args, "path", "")
+func handleSearchCodeDefinition(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		return "", fmt.Errorf("参数 'path' 缺失")
 	}
-	pattern := ToolArgsValue(args, "pattern", "")
+	pattern := toolcall.ToolArgsValue(args, "pattern", "")
 	if pattern == "" {
 		return "", fmt.Errorf("参数 'pattern' 缺失")
 	}
-	typeFilter := ToolArgsValue(args, "type_filter", "")
-	caseSensitive := ToolArgsValue(args, "case_sensitive", false)
+	typeFilter := toolcall.ToolArgsValue(args, "type_filter", "")
+	caseSensitive := toolcall.ToolArgsValue(args, "case_sensitive", false)
 	outfmt.Printf("🔍 搜索代码定义: path=%s pattern=%s typeFilter=%s caseSensitive=%v\n", path, pattern, typeFilter, caseSensitive)
 	// 解析文件结构
-	structure, err := ParseFileStructure(ctx, path)
+	structure, err := toolcall.ParseFileStructure(ctx, path)
 	if err != nil {
 		return "", fmt.Errorf("解析文件结构失败: %w", err)
 	}
@@ -178,7 +179,7 @@ func handleSearchCodeDefinition(ctx context.Context, args ToolArgs) (string, err
 }
 
 // matchesDefinition 检查符号是否匹配搜索条件
-func matchesDefinition(symbol *Symbol, pattern, typeFilter string, caseSensitive bool) bool {
+func matchesDefinition(symbol *toolcall.Symbol, pattern, typeFilter string, caseSensitive bool) bool {
 	// 类型过滤
 	if typeFilter != "" {
 		if !strings.EqualFold(symbol.Type, typeFilter) {
@@ -196,7 +197,7 @@ func matchesDefinition(symbol *Symbol, pattern, typeFilter string, caseSensitive
 }
 
 // formatSymbolResult 格式化符号结果
-func formatSymbolResult(symbol *Symbol, symbolType, filePath string) string {
+func formatSymbolResult(symbol *toolcall.Symbol, symbolType, filePath string) string {
 	var sb strings.Builder
 
 	fmt.Fprintf(&sb, "📋 类型: %s\n", symbolType)

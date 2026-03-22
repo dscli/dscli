@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
@@ -94,22 +93,9 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (output string, err err
 		outfmt.Notice("追加内容到文件 \"%s\"，添加 %d 行", path, lines)
 
 		// 运行make format并捕获结果
-		formatOutput, formatErr := CodeMakeFormat(ctx, filepath.Ext(path))
 
 		// 构建最终结果
 		result := fmt.Sprintf("成功追加内容到文件 \"%s\"，添加 %d 行", path, lines)
-
-		// 添加格式化结果信息
-		if formatErr != nil {
-			result += fmt.Sprintf("\n⚠️ 代码格式化失败: %v", formatErr)
-		} else if formatOutput != "" {
-			// 格式化成功且有输出
-			formatOutput = strings.TrimSpace(formatOutput)
-			result += fmt.Sprintf("\n✅ 代码格式化完成: %s", formatOutput)
-		}
-		// 注意：如果formatOutput为空且formatErr为nil，表示不需要格式化
-		// 这种情况下不添加任何格式化相关的消息
-
 		return result, nil
 	}
 

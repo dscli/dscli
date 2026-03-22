@@ -1,4 +1,4 @@
-package toolcall
+package code
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 // writeCodeSection 基于代码结构定位并修改特定代码片段
@@ -49,7 +50,7 @@ func writeCodeSection(ctx context.Context, path string, selector string, newCont
 	}()
 
 	// 解析文件结构
-	structure, err := ParseFileStructure(ctx, path)
+	structure, err := toolcall.ParseFileStructure(ctx, path)
 	if err != nil {
 		err = fmt.Errorf("解析文件结构失败: %w", err)
 		return
@@ -76,7 +77,7 @@ func writeCodeSection(ctx context.Context, path string, selector string, newCont
 }
 
 // locateSectionRange 根据selector定位代码片段的范围
-func locateSectionRange(structure *FileStructure, lines []string, selector string) (int, int, error) {
+func locateSectionRange(structure *toolcall.FileStructure, lines []string, selector string) (int, int, error) {
 	// 解析selector
 	parts := strings.SplitN(selector, ":", 2)
 	if len(parts) != 2 {
@@ -101,7 +102,7 @@ func locateSectionRange(structure *FileStructure, lines []string, selector strin
 }
 
 // locateFunctionRange 定位函数的行范围
-func locateFunctionRange(structure *FileStructure, functionName string) (int, int, error) {
+func locateFunctionRange(structure *toolcall.FileStructure, functionName string) (int, int, error) {
 	for _, fn := range structure.Functions {
 		if fn.Name == functionName {
 			return fn.Line, fn.EndLine, nil
@@ -111,7 +112,7 @@ func locateFunctionRange(structure *FileStructure, functionName string) (int, in
 }
 
 // locateClassRange 定位类/结构体的行范围
-func locateClassRange(structure *FileStructure, className string) (int, int, error) {
+func locateClassRange(structure *toolcall.FileStructure, className string) (int, int, error) {
 	for _, cls := range structure.Classes {
 		if cls.Name == className {
 			return cls.Line, cls.EndLine, nil
@@ -121,7 +122,7 @@ func locateClassRange(structure *FileStructure, className string) (int, int, err
 }
 
 // locateMethodRange 定位方法的行范围
-func locateMethodRange(structure *FileStructure, methodSelector string) (int, int, error) {
+func locateMethodRange(structure *toolcall.FileStructure, methodSelector string) (int, int, error) {
 	// 方法选择器格式: 类名.方法名
 	parts := strings.Split(methodSelector, ".")
 	if len(parts) != 2 {
@@ -221,7 +222,7 @@ func writeToFile(path string, lines []string, startLine, endLine int, newContent
 
 func init() {
 	// 注册 writeCodeSection 工具
-	RegisterTool(ToolDef{
+	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "write_code_section",
 		Description: `基于代码结构定位并修改特定代码片段。支持function:函数名、class:类名、method:类名.方法名、lines:开始行-结束行等选择器。
 
@@ -253,7 +254,7 @@ func init() {
 				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径（相对于项目根目录）",
-					"pattern":     TitleLikePattern(128),
+					"pattern":     toolcall.TitleLikePattern(128),
 				},
 				"selector": map[string]any{
 					"type":        "string",
@@ -262,7 +263,7 @@ func init() {
 				"new_content": map[string]any{
 					"type":        "string",
 					"description": "要写入的新内容, 建议不超过4096字符",
-					"pattern":     ContentLikePattern(4096),
+					"pattern":     toolcall.ContentLikePattern(4096),
 				},
 			},
 			"required":             []string{"path", "selector", "new_content"},
@@ -273,18 +274,18 @@ func init() {
 	})
 }
 
-func handleWriteCodeSection(ctx context.Context, args ToolArgs) (string, error) {
-	path := ToolArgsValue(args, "path", "")
+func handleWriteCodeSection(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		return "", fmt.Errorf("参数 'path' 缺失")
 	}
 
 	// selector, ok := args["selector"]
-	selector := ToolArgsValue(args, "selector", "")
+	selector := toolcall.ToolArgsValue(args, "selector", "")
 	if selector == "" {
 		return "", fmt.Errorf("参数 'selector' 缺失")
 	}
-	newContent := ToolArgsValue(args, "new_content", "")
+	newContent := toolcall.ToolArgsValue(args, "new_content", "")
 	if newContent == "" {
 		return "", fmt.Errorf("参数 'new_content' 缺失")
 	}

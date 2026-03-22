@@ -1,4 +1,4 @@
-package toolcall
+package code
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 // 这个工具让LLM能够获取代码文件的结构信息（函数、类、方法等），
@@ -23,7 +25,7 @@ func readCodeStructure(ctx context.Context, path string) (string, error) {
 	// }
 
 	// 解析文件结构
-	structure, err := ParseFileStructure(ctx, path)
+	structure, err := toolcall.ParseFileStructure(ctx, path)
 	if err != nil {
 		return "", fmt.Errorf("解析文件结构失败: %w", err)
 	}
@@ -41,7 +43,7 @@ func readCodeStructure(ctx context.Context, path string) (string, error) {
 }
 
 // buildStructureSummary 构建结构摘要
-func buildStructureSummary(structure *FileStructure) string {
+func buildStructureSummary(structure *toolcall.FileStructure) string {
 	var sb strings.Builder
 
 	// 添加搜索图标，表明这是一个读取/搜索操作
@@ -117,7 +119,7 @@ func buildStructureSummary(structure *FileStructure) string {
 
 func init() {
 	// 注册 readCodeStructure 工具
-	RegisterTool(ToolDef{
+	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "read_code_structure",
 		Description: `读取代码文件的结构信息（函数、类、方法、导入等）。返回人类可读的摘要和完整的JSON结构信息。
 ✅ 推荐：这是基于代码结构的新工具，为代码操作提供基础信息。
@@ -158,7 +160,7 @@ func init() {
 				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径（相对于项目根目录）",
-					"pattern":     TitleLikePattern(128),
+					"pattern":     toolcall.TitleLikePattern(128),
 				},
 			},
 			"required":             []string{"path"},
@@ -169,8 +171,8 @@ func init() {
 	})
 }
 
-func handleReadCodeStructure(ctx context.Context, args ToolArgs) (string, error) {
-	path := ToolArgsValue(args, "path", "")
+func handleReadCodeStructure(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		return "", fmt.Errorf("参数 'path' 缺失")
 	}

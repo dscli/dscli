@@ -23,8 +23,8 @@ var defaultSearchConfig = SearchConfig{
 	ExcludePatterns: []string{"*.pyc", "*.class", "*.o", "*.so", "*.dll"},
 }
 
-// expandFilePattern 扩展文件模式
-func expandFilePattern(pattern string) ([]string, error) {
+// ExpandFilePattern 扩展文件模式
+func ExpandFilePattern(pattern string) ([]string, error) {
 	return expandFilePatternWithConfig(pattern, defaultSearchConfig)
 }
 

@@ -1,4 +1,4 @@
-package toolcall
+package code
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 // searchCodeSemantic 基于语义搜索代码中的特定模式
@@ -35,7 +36,7 @@ func searchCodeSemantic(ctx context.Context, path string, searchPattern string, 
 	}
 
 	// 解析文件结构
-	structure, err := ParseFileStructure(ctx, path)
+	structure, err := toolcall.ParseFileStructure(ctx, path)
 	if err != nil {
 		return "", 0, fmt.Errorf("解析文件结构失败: %w", err)
 	}
@@ -77,7 +78,7 @@ func searchMatches(lines []string, searchPattern string, caseSensitive bool, max
 }
 
 // buildSearchResult 构建搜索结果
-func buildSearchResult(path, searchPattern string, contextLines int, caseSensitive bool, maxMatches int, matches []int, lines []string, structure *FileStructure) string {
+func buildSearchResult(path, searchPattern string, contextLines int, caseSensitive bool, maxMatches int, matches []int, lines []string, structure *toolcall.FileStructure) string {
 	var sb strings.Builder
 
 	fmt.Fprintf(&sb, "🔍 搜索文件: %s\n", path)
@@ -135,7 +136,7 @@ func buildSearchResult(path, searchPattern string, contextLines int, caseSensiti
 }
 
 // getStructureInfoForLine 获取指定行所在的结构信息
-func getStructureInfoForLine(structure *FileStructure, line int) string {
+func getStructureInfoForLine(structure *toolcall.FileStructure, line int) string {
 	// 检查是否在函数内
 	for _, fn := range structure.Functions {
 		if line >= fn.Line && line <= fn.EndLine {
@@ -162,7 +163,7 @@ func getStructureInfoForLine(structure *FileStructure, line int) string {
 
 func init() {
 	// 注册 searchCodeSemantic 工具
-	RegisterTool(ToolDef{
+	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "search_code_semantic",
 		Description: `搜索文件中匹配指定模式的行，并显示上下文内容。
 
@@ -199,7 +200,7 @@ func init() {
 				"file_pattern": map[string]any{
 					"type":        "string",
 					"description": "文件搜索模式，支持：单个文件、通配符、多个文件、当前目录、递归搜索",
-					"pattern":     TitleLikePattern(128),
+					"pattern":     toolcall.TitleLikePattern(128),
 				},
 				"search_pattern": map[string]any{
 					"type":        "string",
@@ -226,23 +227,23 @@ func init() {
 	})
 }
 
-func handleSearchCodeSemantic(ctx context.Context, args ToolArgs) (string, error) {
-	filePattern := ToolArgsValue(args, "file_pattern", "")
+func handleSearchCodeSemantic(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+	filePattern := toolcall.ToolArgsValue(args, "file_pattern", "")
 	if filePattern == "" {
 		return "", fmt.Errorf("参数 'file_pattern' 缺失")
 	}
-	searchPattern := ToolArgsValue(args, "search_pattern", "")
+	searchPattern := toolcall.ToolArgsValue(args, "search_pattern", "")
 	if searchPattern == "" {
 		return "", fmt.Errorf("参数 'search_pattern' 缺失")
 	}
 
 	// 解析可选参数
-	contextLines := ToolArgsValue(args, "context_lines", 5)
-	caseSensitive := ToolArgsValue(args, "case_sensitive", false)
-	maxMatches := ToolArgsValue(args, "max_matches", 0)
+	contextLines := toolcall.ToolArgsValue(args, "context_lines", 5)
+	caseSensitive := toolcall.ToolArgsValue(args, "case_sensitive", false)
+	maxMatches := toolcall.ToolArgsValue(args, "max_matches", 0)
 
 	// 扩展文件模式
-	files, err := expandFilePattern(filePattern)
+	files, err := toolcall.ExpandFilePattern(filePattern)
 	if err != nil {
 		return "", fmt.Errorf("扩展文件模式失败: %w", err)
 	}

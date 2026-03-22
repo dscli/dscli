@@ -1,4 +1,4 @@
-package toolcall
+package code
 
 import (
 	"fmt"
@@ -8,9 +8,10 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
-var codeReviewTool = ToolDef{
+var codeReviewTool = toolcall.ToolDef{
 	Name:        "code_review",
 	DisplayName: "代码审查",
 	Description: `对当前最新的Git提交进行代码审查，由专家提供改进建议。
@@ -52,12 +53,12 @@ var codeReviewTool = ToolDef{
 			"summary": map[string]any{
 				"type":        "string",
 				"description": "必选，提供本次提交的背景说明，关注重点，帮助专家理解上下文, 长度1-1024字符",
-				"pattern":     ContentLikePattern(1024),
+				"pattern":     toolcall.ContentLikePattern(1024),
 			},
 			"test_command": map[string]any{
 				"type":        "string",
 				"description": "可选，单元测试命令，默认为空，跳过测试, 长度1-128字符",
-				"pattern":     ContentLikePattern(128),
+				"pattern":     toolcall.ContentLikePattern(128),
 			},
 		},
 		"required":             []string{"summary"},
@@ -69,13 +70,13 @@ var codeReviewTool = ToolDef{
 }
 
 func init() {
-	RegisterTool(codeReviewTool)
+	toolcall.RegisterTool(codeReviewTool)
 }
 
 // handleCodeReview 处理代码审查工具调用
-func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err error) {
-	summary := ToolArgsValue(args, "summary", "")
-	testCommand := ToolArgsValue(args, "test_command", "")
+func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (reply string, err error) {
+	summary := toolcall.ToolArgsValue(args, "summary", "")
+	testCommand := toolcall.ToolArgsValue(args, "test_command", "")
 	// 获取Git状态，确保有提交可审查
 	statusScript := `git status --short`
 	ctx = context.WithValue(ctx, context.ShellNameKey, "/usr/bin/env")
@@ -83,7 +84,7 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 	// 添加os.Stdin使用传统分支OSExec
 	ctx = context.WithValue(ctx, context.ShellStdinKey, os.Stdin)
 
-	status, err := ShellExec(ctx, statusScript)
+	status, err := toolcall.ShellExec(ctx, statusScript)
 	if err != nil {
 		outfmt.Println("❌ 获取Git状态失败")
 		err = fmt.Errorf("获取Git状态失败: %w", err)
@@ -101,7 +102,7 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 	// 检查是否为小于等于3个commit（没有多个未push的提交）
 	fmt.Println("🔍 检查是否为单一commit...")
 	singleCommitScript := `git log --oneline @{u}..HEAD`
-	unpushedCommits, shellErr := ShellExec(ctx, singleCommitScript)
+	unpushedCommits, shellErr := toolcall.ShellExec(ctx, singleCommitScript)
 	if shellErr != nil {
 		outfmt.Println("❌ Git 出错，无法进行代码审查")
 		err = fmt.Errorf("failed to check single commit: %w", shellErr)
@@ -129,7 +130,7 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 		outfmt.Println("🔍 运行单元测试:", testCommand)
 		testOutput := ""
 
-		testOutput, err = ShellExec(ctx, testCommand)
+		testOutput, err = toolcall.ShellExec(ctx, testCommand)
 		if err != nil {
 			outfmt.Println("❌ 单元测试未通过")
 			errorMsg := fmt.Sprintf("单元测试未通过，请修复测试后再审查。\n测试命令：%s\n", testCommand)
@@ -151,7 +152,7 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 	}
 	// 获取最新的提交信息
 	logScript := `git log --oneline -` + fmt.Sprint(commitCount)
-	log, err := ShellExec(ctx, logScript)
+	log, err := toolcall.ShellExec(ctx, logScript)
 	if err != nil {
 		outfmt.Println("❌ 获取提交历史失败")
 		err = fmt.Errorf("获取提交历史失败: %w", err)
@@ -174,14 +175,14 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 
 	// 获取完整的提交信息用于构建请求
 	fullLogScript := `git log --format="%B" -` + fmt.Sprint(commitCount)
-	fullLog, err := ShellExec(ctx, fullLogScript)
+	fullLog, err := toolcall.ShellExec(ctx, fullLogScript)
 	if err != nil {
 		fullLog = log // 如果失败，使用简短的log
 	}
 
 	// 生成patch
 	patchScript := `git --no-pager format-patch --stdout -` + fmt.Sprint(commitCount)
-	patch, err := ShellExec(ctx, patchScript)
+	patch, err := toolcall.ShellExec(ctx, patchScript)
 	if err != nil {
 		fmt.Println("❌ 生成patch失败")
 		err = fmt.Errorf("生成patch失败: %w", err)
@@ -191,7 +192,7 @@ func handleCodeReview(ctx context.Context, args ToolArgs) (reply string, err err
 	// 构建审查请求
 	structuredRequest := buildCodeReviewRequest(summary, fullLog, patch)
 	outfmt.Println("📤 发送代码审查请求...")
-	reply, err = AskExpert(ctx, structuredRequest)
+	reply, err = toolcall.AskExpert(ctx, structuredRequest)
 	if err != nil {
 		outfmt.Println("❌ 代码提交失败")
 		err = fmt.Errorf("代码提交失败: %w", err)
@@ -217,11 +218,11 @@ func generateCodeReviewSummary(log string) string {
 	parts := strings.SplitN(cleanLog, " ", 2)
 	if len(parts) == 2 {
 		commitMsg := strings.TrimSpace(parts[1])
-		return TruncateString(commitMsg, 80)
+		return toolcall.TruncateString(commitMsg, 80)
 	}
 
 	// 如果格式不符合预期，直接截断
-	return TruncateString(cleanLog, 80)
+	return toolcall.TruncateString(cleanLog, 80)
 }
 
 func buildCodeReviewRequest(summary string, commitLog string, patch string) string {

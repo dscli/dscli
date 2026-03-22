@@ -1,4 +1,4 @@
-package toolcall
+package code
 
 import (
 	"fmt"
@@ -8,6 +8,7 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 // CodeMakeFormat - run code format command provided in the context
@@ -48,7 +49,7 @@ func CodeMakeFormat(ctx context.Context, exts ...string) (output string, err err
 		return
 	}
 	ctx = context.WithValue(ctx, context.ShellStdinKey, os.Stdin)
-	output, err = ShellExec(ctx, mkfmt)
+	output, err = toolcall.ShellExec(ctx, mkfmt)
 	if err != nil {
 		err = fmt.Errorf("failed to make code format: %w", err)
 	}
@@ -71,7 +72,7 @@ func CodeMakeFormatSafe(ctx context.Context) (output string, err error) {
 
 func init() {
 	// 注册代码格式化工具
-	RegisterTool(ToolDef{
+	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "code_format",
 		Description: `运行代码格式化命令，格式化项目代码。
 
@@ -96,7 +97,7 @@ func init() {
 				"command": map[string]any{
 					"type":        "string",
 					"description": "格式化命令，可选，如果不提供则使用配置的默认命令",
-					"pattern":     TitleLikePattern(128),
+					"pattern":     toolcall.TitleLikePattern(128),
 				},
 			},
 			"additionalProperties": false,
@@ -107,9 +108,9 @@ func init() {
 }
 
 // handleCodeFormat 处理代码格式化请求
-func handleCodeFormat(ctx context.Context, args ToolArgs) (output string, err error) {
+func handleCodeFormat(ctx context.Context, args toolcall.ToolArgs) (output string, err error) {
 	// 检查是否提供了自定义命令
-	command := ToolArgsValue(args, "command", "")
+	command := toolcall.ToolArgsValue(args, "command", "")
 
 	if command == "" {
 		command = context.ContextValue(ctx, context.CodeFormatKey, "")
@@ -123,7 +124,7 @@ func handleCodeFormat(ctx context.Context, args ToolArgs) (output string, err er
 	outfmt.Printf("代码格式化 %s", command)
 	// 使用用户提供的命令
 	ctx = context.WithValue(ctx, context.ShellStdinKey, os.Stdin)
-	output, err = ShellExec(ctx, command)
+	output, err = toolcall.ShellExec(ctx, command)
 	if err != nil {
 		// 构建详细的错误信息
 		var sb strings.Builder

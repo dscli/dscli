@@ -1,4 +1,4 @@
-package toolcall
+package code
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 // readCodeSection 基于代码结构定位并读取特定代码片段
@@ -30,7 +31,7 @@ func readCodeSection(ctx context.Context, path string, selector string) (string,
 	}
 
 	// 解析文件结构
-	structure, err := ParseFileStructure(ctx, path)
+	structure, err := toolcall.ParseFileStructure(ctx, path)
 	if err != nil {
 		return "", fmt.Errorf("解析文件结构失败: %w", err)
 	}
@@ -46,7 +47,7 @@ func readCodeSection(ctx context.Context, path string, selector string) (string,
 }
 
 // locateCodeSection 根据selector定位代码片段
-func locateCodeSection(structure *FileStructure, lines []string, selector string) (string, error) {
+func locateCodeSection(structure *toolcall.FileStructure, lines []string, selector string) (string, error) {
 	// 解析selector
 	parts := strings.SplitN(selector, ":", 2)
 	if len(parts) != 2 {
@@ -71,7 +72,7 @@ func locateCodeSection(structure *FileStructure, lines []string, selector string
 }
 
 // locateFunction 定位函数
-func locateFunction(structure *FileStructure, lines []string, functionName string) (string, error) {
+func locateFunction(structure *toolcall.FileStructure, lines []string, functionName string) (string, error) {
 	for _, fn := range structure.Functions {
 		if fn.Name == functionName {
 			return extractLines(lines, fn.Line, fn.EndLine), nil
@@ -81,7 +82,7 @@ func locateFunction(structure *FileStructure, lines []string, functionName strin
 }
 
 // locateClass 定位类/结构体
-func locateClass(structure *FileStructure, lines []string, className string) (string, error) {
+func locateClass(structure *toolcall.FileStructure, lines []string, className string) (string, error) {
 	for _, cls := range structure.Classes {
 		if cls.Name == className {
 			return extractLines(lines, cls.Line, cls.EndLine), nil
@@ -91,7 +92,7 @@ func locateClass(structure *FileStructure, lines []string, className string) (st
 }
 
 // locateMethod 定位方法
-func locateMethod(structure *FileStructure, lines []string, methodSelector string) (string, error) {
+func locateMethod(structure *toolcall.FileStructure, lines []string, methodSelector string) (string, error) {
 	// 方法选择器格式: 类名.方法名
 	parts := strings.Split(methodSelector, ".")
 	if len(parts) != 2 {
@@ -154,7 +155,7 @@ func extractLines(lines []string, startLine, endLine int) string {
 
 func init() {
 	// 注册 readCodeSection 工具
-	RegisterTool(ToolDef{
+	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "read_code_section",
 		Description: `基于代码结构定位并读取特定代码片段。支持function:函数名、class:类名、method:类名.方法名、lines:开始行-结束行等选择器。
 ✅ 推荐：这是基于代码结构的新工具，比基于行号的操作更智能、更准确。
@@ -194,7 +195,7 @@ func init() {
 				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径（相对于项目根目录）",
-					"pattern":     TitleLikePattern(128),
+					"pattern":     toolcall.TitleLikePattern(128),
 				},
 				"selector": map[string]any{
 					"type":        "string",
@@ -209,12 +210,12 @@ func init() {
 	})
 }
 
-func handleReadCodeSection(ctx context.Context, args ToolArgs) (string, error) {
-	path := ToolArgsValue(args, "path", "")
+func handleReadCodeSection(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		return "", fmt.Errorf("参数 'path' 缺失")
 	}
-	selector := ToolArgsValue(args, "selector", "")
+	selector := toolcall.ToolArgsValue(args, "selector", "")
 	if selector == "" {
 		return "", fmt.Errorf("参数 'selector' 缺失")
 	}

@@ -1,5 +1,5 @@
 // Package main contains tests for the code review tool
-package toolcall
+package code
 
 import (
 	"context"
@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 // TestCodeReviewToolStructure tests the basic structure of the code review tool
@@ -61,7 +63,7 @@ func TestHandleCodeReviewFunction(t *testing.T) {
 	// We can't easily test the actual execution without mocking external dependencies
 
 	ctx := context.Background()
-	args := ToolArgs{"summary": "Test commit"}
+	args := toolcall.ToolArgs{"summary": "Test commit"}
 
 	// The function should exist and be callable
 	// Note: We're not checking the actual return value since it depends on Git state

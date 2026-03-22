@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
@@ -226,20 +225,7 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (string, e
 
 	outfmt.Notice("%s文件 \"%s\" 行范围 %s，影响 %d 行", operation, path, rangeDesc, linesChanged)
 
-	// 运行make format并捕获结果
-	formatOutput, formatErr := CodeMakeFormat(ctx, filepath.Ext(path))
 	// 构建最终结果
 	result := fmt.Sprintf("成功%s文件 \"%s\" 行范围 %s", operation, path, rangeDesc)
-
-	// 添加格式化结果信息
-	if formatErr != nil {
-		// 格式化失败，但文件写入成功
-		result += fmt.Sprintf("\n⚠️ 代码格式化失败: %v", formatErr)
-	} else if formatOutput != "" {
-		// 格式化成功且有输出
-		formatOutput = strings.TrimSpace(formatOutput)
-		result += fmt.Sprintf("\n✅ 代码格式化完成: %s", formatOutput)
-	}
-
 	return result, nil
 }
