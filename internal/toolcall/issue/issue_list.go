@@ -1,14 +1,16 @@
-package toolcall
+package issue
 
 import (
 	"context"
 	"fmt"
 	"strings"
+
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 // handleIssueList 处理issue列表查询（Tool Calling）
-func handleIssueList(ctx context.Context, args ToolArgs) (string, error) {
-	state := ToolArgsValue(args, "state", "open")
+func handleIssueList(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+	state := toolcall.ToolArgsValue(args, "state", "open")
 
 	// 验证状态参数
 	if state != "open" && state != "closed" && state != "all" {
@@ -69,7 +71,7 @@ func handleIssueList(ctx context.Context, args ToolArgs) (string, error) {
 
 func init() {
 	// 注册issue相关工具
-	RegisterTool(ToolDef{
+	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "issue_list",
 		Description: "列出项目中的issues，支持按状态过滤",
 		Strict:      true,

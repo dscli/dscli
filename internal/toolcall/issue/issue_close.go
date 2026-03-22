@@ -1,13 +1,15 @@
-package toolcall
+package issue
 
 import (
 	"context"
 	"fmt"
+
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 // handleIssueClose 处理关闭issue（Tool Calling）
-func handleIssueClose(ctx context.Context, args ToolArgs) (string, error) {
-	number := ToolArgsValue(args, "number", 0)
+func handleIssueClose(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+	number := toolcall.ToolArgsValue(args, "number", 0)
 	if number == 0 {
 		return "", fmt.Errorf("必须提供issue编号")
 	}
@@ -21,7 +23,7 @@ func handleIssueClose(ctx context.Context, args ToolArgs) (string, error) {
 }
 
 func init() {
-	RegisterTool(ToolDef{
+	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "issue_close",
 		Description: "关闭指定的issue",
 		Strict:      true,

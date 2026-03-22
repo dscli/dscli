@@ -1,4 +1,4 @@
-package toolcall
+package issue
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 // GetIssueConfig 获取issue配置信息
@@ -17,7 +18,7 @@ func GetIssueConfig(ctx context.Context) (issueConfig *IssueConfig, err error) {
 	// 使用context.Background()，因为CLI命令可能没有传递context
 	// 在实际调用中，ShellExec会处理context
 	issueConfig = &IssueConfig{}
-	originURL, err := ShellExec(ctx, `git remote get-url origin`)
+	originURL, err := toolcall.ShellExec(ctx, `git remote get-url origin`)
 	if err != nil {
 		return nil, fmt.Errorf("获取git远程URL失败: %w", err)
 	}

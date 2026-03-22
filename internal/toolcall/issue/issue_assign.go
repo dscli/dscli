@@ -1,18 +1,20 @@
-package toolcall
+package issue
 
 import (
 	"context"
 	"fmt"
+
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 // handleIssueAssign 处理分配issue（Tool Calling）
-func handleIssueAssign(ctx context.Context, args ToolArgs) (string, error) {
-	number := ToolArgsValue(args, "number", 0)
+func handleIssueAssign(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+	number := toolcall.ToolArgsValue(args, "number", 0)
 	if number == 0 {
 		return "", fmt.Errorf("必须提供issue编号")
 	}
 
-	username := ToolArgsValue(args, "username", "")
+	username := toolcall.ToolArgsValue(args, "username", "")
 	if username == "" {
 		return "", fmt.Errorf("必须提供用户名")
 	}
@@ -31,7 +33,7 @@ func handleIssueAssign(ctx context.Context, args ToolArgs) (string, error) {
 }
 
 func init() {
-	RegisterTool(ToolDef{
+	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "issue_assign",
 		Description: "分配issue给指定用户",
 		Strict:      true,

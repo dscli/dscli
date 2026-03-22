@@ -1,12 +1,14 @@
-package toolcall
+package issue
 
 import (
 	"context"
 	"fmt"
+
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 func init() {
-	RegisterTool(ToolDef{
+	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "issue_reopen",
 		Description: "重新打开指定的issue",
 		Strict:      true,
@@ -27,8 +29,8 @@ func init() {
 }
 
 // handleIssueReopen 处理重新打开issue（Tool Calling）
-func handleIssueReopen(ctx context.Context, args ToolArgs) (string, error) {
-	number := ToolArgsValue(args, "number", 0)
+func handleIssueReopen(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+	number := toolcall.ToolArgsValue(args, "number", 0)
 	if number == 0 {
 		return "", fmt.Errorf("必须提供issue编号")
 	}

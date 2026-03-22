@@ -1,13 +1,15 @@
-package toolcall
+package issue
 
 import (
 	"context"
 	"fmt"
 	"strings"
+
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 func init() {
-	RegisterTool(ToolDef{
+	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "issue_update",
 		Description: "更新指定的issue",
 		Strict:      true,
@@ -21,12 +23,12 @@ func init() {
 				"title": map[string]any{
 					"type":        "string",
 					"description": "更新issue标题（可选）,不可有回车，长度1-128字符",
-					"pattern":     TitleLikePattern(128),
+					"pattern":     toolcall.TitleLikePattern(128),
 				},
 				"body": map[string]any{
 					"type":        "string",
 					"description": "更新issue内容（可选），长度1-4096字符",
-					"pattern":     ContentLikePattern(4096),
+					"pattern":     toolcall.ContentLikePattern(4096),
 				},
 				"state": map[string]any{
 					"type":        "string",
@@ -43,16 +45,16 @@ func init() {
 }
 
 // handleIssueUpdate 处理更新issue（Tool Calling）
-func handleIssueUpdate(ctx context.Context, args ToolArgs) (string, error) {
-	number := ToolArgsValue(args, "number", 0)
+func handleIssueUpdate(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+	number := toolcall.ToolArgsValue(args, "number", 0)
 	if number == 0 {
 		return "", fmt.Errorf("必须提供issue编号")
 	}
 
 	// 验证至少提供了一个更新字段
-	title := ToolArgsValue(args, "title", "")
-	body := ToolArgsValue(args, "body", "")
-	state := ToolArgsValue(args, "state", "")
+	title := toolcall.ToolArgsValue(args, "title", "")
+	body := toolcall.ToolArgsValue(args, "body", "")
+	state := toolcall.ToolArgsValue(args, "state", "")
 
 	if title == "" && body == "" && state == "" {
 		return "", fmt.Errorf("必须提供至少一个更新字段（title, body 或 state）")

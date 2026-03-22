@@ -1,14 +1,16 @@
-package toolcall
+package issue
 
 import (
 	"context"
 	"fmt"
 	"strings"
+
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 // handleIssueShow 处理显示单个issue（Tool Calling）
-func handleIssueShow(ctx context.Context, args ToolArgs) (string, error) {
-	number := ToolArgsValue(args, "number", 0)
+func handleIssueShow(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+	number := toolcall.ToolArgsValue(args, "number", 0)
 	if number == 0 {
 		return "", fmt.Errorf("必须提供issue编号")
 	}
@@ -72,7 +74,7 @@ func handleIssueShow(ctx context.Context, args ToolArgs) (string, error) {
 }
 
 func init() {
-	RegisterTool(ToolDef{
+	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "issue_show",
 		Description: "显示指定编号的issue详情",
 		Strict:      true,

@@ -1,4 +1,4 @@
-package toolcall
+package issue
 
 import (
 	"bytes"
@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 // TestFormatFunctions 测试格式化辅助函数
@@ -642,7 +643,7 @@ type tokenGetter interface {
 type defaultTokenGetter struct{}
 
 func (g *defaultTokenGetter) GetToken(host string) (string, error) {
-	return GetTokenFromNetrc(host)
+	return toolcall.GetTokenFromNetrc(host)
 }
 
 // issueAPIBaseURLWithDeps 可测试的版本，接受依赖注入

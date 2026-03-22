@@ -1,19 +1,21 @@
-package toolcall
+package issue
 
 import (
 	"context"
 	"fmt"
 	"strings"
+
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 // handleIssueCreate 处理创建issue（Tool Calling）
-func handleIssueCreate(ctx context.Context, args ToolArgs) (string, error) {
-	title := ToolArgsValue(args, "title", "")
+func handleIssueCreate(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+	title := toolcall.ToolArgsValue(args, "title", "")
 	if title == "" {
 		return "", fmt.Errorf("必须提供标题")
 	}
 
-	body := ToolArgsValue(args, "body", "")
+	body := toolcall.ToolArgsValue(args, "body", "")
 
 	issue, err := CreateIssue(ctx, CreateIssueOptions{
 		Title: title,
@@ -50,7 +52,7 @@ func handleIssueCreate(ctx context.Context, args ToolArgs) (string, error) {
 }
 
 func init() {
-	RegisterTool(ToolDef{
+	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "issue_create",
 		Description: "创建新的issue",
 		Strict:      true,
@@ -60,12 +62,12 @@ func init() {
 				"title": map[string]any{
 					"type":        "string",
 					"description": "issue标题（必需）,不能包含换行符，长度1-128字符",
-					"pattern":     TitleLikePattern(128),
+					"pattern":     toolcall.TitleLikePattern(128),
 				},
 				"body": map[string]any{
 					"type":        "string",
 					"description": "issue内容（可选），长度1-4096字符",
-					"pattern":     ContentLikePattern(4096),
+					"pattern":     toolcall.ContentLikePattern(4096),
 				},
 			},
 			"required":             []string{"title"},

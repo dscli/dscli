@@ -1,4 +1,5 @@
-package toolcall
+// Package issue to address issue create, list, show, assign, close
+package issue
 
 import (
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 // ==================== Issue 相关类型 ====================
@@ -304,7 +306,7 @@ func IssueAPIBaseURL(originURL string, issueConfig *IssueConfig) (err error) {
 	}
 
 	// 使用纯Go实现从.netrc获取token
-	token, err := GetTokenFromNetrc(host)
+	token, err := toolcall.GetTokenFromNetrc(host)
 	if err != nil {
 		return
 	}
