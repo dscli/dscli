@@ -197,13 +197,23 @@ func HandleToolCall(ctx context.Context, toolName string, argsRaw json.RawMessag
 	if err := json.Unmarshal(argsRaw, &args); err != nil {
 		n := len(argsRaw)
 		if n > 80 {
+			input := string(argsRaw)
+			notice := `
+--------IMPORTANT-------NOTICE!-----IMPORTANT----------
+Looks you are using write_file tool to write large file,
+you can seperate the file into several parts,
+each parts less than 4096 characters, after write the
+ first part,use append = true to append the left parts
+`
 			err = fmt.Errorf(`failed to unmarshal arguments: %w, below `+
 				`is the details about raw argument tool %q received`+
 				` which lead error:
 - the length of the argument string: %d
 - the last 40 bytes of the argument string: %q
-- the first 40 bytes of the argument string: %q`, err, toolName, n,
-				string(argsRaw[n-40:]), string(argsRaw[0:40]))
+- the first 40 bytes of the argument string: %q
+
+%s`, err, toolName, n,
+				TruncateHead(input, 40), TruncateTail(input, 40), notice)
 		} else {
 			err = fmt.Errorf(`failed to unmarshal arguments: %w, below `+
 				`is the details about the raw argument tool %q received, 
