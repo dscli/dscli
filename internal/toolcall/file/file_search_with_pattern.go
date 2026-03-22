@@ -1,4 +1,4 @@
-package toolcall
+package file
 
 import (
 	"bufio"
@@ -8,11 +8,12 @@ import (
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 func init() {
 	// 注册文件模式搜索工具
-	RegisterTool(ToolDef{
+	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "search_file_with_pattern",
 		Description: `搜索文件中匹配指定模式的行，并显示上下文内容。
 ⚠️ 注意：这是基于行号操作的旧工具。建议优先使用基于语义的新工具 search_code_semantic。
@@ -59,7 +60,7 @@ func init() {
 				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径，如main.go",
-					"pattern":     TitleLikePattern(128),
+					"pattern":     toolcall.TitleLikePattern(128),
 				},
 				"pattern": map[string]any{
 					"type":        "string",
@@ -88,30 +89,30 @@ func init() {
 
 // handleSearchFileWithPattern 搜索文件中匹配指定模式的行，并显示上下文
 // 输出格式与 awk 类似，保持一致性
-func handleSearchFileWithPattern(ctx context.Context, args ToolArgs) (string, error) {
-	path := ToolArgsValue(args, "path", "")
+func handleSearchFileWithPattern(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		return "", fmt.Errorf("parameter error: no path specified")
 	}
 
-	pattern := ToolArgsValue(args, "pattern", "")
+	pattern := toolcall.ToolArgsValue(args, "pattern", "")
 	if pattern == "" {
 		return "", fmt.Errorf("parameter error: no pattern specified")
 	}
 
-	fullPath := resolvePath(ctx, path)
+	fullPath := ResolvePath(ctx, path)
 
 	// 解析上下文行数参数
-	contextLines := ToolArgsValue(args, "context_lines", 5) // 默认上下文行数
+	contextLines := toolcall.ToolArgsValue(args, "context_lines", 5) // 默认上下文行数
 	if contextLines < 0 {
 		return "", fmt.Errorf("context_lines must be non-negative")
 	}
 
 	// 解析是否区分大小写
-	caseSensitive := ToolArgsValue(args, "case_sensitive", false)
+	caseSensitive := toolcall.ToolArgsValue(args, "case_sensitive", false)
 
 	// 解析最大匹配数
-	maxMatches := ToolArgsValue(args, "max_matches", 0) // 0表示无限制
+	maxMatches := toolcall.ToolArgsValue(args, "max_matches", 0) // 0表示无限制
 	if maxMatches < 0 {
 		return "", fmt.Errorf("max_matches must be non-negative")
 	}

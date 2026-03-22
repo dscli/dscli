@@ -1,4 +1,4 @@
-package toolcall
+package file
 
 import (
 	"context"
@@ -7,10 +7,11 @@ import (
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 func init() {
-	RegisterTool(ToolDef{
+	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "write_file",
 		Description: `将内容写入文件，如果文件不存在则创建，如果文件存在，append=false 覆盖，append=true 追加。
 支持创建目录结构。`,
@@ -21,12 +22,12 @@ func init() {
 				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径，如main.go",
-					"pattern":     TitleLikePattern(128),
+					"pattern":     toolcall.TitleLikePattern(128),
 				},
 				"content": map[string]any{
 					"type":        "string",
 					"description": "要新建或追加的内容，建议不超过4096个字符",
-					"pattern":     ContentLikePattern(4096),
+					"pattern":     toolcall.ContentLikePattern(4096),
 				},
 				"append": map[string]any{
 					"type":        "boolean",
@@ -42,18 +43,18 @@ func init() {
 }
 
 // handleWriteFile 写入文件
-func handleWriteFile(ctx context.Context, args ToolArgs) (output string, err error) {
-	path := ToolArgsValue(args, "path", "")
-	content := ToolArgsValue(args, "content", "")
+func handleWriteFile(ctx context.Context, args toolcall.ToolArgs) (output string, err error) {
+	path := toolcall.ToolArgsValue(args, "path", "")
+	content := toolcall.ToolArgsValue(args, "content", "")
 	if path == "" || content == "" {
 		err = fmt.Errorf("文件路径 path 和文件内容 content 都不能为空")
 		return
 	}
 
-	append := ToolArgsValue(args, "append", false)
+	append := toolcall.ToolArgsValue(args, "append", false)
 	delete(args, "append")
 
-	fullPath := resolvePath(ctx, path)
+	fullPath := ResolvePath(ctx, path)
 
 	if append {
 		// 追加模式：打开文件并追加内容

@@ -8,6 +8,7 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
+	"gitcode.com/dscli/dscli/internal/toolcall/file"
 )
 
 // searchCodeSemantic 基于语义搜索代码中的特定模式
@@ -243,7 +244,7 @@ func handleSearchCodeSemantic(ctx context.Context, args toolcall.ToolArgs) (stri
 	maxMatches := toolcall.ToolArgsValue(args, "max_matches", 0)
 
 	// 扩展文件模式
-	files, err := toolcall.ExpandFilePattern(filePattern)
+	files, err := file.ExpandFilePattern(filePattern)
 	if err != nil {
 		return "", fmt.Errorf("扩展文件模式失败: %w", err)
 	}

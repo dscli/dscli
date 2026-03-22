@@ -82,6 +82,6 @@ func handlePython(ctx context.Context, args ToolArgs) (out string, err error) {
 		script = "#!/usr/bin/env python3\n" + script
 	}
 	outfmt.Printf("🐍 运行Python脚本%s\n", TruncateString(summary, 100))
-	out, err = runShell(ctx, script)
+	out, err = RunShell(ctx, script)
 	return
 }

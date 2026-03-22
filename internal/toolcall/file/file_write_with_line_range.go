@@ -1,4 +1,4 @@
-package toolcall
+package file
 
 import (
 	"bufio"
@@ -8,11 +8,12 @@ import (
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 func init() {
 	// 注册文件行范围写入工具
-	RegisterTool(ToolDef{
+	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "write_file_with_line_range",
 		Description: `写入文件指定行范围的内容，支持替换、插入和删除操作。
 ⚠️ 注意：这是基于行号操作的旧工具。建议优先使用基于代码结构的新工具 write_code_section。
@@ -50,12 +51,12 @@ func init() {
 				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径，如main.go",
-					"pattern":     TitleLikePattern(128),
+					"pattern":     toolcall.TitleLikePattern(128),
 				},
 				"content": map[string]any{
 					"type":        "string",
 					"description": "要写入的内容，可以为空字符串表示删除, 建议不超过4096个字符",
-					"pattern":     ContentLikePattern(4096),
+					"pattern":     toolcall.ContentLikePattern(4096),
 				},
 				"start_line": map[string]any{
 					"type":        "integer",
@@ -76,21 +77,21 @@ func init() {
 
 // handleWriteFileWithLineRange 写入文件指定行范围的内容
 // 如果 content 为空字符串，则删除指定行范围
-func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (string, error) {
+func handleWriteFileWithLineRange(ctx context.Context, args toolcall.ToolArgs) (string, error) {
 	// 检查必需参数
-	path := ToolArgsValue(args, "path", "")
+	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		return "", fmt.Errorf("parameter error: no path specified")
 	}
 
-	content := ToolArgsValue(args, "content", "")
+	content := toolcall.ToolArgsValue(args, "content", "")
 
 	// content 可以为空字符串，表示删除
 
-	fullPath := resolvePath(ctx, path)
+	fullPath := ResolvePath(ctx, path)
 
 	// 解析起始行号
-	startLine, endLine, err := parseLineRange(args)
+	startLine, endLine, err := ParseLineRange(args)
 	if err != nil {
 		return "", err
 	}

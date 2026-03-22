@@ -1,13 +1,15 @@
-package toolcall
+package file
 
 import (
 	"context"
 	"fmt"
 	"strings"
+
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 func init() {
-	RegisterTool(ToolDef{
+	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "search_files",
 		Description: "在项目目录中搜索文件，支持文件名模式匹配（如*.go）和文件内容搜索。自动排除.git目录。",
 		Strict:      true,
@@ -21,7 +23,7 @@ func init() {
 				"content": map[string]any{
 					"type":        "string",
 					"description": "要搜索的内容（如果提供则搜索文件内容）,长度1-4096字符",
-					"pattern":     ContentLikePattern(4096),
+					"pattern":     toolcall.ContentLikePattern(4096),
 				},
 			},
 			"required":             []string{},
@@ -33,9 +35,9 @@ func init() {
 }
 
 // handleSearchFiles 搜索文件
-func handleSearchFiles(ctx context.Context, args ToolArgs) (string, error) {
-	pattern := ToolArgsValue(args, "pattern", "")
-	content := ToolArgsValue(args, "content", "")
+func handleSearchFiles(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+	pattern := toolcall.ToolArgsValue(args, "pattern", "")
+	content := toolcall.ToolArgsValue(args, "content", "")
 	// 使用find和grep命令实现搜索
 	// 基础find命令：从当前目录开始，排除.git目录，只搜索文件
 	script := `find . -type f -not -path "./.git/*"`
@@ -65,5 +67,5 @@ func handleSearchFiles(ctx context.Context, args ToolArgs) (string, error) {
 	// 处理空结果
 	script += ` || echo "未找到匹配的文件"`
 
-	return runShell(ctx, script)
+	return toolcall.RunShell(ctx, script)
 }

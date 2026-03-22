@@ -1,4 +1,4 @@
-package toolcall
+package file
 
 import (
 	"bufio"
@@ -8,11 +8,12 @@ import (
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 func init() {
 	// 注册文件行范围读取工具（与awk格式完全兼容）
-	RegisterTool(ToolDef{
+	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "read_file_with_line_range",
 		Description: `读取文件指定行范围的内容，输出格式与awk完全兼容。
 ⚠️ 注意：这是基于行号操作的旧工具。建议优先使用基于代码结构的新工具 read_code_section。
@@ -41,7 +42,7 @@ func init() {
 				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径，如main.go",
-					"pattern":     TitleLikePattern(128),
+					"pattern":     toolcall.TitleLikePattern(128),
 				},
 				"start_line": map[string]any{
 					"type":        "integer",
@@ -62,15 +63,15 @@ func init() {
 
 // handleReadFileWithLineRange 读取文件指定行范围的内容
 // 输出格式与 awk 'NR>=start && NR<=end {print NR": "$0}' 完全一致
-func handleReadFileWithLineRange(ctx context.Context, args ToolArgs) (string, error) {
-	path := ToolArgsValue(args, "path", "")
+func handleReadFileWithLineRange(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		return "", fmt.Errorf("parameter error: no path specified")
 	}
 
-	fullPath := resolvePath(ctx, path)
+	fullPath := ResolvePath(ctx, path)
 
-	startLine, endLine, err := parseLineRange(args)
+	startLine, endLine, err := ParseLineRange(args)
 	if err != nil {
 		return "", err
 	}

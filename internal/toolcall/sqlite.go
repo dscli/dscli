@@ -42,5 +42,6 @@ func handleSqlite(ctx context.Context, args ToolArgs) (string, error) {
 	fullScript := fmt.Sprintf("#!/usr/bin/env sqlite3 %s\n%s", sqlite.GetDBPath(), script)
 
 	// 使用现有的runBash执行
-	return runShell(ctx, fullScript)
+
+	return RunShell(ctx, fullScript)
 }

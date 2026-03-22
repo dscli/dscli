@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
@@ -444,5 +445,40 @@ func GetOrCreateCacheFile(ctx context.Context, script string) (cacheFile string,
 	} else if verbose {
 		fmt.Fprintf(os.Stderr, "使用缓存文件: %s\n", cacheFile)
 	}
+	return
+}
+
+func RunShell(ctx context.Context, script string) (result string, err error) {
+	startTime := time.Now()
+	name, arg := Shebang(script)
+	ctx = context.WithValue(ctx, context.ShellNameKey, name)
+	ctx = context.WithValue(ctx, context.ShellArgsKey, arg)
+	out, err := ShellExec(ctx, script)
+	executionTime := time.Since(startTime)
+
+	// 记录调试信息（不在用户输出中显示）
+	outfmt.Debug("Shell命令执行时间: %v", executionTime)
+
+	// 判断是Python还是Shell调用
+	isPython := strings.Contains(strings.ToLower(script), "python") ||
+		strings.Contains(strings.ToLower(name), "python")
+
+	if err != nil {
+		// 简化错误输出，不显示执行时间
+		if isPython {
+			result = fmt.Sprintf("🐍 Python执行失败:\n错误: %v\n\n输出内容:\n%s", err, out)
+		} else {
+			result = fmt.Sprintf("💻 Shell执行失败:\n错误: %v\n\n输出内容:\n%s", err, out)
+		}
+		return result, nil
+	}
+	summary := TruncateString(out, 50)
+	// 简化成功输出，不显示执行时间
+	if isPython {
+		result = fmt.Sprintf("🐍 Python执行结果:\n%s", summary)
+	} else {
+		result = fmt.Sprintf("💻 Shell执行结果:\n%s", summary)
+	}
+
 	return
 }

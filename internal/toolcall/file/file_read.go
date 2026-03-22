@@ -1,11 +1,13 @@
-package toolcall
+package file
 
 import (
 	"context"
+
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 func init() {
-	RegisterTool(ToolDef{
+	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "read_file",
 		Description: "读取项目内指定文件的内容，返回文件内容和元数据信息（大小、权限、修改时间等）",
 		Strict:      true,
@@ -15,7 +17,7 @@ func init() {
 				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径，如main.go",
-					"pattern":     TitleLikePattern(128),
+					"pattern":     toolcall.TitleLikePattern(128),
 				},
 			},
 			"required":             []string{"path"},
@@ -27,6 +29,6 @@ func init() {
 }
 
 // handleReadFile 读取文件（纯Go实现）
-func handleReadFile(ctx context.Context, args ToolArgs) (string, error) {
+func handleReadFile(ctx context.Context, args toolcall.ToolArgs) (string, error) {
 	return handleReadFileWithLineRange(ctx, args)
 }
