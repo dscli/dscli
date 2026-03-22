@@ -1,4 +1,4 @@
-package code
+package ask
 
 import (
 	"fmt"
@@ -192,7 +192,7 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (reply string
 	// 构建审查请求
 	structuredRequest := buildCodeReviewRequest(summary, fullLog, patch)
 	outfmt.Println("📤 发送代码审查请求...")
-	reply, err = toolcall.AskExpert(ctx, structuredRequest)
+	reply, err = AskExpert(ctx, structuredRequest)
 	if err != nil {
 		outfmt.Println("❌ 代码提交失败")
 		err = fmt.Errorf("代码提交失败: %w", err)

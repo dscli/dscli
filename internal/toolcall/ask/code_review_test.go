@@ -1,5 +1,5 @@
 // Package main contains tests for the code review tool
-package code
+package ask
 
 import (
 	"context"

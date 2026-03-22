@@ -1,4 +1,4 @@
-package toolcall
+package ask
 
 import (
 	"fmt"
@@ -8,10 +8,11 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 // askExpertTool 工具定义
-var askExpertTool = ToolDef{
+var askExpertTool = toolcall.ToolDef{
 	Name:        "ask_expert",
 	DisplayName: "问专家",
 	Description: `向专家发问，期望专家审阅方案，解答疑难问题
@@ -33,12 +34,12 @@ var askExpertTool = ToolDef{
 			"summary": map[string]any{
 				"type":        "string",
 				"description": "问题摘要（可选），用于快速理解问题背景",
-				"pattern":     TitleLikePattern(128),
+				"pattern":     toolcall.TitleLikePattern(128),
 			},
 			"content": map[string]any{
 				"type":        "string",
 				"description": "要询问的详细内容（必填）",
-				"pattern":     ContentLikePattern(4096),
+				"pattern":     toolcall.ContentLikePattern(4096),
 			},
 		},
 		"required":             []string{"content"},
@@ -50,18 +51,18 @@ var askExpertTool = ToolDef{
 }
 
 func init() {
-	RegisterTool(askExpertTool)
+	toolcall.RegisterTool(askExpertTool)
 }
 
 // handleAskExpert 处理提问工具调用
-func handleAskExpert(ctx context.Context, args ToolArgs) (reply string, err error) {
+func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (reply string, err error) {
 	// 向后兼容：支持旧参数名
-	summary := ToolArgsValue(args, "summary", "")
-	content := ToolArgsValue(args, "content", "")
+	summary := toolcall.ToolArgsValue(args, "summary", "")
+	content := toolcall.ToolArgsValue(args, "content", "")
 
 	// 如果content为空，尝试使用旧参数名
 	if content == "" {
-		content = ToolArgsValue(args, "question", "")
+		content = toolcall.ToolArgsValue(args, "question", "")
 	}
 
 	if content == "" {
@@ -146,7 +147,7 @@ dscli chat --no-color --no-timestamp --model %s`, context.ModelDeepseekReasoner)
 	ctx = context.WithValue(ctx, context.ShellNameKey, "/usr/bin/env")
 	ctx = context.WithValue(ctx, context.ShellArgsKey, []string{"bash"})
 	ctx = context.WithValue(ctx, context.ShellStdinKey, strings.NewReader(input))
-	reply, err = ShellExec(ctx, script)
+	reply, err = toolcall.ShellExec(ctx, script)
 	return
 }
 

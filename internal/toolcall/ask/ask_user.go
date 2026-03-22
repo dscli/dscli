@@ -1,4 +1,4 @@
-package toolcall
+package ask
 
 import (
 	"context"
@@ -6,10 +6,11 @@ import (
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 // AskTool 工具定义
-var askUserTool = ToolDef{
+var askUserTool = toolcall.ToolDef{
 	Name:        "ask_user",
 	DisplayName: "问用户",
 	Description: `向 user 提问需求，期望用户把需求澄清
@@ -28,7 +29,7 @@ var askUserTool = ToolDef{
 			"content": map[string]any{
 				"type":        "string",
 				"description": "要咨询的内容",
-				"pattern":     ContentLikePattern(4096),
+				"pattern":     toolcall.ContentLikePattern(4096),
 			},
 		},
 		"required":             []string{"content"},
@@ -40,12 +41,12 @@ var askUserTool = ToolDef{
 }
 
 func init() {
-	RegisterTool(askUserTool)
+	toolcall.RegisterTool(askUserTool)
 }
 
 // handleAskUser 处理提问工具调用
-func handleAskUser(ctx context.Context, args ToolArgs) (reply string, err error) {
-	content := ToolArgsValue(args, "content", "")
+func handleAskUser(ctx context.Context, args toolcall.ToolArgs) (reply string, err error) {
+	content := toolcall.ToolArgsValue(args, "content", "")
 	if content == "" {
 		return "", fmt.Errorf("内容不能为空")
 	}
@@ -60,7 +61,7 @@ func handleAskUser(ctx context.Context, args ToolArgs) (reply string, err error)
 	}
 	outfmt.Println("  问题摘要:", string(summary))
 
-	reply, err = OpenEditor(ctx, content)
+	reply, err = toolcall.OpenEditor(ctx, content)
 	if err != nil {
 		outfmt.Println("❌ 获取用户回答失败")
 		return "", fmt.Errorf("获取用户回答失败: %v", err)
