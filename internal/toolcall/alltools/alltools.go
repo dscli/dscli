@@ -8,6 +8,6 @@ import (
 	_ "gitcode.com/dscli/dscli/internal/toolcall/file"
 	_ "gitcode.com/dscli/dscli/internal/toolcall/git"
 	_ "gitcode.com/dscli/dscli/internal/toolcall/issue"
+	_ "gitcode.com/dscli/dscli/internal/toolcall/shell"
 )
-
 var GetAllTools = toolcall.GetAllTools
