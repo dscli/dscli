@@ -15,16 +15,6 @@ func init() {
 		Description: `检查项目构建是否成功，主要用于发现语法错误和编译问题。
 
 参数：
-  command: 可选，构建命令。如果不提供，则使用上下文中的配置命令（默认为"make build"）
-
-功能：
-1. 执行构建命令检查项目是否能成功构建
-2. 返回构建输出，包括错误信息
-3. 主要用于发现语法错误、类型错误等编译问题
-
-示例：
-  make_build(command="make build")
-  参数：
   command: 必需，构建命令
 
 功能：
@@ -33,6 +23,8 @@ func init() {
 3. 主要用于发现语法错误、类型错误等编译问题
 
 示例：
+  make_build(command="make build")
+  
   # 使用自定义构建命令
   make_build(command="go build ./...")
   
