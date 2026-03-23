@@ -1,4 +1,4 @@
-package toolcall
+package git
 
 import (
 	"bytes"
@@ -9,9 +9,25 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
-// gitCommand 执行git命令（直接使用exec.Command）
+var (
+	RegisterTool       = toolcall.RegisterTool
+	ShellExec          = toolcall.ShellExec
+	TitleLikePattern   = toolcall.TitleLikePattern
+	ContentLikePattern = toolcall.ContentLikePattern
+)
+
+type (
+	ToolDef  = toolcall.ToolDef
+	ToolArgs = toolcall.ToolArgs
+)
+
+func ToolArgsValue[T any](args ToolArgs, key string, defaultValue T) T {
+	return toolcall.ToolArgsValue(args, key, defaultValue)
+}
+
 // gitCommand 执行git命令（直接使用exec.Command）
 func gitCommand(ctx context.Context, args ...string) (string, error) {
 	startTime := time.Now()

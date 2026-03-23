@@ -6,6 +6,7 @@ import (
 	_ "gitcode.com/dscli/dscli/internal/toolcall/ask"
 	_ "gitcode.com/dscli/dscli/internal/toolcall/code"
 	_ "gitcode.com/dscli/dscli/internal/toolcall/file"
+	_ "gitcode.com/dscli/dscli/internal/toolcall/git"
 	_ "gitcode.com/dscli/dscli/internal/toolcall/issue"
 )
 
