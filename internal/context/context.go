@@ -29,6 +29,7 @@ var (
 	MakeTestKey         = ContextKeyType[string]{"MakeTest"}
 	MakeBuildKey        = ContextKeyType[string]{"MakeBuild"}
 	WechatFormatKey     = ContextKeyType[string]{"WechatFormat"}
+	ToolDisplayNameKey  = ContextKeyType[string]{"ToolDisplayName"}
 )
 
 var (

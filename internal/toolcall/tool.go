@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"strings"
+	"sync"
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/context"
@@ -67,10 +68,13 @@ type ToolCallFunction struct {
 	Arguments string `json:"arguments"` // JSON 字符串
 }
 
-var ToolDisplayName = &struct{}{}
+var (
+	// toolRegistry 工具注册表
+	toolRegistry = map[string]ToolDef{}
 
-// toolRegistry 工具注册表
-var toolRegistry = map[string]ToolDef{}
+	// toolRegistryRWMutex tool registry rwmutex
+	toolRegistryRWMutex = sync.RWMutex{}
+)
 
 func init() {
 	sqlite.RegisterTableSchema(
@@ -130,6 +134,8 @@ func GetToolDisplayName(name string) string {
 
 // RegisterTool 注册工具
 func RegisterTool(tool ToolDef) {
+	toolRegistryRWMutex.Lock()
+	defer toolRegistryRWMutex.Unlock()
 	name := tool.Name
 	if _, ok := toolRegistry[name]; ok {
 		panic(fmt.Sprintf("%s exists", name))
@@ -140,6 +146,8 @@ func RegisterTool(tool ToolDef) {
 
 // GetAllTools 获取所有工具定义（用于API调用）
 func GetAllTools(ctx context.Context) []Tool {
+	toolRegistryRWMutex.RLock()
+	defer toolRegistryRWMutex.RUnlock()
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	if modelID == context.DeepseekReasoner {
 		return nil
@@ -232,7 +240,7 @@ which lead to the error:
 		defer cancel()
 	}
 
-	ctx = context.WithValue(ctx, ToolDisplayName, tool.DisplayName)
+	ctx = context.WithValue(ctx, context.ToolDisplayNameKey, tool.DisplayName)
 	toolID, err := GetOrCreateTool(tool.Name, tool.Description, tool.Category)
 	if err != nil {
 		outfmt.Error(err.Error(), "name", tool.Name)

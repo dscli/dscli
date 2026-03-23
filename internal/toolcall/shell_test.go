@@ -56,7 +56,7 @@ print("OK")`, "OK\n", nil},
 	for _, tc := range tcs {
 		t.Run("", func(t *testing.T) {
 			// 创建包含ToolDisplayName的context
-			ctx := context.WithValue(t.Context(), ToolDisplayName, "test-tool")
+			ctx := context.WithValue(t.Context(), context.ToolDisplayNameKey, "test-tool")
 			out, err := ShellExec(ctx, tc.script)
 
 			if tc.checkErr == nil {
