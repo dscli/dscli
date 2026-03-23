@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
@@ -257,7 +256,7 @@ Line 3`,
 			tt.args["path"] = filePath
 
 			// 调用函数
-			ctx := context.WithValue(t.Context(), context.CodeFormatKey, "echo done")
+			ctx := t.Context()
 			_, err := handleWriteFileWithLineRange(ctx, tt.args)
 
 			// 检查错误
@@ -412,7 +411,7 @@ New Line 2`
 
 			tt.args["path"] = filePath
 
-			ctx := context.WithValue(t.Context(), context.CodeFormatKey, "echo done")
+			ctx := t.Context()
 			_, err := handleWriteFileWithLineRange(ctx, tt.args)
 			if err != nil {
 				t.Errorf("不期望的错误: %v", err)
@@ -431,7 +430,7 @@ func TestHandleWriteFileWithLineRange_MissingPath(t *testing.T) {
 		"content": "test",
 	}
 
-	ctx := context.WithValue(t.Context(), context.CodeFormatKey, "echo done")
+	ctx := t.Context()
 	_, err := handleWriteFileWithLineRange(ctx, args)
 
 	if err == nil {
@@ -457,7 +456,7 @@ func TestHandlerWriteFileWithLineRangeLineBeyondScope(t *testing.T) {
 		"content":    "Line 10: Inserted at line 10",
 	}
 
-	ctx := context.WithValue(t.Context(), context.CodeFormatKey, "echo done")
+	ctx := t.Context()
 	_, err := handleWriteFileWithLineRange(ctx, args)
 	if err != nil {
 		t.Fatal(err)

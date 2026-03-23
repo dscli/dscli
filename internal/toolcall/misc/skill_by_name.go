@@ -1,4 +1,4 @@
-package toolcall
+package misc
 
 import (
 	"fmt"
@@ -28,7 +28,7 @@ func handleSkillByName(ctx context.Context, args ToolArgs) (content string, err 
 	}
 	projectRoot := context.ProjectRoot
 	// 异步记录技能使用
-	safeAsyncRecordUsage(skill.ID, projectRoot)
+	SafeAsyncRecordUsage(skill.ID, projectRoot)
 	// 格式化输出
 
 	return skill.Content, nil

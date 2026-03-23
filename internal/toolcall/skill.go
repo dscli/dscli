@@ -35,6 +35,10 @@ type ProjectSkill struct {
 
 // LoadSkills 加载技能到系统提示词中
 func LoadSkills(ctx context.Context) (messages []Message, err error) {
+	return
+}
+
+func loadSkills(ctx context.Context) (messages []Message, err error) {
 	message := Message{
 		Role: "system",
 	}
@@ -55,7 +59,7 @@ func LoadSkills(ctx context.Context) (messages []Message, err error) {
 }
 
 // safeAsyncRecordUsage 安全的异步记录技能使用
-func safeAsyncRecordUsage(skillID int64, projectPath string) {
+func SafeAsyncRecordUsage(skillID int64, projectPath string) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {

@@ -72,24 +72,6 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 	ctx := cmd.Context()
-	codeformat, err := cmd.Flags().GetString("codeformat")
-	if err != nil {
-		return
-	}
-	ctx = context.WithValue(ctx, context.CodeFormatKey, codeformat)
-
-	maketest, err := cmd.Flags().GetString("maketest")
-	if err != nil {
-		return
-	}
-	ctx = context.WithValue(ctx, context.MakeTestKey, maketest)
-	makebuild, err := cmd.Flags().GetString("makebuild")
-	if err != nil {
-		return
-	}
-
-	ctx = context.WithValue(ctx, context.MakeBuildKey, makebuild)
-
 	// 获取stream标志
 	stream, err := cmd.Flags().GetBool("stream")
 	if err != nil {
@@ -409,7 +391,4 @@ func init() {
 	chatCmd.Flags().Int("histsize", 8, "history size loaded")
 	chatCmd.Flags().String("input", "", "read content from input file or read content from stdin if input file empty")
 	chatCmd.Flags().Bool("stream", false, "启用流式输出（SSE）")
-	chatCmd.Flags().String("codeformat", "", "command to format source code")
-	chatCmd.Flags().String("maketest", "", "command to test source code")
-	chatCmd.Flags().String("makebuild", "", "command to build source code")
 }

@@ -25,9 +25,6 @@ var (
 	InsideShellExecKey  = ContextKeyType[bool]{"InsideShellExec"}
 	StreamKey           = ContextKeyType[bool]{"Stream"}
 	LeftTokensKey       = ContextKeyType[int]{"LeftTokens"}
-	CodeFormatKey       = ContextKeyType[string]{"CodeFormat"}
-	MakeTestKey         = ContextKeyType[string]{"MakeTest"}
-	MakeBuildKey        = ContextKeyType[string]{"MakeBuild"}
 	WechatFormatKey     = ContextKeyType[string]{"WechatFormat"}
 	ToolDisplayNameKey  = ContextKeyType[string]{"ToolDisplayName"}
 )
