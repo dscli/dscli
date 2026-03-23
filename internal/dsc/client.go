@@ -244,13 +244,6 @@ func (c *Deepseek) Chat(ctx context.Context, messages []toolcall.Message, tools 
 			MaxTokens: maxTokens,
 			Stream:    false,
 		}
-		req := ChatRequest{
-			Model:     model,
-			Messages:  messages,
-			Tools:     tools,
-			MaxTokens: maxTokens,
-			Stream:    false,
-		}
 
 		var resp ChatResponse
 		err := c.doRequest("POST", "/chat/completions", req, &resp)
