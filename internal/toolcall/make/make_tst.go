@@ -15,8 +15,7 @@ func init() {
 		Description: `运行项目测试，检查测试是否通过。
 
 参数：
-  command: 可选，测试命令。如果不提供，则使用上下文中的配置命令（默认为"make test"）
-  test_pattern: 可选，测试模式。用于筛选要运行的测试（如果测试命令支持）
+  command: 测试命令
 
 功能：
 1. 执行测试命令运行项目测试
@@ -24,7 +23,7 @@ func init() {
 3. 支持测试模式筛选（如果底层测试命令支持）
 
 示例：
-  # 使用默认测试命令
+  make_test(command="make test")
   参数：
   command: 必需，测试命令
 

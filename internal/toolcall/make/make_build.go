@@ -23,8 +23,7 @@ func init() {
 3. 主要用于发现语法错误、类型错误等编译问题
 
 示例：
-  # 使用默认构建命令
-  make_build()
+  make_build(command="make build")
   参数：
   command: 必需，构建命令
 
