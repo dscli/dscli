@@ -243,9 +243,13 @@ func ListHistory(ctx context.Context) ([]*Message, error) {
 
 // LoadHistory 加载指定会话的所有历史消息，按时间升序返回
 func LoadHistory(ctx context.Context) ([]Message, error) {
+	histSize := context.ContextValue(ctx, context.HistSizeKey, 8)
+	if histSize == 0 {
+		return []Message{}, nil
+	}
+
 	sessionID := GetCurrentSessionID(ctx)
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
-	histSize := context.ContextValue(ctx, context.HistSizeKey, 8)
 	leftTokens := context.ContextValue(ctx, context.LeftTokensKey, 0)
 	db, err := sqlite.OpenDB()
 	if err != nil {
