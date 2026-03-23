@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/dsc"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 	"gitcode.com/dscli/dscli/internal/toolcall/alltools"
@@ -325,7 +326,7 @@ func ChatRound(ctx context.Context, prompts []toolcall.Message, skills []toolcal
 	stories := make([]toolcall.Message, 0, len(inputs)+1)
 	stories = append(stories, inputs...)
 	tools := alltools.GetAllTools(ctx)
-	var resp *ChatResponse
+	var resp *dsc.ChatResponse
 	resp, err = DeepseekClient.Chat(ctx, messages, tools)
 	if err != nil {
 		err = fmt.Errorf("聊天请求失败: %w", err)

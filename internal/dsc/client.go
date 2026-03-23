@@ -1,4 +1,4 @@
-package main
+package dsc
 
 import (
 	"bufio"
@@ -39,7 +39,7 @@ var httpClient = &http.Client{
 
 func NewClient(apiKey, baseURL string) Client {
 	// 默认重试配置
-	maxRetries := 600
+	maxRetries := 3
 	retryDelay := 10 * time.Second
 
 	return &Deepseek{
@@ -170,78 +170,61 @@ func (c *Deepseek) doRequest(method, path string, body any, result any) (err err
 		if lastErr == nil {
 			// 成功，返回
 			if attempt > 0 {
-				outfmt.Success("重试成功！")
+				outfmt.Notice("重试成功")
 			}
 			return nil
 		}
 
 		// 检查错误是否可重试
-		if !isRetryableError(lastErr) || attempt == c.maxRetries {
-			// 不可重试错误或已达到最大重试次数
-			break
+		if !isRetryableError(lastErr) {
+			// 不可重试的错误，直接返回
+			return lastErr
 		}
-
-		// 可重试错误，继续循环
 	}
 
-	// 所有重试都失败
-	if attempt > 0 {
-		return fmt.Errorf("经过%d次重试后仍然失败，最后错误: %w", attempt, lastErr)
-	}
-	return lastErr
+	// 超过最大重试次数
+	return fmt.Errorf("经过%d次重试后仍然失败: %w", c.maxRetries, lastErr)
 }
 
+// Models 获取模型列表
 func (c *Deepseek) Models() (*ModelsResponse, error) {
 	var resp ModelsResponse
 	err := c.doRequest("GET", "/models", nil, &resp)
-	if err != nil {
-		return nil, err
-	}
 	return &resp, err
 }
 
-// Balance 获取余额
+// Balance 获取余额信息
 func (c *Deepseek) Balance() (*BalanceResponse, error) {
 	var resp BalanceResponse
-	err := c.doRequest("GET", "/user/balance", nil, &resp)
-	if err != nil {
-		return nil, err
-	}
+	err := c.doRequest("GET", "/dashboard/billing/credit_grants", nil, &resp)
 	return &resp, err
 }
 
 // Chat 发送聊天请求
 func (c *Deepseek) Chat(ctx context.Context, messages []toolcall.Message, tools []toolcall.Tool) (*ChatResponse, error) {
 	model := context.ContextValue(ctx, context.CurrentModelNameKey, context.ModelDeepseekChat)
-	insideShellExec := context.ContextValue(ctx, context.InsideShellExecKey, false)
 	stream := context.ContextValue(ctx, context.StreamKey, false)
 
-	// 如果是streaming请求，即使InsideShellExec为true也测试streaming逻辑
-	if insideShellExec && !stream {
-		return &ChatResponse{
-			ID: "id",
-			Choices: []Choice{
-				{
-					Message: toolcall.Message{Role: "assistant", Content: "yes, here I heard"},
-				},
-			},
-		}, nil
+	// 如果是streaming请求，使用streaming处理
+	if stream {
+		return c.chatStream(ctx, ChatRequest{
+			Model:    model,
+			Messages: messages,
+			Tools:    tools,
+			Stream:   true,
+		})
 	}
+
+	// 非streaming请求
 	maxTokens := 4096
 	maxAttempts := 2
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		// reset reasoning
 		req := ChatRequest{
 			Model:     model,
 			Messages:  messages,
 			Tools:     tools,
 			MaxTokens: maxTokens,
-			Stream:    stream,
-		}
-
-		// 如果是streaming请求，使用不同的处理方式
-		if stream {
-			return c.chatStream(ctx, req)
+			Stream:    false,
 		}
 
 		var resp ChatResponse
@@ -256,7 +239,7 @@ func (c *Deepseek) Chat(ctx context.Context, messages []toolcall.Message, tools 
 
 		choice := resp.Choices[0]
 		if choice.FinishReason != "length" {
-			return &resp, err
+			return &resp, nil
 		}
 		// 如果是 length，且还有尝试次数，则增加 maxTokens 继续
 		if attempt < maxAttempts {
@@ -345,10 +328,9 @@ func (c *Deepseek) chatStream(ctx context.Context, req ChatRequest) (*ChatRespon
 				continue
 			}
 
-			// 输出内容
+			// 收集内容
 			if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
 				content := chunk.Choices[0].Delta.Content
-				fmt.Print(content)
 				fullContent.WriteString(content)
 			}
 		}

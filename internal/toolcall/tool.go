@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"math/rand/v2"
 	"strings"
 	"sync"
 	"time"
@@ -524,13 +523,4 @@ func GetProjectToolUsage(ctx context.Context, days int) ([]ToolUsageStat, error,
 		stats = append(stats, stat)
 	}
 	return stats, nil
-}
-
-func Shuffle(in string) (out string) {
-	runes := []rune(in)
-	rand.Shuffle(len(runes), func(i, j int) {
-		runes[i], runes[j] = runes[j], runes[i]
-	})
-	out = string(runes)
-	return
 }

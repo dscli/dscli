@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"gitcode.com/dscli/dscli/internal/dsc"
 	"github.com/spf13/cobra"
 )
 
@@ -29,7 +30,7 @@ func ModelsRun(cmd *cobra.Command, args []string) {
 	headers := []string{"ID", "对象", "拥有者"}
 	rowFunc := func(data any) []string {
 		switch m := data.(type) {
-		case Model:
+		case dsc.Model:
 			return []string{m.ID, m.Object, m.OwnedBy}
 		default:
 			return []string{"", "", ""}

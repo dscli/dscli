@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/dsc"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
@@ -53,7 +54,7 @@ func TestPrintSessionStats(t *testing.T) {
 
 	// 创建模拟客户端
 	mockClient := &MockDeepseekClient{
-		balanceResponse: &BalanceResponse{
+		balanceResponse: &dsc.BalanceResponse{
 			BalanceInfos: []context.BalanceInfo{
 				{
 					Currency:     "CNY",
@@ -88,7 +89,7 @@ func TestPrintSessionStats(t *testing.T) {
 
 	// 测试低余额提醒
 	lowBalanceClient := &MockDeepseekClient{
-		balanceResponse: &BalanceResponse{
+		balanceResponse: &dsc.BalanceResponse{
 			BalanceInfos: []context.BalanceInfo{
 				{
 					Currency:     "CNY",
@@ -110,22 +111,22 @@ func TestPrintSessionStats(t *testing.T) {
 
 // MockDeepseekClient 用于测试的模拟客户端
 type MockDeepseekClient struct {
-	balanceResponse *BalanceResponse
+	balanceResponse *dsc.BalanceResponse
 	balanceError    error
 }
 
-func (m *MockDeepseekClient) Balance() (*BalanceResponse, error) {
+func (m *MockDeepseekClient) Balance() (*dsc.BalanceResponse, error) {
 	return m.balanceResponse, m.balanceError
 }
 
-func (m *MockDeepseekClient) Models() (*ModelsResponse, error) {
+func (m *MockDeepseekClient) Models() (*dsc.ModelsResponse, error) {
 	return nil, nil
 }
 
-func (m *MockDeepseekClient) FIM(ctx context.Context, prompt, suffix string, maxTokens int, temperature float64) (*FIMResponse, error) {
+func (m *MockDeepseekClient) FIM(ctx context.Context, prompt, suffix string, maxTokens int, temperature float64) (*dsc.FIMResponse, error) {
 	return nil, nil
 }
 
-func (m *MockDeepseekClient) Chat(ctx context.Context, messages []toolcall.Message, tools []toolcall.Tool) (*ChatResponse, error) {
+func (m *MockDeepseekClient) Chat(ctx context.Context, messages []toolcall.Message, tools []toolcall.Tool) (*dsc.ChatResponse, error) {
 	return nil, nil
 }

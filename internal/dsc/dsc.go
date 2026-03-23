@@ -1,8 +1,7 @@
-package main
+// Package dsc provides deepseek client
+package dsc
 
 import (
-	"time"
-
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
@@ -14,14 +13,6 @@ type ChatRequest struct {
 	Tools     []toolcall.Tool    `json:"tools,omitempty"`
 	Stream    bool               `json:"stream"`
 	MaxTokens int                `json:"max_tokens,omitempty"`
-}
-
-// Session 表示一个对话会话
-type Session struct {
-	ID          int64
-	ProjectPath string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
 }
 
 type ModelsResponse struct {

@@ -4,13 +4,14 @@ import (
 	"fmt"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/dsc"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/sqlite"
 	"github.com/spf13/cobra"
 )
 
 var (
-	DeepseekClient Client
+	DeepseekClient dsc.Client
 
 	rootCmd = &cobra.Command{
 		Use:   "dscli",
@@ -107,7 +108,7 @@ func RootPersistentPreRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	url := context.Getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-	DeepseekClient = NewClient(key, url)
+	DeepseekClient = dsc.NewClient(key, url)
 	return nil
 }
 
