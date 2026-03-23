@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"gitcode.com/dscli/dscli/internal/context"
 )
 
 // LogLevel 定义日志级别（保留类型但不再使用多级过滤）
@@ -482,4 +484,22 @@ func (s *Spinner) StopWithMessage(message string, success bool) {
 // IsVerbose 检查是否启用详细输出
 func IsVerbose() bool {
 	return outputVerbose
+}
+
+func PrintContent(ctx context.Context, reasoning string, content string) {
+	// 检查是否是streaming模式
+	stream := context.ContextValue(ctx, context.StreamKey, false)
+
+	reasoning = strings.TrimSpace(reasoning)
+	if reasoning != "" {
+		Println(reasoning)
+	}
+
+	content = strings.TrimSpace(content)
+	if content != "" {
+		// 在streaming模式下，内容已经在streaming过程中输出，这里不需要再次输出
+		if !stream {
+			Println(content)
+		}
+	}
 }

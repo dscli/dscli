@@ -19,7 +19,7 @@ func TestPrintContent(t *testing.T) {
 	ctx = context.WithValue(ctx, context.CurrentModelIDKey, context.ModelDeepseekChat)
 	buf := bytes.NewBuffer([]byte{})
 	outfmt.SetOutputWriter(buf)
-	PrintContent(ctx, "reasoning", "content")
+	outfmt.PrintContent(ctx, "reasoning", "content")
 	s := buf.String()
 
 	// 检查输出是否包含 reasoning 和 content

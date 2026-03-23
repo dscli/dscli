@@ -137,7 +137,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		tcs := lastHist.ToolCalls
 		if len(tcs) > 0 {
 			// Print reasoning content or content
-			PrintContent(ctx, lastHist.ReasoningContent, lastHist.Content)
+			outfmt.PrintContent(ctx, lastHist.ReasoningContent, lastHist.Content)
 			toolInputs := toolcall.HandleToolCalls(ctx, tcs)
 			// 执行工具调用
 			history = append(history, toolInputs...)
@@ -204,23 +204,6 @@ func ReadContent(ctx context.Context) (content string, err error) {
 	return
 }
 
-func PrintContent(ctx context.Context, reasoning string, content string) {
-	// 检查是否是streaming模式
-	stream := context.ContextValue(ctx, context.StreamKey, false)
-
-	reasoning = strings.TrimSpace(reasoning)
-	if reasoning != "" {
-		outfmt.Println(reasoning)
-	}
-
-	content = strings.TrimSpace(content)
-	if content != "" {
-		// 在streaming模式下，内容已经在streaming过程中输出，这里不需要再次输出
-		if !stream {
-			outfmt.Println(content)
-		}
-	}
-}
 
 // calculateCost 计算花费
 func calculateCost(startBalance, endBalance context.BalanceInfo) string {
@@ -344,7 +327,7 @@ func ChatRound(ctx context.Context, prompts []toolcall.Message, skills []toolcal
 	if resp.Choices[0].FinishReason == "length" {
 		outfmt.Warn("注意：响应因长度限制被截断，可能不完整。")
 	}
-	PrintContent(ctx, story.ReasoningContent, story.Content)
+	outfmt.PrintContent(ctx, story.ReasoningContent, story.Content)
 	stories = append(stories, story)
 	// save stories here
 	err = toolcall.SaveMessages(ctx, stories...)
