@@ -1,4 +1,4 @@
-package code
+package make
 
 import (
 	"testing"

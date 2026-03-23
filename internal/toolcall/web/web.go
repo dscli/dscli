@@ -1,4 +1,4 @@
-package toolcall
+package web
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 	"github.com/PuerkitoBio/goquery"
 	"golang.org/x/net/html/charset"
 
@@ -25,8 +26,8 @@ var webClient = &http.Client{
 }
 
 // handleWebReader 读取网页内容
-func handleWebReader(ctx context.Context, args ToolArgs) (string, error) {
-	url := ToolArgsValue(args, "url", "")
+func handleWebReader(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+	url := toolcall.ToolArgsValue(args, "url", "")
 	if url == "" {
 		return "", fmt.Errorf("no URL or empty URL specified")
 	}
@@ -214,7 +215,7 @@ func Web2Markdown(ctx context.Context, url string) (string, error) {
 
 func init() {
 	// 注册网页读取工具
-	RegisterTool(ToolDef{
+	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "web_reader",
 		Description: "从互联网获取网页内容并智能转换为Markdown格式。支持HTTP/HTTPS URL，特别适合技术文档阅读和整理。",
 		Strict:      true,
@@ -224,7 +225,7 @@ func init() {
 				"url": map[string]any{
 					"type":        "string",
 					"description": "网页URL，如 https://www.baidu.com/s?wd=Golang+教程 或 https://github.com/golang/go",
-					"pattern":     TitleLikePattern(1024),
+					"pattern":     toolcall.TitleLikePattern(1024),
 				},
 			},
 			"required":             []string{"url"},

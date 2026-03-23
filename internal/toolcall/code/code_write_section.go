@@ -34,21 +34,6 @@ func writeCodeSection(ctx context.Context, path string, selector string, newCont
 		return
 	}
 
-	defer func() {
-		output, fmtErr := CodeMakeFormat(ctx)
-		if fmtErr != nil {
-			if err != nil {
-				err = fmt.Errorf("original error: %w, make format error: %w, make format output: %s", err, fmtErr, output)
-			} else {
-				err = fmt.Errorf("make format error: %w, make format output: %s", fmtErr, output)
-			}
-		}
-		output = strings.TrimSpace(output)
-		if output != "" {
-			result = fmt.Sprintf("%s\nmake format result:\n%s", result, output)
-		}
-	}()
-
 	// 解析文件结构
 	structure, err := toolcall.ParseFileStructure(ctx, path)
 	if err != nil {
