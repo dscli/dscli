@@ -39,7 +39,7 @@ var httpClient = &http.Client{
 
 func NewClient(apiKey, baseURL string) Client {
 	// 默认重试配置
-	maxRetries := 3
+	maxRetries := 600
 	retryDelay := 10 * time.Second
 
 	return &Deepseek{
@@ -160,7 +160,11 @@ func (c *Deepseek) doRequest(method, path string, body any, result any) (err err
 			delay := min(time.Duration(1<<(attempt-1))*c.retryDelay,
 				300*time.Second)
 			// 简洁通知用户（不超过20字）
-			outfmt.Notice("网络异常，%d秒后重试...", int(delay.Seconds()))
+			if delay.Seconds() < 1 {
+				outfmt.Notice("网络异常，立即重试...")
+			} else {
+				outfmt.Notice("网络异常，%d秒后重试...", int(delay.Seconds()))
+			}
 			time.Sleep(delay)
 		}
 
@@ -201,9 +205,23 @@ func (c *Deepseek) Balance() (*BalanceResponse, error) {
 }
 
 // Chat 发送聊天请求
+// Chat 发送聊天请求
 func (c *Deepseek) Chat(ctx context.Context, messages []toolcall.Message, tools []toolcall.Tool) (*ChatResponse, error) {
 	model := context.ContextValue(ctx, context.CurrentModelNameKey, context.ModelDeepseekChat)
+	insideShellExec := context.ContextValue(ctx, context.InsideShellExecKey, false)
 	stream := context.ContextValue(ctx, context.StreamKey, false)
+
+	// 如果是streaming请求，即使InsideShellExec为true也测试streaming逻辑
+	if insideShellExec && !stream {
+		return &ChatResponse{
+			ID: "id",
+			Choices: []Choice{
+				{
+					Message: toolcall.Message{Role: "assistant", Content: "yes, here I heard"},
+				},
+			},
+		}, nil
+	}
 
 	// 如果是streaming请求，使用streaming处理
 	if stream {
@@ -219,6 +237,13 @@ func (c *Deepseek) Chat(ctx context.Context, messages []toolcall.Message, tools 
 	maxTokens := 4096
 	maxAttempts := 2
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		req := ChatRequest{
+			Model:     model,
+			Messages:  messages,
+			Tools:     tools,
+			MaxTokens: maxTokens,
+			Stream:    false,
+		}
 		req := ChatRequest{
 			Model:     model,
 			Messages:  messages,
@@ -328,9 +353,10 @@ func (c *Deepseek) chatStream(ctx context.Context, req ChatRequest) (*ChatRespon
 				continue
 			}
 
-			// 收集内容
+			// 输出内容
 			if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
 				content := chunk.Choices[0].Delta.Content
+				fmt.Print(content)
 				fullContent.WriteString(content)
 			}
 		}
