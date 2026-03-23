@@ -2,6 +2,9 @@
 package dsc
 
 import (
+	"fmt"
+	"time"
+
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
@@ -58,3 +61,51 @@ type FIMResponse struct {
 type FIMChoice struct {
 	Text string `json:"text"`
 }
+
+type Deepseek struct {
+	apiKey     string
+	baseURL    string
+	maxRetries int           // 最大重试次数
+	retryDelay time.Duration // 重试延迟（指数退避的初始延迟）
+}
+
+type Client interface {
+	Models() (*ModelsResponse, error)
+	Balance() (*BalanceResponse, error)
+	FIM(ctx context.Context, prompt, suffix string, maxTokens int, temperature float64) (*FIMResponse, error)
+	Chat(ctx context.Context, messages []toolcall.Message, tools []toolcall.Tool) (*ChatResponse, error)
+}
+
+func NewClient(apiKey, baseURL string) Client {
+	// 默认重试配置
+	maxRetries := 600
+	retryDelay := 10 * time.Second
+
+	return &Deepseek{
+		apiKey:     apiKey,
+		baseURL:    baseURL,
+		maxRetries: maxRetries,
+		retryDelay: retryDelay,
+	}
+}
+
+// Models 获取模型列表
+func (c *Deepseek) Models() (*ModelsResponse, error) {
+	var resp ModelsResponse
+	err := c.doRequest("GET", "/models", nil, &resp)
+	return &resp, err
+}
+
+// Balance 获取余额信息
+func (c *Deepseek) Balance() (*BalanceResponse, error) {
+	var resp BalanceResponse
+	err := c.doRequest("GET", "/dashboard/billing/credit_grants", nil, &resp)
+	return &resp, err
+}
+
+// FIM 实现填充中间代码功能
+func (c *Deepseek) FIM(ctx context.Context, prompt, suffix string, maxTokens int, temperature float64) (*FIMResponse, error) {
+	// TODO: 实现FIM功能
+	return nil, fmt.Errorf("FIM功能暂未实现")
+}
+

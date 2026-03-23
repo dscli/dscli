@@ -1,7 +1,6 @@
 package dsc
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -11,25 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/toolcall"
 )
-
-type Deepseek struct {
-	apiKey     string
-	baseURL    string
-	httpClient *http.Client
-	maxRetries int           // 最大重试次数
-	retryDelay time.Duration // 重试延迟（指数退避的初始延迟）
-}
-
-type Client interface {
-	Models() (*ModelsResponse, error)
-	Balance() (*BalanceResponse, error)
-	FIM(ctx context.Context, prompt, suffix string, maxTokens int, temperature float64) (*FIMResponse, error)
-	Chat(ctx context.Context, messages []toolcall.Message, tools []toolcall.Tool) (*ChatResponse, error)
-}
 
 // httpClient 单例HTTP客户端，避免创建多个连接池
 // 超时设置为10分钟，适应DeepSeek API长处理时间的特性
@@ -37,19 +19,6 @@ var httpClient = &http.Client{
 	Timeout: 600 * time.Second,
 }
 
-func NewClient(apiKey, baseURL string) Client {
-	// 默认重试配置
-	maxRetries := 600
-	retryDelay := 10 * time.Second
-
-	return &Deepseek{
-		apiKey:     apiKey,
-		baseURL:    baseURL,
-		httpClient: httpClient,
-		maxRetries: maxRetries,
-		retryDelay: retryDelay,
-	}
-}
 
 // isRetryableError 判断错误是否可重试
 func isRetryableError(err error) bool {
@@ -114,7 +83,7 @@ func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (e
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		// Since error found
 		// 检查是否是网络错误
@@ -188,189 +157,4 @@ func (c *Deepseek) doRequest(method, path string, body any, result any) (err err
 
 	// 超过最大重试次数
 	return fmt.Errorf("经过%d次重试后仍然失败: %w", c.maxRetries, lastErr)
-}
-
-// Models 获取模型列表
-func (c *Deepseek) Models() (*ModelsResponse, error) {
-	var resp ModelsResponse
-	err := c.doRequest("GET", "/models", nil, &resp)
-	return &resp, err
-}
-
-// Balance 获取余额信息
-func (c *Deepseek) Balance() (*BalanceResponse, error) {
-	var resp BalanceResponse
-	err := c.doRequest("GET", "/dashboard/billing/credit_grants", nil, &resp)
-	return &resp, err
-}
-
-// Chat 发送聊天请求
-// Chat 发送聊天请求
-func (c *Deepseek) Chat(ctx context.Context, messages []toolcall.Message, tools []toolcall.Tool) (*ChatResponse, error) {
-	model := context.ContextValue(ctx, context.CurrentModelNameKey, context.ModelDeepseekChat)
-	insideShellExec := context.ContextValue(ctx, context.InsideShellExecKey, false)
-	stream := context.ContextValue(ctx, context.StreamKey, false)
-
-	// 如果是streaming请求，即使InsideShellExec为true也测试streaming逻辑
-	if insideShellExec && !stream {
-		return &ChatResponse{
-			ID: "id",
-			Choices: []Choice{
-				{
-					Message: toolcall.Message{Role: "assistant", Content: "yes, here I heard"},
-				},
-			},
-		}, nil
-	}
-
-	// 如果是streaming请求，使用streaming处理
-	if stream {
-		return c.chatStream(ctx, ChatRequest{
-			Model:    model,
-			Messages: messages,
-			Tools:    tools,
-			Stream:   true,
-		})
-	}
-
-	// 非streaming请求
-	maxTokens := 4096
-	maxAttempts := 2
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		req := ChatRequest{
-			Model:     model,
-			Messages:  messages,
-			Tools:     tools,
-			MaxTokens: maxTokens,
-			Stream:    false,
-		}
-
-		var resp ChatResponse
-		err := c.doRequest("POST", "/chat/completions", req, &resp)
-		if err != nil {
-			return nil, err
-		}
-
-		if len(resp.Choices) == 0 {
-			return nil, fmt.Errorf("no choices in response")
-		}
-
-		choice := resp.Choices[0]
-		if choice.FinishReason != "length" {
-			return &resp, nil
-		}
-		// 如果是 length，且还有尝试次数，则增加 maxTokens 继续
-		if attempt < maxAttempts {
-			maxTokens = 8192
-			// 注意：此时不应将本次截断的响应加入 messages，所以 messages 保持不变
-			continue
-		}
-		// 最后一次尝试仍 length，返回响应（即使被截断）
-		// 而不是返回错误，这样用户至少能看到部分响应
-		return &resp, nil
-	}
-	return nil, fmt.Errorf("unexpected loop exit")
-}
-
-// chatStream 处理streaming聊天请求
-func (c *Deepseek) chatStream(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
-	url := c.baseURL + "/chat/completions"
-
-	data, err := outfmt.JSONMarshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("序列化请求失败: %w", err)
-	}
-
-	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(data))
-	if err != nil {
-		return nil, fmt.Errorf("创建请求失败: %w", err)
-	}
-	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "text/event-stream")
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("网络请求失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API 返回错误状态码 %d: %s", resp.StatusCode, string(body))
-	}
-
-	// 检查Content-Type
-	contentType := resp.Header.Get("Content-Type")
-	if !strings.Contains(contentType, "text/event-stream") {
-		return nil, fmt.Errorf("非streaming响应，Content-Type: %s", contentType)
-	}
-
-	// 处理SSE流
-	reader := bufio.NewReader(resp.Body)
-	var fullContent strings.Builder
-
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return nil, fmt.Errorf("读取streaming响应失败: %w", err)
-		}
-
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		// 解析SSE格式: data: {...}
-		if strings.HasPrefix(line, "data: ") {
-			dataStr := line[6:] // 去掉"data: "前缀
-
-			if dataStr == "[DONE]" {
-				break
-			}
-
-			// 解析JSON数据
-			var chunk struct {
-				Choices []struct {
-					Delta struct {
-						Content string `json:"content"`
-					} `json:"delta"`
-				} `json:"choices"`
-			}
-
-			if err := json.Unmarshal([]byte(dataStr), &chunk); err != nil {
-				// 忽略解析错误，继续处理下一个数据块
-				continue
-			}
-
-			// 输出内容
-			if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
-				content := chunk.Choices[0].Delta.Content
-				fmt.Print(content)
-				fullContent.WriteString(content)
-			}
-		}
-	}
-
-	// 返回一个包含完整内容的响应，用于保存到数据库
-	return &ChatResponse{
-		ID: "streaming-response-" + time.Now().Format("20060102150405"),
-		Choices: []Choice{
-			{
-				Message: toolcall.Message{
-					Role:    "assistant",
-					Content: fullContent.String(),
-				},
-			},
-		},
-	}, nil
-}
-
-// FIM 实现填充中间代码功能
-func (c *Deepseek) FIM(ctx context.Context, prompt, suffix string, maxTokens int, temperature float64) (*FIMResponse, error) {
-	// TODO: 实现FIM功能
-	return nil, fmt.Errorf("FIM功能暂未实现")
 }
