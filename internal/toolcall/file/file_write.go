@@ -13,11 +13,12 @@ import (
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "write_file",
-		Description: `将内容写入文件。如果文件不存在则自动创建目录结构。
-- 首次写入：设置 append=false 覆盖或创建文件。
-- 追加内容：设置 append=true 在文件末尾追加。
-如果内容较大（如超过 8192 字符），请分多次调用本工具，每次写入部分内容，并使用 append=true 追加。
-建议每次写入的内容长度不超过 8192 字符（约 500 行普通文本）。`,
+		Description: `将内容写入文件。重要：如果内容超过 8192 字符，你必须分多次调用，每次写入部分内容，首次使用 append=false，后续使用 append=true 追加。支持自动创建目录结构。
+示例：若文件有 20000 字符，应分三次调用：
+1. append=false, content="第一部分(≤8192字符)"
+2. append=true, content="第二部分(≤8192字符)"
+3. append=true, content="剩余部分"
+`,
 		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",

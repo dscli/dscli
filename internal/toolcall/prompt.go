@@ -19,18 +19,14 @@ func GetSystemPrompt(ctx context.Context) string {
 	sm := &SegmentManager{}
 	prompt, err := sm.RenderSystemPrompt(ctx, modelID, domainID, config)
 	if err != nil || prompt == "" {
-		// 如果失败或为空，使用模板化的系统提示词
-		return GetEnhancedSystemPromptWithTemplate(ctx)
+		return ""
 	}
 	return prompt
 }
 
 // LoadPrompts 加载提示词
 func LoadPrompts(ctx context.Context) ([]Message, error) {
-	return []Message{{
-		Role:    "system",
-		Content: GetSystemPrompt(ctx),
-	}}, nil
+	return LoadEnhancedPrompts(ctx)
 }
 
 // GetCurrentDomainID 获取当前项目的领域ID

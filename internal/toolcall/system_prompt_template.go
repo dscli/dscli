@@ -126,9 +126,15 @@ const deepseekChatTemplate = `# 🎯 专业编程助手
 - **系统工具**：Shell、Python、SQLite、Web
 - **Issue管理**：创建、更新、跟踪任务
 
+## 输出 max_tokens = 8192 要求
+- **输出 tokens 禁止超过 8192**： 否则会被截断，终被丢弃
+- **当需要写入大文件时**：必须使用 write_file 工具分块写入
+  - **第一次调用**：append=false 创建或覆盖文件，content 包含开头部分（建议不超过 8000 字符）。
+  - **后续调用**：append=true 追加剩余内容，每次 content 不超过 8000 字符。
+
 ## 📋 质量要求
 - **代码简洁**：避免不必要的复杂性
-- **最佳实践**：遵循Go语言和项目规范
+- **最佳实践**：遵循项目语言和项目规范
 - **充分注释**：解释复杂逻辑和设计决策
 - **错误处理**：防御性编程，有意义的错误信息
 
@@ -144,9 +150,6 @@ const deepseekChatTemplate = `# 🎯 专业编程助手
 - **工具优先**：优先使用现有工具，避免重复造轮子
 
 ---
-
-**提示词版本**：v3.0.0（分层模块化架构）
-**使用提示**：如需查看完整工具文档，请使用 system_prompt 工具
 
 请基于以上信息，为用户提供专业的编程帮助。`
 
@@ -177,24 +180,8 @@ func (c *SystemPromptConfig) GeneratePromptWithTemplate() string {
 
 	prompt, err := template.Render(data)
 	if err != nil {
-		log.Printf("渲染模板失败: %v", err)
-		// 返回一个基本的提示词，而不是回退到字符串拼接
-		return "你是一个专业的编程助手。请基于当前环境提供帮助。"
+		panic(err)
 	}
 
 	return prompt
-}
-
-// GetEnhancedSystemPromptWithTemplate 获取使用模板的增强系统提示词
-func GetEnhancedSystemPromptWithTemplate(ctx context.Context) string {
-	config := NewSystemPromptConfig(ctx)
-	return config.GeneratePromptWithTemplate()
-}
-
-// LoadEnhancedPromptsWithTemplate 加载使用模板的增强提示词
-func LoadEnhancedPromptsWithTemplate(ctx context.Context) ([]Message, error) {
-	return []Message{{
-		Role:    "system",
-		Content: GetEnhancedSystemPromptWithTemplate(ctx),
-	}}, nil
 }

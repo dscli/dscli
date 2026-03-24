@@ -190,8 +190,7 @@ func GetTemplateSystemPrompt(ctx context.Context) string {
 	sm := &SegmentManager{}
 	prompt, err := sm.RenderSystemPrompt(ctx, modelID, domainID, config)
 	if err != nil || prompt == "" {
-		// 如果失败或为空，使用模板化的系统提示词
-		return GetEnhancedSystemPromptWithTemplate(ctx)
+		return ""
 	}
 
 	return prompt
