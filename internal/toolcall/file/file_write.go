@@ -13,28 +13,30 @@ import (
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "write_file",
-		Description: `将内容写入文件，如果文件不存在则创建，如果文件存在，append=false 覆盖，append=true 追加。
-支持创建目录结构。`,
+		Description: `将内容写入文件。如果文件不存在则自动创建目录结构。
+- 首次写入：设置 append=false（默认）覆盖或创建文件。
+- 追加内容：设置 append=true 在文件末尾追加。
+如果内容较大（如超过 8192 字符），请分多次调用本工具，每次写入部分内容，并使用 append=true 追加。建议每次写入的内容长度不超过 8192 字符（约 500 行普通文本）。`,
 		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "文件路径，如main.go",
+					"description": "文件路径",
 					"pattern":     toolcall.TitleLikePattern(128),
 				},
 				"content": map[string]any{
 					"type":        "string",
-					"description": "要新建或追加的内容，建议不超过4096个字符",
-					"pattern":     toolcall.ContentLikePattern(4096),
+					"description": "写入的内容",
+					"pattern":     toolcall.ContentLikePattern(8192),
 				},
 				"append": map[string]any{
 					"type":        "boolean",
-					"description": "是否以追加模式写入，默认为 false",
+					"description": "是否追加（默认 false）",
 				},
 			},
-			"required":             []string{"path", "content", "append"},
+			"required":             []string{"path", "content"},
 			"additionalProperties": false,
 		},
 		Category: "file_ops",

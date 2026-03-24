@@ -99,7 +99,7 @@ func (c *Deepseek) Models() (*ModelsResponse, error) {
 // Balance 获取余额信息
 func (c *Deepseek) Balance() (*BalanceResponse, error) {
 	var resp BalanceResponse
-	err := c.doRequest("GET", "/dashboard/billing/credit_grants", nil, &resp)
+	err := c.doRequest("GET", "/user/balance", nil, &resp)
 	return &resp, err
 }
 

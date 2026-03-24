@@ -151,7 +151,12 @@ func historyListRunE(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
+
 	filter, err := cmd.Flags().GetString("filter")
+	if err != nil {
+		return
+	}
+
 	wrt := outfmt.NewTabwrt()
 	defer wrt.Flush()
 	for _, hist := range history {
@@ -178,6 +183,9 @@ func historyLoadRunE(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 	filter, err := cmd.Flags().GetString("filter")
+	if err != nil {
+		return
+	}
 	wrt := outfmt.NewTabwrt()
 	defer wrt.Flush()
 	for i, hist := range history[0 : len(history)-1] {

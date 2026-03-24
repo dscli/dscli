@@ -38,8 +38,8 @@ func (c *Deepseek) Chat(ctx context.Context, messages []toolcall.Message, tools 
 	}
 
 	// 非streaming请求
-	maxTokens := 4096
-	maxAttempts := 2
+	maxTokens := 8192
+	maxAttempts := 16
 	attempts := []toolcall.Message{}
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		req := ChatRequest{
@@ -69,20 +69,35 @@ func (c *Deepseek) Chat(ctx context.Context, messages []toolcall.Message, tools 
 				outfmt.PrintContent(ctx, message.ReasoningContent, message.Content)
 				attempts = append(attempts, message)
 				choice.Message = MergeAttempts(attempts)
+				resp.Choices[0] = choice
 				return &resp, nil
 			}
 		}
 		// 如果是 length，且还有尝试次数，则增加 maxTokens 继续
 		if attempt < maxAttempts {
-			maxTokens = 8192
 			message := choice.Message
 			outfmt.PrintContent(ctx, message.ReasoningContent, message.Content)
 			message.ReasoningContent = ""
 			messages = append(messages, message)
 			attempts = append(attempts, message)
+			tcs := message.ToolCalls
+			tail := ""
+			for _, tc := range tcs {
+				tail = toolcall.TruncateTail(tc.Function.Arguments, 120)
+				headtail := toolcall.TruncateHeadTail(tc.Function.Arguments, 120)
+				outfmt.Printf("消息(%d)因max tokens截断: %q\n", len(tc.Function.Arguments), headtail)
+				messages = append(messages, toolcall.Message{
+					Role:       "tool",
+					ToolCallID: tc.ID,
+					Content: fmt.Sprintf(`Tool call arguments truncated. Received so far (end shown): %s
+Please continue generating the remaining part from where it stopped.
+Output only the missing JSON fragment, do not repeat the part you see above.`, tail),
+				})
+			}
 			messages = append(messages, toolcall.Message{
-				Role:    "user",
-				Content: "Output truncated. Continue from where it stopped. Output only the missing part, do not repeat.",
+				Role: "user",
+				Content: fmt.Sprintf(`Arguments truncated. Received so far (end shown): %s
+Continue generating from this point. Output only the missing part, do not repeat.`, tail),
 			})
 			continue
 		}
@@ -118,11 +133,19 @@ func MergeAttempts(attempts []toolcall.Message) (result toolcall.Message) {
 		for _, tc := range msg.ToolCalls {
 			if existing, ok := toolCallMap[tc.ID]; ok {
 				// 同一个 ID，拼接 arguments
-				existing.Function.Arguments += tc.Function.Arguments
+				existing.Function.Arguments = fmt.Sprintf("%s%s", existing.Function.Arguments, tc.Function.Arguments)
+				toolCallMap[tc.ID] = existing
 			} else {
 				// 新 ID，复制一份
 				order = append(order, tc.ID)
-				clone := tc
+				clone := toolcall.ToolCall{
+					ID:   tc.ID,
+					Type: tc.Type,
+					Function: toolcall.ToolCallFunction{
+						Name:      tc.Function.Name,
+						Arguments: tc.Function.Arguments,
+					},
+				}
 				toolCallMap[tc.ID] = &clone
 			}
 		}
