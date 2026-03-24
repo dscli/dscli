@@ -60,7 +60,9 @@ func (c *Deepseek) Chat(ctx context.Context, messages []toolcall.Message, tools 
 
 		choice := resp.Choices[0]
 		if choice.FinishReason != "length" {
-			outfmt.Printf("%s正在更正...\n", model)
+			if attempt > 1 {
+				outfmt.Printf("%s已完成更正并返回完整响应。\n", model)
+			}
 			return &resp, nil
 		}
 		// 如果是 length，且还有尝试次数，则增加 maxTokens 继续
