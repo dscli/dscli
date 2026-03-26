@@ -65,7 +65,7 @@ func init() {
 }
 
 // handlePython 执行Python脚本
-func handlePython(ctx context.Context, args ToolArgs) (out string, err error) {
+func handlePython(ctx context.Context, args ToolArgs) (out string, user string, err error) {
 	script := ToolArgsValue(args, "script", "")
 	summary := ToolArgsValue(args, "summary", "")
 

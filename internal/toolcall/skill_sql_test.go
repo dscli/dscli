@@ -1,8 +1,20 @@
 package toolcall
 
-import "testing"
+import (
+	"os"
+	"testing"
+
+	"gitcode.com/dscli/dscli/internal/sqlite"
+)
 
 func TestGetProjectSkills(t *testing.T) {
+	dbPath := sqlite.GetDBPath()
+	testPath := dbPath + ".test.db"
+	sqlite.SetDBPath(testPath)
+	t.Cleanup(func() {
+		sqlite.SetDBPath(dbPath)
+		os.RemoveAll(testPath)
+	})
 	goModernizeSkill := &Skill{
 		Name:        "GoModernize",
 		Description: "suggest simplifications to Go code, using modern language and library features",
@@ -34,7 +46,8 @@ modernize -fix ./...
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(skills) != 1 {
-		t.Fatal(skills)
+
+	if l := len(skills); l != 1 {
+		t.Fatal(l)
 	}
 }

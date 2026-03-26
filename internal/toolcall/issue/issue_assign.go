@@ -8,28 +8,30 @@ import (
 )
 
 // handleIssueAssign 处理分配issue（Tool Calling）
-func handleIssueAssign(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+func handleIssueAssign(ctx context.Context, args toolcall.ToolArgs) (output string, user string, err error) {
 	number := toolcall.ToolArgsValue(args, "number", 0)
 	if number == 0 {
-		return "", fmt.Errorf("必须提供issue编号")
+		err = fmt.Errorf("必须提供issue编号")
+		return
 	}
 
 	username := toolcall.ToolArgsValue(args, "username", "")
 	if username == "" {
-		return "", fmt.Errorf("必须提供用户名")
+		err = fmt.Errorf("必须提供用户名")
+		return
 	}
 
 	issue, err := AssignIssue(ctx, number, username)
 	if err != nil {
-		return "", err
+		return
 	}
 
 	assigneeInfo := username
 	if issue.Assignee != nil && issue.Assignee.Name != "" {
 		assigneeInfo = fmt.Sprintf("%s (%s)", issue.Assignee.Name, issue.Assignee.Login)
 	}
-
-	return fmt.Sprintf("✅ Issue #%s 已分配给用户: %s", issue.Number, assigneeInfo), nil
+	output = fmt.Sprintf("✅ Issue #%s 已分配给用户: %s", issue.Number, assigneeInfo)
+	return
 }
 
 func init() {

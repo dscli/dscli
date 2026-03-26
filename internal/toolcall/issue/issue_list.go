@@ -9,21 +9,23 @@ import (
 )
 
 // handleIssueList 处理issue列表查询（Tool Calling）
-func handleIssueList(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+func handleIssueList(ctx context.Context, args toolcall.ToolArgs) (output string, user string, err error) {
 	state := toolcall.ToolArgsValue(args, "state", "open")
 
 	// 验证状态参数
 	if state != "open" && state != "closed" && state != "all" {
-		return "", fmt.Errorf("状态必须是 'open'、'closed' 或 'all'，收到: %s", state)
+		err = fmt.Errorf("状态必须是 'open'、'closed' 或 'all'，收到: %s", state)
+		return
 	}
 
 	issues, err := ListIssues(ctx, state)
 	if err != nil {
-		return "", err
+		return
 	}
 
 	if len(issues) == 0 {
-		return fmt.Sprintf("没有找到状态为 '%s' 的issues", state), nil
+		output = fmt.Sprintf("没有找到状态为 '%s' 的issues", state)
+		return
 	}
 
 	// 构建结果
@@ -65,8 +67,8 @@ func handleIssueList(ctx context.Context, args toolcall.ToolArgs) (string, error
 		}
 		result.WriteString("\n")
 	}
-
-	return result.String(), nil
+	output = result.String()
+	return
 }
 
 func init() {

@@ -8,18 +8,20 @@ import (
 )
 
 // handleIssueClose 处理关闭issue（Tool Calling）
-func handleIssueClose(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+func handleIssueClose(ctx context.Context, args toolcall.ToolArgs) (output string, user string, err error) {
 	number := toolcall.ToolArgsValue(args, "number", 0)
 	if number == 0 {
-		return "", fmt.Errorf("必须提供issue编号")
+		err = fmt.Errorf("必须提供issue编号")
+		return
 	}
 
 	issue, err := CloseIssue(ctx, number)
 	if err != nil {
-		return "", err
+		return
 	}
 
-	return fmt.Sprintf("✅ Issue #%s 已关闭!\n当前状态: %s", issue.Number, issue.State), nil
+	output = fmt.Sprintf("✅ Issue #%s 已关闭!\n当前状态: %s", issue.Number, issue.State)
+	return
 }
 
 func init() {

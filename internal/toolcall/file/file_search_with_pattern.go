@@ -89,15 +89,17 @@ func init() {
 
 // handleSearchFileWithPattern 搜索文件中匹配指定模式的行，并显示上下文
 // 输出格式与 awk 类似，保持一致性
-func handleSearchFileWithPattern(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+func handleSearchFileWithPattern(ctx context.Context, args toolcall.ToolArgs) (result string, user string, err error) {
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
-		return "", fmt.Errorf("parameter error: no path specified")
+		err = fmt.Errorf("parameter error: no path specified")
+		return
 	}
 
 	pattern := toolcall.ToolArgsValue(args, "pattern", "")
 	if pattern == "" {
-		return "", fmt.Errorf("parameter error: no pattern specified")
+		err = fmt.Errorf("parameter error: no pattern specified")
+		return
 	}
 
 	fullPath := ResolvePath(ctx, path)
@@ -105,7 +107,8 @@ func handleSearchFileWithPattern(ctx context.Context, args toolcall.ToolArgs) (s
 	// 解析上下文行数参数
 	contextLines := toolcall.ToolArgsValue(args, "context_lines", 5) // 默认上下文行数
 	if contextLines < 0 {
-		return "", fmt.Errorf("context_lines must be non-negative")
+		err = fmt.Errorf("context_lines must be non-negative")
+		return
 	}
 
 	// 解析是否区分大小写
@@ -114,13 +117,15 @@ func handleSearchFileWithPattern(ctx context.Context, args toolcall.ToolArgs) (s
 	// 解析最大匹配数
 	maxMatches := toolcall.ToolArgsValue(args, "max_matches", 0) // 0表示无限制
 	if maxMatches < 0 {
-		return "", fmt.Errorf("max_matches must be non-negative")
+		err = fmt.Errorf("max_matches must be non-negative")
+		return
 	}
 
 	// 读取文件
 	file, err := os.Open(fullPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to open file: %w", err)
+		err = fmt.Errorf("failed to open file: %w", err)
+		return
 	}
 	defer file.Close()
 
@@ -130,8 +135,9 @@ func handleSearchFileWithPattern(ctx context.Context, args toolcall.ToolArgs) (s
 	for scanner.Scan() {
 		allLines = append(allLines, scanner.Text())
 	}
-	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("failed to read file line by line: %w", err)
+	if err = scanner.Err(); err != nil {
+		err = fmt.Errorf("failed to read file line by line: %w", err)
+		return
 	}
 
 	// 准备搜索
@@ -161,7 +167,7 @@ func handleSearchFileWithPattern(ctx context.Context, args toolcall.ToolArgs) (s
 	// 如果没有匹配项
 	if len(matches) == 0 {
 		outfmt.Notice("在文件 \"%s\" 中搜索模式 \"%s\"，未找到匹配项", path, pattern)
-		return "", nil
+		return
 	}
 
 	// 构建结果
@@ -205,11 +211,11 @@ func handleSearchFileWithPattern(ctx context.Context, args toolcall.ToolArgs) (s
 		prevEndCtx = endCtx
 	}
 
-	result := resultBuilder.String()
+	result = resultBuilder.String()
 
 	// 记录日志
 	outfmt.Notice("在文件 \"%s\" 中搜索模式 \"%s\"，找到 %d 个匹配项，显示上下文 ±%d 行",
 		path, pattern, len(matches), contextLines)
 
-	return result, nil
+	return
 }

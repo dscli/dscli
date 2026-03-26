@@ -259,25 +259,29 @@ func init() {
 	})
 }
 
-func handleWriteCodeSection(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+func handleWriteCodeSection(ctx context.Context, args toolcall.ToolArgs) (output string, user string, err error) {
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
-		return "", fmt.Errorf("参数 'path' 缺失")
+		err = fmt.Errorf("参数 'path' 缺失")
+		return
 	}
 
 	// selector, ok := args["selector"]
 	selector := toolcall.ToolArgsValue(args, "selector", "")
 	if selector == "" {
-		return "", fmt.Errorf("参数 'selector' 缺失")
+		err = fmt.Errorf("参数 'selector' 缺失")
+		return
 	}
 	newContent := toolcall.ToolArgsValue(args, "new_content", "")
 	if newContent == "" {
-		return "", fmt.Errorf("参数 'new_content' 缺失")
+		err = fmt.Errorf("参数 'new_content' 缺失")
+		return
 	}
 
 	PrintWriteSession(path, selector)
 
-	return writeCodeSection(ctx, path, selector, newContent)
+	output, err = writeCodeSection(ctx, path, selector, newContent)
+	return
 }
 
 func PrintWriteSession(path string, selector string) {

@@ -57,7 +57,7 @@ func init() {
 }
 
 // handleGitAm 处理git am命令（apply patch from mail）
-func handleGitAm(ctx context.Context, args ToolArgs) (string, error) {
+func handleGitAm(ctx context.Context, args ToolArgs) (result string, user string, err error) {
 	patch := ToolArgsValue(args, "patch", "")
 	options := ToolArgsValue(args, "options", "")
 
@@ -67,7 +67,8 @@ func handleGitAm(ctx context.Context, args ToolArgs) (string, error) {
 	// 如果没有提供patch和options，返回错误
 	if patch == "" && options == "" {
 		outfmt.Error("必须提供patch内容或options参数")
-		return "", fmt.Errorf("必须提供patch内容或options参数")
+		err = fmt.Errorf("必须提供patch内容或options参数")
+		return
 	}
 
 	// 构建git am命令
@@ -113,11 +114,13 @@ func handleGitAm(ctx context.Context, args ToolArgs) (string, error) {
 		ctx = context.WithValue(ctx, context.ShellArgsKey, gitArgs)
 
 		PrintGitCommand(gitArgs...)
-		return ShellExec(ctx, patch)
+		result, err = ShellExec(ctx, patch)
+		return
 	} else {
 		// 如果没有patch内容，直接执行git am命令（用于--continue等操作）
 		outfmt.Info("执行git am命令: %s", strings.Join(gitArgs, " "))
 		PrintGitCommand(gitArgs...)
-		return gitCommand(ctx, gitArgs...)
+		result, err = gitCommand(ctx, gitArgs...)
+		return
 	}
 }

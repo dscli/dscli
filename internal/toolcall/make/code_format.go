@@ -45,7 +45,7 @@ func init() {
 }
 
 // handleCodeFormat 处理代码格式化请求
-func handleCodeFormat(ctx context.Context, args ToolArgs) (output string, err error) {
+func handleCodeFormat(ctx context.Context, args ToolArgs) (output string, user string, err error) {
 	// 检查是否提供了自定义命令
 	command := ToolArgsValue(args, "command", "")
 
@@ -64,7 +64,9 @@ func handleCodeFormat(ctx context.Context, args ToolArgs) (output string, err er
 		fmt.Fprintf(&sb, "📝 使用的命令: %s\n", command)
 		fmt.Fprintf(&sb, "💥 错误信息: %v\n", err)
 		fmt.Fprintf(&sb, "📄 输出内容:\n%s", output)
-		return sb.String(), fmt.Errorf("代码格式化失败")
+		output = sb.String()
+		err = fmt.Errorf("代码格式化失败")
+		return
 	}
 
 	// 构建成功信息
@@ -77,5 +79,6 @@ func handleCodeFormat(ctx context.Context, args ToolArgs) (output string, err er
 	fmt.Fprintf(&sb, "2. 使用 git diff 查看格式化后的变更\n")
 	fmt.Fprintf(&sb, "3. 使用 make_test() 确保格式化后测试仍然通过\n")
 
-	return sb.String(), nil
+	output = sb.String()
+	return
 }

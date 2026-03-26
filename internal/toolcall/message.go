@@ -79,16 +79,14 @@ func ToolCallsID(tcs []ToolCall) string {
 
 // UpdateContent update message content
 func UpdateContent(ctx context.Context, id int64, content string) (err error) {
-	sessionID := GetCurrentSessionID(ctx)
-	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	db, err := sqlite.OpenDB()
 	if err != nil {
 		return
 	}
 	defer db.Close()
 	res, err := db.ExecContext(ctx,
-		`UPDATE messages SET content = ? WHERE id = ? AND session_id = ? AND model_id = ?`,
-		content, id, sessionID, modelID)
+		`UPDATE messages SET content = ? WHERE id = ?`,
+		content, id)
 	if err != nil {
 		return
 	}
@@ -115,8 +113,6 @@ func ToSQLNullString(tcs []ToolCall) (toolCalls sql.NullString) {
 
 // UpdateToolCalls update message content
 func UpdateToolCalls(ctx context.Context, id int64, tcs []ToolCall) (err error) {
-	sessionID := GetCurrentSessionID(ctx)
-	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	db, err := sqlite.OpenDB()
 	if err != nil {
 		return
@@ -124,8 +120,8 @@ func UpdateToolCalls(ctx context.Context, id int64, tcs []ToolCall) (err error) 
 	defer db.Close()
 	toolCalls := ToSQLNullString(tcs)
 	res, err := db.ExecContext(ctx,
-		`UPDATE messages SET tool_calls = ? WHERE id = ? AND session_id = ? AND model_id = ?`,
-		&toolCalls, id, sessionID, modelID)
+		`UPDATE messages SET tool_calls = ? WHERE id = ?`,
+		&toolCalls, id)
 	if err != nil {
 		return
 	}
@@ -142,16 +138,14 @@ func UpdateToolCalls(ctx context.Context, id int64, tcs []ToolCall) (err error) 
 
 // UpdateHistory update message session_id to 0
 func UpdateHistory(ctx context.Context, id int64) (err error) {
-	sessionID := GetCurrentSessionID(ctx)
-	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	db, err := sqlite.OpenDB()
 	if err != nil {
 		return
 	}
 	defer db.Close()
 	_, err = db.ExecContext(ctx,
-		`UPDATE messages SET session_id = 0 WHERE id = ? AND session_id = ? and model_id = ?`,
-		id, sessionID, modelID)
+		`UPDATE messages SET session_id = 0 WHERE id = ?`,
+		id)
 	if err != nil {
 		return
 	}
@@ -159,8 +153,6 @@ func UpdateHistory(ctx context.Context, id int64) (err error) {
 }
 
 func ShowMessage(ctx context.Context, id int64) (message *Message, err error) {
-	sessionID := GetCurrentSessionID(ctx)
-	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	db, err := sqlite.OpenDB()
 	if err != nil {
 		return
@@ -171,7 +163,7 @@ func ShowMessage(ctx context.Context, id int64) (message *Message, err error) {
 	message = &Message{}
 	err = db.QueryRowContext(ctx, `SELECT id, session_id, role, content, tool_call_id, `+
 		`tool_calls, created_at, model_id, reasoning_content FROM messages WHERE `+
-		`session_id = ? AND model_id = ? AND id = ?`, sessionID, modelID, id).Scan(&message.ID,
+		`id = ?`, id).Scan(&message.ID,
 		&message.SessionID, &message.Role, &message.Content, &toolCallID,
 		&toolCalls, &message.CreatedAt, &message.ModelID, &message.ReasoningContent)
 	if err != nil {
@@ -450,7 +442,7 @@ func SaveMessages(ctx context.Context, msgs ...Message) error {
 			toolCallID.Valid = true
 		}
 		if len(m.ToolCalls) > 0 {
-			var data json.RawMessage
+			var data []byte
 			data, err = outfmt.JSONMarshal(&m.ToolCalls)
 			if err != nil {
 				return err

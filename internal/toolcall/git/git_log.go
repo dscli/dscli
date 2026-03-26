@@ -30,7 +30,7 @@ func init() {
 }
 
 // handleGitLog git日志
-func handleGitLog(ctx context.Context, args ToolArgs) (string, error) {
+func handleGitLog(ctx context.Context, args ToolArgs) (result string, user string, err error) {
 	maxCount := ToolArgsValue(args, "max_count", 10)
 
 	// 显示操作标题
@@ -39,19 +39,20 @@ func handleGitLog(ctx context.Context, args ToolArgs) (string, error) {
 	outfmt.Info("显示最近 %d 条提交记录", maxCount)
 
 	gitArgs := []string{"log", "--oneline", "--graph", "--decorate", fmt.Sprintf("-%d", maxCount)}
-	out, err := gitCommand(ctx, gitArgs...)
+	result, err = gitCommand(ctx, gitArgs...)
 	if err != nil {
-		return "", err
+		return
 	}
 
 	// 格式化输出
-	if out == "" {
+	if result == "" {
 		outfmt.Warn("没有提交记录")
-		return "没有提交记录", nil
+		result, err =  "没有提交记录", nil
+		return
 	}
 
 	// 解析提交记录
-	lines := strings.Split(strings.TrimSpace(out), "\n")
+	lines := strings.Split(strings.TrimSpace(result), "\n")
 
 	outfmt.PrintSubSection("提交历史")
 	for i, line := range lines {
@@ -68,5 +69,5 @@ func handleGitLog(ctx context.Context, args ToolArgs) (string, error) {
 	outfmt.PrintSubSection("统计信息")
 	outfmt.Info("共显示 %d 条提交记录", len(lines))
 
-	return out, nil
+	return
 }

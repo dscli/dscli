@@ -45,7 +45,7 @@ func init() {
 }
 
 // handleMakeTest 处理测试运行请求
-func handleMakeTest(ctx context.Context, args ToolArgs) (output string, err error) {
+func handleMakeTest(ctx context.Context, args ToolArgs) (output string, user string, err error) {
 	// 检查是否提供了自定义命令
 	userCmd := ToolArgsValue(args, "command", "")
 

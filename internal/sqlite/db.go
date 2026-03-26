@@ -16,12 +16,12 @@ var (
 	dbPath = func() string {
 		configDir := context.GetConfigDir()
 		isTesting := context.IsTesting()
+		insideShellExec := os.Getenv("InsideShellExec")
 		dbname := "sqlite.db"
-		if isTesting {
+		if isTesting && insideShellExec != "" {
 			dbname = fmt.Sprintf("%s.db", filepath.Base(os.Args[0]))
 		}
 		path := filepath.Join(configDir, dbname)
-		insideShellExec := os.Getenv("InsideShellExec")
 		if insideShellExec != "" {
 			dir := filepath.Join(configDir, "inside-shell-exec")
 			err := os.MkdirAll(dir, 0o755)
@@ -124,6 +124,7 @@ func OpenDB(elem ...string) (*sql.DB, error) {
 func SetDBPath(path string) {
 	if path != "" {
 		dbPath = path
+		dbOnce = sync.Once{}
 	}
 }
 

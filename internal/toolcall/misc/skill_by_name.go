@@ -8,7 +8,7 @@ import (
 )
 
 // handleSkillByName 处理Skill工具调用
-func handleSkillByName(ctx context.Context, args ToolArgs) (content string, err error) {
+func handleSkillByName(ctx context.Context, args ToolArgs) (content string, user string, err error) {
 	// 获取参数
 	skillName := ToolArgsValue(args, "skill_name", "")
 	if skillName == "" {
@@ -31,7 +31,8 @@ func handleSkillByName(ctx context.Context, args ToolArgs) (content string, err 
 	SafeAsyncRecordUsage(skill.ID, projectRoot)
 	// 格式化输出
 
-	return skill.Content, nil
+	content = skill.Content
+	return
 }
 
 func init() {

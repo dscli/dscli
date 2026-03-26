@@ -47,14 +47,15 @@ func init() {
 }
 
 // handleGitAmend 处理Git amend操作
-func handleGitAmend(ctx context.Context, args ToolArgs) (string, error) {
+func handleGitAmend(ctx context.Context, args ToolArgs) (result string, user string, err error) {
 	// 显示操作标题
 	PrintGitSection("修改提交")
 
 	// 安全检查
 	if safe, reason := checkAmendSafety(ctx); !safe {
 		outfmt.Error("安全检查失败: %s", reason)
-		return "", fmt.Errorf("amend操作不安全: %s", reason)
+		err = fmt.Errorf("amend操作不安全: %s", reason)
+		return
 	}
 
 	// 获取参数
@@ -75,25 +76,27 @@ func handleGitAmend(ctx context.Context, args ToolArgs) (string, error) {
 	cmd := exec.Command("git", gitArgs...)
 	cmd.Dir = context.ProjectRoot
 	output, err := cmd.CombinedOutput()
-	out := string(output)
+	result = string(output)
 
 	if err != nil {
 		outfmt.Error("Git提交修改失败: %v", err)
-		if out != "" {
-			outfmt.Error("输出: %s", out)
+		if result != "" {
+			outfmt.Error("输出: %s", result)
 		}
-		return "", fmt.Errorf("git commit --amend失败: %v", err)
+		err = fmt.Errorf("git commit --amend失败: %v", err)
+		return
 	}
 
 	// 如果输出为空，显示成功消息
-	if out == "" {
+	if result == "" {
 		outfmt.Success("提交修改成功")
-		return "Git提交修改成功", nil
+		result = "Git提交修改成功"
+		return
 	}
 
 	// 提取提交哈希（如果可能）
-	if strings.Contains(out, "[") && strings.Contains(out, "]") {
-		for line := range strings.SplitSeq(out, "\n") {
+	if strings.Contains(result, "[") && strings.Contains(result, "]") {
+		for line := range strings.SplitSeq(result, "\n") {
 			if strings.Contains(line, "[") && strings.Contains(line, "]") {
 				outfmt.Success("提交修改成功: %s", strings.TrimSpace(line))
 				break
@@ -101,7 +104,7 @@ func handleGitAmend(ctx context.Context, args ToolArgs) (string, error) {
 		}
 	}
 
-	return out, nil
+	return
 }
 
 // checkAmendSafety 检查amend操作的安全性

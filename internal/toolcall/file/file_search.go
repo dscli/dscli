@@ -35,7 +35,7 @@ func init() {
 }
 
 // handleSearchFiles 搜索文件
-func handleSearchFiles(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+func handleSearchFiles(ctx context.Context, args toolcall.ToolArgs) (output string, user string, err error) {
 	pattern := toolcall.ToolArgsValue(args, "pattern", "")
 	content := toolcall.ToolArgsValue(args, "content", "")
 	// 使用find和grep命令实现搜索
@@ -67,5 +67,6 @@ func handleSearchFiles(ctx context.Context, args toolcall.ToolArgs) (string, err
 	// 处理空结果
 	script += ` || echo "未找到匹配的文件"`
 
-	return toolcall.RunShell(ctx, script)
+	output, err = toolcall.RunShell(ctx, script)
+	return
 }

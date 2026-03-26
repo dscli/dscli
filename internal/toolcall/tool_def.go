@@ -2,6 +2,7 @@ package toolcall
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"time"
@@ -16,11 +17,33 @@ type ToolDef struct {
 	Parameters  map[string]any
 	Category    string
 	Timeout     time.Duration // 工具执行超时时间
-	Handler     func(ctx context.Context, args ToolArgs) (string, error)
+	Handler     func(ctx context.Context, args ToolArgs) (string, string, error)
 }
 
 // ToolArgs 参数定义
 type ToolArgs map[string]any
+
+func (args *ToolArgs) Unmarshal() (err error) {
+	rawArgs := ToolArgsValue(*args, ".rawArgs", "")
+	if rawArgs != "" {
+		data := []byte(rawArgs)
+		l := len(data)
+		i:=l-1
+		for ; i>1; i--{
+			if data[i] == 'n' && data[i-1] == '\\'{
+				break
+			}
+		}
+		data = data[0:i+1]
+		data = append(data, '"', '}')
+		err = json.Unmarshal(data, args)
+		if err != nil {
+			err = fmt.Errorf("failed to unmarshal from raw args")
+			return
+		}
+	}
+	return
+}
 
 // ToolArgsValue 安全获取类型化参数值
 func ToolArgsValue[T any](args ToolArgs, key string, defaultValue T) T {

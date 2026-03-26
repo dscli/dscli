@@ -39,7 +39,7 @@ func init() {
 // 支持参数：
 //
 //	revision: 指定commit哈希或-n格式（如-1表示最新提交），默认为"-1"
-func handleGitFormatPatch(ctx context.Context, args ToolArgs) (string, error) {
+func handleGitFormatPatch(ctx context.Context, args ToolArgs) (result string, user string, err error) {
 	// 获取revision参数，默认为"-1"（最新提交）
 	revision := ToolArgsValue(args, "revision", "")
 
@@ -60,19 +60,21 @@ func handleGitFormatPatch(ctx context.Context, args ToolArgs) (string, error) {
 	}
 
 	// 执行git命令
-	out, err := gitCommand(ctx, gitArgs...)
+	result, err = gitCommand(ctx, gitArgs...)
 	if err != nil {
-		return "", fmt.Errorf("git format-patch failed: %w", err)
+		err = fmt.Errorf("git format-patch failed: %w", err)
+		return
 	}
 
 	// 如果输出为空，返回提示信息
-	if out == "" {
+	if result == "" {
 		outfmt.Warn("git format-patch成功但没有输出（可能没有变更？）")
-		return "git format-patch succeed without output (maybe no changes?)", nil
+		result = "git format-patch succeed without output (maybe no changes?)"
+		return
 	}
 
 	// 解析patch内容
-	lines := strings.Split(strings.TrimSpace(out), "\n")
+	lines := strings.Split(strings.TrimSpace(result), "\n")
 
 	outfmt.PrintSubSection("Patch信息")
 
@@ -95,7 +97,7 @@ func handleGitFormatPatch(ctx context.Context, args ToolArgs) (string, error) {
 
 	// 显示patch统计
 	outfmt.PrintSubSection("Patch统计")
-	diffStats := analyzeDiffStats(out)
+	diffStats := analyzeDiffStats(result)
 	outfmt.Info("Patch包含 %d 个文件", diffStats.files)
 	outfmt.Success("新增行: %d", diffStats.additions)
 	outfmt.Error("删除行: %d", diffStats.deletions)
@@ -103,5 +105,5 @@ func handleGitFormatPatch(ctx context.Context, args ToolArgs) (string, error) {
 
 	// 显示完整的patch内容
 	outfmt.PrintSubSection("完整Patch内容")
-	return out, nil
+	return
 }

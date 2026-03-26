@@ -29,16 +29,18 @@ func init() {
 }
 
 // handleIssueReopen 处理重新打开issue（Tool Calling）
-func handleIssueReopen(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+func handleIssueReopen(ctx context.Context, args toolcall.ToolArgs) (output string, user string, err error) {
 	number := toolcall.ToolArgsValue(args, "number", 0)
 	if number == 0 {
-		return "", fmt.Errorf("必须提供issue编号")
+		err = fmt.Errorf("必须提供issue编号")
+		return
 	}
 
 	issue, err := ReopenIssue(ctx, number)
 	if err != nil {
-		return "", err
+		return
 	}
 
-	return fmt.Sprintf("✅ Issue #%s 已重新打开!\n当前状态: %s", issue.Number, issue.State), nil
+	output = fmt.Sprintf("✅ Issue #%s 已重新打开!\n当前状态: %s", issue.Number, issue.State)
+	return
 }

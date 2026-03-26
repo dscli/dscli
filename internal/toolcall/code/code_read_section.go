@@ -210,15 +210,18 @@ func init() {
 	})
 }
 
-func handleReadCodeSection(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+func handleReadCodeSection(ctx context.Context, args toolcall.ToolArgs) (result string, user string, err error) {
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
-		return "", fmt.Errorf("参数 'path' 缺失")
+		result, err =  "", fmt.Errorf("参数 'path' 缺失")
+		return
 	}
 	selector := toolcall.ToolArgsValue(args, "selector", "")
 	if selector == "" {
-		return "", fmt.Errorf("参数 'selector' 缺失")
+		result, err = "", fmt.Errorf("参数 'selector' 缺失")
+		return
 	}
 	outfmt.Printf("读取%s文件代码片段%s\n", path, selector)
-	return readCodeSection(ctx, path, selector)
+	result, err = readCodeSection(ctx, path, selector)
+	return
 }

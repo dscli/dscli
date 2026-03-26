@@ -143,6 +143,13 @@ func RegisterTool(tool ToolDef) {
 	toolRegistry[name] = tool
 }
 
+func GetToolDef(ctx context.Context, toolName string) (tool ToolDef, ok bool) {
+	toolRegistryRWMutex.RLock()
+	defer toolRegistryRWMutex.RUnlock()
+	tool, ok = toolRegistry[toolName]
+	return
+}
+
 // GetAllTools 获取所有工具定义（用于API调用）
 func GetAllTools(ctx context.Context) []Tool {
 	toolRegistryRWMutex.RLock()
@@ -173,39 +180,61 @@ func HandleToolCalls(ctx context.Context, tcs []ToolCall) (inputs []Message) {
 	for _, tc := range tcs {
 		id := tc.ID
 		// 使用新的工具调用处理器
-		result, err := HandleToolCall(ctx, tc.Function.Name, []byte(tc.Function.Arguments))
+		result, user, err := HandleToolCall(ctx, tc.Function.Name, tc.Function.Arguments)
 		if err != nil {
 			// But we still need to tell the result to assistant
-			result = err.Error()
+			result = fmt.Sprintf("result: %s, with error: %s", result, err.Error())
 		}
+
 		input := Message{
 			Role:       "tool",
 			ToolCallID: id,
 			Content:    result,
 		}
-		err = SaveMessages(ctx, input)
-		if err != nil {
+
+		saveErr := SaveMessages(ctx, input)
+
+		if saveErr != nil {
 			outfmt.Debug("failed to save: %v", err)
 		}
+
 		inputs = append(inputs, input)
+		if user != "" {
+			input = Message{
+				Role:    "user",
+				Content: fmt.Sprintf("伴随tool_call_id=%s有用户命令，请认真执行:\n%s", id, user),
+			}
+			outfmt.PrintContent(ctx, "", input.Content)
+			saveErr = SaveMessages(ctx, input)
+			if saveErr != nil {
+				outfmt.Debug("failed to save: %v", err)
+			}
+			inputs = append(inputs, input)
+		}
 
 	}
 	return inputs
 }
 
 // HandleToolCall 处理工具调用（带统计和超时）
-func HandleToolCall(ctx context.Context, toolName string, argsRaw json.RawMessage) (string, error) {
+func HandleToolCall(ctx context.Context, toolName string, argsRaw string) (result string, user string, err error) {
 	// 获取工具处理器
-	tool, ok := toolRegistry[toolName]
+	tool, ok := GetToolDef(ctx, toolName)
 	if !ok {
-		return "", fmt.Errorf("未知工具: %s", toolName)
+		return "", "", fmt.Errorf("未知工具: %s", toolName)
 	}
+
+	truncated := context.ContextValue(ctx, context.FinishReasonLengthKey, false)
 	args := ToolArgs{}
-	if err := json.Unmarshal(argsRaw, &args); err != nil {
-		n := len(argsRaw)
-		if n > 80 {
-			input := string(argsRaw)
-			notice := fmt.Sprintf(`
+	if truncated {
+		outfmt.Printf("消息已截断: %s\n", TruncateHeadTail(argsRaw, 40))
+		args[".argsRaw"] = argsRaw
+	} else {
+		if err := json.Unmarshal([]byte(argsRaw), &args); err != nil {
+			n := len(argsRaw)
+			if n > 80 {
+				input := string(argsRaw)
+				notice := fmt.Sprintf(`
 --------IMPORTANT-------NOTICE-----IMPORTANT----------
 Looks you are using write_file tool to write large file
 (around %d characters), you can seperate the file into several parts,
@@ -213,23 +242,24 @@ Looks you are using write_file tool to write large file
 use append = true to append the left parts one by one IN ORDER. 
 DO NOT MISORDER! THIS UNMARSHAL CONTENT WILL BE DISCARD!
 -------------------------NOTICE------------------------`, n)
-			err = fmt.Errorf(`failed to unmarshal arguments: %w, below `+
-				`is the details about raw argument tool %q received`+
-				` which lead error:
+				err = fmt.Errorf(`failed to unmarshal arguments: %w, below `+
+					`is the details about raw argument tool %q received`+
+					` which lead error:
 - the length of the argument string: %d
 - the last 40 bytes of the argument string: %q
 - the first 40 bytes of the argument string: %q
 
 %s`, err, toolName, n,
-				TruncateHead(input, 40), TruncateTail(input, 40), notice)
-		} else {
-			err = fmt.Errorf(`failed to unmarshal arguments: %w, below `+
-				`is the details about the raw argument tool %q received, 
+					TruncateHead(input, 40), TruncateTail(input, 40), notice)
+			} else {
+				err = fmt.Errorf(`failed to unmarshal arguments: %w, below `+
+					`is the details about the raw argument tool %q received, 
 which lead to the error:
 - the length of the argument string：%d
 - the argument raw：%q`, err, toolName, n, string(argsRaw))
+			}
+			return "", "", err
 		}
-		return "", err
 	}
 
 	// 创建带超时的context（如果工具设置了超时）
@@ -255,7 +285,7 @@ which lead to the error:
 	outfmt.Printf("🔄 正在执行 %s...\n", displayName)
 
 	// 执行工具
-	result, err := tool.Handler(ctx, args)
+	result, user, err = tool.Handler(ctx, args)
 
 	// 检查是否超时
 	if ctx.Err() == context.DeadlineExceeded {
@@ -288,8 +318,8 @@ which lead to the error:
 		errorMsg = err.Error()
 	}
 
-	if err := RecordToolUsage(ctx, toolID, success, errorMsg); err != nil {
-		return "", err
+	if recordErr := RecordToolUsage(ctx, toolID, success, errorMsg); recordErr != nil {
+		outfmt.Error("failed to record tool usage: %v", recordErr)
 	}
 
 	// 截断工具结果，避免API调用失败
@@ -297,7 +327,7 @@ which lead to the error:
 		result = TruncateToolResult(result)
 	}
 
-	return result, err
+	return
 }
 
 // GetOrCreateTool 获取或创建工具

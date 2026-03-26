@@ -28,7 +28,7 @@ Line 3
 Line 4
 Line 5`,
 			args: toolcall.ToolArgs{
-				"path":       "test.txt",
+				"apath":       "test.txt",
 				"start_line": 2,
 				"end_line":   4,
 				"content":    "New Line 2\nNew Line 3\nNew Line 4",
@@ -56,7 +56,7 @@ Line 3
 Line 4
 Line 5`,
 			args: toolcall.ToolArgs{
-				"path":       "test.txt",
+				"apath":       "test.txt",
 				"start_line": 2,
 				"end_line":   4,
 				"content":    "",
@@ -81,7 +81,7 @@ Line 3
 Line 4
 Line 5`,
 			args: toolcall.ToolArgs{
-				"path":       "test.txt",
+				"apath":       "test.txt",
 				"start_line": 3,
 				"content":    "New Line 3\nNew Line 4",
 			},
@@ -107,7 +107,7 @@ Line 3
 Line 4
 Line 5`,
 			args: toolcall.ToolArgs{
-				"path":       "test.txt",
+				"apath":       "test.txt",
 				"start_line": 3,
 				"content":    "",
 			},
@@ -128,7 +128,7 @@ Line 2`
 			initialFile: `Old Line 1
 Old Line 2`,
 			args: toolcall.ToolArgs{
-				"path":    "test.txt",
+				"apath":    "test.txt",
 				"content": "New Line 1\nNew Line 2\nNew Line 3",
 			},
 			checkFile: func(t *testing.T, filePath string) {
@@ -150,7 +150,7 @@ New Line 3`
 Line 2
 Line 3`,
 			args: toolcall.ToolArgs{
-				"path":    "test.txt",
+				"apath":    "test.txt",
 				"content": "",
 			},
 			checkFile: func(t *testing.T, filePath string) {
@@ -167,7 +167,7 @@ Line 3`,
 			name:        "创建新文件",
 			initialFile: "", // 文件不存在
 			args: toolcall.ToolArgs{
-				"path":    "new.txt",
+				"apath":    "new.txt",
 				"content": "New File Content\nLine 2",
 			},
 			checkFile: func(t *testing.T, filePath string) {
@@ -186,7 +186,7 @@ Line 2`
 			name:        "创建空文件",
 			initialFile: "", // 文件不存在
 			args: toolcall.ToolArgs{
-				"path":    "empty.txt",
+				"apath":    "empty.txt",
 				"content": "",
 			},
 			checkFile: func(t *testing.T, filePath string) {
@@ -204,7 +204,7 @@ Line 2`
 			initialFile: `Line 1
 Line 2`,
 			args: toolcall.ToolArgs{
-				"path":       "test.txt",
+				"apath":       "test.txt",
 				"start_line": 0,
 				"content":    "test",
 			},
@@ -215,7 +215,7 @@ Line 2`,
 			initialFile: `Line 1
 Line 2`,
 			args: toolcall.ToolArgs{
-				"path":     "test.txt",
+				"apath":     "test.txt",
 				"end_line": 0,
 				"content":  "test",
 			},
@@ -227,7 +227,7 @@ Line 2`,
 Line 2
 Line 3`,
 			args: toolcall.ToolArgs{
-				"path":       "test.txt",
+				"apath":       "test.txt",
 				"start_line": 3,
 				"end_line":   1,
 				"content":    "test",
@@ -242,7 +242,7 @@ Line 3`,
 				os.RemoveAll("test.txt")
 			})
 			// 设置测试文件
-			filePath := filepath.Join(tmpDir, toolcall.ToolArgsValue(tt.args, "path", ""))
+			filePath := filepath.Join(tmpDir, toolcall.ToolArgsValue(tt.args, "apath", ""))
 
 			// 如果 initialFile 不为空，创建文件
 			if tt.initialFile != "" {
@@ -253,11 +253,11 @@ Line 3`,
 			}
 
 			// 更新路径参数为绝对路径
-			tt.args["path"] = filePath
+			tt.args["apath"] = filePath
 
 			// 调用函数
 			ctx := t.Context()
-			_, err := handleWriteFileWithLineRange(ctx, tt.args)
+			_, _, err := handleWriteFileWithLineRange(ctx, tt.args)
 
 			// 检查错误
 			if tt.wantErr {
@@ -293,7 +293,7 @@ func TestHandleWriteFileWithLineRange_EdgeCases(t *testing.T) {
 			name:        "单行文件替换",
 			initialFile: "Single Line",
 			args: toolcall.ToolArgs{
-				"path":    "test.txt",
+				"apath":    "test.txt",
 				"content": "Replaced Line",
 			},
 			checkFile: func(t *testing.T, filePath string) {
@@ -310,7 +310,7 @@ func TestHandleWriteFileWithLineRange_EdgeCases(t *testing.T) {
 			name:        "空文件替换",
 			initialFile: "",
 			args: toolcall.ToolArgs{
-				"path":    "test.txt",
+				"apath":    "test.txt",
 				"content": "New Content",
 			},
 			checkFile: func(t *testing.T, filePath string) {
@@ -328,7 +328,7 @@ func TestHandleWriteFileWithLineRange_EdgeCases(t *testing.T) {
 			initialFile: `Line 1
 Line 2`,
 			args: toolcall.ToolArgs{
-				"path":       "test.txt",
+				"apath":       "test.txt",
 				"start_line": 5,
 				"content":    "Appended Line",
 			},
@@ -353,7 +353,7 @@ Appended Line`
 Line 2
 Line 3`,
 			args: toolcall.ToolArgs{
-				"path":       "test.txt",
+				"apath":       "test.txt",
 				"start_line": 2,
 				"end_line":   2,
 				"content":    "New Line 2a\nNew Line 2b\nNew Line 2c",
@@ -378,7 +378,7 @@ Line 3`
 			initialFile: `Line 1
 Line 2`,
 			args: toolcall.ToolArgs{
-				"path":    "test.txt",
+				"apath":    "test.txt",
 				"content": "New Line 1\nNew Line 2\n",
 			},
 			checkFile: func(t *testing.T, filePath string) {
@@ -400,7 +400,7 @@ New Line 2`
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			filePath := filepath.Join(tmpDir, toolcall.ToolArgsValue(tt.args, "path", ""))
+			filePath := filepath.Join(tmpDir, toolcall.ToolArgsValue(tt.args, "apath", ""))
 
 			if tt.initialFile != "" {
 				err := os.WriteFile(filePath, []byte(tt.initialFile), 0o644)
@@ -409,10 +409,10 @@ New Line 2`
 				}
 			}
 
-			tt.args["path"] = filePath
+			tt.args["apath"] = filePath
 
 			ctx := t.Context()
-			_, err := handleWriteFileWithLineRange(ctx, tt.args)
+			_, _, err := handleWriteFileWithLineRange(ctx, tt.args)
 			if err != nil {
 				t.Errorf("不期望的错误: %v", err)
 				return
@@ -431,7 +431,7 @@ func TestHandleWriteFileWithLineRange_MissingPath(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	_, err := handleWriteFileWithLineRange(ctx, args)
+	_, _, err := handleWriteFileWithLineRange(ctx, args)
 
 	if err == nil {
 		t.Error("期望错误，但未收到错误")
@@ -451,13 +451,13 @@ func TestHandlerWriteFileWithLineRangeLineBeyondScope(t *testing.T) {
 	os.WriteFile(filePath, []byte("Line 1\nLine 2\nLine 3"), 0o644)
 
 	args := toolcall.ToolArgs{
-		"path":       filePath,
+		"apath":       filePath,
 		"start_line": 10,
 		"content":    "Line 10: Inserted at line 10",
 	}
 
 	ctx := t.Context()
-	_, err := handleWriteFileWithLineRange(ctx, args)
+	_, _, err := handleWriteFileWithLineRange(ctx, args)
 	if err != nil {
 		t.Fatal(err)
 	}

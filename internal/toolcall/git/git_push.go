@@ -29,7 +29,7 @@ func init() {
 }
 
 // handleGitPush git push [options...]
-func handleGitPush(ctx context.Context, args ToolArgs) (string, error) {
+func handleGitPush(ctx context.Context, args ToolArgs) (result string, user string, err error) {
 	options := ToolArgsValue(args, "options", "")
 	options = strings.TrimSpace(options)
 
@@ -51,19 +51,20 @@ func handleGitPush(ctx context.Context, args ToolArgs) (string, error) {
 	outfmt.PrintSubSection("推送信息")
 	outfmt.Info("正在推送分支到远程仓库...")
 
-	out, err := gitCommand(ctx, gitArgs...)
+	result, err = gitCommand(ctx, gitArgs...)
 	if err != nil {
-		return "", err
+		return
 	}
 
 	// 解析推送结果
-	if out == "" || strings.Contains(out, "命令执行成功（无输出）") {
+	if result == "" || strings.Contains(result, "命令执行成功（无输出）") {
 		outfmt.Success("推送成功")
-		return "推送成功", nil
+		result = "推送成功"
+		return
 	}
 
 	// 检查推送结果
-	lines := strings.Split(strings.TrimSpace(out), "\n")
+	lines := strings.Split(strings.TrimSpace(result), "\n")
 
 	outfmt.PrintSubSection("推送结果")
 	for _, line := range lines {
@@ -82,5 +83,5 @@ func handleGitPush(ctx context.Context, args ToolArgs) (string, error) {
 		}
 	}
 
-	return out, nil
+	return
 }

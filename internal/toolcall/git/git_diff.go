@@ -31,7 +31,7 @@ func init() {
 }
 
 // handleGitDiff git差异
-func handleGitDiff(ctx context.Context, args ToolArgs) (string, error) {
+func handleGitDiff(ctx context.Context, args ToolArgs) (result string, user string, err error) {
 	path := ToolArgsValue(args, "path", "")
 	path = strings.TrimSpace(path)
 
@@ -44,7 +44,7 @@ func handleGitDiff(ctx context.Context, args ToolArgs) (string, error) {
 	// 检查是否有暂存的文件
 	statusOut, err := gitCommand(ctx, "status", "--short")
 	if err != nil {
-		return "", err
+		return
 	}
 
 	// 分析状态：是否有已暂存的文件？
@@ -76,19 +76,20 @@ func handleGitDiff(ctx context.Context, args ToolArgs) (string, error) {
 		outfmt.Info("比较所有变更的文件")
 	}
 
-	out, err := gitCommand(ctx, gitArgs...)
+	result, err = gitCommand(ctx, gitArgs...)
 	if err != nil {
-		return "", err
+		return
 	}
 
 	// 格式化输出
-	if out == "" {
+	if result == "" {
 		outfmt.Success("没有差异")
-		return "没有差异", nil
+		result = "没有差异"
+		return
 	}
 
 	// 解析差异输出
-	lines := strings.Split(strings.TrimSpace(out), "\n")
+	lines := strings.Split(strings.TrimSpace(result), "\n")
 
 	outfmt.PrintSubSection("差异详情")
 
@@ -135,7 +136,7 @@ func handleGitDiff(ctx context.Context, args ToolArgs) (string, error) {
 	outfmt.Println("```")
 	// 显示统计信息
 	outfmt.PrintSubSection("统计信息")
-	diffStats := analyzeDiffStats(out)
+	diffStats := analyzeDiffStats(result)
 	if diffStats.files > 0 {
 		outfmt.Info("共比较 %d 个文件", diffStats.files)
 		outfmt.Success("新增行: %d", diffStats.additions)
@@ -143,7 +144,7 @@ func handleGitDiff(ctx context.Context, args ToolArgs) (string, error) {
 		outfmt.Notice("变更行总计: %d", diffStats.additions+diffStats.deletions)
 	}
 
-	return out, nil
+	return
 }
 
 func hasStagedUnstagedChanges(statusOut string) (hasStagedChanges bool, hasUnstagedChanges bool) {

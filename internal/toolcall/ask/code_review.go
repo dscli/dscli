@@ -74,7 +74,7 @@ func init() {
 }
 
 // handleCodeReview 处理代码审查工具调用
-func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (reply string, err error) {
+func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (reply string, user string, err error) {
 	summary := toolcall.ToolArgsValue(args, "summary", "")
 	testCommand := toolcall.ToolArgsValue(args, "test_command", "")
 	// 获取Git状态，确保有提交可审查
@@ -122,7 +122,8 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (reply string
 	// 如果有多个未push的提交，建议用户先rebase
 	if commitCount > 3 {
 		outfmt.Printf("❌ 检测到%d个未push的提交\n", commitCount)
-		return "", fmt.Errorf("more than 3 unpushed commit found")
+		err = fmt.Errorf("more than 3 unpushed commit found")
+		return
 	}
 
 	outfmt.Println("✅ 不多于3个commit检查通过")
@@ -199,9 +200,9 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (reply string
 		return
 	}
 	// 处理响应
-	processedResponse := processCodeReviewResponse(reply)
+	reply = processCodeReviewResponse(reply)
 	outfmt.Println("✅ 代码审查完成")
-	return processedResponse, nil
+	return
 }
 
 // generateCodeReviewSummary 从Git提交信息生成摘要（重构版本）

@@ -49,7 +49,7 @@ func init() {
 }
 
 // handleMakeBuild 处理构建检查请求
-func handleMakeBuild(ctx context.Context, args ToolArgs) (output string, err error) {
+func handleMakeBuild(ctx context.Context, args ToolArgs) (output string, user string, err error) {
 	// 检查是否提供了自定义命令
 	userCmd := ToolArgsValue(args, "command", "")
 	if userCmd == "" {

@@ -70,14 +70,16 @@ func init() {
 }
 
 // handleSearchCodeDefinition 处理代码定义搜索请求
-func handleSearchCodeDefinition(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+func handleSearchCodeDefinition(ctx context.Context, args toolcall.ToolArgs) (output string, user string, err error) {
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
-		return "", fmt.Errorf("参数 'path' 缺失")
+		err = fmt.Errorf("参数 'path' 缺失")
+		return
 	}
 	pattern := toolcall.ToolArgsValue(args, "pattern", "")
 	if pattern == "" {
-		return "", fmt.Errorf("参数 'pattern' 缺失")
+		err = fmt.Errorf("参数 'pattern' 缺失")
+		return
 	}
 	typeFilter := toolcall.ToolArgsValue(args, "type_filter", "")
 	caseSensitive := toolcall.ToolArgsValue(args, "case_sensitive", false)
@@ -85,7 +87,8 @@ func handleSearchCodeDefinition(ctx context.Context, args toolcall.ToolArgs) (st
 	// 解析文件结构
 	structure, err := toolcall.ParseFileStructure(ctx, path)
 	if err != nil {
-		return "", fmt.Errorf("解析文件结构失败: %w", err)
+		err = fmt.Errorf("解析文件结构失败: %w", err)
+		return
 	}
 
 	// 准备搜索
@@ -152,7 +155,8 @@ func handleSearchCodeDefinition(ctx context.Context, args toolcall.ToolArgs) (st
 		sb.WriteString("3. 尝试不使用类型过滤器\n")
 		sb.WriteString("4. 使用 search_code_semantic 进行文本搜索\n")
 		sb.WriteString("5. 查看文件结构: read_code_structure(path=\"" + path + "\")\n")
-		return sb.String(), nil
+		output = sb.String()
+		return
 	}
 
 	// 显示所有匹配结果
@@ -175,7 +179,8 @@ func handleSearchCodeDefinition(ctx context.Context, args toolcall.ToolArgs) (st
 		fmt.Fprintf(&sb, "  - 搜索效率: %.1f%%\n", efficiency)
 	}
 
-	return sb.String(), nil
+	output = sb.String()
+	return
 }
 
 // matchesDefinition 检查符号是否匹配搜索条件

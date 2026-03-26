@@ -25,25 +25,26 @@ func init() {
 }
 
 // handleGitStatus git状态
-func handleGitStatus(ctx context.Context, args ToolArgs) (string, error) {
+func handleGitStatus(ctx context.Context, args ToolArgs) (result string, user string, err error) {
 	// 显示操作标题
 	PrintGitSection("仓库状态")
 
 	outfmt.Info("正在检查Git仓库状态...")
 
-	out, err := gitCommand(ctx, "status", "--short")
+	result, err = gitCommand(ctx, "status", "--short")
 	if err != nil {
-		return "", err
+		return
 	}
 
 	// 格式化输出
-	if out == "" || strings.Contains(out, "工作区干净，无变更") {
+	if result == "" || strings.Contains(result, "工作区干净，无变更") {
 		outfmt.Success("工作区干净，无变更")
-		return "工作区干净，无变更", nil
+		result, err = "工作区干净，无变更", nil
+		return
 	}
 
 	// 解析状态输出
-	lines := strings.Split(strings.TrimSpace(out), "\n")
+	lines := strings.Split(strings.TrimSpace(result), "\n")
 
 	// 统计不同类型的变更
 	var staged, unstaged, untracked []string
@@ -93,7 +94,7 @@ func handleGitStatus(ctx context.Context, args ToolArgs) (string, error) {
 
 	// 显示原始输出
 	outfmt.PrintSubSection("原始输出")
-	outfmt.Println(out)
+	outfmt.Println(result)
 
-	return out, nil
+	return
 }

@@ -13,7 +13,7 @@ func TestHandleSearchCodeSemantic(t *testing.T) {
 		"search_pattern": "def parse_java",
 		"context_lines":  5,
 	}
-	result, err := handleSearchCodeSemantic(ctx, args)
+	result, _, err := handleSearchCodeSemantic(ctx, args)
 	if err != nil {
 		t.Fatal(err)
 	}

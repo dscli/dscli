@@ -67,7 +67,7 @@ func TestHandleCodeReviewFunction(t *testing.T) {
 
 	// The function should exist and be callable
 	// Note: We're not checking the actual return value since it depends on Git state
-	_, err := handleCodeReview(ctx, args)
+	_, _, err := handleCodeReview(ctx, args)
 	// We expect an error if there are uncommitted changes or no commits
 	// But we don't fail the test based on the error since it's environment-dependent
 	if err != nil {

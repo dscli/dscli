@@ -26,17 +26,19 @@ var webClient = &http.Client{
 }
 
 // handleWebReader 读取网页内容
-func handleWebReader(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+func handleWebReader(ctx context.Context, args toolcall.ToolArgs) (output string, user string, err error) {
 	url := toolcall.ToolArgsValue(args, "url", "")
 	if url == "" {
-		return "", fmt.Errorf("no URL or empty URL specified")
+		err = fmt.Errorf("no URL or empty URL specified")
+		return
 	}
 
 	// 确保URL以http://或https://开头
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 		url = "https://" + url
 	}
-	return Web2Markdown(ctx, url)
+	output, err = Web2Markdown(ctx, url)
+	return
 }
 
 // htmlToMarkdown 将HTML转换为简化的Markdown格式

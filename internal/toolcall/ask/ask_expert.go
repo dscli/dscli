@@ -55,7 +55,7 @@ func init() {
 }
 
 // handleAskExpert 处理提问工具调用
-func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (reply string, err error) {
+func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (reply string, user string, err error) {
 	// 向后兼容：支持旧参数名
 	summary := toolcall.ToolArgsValue(args, "summary", "")
 	content := toolcall.ToolArgsValue(args, "content", "")
@@ -66,7 +66,8 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (reply string,
 	}
 
 	if content == "" {
-		return "", fmt.Errorf("问题内容不能为空")
+		err = fmt.Errorf("问题内容不能为空")
+		return 
 	}
 
 	// 如果用户没有提供summary，自动从content生成
@@ -89,11 +90,11 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (reply string,
 	}
 
 	// 智能处理专家响应（自动生成摘要）
-	processedReply := processExpertResponse(reply)
+	reply = processExpertResponse(reply)
 
 	outfmt.Println("✅ 专家咨询完成")
 
-	return processedReply, nil
+	return
 }
 
 // AskExpert 调用AI专家模型进行咨询并返回回复

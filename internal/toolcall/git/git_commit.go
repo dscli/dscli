@@ -39,10 +39,11 @@ func init() {
 }
 
 // handleGitCommit git提交
-func handleGitCommit(ctx context.Context, args ToolArgs) (string, error) {
+func handleGitCommit(ctx context.Context, args ToolArgs) (result string, user string, err error) {
 	message, ok := args["message"].(string)
 	if !ok || message == "" {
-		return "", fmt.Errorf("必须提供提交信息")
+		err = fmt.Errorf("必须提供提交信息")
+		return
 	}
 
 	options, _ := args["options"].(string)
@@ -54,7 +55,8 @@ func handleGitCommit(ctx context.Context, args ToolArgs) (string, error) {
 		if word == "-m" || word == "--message" || strings.HasPrefix(word, "-m") {
 			outfmt.Error("检测到-m或--message参数")
 			outfmt.Warn("提示: message参数已通过message字段提供，不要在options中包含-m或--message")
-			return "", fmt.Errorf("message参数已通过message字段提供，不要在options中包含-m或--message")
+			err = fmt.Errorf("message参数已通过message字段提供，不要在options中包含-m或--message")
+			return
 		}
 	}
 
@@ -69,19 +71,20 @@ func handleGitCommit(ctx context.Context, args ToolArgs) (string, error) {
 	cmd := exec.Command("git", gitArgs...)
 	cmd.Dir = context.ProjectRoot
 	output, err := cmd.CombinedOutput()
-	out := string(output)
+	result = string(output)
 
 	if err != nil {
 		outfmt.Error("Git提交失败: %v", err)
-		if out != "" {
-			outfmt.Error("输出: %s", out)
+		if result != "" {
+			outfmt.Error("输出: %s", result)
 		}
-		return "", fmt.Errorf("git commit失败: %v", err)
+		err = fmt.Errorf("git commit失败: %v", err)
+		return
 	}
 
 	// 提取提交哈希（如果可能）
-	if strings.Contains(out, "[") && strings.Contains(out, "]") {
-		for line := range strings.SplitSeq(out, "\n") {
+	if strings.Contains(result, "[") && strings.Contains(result, "]") {
+		for line := range strings.SplitSeq(result, "\n") {
 			if strings.Contains(line, "[") && strings.Contains(line, "]") {
 				outfmt.Success("提交成功: %s", strings.TrimSpace(line))
 				break
@@ -91,5 +94,5 @@ func handleGitCommit(ctx context.Context, args ToolArgs) (string, error) {
 		outfmt.Success("提交成功")
 	}
 
-	return out, nil
+	return
 }

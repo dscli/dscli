@@ -45,10 +45,11 @@ func init() {
 }
 
 // handleAskUser 处理提问工具调用
-func handleAskUser(ctx context.Context, args toolcall.ToolArgs) (reply string, err error) {
+func handleAskUser(ctx context.Context, args toolcall.ToolArgs) (reply string, user string, err error) {
 	content := toolcall.ToolArgsValue(args, "content", "")
 	if content == "" {
-		return "", fmt.Errorf("内容不能为空")
+		err = fmt.Errorf("内容不能为空")
+		return
 	}
 
 	// 输出咨询日志
@@ -64,7 +65,8 @@ func handleAskUser(ctx context.Context, args toolcall.ToolArgs) (reply string, e
 	reply, err = toolcall.OpenEditor(ctx, content)
 	if err != nil {
 		outfmt.Println("❌ 获取用户回答失败")
-		return "", fmt.Errorf("获取用户回答失败: %v", err)
+		err = fmt.Errorf("获取用户回答失败: %v", err)
+		return
 	}
 
 	// 显示用户回答摘要
@@ -77,5 +79,5 @@ func handleAskUser(ctx context.Context, args toolcall.ToolArgs) (reply string, e
 	}
 
 	outfmt.Println("✅ 用户咨询完成")
-	return reply, nil
+	return
 }

@@ -9,10 +9,11 @@ import (
 )
 
 // handleIssueCreate 处理创建issue（Tool Calling）
-func handleIssueCreate(ctx context.Context, args toolcall.ToolArgs) (string, error) {
+func handleIssueCreate(ctx context.Context, args toolcall.ToolArgs) (output string, user string, err error) {
 	title := toolcall.ToolArgsValue(args, "title", "")
 	if title == "" {
-		return "", fmt.Errorf("必须提供标题")
+		err = fmt.Errorf("必须提供标题")
+		return
 	}
 
 	body := toolcall.ToolArgsValue(args, "body", "")
@@ -22,7 +23,7 @@ func handleIssueCreate(ctx context.Context, args toolcall.ToolArgs) (string, err
 		Body:  body,
 	})
 	if err != nil {
-		return "", err
+		return
 	}
 
 	// 构建成功结果
@@ -48,7 +49,8 @@ func handleIssueCreate(ctx context.Context, args toolcall.ToolArgs) (string, err
 
 	result.WriteString(strings.Repeat("=", 80) + "\n")
 
-	return result.String(), nil
+	output = result.String()
+	return
 }
 
 func init() {

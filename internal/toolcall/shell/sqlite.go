@@ -33,15 +33,17 @@ func init() {
 }
 
 // handleSqlite 执行SQLite数据库查询和操作
-func handleSqlite(ctx context.Context, args ToolArgs) (string, error) {
+func handleSqlite(ctx context.Context, args ToolArgs) (output string, user string, err error) {
 	script := ToolArgsValue(args, "script", "")
 	if script == "" {
-		return "", fmt.Errorf("sql script can not be empty")
+		err = fmt.Errorf("sql script can not be empty")
+		return
 	}
 	// 构建完整的shebang脚本
 	fullScript := fmt.Sprintf("#!/usr/bin/env sqlite3 %s\n%s", sqlite.GetDBPath(), script)
 
 	// 使用现有的runBash执行
 
-	return RunShell(ctx, fullScript)
+	output, err = RunShell(ctx, fullScript)
+	return
 }

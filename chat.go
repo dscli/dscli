@@ -204,7 +204,6 @@ func ReadContent(ctx context.Context) (content string, err error) {
 	return
 }
 
-
 // calculateCost 计算花费
 func calculateCost(startBalance, endBalance context.BalanceInfo) string {
 	// 解析余额字符串为浮点数
@@ -326,7 +325,9 @@ func ChatRound(ctx context.Context, prompts []toolcall.Message, skills []toolcal
 	// 检查响应是否被截断
 	if resp.Choices[0].FinishReason == "length" {
 		outfmt.Warn("注意：响应因长度限制被截断，可能不完整。")
+		ctx = context.WithValue(ctx, context.FinishReasonLengthKey, true)
 	}
+
 	outfmt.PrintContent(ctx, story.ReasoningContent, story.Content)
 	stories = append(stories, story)
 	// save stories here
@@ -336,6 +337,7 @@ func ChatRound(ctx context.Context, prompts []toolcall.Message, skills []toolcal
 	if err != nil {
 		outfmt.Error("%v", err)
 	}
+
 	if len(stories) > 0 {
 		history = append(history, stories...)
 	}
@@ -346,6 +348,7 @@ func ChatRound(ctx context.Context, prompts []toolcall.Message, skills []toolcal
 		PrintSessionStats(ctx)
 		return
 	}
+
 	toolInputs := toolcall.HandleToolCalls(ctx, tcs)
 	if len(toolInputs) > 0 {
 		// Now tool call inputs saved in db
