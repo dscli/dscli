@@ -19,7 +19,7 @@ func init() {
 ⚠️ 注意：这是基于行号操作的旧工具。建议优先使用基于代码结构的新工具 write_code_section。
 
 参数：
-  apath: 文件路径（必需）
+  path: 文件路径（必需）
   content: 要写入的内容（必需，可以为空字符串表示删除, 建议不超过4096字符）
   start_line: 起始行号（可选，默认1）
   end_line: 结束行号（可选，默认到文件末尾）
@@ -37,18 +37,18 @@ func init() {
 
 示例：
   # 替换第5-10行的内容
-  write_file_with_line_range(apath="file.txt", start_line=5, end_line=10, content="新内容")
+  write_file_with_line_range(path="file.txt", start_line=5, end_line=10, content="新内容")
   
   # 删除第5-10行的内容
-  write_file_with_line_range(apath="file.txt", start_line=5, end_line=10, content="")
+  write_file_with_line_range(path="file.txt", start_line=5, end_line=10, content="")
   
   # 从第5行开始替换到文件末尾
-  write_file_with_line_range(apath="file.txt", start_line=5, content="新内容")`,
+  write_file_with_line_range(path="file.txt", start_line=5, content="新内容")`,
 		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"apath": map[string]any{
+				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径，如main.go",
 					"pattern":     toolcall.TitleLikePattern(128),
@@ -67,7 +67,7 @@ func init() {
 					"description": "结束行号，可选，默认到文件末尾",
 				},
 			},
-			"required":             []string{"apath", "content"},
+			"required":             []string{"path", "content"},
 			"additionalProperties": false,
 		},
 		Category: "file_ops",
@@ -79,11 +79,8 @@ func init() {
 // 如果 content 为空字符串，则删除指定行范围
 func handleWriteFileWithLineRange(ctx context.Context, args toolcall.ToolArgs) (result string, user string, err error) {
 	// 检查必需参数
-	apath := toolcall.ToolArgsValue(args, "apath", "")
-	if apath == "" {
-		apath = toolcall.ToolArgsValue(args, "path", "")
-	}
-	if apath == ""{
+	path := toolcall.ToolArgsValue(args, "path", "")
+	if path == ""{
 		err = fmt.Errorf("parameter error: no path specified")
 		return
 	}
@@ -92,7 +89,7 @@ func handleWriteFileWithLineRange(ctx context.Context, args toolcall.ToolArgs) (
 
 	// content 可以为空字符串，表示删除
 
-	fullPath := ResolvePath(ctx, apath)
+	fullPath := ResolvePath(ctx, path)
 
 	// 解析起始行号
 	startLine, endLine, err := ParseLineRange(args)
@@ -122,7 +119,7 @@ func handleWriteFileWithLineRange(ctx context.Context, args toolcall.ToolArgs) (
 					return
 				}
 				newFile.Close()
-				outfmt.Notice("创建空文件 \"%s\"", apath)
+				outfmt.Notice("创建空文件 \"%s\"", path)
 				result = "成功创建空文件"
 				return
 			}
@@ -139,7 +136,7 @@ func handleWriteFileWithLineRange(ctx context.Context, args toolcall.ToolArgs) (
 				lines = strings.Count(content, "\n")
 			}
 
-			outfmt.Notice("创建文件 \"%s\" 并写入 %d 行内容", apath, lines)
+			outfmt.Notice("创建文件 \"%s\" 并写入 %d 行内容", path, lines)
 			result = fmt.Sprintf("成功创建文件并写入 %d 行内容", lines)
 			return
 		}
@@ -238,9 +235,9 @@ func handleWriteFileWithLineRange(ctx context.Context, args toolcall.ToolArgs) (
 		linesChanged = contentLineCount
 	}
 
-	outfmt.Notice("%s文件 \"%s\" 行范围 %s，影响 %d 行", operation, apath, rangeDesc, linesChanged)
+	outfmt.Notice("%s文件 \"%s\" 行范围 %s，影响 %d 行", operation, path, rangeDesc, linesChanged)
 
 	// 构建最终结果
-	result = fmt.Sprintf("成功%s文件 \"%s\" 行范围 %s", operation, apath, rangeDesc)
+	result = fmt.Sprintf("成功%s文件 \"%s\" 行范围 %s", operation, path, rangeDesc)
 	return
 }

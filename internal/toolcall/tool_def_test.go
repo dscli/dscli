@@ -10,7 +10,7 @@ import (
 
 func TestToolArgsValue(t *testing.T) {
 	args := ToolArgs{
-		"apath":   "main.go",
+		"path":   "main.go",
 		"append":  true,
 		"content": "very long content...actual not so log",
 	}
@@ -21,9 +21,9 @@ func TestToolArgsValue(t *testing.T) {
 	}
 
 	// Go marshal output may have different sequence order, so hardcoded it here
-	b = []byte(`{"apath":"main.go","append":true,"content":"very long content...actual not so log"}`)
+	b = []byte(`{"path":"main.go","append":true,"content":"very long content...actual not so log"}`)
 	truncateds := string(b[0 : len(b)-10])
-	want := `{"apath":"main.go","append":true,"content":"very long content...actual no`
+	want := `{"path":"main.go","append":true,"content":"very long content...actual no`
 	if truncateds != want {
 		t.Fatal(truncateds)
 	}
@@ -50,10 +50,10 @@ func TestToolArgsValue(t *testing.T) {
 	if !append {
 		t.Fatal(append)
 	}
-	apath := ToolArgsValue(truncatedArgs, "apath", "")
+	path := ToolArgsValue(truncatedArgs, "path", "")
 
-	if apath != "main.go" {
-		t.Fatal(apath)
+	if path != "main.go" {
+		t.Fatal(path)
 	}
 
 	content := ToolArgsValue(truncatedArgs, "content", "")
@@ -70,26 +70,26 @@ func TestToolArgs_Unmarshal(t *testing.T) {
 	}{
 		{
 			"truncated", false,
-			"{\"apath\": \"architecture-design-v3.md\", " +
+			"{\"path\": \"architecture-design-v3.md\", " +
 				"\"content\": \"\\n## 7. 监控与告警" +
 				"\\n\\n### tmpl'\\n```\\n\\n### 7.4 仪表板",
 		},
 		{
 			"almost done", false,
-			"{\"apath\": \"architecture-design-v3.md\", " +
+			"{\"path\": \"architecture-design-v3.md\", " +
 				"\"content\": \"\\n## 7. 监控与告警" +
 				"\\n\\n### tmpl'\\n```\\n\\n### 7.4 仪表板" + `"`,
 		},
 		{
 			"done actually", false,
-			"{\"apath\": \"architecture-design-v3.md\", " +
+			"{\"path\": \"architecture-design-v3.md\", " +
 				"\"content\": \"\\n## 7. 监控与告警" +
 				"\\n\\n### tmpl'\\n```\\n\\n### 7.4 仪表板" + `"}`,
 		},
 
 		{
 			"done actually", false,
-			"{\"apath\": \"architecture-design-v3.md\", " +
+			"{\"path\": \"architecture-design-v3.md\", " +
 				"\"content\": \"\\n## 7. 监控与告警" +
 				"\\n\\n### tmpl'\\n```\\n\\n### 7.4 仪表板" + `\\}`,
 		},
@@ -108,9 +108,9 @@ func TestToolArgs_Unmarshal(t *testing.T) {
 			if tt.wantErr {
 				t.Fatal("Unmarshal() succeeded unexpectedly")
 			}
-			apath := ToolArgsValue(args, "apath", "")
-			if apath != "architecture-design-v3.md" {
-				t.Fatal(apath, args)
+			path := ToolArgsValue(args, "path", "")
+			if path != "architecture-design-v3.md" {
+				t.Fatal(path, args)
 			}
 			content := ToolArgsValue(args, "content", "")
 			if content != `
