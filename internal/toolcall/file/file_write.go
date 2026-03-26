@@ -53,17 +53,6 @@ func init() {
 func handleWriteFile(ctx context.Context, args toolcall.ToolArgs) (result string, user string, err error) {
 	truncated := context.ContextValue(ctx, context.FinishReasonLengthKey, false)
 	outfmt.Printf("FinishReasonLength: %v\n", truncated)
-	if truncated {
-		outfmt.Println("内容截断，在恢复")
-		err = args.Unmarshal()
-		if err != nil {
-			err = fmt.Errorf("failed to unmarshal from raw args")
-			outfmt.Println("内容截断，恢复失败")
-			return
-		}
-		outfmt.Println("内容截断，已经恢复")
-	}
-
 	path := toolcall.ToolArgsValue(args, "path", "")
 	content := toolcall.ToolArgsValue(args, "content", "")
 	lastlines := ""
@@ -73,18 +62,11 @@ func handleWriteFile(ctx context.Context, args toolcall.ToolArgs) (result string
 		outfmt.Printf("最后几行：\n%s\n", lastlines)
 	}
 
-	if path == "" || content == "" {
+	if path == "" {
+		err = fmt.Errorf("文件路径 path 不能为空")
 		if truncated {
-			user = fmt.Sprintf(`内容超过 max_tokens=8192, 已经截断。其中path参数也被截断,
-因此截断内容虽然收到但因不知写入哪个文件，最终无法写入。
-请严格按照 write_file 的使用说明，严控输出长度不超 8192 Tokens，
-在输出内容(content)前，优先考虑输出到哪个文件（path 参数），
-注意content无法写入已丢弃，请重新生成这部分content，
-以下将已输出content内容的最后几行也附上供参考:
-
-%s`, lastlines)
+			user = fmt.Sprintf("内容截断，因为内容长度 %d 超过了最大输出Tokens要求 8192，请严格遵守 write_file 要求，严格控制输出。", len(content))
 		}
-		err = fmt.Errorf("文件路径 path 或文件内容 content 不能为空")
 		return
 	}
 
@@ -156,7 +138,7 @@ func handleWriteFile(ctx context.Context, args toolcall.ToolArgs) (result string
 	result = fmt.Sprintf("成功追加内容到文件 \"%s\"，添加 %d 行。", path, lines)
 
 	if truncated {
-		user = fmt.Sprintf(`此次写入文件 %s 的内容是截断的内容，其中最后一行因为不完整已丢弃，
+		user = fmt.Sprintf(`此次写入文件 %s 的内容是截断的内容。
 请从上次输出内容的最后一完整行继续生成，并调用工具 write_file(path="%s", append=true, content="...继续生成的内容...") 
 追加入文件%s，为帮助你找到继续生成的点，现把上次截断内容最后几行展示给你：
 ---
