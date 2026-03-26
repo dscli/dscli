@@ -216,49 +216,18 @@ func HandleToolCalls(ctx context.Context, tcs []ToolCall) (inputs []Message) {
 	return inputs
 }
 
-func FixBrokenJSON(broken string) string {
+func FixBrokenJSON(broken string) (result string) {
 	if len(broken) == 0 {
 		return "{}"
 	}
-
-	// 1. 扫描字符串，判断是否处于未闭合的字符串内部
-	inString := false
-	escape := false
-	for _, ch := range broken {
-		if escape {
-			escape = false
-			continue
-		}
-		if ch == '\\' {
-			escape = true
-			continue
-		}
-		if ch == '"' {
-			inString = !inString
-		}
-	}
-
-	result := broken
-
-	// 2. 如果字符串未闭合，先补上双引号
-	if inString {
-		result += "\""
-	}
-
-	// 3. 统计花括号数量，补全缺失的 }（支持多层嵌套）
-	braceCount := 0
-	for _, ch := range result {
-		if ch == '{' {
-			braceCount++
-		} else if ch == '}' {
-			braceCount--
-		}
-	}
-	for i := 0; i < braceCount; i++ {
+	result = broken
+	lastCh := broken[len(broken)-1:]
+	if lastCh == "\"" {
 		result += "}"
+	} else if lastCh != "}" {
+		result += "\"}"
 	}
-
-	return result
+	return
 }
 
 // HandleToolCall 处理工具调用（带统计和超时）
