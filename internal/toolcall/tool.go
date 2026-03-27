@@ -221,12 +221,37 @@ func FixBrokenJSON(broken string) (result string) {
 		return "{}"
 	}
 	result = broken
-	lastCh := broken[len(broken)-1:]
-	if lastCh == "\"" {
+	lastCh := broken[len(broken)-1]
+	lastCh2 := broken[len(broken)-2]
+	lastCh3 := broken[len(broken)-3]
+	// no closing curly brace
+	if lastCh == '"' && lastCh2 != '\\' {
 		result += "}"
-	} else if lastCh != "}" {
-		result += "\"}"
+		return
 	}
+
+	//  fake right closing curly brace
+	if lastCh == '}' && lastCh2 != '"' && lastCh3 != '\\' {
+		result += "\"}"
+		return
+	}
+
+	// fake right quote
+	if lastCh == '"' && lastCh2 == '\\' {
+		result += "\"}"
+		return
+	}
+
+	if lastCh == '}' && lastCh2 == '"' && lastCh3 != '\\' {
+		return
+	}
+
+	if lastCh == '\\' && lastCh2 != '\\' {
+		result = result[0:len(result)-1]
+		result += "\"}"
+		return
+	}
+	result += "\"}"
 	return
 }
 
