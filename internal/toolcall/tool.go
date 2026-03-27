@@ -220,6 +220,11 @@ func FixBrokenJSON(broken string) (result string) {
 	if len(broken) == 0 {
 		return "{}"
 	}
+
+	if len(broken) < 3 {
+		result = broken
+		return
+	}
 	result = broken
 	lastCh := broken[len(broken)-1]
 	lastCh2 := broken[len(broken)-2]

@@ -326,6 +326,10 @@ func ChatRound(ctx context.Context, prompts []toolcall.Message, skills []toolcal
 	if resp.Choices[0].FinishReason == "length" {
 		outfmt.Warn("注意：响应因长度限制被截断，可能不完整。")
 		ctx = context.WithValue(ctx, context.FinishReasonLengthKey, true)
+	} else {
+		if context.ContextValue(ctx, context.FinishReasonLengthKey, false) {
+			ctx = context.WithValue(ctx, context.FinishReasonLengthKey, false)
+		}
 	}
 
 	outfmt.PrintContent(ctx, story.ReasoningContent, story.Content)
