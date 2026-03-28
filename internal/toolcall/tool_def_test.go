@@ -1,63 +1,136 @@
 package toolcall
 
 import (
-	_ "embed"
-	"encoding/json"
+	"reflect"
 	"testing"
-
-	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
 func TestToolArgsValue(t *testing.T) {
-	args := ToolArgs{
-		"path":   "main.go",
-		"append":  true,
-		"content": "very long content...actual not so log",
+	{ // string
+		tcs := []struct {
+			name         string
+			value        string
+			defaultValue string
+			want         string
+		}{
+			{"string empty ", "", "a", "a"},
+			{"string value", "a", "", "a"},
+		}
+
+		for _, tc := range tcs {
+			t.Run(tc.name, func(t *testing.T) {
+				args := ToolArgs{}
+				if tc.value != "" {
+					args["key"] = tc.value
+				}
+				actual := ToolArgsValue(args, "key", tc.defaultValue)
+				if actual != tc.want {
+					t.Fatal(actual, tc.want)
+				}
+			})
+		}
+	}
+	{ // float64
+		tcs := []struct {
+			name         string
+			value        float64
+			defaultValue float64
+			want         float64
+		}{
+			{"float64 default", float64(0), float64(1), float64(1)},
+			{"float64 default", float64(1), float64(0), float64(1)},
+		}
+
+		for _, tc := range tcs {
+			t.Run(tc.name, func(t *testing.T) {
+				args := ToolArgs{}
+				key := "key"
+				if tc.value != float64(0) {
+					args[key] = tc.value
+				}
+				actual := ToolArgsValue(args, "key", tc.defaultValue)
+				if actual != tc.want {
+					t.Fatal(actual, tc.want)
+				}
+			})
+		}
 	}
 
-	b, err := outfmt.JSONMarshal(&args)
-	if err != nil {
-		t.Fatal(err, string(b))
+	{ // integer
+		tcs := []struct {
+			name         string
+			value        int64
+			defaultValue int64
+			want         int64
+		}{
+			{"float64 default", int64(0), int64(1), int64(1)},
+			{"float64 default", int64(1), int64(0), int64(1)},
+		}
+
+		for _, tc := range tcs {
+			t.Run(tc.name, func(t *testing.T) {
+				args := ToolArgs{}
+				key := "key"
+				if tc.value != int64(0) {
+					args[key] = tc.value
+				}
+				actual := ToolArgsValue(args, "key", tc.defaultValue)
+				if actual != tc.want {
+					t.Fatal(actual, tc.want)
+				}
+			})
+		}
 	}
 
-	// Go marshal output may have different sequence order, so hardcoded it here
-	b = []byte(`{"path":"main.go","append":true,"content":"very long content...actual not so log"}`)
-	truncateds := string(b[0 : len(b)-10])
-	want := `{"path":"main.go","append":true,"content":"very long content...actual no`
-	if truncateds != want {
-		t.Fatal(truncateds)
+	{ // boolean
+		tcs := []struct {
+			name         string
+			value        bool
+			defaultValue bool
+			want         bool
+		}{
+			{"float64 default", false, true, true},
+			{"float64 default", true, false, true},
+		}
+
+		for _, tc := range tcs {
+			t.Run(tc.name, func(t *testing.T) {
+				args := ToolArgs{}
+				key := "key"
+				if tc.value != false {
+					args[key] = tc.value
+				}
+				actual := ToolArgsValue(args, "key", tc.defaultValue)
+				if actual != tc.want {
+					t.Fatal(actual, tc.want)
+				}
+			})
+		}
 	}
 
-	truncatedArgs := ToolArgs{".rawArgs": truncateds}
-	rawArgs := ToolArgsValue(truncatedArgs, ".rawArgs", "")
-	if len(rawArgs) == 0 {
-		t.Fatal(rawArgs)
-	}
+	{ // array
+		tcs := []struct {
+			name         string
+			value        []string
+			defaultValue []string
+			want         []string
+		}{
+			{"float64 default", []string{}, []string{"default"}, []string{"default"}},
+			{"float64 default", []string{"value"}, []string{}, []string{"value"}},
+		}
 
-	s := string([]byte(rawArgs))
-	if s != want {
-		t.Fatal(s)
-	}
-
-	s += `"}`
-	data := []byte(s)
-	err = json.Unmarshal(data, &truncatedArgs)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	append := ToolArgsValue(truncatedArgs, "append", false)
-	if !append {
-		t.Fatal(append)
-	}
-	path := ToolArgsValue(truncatedArgs, "path", "")
-
-	if path != "main.go" {
-		t.Fatal(path)
-	}
-
-	content := ToolArgsValue(truncatedArgs, "content", "")
-	if content != "very long content...actual no" {
-		t.Fatal(content)
+		for _, tc := range tcs {
+			t.Run(tc.name, func(t *testing.T) {
+				args := ToolArgs{}
+				key := "key"
+				if len(tc.value) != 0 {
+					args[key] = tc.value
+				}
+				actual := ToolArgsValue(args, "key", tc.defaultValue)
+				if !reflect.DeepEqual(actual, tc.want) {
+					t.Fatal(actual, tc.want)
+				}
+			})
+		}
 	}
 }

@@ -252,7 +252,7 @@ func FixBrokenJSON(broken string) (result string) {
 	}
 
 	if lastCh == '\\' && lastCh2 != '\\' {
-		result = result[0:len(result)-1]
+		result = result[0 : len(result)-1]
 		result += "\"}"
 		return
 	}

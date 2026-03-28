@@ -19,7 +19,6 @@ var httpClient = &http.Client{
 	Timeout: 600 * time.Second,
 }
 
-
 // isRetryableError 判断错误是否可重试
 func isRetryableError(err error) bool {
 	if err == nil {

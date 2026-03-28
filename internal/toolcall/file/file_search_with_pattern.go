@@ -105,7 +105,7 @@ func handleSearchFileWithPattern(ctx context.Context, args toolcall.ToolArgs) (r
 	fullPath := ResolvePath(ctx, path)
 
 	// 解析上下文行数参数
-	contextLines := toolcall.ToolArgsValue(args, "context_lines", 5) // 默认上下文行数
+	contextLines := int(toolcall.ToolArgsValue(args, "context_lines", int64(5))) // 默认上下文行数
 	if contextLines < 0 {
 		err = fmt.Errorf("context_lines must be non-negative")
 		return
@@ -115,7 +115,7 @@ func handleSearchFileWithPattern(ctx context.Context, args toolcall.ToolArgs) (r
 	caseSensitive := toolcall.ToolArgsValue(args, "case_sensitive", false)
 
 	// 解析最大匹配数
-	maxMatches := toolcall.ToolArgsValue(args, "max_matches", 0) // 0表示无限制
+	maxMatches := int(toolcall.ToolArgsValue(args, "max_matches", int64(0))) // 0表示无限制
 	if maxMatches < 0 {
 		err = fmt.Errorf("max_matches must be non-negative")
 		return

@@ -46,7 +46,7 @@ func init() {
 
 // handleIssueUpdate 处理更新issue（Tool Calling）
 func handleIssueUpdate(ctx context.Context, args toolcall.ToolArgs) (output string, user string, err error) {
-	number := toolcall.ToolArgsValue(args, "number", 0)
+	number := int(toolcall.ToolArgsValue(args, "number", int64(0)))
 	if number == 0 {
 		err = fmt.Errorf("必须提供issue编号")
 		return

@@ -213,7 +213,7 @@ func init() {
 func handleReadCodeSection(ctx context.Context, args toolcall.ToolArgs) (result string, user string, err error) {
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
-		result, err =  "", fmt.Errorf("参数 'path' 缺失")
+		result, err = "", fmt.Errorf("参数 'path' 缺失")
 		return
 	}
 	selector := toolcall.ToolArgsValue(args, "selector", "")

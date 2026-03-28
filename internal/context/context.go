@@ -11,22 +11,22 @@ import (
 )
 
 var (
-	HistSizeKey             = ContextKeyType[int]{"HistSize"}
-	StartTimeKey            = ContextKeyType[time.Time]{"StartTime"}
-	StartBalanceKey         = ContextKeyType[map[string]string]{"StartBalance"}
-	CurrentModelIDKey       = ContextKeyType[int64]{"CurrentModelID"}
-	CurrentModelNameKey     = ContextKeyType[string]{"CurrentModelName"}
-	CurrentDomainIDKey      = ContextKeyType[int64]{"CurrentDomainID"}
-	ToolCallIDKey           = ContextKeyType[string]{"ToolCallID"}
-	ShellNameKey            = ContextKeyType[string]{"ShellName"}
-	ShellArgsKey            = ContextKeyType[[]string]{"ShellArgs"}
-	ShellStdinKey           = ContextKeyType[io.Reader]{"ShellStdin"}
-	InputContentKey         = ContextKeyType[string]{"InputContent"}
-	InsideShellExecKey      = ContextKeyType[bool]{"InsideShellExec"}
-	StreamKey               = ContextKeyType[bool]{"Stream"}
-	LeftTokensKey           = ContextKeyType[int]{"LeftTokens"}
-	WechatFormatKey         = ContextKeyType[string]{"WechatFormat"}
-	ToolDisplayNameKey      = ContextKeyType[string]{"ToolDisplayName"}
+	HistSizeKey           = ContextKeyType[int]{"HistSize"}
+	StartTimeKey          = ContextKeyType[time.Time]{"StartTime"}
+	StartBalanceKey       = ContextKeyType[map[string]string]{"StartBalance"}
+	CurrentModelIDKey     = ContextKeyType[int64]{"CurrentModelID"}
+	CurrentModelNameKey   = ContextKeyType[string]{"CurrentModelName"}
+	CurrentDomainIDKey    = ContextKeyType[int64]{"CurrentDomainID"}
+	ToolCallIDKey         = ContextKeyType[string]{"ToolCallID"}
+	ShellNameKey          = ContextKeyType[string]{"ShellName"}
+	ShellArgsKey          = ContextKeyType[[]string]{"ShellArgs"}
+	ShellStdinKey         = ContextKeyType[io.Reader]{"ShellStdin"}
+	InputContentKey       = ContextKeyType[string]{"InputContent"}
+	InsideShellExecKey    = ContextKeyType[bool]{"InsideShellExec"}
+	StreamKey             = ContextKeyType[bool]{"Stream"}
+	LeftTokensKey         = ContextKeyType[int]{"LeftTokens"}
+	WechatFormatKey       = ContextKeyType[string]{"WechatFormat"}
+	ToolDisplayNameKey    = ContextKeyType[string]{"ToolDisplayName"}
 	FinishReasonLengthKey = ContextKeyType[bool]{"FinishReasonLength"}
 )
 

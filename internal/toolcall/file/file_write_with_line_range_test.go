@@ -29,8 +29,8 @@ Line 4
 Line 5`,
 			args: toolcall.ToolArgs{
 				"path":       "test.txt",
-				"start_line": 2,
-				"end_line":   4,
+				"start_line": int64(2),
+				"end_line":   int64(4),
 				"content":    "New Line 2\nNew Line 3\nNew Line 4",
 			},
 			checkFile: func(t *testing.T, filePath string) {
@@ -57,8 +57,8 @@ Line 4
 Line 5`,
 			args: toolcall.ToolArgs{
 				"path":       "test.txt",
-				"start_line": 2,
-				"end_line":   4,
+				"start_line": int64(2),
+				"end_line":   int64(4),
 				"content":    "",
 			},
 			checkFile: func(t *testing.T, filePath string) {
@@ -82,7 +82,7 @@ Line 4
 Line 5`,
 			args: toolcall.ToolArgs{
 				"path":       "test.txt",
-				"start_line": 3,
+				"start_line": int64(3),
 				"content":    "New Line 3\nNew Line 4",
 			},
 			checkFile: func(t *testing.T, filePath string) {
@@ -108,7 +108,7 @@ Line 4
 Line 5`,
 			args: toolcall.ToolArgs{
 				"path":       "test.txt",
-				"start_line": 3,
+				"start_line": int64(3),
 				"content":    "",
 			},
 			checkFile: func(t *testing.T, filePath string) {
@@ -205,7 +205,7 @@ Line 2`
 Line 2`,
 			args: toolcall.ToolArgs{
 				"path":       "test.txt",
-				"start_line": 0,
+				"start_line": int64(0),
 				"content":    "test",
 			},
 			wantErr: true,
@@ -216,7 +216,7 @@ Line 2`,
 Line 2`,
 			args: toolcall.ToolArgs{
 				"path":     "test.txt",
-				"end_line": 0,
+				"end_line": int64(0),
 				"content":  "test",
 			},
 			wantErr: true,
@@ -228,8 +228,8 @@ Line 2
 Line 3`,
 			args: toolcall.ToolArgs{
 				"path":       "test.txt",
-				"start_line": 3,
-				"end_line":   1,
+				"start_line": int64(3),
+				"end_line":   int64(1),
 				"content":    "test",
 			},
 			wantErr: true,
@@ -329,7 +329,7 @@ func TestHandleWriteFileWithLineRange_EdgeCases(t *testing.T) {
 Line 2`,
 			args: toolcall.ToolArgs{
 				"path":       "test.txt",
-				"start_line": 5,
+				"start_line": int64(5),
 				"content":    "Appended Line",
 			},
 			checkFile: func(t *testing.T, filePath string) {
@@ -354,8 +354,8 @@ Line 2
 Line 3`,
 			args: toolcall.ToolArgs{
 				"path":       "test.txt",
-				"start_line": 2,
-				"end_line":   2,
+				"start_line": int64(2),
+				"end_line":   int64(2),
 				"content":    "New Line 2a\nNew Line 2b\nNew Line 2c",
 			},
 			checkFile: func(t *testing.T, filePath string) {
@@ -452,7 +452,7 @@ func TestHandlerWriteFileWithLineRangeLineBeyondScope(t *testing.T) {
 
 	args := toolcall.ToolArgs{
 		"path":       filePath,
-		"start_line": 10,
+		"start_line": int64(10),
 		"content":    "Line 10: Inserted at line 10",
 	}
 

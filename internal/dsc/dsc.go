@@ -30,7 +30,7 @@ type Model struct {
 }
 
 type BalanceResponse struct {
-	IsAvailable  bool                  `json:"is_available"`
+	IsAvailable  bool                `json:"is_available"`
 	BalanceInfos []map[string]string `json:"balance_infos"`
 }
 
@@ -108,4 +108,3 @@ func (c *Deepseek) FIM(ctx context.Context, prompt, suffix string, maxTokens int
 	// TODO: 实现FIM功能
 	return nil, fmt.Errorf("FIM功能暂未实现")
 }
-

@@ -80,7 +80,7 @@ func init() {
 func handleWriteFileWithLineRange(ctx context.Context, args toolcall.ToolArgs) (result string, user string, err error) {
 	// 检查必需参数
 	path := toolcall.ToolArgsValue(args, "path", "")
-	if path == ""{
+	if path == "" {
 		err = fmt.Errorf("parameter error: no path specified")
 		return
 	}

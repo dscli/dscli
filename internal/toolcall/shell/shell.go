@@ -12,10 +12,11 @@ var (
 )
 
 type (
-	ToolDef  = toolcall.ToolDef
-	ToolArgs = toolcall.ToolArgs
+	ToolDef   = toolcall.ToolDef
+	ToolArgs  = toolcall.ToolArgs
+	Primitive = toolcall.Primitive
 )
 
-func ToolArgsValue[T any](args ToolArgs, key string, defaultValue T) T {
+func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
 	return toolcall.ToolArgsValue(args, key, defaultValue)
 }

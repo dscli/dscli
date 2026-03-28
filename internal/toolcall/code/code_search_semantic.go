@@ -241,9 +241,9 @@ func handleSearchCodeSemantic(ctx context.Context, args toolcall.ToolArgs) (outp
 	}
 
 	// 解析可选参数
-	contextLines := toolcall.ToolArgsValue(args, "context_lines", 5)
+	contextLines := int(toolcall.ToolArgsValue(args, "context_lines", int64(5)))
 	caseSensitive := toolcall.ToolArgsValue(args, "case_sensitive", false)
-	maxMatches := toolcall.ToolArgsValue(args, "max_matches", 0)
+	maxMatches := int(toolcall.ToolArgsValue(args, "max_matches", int64(0)))
 
 	// 扩展文件模式
 	files, err := file.ExpandFilePattern(filePattern)

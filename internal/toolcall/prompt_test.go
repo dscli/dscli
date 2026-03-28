@@ -44,7 +44,7 @@ func TestLoadPrompts(t *testing.T) {
 			if !strings.Contains(content, tt.contains) {
 				t.Fatal(content, tt.contains)
 			}
-			if strings.Contains(content, tt.notcontains){
+			if strings.Contains(content, tt.notcontains) {
 				t.Fatal(content, tt.notcontains)
 			}
 		})

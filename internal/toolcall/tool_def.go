@@ -3,7 +3,6 @@ package toolcall
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"time"
 )
 
@@ -22,78 +21,24 @@ type ToolDef struct {
 // ToolArgs 参数定义
 type ToolArgs map[string]any
 
-// ToolArgsValue 安全获取类型化参数值
-func ToolArgsValue[T any](args ToolArgs, key string, defaultValue T) T {
-	value, exists := args[key]
-	if !exists {
-		return defaultValue
-	}
-
-	// 根据目标类型进行安全转换
-	return convertValue(value, defaultValue)
+// Primitive types tool arguments support:
+// 1. string   - string
+// 2. float64  - number
+// 3. int64    - integer
+// 4. bool     - boolean
+// 5. []string - array
+type Primitive interface {
+	~string | ~float64 | ~int64 | ~bool | ~[]string
 }
 
-// convertValue 安全类型转换
-func convertValue[T any](value any, defaultValue T) T {
-	var result T
-
-	// 使用类型开关进行安全转换
-	switch target := any(&result).(type) {
-	case *int:
-		switch v := value.(type) {
-		case int:
-			*target = v
-		case float64:
-			*target = int(v)
-		case string:
-			if i, err := strconv.Atoi(v); err == nil {
-				*target = i
-			} else {
-				*target = *any(&defaultValue).(*int)
-			}
-		default:
-			*target = *any(&defaultValue).(*int)
+// ToolArgsValue 安全获取类型化参数值
+func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
+	if value, ok := args[key]; ok {
+		if typedValue, ok := value.(T); ok {
+			return typedValue
 		}
-	case *bool:
-		switch v := value.(type) {
-		case bool:
-			*target = v
-		case string:
-			*target = v == "true" || v == "1"
-		default:
-			*target = *any(&defaultValue).(*bool)
-		}
-	case *string:
-		switch v := value.(type) {
-		case string:
-			*target = v
-		default:
-			*target = *any(&defaultValue).(*string)
-		}
-	case *float64:
-		switch v := value.(type) {
-		case float64:
-			*target = v
-		case int:
-			*target = float64(v)
-		case string:
-			if f, err := strconv.ParseFloat(v, 64); err == nil {
-				*target = f
-			} else {
-				*target = *any(&defaultValue).(*float64)
-			}
-		default:
-			*target = *any(&defaultValue).(*float64)
-		}
-	default:
-		// 尝试直接断言
-		if tv, ok := value.(T); ok {
-			return tv
-		}
-		return defaultValue
 	}
-
-	return result
+	return defaultValue
 }
 
 func TitleLikePattern(maxLength int) string {

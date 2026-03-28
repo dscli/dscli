@@ -67,7 +67,7 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (reply string,
 
 	if content == "" {
 		err = fmt.Errorf("问题内容不能为空")
-		return 
+		return
 	}
 
 	// 如果用户没有提供summary，自动从content生成

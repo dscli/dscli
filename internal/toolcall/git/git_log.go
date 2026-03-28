@@ -31,7 +31,7 @@ func init() {
 
 // handleGitLog git日志
 func handleGitLog(ctx context.Context, args ToolArgs) (result string, user string, err error) {
-	maxCount := ToolArgsValue(args, "max_count", 10)
+	maxCount := ToolArgsValue(args, "max_count", int64(10))
 
 	// 显示操作标题
 	PrintGitSection("提交历史")
@@ -47,7 +47,7 @@ func handleGitLog(ctx context.Context, args ToolArgs) (result string, user strin
 	// 格式化输出
 	if result == "" {
 		outfmt.Warn("没有提交记录")
-		result, err =  "没有提交记录", nil
+		result, err = "没有提交记录", nil
 		return
 	}
 

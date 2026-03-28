@@ -38,7 +38,7 @@ func (c *Deepseek) Chat(ctx context.Context, messages []toolcall.Message, tools 
 
 	// 非streaming请求
 	maxTokens := 8192
-	maxAttempts := 1			// max attempts 1 means no retry
+	maxAttempts := 1 // max attempts 1 means no retry
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		req := ChatRequest{
 			Model:     model,
