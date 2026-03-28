@@ -18,17 +18,13 @@ func runGitCommand(ctx context.Context, command string, args ...string) (result 
 		command = ""
 	}
 
-	if command == "git" || strings.HasPrefix(command, "-") {
-		for _, arg := range args {
-			if arg != "git" && !strings.HasPrefix(arg, "-") {
-				command = arg
-				break
-			}
-		}
+	if command == "" && len(args) > 0 {
+		command = args[0]
 	}
 
 	startTime := time.Now()
 	outfmt.Printf("运行 git %s 命令\n", command)
+
 	result, suggestion, err = GitCommand(ctx, args...)
 	executionTime := time.Since(startTime)
 	if err != nil {
@@ -40,21 +36,24 @@ func runGitCommand(ctx context.Context, command string, args ...string) (result 
 }
 
 func GitCommand(ctx context.Context, args ...string) (result string, suggestion string, err error) {
-	// Add --no-pager if it's missing
+	workDir := context.ProjectRoot
 	if !slices.Contains(args, "--no-pager") {
 		args = append([]string{"--no-pager"}, args...)
 	}
 
-	if len(args) > 0 {
-		if args[0] == "git" {
-			args = args[1:]
+	for i, arg := range args {
+		if arg == "-C" {
+			n := i + 1
+			if n < len(args) {
+				workDir = args[n]
+			}
 		}
 	}
 	// 创建命令
 	cmd := exec.CommandContext(ctx, "git", args...)
 
 	// 设置工作目录
-	cmd.Dir = context.ProjectRoot
+	cmd.Dir = workDir
 
 	// 捕获输出
 	var stdoutBuf, stderrBuf bytes.Buffer
@@ -63,8 +62,8 @@ func GitCommand(ctx context.Context, args ...string) (result string, suggestion 
 
 	// 执行命令
 	err = cmd.Run()
-	result = strings.TrimSpace(stdoutBuf.String())
-	suggestion = strings.TrimSpace(stderrBuf.String())
+	result = stdoutBuf.String()
+	suggestion = stderrBuf.String()
 	return
 }
 
