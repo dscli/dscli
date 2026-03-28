@@ -2,6 +2,7 @@ package toolcall
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -29,6 +30,28 @@ type ToolArgs map[string]any
 // 5. []string - array
 type Primitive interface {
 	~string | ~float64 | ~int64 | ~bool | ~[]string
+}
+
+func Error(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+type ToolContent struct {
+	Result     string `json:"result,omitzero"`
+	Error      string `json:"error,omitzero"`
+	Suggestion string `json:"suggestion,omitzero"`
+}
+
+func (tc *ToolContent) String() (content string) {
+	b, err := json.MarshalIndent(tc, "", " ")
+	if err != nil {
+		return
+	}
+	content = string(b)
+	return
 }
 
 // ToolArgsValue 安全获取类型化参数值

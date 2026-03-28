@@ -1,6 +1,7 @@
 package toolcall
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 )
@@ -132,5 +133,38 @@ func TestToolArgsValue(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestToolContent(t *testing.T) {
+	tcs := []struct {
+		name       string
+		result     string
+		err        error
+		suggestion string
+		want       string
+	}{
+		{"all empty", "", nil, "", `{}`},
+		{"err empty", "done", nil, "ok", `{
+ "result": "done",
+ "suggestion": "ok"
+}`},
+		{"only error", "",fmt.Errorf("all wrong!"), "", `{
+ "error": "all wrong!"
+}`},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			toolContent := ToolContent{
+				Result:     tc.result,
+				Suggestion: tc.suggestion,
+				Error:      Error(tc.err),
+			}
+			actual := toolContent.String()
+			if actual != tc.want {
+				t.Fatal(actual, tc.want)
+			}
+		})
 	}
 }

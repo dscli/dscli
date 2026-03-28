@@ -186,30 +186,22 @@ func HandleToolCalls(ctx context.Context, tcs []ToolCall) (inputs []Message) {
 			result = fmt.Sprintf("result: %s, with error: %s", result, err.Error())
 		}
 
+		toolContent := ToolContent{
+			Result:     result,
+			Error:      Error(err),
+			Suggestion: user,
+		}
+
 		input := Message{
 			Role:       "tool",
 			ToolCallID: id,
-			Content:    result,
+			Content:    toolContent.String(),
 		}
 
 		saveErr := SaveMessages(ctx, input)
 
 		if saveErr != nil {
 			outfmt.Debug("failed to save: %v", err)
-		}
-
-		inputs = append(inputs, input)
-		if user != "" {
-			input = Message{
-				Role:    "user",
-				Content: fmt.Sprintf("伴随tool_call_id=%s有用户命令，请认真执行:\n%s", id, user),
-			}
-			outfmt.PrintContent(ctx, "", input.Content)
-			saveErr = SaveMessages(ctx, input)
-			if saveErr != nil {
-				outfmt.Debug("failed to save: %v", err)
-			}
-			inputs = append(inputs, input)
 		}
 
 	}
