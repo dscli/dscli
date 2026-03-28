@@ -13,7 +13,7 @@ import (
 var (
 	HistSizeKey             = ContextKeyType[int]{"HistSize"}
 	StartTimeKey            = ContextKeyType[time.Time]{"StartTime"}
-	StartBalanceKey         = ContextKeyType[BalanceInfo]{"StartBalance"}
+	StartBalanceKey         = ContextKeyType[map[string]string]{"StartBalance"}
 	CurrentModelIDKey       = ContextKeyType[int64]{"CurrentModelID"}
 	CurrentModelNameKey     = ContextKeyType[string]{"CurrentModelName"}
 	CurrentDomainIDKey      = ContextKeyType[int64]{"CurrentDomainID"}
@@ -53,13 +53,6 @@ type (
 	Context    = context.Context
 	CancelFunc = context.CancelFunc
 )
-
-type BalanceInfo struct {
-	Currency        string `json:"currency"`
-	TotalBalance    string `json:"total_balance"`
-	GrantedBalance  string `json:"granted_balance"`
-	ToppedUpBalance string `json:"topped_up_balance"`
-}
 
 type ContextKeyType[T any] struct {
 	name string

@@ -42,9 +42,9 @@ func TestPrintSessionStats(t *testing.T) {
 	ctx = context.WithValue(ctx, context.StartTimeKey, time.Now().Add(-30*time.Second))
 
 	// 设置起始余额
-	startBalance := context.BalanceInfo{
-		Currency:     "CNY",
-		TotalBalance: "100.00",
+	startBalance := map[string]string{
+		"currency":      "CNY",
+		"total_balance": "100.00",
 	}
 	ctx = context.WithValue(ctx, context.StartBalanceKey, startBalance)
 
@@ -55,10 +55,10 @@ func TestPrintSessionStats(t *testing.T) {
 	// 创建模拟客户端
 	mockClient := &MockDeepseekClient{
 		balanceResponse: &dsc.BalanceResponse{
-			BalanceInfos: []context.BalanceInfo{
+			BalanceInfos: []map[string]string{
 				{
-					Currency:     "CNY",
-					TotalBalance: "95.50", // 模拟花费4.5元后的余额
+					"currency":      "CNY",
+					"total_balance": "95.50", // 模拟花费4.5元后的余额
 				},
 			},
 		},
@@ -90,10 +90,10 @@ func TestPrintSessionStats(t *testing.T) {
 	// 测试低余额提醒
 	lowBalanceClient := &MockDeepseekClient{
 		balanceResponse: &dsc.BalanceResponse{
-			BalanceInfos: []context.BalanceInfo{
+			BalanceInfos: []map[string]string{
 				{
-					Currency:     "CNY",
-					TotalBalance: "5.00", // 低于10元
+					"currency":      "CNY",
+					"total_balance": "5.00", // 低于10元
 				},
 			},
 		},

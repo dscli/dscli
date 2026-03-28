@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 
-	"gitcode.com/dscli/dscli/internal/context"
 	"github.com/spf13/cobra"
 )
 
@@ -30,8 +29,8 @@ func BalanceRunE(cmd *cobra.Command, args []string) (err error) {
 	headers := []string{"货币", "总余额", "赠送余额", "充值余额"}
 	rowFunc := func(data any) []string {
 		switch info := data.(type) {
-		case context.BalanceInfo:
-			return []string{info.Currency, info.TotalBalance, info.GrantedBalance, info.ToppedUpBalance}
+		case map[string]string:
+			return []string{info["currency"], info["total_balance"], info["granted_balance"], info["topped_up_balance"]}
 		default:
 			return []string{"", "", "", ""}
 		}

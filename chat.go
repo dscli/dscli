@@ -109,7 +109,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx = context.WithValue(ctx, context.StartTimeKey, time.Now())
 
 	// 获取开始余额
-	var startBalance context.BalanceInfo
+	var startBalance map[string]string
 	if resp, err := DeepseekClient.Balance(); err == nil && len(resp.BalanceInfos) > 0 {
 		// 使用第一个余额信息（通常是CNY）
 		startBalance = resp.BalanceInfos[0]
@@ -205,10 +205,10 @@ func ReadContent(ctx context.Context) (content string, err error) {
 }
 
 // calculateCost 计算花费
-func calculateCost(startBalance, endBalance context.BalanceInfo) string {
+func calculateCost(startBalance, endBalance map[string]string) string {
 	// 解析余额字符串为浮点数
-	startTotal, err1 := parseBalance(startBalance.TotalBalance)
-	endTotal, err2 := parseBalance(endBalance.TotalBalance)
+	startTotal, err1 := parseBalance(startBalance["total_balance"])
+	endTotal, err2 := parseBalance(endBalance["total_balance"])
 
 	if err1 != nil || err2 != nil {
 		return "" // 解析失败，不显示花费
@@ -223,7 +223,7 @@ func calculateCost(startBalance, endBalance context.BalanceInfo) string {
 	}
 
 	// 格式化花费，精确到分
-	return fmt.Sprintf("%s %.2f", startBalance.Currency, cost)
+	return fmt.Sprintf("%s %.2f", startBalance["currency"], cost)
 }
 
 // parseBalance 解析余额字符串
@@ -237,7 +237,7 @@ func parseBalance(balanceStr string) (float64, error) {
 // PrintSessionStats 打印会话统计信息
 func PrintSessionStats(ctx context.Context) {
 	startTime := context.ContextValue(ctx, context.StartTimeKey, time.Time{})
-	startBalance := context.ContextValue(ctx, context.StartBalanceKey, context.BalanceInfo{})
+	startBalance := context.ContextValue(ctx, context.StartBalanceKey, map[string]string{})
 
 	// 收集要显示的信息
 	var stats []string
@@ -257,15 +257,15 @@ func PrintSessionStats(ctx context.Context) {
 	}
 
 	// 花费和余额
-	if startBalance.Currency != "" {
+	if startBalance["currency"] != "" {
 		if resp, err := DeepseekClient.Balance(); err == nil && len(resp.BalanceInfos) > 0 {
 			for _, balance := range resp.BalanceInfos {
-				if balance.Currency == startBalance.Currency {
+				if balance["currency"] == startBalance["currency"] {
 					// 计算花费
 					cost := calculateCost(startBalance, balance)
 
 					// 解析当前余额
-					currentBalance, err := parseBalance(balance.TotalBalance)
+					currentBalance, err := parseBalance(balance["total_balance"])
 					if err != nil {
 						currentBalance = 0
 					}
@@ -276,7 +276,7 @@ func PrintSessionStats(ctx context.Context) {
 					}
 
 					// 余额
-					stats = append(stats, fmt.Sprintf("💳 %s %s", balance.Currency, balance.TotalBalance))
+					stats = append(stats, fmt.Sprintf("💳 %s %s", balance["currency"], balance["total_balance"]))
 
 					// 如果余额较低，显示提醒
 					if currentBalance < 10.0 { // 余额低于10元时提醒

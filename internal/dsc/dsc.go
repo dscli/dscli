@@ -31,7 +31,7 @@ type Model struct {
 
 type BalanceResponse struct {
 	IsAvailable  bool                  `json:"is_available"`
-	BalanceInfos []context.BalanceInfo `json:"balance_infos"`
+	BalanceInfos []map[string]string `json:"balance_infos"`
 }
 
 // ChatResponse 响应
