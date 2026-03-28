@@ -1,7 +1,7 @@
 package git
 
 import (
-	"context"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -19,7 +19,8 @@ func TestGitCommand(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, gotErr := gitCommand(context.Background(), tt.args...)
+			ctx := t.Context()
+			got, _, gotErr := GitCommand(ctx, tt.args...)
 			if gotErr != nil {
 				if !tt.wantErr {
 					t.Errorf("gitCommand() failed: %v", gotErr)
@@ -37,5 +38,42 @@ func TestGitCommand(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSubCommands(t *testing.T) {
+	commands := SubCommands()
+	if len(commands) == 0 {
+		t.Fatal(commands)
+	}
+	for _, command := range []string{
+		"clone",
+		"add",
+		"mv",
+		"restore",
+		"rm",
+		"bisect",
+		"diff",
+		"grep",
+		"log",
+		"show",
+		"status",
+		"backfill",
+		"branch",
+		"commit",
+		"merge",
+		"rebase",
+		"reset",
+		"switch",
+		"tag",
+		"fetch",
+		"pull",
+		"push",
+		"format-patch",
+		"git",
+	} {
+		if !slices.Contains(commands, command) {
+			t.Fatal(commands)
+		}
 	}
 }

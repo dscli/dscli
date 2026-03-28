@@ -35,6 +35,7 @@ var (
 	WithValue        = context.WithValue
 	WithCancel       = context.WithCancel
 	DeadlineExceeded = context.DeadlineExceeded
+	Background       = context.Background
 )
 
 var (

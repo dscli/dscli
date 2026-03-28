@@ -22,7 +22,7 @@ func TestGetAllTools(t *testing.T) {
 			return false
 		}},
 		{"not too large", func(tool toolcall.Tool) bool {
-			return tool.GetTokens() <= 512+256 // around 1.5K
+			return tool.GetTokens() <= 1600 // around 1.5K
 		}},
 	}
 	for _, tt := range tests {

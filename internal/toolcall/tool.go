@@ -181,11 +181,6 @@ func HandleToolCalls(ctx context.Context, tcs []ToolCall) (inputs []Message) {
 		id := tc.ID
 		// 使用新的工具调用处理器
 		result, user, err := HandleToolCall(ctx, tc.Function.Name, tc.Function.Arguments)
-		if err != nil {
-			// But we still need to tell the result to assistant
-			result = fmt.Sprintf("result: %s, with error: %s", result, err.Error())
-		}
-
 		toolContent := ToolContent{
 			Result:     result,
 			Error:      Error(err),
@@ -203,6 +198,7 @@ func HandleToolCalls(ctx context.Context, tcs []ToolCall) (inputs []Message) {
 		if saveErr != nil {
 			outfmt.Debug("failed to save: %v", err)
 		}
+		inputs = append(inputs, input)
 
 	}
 	return inputs
@@ -257,7 +253,10 @@ func HandleToolCall(ctx context.Context, toolName string, argsRaw string) (resul
 	// 获取工具处理器
 	tool, ok := GetToolDef(ctx, toolName)
 	if !ok {
-		return "", "", fmt.Errorf("未知工具: %s", toolName)
+		err = fmt.Errorf("未知工具: %s", toolName)
+		user = fmt.Sprintf("所调用工具 %q 不存在，请严格按照 tools 列表所提供工具调用", toolName)
+		outfmt.Println(user)
+		return
 	}
 
 	truncated := context.ContextValue(ctx, context.FinishReasonLengthKey, false)
