@@ -14,16 +14,15 @@ func init() {
 
 	RegisterTool(ToolDef{
 		Name: "git",
-		Description: `在当前目录运行Git命令。其中 command="git" 是为了Git运行在其他目录，例如
- - git(command="git", args=["-C", "/other/dir", "status"]) :  在 /other/dir 运行 git
+		Description: `在当前目录运行Git命令。例如
  - git(command="commit" args=["-m", "commit message"]) : 在当前目录运行 git
 
 help 子命令可以用来查看 git 帮助，例如
-- git(command="help") : 查看 git 常用子命令列表，如常用子命令忘记，可以使用
-- git(command="help", args=["commit"]): 查看 Git commit 子命令详细用法，如果记不清Git子命令用法，可使用
-- git(command="help", args=["faq"]): 关于使用 Git 的常见问题，如果日常使用 Git 有问题，可使用
-- git(command="help", args=["everyday"]): 日常 Git 的一组有用的最小命令集合, 如想提高可使用
-总之 git tool 呈现 git 所有能力，有含糊就去查帮助。
+- git(command="help") : 查看 git 常用子命令列表
+- git(command="help", args=["commit"]): 查看 Git 子命令详细用法
+- git(command="help", args=["faq"]): 关于使用 Git 的常见问题
+- git(command="help", args=["everyday"]): 日常 Git 的一组有用的最小命令集合
+总之 git tool 呈现 git 所有能力，不清楚可查帮助。
 `,
 		Strict: true,
 		Parameters: map[string]any{
