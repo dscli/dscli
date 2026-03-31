@@ -2,6 +2,7 @@ package git
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/context"
@@ -51,6 +52,16 @@ help 子命令可以用来查看 git 帮助，例如
 	})
 }
 
+func SliceString(args []string) string {
+	return strings.Join(func() []string {
+		qargs := make([]string, len(args))
+		for i, arg := range args {
+			qargs[i] = fmt.Sprintf("%q", arg)
+		}
+		return qargs
+	}(), ",")
+}
+
 func handleGit(ctx context.Context, toolArgs ToolArgs) (result string, suggestion string, err error) {
 	name := "command"
 	command := ToolArgsValue(toolArgs, name, "")
@@ -60,18 +71,19 @@ func handleGit(ctx context.Context, toolArgs ToolArgs) (result string, suggestio
 		return
 	}
 
+	commands := SubCommands()
+	if !slices.Contains(commands, command) {
+		err = fmt.Errorf("command %q is not supported", command)
+		suggestion = fmt.Sprintf(`应该在%s中选择命令`, SliceString(commands))
+		return
+	}
+
 	args := ToolArgsValue(toolArgs, "args", []string{})
 	result, suggestion, err = runGitCommand(ctx, command, args...)
 	if err != nil {
 		if suggestion == "" && result != "" {
 			suggestion = result
-			result = fmt.Sprintf("git(command=%q, args=[%s]) 失败", command, strings.Join(func() []string {
-				qargs := make([]string, len(args))
-				for i, arg := range args {
-					qargs[i] = fmt.Sprintf("%q", arg)
-				}
-				return qargs
-			}(), ","))
+			result = fmt.Sprintf("git(command=%q, args=[%s]) 失败", command, SliceString(args))
 		}
 	}
 	return

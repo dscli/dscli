@@ -3,24 +3,21 @@ package git
 import (
 	"bytes"
 	"os/exec"
-	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
-func runGitCommand(ctx context.Context, command string, args ...string) (result string, suggestion string, err error) {
-	if command != "git" {
-		args = append([]string{command}, args...)
-	} else {
-		command = ""
-	}
+var (
+	subcommands     []string
+	subcommandsOnce sync.Once
+)
 
-	if command == "" && len(args) > 0 {
-		command = args[0]
-	}
+func runGitCommand(ctx context.Context, command string, args ...string) (result string, suggestion string, err error) {
+	args = append([]string{command}, args...)
 
 	startTime := time.Now()
 	outfmt.Notice("运行 git %s 命令\n", command)
@@ -36,18 +33,9 @@ func runGitCommand(ctx context.Context, command string, args ...string) (result 
 
 func GitCommand(ctx context.Context, args ...string) (result string, suggestion string, err error) {
 	workDir := context.ProjectRoot
-	if !slices.Contains(args, "--no-pager") {
-		args = append([]string{"--no-pager"}, args...)
-	}
+	// make sure no pager and no color
+	args = append([]string{"--no-pager", "-c", "color.ui=false"}, args...)
 
-	for i, arg := range args {
-		if arg == "-C" {
-			n := i + 1
-			if n < len(args) {
-				workDir = args[n]
-			}
-		}
-	}
 	// 创建命令
 	cmd := exec.CommandContext(ctx, "git", args...)
 
@@ -88,21 +76,26 @@ func gitHelp(args ...string) string {
 	return output
 }
 
-func SubCommands() (commands []string) {
-	output := gitHelp("-a")
-	if output == "" {
-		return
-	}
-
-	for line := range strings.Lines(output) {
-		if strings.HasPrefix(line, "  ") {
-			fields := strings.Fields(line)
-			command := fields[0]
-			if strings.HasPrefix(command, "[") || strings.HasPrefix(command, "-") {
-				continue
-			}
-			commands = append(commands, command)
+func SubCommands() []string {
+	subcommandsOnce.Do(func() {
+		commands := []string{}
+		output := gitHelp("-a")
+		if output == "" {
+			return
 		}
-	}
-	return append(commands, "git")
+
+		for line := range strings.Lines(output) {
+			if strings.HasPrefix(line, "  ") {
+				fields := strings.Fields(line)
+				command := fields[0]
+				if strings.HasPrefix(command, "[") || strings.HasPrefix(command, "-") {
+					continue
+				}
+				commands = append(commands, command)
+			}
+		}
+		commands = append(commands, "-C")
+		subcommands = commands
+	})
+	return subcommands
 }

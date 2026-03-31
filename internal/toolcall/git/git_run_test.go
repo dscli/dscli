@@ -70,10 +70,11 @@ func TestSubCommands(t *testing.T) {
 		"pull",
 		"push",
 		"format-patch",
-		"git",
+		"-C",
 	} {
 		if !slices.Contains(commands, command) {
-			t.Fatal(commands)
+			t.Fatal(command, commands)
 		}
 	}
 }
+
