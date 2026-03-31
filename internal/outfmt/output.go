@@ -47,7 +47,7 @@ func (logLevel LogLevel) String() string {
 // 输出系统变量
 var (
 	// 是否启用颜色输出
-	outputColorEnabled bool = true
+	outputColorEnabled bool = false
 
 	// 是否显示时间戳
 	outputShowTimestamp bool = true

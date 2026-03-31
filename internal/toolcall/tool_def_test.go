@@ -149,7 +149,7 @@ func TestToolContent(t *testing.T) {
  "result": "done",
  "suggestion": "ok"
 }`},
-		{"only error", "",fmt.Errorf("all wrong!"), "", `{
+		{"only error", "", fmt.Errorf("all wrong!"), "", `{
  "error": "all wrong!"
 }`},
 	}

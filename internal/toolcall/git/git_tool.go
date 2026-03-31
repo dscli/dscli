@@ -2,6 +2,7 @@ package git
 
 import (
 	"fmt"
+	"strings"
 
 	"gitcode.com/dscli/dscli/internal/context"
 )
@@ -61,5 +62,17 @@ func handleGit(ctx context.Context, toolArgs ToolArgs) (result string, suggestio
 
 	args := ToolArgsValue(toolArgs, "args", []string{})
 	result, suggestion, err = runGitCommand(ctx, command, args...)
+	if err != nil {
+		if suggestion == "" && result != "" {
+			suggestion = result
+			result = fmt.Sprintf("git(command=%q, args=[%s]) 失败", command, strings.Join(func() []string {
+				qargs := make([]string, len(args))
+				for i, arg := range args {
+					qargs[i] = fmt.Sprintf("%q", arg)
+				}
+				return qargs
+			}(), ","))
+		}
+	}
 	return
 }

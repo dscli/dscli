@@ -23,4 +23,3 @@ type (
 func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
 	return toolcall.ToolArgsValue(args, key, defaultValue)
 }
-

@@ -23,7 +23,7 @@ func runGitCommand(ctx context.Context, command string, args ...string) (result 
 	}
 
 	startTime := time.Now()
-	outfmt.Printf("运行 git %s 命令\n", command)
+	outfmt.Notice("运行 git %s 命令\n", command)
 
 	result, suggestion, err = GitCommand(ctx, args...)
 	executionTime := time.Since(startTime)
@@ -64,7 +64,7 @@ func GitCommand(ctx context.Context, args ...string) (result string, suggestion 
 	result = stdoutBuf.String()
 	suggestion = stderrBuf.String()
 	if err != nil {
-		outfmt.Error("Git %q 失败", cmd.String())
+		outfmt.Error("%q 失败", cmd.String())
 	}
 	return
 }
