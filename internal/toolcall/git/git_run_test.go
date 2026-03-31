@@ -77,4 +77,3 @@ func TestSubCommands(t *testing.T) {
 		}
 	}
 }
-

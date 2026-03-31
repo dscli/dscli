@@ -40,3 +40,41 @@ func TestFixBrokenJSON(t *testing.T) {
 		})
 	}
 }
+
+func TestToolCallsUnmarshal(t *testing.T) {
+	data := []byte(`[{"id":"call_00_hwUc2FNhUQ45gf3kCdq299Cu",` +
+		`"type":"function","function":{"name":"git","arguments":"{\"command\": ` +
+		`\"commit\", \"args\": [\"-m\",\"fix(git): improve args/arguments ` +
+		`parameter handling logic\"]}"}}]`)
+	tcs := []ToolCall{}
+
+	err := json.Unmarshal(data, &tcs)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(tcs) == 0 {
+		t.Fatal(tcs)
+	}
+	tc := tcs[0]
+	arguments := tc.Function.Arguments
+	if len(arguments) == 0 {
+		t.Fatal(arguments)
+	}
+
+	toolArgs := ToolArgs{}
+	err = json.Unmarshal([]byte(arguments), &toolArgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	command := ToolArgsValue(toolArgs, "command", "")
+	if command == "" {
+		t.Fatal()
+	}
+
+	args := ToolArgsValue(toolArgs, "args", []string{})
+	if len(args) == 0 {
+		t.Fatal(args, toolArgs)
+	}
+}

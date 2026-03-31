@@ -57,6 +57,16 @@ func (tc *ToolContent) String() (content string) {
 // ToolArgsValue 安全获取类型化参数值
 func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
 	if value, ok := args[key]; ok {
+		if anyValues, ok := value.([]any); ok {
+			ss := make([]string, len(anyValues))
+			for i, v := range anyValues {
+				ss[i] = fmt.Sprint(v)
+			}
+			args[key] = ss
+		}
+	}
+
+	if value, ok := args[key]; ok {
 		if typedValue, ok := value.(T); ok {
 			return typedValue
 		}
