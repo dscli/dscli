@@ -79,6 +79,9 @@ func handleGit(ctx context.Context, toolArgs ToolArgs) (result string, suggestio
 	}
 
 	args := ToolArgsValue(toolArgs, "args", []string{})
+	if len(args) == 0 {
+		args = ToolArgsValue(toolArgs, "arguments", []string{})
+	}
 	result, suggestion, err = runGitCommand(ctx, command, args...)
 	if err != nil {
 		if suggestion == "" && result != "" {
