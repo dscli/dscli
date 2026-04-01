@@ -50,22 +50,20 @@ func init() {
 }
 
 // handleWriteFile 写入文件
-func handleWriteFile(ctx context.Context, args toolcall.ToolArgs) (result string, user string, err error) {
+func handleWriteFile(ctx context.Context, args toolcall.ToolArgs) (result string, suggestion string, err error) {
 	truncated := context.ContextValue(ctx, context.FinishReasonLengthKey, false)
-	outfmt.Printf("FinishReasonLength: %v\n", truncated)
 	path := toolcall.ToolArgsValue(args, "path", "")
 	content := toolcall.ToolArgsValue(args, "content", "")
 	lastlines := ""
-	if truncated && len(content) > 100 {
+	if truncated && len(content) > 8192 {
 		runes := []rune(content)
-		lastlines = string(runes[len(runes)-100:])
-		outfmt.Printf("最后几行：\n%s\n", lastlines)
+		lastlines = string(runes[len(runes)-1024:])
 	}
 
 	if path == "" {
 		err = fmt.Errorf("文件路径 path 不能为空")
 		if truncated {
-			user = fmt.Sprintf("内容截断，因为内容长度 %d 超过了最大输出Tokens要求 8192，请严格遵守 write_file 要求，严格控制输出。", len(content))
+			suggestion = fmt.Sprintf("内容截断，因为内容长度 %d 超过了最大输出 Tokens 要求 8192，请严格遵守 write_file 要求，严格控制输出。", len(content))
 		}
 		return
 	}
@@ -138,7 +136,7 @@ func handleWriteFile(ctx context.Context, args toolcall.ToolArgs) (result string
 	result = fmt.Sprintf("成功追加内容到文件 \"%s\"，添加 %d 行。", path, lines)
 
 	if truncated {
-		user = fmt.Sprintf(`此次写入文件 %s 的内容是截断的内容。
+		suggestion = fmt.Sprintf(`此次写入文件 %s 的内容是截断的内容。
 请从上次输出内容的最后一完整行继续生成，并调用工具 write_file(path="%s", append=true, content="...继续生成的内容...") 
 追加入文件%s，为帮助你找到继续生成的点，现把上次截断内容最后几行展示给你：
 ---
@@ -146,8 +144,8 @@ func handleWriteFile(ctx context.Context, args toolcall.ToolArgs) (result string
 如果觉得信息不足以继续生成，可以停下来询问。`, path, path, path, lastlines)
 	} else {
 		n := utf8.RuneCountInString(content)
-		if n > 8192 {
-			user = fmt.Sprintf(`内容成功写入文件，但这部分内容太大(%d > 8192)，请严格按照 write_file 工具要求，严格控制输出长度。`, n)
+		if n > 16384 {
+			suggestion = fmt.Sprintf(`内容成功写入文件，但这部分内容太大(%d > 16384)，请严格按照 write_file 工具要求，严格控制输出长度。`, n)
 		}
 	}
 	return
