@@ -12,6 +12,17 @@ import (
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
+const (
+	// truncationByteThreshold 触发截断的字节长度阈值（当内容被外部截断时）
+	truncationByteThreshold = 8192
+	// previewLastChars 预览时显示的最后字符数
+	previewLastChars = 1024
+	// warningCharThreshold 警告用户内容过大的字符数阈值
+	warningCharThreshold = 16384
+	// maxOutputTokens LLM最大输出token限制（用于错误信息）
+	maxOutputTokens = 8192
+)
+
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "write_file",
@@ -55,15 +66,19 @@ func handleWriteFile(ctx context.Context, args toolcall.ToolArgs) (result string
 	path := toolcall.ToolArgsValue(args, "path", "")
 	content := toolcall.ToolArgsValue(args, "content", "")
 	lastlines := ""
-	if truncated && len(content) > 8192 {
+	if truncated && len(content) > truncationByteThreshold {
 		runes := []rune(content)
-		lastlines = string(runes[len(runes)-1024:])
+		start := len(runes) - previewLastChars
+		if start < 0 {
+			start = 0
+		}
+		lastlines = string(runes[start:])
 	}
 
 	if path == "" {
 		err = fmt.Errorf("文件路径 path 不能为空")
 		if truncated {
-			suggestion = fmt.Sprintf("内容截断，因为内容长度 %d 超过了最大输出 Tokens 要求 8192，请严格遵守 write_file 要求，严格控制输出。", len(content))
+			suggestion = fmt.Sprintf("内容截断，因为内容长度 %d 超过了最大输出 Tokens 要求 %d，请严格遵守 write_file 要求，严格控制输出。", len(content), maxOutputTokens)
 		}
 		return
 	}
@@ -144,8 +159,8 @@ func handleWriteFile(ctx context.Context, args toolcall.ToolArgs) (result string
 如果觉得信息不足以继续生成，可以停下来询问。`, path, path, path, lastlines)
 	} else {
 		n := utf8.RuneCountInString(content)
-		if n > 16384 {
-			suggestion = fmt.Sprintf(`内容成功写入文件，但这部分内容太大(%d > 16384)，请严格按照 write_file 工具要求，严格控制输出长度。`, n)
+		if n > warningCharThreshold {
+			suggestion = fmt.Sprintf(`内容成功写入文件，但这部分内容太大(%d > %d)，请严格按照 write_file 工具要求，严格控制输出长度。`, n, warningCharThreshold)
 		}
 	}
 	return
