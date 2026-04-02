@@ -95,6 +95,8 @@ func Ripgrep(ctx context.Context, pattern string, path string, glob string, file
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			if exitErr.ExitCode() == 1 {
+				// ripgrep 退出码 1 表示"未找到匹配"，这不是错误
+				err = nil
 				return
 			}
 			err = fmt.Errorf("ripgrep failed with exit code %d: %s", exitErr.ExitCode(), string(exitErr.Stderr))
@@ -219,7 +221,7 @@ func applyPagination[T any](items []T, offset, limit int) []T {
 	if limit <= 0 {
 		limit = len(items)
 	}
-	end := min(offset + limit, len(items))
+	end := min(offset+limit, len(items))
 	return items[offset:end]
 }
 
@@ -328,6 +330,7 @@ func handleRipgrep(ctx context.Context, toolArgs toolcall.ToolArgs) (result stri
 	beforeLines := toolcall.ToolArgsValue(toolArgs, "-B", int64(0))
 	contextLines := toolcall.ToolArgsValue(toolArgs, "-C", int64(0))
 	if contextLines > 0 {
+		// -C 参数优先级最高，会覆盖显式指定的 -A 和 -B
 		afterLines = contextLines
 		beforeLines = contextLines
 	}
