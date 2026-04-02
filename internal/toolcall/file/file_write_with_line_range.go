@@ -77,7 +77,7 @@ func init() {
 
 // handleWriteFileWithLineRange 写入文件指定行范围的内容
 // 如果 content 为空字符串，则删除指定行范围
-func handleWriteFileWithLineRange(ctx context.Context, args toolcall.ToolArgs) (result string, user string, err error) {
+func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result string, user string, err error) {
 	// 检查必需参数
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {

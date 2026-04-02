@@ -92,8 +92,8 @@ func Ripgrep(ctx context.Context, pattern string, path string, glob string, file
 			err = fmt.Errorf("ripgrep (rg) is not installed or not in PATH. Please install it: https://github.com/BurntSushi/ripgrep#installation")
 			return
 		}
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			if exitErr.ExitCode() == 1 {
 				// ripgrep 退出码 1 表示"未找到匹配"，这不是错误
 				err = nil
@@ -313,7 +313,7 @@ func formatCountMatches(matches []GrepMatch, offset, headLimit int) string {
 	return fmt.Sprintf("%s\n\nFound %d total %s across %d %s.", result, totalOccurrences, occurrenceWord, totalFiles, fileWord)
 }
 
-func handleRipgrep(ctx context.Context, toolArgs toolcall.ToolArgs) (result string, suggestion string, err error) {
+func handleRipgrep(ctx context.Context, toolArgs ToolArgs) (result string, suggestion string, err error) {
 	pattern := toolcall.ToolArgsValue(toolArgs, "pattern", "")
 	if pattern == "" {
 		err = fmt.Errorf("pattern is required")

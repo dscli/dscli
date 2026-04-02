@@ -92,7 +92,7 @@ func init() {
 
 // handleSearchFileWithPattern 搜索文件中匹配指定模式的行，并显示上下文
 // 输出格式与 awk 类似，保持一致性
-func handleSearchFileWithPattern(ctx context.Context, args toolcall.ToolArgs) (result string, user string, err error) {
+func handleSearchFileWithPattern(ctx context.Context, args ToolArgs) (result string, user string, err error) {
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		err = fmt.Errorf("parameter error: no path specified")

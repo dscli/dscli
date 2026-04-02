@@ -61,7 +61,7 @@ func init() {
 }
 
 // handleWriteFile 写入文件
-func handleWriteFile(ctx context.Context, args toolcall.ToolArgs) (result string, suggestion string, err error) {
+func handleWriteFile(ctx context.Context, args ToolArgs) (result string, suggestion string, err error) {
 	truncated := context.ContextValue(ctx, context.FinishReasonLengthKey, false)
 	path := toolcall.ToolArgsValue(args, "path", "")
 	content := toolcall.ToolArgsValue(args, "content", "")

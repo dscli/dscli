@@ -9,8 +9,9 @@ import (
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
-func init() {
-}
+type (
+	ToolArgs = toolcall.ToolArgs
+)
 
 // ResolvePath 解析文件路径：如果是相对路径，则拼接项目根目录；否则直接使用
 func ResolvePath(ctx context.Context, path string) string {
@@ -22,7 +23,7 @@ func ResolvePath(ctx context.Context, path string) string {
 }
 
 // ParseLineRange parse line range
-func ParseLineRange(args toolcall.ToolArgs) (int, int, error) {
+func ParseLineRange(args ToolArgs) (int, int, error) {
 	// 解析开始行号
 	startLine := int(toolcall.ToolArgsValue(args, "start_line", int64(1)))
 	// 解析结束行号

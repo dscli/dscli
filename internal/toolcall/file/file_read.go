@@ -29,7 +29,7 @@ func init() {
 }
 
 // handleReadFile 读取文件（纯Go实现）
-func handleReadFile(ctx context.Context, args toolcall.ToolArgs) (output string, user string, err error) {
+func handleReadFile(ctx context.Context, args ToolArgs) (output string, user string, err error) {
 	output, user, err = handleReadFileWithLineRange(ctx, args)
 	return
 }

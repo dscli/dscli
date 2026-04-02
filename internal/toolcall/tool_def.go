@@ -118,9 +118,10 @@ func ToArrayType[T PrimitiveType](anyValues []any, anyValuesLen int) []T {
 // ToolArgsValue 安全获取类型化参数值
 func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
 	var (
-		value     any
-		ok        bool
-		anyValues []any
+		value      any
+		ok         bool
+		anyValues  []any
+		floatValue float64
 	)
 
 	if value, ok = args[key]; ok {
@@ -133,26 +134,23 @@ func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
 				case string:
 					value = ToArrayType[string](anyValues, anyValuesLen)
 				case float64:
-					value = ToArrayType[float64](anyValues, anyValuesLen)
-				case int64:
-					value = ToArrayType[int64](anyValues, anyValuesLen)
+					switch any(defaultValue).(type) {
+					case []float64:
+						value = ToArrayType[float64](anyValues, anyValuesLen)
+					case []int64:
+						value = ToArrayType[int64](anyValues, anyValuesLen)
+					}
 				case bool:
 					value = ToArrayType[bool](anyValues, anyValuesLen)
 				default:
 					// 无法识别的类型，保持原样
 				}
-			} else {
-				// 空切片，根据默认值的类型创建对应类型的空切片
-				switch any(defaultValue).(type) {
-				case []string:
-					value = []string{}
-				case []float64:
-					value = []float64{}
-				case []int64:
-					value = []int64{}
-				case []bool:
-					value = []bool{}
-				}
+			}
+		}
+
+		if floatValue, ok = value.(float64); ok {
+			if _, ok = any(defaultValue).(int64); ok {
+				value = int64(floatValue)
 			}
 		}
 	}
@@ -160,6 +158,7 @@ func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
 	if typedValue, ok := value.(T); ok {
 		return typedValue
 	}
+
 	return defaultValue
 }
 

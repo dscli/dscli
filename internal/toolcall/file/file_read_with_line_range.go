@@ -63,7 +63,7 @@ func init() {
 
 // handleReadFileWithLineRange 读取文件指定行范围的内容
 // 输出格式与 awk 'NR>=start && NR<=end {print NR": "$0}' 完全一致
-func handleReadFileWithLineRange(ctx context.Context, args toolcall.ToolArgs) (output string, user string, err error) {
+func handleReadFileWithLineRange(ctx context.Context, args ToolArgs) (output string, user string, err error) {
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		err = fmt.Errorf("parameter error: no path specified")
