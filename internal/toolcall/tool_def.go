@@ -69,7 +69,48 @@ func (tc *ToolContent) String() (content string) {
 func ToArrayType[T PrimitiveType](anyValues []any, anyValuesLen int) []T {
 	sa := make([]T, anyValuesLen)
 	for i, v := range anyValues {
-		sa[i] = v.(T)
+		// 安全的类型转换，避免panic
+		switch any(*new(T)).(type) {
+		case string:
+			if str, ok := v.(string); ok {
+				sa[i] = any(str).(T)
+			} else {
+				// 对于非字符串类型，尝试转换为字符串
+				sa[i] = any(fmt.Sprint(v)).(T)
+			}
+		case float64:
+			switch val := v.(type) {
+			case float64:
+				sa[i] = any(val).(T)
+			case int64:
+				sa[i] = any(float64(val)).(T)
+			case int:
+				sa[i] = any(float64(val)).(T)
+			default:
+				// 无法转换，使用零值
+				sa[i] = *new(T)
+			}
+		case int64:
+			switch val := v.(type) {
+			case int64:
+				sa[i] = any(val).(T)
+			case float64:
+				// 注意：这里会截断小数部分
+				sa[i] = any(int64(val)).(T)
+			case int:
+				sa[i] = any(int64(val)).(T)
+			default:
+				// 无法转换，使用零值
+				sa[i] = *new(T)
+			}
+		case bool:
+			if b, ok := v.(bool); ok {
+				sa[i] = any(b).(T)
+			} else {
+				// 无法转换，使用零值
+				sa[i] = *new(T)
+			}
+		}
 	}
 	return sa
 }
@@ -86,8 +127,9 @@ func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
 		if anyValues, ok = value.([]any); ok {
 			anyValuesLen := len(anyValues)
 			if anyValuesLen != 0 {
-				anyValue := anyValues[0]
-				switch anyValue.(type) {
+				// 检查第一个元素的类型来决定转换目标类型
+				firstValue := anyValues[0]
+				switch firstValue.(type) {
 				case string:
 					value = ToArrayType[string](anyValues, anyValuesLen)
 				case float64:
@@ -96,6 +138,20 @@ func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
 					value = ToArrayType[int64](anyValues, anyValuesLen)
 				case bool:
 					value = ToArrayType[bool](anyValues, anyValuesLen)
+				default:
+					// 无法识别的类型，保持原样
+				}
+			} else {
+				// 空切片，根据默认值的类型创建对应类型的空切片
+				switch any(defaultValue).(type) {
+				case []string:
+					value = []string{}
+				case []float64:
+					value = []float64{}
+				case []int64:
+					value = []int64{}
+				case []bool:
+					value = []bool{}
 				}
 			}
 		}
