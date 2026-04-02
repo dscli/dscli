@@ -12,9 +12,6 @@ import (
 )
 
 func init() {
-	if RipgrepExists(){
-		return
-	}
 	// 注册文件模式搜索工具
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "search_file_with_pattern",
@@ -30,7 +27,7 @@ func init() {
 
 输出格式：
   > 匹配行号: 匹配行内容（用 > 标记）
-    上下文行号: 上下文行内容
+     上下文行号: 上下文行内容
 
 适用场景：
 - 简单的文本模式搜索

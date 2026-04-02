@@ -12,7 +12,6 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/toolcall"
-	"github.com/bmatcuk/doublestar/v4"
 )
 
 const (
@@ -93,7 +92,8 @@ func Ripgrep(ctx context.Context, pattern string, path string, glob string, file
 			err = fmt.Errorf("ripgrep (rg) is not installed or not in PATH. Please install it: https://github.com/BurntSushi/ripgrep#installation")
 			return
 		}
-		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
 			if exitErr.ExitCode() == 1 {
 				return
 			}
@@ -117,15 +117,6 @@ func Ripgrep(ctx context.Context, pattern string, path string, glob string, file
 		}
 		if data.Type == "match" || data.Type == "context" {
 			matchPath := data.Data.Path.Text
-			if fileType != "" && glob != "" {
-				matched, _ := doublestar.Match(glob, matchPath)
-				if !matched {
-					matched, _ = doublestar.Match(glob, filepath.Base(matchPath))
-				}
-				if !matched {
-					continue
-				}
-			}
 			matches = append(matches, GrepMatch{
 				Path:    matchPath,
 				Line:    data.Data.LineNumber,
@@ -137,7 +128,7 @@ func Ripgrep(ctx context.Context, pattern string, path string, glob string, file
 }
 
 func init() {
-	if !RipgrepExists(){
+	if !RipgrepExists() {
 		return
 	}
 	toolcall.RegisterTool(toolcall.ToolDef{
@@ -168,43 +159,39 @@ func init() {
 					"type":        "string",
 					"description": "Glob pattern to filter files (e.g. '*.js', '*.{ts,tsx}') - maps to rg --glob",
 				},
-				"output_mode": map[string]any{
+				"type": map[string]any{
 					"type":        "string",
-					"description": "Output mode: 'content' shows matching lines (supports -A/-B/-C context, -n line numbers, head_limit), 'files_with_matches' shows file paths (supports head_limit), 'count' shows match counts (supports head_limit). Defaults to 'files_with_matches'.",
-					"enum":        []string{"content", "files_with_matches", "count"},
+					"description": "File type to search (rg --type). Common types: js, py, rust, go, java, etc. More efficient than include for standard file types.",
 				},
-				"-C": map[string]any{
-					"type":        "integer",
-					"description": "Number of lines to show before and after each match (rg -C). Requires output_mode: 'content', ignored otherwise.",
+				"-i": map[string]any{
+					"type":        "boolean",
+					"description": "Case insensitive search (rg -i)",
 				},
-				"-B": map[string]any{
-					"type":        "integer",
-					"description": "Number of lines to show before each match (rg -B). Requires output_mode: 'content', ignored otherwise.",
+				"-n": map[string]any{
+					"type":        "boolean",
+					"description": "Show line numbers in output (rg -n). Requires output_mode: 'content', ignored otherwise. Defaults to true.",
 				},
 				"-A": map[string]any{
 					"type":        "integer",
 					"description": "Number of lines to show after each match (rg -A). Requires output_mode: 'content', ignored otherwise.",
 				},
-
-				"-n": map[string]any{
-					"type":        "boolean",
-					"description": "Show line numbers in output (rg -n). Requires output_mode: 'content', ignored otherwise. Defaults to true.",
+				"-B": map[string]any{
+					"type":        "integer",
+					"description": "Number of lines to show before each match (rg -B). Requires output_mode: 'content', ignored otherwise.",
 				},
-
-				"-i": map[string]any{
-					"type":        "boolean",
-					"description": "Case insensitive search (rg -i)",
+				"-C": map[string]any{
+					"type":        "integer",
+					"description": "Number of lines to show before and after each match (rg -C). Requires output_mode: 'content', ignored otherwise.",
 				},
-
-				"type": map[string]any{
+				"output_mode": map[string]any{
 					"type":        "string",
-					"description": "File type to search (rg --type). Common types: js, py, rust, go, java, etc. More efficient than include for standard file types.",
+					"description": "Output mode: 'content' shows matching lines (supports -A/-B/-C context, -n line numbers, head_limit), 'files_with_matches' shows file paths (supports head_limit), 'count' shows match counts (supports head_limit). Defaults to 'files_with_matches'.",
+					"enum":        []string{"content", "files_with_matches", "count"},
 				},
 				"head_limit": map[string]any{
 					"type":        "integer",
 					"description": "Limit output to first N lines/entries, equivalent to '| head -N'. Works across all output modes: content (limits output lines), files_with_matches (limits file paths), count (limits count entries). Defaults to 0 (unlimited).",
 				},
-
 				"offset": map[string]any{
 					"type":        "integer",
 					"description": "Skip first N lines/entries before applying head_limit, equivalent to '| tail -n +N | head -N'. Works across all output modes. Defaults to 0.",
@@ -222,62 +209,71 @@ func init() {
 	})
 }
 
-func applyPagination[T any](items []T, offset, headLimit int) []T {
+func applyPagination[T any](items []T, offset, limit int) []T {
 	if offset < 0 {
 		offset = 0
 	}
 	if offset >= len(items) {
 		return []T{}
 	}
-	items = items[offset:]
-
-	if headLimit > 0 && headLimit < len(items) {
-		items = items[:headLimit]
+	if limit <= 0 {
+		limit = len(items)
 	}
-	return items
+	end := offset + limit
+	if end > len(items) {
+		end = len(items)
+	}
+	return items[offset:end]
+}
+
+func formatContentMatches(matches []GrepMatch, showLineNumbers bool) string {
+	if len(matches) == 0 {
+		return noMatchesFound
+	}
+
+	var b strings.Builder
+	for _, match := range matches {
+		if showLineNumbers {
+			b.WriteString(fmt.Sprintf("%s:%d:%s\n", match.Path, match.Line, match.Content))
+		} else {
+			b.WriteString(fmt.Sprintf("%s:%s\n", match.Path, match.Content))
+		}
+	}
+	return strings.TrimSuffix(b.String(), "\n")
 }
 
 func formatFileMatches(matches []GrepMatch, offset, headLimit int) string {
 	if len(matches) == 0 {
 		return noFilesFound
 	}
-	seen := make(map[string]bool)
-	var uniquePaths []string
+
+	// 去重文件路径
+	fileSet := make(map[string]bool)
 	for _, match := range matches {
-		if !seen[match.Path] {
-			seen[match.Path] = true
-			uniquePaths = append(uniquePaths, match.Path)
-		}
+		fileSet[match.Path] = true
 	}
-	totalFiles := len(uniquePaths)
-	uniquePaths = applyPagination(uniquePaths, offset, headLimit)
 
-	fileWord := "files"
-	if totalFiles == 1 {
-		fileWord = "file"
+	var files []string
+	for file := range fileSet {
+		files = append(files, file)
 	}
-	return fmt.Sprintf("Found %d %s\n%s", totalFiles, fileWord, strings.Join(uniquePaths, "\n"))
-}
+	sort.Strings(files)
 
-func formatContentMatches(matches []GrepMatch, showLineNum bool) string {
-	if len(matches) == 0 {
-		return noMatchesFound
-	}
+	files = applyPagination(files, offset, headLimit)
+
 	var b strings.Builder
-	for _, match := range matches {
-		b.WriteString(match.Path)
-		if showLineNum {
-			b.WriteString(":")
-			b.WriteString(strconv.Itoa(match.Line))
-		}
-		b.WriteString(":")
-		b.WriteString(match.Content)
-		b.WriteString("\n")
+	for _, file := range files {
+		b.WriteString(file + "\n")
 	}
 	return strings.TrimSuffix(b.String(), "\n")
 }
 
 func formatCountMatches(matches []GrepMatch, offset, headLimit int) string {
+	if len(matches) == 0 {
+		return noMatchesFound
+	}
+
+	// 统计每个文件的匹配次数
 	countMap := make(map[string]int)
 	for _, match := range matches {
 		countMap[match.Path]++
@@ -347,7 +343,7 @@ func handleRipgrep(ctx context.Context, toolArgs toolcall.ToolArgs) (result stri
 	}
 
 	sort.SliceStable(matches, func(i, j int) bool {
-		return filepath.Base(matches[i].Path) < filepath.Base(matches[j].Path)
+		return matches[i].Path < matches[j].Path
 	})
 
 	switch outputMode {
