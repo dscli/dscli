@@ -23,25 +23,25 @@ type ToolDef struct {
 type ToolArgs map[string]any
 
 // Primitive types tool arguments support:
-// 1. string   - string
-// 2. float64  - number
-// 3. int64    - integer
-// 4. bool     - boolean
-// 5. []string  - array with item type string
-// 6. []float64 - array with item type float64
-// 7. []int64   - array with item type int64
-// 8. []bool    - array with item type bool
+// 1. string              - string
+// 2. float64, float64    - number
+// 3. int64, int32, int   - integer
+// 4. bool                - boolean
+// 5. []string                    - array with item type string
+// 6. []float64, []float32        - array with item type float64, float32
+// 7. []int64, []int32, []int     - array with item type int64, int32, int
+// 8. []bool                      - array with item type bool
 
 type Primitive interface {
 	PrimitiveType | ArrayType
 }
 
 type PrimitiveType interface {
-	~string | ~float64 | ~int64 | ~bool
+	~string | ~float64 | ~float32 | ~int64 | ~int32 | ~int | ~bool
 }
 
 type ArrayType interface {
-	~[]string | ~[]float64 | ~[]int64 | ~[]bool
+	~[]string | ~[]float64 | ~[]float32 | ~[]int64 | ~[]int32 | ~[]int | ~[]bool
 }
 
 func Error(err error) string {
@@ -82,23 +82,42 @@ func ToArrayType[T PrimitiveType](anyValues []any, anyValuesLen int) []T {
 			switch val := v.(type) {
 			case float64:
 				sa[i] = any(val).(T)
-			case int64:
-				sa[i] = any(float64(val)).(T)
-			case int:
-				sa[i] = any(float64(val)).(T)
 			default:
 				// 无法转换，使用零值
 				sa[i] = *new(T)
 			}
+		case float32:
+			switch val := v.(type) {
+			case float64:
+				sa[i] = any(float32(val)).(T)
+			default:
+				// 无法转换，使用零值
+				sa[i] = *new(T)
+			}
+
 		case int64:
 			switch val := v.(type) {
-			case int64:
-				sa[i] = any(val).(T)
 			case float64:
 				// 注意：这里会截断小数部分
 				sa[i] = any(int64(val)).(T)
-			case int:
-				sa[i] = any(int64(val)).(T)
+			default:
+				// 无法转换，使用零值
+				sa[i] = *new(T)
+			}
+		case int32:
+			switch val := v.(type) {
+			case float64:
+				// 注意：这里会截断小数部分
+				sa[i] = any(int32(val)).(T)
+			default:
+				// 无法转换，使用零值
+				sa[i] = *new(T)
+			}
+		case int:
+			switch val := v.(type) {
+			case float64:
+				// 注意：这里会截断小数部分
+				sa[i] = any(int(val)).(T)
 			default:
 				// 无法转换，使用零值
 				sa[i] = *new(T)
@@ -137,8 +156,14 @@ func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
 					switch any(defaultValue).(type) {
 					case []float64:
 						value = ToArrayType[float64](anyValues, anyValuesLen)
+					case []float32:
+						value = ToArrayType[float32](anyValues, anyValuesLen)
 					case []int64:
 						value = ToArrayType[int64](anyValues, anyValuesLen)
+					case []int32:
+						value = ToArrayType[int32](anyValues, anyValuesLen)
+					case []int:
+						value = ToArrayType[int](anyValues, anyValuesLen)
 					}
 				case bool:
 					value = ToArrayType[bool](anyValues, anyValuesLen)
@@ -149,8 +174,15 @@ func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
 		}
 
 		if floatValue, ok = value.(float64); ok {
-			if _, ok = any(defaultValue).(int64); ok {
+			switch any(defaultValue).(type) {
+			case float32:
+				value = float32(floatValue)
+			case int64:
 				value = int64(floatValue)
+			case int32:
+				value = int32(floatValue)
+			case int:
+				value = int(floatValue)
 			}
 		}
 	}
