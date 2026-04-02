@@ -219,10 +219,7 @@ func applyPagination[T any](items []T, offset, limit int) []T {
 	if limit <= 0 {
 		limit = len(items)
 	}
-	end := offset + limit
-	if end > len(items) {
-		end = len(items)
-	}
+	end := min(offset + limit, len(items))
 	return items[offset:end]
 }
 
@@ -234,9 +231,9 @@ func formatContentMatches(matches []GrepMatch, showLineNumbers bool) string {
 	var b strings.Builder
 	for _, match := range matches {
 		if showLineNumbers {
-			b.WriteString(fmt.Sprintf("%s:%d:%s\n", match.Path, match.Line, match.Content))
+			fmt.Fprintf(&b, "%s:%d:%s\n", match.Path, match.Line, match.Content)
 		} else {
-			b.WriteString(fmt.Sprintf("%s:%s\n", match.Path, match.Content))
+			fmt.Fprintf(&b, "%s:%s\n", match.Path, match.Content)
 		}
 	}
 	return strings.TrimSuffix(b.String(), "\n")
