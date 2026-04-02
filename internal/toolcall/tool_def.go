@@ -27,9 +27,21 @@ type ToolArgs map[string]any
 // 2. float64  - number
 // 3. int64    - integer
 // 4. bool     - boolean
-// 5. []string - array
+// 5. []string  - array with item type string
+// 6. []float64 - array with item type float64
+// 7. []int64   - array with item type int64
+// 8. []bool    - array with item type bool
+
 type Primitive interface {
-	~string | ~float64 | ~int64 | ~bool | ~[]string
+	PrimitiveType | ArrayType
+}
+
+type PrimitiveType interface {
+	~string | ~float64 | ~int64 | ~bool
+}
+
+type ArrayType interface {
+	~[]string | ~[]float64 | ~[]int64 | ~[]bool
 }
 
 func Error(err error) string {
@@ -54,22 +66,43 @@ func (tc *ToolContent) String() (content string) {
 	return
 }
 
+func ToArrayType[T PrimitiveType](anyValues []any, anyValuesLen int) []T {
+	sa := make([]T, anyValuesLen)
+	for i, v := range anyValues {
+		sa[i] = v.(T)
+	}
+	return sa
+}
+
 // ToolArgsValue 安全获取类型化参数值
 func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
-	if value, ok := args[key]; ok {
-		if anyValues, ok := value.([]any); ok {
-			ss := make([]string, len(anyValues))
-			for i, v := range anyValues {
-				ss[i] = fmt.Sprint(v)
+	var (
+		value     any
+		ok        bool
+		anyValues []any
+	)
+
+	if value, ok = args[key]; ok {
+		if anyValues, ok = value.([]any); ok {
+			anyValuesLen := len(anyValues)
+			if anyValuesLen != 0 {
+				anyValue := anyValues[0]
+				switch anyValue.(type) {
+				case string:
+					value = ToArrayType[string](anyValues, anyValuesLen)
+				case float64:
+					value = ToArrayType[float64](anyValues, anyValuesLen)
+				case int64:
+					value = ToArrayType[int64](anyValues, anyValuesLen)
+				case bool:
+					value = ToArrayType[bool](anyValues, anyValuesLen)
+				}
 			}
-			args[key] = ss
 		}
 	}
 
-	if value, ok := args[key]; ok {
-		if typedValue, ok := value.(T); ok {
-			return typedValue
-		}
+	if typedValue, ok := value.(T); ok {
+		return typedValue
 	}
 	return defaultValue
 }
