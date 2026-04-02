@@ -32,12 +32,12 @@ help 子命令可以用来查看 git 帮助，例如
 			"properties": map[string]any{
 				"command": map[string]any{
 					"type":        "string",
-					"description": `Git命令或子命令`,
+					"description": `Git子命令`,
 					"enum":        subCommands,
 				},
 				"args": map[string]any{
 					"type":        "array",
-					"description": `Git子命令或选项列表`,
+					"description": `Git子命令选项列表`,
 					"items": map[string]string{
 						"type":        "string",
 						"description": "Git子命令或选项",
