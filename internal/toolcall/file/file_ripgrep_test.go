@@ -23,7 +23,7 @@ func Test_handleRipgrep(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
-			args := func()(v ToolArgs) {
+			args := func() (v ToolArgs) {
 				b, err := json.Marshal(tt.toolArgs)
 				if err != nil {
 					t.Fatal(err)

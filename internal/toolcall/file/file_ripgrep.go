@@ -335,12 +335,12 @@ func handleRipgrep(ctx context.Context, toolArgs ToolArgs) (result string, sugge
 		beforeLines = contextLines
 	}
 	outputMode := toolcall.ToolArgsValue(toolArgs, "output_mode", "files_with_matches")
-	
+
 	// 注意：ToolArgsValue使用int64作为默认值，但实际参数可能是float64
 	// ToolArgsValue函数会自动将float64转换为int64
 	headLimit := int(toolcall.ToolArgsValue(toolArgs, "head_limit", int64(0)))
 	offset := int(toolcall.ToolArgsValue(toolArgs, "offset", int64(0)))
-	
+
 	matches, err := Ripgrep(ctx, pattern, path, glob, fileType, afterLines, beforeLines, caseInsensitive, enableMultiline)
 	if err != nil {
 		return

@@ -8,6 +8,7 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/context"
 )
+
 func init() {
 	subCommands := SubCommands()
 	if len(subCommands) == 0 {
@@ -36,7 +37,7 @@ help 子命令可以用来查看 git 帮助，例如
 					"enum":        subCommands,
 				},
 				"-C": map[string]any{
-					"type": "string",
+					"type":        "string",
 					"description": `Git 工作目录，对应 git -C <路径> ，默认当前目录。`,
 				},
 				"args": map[string]any{

@@ -97,7 +97,6 @@ func TestToolArgsValue(t *testing.T) {
 		}
 	}
 
-
 	{ // integer - int64
 		tcs := []struct {
 			name         string
