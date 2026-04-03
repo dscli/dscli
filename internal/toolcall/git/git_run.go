@@ -39,8 +39,10 @@ func GitCommand(ctx context.Context, args ...string) (result string, suggestion 
 	// 创建命令
 	cmd := exec.CommandContext(ctx, "git", args...)
 
-	// 设置工作目录
-	cmd.Dir = workDir
+	// 设置工作目录（仅当非空时）
+	if workDir != "" {
+		cmd.Dir = workDir
+	}
 
 	// 捕获输出
 	var stdoutBuf, stderrBuf bytes.Buffer

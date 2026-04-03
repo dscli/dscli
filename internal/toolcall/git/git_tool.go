@@ -2,12 +2,12 @@ package git
 
 import (
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/context"
 )
-
 func init() {
 	subCommands := SubCommands()
 	if len(subCommands) == 0 {
@@ -86,6 +86,11 @@ func handleGit(ctx context.Context, toolArgs ToolArgs) (result string, suggestio
 		ToolArgsValue(toolArgs, "arguments", []string{}))
 
 	gitWorkingDir := ToolArgsValue(toolArgs, "-C", context.ProjectRoot)
+	// 清理路径：去除多余的空格并使用Clean清理路径
+	if gitWorkingDir != "" {
+		gitWorkingDir = strings.TrimSpace(gitWorkingDir)
+		gitWorkingDir = filepath.Clean(gitWorkingDir)
+	}
 	ctx = context.WithValue(ctx, context.GitWorkingDirKey, gitWorkingDir)
 	result, suggestion, err = runGitCommand(ctx, command, args...)
 	if err != nil {
