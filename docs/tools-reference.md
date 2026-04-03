@@ -223,16 +223,11 @@ dscli 提供了丰富的工具集，帮助AI助手与开发环境进行交互。
 **示例**:
 ```json
 {
-  "name": "sqlite",
-  "arguments": {
-    "script": ".schema messages"
-  }
+  "script": ".schema messages"
 }
 ```
 
 **注意**: 该工具已从工具集中移除，因为ShellExec重构后只支持Bash和Python，不再支持sqlite3命令行工具。
-## 工具统计
-
 当前版本共提供 **16** 个工具，分为5个类别：
 - 文件操作工具: 6个
 - Git操作工具: 6个  

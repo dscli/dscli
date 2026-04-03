@@ -170,6 +170,9 @@ func CreateIssue(ctx context.Context, opts CreateIssueOptions) (*Issue, error) {
 	defer resp.Body.Close()
 
 	// 检查HTTP状态码
+	// GitCode API在某些情况下可能返回200 OK（如幂等性检查通过），
+	// 而标准RESTful API通常返回201 Created。
+	// 为了兼容性，我们同时接受两种状态码。
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, &IssueAPIError{
