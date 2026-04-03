@@ -150,7 +150,7 @@ watch-test:
 
 # release: 构建发布版本
 release: clean
-	@echo "构建 dscli v$(VERSION) 发布版本..."
+	@echo "构建 dscli $(VERSION) 发布版本..."
 	@echo "构建时间: $(BUILD_DATE)"
 	@echo "Git提交: $(GIT_COMMIT)"
 	@echo ""
@@ -184,7 +184,7 @@ release: clean
 
 # release-info: 显示发布信息
 release-info:
-	@echo "=== dscli v$(VERSION) 发布信息 ==="
+	@echo "=== dscli $(VERSION) 发布信息 ==="
 	@echo "版本号: $(VERSION)"
 	@echo "构建时间: $(BUILD_DATE)"
 	@echo "Git提交: $(GIT_COMMIT)"
