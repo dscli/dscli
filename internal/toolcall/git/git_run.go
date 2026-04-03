@@ -32,7 +32,7 @@ func runGitCommand(ctx context.Context, command string, args ...string) (result 
 }
 
 func GitCommand(ctx context.Context, args ...string) (result string, suggestion string, err error) {
-	workDir := context.ProjectRoot
+	workDir := context.ContextValue(ctx, context.GitWorkingDirKey, context.ProjectRoot)
 	// make sure no pager and no color
 	args = append([]string{"--no-pager", "-c", "color.ui=false"}, args...)
 
@@ -94,7 +94,6 @@ func SubCommands() []string {
 				commands = append(commands, command)
 			}
 		}
-		commands = append(commands, "-C")
 		subcommands = commands
 	})
 	return subcommands

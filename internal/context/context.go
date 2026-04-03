@@ -28,6 +28,7 @@ var (
 	WechatFormatKey       = ContextKeyType[string]{"WechatFormat"}
 	ToolDisplayNameKey    = ContextKeyType[string]{"ToolDisplayName"}
 	FinishReasonLengthKey = ContextKeyType[bool]{"FinishReasonLength"}
+	GitWorkingDirKey      = ContextKeyType[string]{"GitWorkingDir"}
 )
 
 var (

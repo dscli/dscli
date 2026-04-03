@@ -35,6 +35,10 @@ help 子命令可以用来查看 git 帮助，例如
 					"description": `Git子命令`,
 					"enum":        subCommands,
 				},
+				"-C": map[string]any{
+					"type": "string",
+					"description": `Git 工作目录，对应 git -C <路径> ，默认当前目录。`,
+				},
 				"args": map[string]any{
 					"type":        "array",
 					"description": `Git子命令选项列表`,
@@ -80,6 +84,9 @@ func handleGit(ctx context.Context, toolArgs ToolArgs) (result string, suggestio
 
 	args := ToolArgsValue(toolArgs, "args",
 		ToolArgsValue(toolArgs, "arguments", []string{}))
+
+	gitWorkingDir := ToolArgsValue(toolArgs, "-C", context.ProjectRoot)
+	ctx = context.WithValue(ctx, context.GitWorkingDirKey, gitWorkingDir)
 	result, suggestion, err = runGitCommand(ctx, command, args...)
 	if err != nil {
 		if suggestion == "" && result != "" {

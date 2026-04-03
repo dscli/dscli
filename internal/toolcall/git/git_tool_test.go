@@ -104,9 +104,12 @@ func Test_handleGit_C(t *testing.T) {
 					}
 				}
 			}())
+			command := tt.args[0]
+			args := tt.args[1:]
 			toolArgs := ToolArgs{
-				"command": "-C",
-				"args":    append([]string{dir}, tt.args...),
+				"command": command,
+				"-C":      dir,
+				"args":    args,
 			}
 			result, suggestion, err := handleGit(ctx, toolArgs)
 			errstr := fmt.Sprint(err)
