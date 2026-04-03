@@ -10,6 +10,7 @@ import (
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
+
 var codeReviewTool = toolcall.ToolDef{
 	Name:        "code_review",
 	DisplayName: "代码审查",
