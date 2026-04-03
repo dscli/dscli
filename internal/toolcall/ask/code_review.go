@@ -2,7 +2,6 @@ package ask
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -27,10 +26,10 @@ var codeReviewTool = toolcall.ToolDef{
 
 审查流程：
 1. 检查是否有未提交的更改（如果有则返回错误）
-2. 运行单元测试（确保代码质量），test_command为空跳过测试，
-3. 生成patch格式的代码变更（不超过1个commit）
-4. 发送给专家进行审查
-5. 返回专家的改进建议
+2. 运行单元测试（确保代码质量），test_command为空跳过测试
+3. 获取最新的提交（HEAD）
+4. 生成该提交的patch格式代码变更
+5. 发送给专家进行审查并返回建议
 
 错误处理：
 - 如果检测到未提交的更改，工具会立即返回错误
@@ -39,9 +38,9 @@ var codeReviewTool = toolcall.ToolDef{
 - 用户需要先解决所有问题，然后才能使用代码审查工具
 
 注意：
-- 只审查最新的不超过1个的提交（HEAD）
-- 专家会看到完整的代码变更
-- 建议在push之前使用此工具
+- 默认只审查最新的1个提交（HEAD）
+- 专家会看到该提交的完整代码变更
+- 建议在push之前使用此工具，但也可以审查已push的代码
 - 确保所有更改都已提交，否则工具会返回错误`,
 	Strict: true,
 	Parameters: map[string]any{
@@ -72,56 +71,52 @@ func init() {
 
 // handleCodeReview 处理代码审查工具调用
 func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (reply string, user string, err error) {
+	// 常量定义：每次审查的提交数量
+	const reviewCommitCount = 1
+
 	summary := toolcall.ToolArgsValue(args, "summary", "")
 	testCommand := toolcall.ToolArgsValue(args, "test_command", "")
-	// 获取Git状态，确保有提交可审查
-	statusScript := `git status --short`
-	ctx = context.WithValue(ctx, context.ShellNameKey, "/usr/bin/env")
-	ctx = context.WithValue(ctx, context.ShellArgsKey, []string{"bash"})
-	// 添加os.Stdin使用传统分支OSExec
-	ctx = context.WithValue(ctx, context.ShellStdinKey, os.Stdin)
 
-	status, err := toolcall.ShellExec(ctx, statusScript)
-	if err != nil {
-		outfmt.Println("❌ 获取Git状态失败")
-		err = fmt.Errorf("获取Git状态失败: %w", err)
+	if summary == "" {
+		outfmt.Println("❌ 必须提供提交摘要")
+		err = fmt.Errorf("必须提供提交摘要")
 		return
 	}
+
 	// 检查是否有未提交的更改
-	if strings.Contains(status, "Changes not staged for commit") ||
-		strings.Contains(status, "Changes to be committed") ||
-		(status != "" && !strings.Contains(status, "nothing to commit")) {
-		outfmt.Println("❌ 检测到未提交的更改")
-		err = fmt.Errorf("检测到未提交的更改，请先提交所有更改再审查。当前状态：\n%s", status)
+	fmt.Println("🔍 检查是否有未提交的更改...")
+	statusScript := `git status --porcelain`
+	status, shellErr := toolcall.ShellExec(ctx, statusScript)
+	if shellErr != nil {
+		outfmt.Println("❌ Git 状态检查失败")
+		err = fmt.Errorf("failed to check git status: %w", shellErr)
 		return
 	}
+
+	if status != "" {
+		outfmt.Println("❌ 检测到未提交的更改")
+		err = fmt.Errorf("检测到未提交的更改")
+		return
+	}
+
+	outfmt.Println("✅ 没有未提交的更改")
 
 	if testCommand != "" {
 		outfmt.Println("🔍 运行单元测试:", testCommand)
 		testOutput := ""
-
 		testOutput, err = toolcall.ShellExec(ctx, testCommand)
 		if err != nil {
-			outfmt.Println("❌ 单元测试未通过")
-			errorMsg := fmt.Sprintf("单元测试未通过，请修复测试后再审查。\n测试命令：%s\n", testCommand)
-			if testOutput != "" {
-				// 截断过长的输出
-				outputLines := strings.Split(testOutput, "\n")
-				if len(outputLines) > 20 {
-					errorMsg += "测试输出（前20行）：\n" + strings.Join(outputLines[:20], "\n")
-					errorMsg += fmt.Sprintf("\n... 还有%d行输出", len(outputLines)-20)
-				} else {
-					errorMsg += "测试输出：\n" + testOutput
-				}
-			}
 			outfmt.Println("❌ 单元测试失败")
-			err = fmt.Errorf("%s: %w", errorMsg, err)
+			err = fmt.Errorf("单元测试失败: %w", err)
 			return
+		}
+		if testOutput != "" {
+			outfmt.Println(testOutput)
 		}
 		outfmt.Println("✅ 单元测试通过")
 	}
 	// 获取最新的提交信息
-	logScript := `git log --oneline -` + fmt.Sprint(1)
+	logScript := `git log --oneline -` + fmt.Sprint(reviewCommitCount)
 	log, err := toolcall.ShellExec(ctx, logScript)
 	if err != nil {
 		outfmt.Println("❌ 获取提交历史失败")
@@ -129,29 +124,24 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (reply string
 		return
 	}
 
-	if strings.TrimSpace(log) == "" {
-		outfmt.Println("❌ 没有找到提交记录")
-		err = fmt.Errorf("没有找到提交记录，请先提交代码")
+	if log == "" {
+		outfmt.Println("❌ 没有找到提交")
+		err = fmt.Errorf("没有找到提交")
 		return
 	}
 
-	outfmt.Println("📝 审查提交:", strings.TrimSpace(log))
-
-	// 如果用户没有提供summary，从提交信息生成
-	if summary == "" {
-		summary = generateCodeReviewSummary(log)
-		outfmt.Println("📝 自动生成提交摘要:", summary)
-	}
+	outfmt.Println("📝 提交信息:")
+	outfmt.Println(log)
 
 	// 获取完整的提交信息用于构建请求
-	fullLogScript := `git log --format="%B" -` + fmt.Sprint(1)
+	fullLogScript := `git log --format="%B" -` + fmt.Sprint(reviewCommitCount)
 	fullLog, err := toolcall.ShellExec(ctx, fullLogScript)
 	if err != nil {
 		fullLog = log // 如果失败，使用简短的log
 	}
 
 	// 生成patch
-	patchScript := `git --no-pager format-patch --stdout -` + fmt.Sprint(1)
+	patchScript := `git --no-pager format-patch --stdout -` + fmt.Sprint(reviewCommitCount)
 	patch, err := toolcall.ShellExec(ctx, patchScript)
 	if err != nil {
 		fmt.Println("❌ 生成patch失败")
@@ -168,9 +158,8 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (reply string
 		err = fmt.Errorf("代码提交失败: %w", err)
 		return
 	}
-	// 处理响应
-	reply = processCodeReviewResponse(reply)
-	outfmt.Println("✅ 代码审查完成")
+
+	outfmt.Println("✅ 代码审查请求已发送")
 	return
 }
 
