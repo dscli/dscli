@@ -145,9 +145,9 @@ func CreateIssue(ctx context.Context, opts CreateIssueOptions) (*Issue, error) {
 
 	// 准备请求数据
 	requestData := map[string]any{
-		"repo":        config.Repo,
-		"title":       opts.Title,
-		"description": opts.Body,
+		"repo":  config.Repo,
+		"title": opts.Title,
+		"body":  opts.Body,
 	}
 	jsonData, err := outfmt.JSONMarshal(requestData)
 	if err != nil {
@@ -170,7 +170,7 @@ func CreateIssue(ctx context.Context, opts CreateIssueOptions) (*Issue, error) {
 	defer resp.Body.Close()
 
 	// 检查HTTP状态码
-	if resp.StatusCode != http.StatusCreated {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, &IssueAPIError{
 			StatusCode: resp.StatusCode,
