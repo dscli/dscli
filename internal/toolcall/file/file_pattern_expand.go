@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
@@ -116,10 +117,8 @@ func recursiveGlob(pattern string, config SearchConfig) ([]string, error) {
 
 		// 检查排除目录
 		if info.IsDir() {
-			for _, excludeDir := range config.ExcludeDirs {
-				if info.Name() == excludeDir {
-					return filepath.SkipDir
-				}
+			if slices.Contains(config.ExcludeDirs, info.Name()) {
+				return filepath.SkipDir
 			}
 		}
 

@@ -68,10 +68,7 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result string, suggest
 	lastlines := ""
 	if truncated && len(content) > truncationByteThreshold {
 		runes := []rune(content)
-		start := len(runes) - previewLastChars
-		if start < 0 {
-			start = 0
-		}
+		start := max(len(runes)-previewLastChars, 0)
 		lastlines = string(runes[start:])
 	}
 

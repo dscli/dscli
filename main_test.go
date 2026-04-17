@@ -12,29 +12,6 @@ func TestMain(t *testing.T) {
 	// Just stay here, nothing to do
 }
 
-func TestGetenv(t *testing.T) {
-	tests := []struct {
-		name string // description of this test case
-		// Named input parameters for target function.
-		key    string
-		dvalue string
-		want   string
-	}{
-		{"EmptyKey00", "", "", ""},
-		{"EmptyKey01", "", "yes", "yes"},
-		{"WithKey01", "withkey01", "", ""},
-		{"WithKey02", "withkey02", "yes", "yes"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := context.Getenv(tt.key, tt.dvalue)
-			if got != tt.want {
-				t.Fatalf("Getenv() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestGetProjectRoot(t *testing.T) {
 	projectRoot := func() string {
 		p, err := filepath.Abs(".")

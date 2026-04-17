@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"gitcode.com/dscli/dscli/internal/config"
 	"gitcode.com/dscli/dscli/internal/context"
 )
 
@@ -44,7 +45,7 @@ func NewSystemPromptConfig(ctx context.Context) *SystemPromptConfig {
 	config := &SystemPromptConfig{
 		CurrentDate:      time.Now().Format("2006年01月02日"),
 		ProjectRoot:      projectRoot,
-		ConfigDir:        context.ConfigDir,
+		ConfigDir:        config.ConfigDir,
 		WorkingDirectory: getWorkingDirectory(),
 		Hostname:         getHostname(),
 		Username:         getUsername(),

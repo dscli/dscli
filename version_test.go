@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"gitcode.com/dscli/dscli/internal/config"
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 )
@@ -35,7 +36,7 @@ func TestVersionCommandOutput(t *testing.T) {
 	originalWriter := os.Stdout
 	originalVersion := Version
 	originalBuild := Build
-	originalConfigDir := context.ConfigDir
+	originalConfigDir := config.ConfigDir
 	originalMode := outfmt.GetOutputMode()
 	originalVerbose := outfmt.GetVerbose()
 	originalColorEnabled := outfmt.GetColorEnabled()
@@ -48,7 +49,7 @@ func TestVersionCommandOutput(t *testing.T) {
 		outfmt.SetOutputWriter(originalWriter)
 		Version = originalVersion
 		Build = originalBuild
-		context.ConfigDir = originalConfigDir
+		config.ConfigDir = originalConfigDir
 		outfmt.SetOutputMode(originalMode)
 		outfmt.SetVerbose(originalVerbose)
 		outfmt.SetColorEnabled(originalColorEnabled)
@@ -60,7 +61,7 @@ func TestVersionCommandOutput(t *testing.T) {
 	// 设置测试值
 	Version = "1.0.0-test"
 	Build = "test-build-123"
-	context.ConfigDir = "/tmp/.dscli-test"
+	config.ConfigDir = "/tmp/.dscli-test"
 	outfmt.SetOutputMode("markdown")
 	outfmt.SetVerbose(true)
 	outfmt.SetColorEnabled(true)

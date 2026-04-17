@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/config"
 	"gitcode.com/dscli/dscli/internal/dsc"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/sqlite"
@@ -101,13 +101,13 @@ func RootPersistentPreRunE(cmd *cobra.Command, args []string) (err error) {
 		return fmt.Errorf("数据库初始化失败: %w", err)
 	}
 
-	key := context.Getenv("DEEPSEEK_API_KEY", "")
+	key := config.Get("deepseek-api-key", "")
 	if key == "" {
 		err = fmt.Errorf("no api key specified")
 		return
 	}
 
-	url := context.Getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+	url := config.Get("deepseek-base-url", "https://api.deepseek.com")
 	DeepseekClient = dsc.NewClient(key, url)
 	return nil
 }

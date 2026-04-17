@@ -5,7 +5,6 @@ go 1.26
 require (
 	github.com/PuerkitoBio/goquery v1.11.0
 	github.com/eatmoreapple/openwechat v1.4.0
-	github.com/joho/godotenv v1.5.1
 	github.com/spf13/cobra v1.8.0
 	golang.org/x/net v0.52.0
 	jaytaylor.com/html2text v0.0.0-20260303211410-1a4bdc82ecec

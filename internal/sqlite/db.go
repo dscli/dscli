@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"gitcode.com/dscli/dscli/internal/config"
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 )
@@ -14,7 +15,7 @@ import (
 var (
 	// ModelID = int64(0)
 	dbPath = func() string {
-		configDir := context.GetConfigDir()
+		configDir := config.ConfigDir
 		isTesting := context.IsTesting()
 		insideShellExec := os.Getenv("InsideShellExec")
 		dbname := "sqlite.db"

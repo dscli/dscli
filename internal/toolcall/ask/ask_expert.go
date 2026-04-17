@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"gitcode.com/dscli/dscli/internal/config"
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
@@ -144,7 +145,7 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (reply string,
 //   - handleAskExpert: 使用此函数的工具处理函数
 func AskExpert(ctx context.Context, input string) (reply string, err error) {
 	script := fmt.Sprintf(`unset InsideShellExec
-dscli chat --no-color --no-timestamp --histsize 0 --model %s`, context.ModelDeepseekReasoner)
+dscli chat --no-color --no-timestamp --histsize 0 --model %s`, config.Get("model-deepseek-reasoner", "deepseek-reasoner"))
 	ctx = context.WithValue(ctx, context.ShellStdinKey, strings.NewReader(input))
 	reply, err = toolcall.ShellExec(ctx, script)
 	return

@@ -3,6 +3,7 @@ package main
 import (
 	"runtime"
 
+	"gitcode.com/dscli/dscli/internal/config"
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"github.com/spf13/cobra"
@@ -48,7 +49,7 @@ func versionRunE(ctx context.Context) (err error) {
 	outfmt.PrintKeyValue("编译器", runtime.Compiler)
 
 	outfmt.PrintSection("配置信息")
-	outfmt.PrintKeyValue("配置目录", context.ConfigDir)
+	outfmt.PrintKeyValue("配置目录", config.ConfigDir)
 	outfmt.PrintKeyValue("项目根目录", projectRoot)
 	outfmt.PrintKeyValue("输出模式", outfmt.GetOutputMode())
 	outfmt.PrintKeyValue("详细输出", boolToString(outfmt.GetVerbose()))

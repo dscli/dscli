@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"gitcode.com/dscli/dscli/internal/config"
 )
 
 var (
@@ -40,10 +42,9 @@ var (
 )
 
 var (
-	ConfigDir             = GetConfigDir()
 	ProjectRoot           = GetProjectRoot()
-	ModelDeepseekChat     = Getenv("MODEL_DEEPSEEK_CHAT", "deepseek-chat")
-	ModelDeepseekReasoner = Getenv("MODEL_DEEPSEEK_REASONER", "deepseek-reasoner")
+	ModelDeepseekChat     = config.Get("model-deepseek-chat", "deepseek-chat")
+	ModelDeepseekReasoner = config.Get("model-deepseek-reasoner", "deepseek-reasoner")
 )
 
 const (
@@ -118,23 +119,6 @@ func findGitRoot(dir string) (string, error) {
 		absDir = parent
 	}
 	return "", fmt.Errorf("未找到 Git 仓库根目录")
-}
-
-func GetConfigDir() (configDir string) {
-	configDir = filepath.Join(os.Getenv("HOME"), ".dscli")
-	err := os.MkdirAll(configDir, 0o755)
-	if err != nil {
-		panic(err)
-	}
-	return
-}
-
-func Getenv(key, dvalue string) (value string) {
-	value = os.Getenv(key)
-	if value == "" {
-		value = dvalue
-	}
-	return
 }
 
 func IsTesting() bool {
