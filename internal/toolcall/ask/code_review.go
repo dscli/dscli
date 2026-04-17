@@ -67,7 +67,9 @@ var codeReviewTool = toolcall.ToolDef{
 }
 
 func init() {
-	toolcall.RegisterTool(codeReviewTool)
+	if context.ReasonerModelOK() {
+		toolcall.RegisterTool(codeReviewTool)
+	}
 }
 
 // handleCodeReview 处理代码审查工具调用

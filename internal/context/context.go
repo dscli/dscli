@@ -124,3 +124,10 @@ func findGitRoot(dir string) (string, error) {
 func IsTesting() bool {
 	return strings.HasSuffix(os.Args[0], ".test")
 }
+
+func ReasonerModelOK() bool {
+	if ModelDeepseekReasoner == ModelDeepseekChat {
+		return false
+	}
+	return ModelDeepseekReasoner == "deepseek-reasoner"
+}

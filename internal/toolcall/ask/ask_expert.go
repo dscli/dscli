@@ -52,7 +52,9 @@ var askExpertTool = toolcall.ToolDef{
 }
 
 func init() {
-	toolcall.RegisterTool(askExpertTool)
+	if context.ReasonerModelOK() {
+		toolcall.RegisterTool(askExpertTool)
+	}
 }
 
 // handleAskExpert 处理提问工具调用
