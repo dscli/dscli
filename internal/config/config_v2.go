@@ -10,8 +10,8 @@ import (
 
 // Config 配置管理器
 type Config struct {
-	mu       sync.RWMutex
-	data     map[string]string
+	mu        sync.RWMutex
+	data      map[string]string
 	configDir string
 }
 
@@ -143,7 +143,7 @@ func saveConfigToFile(configDir string, data map[string]string) error {
 
 	content := strings.Join(lines, "\n\n")
 	configFile := filepath.Join(configDir, "config.dscli")
-	
+
 	if err := os.WriteFile(configFile, []byte(content), 0o600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
@@ -165,19 +165,19 @@ func loadConfigFromEnv() map[string]string {
 		BaseURL = "DEEPSEEK_BASE_URL"
 		APIKey  = "DEEPSEEK_API_KEY"
 	)
-	
+
 	config := make(map[string]string)
-	
+
 	baseURL := os.Getenv(BaseURL)
 	if baseURL != "" {
 		config[configName(BaseURL)] = baseURL
 	}
-	
+
 	apiKey := os.Getenv(APIKey)
 	if apiKey != "" {
 		config[configName(APIKey)] = apiKey
 	}
-	
+
 	return config
 }
 
@@ -192,18 +192,19 @@ func configName(envName string) string {
 }
 
 // parseConfig 解析配置内容
+// parseConfig 解析配置内容
 func parseConfig(data string) (map[string]string, error) {
 	config := make(map[string]string)
-	
+
 	// 使用兼容的字符串分割方式
 	lines := strings.Split(data, "\n")
-	
+
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		
+
 		// 处理注释
 		if commentIdx := strings.Index(line, "#"); commentIdx != -1 {
 			line = line[:commentIdx]
@@ -212,10 +213,10 @@ func parseConfig(data string) (map[string]string, error) {
 				continue
 			}
 		}
-		
+
 		// 查找等号分隔符
-		equalsIdx := strings.Index(line, "=")
-		if equalsIdx == -1 {
+		before, after, ok := strings.Cut(line, "=")
+		if !ok {
 			// 尝试支持 "export KEY = VALUE" 格式
 			fields := strings.Fields(line)
 			if len(fields) >= 4 && fields[0] == "export" && fields[2] == "=" {
@@ -230,20 +231,20 @@ func parseConfig(data string) (map[string]string, error) {
 			}
 			continue
 		}
-		
+
 		// 解析 "KEY=VALUE" 或 "KEY = VALUE" 格式
-		key := strings.TrimSpace(line[:equalsIdx])
-		value := strings.TrimSpace(line[equalsIdx+1:])
-		
+		key := strings.TrimSpace(before)
+		value := strings.TrimSpace(after)
+
 		// 处理 "export KEY=VALUE" 格式
 		if strings.HasPrefix(key, "export ") {
 			key = strings.TrimSpace(strings.TrimPrefix(key, "export"))
 		}
-		
+
 		if key != "" {
 			config[configName(key)] = value
 		}
 	}
-	
+
 	return config, nil
 }
