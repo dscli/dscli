@@ -56,16 +56,25 @@ type promptConfig struct {
 	ModelID int64
 }
 
-func GetPromptPath(model string, global bool) string {
-	promptDir := filepath.Join(context.ProjectRoot, ".dscli", "prompt")
+// GetPromptPath 获取提示词文件路径
+// global: true表示全局配置，false表示项目配置
+func GetPromptPath(model string, global bool) (string, error) {
+	var promptDir string
 	if global {
 		promptDir = filepath.Join(config.ConfigDir, "prompt")
+	} else {
+		if context.ProjectRoot == "" {
+			return "", fmt.Errorf("不在项目目录中")
+		}
+		promptDir = filepath.Join(context.ProjectRoot, ".dscli", "prompt")
 	}
+	
 	err := os.MkdirAll(promptDir, 0o755)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("创建提示词目录失败 %s: %w", promptDir, err)
 	}
-	return filepath.Join(promptDir, fmt.Sprintf("%s.md", model))
+	
+	return filepath.Join(promptDir, fmt.Sprintf("%s.md", model)), nil
 }
 
 // readPromptFile 读取提示词文件
@@ -91,18 +100,33 @@ func readPromptFile(p string) string {
 	return content
 }
 
+// GetPromptTemplate 获取当前生效的提示词模板
+// 优先级：项目配置 > 全局配置 > 内嵌默认模板
 func GetPromptTemplate(model string) string {
-	p := GetPromptPath(model, false)
-	prompt := readPromptFile(p)
-	if prompt != "" {
-		return prompt
+	// 先尝试项目配置
+	p, err := GetPromptPath(model, false)
+	if err == nil {
+		prompt := readPromptFile(p)
+		if prompt != "" {
+			return prompt
+		}
 	}
-	p = GetPromptPath(model, true)
-	prompt = readPromptFile(p)
-	if prompt != "" {
-		return prompt
+	
+	// 再尝试全局配置
+	p, err = GetPromptPath(model, true)
+	if err == nil {
+		prompt := readPromptFile(p)
+		if prompt != "" {
+			return prompt
+		}
 	}
+	
+	// 最后返回内嵌默认模板
+	return GetDefaultPromptTemplate(model)
+}
 
+// GetDefaultPromptTemplate 获取内嵌的默认提示词模板
+func GetDefaultPromptTemplate(model string) string {
 	if model == "chat" {
 		return chatTemplate
 	}
