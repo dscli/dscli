@@ -74,11 +74,12 @@ func GetPromptProjectPath(model string) string {
 	return filepath.Join(promptDir, fmt.Sprintf("%s.md", model))
 }
 
+// readPromptFile 读取提示词文件
 func readPromptFile(p string) string {
 	if p == "" {
 		return ""
 	}
-	
+
 	b, err := os.ReadFile(p)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -86,13 +87,13 @@ func readPromptFile(p string) string {
 		}
 		return ""
 	}
-	
+
 	content := strings.TrimSpace(string(b))
 	if content == "" {
 		log.Printf("提示词文件为空: %s", p)
 		return ""
 	}
-	
+
 	return content
 }
 
@@ -167,7 +168,6 @@ func GetSystemPrompt(ctx context.Context) string {
 	return config.GeneratePromptWithTemplate()
 }
 
-// NewSystemPromptConfig 创建系统提示词配置
 // newPromptConfig 创建系统提示词配置
 func newPromptConfig(ctx context.Context) *promptConfig {
 	projectRoot := context.ProjectRoot
@@ -220,6 +220,7 @@ func (c *promptConfig) loadGitInfo() {
 	if output, err := exec.Command("git", "config", "user.name").Output(); err == nil {
 		c.GitUserName = strings.TrimSpace(string(output))
 	} else {
+		log.Printf("警告: 获取Git用户名失败: %v", err)
 		c.GitUserName = "未知"
 	}
 
@@ -227,6 +228,7 @@ func (c *promptConfig) loadGitInfo() {
 	if output, err := exec.Command("git", "config", "user.email").Output(); err == nil {
 		c.GitUserEmail = strings.TrimSpace(string(output))
 	} else {
+		log.Printf("警告: 获取Git邮箱失败: %v", err)
 		c.GitUserEmail = "未知"
 	}
 
@@ -234,9 +236,10 @@ func (c *promptConfig) loadGitInfo() {
 	if output, err := exec.Command("git", "branch", "--show-current").Output(); err == nil {
 		c.GitBranch = strings.TrimSpace(string(output))
 		if c.GitBranch == "" {
-			c.GitBranch = "未设置分支"
+			c.GitBranch = "（无活动分支）"
 		}
 	} else {
+		log.Printf("警告: 获取Git分支失败: %v", err)
 		c.GitBranch = "非Git仓库"
 	}
 
@@ -249,6 +252,7 @@ func (c *promptConfig) loadGitInfo() {
 			c.GitStatus = "工作区干净"
 		}
 	} else {
+		log.Printf("警告: 获取Git状态失败: %v", err)
 		c.GitStatus = "无法获取状态"
 	}
 }
