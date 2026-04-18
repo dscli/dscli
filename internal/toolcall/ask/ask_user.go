@@ -7,6 +7,7 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
+	"gitcode.com/dscli/dscli/internal/editor"
 )
 
 // AskTool 工具定义
@@ -62,7 +63,7 @@ func handleAskUser(ctx context.Context, args toolcall.ToolArgs) (reply string, u
 	}
 	outfmt.Println("  问题摘要:", string(summary))
 
-	reply, err = toolcall.OpenEditor(ctx, content)
+	reply, err = editor.OpenEditor(ctx, content)
 	if err != nil {
 		outfmt.Println("❌ 获取用户回答失败")
 		err = fmt.Errorf("获取用户回答失败: %v", err)

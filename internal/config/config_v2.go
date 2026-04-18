@@ -83,6 +83,7 @@ func (c *Config) ConfigDir() string {
 func (c *Config) load() error {
 	// 尝试从新格式文件加载
 	configFile := filepath.Join(c.configDir, "config.dscli")
+	defer c.Set("filename", configFile)
 	if data, err := loadConfigFromFile(configFile); err == nil && len(data) > 0 {
 		c.data = data
 		return nil

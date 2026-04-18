@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/editor"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 	"github.com/spf13/cobra"
@@ -92,7 +93,7 @@ func historyEditRunE(cmd *cobra.Command, args []string) (err error) {
 	switch column {
 	case "content":
 		content := message.Content
-		content, err = toolcall.OpenEditor(ctx, content)
+		content, err = editor.OpenEditor(ctx, content)
 		if err != nil {
 			return
 		}
@@ -107,7 +108,7 @@ func historyEditRunE(cmd *cobra.Command, args []string) (err error) {
 		}
 		tc := tcs[0]
 		arguments := tc.Function.Arguments
-		arguments, err = toolcall.OpenEditor(ctx, arguments)
+		arguments, err = editor.OpenEditor(ctx, arguments)
 		if err != nil {
 			return
 		}
