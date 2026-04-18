@@ -56,17 +56,11 @@ type promptConfig struct {
 	ModelID int64
 }
 
-func GetPromptPath(model string) string {
-	promptDir := filepath.Join(config.ConfigDir, "prompt")
-	err := os.MkdirAll(promptDir, 0o755)
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(promptDir, fmt.Sprintf("%s.md", model))
-}
-
-func GetPromptProjectPath(model string) string {
+func GetPromptPath(model string, global bool) string {
 	promptDir := filepath.Join(context.ProjectRoot, ".dscli", "prompt")
+	if global {
+		promptDir = filepath.Join(config.ConfigDir, "prompt")
+	}
 	err := os.MkdirAll(promptDir, 0o755)
 	if err != nil {
 		return ""
@@ -97,13 +91,13 @@ func readPromptFile(p string) string {
 	return content
 }
 
-func getPromptTemplate(model string) string {
-	p := GetPromptProjectPath(model)
+func GetPromptTemplate(model string) string {
+	p := GetPromptPath(model, false)
 	prompt := readPromptFile(p)
 	if prompt != "" {
 		return prompt
 	}
-	p = GetPromptPath(model)
+	p = GetPromptPath(model, true)
 	prompt = readPromptFile(p)
 	if prompt != "" {
 		return prompt
@@ -121,12 +115,12 @@ func newPromptTemplate(modelID int64) *promptTemplate {
 	case context.DeepseekChat:
 		return &promptTemplate{
 			Name:     context.ModelDeepseekChat,
-			Template: getPromptTemplate("chat"),
+			Template: GetPromptTemplate("chat"),
 		}
 	case context.DeepseekReasoner:
 		return &promptTemplate{
 			Name:     context.ModelDeepseekReasoner,
-			Template: getPromptTemplate("reasoner"),
+			Template: GetPromptTemplate("reasoner"),
 		}
 	default:
 		log.Fatalf("不支持模型ID: %d", modelID)
