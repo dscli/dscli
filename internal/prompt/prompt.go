@@ -75,14 +75,25 @@ func GetPromptProjectPath(model string) string {
 }
 
 func readPromptFile(p string) string {
-	if p != "" {
-		b, err := os.ReadFile(p)
-		prompt := string(b)
-		if err == nil && prompt != "" {
-			return prompt
-		}
+	if p == "" {
+		return ""
 	}
-	return ""
+	
+	b, err := os.ReadFile(p)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("读取提示词文件失败 %s: %v", p, err)
+		}
+		return ""
+	}
+	
+	content := strings.TrimSpace(string(b))
+	if content == "" {
+		log.Printf("提示词文件为空: %s", p)
+		return ""
+	}
+	
+	return content
 }
 
 func getPromptTemplate(model string) string {
@@ -157,6 +168,7 @@ func GetSystemPrompt(ctx context.Context) string {
 }
 
 // NewSystemPromptConfig 创建系统提示词配置
+// newPromptConfig 创建系统提示词配置
 func newPromptConfig(ctx context.Context) *promptConfig {
 	projectRoot := context.ProjectRoot
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, int64(0))
@@ -164,7 +176,7 @@ func newPromptConfig(ctx context.Context) *promptConfig {
 		CurrentDate:      time.Now().Format("2006年01月02日"),
 		ProjectRoot:      projectRoot,
 		ConfigDir:        config.ConfigDir,
-		WorkingDirectory: projectRoot,
+		WorkingDirectory: getWorkingDirectory(),
 		Hostname:         getHostname(),
 		Username:         getUsername(),
 		ModelID:          modelID,
@@ -187,8 +199,19 @@ func getHostname() string {
 }
 
 // getUsername 获取用户名
+// getUsername 获取用户名
 func getUsername() string {
 	return os.Getenv("USER")
+}
+
+// getWorkingDirectory 获取当前工作目录
+func getWorkingDirectory() string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Printf("无法获取工作目录: %v", err)
+		return "未知"
+	}
+	return cwd
 }
 
 // loadGitInfo 加载Git信息
@@ -196,16 +219,25 @@ func (c *promptConfig) loadGitInfo() {
 	// 获取Git用户名
 	if output, err := exec.Command("git", "config", "user.name").Output(); err == nil {
 		c.GitUserName = strings.TrimSpace(string(output))
+	} else {
+		c.GitUserName = "未知"
 	}
 
 	// 获取Git邮箱
 	if output, err := exec.Command("git", "config", "user.email").Output(); err == nil {
 		c.GitUserEmail = strings.TrimSpace(string(output))
+	} else {
+		c.GitUserEmail = "未知"
 	}
 
 	// 获取当前分支
 	if output, err := exec.Command("git", "branch", "--show-current").Output(); err == nil {
 		c.GitBranch = strings.TrimSpace(string(output))
+		if c.GitBranch == "" {
+			c.GitBranch = "未设置分支"
+		}
+	} else {
+		c.GitBranch = "非Git仓库"
 	}
 
 	// 获取Git状态（简化版）
@@ -216,6 +248,8 @@ func (c *promptConfig) loadGitInfo() {
 		} else {
 			c.GitStatus = "工作区干净"
 		}
+	} else {
+		c.GitStatus = "无法获取状态"
 	}
 }
 
