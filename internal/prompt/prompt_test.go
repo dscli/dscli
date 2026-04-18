@@ -1,4 +1,4 @@
-package toolcall
+package prompt
 
 import (
 	"strings"
@@ -7,7 +7,7 @@ import (
 	"gitcode.com/dscli/dscli/internal/context"
 )
 
-func TestLoadPrompts(t *testing.T) {
+func TestGetEnhancedSystemPrompt(t *testing.T) {
 	tests := []struct {
 		name        string
 		modelID     int64
@@ -30,16 +30,8 @@ func TestLoadPrompts(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
-			ctx = context.WithValue(ctx, context.CurrentDomainIDKey, int64(0))
 			ctx = context.WithValue(ctx, context.CurrentModelIDKey, tt.modelID)
-			got, err := LoadPrompts(ctx)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(got) != 1 {
-				t.Fatal(got)
-			}
-			content := got[0].Content
+			content := GetSystemPrompt(ctx)
 			if !strings.Contains(content, tt.contains) {
 				t.Fatal(content, tt.contains)
 			}

@@ -7,7 +7,6 @@ var (
 	RegisterTool          = toolcall.RegisterTool
 	TitleLikePattern      = toolcall.TitleLikePattern
 	SafeAsyncRecordUsage  = toolcall.SafeAsyncRecordUsage
-	NewSystemPromptConfig = toolcall.NewSystemPromptConfig
 )
 
 type (
