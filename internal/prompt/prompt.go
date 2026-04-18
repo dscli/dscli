@@ -4,7 +4,6 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -68,15 +67,16 @@ func GetPromptPath(model string, global bool) (string, error) {
 		}
 		promptDir = filepath.Join(context.ProjectRoot, ".dscli", "prompt")
 	}
-	
+
 	err := os.MkdirAll(promptDir, 0o755)
 	if err != nil {
 		return "", fmt.Errorf("创建提示词目录失败 %s: %w", promptDir, err)
 	}
-	
+
 	return filepath.Join(promptDir, fmt.Sprintf("%s.md", model)), nil
 }
 
+// readPromptFile 读取提示词文件
 // readPromptFile 读取提示词文件
 func readPromptFile(p string) string {
 	if p == "" {
@@ -85,15 +85,11 @@ func readPromptFile(p string) string {
 
 	b, err := os.ReadFile(p)
 	if err != nil {
-		if !os.IsNotExist(err) {
-			log.Printf("读取提示词文件失败 %s: %v", p, err)
-		}
 		return ""
 	}
 
 	content := strings.TrimSpace(string(b))
 	if content == "" {
-		log.Printf("提示词文件为空: %s", p)
 		return ""
 	}
 
@@ -111,7 +107,7 @@ func GetPromptTemplate(model string) string {
 			return prompt
 		}
 	}
-	
+
 	// 再尝试全局配置
 	p, err = GetPromptPath(model, true)
 	if err == nil {
@@ -120,7 +116,7 @@ func GetPromptTemplate(model string) string {
 			return prompt
 		}
 	}
-	
+
 	// 最后返回内嵌默认模板
 	return GetDefaultPromptTemplate(model)
 }
@@ -133,6 +129,7 @@ func GetDefaultPromptTemplate(model string) string {
 	return reasonerTemplate
 }
 
+// newPromptTemplate 获取指定模型的模板
 // newPromptTemplate 获取指定模型的模板
 func newPromptTemplate(modelID int64) *promptTemplate {
 	switch modelID {
@@ -147,7 +144,6 @@ func newPromptTemplate(modelID int64) *promptTemplate {
 			Template: GetPromptTemplate("reasoner"),
 		}
 	default:
-		log.Fatalf("不支持模型ID: %d", modelID)
 		return nil
 	}
 }
@@ -223,22 +219,22 @@ func getUsername() string {
 }
 
 // getWorkingDirectory 获取当前工作目录
+// getWorkingDirectory 获取当前工作目录
 func getWorkingDirectory() string {
 	cwd, err := os.Getwd()
 	if err != nil {
-		log.Printf("无法获取工作目录: %v", err)
 		return "未知"
 	}
 	return cwd
 }
 
 // loadGitInfo 加载Git信息
+// loadGitInfo 加载Git信息
 func (c *promptConfig) loadGitInfo() {
 	// 获取Git用户名
 	if output, err := exec.Command("git", "config", "user.name").Output(); err == nil {
 		c.GitUserName = strings.TrimSpace(string(output))
 	} else {
-		log.Printf("警告: 获取Git用户名失败: %v", err)
 		c.GitUserName = "未知"
 	}
 
@@ -246,7 +242,6 @@ func (c *promptConfig) loadGitInfo() {
 	if output, err := exec.Command("git", "config", "user.email").Output(); err == nil {
 		c.GitUserEmail = strings.TrimSpace(string(output))
 	} else {
-		log.Printf("警告: 获取Git邮箱失败: %v", err)
 		c.GitUserEmail = "未知"
 	}
 
@@ -257,7 +252,6 @@ func (c *promptConfig) loadGitInfo() {
 			c.GitBranch = "（无活动分支）"
 		}
 	} else {
-		log.Printf("警告: 获取Git分支失败: %v", err)
 		c.GitBranch = "非Git仓库"
 	}
 
@@ -270,7 +264,6 @@ func (c *promptConfig) loadGitInfo() {
 			c.GitStatus = "工作区干净"
 		}
 	} else {
-		log.Printf("警告: 获取Git状态失败: %v", err)
 		c.GitStatus = "无法获取状态"
 	}
 }
