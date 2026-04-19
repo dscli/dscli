@@ -3,6 +3,7 @@ package ask
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -12,7 +13,6 @@ import (
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
-
 // askExpertTool 工具定义
 var askExpertTool = toolcall.ToolDef{
 	Name:        "ask_expert",
@@ -67,6 +67,7 @@ func init() {
 }
 
 // handleAskExpert 处理提问工具调用
+// handleAskExpert 处理提问工具调用
 func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (reply string, user string, err error) {
 	// 向后兼容：支持旧参数名
 	summary := toolcall.ToolArgsValue(args, "summary", "")
@@ -94,7 +95,15 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (reply string,
 	outfmt.Println("  问题摘要:", summary)
 
 	// 构建结构化请求（不再要求专家生成摘要）
-	structuredRequest := buildStructuredRequest(summary, content, attachments)
+	structuredRequest, attachmentErrors := buildStructuredRequest(summary, content, attachments)
+	
+	// 如果有附件错误，向用户报告但继续执行
+	if len(attachmentErrors) > 0 {
+		outfmt.Println("⚠️  附件处理警告:")
+		for _, attachmentErr := range attachmentErrors {
+			outfmt.Printf("  - %v\n", attachmentErr)
+		}
+	}
 
 	reply, err = AskExpert(ctx, structuredRequest)
 	if err != nil {
@@ -164,27 +173,56 @@ dscli chat --no-color --no-timestamp --histsize 0 --model %s`, config.Get("model
 }
 
 // buildStructuredRequest 构建结构化请求
-func buildStructuredRequest(userSummary string, originalContent string, attachments []string) string {
+// buildStructuredRequest 构建结构化请求
+func buildStructuredRequest(userSummary string, originalContent string, attachments []string) (string, []error) {
+	var errors []error
 	attachmentSection := ""
-	for _, filename := range attachments {
-		b, err := os.ReadFile(filename)
-		if err == nil {
-			attachmentSection += fmt.Sprintf("%s\n---\n%s\n", filename, string(b))
+	
+	if len(attachments) > 0 {
+		var attachmentContent strings.Builder
+		attachmentContent.WriteString("\n## 附件\n")
+		
+		for _, filename := range attachments {
+			// 安全检查：防止路径遍历攻击
+			if !isSafePath(filename) {
+				errors = append(errors, fmt.Errorf("不安全路径: %s", filename))
+				continue
+			}
+			
+			// 检查文件大小（限制为1MB）
+			if info, err := os.Stat(filename); err == nil && info.Size() > 1024*1024 {
+				errors = append(errors, fmt.Errorf("文件过大: %s (%d字节 > 1MB)", filename, info.Size()))
+				continue
+			}
+			
+			b, err := os.ReadFile(filename)
+			if err != nil {
+				errors = append(errors, fmt.Errorf("读取文件失败 %s: %w", filename, err))
+				continue
+			}
+			
+			content := strings.TrimSpace(string(b))
+			if content == "" {
+				errors = append(errors, fmt.Errorf("文件为空: %s", filename))
+				continue
+			}
+			
+			// 使用Markdown代码块格式
+			attachmentContent.WriteString(fmt.Sprintf("### %s\n```\n%s\n```\n\n", filename, content))
+		}
+		
+		if attachmentContent.Len() > len("\n## 附件\n") {
+			attachmentSection = attachmentContent.String()
 		}
 	}
-
-	if len(attachmentSection) > 0 {
-		attachmentSection = fmt.Sprintf("\n## 附件列表\n%s\n", attachmentSection)
-	}
-	return `请以结构化格式回答以下问题。
+	
+	request := `请以结构化格式回答以下问题。
 
 ## 问题背景
 ` + userSummary + `
 
 ## 详细问题
-` + originalContent + 
-attachmentSection +
-`
+` + originalContent + attachmentSection + `
 
 ## 回答要求
 请提供详细的分析和建议，包括：
@@ -198,7 +236,38 @@ attachmentSection +
 - 建议要具体可行，有优先级
 - 风险评估要客观全面
 
-现在请开始您的回答：`
+`
+	return request, errors
+}
+
+// isSafePath 检查文件路径是否安全
+// 防止路径遍历攻击，只允许当前目录及其子目录
+func isSafePath(filename string) bool {
+	// 清理路径
+	cleanPath := filepath.Clean(filename)
+	
+	// 检查是否包含路径遍历
+	if strings.Contains(cleanPath, "..") {
+		return false
+	}
+	
+	// 检查是否为绝对路径
+	if filepath.IsAbs(cleanPath) {
+		return false
+	}
+	
+	// 检查是否在当前工作目录下
+	cwd, err := os.Getwd()
+	if err != nil {
+		return false
+	}
+	
+	fullPath, err := filepath.Abs(cleanPath)
+	if err != nil {
+		return false
+	}
+	
+	return strings.HasPrefix(fullPath, cwd)
 }
 
 // processExpertResponse 处理专家响应
