@@ -77,7 +77,6 @@ func GetPromptPath(model string, global bool) (string, error) {
 }
 
 // readPromptFile 读取提示词文件
-// readPromptFile 读取提示词文件
 func readPromptFile(p string) string {
 	if p == "" {
 		return ""
@@ -129,7 +128,6 @@ func GetDefaultPromptTemplate(model string) string {
 	return reasonerTemplate
 }
 
-// newPromptTemplate 获取指定模型的模板
 // newPromptTemplate 获取指定模型的模板
 func newPromptTemplate(modelID int64) *promptTemplate {
 	switch modelID {
@@ -213,12 +211,10 @@ func getHostname() string {
 }
 
 // getUsername 获取用户名
-// getUsername 获取用户名
 func getUsername() string {
 	return os.Getenv("USER")
 }
 
-// getWorkingDirectory 获取当前工作目录
 // getWorkingDirectory 获取当前工作目录
 func getWorkingDirectory() string {
 	cwd, err := os.Getwd()
@@ -228,7 +224,6 @@ func getWorkingDirectory() string {
 	return cwd
 }
 
-// loadGitInfo 加载Git信息
 // loadGitInfo 加载Git信息
 func (c *promptConfig) loadGitInfo() {
 	// 获取Git用户名

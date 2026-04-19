@@ -2,6 +2,7 @@ package ask
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -42,6 +43,14 @@ var askExpertTool = toolcall.ToolDef{
 				"description": "要询问的详细内容（必填）",
 				"pattern":     toolcall.ContentLikePattern(4096),
 			},
+			"attachments": map[string]any{
+				"type":        "array",
+				"description": `作为附件的文件名列表`,
+				"items": map[string]string{
+					"type":        "string",
+					"description": "作为附件的文件名",
+				},
+			},
 		},
 		"required":             []string{"content"},
 		"additionalProperties": false,
@@ -62,6 +71,7 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (reply string,
 	// 向后兼容：支持旧参数名
 	summary := toolcall.ToolArgsValue(args, "summary", "")
 	content := toolcall.ToolArgsValue(args, "content", "")
+	attachments := toolcall.ToolArgsValue(args, "attachments", []string{})
 
 	// 如果content为空，尝试使用旧参数名
 	if content == "" {
@@ -84,7 +94,7 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (reply string,
 	outfmt.Println("  问题摘要:", summary)
 
 	// 构建结构化请求（不再要求专家生成摘要）
-	structuredRequest := buildStructuredRequest(summary, content)
+	structuredRequest := buildStructuredRequest(summary, content, attachments)
 
 	reply, err = AskExpert(ctx, structuredRequest)
 	if err != nil {
@@ -154,14 +164,27 @@ dscli chat --no-color --no-timestamp --histsize 0 --model %s`, config.Get("model
 }
 
 // buildStructuredRequest 构建结构化请求
-func buildStructuredRequest(userSummary string, originalContent string) string {
+func buildStructuredRequest(userSummary string, originalContent string, attachments []string) string {
+	attachmentSection := ""
+	for _, filename := range attachments {
+		b, err := os.ReadFile(filename)
+		if err == nil {
+			attachmentSection += fmt.Sprintf("%s\n---\n%s\n", filename, string(b))
+		}
+	}
+
+	if len(attachmentSection) > 0 {
+		attachmentSection = fmt.Sprintf("\n## 附件列表\n%s\n", attachmentSection)
+	}
 	return `请以结构化格式回答以下问题。
 
 ## 问题背景
 ` + userSummary + `
 
 ## 详细问题
-` + originalContent + `
+` + originalContent + 
+attachmentSection +
+`
 
 ## 回答要求
 请提供详细的分析和建议，包括：
