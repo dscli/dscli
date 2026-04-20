@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -137,13 +138,26 @@ func ToArrayType[T PrimitiveType](anyValues []any, anyValuesLen int) []T {
 // ToolArgsValue 安全获取类型化参数值
 func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
 	var (
-		value      any
-		ok         bool
-		anyValues  []any
-		floatValue float64
+		value       any
+		ok          bool
+		anyValues   []any
+		floatValue  float64
+		stringValue string
 	)
 
 	if value, ok = args[key]; ok {
+		if stringValue, ok = value.(string); ok {
+			if strings.HasPrefix(stringValue, `["`) &&
+				strings.HasSuffix(stringValue, `"]`) {
+				stringValue = strings.ReplaceAll(stringValue, "\n", "\\n")
+				a := []string{}
+				err := json.Unmarshal([]byte(stringValue), &a)
+				if err == nil {
+					value = a
+				}
+			}
+		}
+
 		if anyValues, ok = value.([]any); ok {
 			anyValuesLen := len(anyValues)
 			if anyValuesLen != 0 {

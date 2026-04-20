@@ -416,3 +416,39 @@ func TestToolContent(t *testing.T) {
 		})
 	}
 }
+
+func TestGitCommit(t *testing.T) {
+	tcs := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{"git commit one line",
+			`{"command":"commit","args":"[\"-m\", \"One line\"]"}`,
+			[]string{"-m", "One line"}},
+		{"git commit two line",
+			`{"command":"commit","args":"[\"-m\", \"One line\\nTwo line\"]"}`,
+			[]string{"-m", `One line
+Two line`}},
+	}
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			args := ToolArgs{}
+			err := json.Unmarshal([]byte(tc.input), &args)
+			if err != nil {
+				t.Fatal(err, tc.input)
+			}
+			command := ToolArgsValue(args, "command", "")
+			if command != "commit" {
+				t.Fatal(command)
+			}
+			want := ToolArgsValue(args, "args", []string{})
+			if len(want) != 2 {
+				t.Fatal(want, args["args"])
+			}
+			if !reflect.DeepEqual(want, tc.want) {
+				t.Fatal(want, tc.want)
+			}
+		})
+	}
+}
