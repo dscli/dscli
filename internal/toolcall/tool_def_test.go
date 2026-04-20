@@ -417,20 +417,69 @@ func TestToolContent(t *testing.T) {
 	}
 }
 
-func TestGitCommit(t *testing.T) {
+func TestToolArgsValue_WithJsonStringArray(t *testing.T) {
 	tcs := []struct {
-		name  string
-		input string
-		want  []string
+		name     string
+		input    string // 完整的JSON输入
+		key      string
+		expected any
 	}{
-		{"git commit one line",
-			`{"command":"commit","args":"[\"-m\", \"One line\"]"}`,
-			[]string{"-m", "One line"}},
-		{"git commit two line",
-			`{"command":"commit","args":"[\"-m\", \"One line\\nTwo line\"]"}`,
-			[]string{"-m", `One line
-Two line`}},
+		{
+			name:     "normal array",
+			input:    `{"args": ["-m", "msg"]}`,
+			key:      "args",
+			expected: []string{"-m", "msg"},
+		},
+		{
+			name:     "json string array",
+			input:    `{"args": "[\"-m\", \"msg\"]"}`,
+			key:      "args",
+			expected: []string{"-m", "msg"},
+		},
+		{
+			name:     "json string array with spaces",
+			input:    `{"args": "[ \"-m\", \"msg\" ]"}`,
+			key:      "args",
+			expected: []string{"-m", "msg"},
+		},
+		{
+			name:     "invalid json string",
+			input:    `{"args": "[\"-m\", \"msg\""}`,
+			key:      "args",
+			expected: `["-m", "msg"`,
+		},
+		{
+			name:     "not a json array string",
+			input:    `{"message": "hello [\"world\"]"}`,
+			key:      "message",
+			expected: `hello ["world"]`,
+		},
+		{
+			name:     "empty json array",
+			input:    `{"args": "[]"}`,
+			key:      "args",
+			expected: []string{},
+		},
+		{
+			name:     "json string with newline",
+			input:    `{"args": "[\"-m\", \"One line\\nTwo line\"]"}`,
+			key:      "args",
+			expected: []string{"-m", "One line\nTwo line"},
+		},
+		{
+			name:     "json number array as string",
+			input:    `{"numbers": "[1, 2, 3]"}`,
+			key:      "numbers",
+			expected: []float64{1, 2, 3},
+		},
+		{
+			name:     "json boolean array as string",
+			input:    `{"flags": "[true, false, true]"}`,
+			key:      "flags",
+			expected: []bool{true, false, true},
+		},
 	}
+
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
 			args := ToolArgs{}
@@ -438,16 +487,29 @@ Two line`}},
 			if err != nil {
 				t.Fatal(err, tc.input)
 			}
-			command := ToolArgsValue(args, "command", "")
-			if command != "commit" {
-				t.Fatal(command)
-			}
-			want := ToolArgsValue(args, "args", []string{})
-			if len(want) != 2 {
-				t.Fatal(want, args["args"])
-			}
-			if !reflect.DeepEqual(want, tc.want) {
-				t.Fatal(want, tc.want)
+
+			// 根据期望类型调用不同的ToolArgsValue
+			switch expected := tc.expected.(type) {
+			case []string:
+				got := ToolArgsValue(args, tc.key, []string{})
+				if !reflect.DeepEqual(got, expected) {
+					t.Errorf("ToolArgsValue(%q) = %v, want %v", tc.key, got, expected)
+				}
+			case string:
+				got := ToolArgsValue(args, tc.key, "")
+				if got != expected {
+					t.Errorf("ToolArgsValue(%q) = %q, want %q", tc.key, got, expected)
+				}
+			case []float64:
+				got := ToolArgsValue(args, tc.key, []float64{})
+				if !reflect.DeepEqual(got, expected) {
+					t.Errorf("ToolArgsValue(%q) = %v, want %v", tc.key, got, expected)
+				}
+			case []bool:
+				got := ToolArgsValue(args, tc.key, []bool{})
+				if !reflect.DeepEqual(got, expected) {
+					t.Errorf("ToolArgsValue(%q) = %v, want %v", tc.key, got, expected)
+				}
 			}
 		})
 	}

@@ -4,10 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 )
-
 // ToolDef 工具定义
 type ToolDef struct {
 	Name        string
@@ -136,6 +134,7 @@ func ToArrayType[T PrimitiveType](anyValues []any, anyValuesLen int) []T {
 }
 
 // ToolArgsValue 安全获取类型化参数值
+// ToolArgsValue 安全获取类型化参数值
 func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
 	var (
 		value       any
@@ -146,15 +145,13 @@ func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
 	)
 
 	if value, ok = args[key]; ok {
+		// 尝试将字符串解析为JSON值（处理智能体误将数组序列化为字符串的情况）
 		if stringValue, ok = value.(string); ok {
-			if strings.HasPrefix(stringValue, `["`) &&
-				strings.HasSuffix(stringValue, `"]`) {
-				stringValue = strings.ReplaceAll(stringValue, "\n", "\\n")
-				a := []string{}
-				err := json.Unmarshal([]byte(stringValue), &a)
-				if err == nil {
-					value = a
-				}
+			// 尝试将字符串解析为JSON
+			var decoded any
+			if err := json.Unmarshal([]byte(stringValue), &decoded); err == nil {
+				// 解析成功，使用解析后的值
+				value = decoded
 			}
 		}
 
