@@ -105,7 +105,28 @@ func (store *Store) Load() (err error) {
 	}
 	store.Skills = skills
 	store.Keywords = kws
+
+	// 保存到yaml文件，以便下次直接加载
+	if err := store.Save(); err != nil {
+		// 保存失败不影响使用，只是下次需要重新加载
+		fmt.Printf("Warning: failed to save skills.yaml: %v\n", err)
+	}
+
 	return
+}
+
+func (store *Store) Save() error {
+	path := filepath.Join(store.dir, "skills.yaml")
+	data, err := yaml.Marshal(store)
+	if err != nil {
+		return fmt.Errorf("failed to marshal skills: %w", err)
+	}
+	
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("failed to write skills.yaml: %w", err)
+	}
+	
+	return nil
 }
 
 func (store *Store) Query(query string) (matched map[string]Skill) {
