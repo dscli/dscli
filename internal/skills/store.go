@@ -112,7 +112,7 @@ func (store *Store) Query(query string) (matched map[string]Skill) {
 	matched = map[string]Skill{}
 	queryLower := strings.ToLower(query)
 	for keyword, names := range store.Keywords {
-		if strings.Contains(queryLower, strings.ToLower(keyword)) {
+		if strings.Contains(queryLower, keyword) {
 			for _, name := range names {
 				if skill, ok := store.Skills[name]; ok {
 					matched[name] = skill

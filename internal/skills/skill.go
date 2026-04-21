@@ -183,7 +183,7 @@ func extractKeywords(desc string) []string {
 			for _, p := range parts {
 				p = strings.TrimSpace(p)
 				if p != "" {
-					keywords = append(keywords, p)
+					keywords = append(keywords, strings.ToLower(p))
 				}
 			}
 			return keywords
