@@ -1,10 +1,11 @@
 package skills
 
 import (
-	"maps"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -121,11 +122,11 @@ func (store *Store) Save() error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal skills: %w", err)
 	}
-	
+
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("failed to write skills.yaml: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -161,20 +162,20 @@ func Query(q string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to load local store: %w", err)
 	}
-	
+
 	globalStore, err := GlobalStore()
 	if err != nil {
 		return "", fmt.Errorf("failed to load global store: %w", err)
 	}
-	
+
 	localMatched := localStore.Query(q)
 	matched := globalStore.Query(q)
 	maps.Copy(matched, localMatched)
-	
+
 	if len(matched) == 0 {
 		return "", fmt.Errorf("no skills found for query: %s", q)
 	}
-	
+
 	var builder strings.Builder
 	for name, skill := range matched {
 		builder.WriteString("---skill name: ")
@@ -190,21 +191,94 @@ func Use(name string) (content string, err error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to load local store: %w", err)
 	}
-	
+
 	content, err = local.Use(name)
 	if err == nil {
 		return content, nil
 	}
-	
+
 	global, err := GlobalStore()
 	if err != nil {
 		return "", fmt.Errorf("failed to load global store: %w", err)
 	}
-	
+
 	content, err = global.Use(name)
 	if err == nil {
 		return content, nil
 	}
-	
 	return "", fmt.Errorf("skill %s not found in local or global store", name)
+}
+
+// List 返回存储中的所有技能名称
+func (store *Store) List() []string {
+	if store == nil || store.Skills == nil {
+		return []string{}
+	}
+	
+	names := make([]string, 0, len(store.Skills))
+	for name := range store.Skills {
+		names = append(names, name)
+	}
+	
+	// 按名称排序
+	sort.Strings(names)
+	return names
+}
+
+// ListAll 返回所有技能（本地和全局）的列表
+// ListAll 返回所有技能（本地和全局）的列表
+func ListAll() ([]SkillInfo, error) {
+	localStore, err := LocalStore()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load local store: %w", err)
+	}
+
+	globalStore, err := GlobalStore()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load global store: %w", err)
+	}
+
+	// 收集所有技能信息
+	skillInfos := make([]SkillInfo, 0)
+	
+	// 添加本地技能
+	for _, name := range localStore.List() {
+		skillInfos = append(skillInfos, SkillInfo{
+			Name:  name,
+			Scope: "local",
+		})
+	}
+	
+	// 添加全局技能（排除与本地技能同名的）
+	for _, name := range globalStore.List() {
+		// 检查是否已有同名的本地技能
+		hasLocal := false
+		for _, info := range skillInfos {
+			if info.Name == name {
+				hasLocal = true
+				break
+			}
+		}
+		
+		if !hasLocal {
+			skillInfos = append(skillInfos, SkillInfo{
+				Name:  name,
+				Scope: "global",
+			})
+		}
+	}
+	
+	// 按名称排序
+	sort.Slice(skillInfos, func(i, j int) bool {
+		return skillInfos[i].Name < skillInfos[j].Name
+	})
+	
+	return skillInfos, nil
+}
+
+// SkillInfo 包含技能的基本信息和作用域
+// SkillInfo 包含技能的基本信息和作用域
+type SkillInfo struct {
+	Name  string `json:"name"`
+	Scope string `json:"scope"` // "local" 或 "global"
 }

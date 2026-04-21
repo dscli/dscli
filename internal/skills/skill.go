@@ -99,8 +99,10 @@ func ParseSkill(path string, skill *Skill) error {
 	skillDir := filepath.Dir(absPath)
 	skill.Path = skillDir
 
-	// 解析关键词（从 description 中提取）
-	skill.Keywords = extractKeywords(skill.Description)
+	// 如果YAML中没有关键词，则从description中提取
+	if len(skill.Keywords) == 0 {
+		skill.Keywords = extractKeywords(skill.Description)
+	}
 
 	// 加载子资源
 	if err := loadScripts(skillDir, skill); err != nil {
