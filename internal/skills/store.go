@@ -26,40 +26,43 @@ type Store struct {
 	Keywords map[string][]string `yaml:"keywords,omitzero"`
 }
 
-func LocalStore() *Store {
+func LocalStore() (*Store, error) {
+	var err error
 	localOnce.Do(func() {
 		dir := filepath.Join(context.ProjectRoot, ".dscli", "skills")
-		err := os.MkdirAll(dir, 0o755)
+		err = os.MkdirAll(dir, 0o755)
 		if err != nil {
-			panic(err)
+			return
 		}
-		localStore = NewSkillStore(dir)
+		localStore, err = NewSkillStore(dir)
 	})
-	return localStore
+	return localStore, err
 }
 
-func GlobalStore() *Store {
+func GlobalStore() (*Store, error) {
+	var err error
 	globalOnce.Do(func() {
 		dir := filepath.Join(config.ConfigDir, "skills")
-		err := os.MkdirAll(dir, 0755)
+		err = os.MkdirAll(dir, 0o755)
 		if err != nil {
-			panic(err)
+			return
 		}
-		globalStore = NewSkillStore(dir)
-
+		globalStore, err = NewSkillStore(dir)
 	})
-	return globalStore
+	return globalStore, err
 }
 
-func NewSkillStore(dir string) (store *Store) {
-	store = &Store{
+func NewSkillStore(dir string) (*Store, error) {
+	store := &Store{
 		dir: dir,
 	}
-	err := store.Load()
-	if err != nil {
-		return nil
+	if err := store.Load(); err != nil {
+		// 返回空存储而非错误，确保调用方始终获得有效对象
+		store.Skills = map[string]Skill{}
+		store.Keywords = map[string][]string{}
+		return store, nil
 	}
-	return
+	return store, nil
 }
 
 func (store *Store) Load() (err error) {
@@ -107,11 +110,11 @@ func (store *Store) Load() (err error) {
 
 func (store *Store) Query(query string) (matched map[string]Skill) {
 	matched = map[string]Skill{}
-	for keyword, names := range store.Keywords {
-		if strings.Contains(query, keyword) {
-			for _, name := range names {
-				skill, ok := store.Skills[name]
-				if ok {
+	queryWords := strings.Fields(strings.ToLower(query))
+	for _, qw := range queryWords {
+		if skills, ok := store.Keywords[qw]; ok {
+			for _, name := range skills {
+				if skill, ok := store.Skills[name]; ok {
 					matched[name] = skill
 				}
 			}
@@ -132,10 +135,25 @@ func (store *Store) Use(name string) (content string, err error) {
 	return
 }
 
-func Query(q string) string {
-	localMatched := LocalStore().Query(q)
-	matched := GlobalStore().Query(q)
+func Query(q string) (string, error) {
+	localStore, err := LocalStore()
+	if err != nil {
+		return "", fmt.Errorf("failed to load local store: %w", err)
+	}
+	
+	globalStore, err := GlobalStore()
+	if err != nil {
+		return "", fmt.Errorf("failed to load global store: %w", err)
+	}
+	
+	localMatched := localStore.Query(q)
+	matched := globalStore.Query(q)
 	maps.Copy(matched, localMatched)
+	
+	if len(matched) == 0 {
+		return "", fmt.Errorf("no skills found for query: %s", q)
+	}
+	
 	var builder strings.Builder
 	for name, skill := range matched {
 		builder.WriteString("---skill name: ")
@@ -143,20 +161,29 @@ func Query(q string) string {
 		builder.WriteString("---\n")
 		builder.WriteString(skill.Summary())
 	}
-	return builder.String()
+	return builder.String(), nil
 }
-func Use(name string) (content string) {
-	var err error
-	local := LocalStore()
+
+func Use(name string) (content string, err error) {
+	local, err := LocalStore()
+	if err != nil {
+		return "", fmt.Errorf("failed to load local store: %w", err)
+	}
+	
 	content, err = local.Use(name)
 	if err == nil {
-		return
+		return content, nil
 	}
-	global := GlobalStore()
+	
+	global, err := GlobalStore()
+	if err != nil {
+		return "", fmt.Errorf("failed to load global store: %w", err)
+	}
+	
 	content, err = global.Use(name)
 	if err == nil {
-		return
+		return content, nil
 	}
-	err = fmt.Errorf("skill %s not exists", name)
-	return
+	
+	return "", fmt.Errorf("skill %s not found in local or global store", name)
 }
