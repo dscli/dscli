@@ -57,7 +57,6 @@ func createTempfile(initialContent string, ext string) (name string, err error) 
 }
 
 func OpenEditor(ctx context.Context, initialContent string) (content string, err error) {
-
 	ext := getExt()
 	path, err := createTempfile(initialContent, ext)
 	if err != nil {

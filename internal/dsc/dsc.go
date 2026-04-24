@@ -16,7 +16,7 @@ type ChatRequest struct {
 	Tools           []toolcall.Tool    `json:"tools,omitempty"`
 	Stream          bool               `json:"stream"`
 	MaxTokens       int                `json:"max_tokens,omitempty"`
-	Thinking        Thinking           `json:"thinking"`
+	Thinking        Thinking           `json:"thinking,omitempty"`
 	ReasoningEffort string             `json:"reasoning_effort,omitempty"`
 }
 

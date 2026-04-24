@@ -57,8 +57,8 @@ func (c *Config) Get(name, defaultValue string, alias ...string) string {
 		return value
 	}
 
-	for _, name = range alias {
-		if value, ok := c.data[name]; ok && value != "" {
+	for _, aliasName := range alias {
+		if value, ok := c.data[aliasName]; ok && value != "" {
 			return value
 		}
 	}

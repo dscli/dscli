@@ -326,8 +326,9 @@ func ChatRound(ctx context.Context, prompts []toolcall.Message, skills []toolcal
 		return
 	}
 
+	// story 保留 ReasoningContent（持久化和展示用），
+	// 后续作为输入消息时，dsc.Chat() 会清理掉（API 要求）
 	story := resp.Choices[0].Message
-
 	// 检查响应是否被截断
 	if resp.Choices[0].FinishReason == "length" {
 		outfmt.Warn("注意：响应因长度限制被截断，可能不完整。")
@@ -344,7 +345,6 @@ func ChatRound(ctx context.Context, prompts []toolcall.Message, skills []toolcal
 
 	// save stories here
 	err = toolcall.SaveMessages(ctx, stories...)
-
 	if err != nil {
 		outfmt.Error("%v", err)
 	}
