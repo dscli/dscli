@@ -1,10 +1,11 @@
 package misc
 
 import (
+	"context"
 	"fmt"
 
-	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/skills"
 )
 
 // handleSkillByName 处理Skill工具调用
@@ -15,23 +16,16 @@ func handleSkillByName(ctx context.Context, args ToolArgs) (content string, user
 		err = fmt.Errorf("skill name can not be empty")
 		return
 	}
-	outfmt.Printf("getting skill by name [%s]\n", skillName)
-	skill, err := GetSkillByName(skillName)
+	outfmt.Printf("获取技能 [%s]\n", skillName)
+
+	// 使用 markdown 技能系统获取技能内容
+	skillContent, err := skills.Use(skillName)
 	if err != nil {
-		err = fmt.Errorf("no skill found for %s: %w", skillName, err)
+		err = fmt.Errorf("获取技能 %s 失败: %w", skillName, err)
 		return
 	}
 
-	if skill == nil {
-		err = fmt.Errorf("no skill found for %s", skillName)
-		return
-	}
-	projectRoot := context.ProjectRoot
-	// 异步记录技能使用
-	SafeAsyncRecordUsage(skill.ID, projectRoot)
-	// 格式化输出
-
-	content = skill.Content
+	content = skillContent
 	return
 }
 

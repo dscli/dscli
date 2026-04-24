@@ -296,10 +296,10 @@ func PrintSessionStats(ctx context.Context) {
 }
 
 func ChatRound(ctx context.Context, prompts []toolcall.Message, skills []toolcall.Message, history []toolcall.Message, inputs ...toolcall.Message) (err error) {
-	// 1. 构造 messages 切片（包含历史）
-	// 注意：skills 暂未拼入 messages，预留容量以备后用
-	messages := make([]toolcall.Message, 0, len(history)+len(prompts)+len(skills)+len(inputs))
+	// 1. 构造 messages 切片（prompts → skills → history → inputs）
+	messages := make([]toolcall.Message, 0, len(prompts)+len(skills)+len(history)+len(inputs))
 	messages = append(messages, prompts...)
+	messages = append(messages, skills...)
 	messages = append(messages, history...)
 
 	// 2. 添加当前用户消息
