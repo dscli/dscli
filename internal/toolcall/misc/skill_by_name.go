@@ -8,20 +8,24 @@ import (
 	"gitcode.com/dscli/dscli/internal/skills"
 )
 
-// handleSkillByName 处理Skill工具调用
+// handleSkillByName fetches a skill's full content by exact name.
 func handleSkillByName(ctx context.Context, args ToolArgs) (content string, user string, err error) {
-	// 获取参数
 	skillName := ToolArgsValue(args, "skill_name", "")
 	if skillName == "" {
 		err = fmt.Errorf("skill name can not be empty")
 		return
 	}
-	outfmt.Printf("获取技能 [%s]\n", skillName)
+	outfmt.Printf("Fetching skill [%s]\n", skillName)
 
-	// 使用 markdown 技能系统获取技能内容
+	// Use markdown-based skill system
 	skillContent, err := skills.Use(skillName)
 	if err != nil {
-		err = fmt.Errorf("获取技能 %s 失败: %w", skillName, err)
+		err = fmt.Errorf("failed to fetch skill %s: %w", skillName, err)
+		return
+	}
+
+	if skillContent == "" {
+		content = fmt.Sprintf("Skill %q exists but has no content.", skillName)
 		return
 	}
 
@@ -30,24 +34,25 @@ func handleSkillByName(ctx context.Context, args ToolArgs) (content string, user
 }
 
 func init() {
-	// 注册Skill工具
+	// Register skill_by_name tool
 	RegisterTool(ToolDef{
 		Name:        "skill_by_name",
-		DisplayName: "获取技能",
-		Description: `根据Skill名称获取技能内容。技能包含最佳实践、技巧、规范等知识。
+		DisplayName: "Get Skill",
+		Description: `Fetch a skill's full content by name. Skills contain best practices, tips, conventions, and executable scripts.
 
-使用示例：
-1. 通过名称获取：skill_by_name(skill_name="Go最佳实践")
+Usage:
+  skill_by_name(skill_name="test-skill")
 
-注意事项：
-- skill_name长度2-100字符，区分大小写`,
+Notes:
+- skill_name is case-sensitive, max 128 chars
+- After fetching, extract scripts and execute via shell/python tools`,
 		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"skill_name": map[string]any{
 					"type":        "string",
-					"description": "技能名称（区分大小写）",
+					"description": "Exact skill name (case-sensitive)",
 					"pattern":     TitleLikePattern(128),
 				},
 			},
@@ -56,5 +61,57 @@ func init() {
 		},
 		Category: "skill",
 		Handler:  handleSkillByName,
+	})
+}
+
+// handleSkillSearch searches skills by keyword query.
+func handleSkillSearch(ctx context.Context, args ToolArgs) (content string, user string, err error) {
+	query := ToolArgsValue(args, "query", "")
+	if query == "" {
+		err = fmt.Errorf("search query cannot be empty")
+		return
+	}
+	outfmt.Printf("Searching skills [%s]\n", query)
+
+	result, err := skills.Query(query)
+	if err != nil {
+		err = fmt.Errorf("skill search failed: %w", err)
+		return
+	}
+
+	content = result
+	return
+}
+
+func init() {
+	// Register skill_search tool
+	RegisterTool(ToolDef{
+		Name:        "skill_search",
+		DisplayName: "Search Skills",
+		Description: `Search available skills by keyword. Use this when unsure which skill to use or to discover relevant skills for a task.
+
+Usage:
+  skill_search(query="test")
+  skill_search(query="build deploy")
+
+Notes:
+- query is case-insensitive, max 128 chars
+- Returns matching skill names with description summaries
+- After finding a skill, use skill_by_name to get full content`,
+		Strict: true,
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"query": map[string]any{
+					"type":        "string",
+					"description": "Search keywords (space-separated)",
+					"pattern":     TitleLikePattern(128),
+				},
+			},
+			"required":             []string{"query"},
+			"additionalProperties": false,
+		},
+		Category: "skill",
+		Handler:  handleSkillSearch,
 	})
 }

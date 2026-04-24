@@ -30,6 +30,7 @@ type Skill struct {
 	Scripts     []Resource `yaml:"scripts,omitzero"`
 	References  []Resource `yaml:"references,omitzero"`
 	Templates   []Resource `yaml:"templates,omitzero"`
+	AutoInject  bool       `yaml:"auto_inject,omitzero"` // 自动注入到对话上下文，无需 LLM 主动获取
 }
 
 func (skill *Skill) Summary() string {

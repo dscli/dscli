@@ -68,8 +68,26 @@ func NewSkillStore(dir string) (*Store, error) {
 
 func (store *Store) Load() (err error) {
 	path := filepath.Join(store.dir, "skills.yaml")
-	_, err = os.Stat(path)
-	if err == nil {
+	yamlInfo, yamlErr := os.Stat(path)
+
+	// 检查缓存是否需要更新：比较 skills.yaml 和 SKILL.md 文件的修改时间
+	needReload := yamlErr != nil
+	if yamlErr == nil {
+		skillFiles := SkillFiles(store.dir)
+		for _, sf := range skillFiles {
+			info, statErr := os.Stat(sf)
+			if statErr != nil {
+				continue
+			}
+			if info.ModTime().After(yamlInfo.ModTime()) {
+				needReload = true
+				break
+			}
+		}
+	}
+
+	// 如果缓存有效，直接加载
+	if !needReload {
 		var data []byte
 		data, err = os.ReadFile(path)
 		if err != nil {
@@ -79,12 +97,10 @@ func (store *Store) Load() (err error) {
 		if err != nil {
 			return
 		}
-	}
-
-	if err == nil {
 		return
 	}
 
+	// 缓存无效或不存在，重新从 SKILL.md 文件加载
 	err = nil
 	skills := LoadSkills(store.dir)
 	if len(skills) == 0 {
