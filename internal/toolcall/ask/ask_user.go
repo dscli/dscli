@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"gitcode.com/dscli/dscli/internal/editor"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
-	"gitcode.com/dscli/dscli/internal/editor"
 )
 
 // AskTool 工具定义

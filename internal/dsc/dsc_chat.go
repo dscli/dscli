@@ -10,6 +10,13 @@ import (
 
 // Chat 发送聊天请求
 func (c *Deepseek) Chat(ctx context.Context, messages []toolcall.Message, tools []toolcall.Tool) (*ChatResponse, error) {
+	// 非工具调用的 assistant 消息，清空 reasoning_content（API 会忽略但保留更安全）
+	for i, message := range messages {
+		if message.Role == "assistant" && len(message.ToolCalls) == 0 && message.ReasoningContent != "" {
+			message.ReasoningContent = ""
+			messages[i] = message
+		}
+	}
 	model := context.ContextValue(ctx, context.CurrentModelNameKey, context.ModelDeepseekChat)
 	insideShellExec := context.ContextValue(ctx, context.InsideShellExecKey, false)
 	stream := context.ContextValue(ctx, context.StreamKey, false)
@@ -33,12 +40,16 @@ func (c *Deepseek) Chat(ctx context.Context, messages []toolcall.Message, tools 
 			Messages: messages,
 			Tools:    tools,
 			Stream:   true,
+			Thinking: Thinking{
+				Type: "enabled",
+			},
+			ReasoningEffort: "max",
 		})
 	}
 
 	// 非streaming请求
-	maxTokens := 8192
-	maxAttempts := 1 // max attempts 1 means no retry
+	maxTokens := 8192 * 48 // 384K
+	maxAttempts := 1       // max attempts 1 means no retry
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		req := ChatRequest{
 			Model:     model,
@@ -46,6 +57,10 @@ func (c *Deepseek) Chat(ctx context.Context, messages []toolcall.Message, tools 
 			Tools:     tools,
 			MaxTokens: maxTokens,
 			Stream:    false,
+			Thinking: Thinking{
+				Type: "enabled",
+			},
+			ReasoningEffort: "max",
 		}
 
 		var resp ChatResponse
@@ -69,7 +84,9 @@ func (c *Deepseek) Chat(ctx context.Context, messages []toolcall.Message, tools 
 		if attempt < maxAttempts {
 			message := choice.Message
 			outfmt.PrintContent(ctx, message.ReasoningContent, message.Content)
-			message.ReasoningContent = ""
+			if len(message.ToolCalls) == 0 {
+				message.ReasoningContent = ""
+			}
 			messages = append(messages, message)
 			tcs := message.ToolCalls
 			for _, tc := range tcs {

@@ -10,10 +10,11 @@ var (
 	globalConfig     *Config
 	globalConfigOnce sync.Once
 )
+
 // Get 获取配置值（向后兼容接口）
 // 使用全局配置实例，支持懒加载
-func Get(name string, defaultValue string) string {
-	return getGlobalConfig().Get(name, defaultValue)
+func Get(name string, defaultValue string, alias ...string) string {
+	return getGlobalConfig().Get(name, defaultValue, alias...)
 }
 
 // ConfigDir 配置目录（向后兼容变量）

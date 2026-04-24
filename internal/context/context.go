@@ -43,8 +43,8 @@ var (
 
 var (
 	ProjectRoot           = GetProjectRoot()
-	ModelDeepseekChat     = config.Get("model-deepseek-chat", "deepseek-chat")
-	ModelDeepseekReasoner = config.Get("model-deepseek-reasoner", "deepseek-reasoner")
+	ModelDeepseekChat     = config.Get("model-deepseek-chat", "deepseek-v4-pro")
+	ModelDeepseekReasoner = config.Get("model-deepseek-reasoner", "deepseek-v4-flash")
 )
 
 const (
@@ -126,8 +126,8 @@ func IsTesting() bool {
 }
 
 func ReasonerModelOK() bool {
-	if ModelDeepseekReasoner == ModelDeepseekChat {
-		return false
-	}
-	return ModelDeepseekReasoner == "deepseek-reasoner"
+	// 只要推理模型与聊天模型不同，即认为推理模型可用
+	// V4: deepseek-v4-pro vs deepseek-v4-flash
+	// V3: deepseek-chat vs deepseek-reasoner
+	return ModelDeepseekReasoner != ModelDeepseekChat
 }

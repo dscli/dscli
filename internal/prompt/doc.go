@@ -20,7 +20,7 @@
 //	last priority but can not be edited.
 //
 // # Prompt for reasoner model
-// 
+//
 //	reasoner.md should be in
 //	 1. gitcode.com/dscli/dscli/internal/prompt/reasoner.md - source code, readonly
 //	 2. ${CONFIG_DIR}/prompt/reasoner.md                    - system,      editable

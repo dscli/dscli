@@ -214,12 +214,12 @@ func (store *Store) List() []string {
 	if store == nil || store.Skills == nil {
 		return []string{}
 	}
-	
+
 	names := make([]string, 0, len(store.Skills))
 	for name := range store.Skills {
 		names = append(names, name)
 	}
-	
+
 	// 按名称排序
 	sort.Strings(names)
 	return names
@@ -240,7 +240,7 @@ func ListAll() ([]SkillInfo, error) {
 
 	// 收集所有技能信息
 	skillInfos := make([]SkillInfo, 0)
-	
+
 	// 添加本地技能
 	for _, name := range localStore.List() {
 		skillInfos = append(skillInfos, SkillInfo{
@@ -248,7 +248,7 @@ func ListAll() ([]SkillInfo, error) {
 			Scope: "local",
 		})
 	}
-	
+
 	// 添加全局技能（排除与本地技能同名的）
 	for _, name := range globalStore.List() {
 		// 检查是否已有同名的本地技能
@@ -259,7 +259,7 @@ func ListAll() ([]SkillInfo, error) {
 				break
 			}
 		}
-		
+
 		if !hasLocal {
 			skillInfos = append(skillInfos, SkillInfo{
 				Name:  name,
@@ -267,12 +267,12 @@ func ListAll() ([]SkillInfo, error) {
 			})
 		}
 	}
-	
+
 	// 按名称排序
 	sort.Slice(skillInfos, func(i, j int) bool {
 		return skillInfos[i].Name < skillInfos[j].Name
 	})
-	
+
 	return skillInfos, nil
 }
 

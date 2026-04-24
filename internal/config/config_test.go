@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 )
+
 func TestConfig_Get(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -50,7 +51,7 @@ func TestConfig_Get(t *testing.T) {
 
 			// 创建临时配置目录
 			tempDir := t.TempDir()
-			
+
 			// 创建新的配置实例
 			cfg, err := NewWithDir(tempDir)
 			if err != nil {
@@ -68,7 +69,7 @@ func TestConfig_Get(t *testing.T) {
 
 func TestConfig_SaveAndLoad(t *testing.T) {
 	tempDir := t.TempDir()
-	
+
 	cfg, err := NewWithDir(tempDir)
 	if err != nil {
 		t.Fatalf("NewWithDir() error = %v", err)
@@ -222,14 +223,14 @@ func TestGlobalGet(t *testing.T) {
 			os.Unsetenv("DEEPSEEK_API_KEY")
 		}
 	}()
-	
+
 	// 设置测试环境变量
 	os.Setenv("DEEPSEEK_API_KEY", "sk-global-test")
-	
+
 	// 注意：由于全局变量只初始化一次，我们无法完全重置
 	// 这里测试的是全局Get函数的基本功能
 	got := Get("deepseek-api-key", "default")
-	
+
 	// 检查是否获取到了环境变量的值或默认值
 	if got == "default" {
 		// 如果全局配置已经初始化过，可能不会使用新的环境变量

@@ -49,13 +49,20 @@ func NewWithDir(dir string) (*Config, error) {
 }
 
 // Get 获取配置值
-func (c *Config) Get(name, defaultValue string) string {
+func (c *Config) Get(name, defaultValue string, alias ...string) string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	if value, ok := c.data[name]; ok && value != "" {
 		return value
 	}
+
+	for _, name = range alias {
+		if value, ok := c.data[name]; ok && value != "" {
+			return value
+		}
+	}
+
 	return defaultValue
 }
 

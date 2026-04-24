@@ -11,11 +11,17 @@ import (
 
 // ChatRequest 扩展，支持 tools
 type ChatRequest struct {
-	Model     string             `json:"model"`
-	Messages  []toolcall.Message `json:"messages"`
-	Tools     []toolcall.Tool    `json:"tools,omitempty"`
-	Stream    bool               `json:"stream"`
-	MaxTokens int                `json:"max_tokens,omitempty"`
+	Model           string             `json:"model"`
+	Messages        []toolcall.Message `json:"messages"`
+	Tools           []toolcall.Tool    `json:"tools,omitempty"`
+	Stream          bool               `json:"stream"`
+	MaxTokens       int                `json:"max_tokens,omitempty"`
+	Thinking        Thinking           `json:"thinking"`
+	ReasoningEffort string             `json:"reasoning_effort,omitempty"`
+}
+
+type Thinking struct {
+	Type string `json:"type,omitzero"`
 }
 
 type ModelsResponse struct {

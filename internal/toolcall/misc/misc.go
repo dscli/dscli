@@ -3,10 +3,10 @@ package misc
 import "gitcode.com/dscli/dscli/internal/toolcall"
 
 var (
-	GetSkillByName        = toolcall.GetSkillByName
-	RegisterTool          = toolcall.RegisterTool
-	TitleLikePattern      = toolcall.TitleLikePattern
-	SafeAsyncRecordUsage  = toolcall.SafeAsyncRecordUsage
+	GetSkillByName       = toolcall.GetSkillByName
+	RegisterTool         = toolcall.RegisterTool
+	TitleLikePattern     = toolcall.TitleLikePattern
+	SafeAsyncRecordUsage = toolcall.SafeAsyncRecordUsage
 )
 
 type (

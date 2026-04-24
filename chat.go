@@ -297,7 +297,8 @@ func PrintSessionStats(ctx context.Context) {
 
 func ChatRound(ctx context.Context, prompts []toolcall.Message, skills []toolcall.Message, history []toolcall.Message, inputs ...toolcall.Message) (err error) {
 	// 1. 构造 messages 切片（包含历史）
-	messages := make([]toolcall.Message, 0, len(history)+len(prompts)+len(skills))
+	// 注意：skills 暂未拼入 messages，预留容量以备后用
+	messages := make([]toolcall.Message, 0, len(history)+len(prompts)+len(skills)+len(inputs))
 	messages = append(messages, prompts...)
 	messages = append(messages, history...)
 
@@ -311,7 +312,12 @@ func ChatRound(ctx context.Context, prompts []toolcall.Message, skills []toolcal
 	var resp *dsc.ChatResponse
 	resp, err = DeepseekClient.Chat(ctx, messages, tools)
 	if err != nil {
-		err = fmt.Errorf("聊天请求失败: %w", err)
+		messagesJSON, marshalErr := outfmt.JSONMarshal(messages)
+		if marshalErr != nil {
+			err = fmt.Errorf("聊天请求失败: %w", err)
+		} else {
+			err = fmt.Errorf("聊天请求失败: %w\nmessages=%s", err, string(messagesJSON))
+		}
 		return
 	}
 
@@ -334,9 +340,10 @@ func ChatRound(ctx context.Context, prompts []toolcall.Message, skills []toolcal
 
 	outfmt.PrintContent(ctx, story.ReasoningContent, story.Content)
 	stories = append(stories, story)
+	tcs := story.ToolCalls
+
 	// save stories here
 	err = toolcall.SaveMessages(ctx, stories...)
-	story.ReasoningContent = "" // reset reasoning content
 
 	if err != nil {
 		outfmt.Error("%v", err)
@@ -346,7 +353,6 @@ func ChatRound(ctx context.Context, prompts []toolcall.Message, skills []toolcal
 		history = append(history, stories...)
 	}
 
-	tcs := story.ToolCalls
 	if len(tcs) == 0 {
 		// 会话结束，打印统计信息
 		PrintSessionStats(ctx)

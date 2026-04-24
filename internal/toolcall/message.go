@@ -18,7 +18,7 @@ type Message struct {
 	SessionID        int64      `json:"-"`
 	ModelID          int64      `json:"-"`
 	Role             string     `json:"role"`
-	ReasoningContent string     `json:"reasoning_content,omitempty"`
+	ReasoningContent string     `json:"reasoning_content"`
 	Content          string     `json:"content"`                // 始终输出，即使为空字符串
 	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`   // 仅当有工具调用时输出
 	ToolCallID       string     `json:"tool_call_id,omitempty"` // 仅当 role="tool" 时输出
@@ -191,7 +191,7 @@ func ListHistory(ctx context.Context) ([]*Message, error) {
 		return nil, err
 	}
 	defer db.Close()
-	rows, err := db.QueryContext(ctx, `SELECT id, role, content, tool_call_id, tool_calls, created_at
+	rows, err := db.QueryContext(ctx, `SELECT id, role, content, tool_call_id, tool_calls, created_at,reasoning_content
 		FROM messages
 		WHERE session_id = ? AND model_id = ?
 		ORDER BY id DESC
@@ -210,7 +210,7 @@ func ListHistory(ctx context.Context) ([]*Message, error) {
 	for rows.Next() {
 		m := &Message{}
 		var toolCallID, toolCalls sql.NullString
-		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt, &m.ReasoningContent); err != nil {
 			return nil, fmt.Errorf("扫描消息失败: %w", err)
 		}
 		if toolCallID.Valid {
@@ -249,7 +249,7 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 	}
 	defer db.Close()
 	rows, err := db.Query(`
-		SELECT id, role, content, tool_call_id, tool_calls, created_at
+		SELECT id, role, content, tool_call_id, tool_calls, created_at, reasoning_content
 		FROM messages
 		WHERE session_id = ? AND model_id = ?
 		ORDER BY id DESC
@@ -267,7 +267,7 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 	for rows.Next() {
 		var m Message
 		var toolCallID, toolCalls sql.NullString
-		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt, &m.ReasoningContent); err != nil {
 			return nil, fmt.Errorf("扫描消息失败: %w", err)
 		}
 		if toolCallID.Valid {
