@@ -15,7 +15,6 @@ type (
 	ToolArgs = toolcall.ToolArgs
 )
 
-
 // ResolvePath 解析文件路径：
 //  1. 如果是 "~" 开头（如 ~/.dscli/skills/...），展开为用户主目录
 //  2. 如果是绝对路径，直接使用

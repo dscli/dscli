@@ -23,7 +23,7 @@ var (
 
 type Store struct {
 	dir      string
-	source   string                // "local" 或 "global"
+	source   string              // "local" 或 "global"
 	Skills   map[string]Skill    `yaml:"skills,omitzero"`
 	Keywords map[string][]string `yaml:"keywords,omitzero"`
 }
@@ -173,8 +173,7 @@ func (store *Store) Query(query string) (matched map[string]Skill) {
 func (store *Store) Use(name string) (content string, err error) {
 	skill, ok := store.Skills[name]
 	if ok {
-		summary := skill.Summary()
-		content = fmt.Sprintf("---\n%s---\n\n%s\n", summary, skill.Content)
+		content = skill.FormatFull()
 		return
 	}
 

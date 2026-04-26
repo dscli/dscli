@@ -40,12 +40,17 @@ func init() {
 		DisplayName: "Get Skill",
 		Description: `Fetch a skill's full content by name. Skills contain best practices, tips, conventions, and executable scripts.
 
+Returns:
+- SKILL.md content (instructions)
+- Resource listings (scripts, references, templates, examples) with absolute paths
+
 Usage:
   skill_by_name(skill_name="test-skill")
 
 Notes:
 - skill_name is case-sensitive, max 128 chars
-- After fetching, extract scripts and execute via shell/python tools`,
+- Scripts are listed with paths; execute via shell (bash <path>) or python (python3 <path>) tools
+- Reference documents can be read via read_file or shell (cat <path>)`,
 		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",

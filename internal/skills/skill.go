@@ -30,6 +30,7 @@ type Skill struct {
 	Scripts     []Resource `yaml:"scripts,omitzero"`
 	References  []Resource `yaml:"references,omitzero"`
 	Templates   []Resource `yaml:"templates,omitzero"`
+	Examples    []Resource `yaml:"examples,omitzero"`    // 示例文件
 	AutoInject  bool       `yaml:"auto_inject,omitzero"` // 自动注入到对话上下文，无需 LLM 主动获取
 	Source      string     `yaml:"-"`                    // "local" 或 "global"，由加载侧注入
 }
@@ -39,9 +40,6 @@ func (skill *Skill) Summary() string {
 	builder.WriteString("name: ")
 	builder.WriteString(skill.Name)
 	builder.WriteRune('\n')
-	builder.WriteString("source: ")
-	builder.WriteString(skill.Source)
-	builder.WriteRune('\n')
 	builder.WriteString("path: ")
 	builder.WriteString(sanitizePath(skill.Path))
 	builder.WriteRune('\n')
@@ -49,6 +47,53 @@ func (skill *Skill) Summary() string {
 	builder.WriteString(skill.Description)
 	builder.WriteRune('\n')
 	return builder.String()
+}
+
+// FormatFull 格式化技能的完整信息，供 LLM 使用。
+// 包含：摘要、正文、资源列表（仅路径和描述，不含内容，LLM 按需读取）。
+func (skill *Skill) FormatFull() string {
+	var builder strings.Builder
+
+	// 摘要
+	builder.WriteString("---\n")
+	builder.WriteString(skill.Summary())
+	builder.WriteString("---\n\n")
+
+	// 正文
+	builder.WriteString(skill.Content)
+
+	// 资源列表
+	formatResourceSection(&builder, "Scripts", skill.Scripts, skill.Path)
+	formatResourceSection(&builder, "References", skill.References, skill.Path)
+	formatResourceSection(&builder, "Templates", skill.Templates, skill.Path)
+	formatResourceSection(&builder, "Examples", skill.Examples, skill.Path)
+
+	return builder.String()
+}
+
+// formatResourceSection 格式化单个资源类型的列表，仅包含路径和描述。
+func formatResourceSection(builder *strings.Builder, title string, resources []Resource, skillPath string) {
+	if len(resources) == 0 {
+		return
+	}
+	builder.WriteString("\n## ")
+	builder.WriteString(title)
+	builder.WriteString("\n\n")
+	for _, res := range resources {
+		// 相对路径（Name）便于在 SKILL.md 中引用
+		// 绝对路径（sanitized）供 LLM 直接访问
+		sanitized := sanitizePath(res.Path)
+		builder.WriteString("- `")
+		builder.WriteString(res.Name)
+		builder.WriteString("`")
+		if res.Description != "" {
+			builder.WriteString(" — ")
+			builder.WriteString(res.Description)
+		}
+		builder.WriteString("\n  path: ")
+		builder.WriteString(sanitized)
+		builder.WriteString("\n")
+	}
 }
 
 // sanitizePath 脱敏绝对路径，将用户主目录替换为 ~
@@ -123,7 +168,6 @@ func ParseSkill(path string, skill *Skill) error {
 	if len(skill.Keywords) == 0 {
 		skill.Keywords = extractKeywords(skill.Description)
 	}
-
 	// 加载子资源
 	if err := loadScripts(skillDir, skill); err != nil {
 		return fmt.Errorf("load scripts: %w", err)
@@ -133,6 +177,9 @@ func ParseSkill(path string, skill *Skill) error {
 	}
 	if err := loadTemplates(skillDir, skill); err != nil {
 		return fmt.Errorf("load templates: %w", err)
+	}
+	if err := loadExamples(skillDir, skill); err != nil {
+		return fmt.Errorf("load examples: %w", err)
 	}
 
 	return nil
@@ -277,11 +324,18 @@ func extractScriptDescription(path string) string {
 }
 
 // loadReferences 加载 references 目录下的文档资源。
+// loadReferences 加载 references（或 reference）目录下的文档资源。
+// 优先检查 "references" 目录，不存在则回退到 "reference"（单数形式）。
 func loadReferences(skillDir string, skill *Skill) error {
+	// 先尝试 "references"，再尝试 "reference"
 	refDir := filepath.Join(skillDir, "references")
 	entries, err := os.ReadDir(refDir)
 	if os.IsNotExist(err) {
-		return nil
+		refDir = filepath.Join(skillDir, "reference")
+		entries, err = os.ReadDir(refDir)
+		if os.IsNotExist(err) {
+			return nil
+		}
 	}
 	if err != nil {
 		return err
@@ -296,8 +350,10 @@ func loadReferences(skillDir string, skill *Skill) error {
 			continue
 		}
 
+		// Name 使用加载时实际的目录名（references 或 reference）
+		dirName := filepath.Base(refDir)
 		res := Resource{
-			Name: filepath.Join("references", name),
+			Name: filepath.Join(dirName, name),
 			Path: filepath.Join(refDir, name),
 		}
 		res.Description = extractMarkdownTitle(res.Path)
@@ -389,4 +445,35 @@ func extractFirstCommentOrEmpty(path string) string {
 		break
 	}
 	return ""
+}
+
+// loadExamples 加载 examples 目录下的示例文件。
+func loadExamples(skillDir string, skill *Skill) error {
+	examplesDir := filepath.Join(skillDir, "examples")
+	entries, err := os.ReadDir(examplesDir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		res := Resource{
+			Name: filepath.Join("examples", name),
+			Path: filepath.Join(examplesDir, name),
+		}
+		// 提取描述：Markdown 取标题，否则取第一行注释
+		if strings.HasSuffix(name, ".md") {
+			res.Description = extractMarkdownTitle(res.Path)
+		} else {
+			res.Description = extractFirstCommentOrEmpty(res.Path)
+		}
+		skill.Examples = append(skill.Examples, res)
+	}
+	return nil
 }
