@@ -19,9 +19,10 @@ func init() {
 支持本地技能（项目目录）和全局技能（用户配置目录）。
 
 子命令：
-  use    显示指定名称的技能
-  query  查询匹配关键词的技能
-  list   列出所有可用技能`,
+  use              显示指定名称的技能
+  query            查询匹配关键词的技能
+  list             列出所有可用技能
+  set-auto-inject  设置技能的自动注入属性`,
 	})
 
 	// use 子命令
@@ -80,6 +81,48 @@ func init() {
 		RunE: SkillListRunE,
 	}
 	skillCmd.AddCommand(listCmd)
+
+	// set-auto-inject 子命令
+	setAutoInjectCmd := &cobra.Command{
+		Use:   "set-auto-inject <name> <true|false>",
+		Short: "设置技能的自动注入属性",
+		Long: `设置技能的 auto_inject 属性。
+
+当 auto_inject 为 true 时，技能内容会自动注入到每次对话的上下文中，无需 LLM 主动获取。
+当为 false 时，技能仅在 skill 列表中展示，LLM 需要时才通过 skill_by_name 获取。
+
+默认修改本地技能；使用 --global/-g 标志修改全局技能。`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			val := args[1]
+			var autoInject bool
+			switch val {
+			case "true":
+				autoInject = true
+			case "false":
+				autoInject = false
+			default:
+				return fmt.Errorf("无效的值 %q，必须为 true 或 false", val)
+			}
+
+			global, _ := cmd.Flags().GetBool("global")
+
+			if err := skills.SetAutoInject(name, autoInject, global); err != nil {
+				return fmt.Errorf("设置 auto_inject 失败: %w", err)
+			}
+
+			scope := "本地"
+			if global {
+				scope = "全局"
+			}
+			fmt.Printf("已将 %s 技能 %q 的 auto_inject 设置为 %v\n", scope, name, autoInject)
+			return nil
+		},
+	}
+	setAutoInjectCmd.Flags().BoolP("global", "g", false, "修改全局技能而非本地技能")
+	skillCmd.AddCommand(setAutoInjectCmd)
+
 }
 
 // SkillListRunE 列出所有技能
@@ -97,20 +140,25 @@ func SkillListRunE(cmd *cobra.Command, args []string) error {
 	// 转换为map数组，以便使用FormatOutput
 	var skillMaps []map[string]string
 	for _, info := range skillInfos {
+		autoInject := "-"
+		if info.AutoInject {
+			autoInject = "是"
+		}
 		skillMaps = append(skillMaps, map[string]string{
-			"name":  info.Name,
-			"scope": info.Scope,
+			"name":        info.Name,
+			"scope":       info.Scope,
+			"auto_inject": autoInject,
 		})
 	}
 
 	// 使用FormatOutput进行格式化输出
-	headers := []string{"名称", "范围"}
+	headers := []string{"名称", "范围", "自动注入"}
 	rowFunc := func(data any) []string {
 		switch info := data.(type) {
 		case map[string]string:
-			return []string{info["name"], info["scope"]}
+			return []string{info["name"], info["scope"], info["auto_inject"]}
 		default:
-			return []string{"", ""}
+			return []string{"", "", ""}
 		}
 	}
 

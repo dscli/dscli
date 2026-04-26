@@ -2,16 +2,23 @@ package skills
 
 import (
 	"bufio"
+	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/goccy/go-yaml"
 )
+
+//go:embed how_to_use_a_skill.md
+var how_to_use_a_skill_md string
 
 var ErrInvalidFrontmatter = errors.New("invalid frontmatter format")
 
@@ -63,16 +70,16 @@ func (skill *Skill) FormatFull() string {
 	builder.WriteString(skill.Content)
 
 	// 资源列表
-	formatResourceSection(&builder, "Scripts", skill.Scripts, skill.Path)
-	formatResourceSection(&builder, "References", skill.References, skill.Path)
-	formatResourceSection(&builder, "Templates", skill.Templates, skill.Path)
-	formatResourceSection(&builder, "Examples", skill.Examples, skill.Path)
+	formatResourceSection(&builder, "Scripts", skill.Scripts)
+	formatResourceSection(&builder, "References", skill.References)
+	formatResourceSection(&builder, "Templates", skill.Templates)
+	formatResourceSection(&builder, "Examples", skill.Examples)
 
 	return builder.String()
 }
 
 // formatResourceSection 格式化单个资源类型的列表，仅包含路径和描述。
-func formatResourceSection(builder *strings.Builder, title string, resources []Resource, skillPath string) {
+func formatResourceSection(builder *strings.Builder, title string, resources []Resource) {
 	if len(resources) == 0 {
 		return
 	}
@@ -323,9 +330,9 @@ func extractScriptDescription(path string) string {
 	return ""
 }
 
-// loadReferences 加载 references 目录下的文档资源。
 // loadReferences 加载 references（或 reference）目录下的文档资源。
 // 优先检查 "references" 目录，不存在则回退到 "reference"（单数形式）。
+
 func loadReferences(skillDir string, skill *Skill) error {
 	// 先尝试 "references"，再尝试 "reference"
 	refDir := filepath.Join(skillDir, "references")
@@ -373,6 +380,7 @@ func extractMarkdownTitle(path string) string {
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
+
 		if line == "" {
 			continue
 		}
@@ -476,4 +484,114 @@ func loadExamples(skillDir string, skill *Skill) error {
 		skill.Examples = append(skill.Examples, res)
 	}
 	return nil
+}
+
+// BuildSkillPrompt builds a system prompt string from all available skills.
+//
+// It loads from local (.dscli/skills) and global (~/.dscli/skills) stores,
+// merging with local priority. Two injection strategies:
+//  1. auto_inject skills: full content injected directly, no LLM fetch needed
+//  2. manual skills: name/description list only, LLM fetches via skill_by_name
+//
+// Use skill_search tool for keyword-based discovery of manual skills.
+// Store loading errors are gracefully degraded to empty stores
+// so that skill failures never block conversation.
+func BuildSkillPrompt(ctx context.Context) string {
+	localStore, localErr := LocalStore()
+	if localErr != nil {
+		localStore = &Store{}
+	}
+
+	globalStore, globalErr := GlobalStore()
+	if globalErr != nil {
+		globalStore = &Store{}
+	}
+
+	// Merge skills: local takes priority over global
+	allSkills := make(map[string]Skill)
+	maps.Copy(allSkills, globalStore.Skills)
+	maps.Copy(allSkills, localStore.Skills)
+
+	if len(allSkills) == 0 {
+		return "" // No skills, no injection
+	}
+
+	// Sort for stable output
+	names := make([]string, 0, len(allSkills))
+	for name := range allSkills {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	// Separate auto_inject skills from manual ones
+	var autoSkills, manualSkills []Skill
+	for _, name := range names {
+		skill := allSkills[name]
+		if skill.AutoInject {
+			autoSkills = append(autoSkills, skill)
+		} else {
+			manualSkills = append(manualSkills, skill)
+		}
+	}
+
+	// Cap manual skills listed to avoid token waste
+	const maxManualListed = 20
+	hasMore := len(manualSkills) > maxManualListed
+	if hasMore {
+		manualSkills = manualSkills[:maxManualListed]
+	}
+
+	var builder strings.Builder
+
+	// === Part 1: Auto-inject skills (full content) ===
+	for _, skill := range autoSkills {
+		builder.WriteString("---\n")
+		fmt.Fprintf(&builder, "## Skill: %s (auto-loaded)\n\n", skill.Name)
+		builder.WriteString(skill.Content)
+		builder.WriteString("\n\n")
+	}
+
+	// === Part 2: Manual skill list ===
+	if len(manualSkills) > 0 {
+		builder.WriteString("## Available Skills\n\n")
+		builder.WriteString("Fetch full content via `skill_by_name` tool, ")
+		builder.WriteString("then execute scripts via `shell` or `python` tools.\n")
+		builder.WriteString("Not sure which skill to use? Try `skill_search` with keywords.\n\n")
+		builder.WriteString("| Name | Description | Keywords |\n")
+		builder.WriteString("|------|-------------|----------|\n")
+
+		for _, skill := range manualSkills {
+			keywords := "-"
+			if len(skill.Keywords) > 0 {
+				keywords = strings.Join(skill.Keywords, ", ")
+			}
+			fmt.Fprintf(&builder, "| %s | %s | %s |\n",
+				skill.Name,
+				truncateSkillDesc(skill.Description, 80),
+				keywords,
+			)
+		}
+
+		if hasMore {
+			fmt.Fprintf(&builder, "| ... | _(%d more skills, use skill_search to discover)_ | ... |\n",
+				len(names)-len(autoSkills)-maxManualListed)
+		}
+	}
+
+	// === Part 3: Usage instructions with example ===
+	builder.WriteString("\n")
+	builder.WriteString(how_to_use_a_skill_md)
+	return builder.String()
+}
+
+// truncateSkillDesc truncates a skill description to maxLen runes, appending "..." if needed.
+func truncateSkillDesc(desc string, maxLen int) string {
+	if maxLen < 3 {
+		maxLen = 3 // guard against negative slice index
+	}
+	runes := []rune(desc)
+	if len(runes) <= maxLen {
+		return desc
+	}
+	return string(runes[:maxLen-3]) + "..."
 }

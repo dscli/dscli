@@ -108,6 +108,18 @@ func (store *Store) Load() (err error) {
 	}
 
 	// 缓存无效或不存在，重新从 SKILL.md 文件加载
+	// 先读取旧缓存中的 auto_inject 设置，以便刷新后保留用户偏好
+	var oldSkills map[string]Skill
+	if yamlErr == nil {
+		// 旧缓存存在，尝试读取
+		var oldStore Store
+		if data, readErr := os.ReadFile(path); readErr == nil {
+			if unmarshalErr := yaml.Unmarshal(data, &oldStore); unmarshalErr == nil {
+				oldSkills = oldStore.Skills
+			}
+		}
+	}
+
 	err = nil
 	skills := LoadSkills(store.dir)
 	if len(skills) == 0 {
@@ -118,6 +130,12 @@ func (store *Store) Load() (err error) {
 	kws := map[string][]string{}
 	for name, skill := range skills {
 		skill.Source = store.source // 注入来源
+
+		// 保留旧的 auto_inject 设置（用户偏好，非 skill 定义）
+		if old, ok := oldSkills[name]; ok {
+			skill.AutoInject = old.AutoInject
+		}
+
 		for _, word := range skill.Keywords {
 			var kw []string
 			var ok bool
@@ -250,7 +268,6 @@ func (store *Store) List() []string {
 }
 
 // ListAll 返回所有技能（本地和全局）的列表
-// ListAll 返回所有技能（本地和全局）的列表
 func ListAll() ([]SkillInfo, error) {
 	localStore, err := LocalStore()
 	if err != nil {
@@ -267,9 +284,11 @@ func ListAll() ([]SkillInfo, error) {
 
 	// 添加本地技能
 	for _, name := range localStore.List() {
+		skill := localStore.Skills[name]
 		skillInfos = append(skillInfos, SkillInfo{
-			Name:  name,
-			Scope: "local",
+			Name:       name,
+			Scope:      "local",
+			AutoInject: skill.AutoInject,
 		})
 	}
 
@@ -285,9 +304,11 @@ func ListAll() ([]SkillInfo, error) {
 		}
 
 		if !hasLocal {
+			skill := globalStore.Skills[name]
 			skillInfos = append(skillInfos, SkillInfo{
-				Name:  name,
-				Scope: "global",
+				Name:       name,
+				Scope:      "global",
+				AutoInject: skill.AutoInject,
 			})
 		}
 	}
@@ -301,8 +322,37 @@ func ListAll() ([]SkillInfo, error) {
 }
 
 // SkillInfo 包含技能的基本信息和作用域
-// SkillInfo 包含技能的基本信息和作用域
 type SkillInfo struct {
-	Name  string `json:"name"`
-	Scope string `json:"scope"` // "local" 或 "global"
+	Name       string `json:"name"`
+	Scope      string `json:"scope"`       // "local" 或 "global"
+	AutoInject bool   `json:"auto_inject"` // 是否自动注入到对话上下文
+}
+
+// SetAutoInject 设置指定技能的 auto_inject 属性并保存。
+func (store *Store) SetAutoInject(name string, autoInject bool) error {
+	skill, ok := store.Skills[name]
+	if !ok {
+		return fmt.Errorf("skill %q not found in %s store", name, store.source)
+	}
+	skill.AutoInject = autoInject
+	store.Skills[name] = skill
+	return store.Save()
+}
+
+// SetAutoInject 设置技能的 auto_inject 属性。
+// 优先修改本地 store；若指定了 global 则修改全局 store。
+func SetAutoInject(name string, autoInject bool, global bool) error {
+	if global {
+		globalStore, err := GlobalStore()
+		if err != nil {
+			return fmt.Errorf("failed to load global store: %w", err)
+		}
+		return globalStore.SetAutoInject(name, autoInject)
+	}
+
+	localStore, err := LocalStore()
+	if err != nil {
+		return fmt.Errorf("failed to load local store: %w", err)
+	}
+	return localStore.SetAutoInject(name, autoInject)
 }

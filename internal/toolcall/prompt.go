@@ -1,14 +1,24 @@
 package toolcall
 
 import (
-	"gitcode.com/dscli/dscli/internal/context"
+	"context"
+
 	"gitcode.com/dscli/dscli/internal/prompt"
+	"gitcode.com/dscli/dscli/internal/skills"
 )
 
-// LoadPrompts 加载提示词
+// LoadPrompts loads the system prompt combined with skill prompts.
 func LoadPrompts(ctx context.Context) ([]Message, error) {
+	systemPrompt := prompt.GetSystemPrompt(ctx)
+	skillPrompt := skills.BuildSkillPrompt(ctx)
+
+	content := systemPrompt
+	if skillPrompt != "" {
+		content = systemPrompt + "\n\n" + skillPrompt
+	}
+
 	return []Message{{
 		Role:    "system",
-		Content: prompt.GetSystemPrompt(ctx),
+		Content: content,
 	}}, nil
 }

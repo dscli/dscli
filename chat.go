@@ -28,7 +28,6 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 		return
 	}
 	ctx := cmd.Context()
-	// ModelID
 	var modelID int64
 	switch model {
 	case context.ModelDeepseekChat:
@@ -53,12 +52,12 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 	for _, tool := range tools {
 		tokens += tool.GetTokens()
 	}
-	skills, err := toolcall.LoadSkills(ctx)
+	prompts, err := toolcall.LoadPrompts(ctx)
 	if err != nil {
 		return
 	}
-	for _, skill := range skills {
-		tokens += skill.GetTokens()
+	for _, p := range prompts {
+		tokens += p.GetTokens()
 	}
 
 	ctx = context.WithValue(ctx, context.LeftTokensKey, 131072-tokens)
@@ -108,10 +107,9 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx = context.WithValue(ctx, context.HistSizeKey, histSize)
 	ctx = context.WithValue(ctx, context.StartTimeKey, time.Now())
 
-	// 获取开始余额
+	// Fetch starting balance
 	var startBalance map[string]string
 	if resp, err := DeepseekClient.Balance(); err == nil && len(resp.BalanceInfos) > 0 {
-		// 使用第一个余额信息（通常是CNY）
 		startBalance = resp.BalanceInfos[0]
 		ctx = context.WithValue(ctx, context.StartBalanceKey, startBalance)
 	}
@@ -121,17 +119,12 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 
-	skills, err := toolcall.LoadSkills(ctx)
-	if err != nil {
-		return
-	}
-
 	history, err := toolcall.LoadHistory(ctx)
 	if err != nil {
 		return
 	}
 
-	// 检查是否有历史记录，并且最后一个历史记录包含工具调用
+	// Check if there is history and the last message has tool calls
 	if len(history) > 0 {
 		lastHist := history[len(history)-1]
 		tcs := lastHist.ToolCalls
@@ -139,7 +132,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 			// Print reasoning content or content
 			outfmt.PrintContent(ctx, lastHist.ReasoningContent, lastHist.Content)
 			toolInputs := toolcall.HandleToolCalls(ctx, tcs)
-			// 执行工具调用
+			// Execute tool calls
 			history = append(history, toolInputs...)
 
 			inputs := []toolcall.Message{}
@@ -150,11 +143,11 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 				})
 			}
 
-			return ChatRound(ctx, prompts, skills, history, inputs...)
+			return ChatRound(ctx, prompts, history, inputs...)
 		}
 	}
 
-	return ChatRound(ctx, prompts, skills, history,
+	return ChatRound(ctx, prompts, history,
 		toolcall.Message{Role: "user", Content: content})
 }
 
@@ -295,17 +288,16 @@ func PrintSessionStats(ctx context.Context) {
 	}
 }
 
-func ChatRound(ctx context.Context, prompts []toolcall.Message, skills []toolcall.Message, history []toolcall.Message, inputs ...toolcall.Message) (err error) {
-	// 1. 构造 messages 切片（prompts → skills → history → inputs）
-	messages := make([]toolcall.Message, 0, len(prompts)+len(skills)+len(history)+len(inputs))
+func ChatRound(ctx context.Context, prompts []toolcall.Message, history []toolcall.Message, inputs ...toolcall.Message) (err error) {
+	// 1. Construct messages slice (prompts → history → inputs)
+	messages := make([]toolcall.Message, 0, len(prompts)+len(history)+len(inputs))
 	messages = append(messages, prompts...)
-	messages = append(messages, skills...)
 	messages = append(messages, history...)
 
-	// 2. 添加当前用户消息
+	// 2. Add current user messages
 	messages = append(messages, inputs...)
 
-	// 3. 记录本轮新增的消息（用于存储）
+	// 3. Track new messages for this round (for storage)
 	stories := make([]toolcall.Message, 0, len(inputs)+1)
 	stories = append(stories, inputs...)
 	tools := alltools.GetAllTools(ctx)
@@ -314,24 +306,24 @@ func ChatRound(ctx context.Context, prompts []toolcall.Message, skills []toolcal
 	if err != nil {
 		messagesJSON, marshalErr := outfmt.JSONMarshal(messages)
 		if marshalErr != nil {
-			err = fmt.Errorf("聊天请求失败: %w", err)
+			err = fmt.Errorf("chat request failed: %w", err)
 		} else {
-			err = fmt.Errorf("聊天请求失败: %w\nmessages=%s", err, string(messagesJSON))
+			err = fmt.Errorf("chat request failed: %w\nmessages=%s", err, string(messagesJSON))
 		}
 		return
 	}
 
 	if len(resp.Choices) == 0 {
-		err = fmt.Errorf("错误: 未收到回复")
+		err = fmt.Errorf("error: no response received")
 		return
 	}
 
-	// story 保留 ReasoningContent（持久化和展示用），
-	// 后续作为输入消息时，dsc.Chat() 会清理掉（API 要求）
+	// story retains ReasoningContent (for persistence and display),
+	// dsc.Chat() will clean it up when used as input (API requirement)
 	story := resp.Choices[0].Message
-	// 检查响应是否被截断
+	// Check if response was truncated
 	if resp.Choices[0].FinishReason == "length" {
-		outfmt.Warn("注意：响应因长度限制被截断，可能不完整。")
+		outfmt.Warn("note: response truncated due to length limit, may be incomplete.")
 		ctx = context.WithValue(ctx, context.FinishReasonLengthKey, true)
 	} else {
 		if context.ContextValue(ctx, context.FinishReasonLengthKey, false) {
@@ -354,17 +346,16 @@ func ChatRound(ctx context.Context, prompts []toolcall.Message, skills []toolcal
 	}
 
 	if len(tcs) == 0 {
-		// 会话结束，打印统计信息
+		// Conversation ended, print stats
 		PrintSessionStats(ctx)
 		return
 	}
 
 	toolInputs := toolcall.HandleToolCalls(ctx, tcs)
 	if len(toolInputs) > 0 {
-		// Now tool call inputs saved in db
-		// move them to history
+		// Tool call inputs saved in db, move them to history
 		history = append(history, toolInputs...)
-		return ChatRound(ctx, prompts, skills, history)
+		return ChatRound(ctx, prompts, history)
 	}
 	return
 }
