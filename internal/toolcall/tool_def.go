@@ -135,7 +135,6 @@ func ToArrayType[T PrimitiveType](anyValues []any, anyValuesLen int) []T {
 }
 
 // ToolArgsValue 安全获取类型化参数值
-// ToolArgsValue 安全获取类型化参数值
 func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
 	var (
 		value       any
@@ -151,8 +150,10 @@ func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
 			// 尝试将字符串解析为JSON
 			var decoded any
 			if err := json.Unmarshal([]byte(stringValue), &decoded); err == nil {
-				// 解析成功，使用解析后的值
-				value = decoded
+				// 只接受解析出的数组类型，避免将JSON对象/数字等误解析导致string参数丢失
+				if decodedArray, ok := decoded.([]any); ok {
+					value = decodedArray
+				}
 			}
 		}
 

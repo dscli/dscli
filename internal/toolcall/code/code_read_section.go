@@ -38,6 +38,10 @@ func readCodeSection(ctx context.Context, path string, selector string) (string,
 
 	// 根据selector定位代码片段
 	lines := strings.Split(string(content), "\n")
+	// 去除文件末尾换行符产生的空元素（与bufio.Scanner行为一致）
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
 	result, err := locateCodeSection(structure, lines, selector)
 	if err != nil {
 		return "", err

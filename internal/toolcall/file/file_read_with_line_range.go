@@ -121,7 +121,6 @@ func handleReadFileWithLineRange(ctx context.Context, args ToolArgs) (output str
 	output = resultBuilder.String()
 
 	// 记录日志
-	// 记录日志
 	rangeDesc := fmt.Sprintf("第%d行 - 第%d行", startLine, endLine)
 	if endLine == -1 {
 		rangeDesc = fmt.Sprintf("第%d行 - 末尾", startLine)

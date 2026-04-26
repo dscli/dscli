@@ -19,7 +19,6 @@ import (
 //	method:类名.方法名   - 修改指定方法
 //	lines:开始行-结束行  - 修改指定行范围（后备方案）
 //
-// writeCodeSection 基于代码结构定位并修改特定代码片段
 func writeCodeSection(ctx context.Context, path string, selector string, newContent string) (result string, err error) {
 	// 检查文件是否存在
 	if _, err = os.Stat(path); os.IsNotExist(err) {
@@ -43,6 +42,10 @@ func writeCodeSection(ctx context.Context, path string, selector string, newCont
 
 	// 根据selector定位代码片段
 	lines := strings.Split(string(content), "\n")
+	// 去除文件末尾换行符产生的空元素（与bufio.Scanner行为一致）
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
 	startLine, endLine, err := locateSectionRange(structure, lines, selector)
 	if err != nil {
 		err = fmt.Errorf("获取区域范围失败: %w", err)

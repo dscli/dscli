@@ -43,6 +43,10 @@ func searchCodeSemantic(ctx context.Context, path string, searchPattern string, 
 	}
 	// 搜索匹配项
 	lines := strings.Split(string(content), "\n")
+	// 去除文件末尾换行符产生的空元素（与bufio.Scanner行为一致）
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
 	matches := searchMatches(lines, searchPattern, caseSensitive, maxMatches)
 
 	// 构建结果

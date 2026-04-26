@@ -67,7 +67,6 @@ func init() {
 }
 
 // handleAskExpert 处理提问工具调用
-// handleAskExpert 处理提问工具调用
 func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (reply string, user string, err error) {
 	// 向后兼容：支持旧参数名
 	summary := toolcall.ToolArgsValue(args, "summary", "")
@@ -172,7 +171,6 @@ dscli chat --no-color --no-timestamp --histsize 0 --model %s`, context.ModelDeep
 	return
 }
 
-// buildStructuredRequest 构建结构化请求
 // buildStructuredRequest 构建结构化请求
 func buildStructuredRequest(userSummary string, originalContent string, attachments []string) (string, []error) {
 	var errors []error
