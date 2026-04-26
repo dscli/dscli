@@ -31,6 +31,7 @@ type Skill struct {
 	References  []Resource `yaml:"references,omitzero"`
 	Templates   []Resource `yaml:"templates,omitzero"`
 	AutoInject  bool       `yaml:"auto_inject,omitzero"` // 自动注入到对话上下文，无需 LLM 主动获取
+	Source      string     `yaml:"-"`                    // "local" 或 "global"，由加载侧注入
 }
 
 func (skill *Skill) Summary() string {
@@ -38,10 +39,28 @@ func (skill *Skill) Summary() string {
 	builder.WriteString("name: ")
 	builder.WriteString(skill.Name)
 	builder.WriteRune('\n')
+	builder.WriteString("source: ")
+	builder.WriteString(skill.Source)
+	builder.WriteRune('\n')
+	builder.WriteString("path: ")
+	builder.WriteString(sanitizePath(skill.Path))
+	builder.WriteRune('\n')
 	builder.WriteString("description: ")
 	builder.WriteString(skill.Description)
 	builder.WriteRune('\n')
 	return builder.String()
+}
+
+// sanitizePath 脱敏绝对路径，将用户主目录替换为 ~
+func sanitizePath(p string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return p
+	}
+	if strings.HasPrefix(p, home) {
+		return "~" + p[len(home):]
+	}
+	return p
 }
 
 func LoadSkills(dir string) (skills map[string]Skill) {

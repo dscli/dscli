@@ -3,7 +3,9 @@ package file
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/toolcall"
@@ -13,8 +15,18 @@ type (
 	ToolArgs = toolcall.ToolArgs
 )
 
-// ResolvePath 解析文件路径：如果是相对路径，则拼接项目根目录；否则直接使用
+
+// ResolvePath 解析文件路径：
+//  1. 如果是 "~" 开头（如 ~/.dscli/skills/...），展开为用户主目录
+//  2. 如果是绝对路径，直接使用
+//  3. 否则是相对路径，拼接项目根目录
 func ResolvePath(ctx context.Context, path string) string {
+	// Unix ~ 展开：~/.dscli/... → /home/user/.dscli/...
+	if strings.HasPrefix(path, "~") {
+		if home, err := os.UserHomeDir(); err == nil {
+			path = filepath.Join(home, path[1:])
+		}
+	}
 	projectRoot := context.ProjectRoot
 	if filepath.IsAbs(path) {
 		return path

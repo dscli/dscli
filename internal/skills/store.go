@@ -23,6 +23,7 @@ var (
 
 type Store struct {
 	dir      string
+	source   string                // "local" 或 "global"
 	Skills   map[string]Skill    `yaml:"skills,omitzero"`
 	Keywords map[string][]string `yaml:"keywords,omitzero"`
 }
@@ -35,7 +36,7 @@ func LocalStore() (*Store, error) {
 		if err != nil {
 			return
 		}
-		localStore, err = NewSkillStore(dir)
+		localStore, err = NewSkillStore(dir, "local")
 	})
 	return localStore, err
 }
@@ -48,14 +49,15 @@ func GlobalStore() (*Store, error) {
 		if err != nil {
 			return
 		}
-		globalStore, err = NewSkillStore(dir)
+		globalStore, err = NewSkillStore(dir, "global")
 	})
 	return globalStore, err
 }
 
-func NewSkillStore(dir string) (*Store, error) {
+func NewSkillStore(dir string, source string) (*Store, error) {
 	store := &Store{
-		dir: dir,
+		dir:    dir,
+		source: source,
 	}
 	if err := store.Load(); err != nil {
 		// 返回空存储而非错误，确保调用方始终获得有效对象
@@ -97,6 +99,11 @@ func (store *Store) Load() (err error) {
 		if err != nil {
 			return
 		}
+		// 注入 Source（缓存中不保存 Source）
+		for name, skill := range store.Skills {
+			skill.Source = store.source
+			store.Skills[name] = skill
+		}
 		return
 	}
 
@@ -110,6 +117,7 @@ func (store *Store) Load() (err error) {
 
 	kws := map[string][]string{}
 	for name, skill := range skills {
+		skill.Source = store.source // 注入来源
 		for _, word := range skill.Keywords {
 			var kw []string
 			var ok bool
@@ -119,6 +127,7 @@ func (store *Store) Load() (err error) {
 			kw = append(kw, name)
 			kws[word] = kw
 		}
+		skills[name] = skill
 	}
 	store.Skills = skills
 	store.Keywords = kws
