@@ -52,8 +52,9 @@ func handleSkillSearch(ctx context.Context, args ToolArgs) (content string, user
 	return
 }
 
-// init registers all skill tools via side-effect import.
+// init registers the skill tools with the global registry.
 func init() {
+	// Register skill_by_name — fetch a skill's full content by exact name.
 	RegisterTool(ToolDef{
 		Name:        "skill_by_name",
 		DisplayName: "Get Skill",
@@ -86,6 +87,7 @@ Notes:
 		Handler:  handleSkillByName,
 	})
 
+	// Register skill_search — discover skills by keyword query.
 	RegisterTool(ToolDef{
 		Name:        "skill_search",
 		DisplayName: "Search Skills",

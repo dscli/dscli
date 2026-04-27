@@ -14,16 +14,26 @@ func TestRegistration(t *testing.T) {
 	ctx := context.Background()
 
 	for _, name := range []string{"skill_by_name", "skill_search"} {
-		tool, ok := toolcall.GetToolDef(ctx, name)
-		if !ok {
-			t.Errorf("tool %q not registered — ensure package is imported in alltools", name)
-			continue
-		}
-		if tool.Name != name {
-			t.Errorf("tool %q has unexpected Name field: %q", name, tool.Name)
-		}
-		if tool.Handler == nil {
-			t.Errorf("tool %q has nil Handler", name)
-		}
+		t.Run(name, func(t *testing.T) {
+			tool, ok := toolcall.GetToolDef(ctx, name)
+			if !ok {
+				t.Fatalf("tool %q has not been registered; init() may not have been called", name)
+			}
+			if tool.Name != name {
+				t.Errorf("Name = %q, want %q", tool.Name, name)
+			}
+			if tool.Handler == nil {
+				t.Error("Handler is nil")
+			}
+			if tool.DisplayName == "" {
+				t.Error("DisplayName is empty")
+			}
+			if tool.Description == "" {
+				t.Error("Description is empty")
+			}
+			if tool.Category == "" {
+				t.Error("Category is empty")
+			}
+		})
 	}
 }
