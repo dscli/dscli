@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode/utf8"
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
@@ -13,27 +12,17 @@ import (
 )
 
 const (
-	// truncationByteThreshold 触发截断的字节长度阈值（当内容被外部截断时）
-	truncationByteThreshold = 8192
-	// previewLastChars 预览时显示的最后字符数
-	previewLastChars = 1024
-	// warningCharThreshold 警告用户内容过大的字符数阈值
-	warningCharThreshold = 16384
+	// previewLastChars 截断时预览显示的最后字符数
+	previewLastChars = 2048
 	// maxOutputTokens LLM最大输出token限制（用于错误信息）
-	maxOutputTokens = 8192
+	maxOutputTokens = 327680 // 320K
 )
 
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
-		Name: "write_file",
-		Description: `将内容写入文件。重要：如果内容超过 8192 字符，你必须分多次调用，每次写入小于 8192 长度内容，
-首次使用 append=false，后续使用 append=true 追加。注意 append 默认值 true，默认支持追加。支持自动创建目录结构。
-示例：若文件有 20000 字符，应分三次调用：
-1. append=false, content="第一部分(≤8192字符)"
-2. append=true, content="第二部分(≤8192字符)"
-3. append=true, content="剩余部分(≤8192字符)"
-`,
-		Strict: true,
+		Name:        "write_file",
+		Description: `将内容写入文件。支持自动创建目录结构。append=false覆盖或创建文件，append=true追加内容（默认true）。content最大262144字符，超过请分多次调用。`,
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -49,7 +38,7 @@ func init() {
 				"content": map[string]any{
 					"type":        "string",
 					"description": "写入的内容",
-					"pattern":     toolcall.ContentLikePattern(8192),
+					"pattern":     toolcall.ContentLikePattern(262144),
 				},
 			},
 			"required":             []string{"path", "content"},
@@ -66,7 +55,7 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result string, suggest
 	path := toolcall.ToolArgsValue(args, "path", "")
 	content := toolcall.ToolArgsValue(args, "content", "")
 	lastlines := ""
-	if truncated && len(content) > truncationByteThreshold {
+	if truncated {
 		runes := []rune(content)
 		start := max(len(runes)-previewLastChars, 0)
 		lastlines = string(runes[start:])
@@ -154,11 +143,6 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result string, suggest
 ---
 %s---
 如果觉得信息不足以继续生成，可以停下来询问。`, path, path, path, lastlines)
-	} else {
-		n := utf8.RuneCountInString(content)
-		if n > warningCharThreshold {
-			suggestion = fmt.Sprintf(`内容成功写入文件，但这部分内容太大(%d > %d)，请严格按照 write_file 工具要求，严格控制输出长度。`, n, warningCharThreshold)
-		}
 	}
 	return
 }
