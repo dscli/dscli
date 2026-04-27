@@ -392,14 +392,9 @@ func TestToolContent(t *testing.T) {
 		suggestion string
 		want       string
 	}{
-		{"all empty", "", nil, "", `{}`},
-		{"err empty", "done", nil, "ok", `{
- "result": "done",
- "suggestion": "ok"
-}`},
-		{"only error", "", fmt.Errorf("all wrong!"), "", `{
- "error": "all wrong!"
-}`},
+		{"all empty", "", nil, "", ``},
+		{"err empty", "done", nil, "ok", "### Result\ndone\n\n### Suggestion\nok\n"},
+		{"only error", "", fmt.Errorf("all wrong!"), "", "### Error\nall wrong!\n"},
 	}
 
 	for _, tc := range tcs {

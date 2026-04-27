@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -58,11 +59,29 @@ type ToolContent struct {
 }
 
 func (tc *ToolContent) String() (content string) {
-	b, err := json.MarshalIndent(tc, "", " ")
-	if err != nil {
-		return
+	var b strings.Builder
+	if tc.Result != "" {
+		b.WriteString("### Result\n")
+		b.WriteString(tc.Result)
+		b.WriteString("\n")
 	}
-	content = string(b)
+	if tc.Error != "" {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString("### Error\n")
+		b.WriteString(tc.Error)
+		b.WriteString("\n")
+	}
+	if tc.Suggestion != "" {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString("### Suggestion\n")
+		b.WriteString(tc.Suggestion)
+		b.WriteString("\n")
+	}
+	content = b.String()
 	return
 }
 
