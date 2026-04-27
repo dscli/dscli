@@ -160,7 +160,6 @@ func init() {
 				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径（相对于项目根目录）",
-					"pattern":     toolcall.TitleLikePattern(128),
 				},
 			},
 			"required":             []string{"path"},

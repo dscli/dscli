@@ -40,7 +40,6 @@ func init() {
 2. 数据处理：import json; print(json.dumps({"key": "value"}))
 3. 文件操作：with open("file.txt", "r") as f: print(f.read())
 `,
-					"pattern": ContentLikePattern(4096),
 				},
 				"summary": map[string]any{
 					"type": "string",
@@ -52,7 +51,6 @@ func init() {
 2. 处理Json数据
 3. 读文件
 `,
-					"pattern": TitleLikePattern(40),
 				},
 			},
 			"required":             []string{"script"},

@@ -40,7 +40,6 @@ func init() { // 注册shell工具
 3. 文件操作：cat file.txt
 4. Git操作：git status
 `,
-					"pattern": ContentLikePattern(4096),
 				},
 				"summary": map[string]any{
 					"type": "string",
@@ -52,7 +51,6 @@ func init() { // 注册shell工具
 2. 处理Json数据
 3. 读文件
 `,
-					"pattern": TitleLikePattern(40),
 				},
 			},
 			"required":             []string{"script"},

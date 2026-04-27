@@ -8,10 +8,8 @@ import (
 )
 
 var (
-	RegisterTool       = toolcall.RegisterTool
-	ShellExec          = toolcall.ShellExec
-	TitleLikePattern   = toolcall.TitleLikePattern
-	ContentLikePattern = toolcall.ContentLikePattern
+	RegisterTool = toolcall.RegisterTool
+	ShellExec    = toolcall.ShellExec
 )
 
 type (

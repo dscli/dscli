@@ -3,8 +3,7 @@ package misc
 import "gitcode.com/dscli/dscli/internal/toolcall"
 
 var (
-	RegisterTool     = toolcall.RegisterTool
-	TitleLikePattern = toolcall.TitleLikePattern
+	RegisterTool = toolcall.RegisterTool
 )
 
 type (

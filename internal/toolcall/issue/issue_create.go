@@ -64,12 +64,10 @@ func init() {
 				"title": map[string]any{
 					"type":        "string",
 					"description": "issue标题（必需）,不能包含换行符，长度1-128字符",
-					"pattern":     toolcall.TitleLikePattern(128),
 				},
 				"body": map[string]any{
 					"type":        "string",
 					"description": "issue内容（可选），长度1-4096字符",
-					"pattern":     toolcall.ContentLikePattern(4096),
 				},
 			},
 			"required":             []string{"title"},

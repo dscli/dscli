@@ -3,9 +3,8 @@ package make
 import "gitcode.com/dscli/dscli/internal/toolcall"
 
 var (
-	ShellExec        = toolcall.ShellExec
-	RegisterTool     = toolcall.RegisterTool
-	TitleLikePattern = toolcall.TitleLikePattern
+	ShellExec    = toolcall.ShellExec
+	RegisterTool = toolcall.RegisterTool
 )
 
 type (

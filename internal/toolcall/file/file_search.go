@@ -27,7 +27,6 @@ func init() {
 				"content": map[string]any{
 					"type":        "string",
 					"description": "要搜索的内容（如果提供则搜索文件内容）,长度1-4096字符",
-					"pattern":     toolcall.ContentLikePattern(4096),
 				},
 			},
 			"required":             []string{},

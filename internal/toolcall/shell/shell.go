@@ -4,11 +4,9 @@ package shell
 import "gitcode.com/dscli/dscli/internal/toolcall"
 
 var (
-	RegisterTool       = toolcall.RegisterTool
-	ContentLikePattern = toolcall.ContentLikePattern
-	TitleLikePattern   = toolcall.TitleLikePattern
-	TruncateString     = toolcall.TruncateString
-	RunShell           = toolcall.RunShell
+	RegisterTool   = toolcall.RegisterTool
+	TruncateString = toolcall.TruncateString
+	RunShell       = toolcall.RunShell
 )
 
 type (

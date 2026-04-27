@@ -50,12 +50,10 @@ var codeReviewTool = toolcall.ToolDef{
 			"summary": map[string]any{
 				"type":        "string",
 				"description": "必选，提供本次提交的背景说明，关注重点，帮助专家理解上下文, 长度1-1024字符",
-				"pattern":     toolcall.ContentLikePattern(1024),
 			},
 			"test_command": map[string]any{
 				"type":        "string",
 				"description": "可选，单元测试命令，默认为空，跳过测试, 长度1-128字符",
-				"pattern":     toolcall.ContentLikePattern(128),
 			},
 		},
 		"required":             []string{"summary"},

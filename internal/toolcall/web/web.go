@@ -227,7 +227,6 @@ func init() {
 				"url": map[string]any{
 					"type":        "string",
 					"description": "网页URL，如 https://www.baidu.com/s?wd=Golang+教程 或 https://github.com/golang/go",
-					"pattern":     toolcall.TitleLikePattern(1024),
 				},
 			},
 			"required":             []string{"url"},

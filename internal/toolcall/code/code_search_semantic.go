@@ -205,7 +205,6 @@ func init() {
 				"file_pattern": map[string]any{
 					"type":        "string",
 					"description": "文件搜索模式，支持：单个文件、通配符、多个文件、当前目录、递归搜索",
-					"pattern":     toolcall.TitleLikePattern(128),
 				},
 				"search_pattern": map[string]any{
 					"type":        "string",

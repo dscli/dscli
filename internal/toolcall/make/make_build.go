@@ -37,7 +37,6 @@ func init() {
 				"command": map[string]any{
 					"type":        "string",
 					"description": "构建命令",
-					"pattern":     TitleLikePattern(128),
 				},
 			},
 			"required":             []string{"command"},

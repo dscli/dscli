@@ -58,7 +58,6 @@ Notes:
 				"skill_name": map[string]any{
 					"type":        "string",
 					"description": "Exact skill name (case-sensitive)",
-					"pattern":     TitleLikePattern(128),
 				},
 			},
 			"required":             []string{"skill_name"},
@@ -110,7 +109,6 @@ Notes:
 				"query": map[string]any{
 					"type":        "string",
 					"description": "Search keywords (space-separated)",
-					"pattern":     TitleLikePattern(128),
 				},
 			},
 			"required":             []string{"query"},

@@ -23,12 +23,10 @@ func init() {
 				"title": map[string]any{
 					"type":        "string",
 					"description": "更新issue标题（可选）,不可有回车，长度1-128字符",
-					"pattern":     toolcall.TitleLikePattern(128),
 				},
 				"body": map[string]any{
 					"type":        "string",
 					"description": "更新issue内容（可选），长度1-4096字符",
-					"pattern":     toolcall.ContentLikePattern(4096),
 				},
 				"state": map[string]any{
 					"type":        "string",

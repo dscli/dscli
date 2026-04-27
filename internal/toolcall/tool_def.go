@@ -206,11 +206,3 @@ func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
 
 	return defaultValue
 }
-
-func TitleLikePattern(maxLength int) string {
-	return fmt.Sprintf("^[^\\n\\r]{1,%d}$", maxLength)
-}
-
-func ContentLikePattern(maxLength int) string {
-	return fmt.Sprintf("^[\\s\\S]{1,%d}$", maxLength)
-}

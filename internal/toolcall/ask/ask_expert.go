@@ -36,12 +36,10 @@ var askExpertTool = toolcall.ToolDef{
 			"summary": map[string]any{
 				"type":        "string",
 				"description": "问题摘要（可选），用于快速理解问题背景",
-				"pattern":     toolcall.TitleLikePattern(128),
 			},
 			"content": map[string]any{
 				"type":        "string",
 				"description": "要询问的详细内容（必填）",
-				"pattern":     toolcall.ContentLikePattern(4096),
 			},
 			"attachments": map[string]any{
 				"type":        "array",

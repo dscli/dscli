@@ -40,7 +40,6 @@ func init() {
 				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径，如main.go",
-					"pattern":     toolcall.TitleLikePattern(128),
 				},
 				"start_line": map[string]any{
 					"type":        "integer",

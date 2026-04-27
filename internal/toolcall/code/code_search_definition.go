@@ -46,7 +46,6 @@ func init() {
 				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径，如main.go",
-					"pattern":     toolcall.TitleLikePattern(128),
 				},
 				"pattern": map[string]any{
 					"type":        "string",

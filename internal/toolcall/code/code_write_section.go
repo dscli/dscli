@@ -18,7 +18,6 @@ import (
 //	class:类名          - 修改指定类/结构体
 //	method:类名.方法名   - 修改指定方法
 //	lines:开始行-结束行  - 修改指定行范围（后备方案）
-//
 func writeCodeSection(ctx context.Context, path string, selector string, newContent string) (result string, err error) {
 	// 检查文件是否存在
 	if _, err = os.Stat(path); os.IsNotExist(err) {
@@ -242,7 +241,6 @@ func init() {
 				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径（相对于项目根目录）",
-					"pattern":     toolcall.TitleLikePattern(128),
 				},
 				"selector": map[string]any{
 					"type":        "string",
@@ -251,7 +249,6 @@ func init() {
 				"new_content": map[string]any{
 					"type":        "string",
 					"description": "要写入的新内容, 建议不超过4096字符",
-					"pattern":     toolcall.ContentLikePattern(4096),
 				},
 			},
 			"required":             []string{"path", "selector", "new_content"},

@@ -30,7 +30,6 @@ var askUserTool = toolcall.ToolDef{
 			"content": map[string]any{
 				"type":        "string",
 				"description": "要咨询的内容",
-				"pattern":     toolcall.ContentLikePattern(4096),
 			},
 		},
 		"required":             []string{"content"},
