@@ -33,8 +33,27 @@ func handleSkillByName(ctx context.Context, args ToolArgs) (content string, user
 	return
 }
 
+// handleSkillSearch searches skills by keyword query.
+func handleSkillSearch(ctx context.Context, args ToolArgs) (content string, user string, err error) {
+	query := ToolArgsValue(args, "query", "")
+	if query == "" {
+		err = fmt.Errorf("search query cannot be empty")
+		return
+	}
+	outfmt.Printf("Searching skills [%s]\n", query)
+
+	result, err := skills.Query(query)
+	if err != nil {
+		err = fmt.Errorf("skill search failed: %w", err)
+		return
+	}
+
+	content = result
+	return
+}
+
+// init registers all skill tools via side-effect import.
 func init() {
-	// Register skill_by_name tool
 	RegisterTool(ToolDef{
 		Name:        "skill_by_name",
 		DisplayName: "Get Skill",
@@ -66,29 +85,7 @@ Notes:
 		Category: "skill",
 		Handler:  handleSkillByName,
 	})
-}
 
-// handleSkillSearch searches skills by keyword query.
-func handleSkillSearch(ctx context.Context, args ToolArgs) (content string, user string, err error) {
-	query := ToolArgsValue(args, "query", "")
-	if query == "" {
-		err = fmt.Errorf("search query cannot be empty")
-		return
-	}
-	outfmt.Printf("Searching skills [%s]\n", query)
-
-	result, err := skills.Query(query)
-	if err != nil {
-		err = fmt.Errorf("skill search failed: %w", err)
-		return
-	}
-
-	content = result
-	return
-}
-
-func init() {
-	// Register skill_search tool
 	RegisterTool(ToolDef{
 		Name:        "skill_search",
 		DisplayName: "Search Skills",
