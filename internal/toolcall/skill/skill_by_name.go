@@ -1,4 +1,4 @@
-package misc
+package skill
 
 import (
 	"context"

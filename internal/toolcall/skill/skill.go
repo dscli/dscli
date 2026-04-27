@@ -1,4 +1,4 @@
-package misc
+package skill
 
 import "gitcode.com/dscli/dscli/internal/toolcall"
 
