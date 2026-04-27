@@ -11,8 +11,6 @@ func init() { // 注册shell工具
 	RegisterTool(ToolDef{
 		Name: "shell",
 		Description: `在项目根目录执行Shell脚本。
-支持shebang指定解释器（如bash、sh等）。
-脚本通过标准输入传递，避免命令行长度限制。
 
 输出格式：
 - 成功时：返回包含执行结果和执行统计的格式化文本

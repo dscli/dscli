@@ -9,10 +9,6 @@ import (
 )
 
 func init() {
-	if RipgrepExists() {
-		return
-	}
-
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "search_files",
 		Description: "在项目目录中搜索文件，支持文件名模式匹配（如*.go）和文件内容搜索。自动排除.git目录。",

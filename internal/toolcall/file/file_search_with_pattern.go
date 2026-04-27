@@ -12,9 +12,6 @@ import (
 )
 
 func init() {
-	if RipgrepExists() {
-		return
-	}
 	// 注册文件模式搜索工具
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "search_file_with_pattern",
