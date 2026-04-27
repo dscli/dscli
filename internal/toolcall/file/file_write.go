@@ -29,7 +29,6 @@ func init() {
 				"path": map[string]any{
 					"type":        "string",
 					"description": "文件路径",
-					"pattern":     toolcall.TitleLikePattern(128),
 				},
 				"append": map[string]any{
 					"type":        "boolean",
@@ -38,7 +37,6 @@ func init() {
 				"content": map[string]any{
 					"type":        "string",
 					"description": "写入的内容",
-					"pattern":     toolcall.ContentLikePattern(262144),
 				},
 			},
 			"required":             []string{"path", "content"},
