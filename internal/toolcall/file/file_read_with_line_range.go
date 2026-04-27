@@ -16,7 +16,6 @@ func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "read_file_with_line_range",
 		Description: `读取文件指定行范围的内容，输出格式与awk完全兼容。
-⚠️ 注意：这是基于行号操作的旧工具。建议优先使用基于代码结构的新工具 read_code_section。
 
 参数：
   path: 文件路径（必需）
@@ -28,7 +27,6 @@ func init() {
 适用场景：
 - 处理非代码文件（如配置文件、文档等）
 - 需要精确行号控制的场景
-- 新工具 read_code_section 无法满足需求时的后备方案
 
 示例：
   # 显示所有行：read_file_with_line_range(path="file.txt")
