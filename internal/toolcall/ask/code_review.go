@@ -166,7 +166,7 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (reply string
 
 	// 构建审查请求
 	structuredRequest := buildCodeReviewRequest(summary, fullLog, patch)
-	outfmt.Println("📤 发送代码审查请求...")
+	outfmt.Printf("📤 发送代码审查请求...\n%s\n", structuredRequest)
 	reply, err = AskExpert(ctx, structuredRequest)
 	if err != nil {
 		outfmt.Println("❌ 代码提交失败")
@@ -174,29 +174,8 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (reply string
 		return
 	}
 
-	outfmt.Println("✅ 代码审查请求已发送")
+	outfmt.Printf("✅ 代码审查结果\n%s\n", reply)
 	return
-}
-
-// generateCodeReviewSummary 从Git提交信息生成摘要（重构版本）
-func generateCodeReviewSummary(log string) string {
-	// 清理log
-	cleanLog := strings.TrimSpace(log)
-
-	// 如果log很短，直接返回
-	if len(cleanLog) <= 80 {
-		return cleanLog
-	}
-
-	// 提取提交ID和提交信息
-	parts := strings.SplitN(cleanLog, " ", 2)
-	if len(parts) == 2 {
-		commitMsg := strings.TrimSpace(parts[1])
-		return toolcall.TruncateString(commitMsg, 80)
-	}
-
-	// 如果格式不符合预期，直接截断
-	return toolcall.TruncateString(cleanLog, 80)
 }
 
 func buildCodeReviewRequest(summary string, commitLog string, patch string) string {
