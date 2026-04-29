@@ -81,15 +81,29 @@ func Edit(ctx context.Context, filename string) (err error) {
 		err = fmt.Errorf("no editor specified")
 		return err
 	}
+
+	// 尝试打开真实终端，确保编辑器不受 dscli 管道重定向影响
+	tty, ttyErr := openTTY()
+	if ttyErr == nil {
+		defer tty.Close()
+	}
+
 	cmdParts := strings.Fields(editor)
 	name := cmdParts[0]
 	args := cmdParts[1:]
 	args = append(args, filename)
 	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	outfmt.Println(cmd.String())
+	if ttyErr == nil {
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+	} else {
+		// 安全降级：/dev/tty 不可用（Windows、CI/CD、Docker 无 tty）时
+		// 使用当前进程的标准流，编辑器可能以管道模式运行
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
 	if err = cmd.Run(); err != nil {
 		return err
 	}
