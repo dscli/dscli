@@ -7,10 +7,9 @@ import (
 	_ "gitcode.com/dscli/dscli/internal/toolcall/code"
 	_ "gitcode.com/dscli/dscli/internal/toolcall/file"
 	_ "gitcode.com/dscli/dscli/internal/toolcall/issue"
-	_ "gitcode.com/dscli/dscli/internal/toolcall/make"
 	_ "gitcode.com/dscli/dscli/internal/toolcall/shell"
-	_ "gitcode.com/dscli/dscli/internal/toolcall/web"
 	_ "gitcode.com/dscli/dscli/internal/toolcall/skill"
+	_ "gitcode.com/dscli/dscli/internal/toolcall/web"
 )
 
 var GetAllTools = toolcall.GetAllTools
