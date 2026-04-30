@@ -13,13 +13,7 @@ require (
 	mvdan.cc/sh/v3 v3.13.0
 )
 
-ignore (
-	./docs
-	./examples
-	./notes
-	./sandbox_prototype
-	./scripts
-)
+ignore ./docs
 
 require (
 	github.com/andybalholm/cascadia v1.3.3 // indirect
