@@ -90,23 +90,19 @@ func handleShell(ctx context.Context, args ToolArgs) (out string, user string, e
 		return
 	}
 
-	// 合并 stdout/stderr，保留完整的输出信息
-	combined := result.Stdout
+	// 标准错误归到 user（Suggestion），供 AI 参考诊断信息
 	if result.Stderr != "" {
-		if combined != "" {
-			combined += "\n"
-		}
-		combined += result.Stderr
+		user = fmt.Sprintf("💻 Shell标准错误输出:\n%s", result.Stderr)
 	}
 
 	if result.Err != nil {
-		out = fmt.Sprintf("💻 Shell执行失败:\n错误: %v\n\n输出内容:\n%s", result.Err, combined)
+		out = fmt.Sprintf("💻 Shell执行失败:\n错误: %v\n\n输出内容:\n%s", result.Err, result.Stdout)
 		err = fmt.Errorf("shell script failed (exit=%d): %w", result.ExitCode, result.Err)
 		return
 	}
 
-	// 成功：截断输出到50字符展示
-	truncatedOutput := TruncateString(combined, 50)
+	// 成功：标准输出归到 out（Result），截断展示
+	truncatedOutput := TruncateString(result.Stdout, 50)
 	out = fmt.Sprintf("💻 Shell执行结果:\n%s", truncatedOutput)
 	return
 }
