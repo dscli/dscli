@@ -6,7 +6,6 @@ import "gitcode.com/dscli/dscli/internal/toolcall"
 var (
 	RegisterTool   = toolcall.RegisterTool
 	TruncateString = toolcall.TruncateString
-	RunShell       = toolcall.RunShell
 )
 
 type (

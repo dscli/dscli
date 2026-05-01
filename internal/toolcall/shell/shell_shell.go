@@ -1,10 +1,12 @@
 package shell
 
 import (
+	"fmt"
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	ishell "gitcode.com/dscli/dscli/internal/shell"
 )
 
 func init() { // 注册shell工具
@@ -61,16 +63,50 @@ func init() { // 注册shell工具
 	})
 }
 
-// handleShell 执行Shell脚本
+// handleShell 执行Shell脚本，使用 internal/shell 解释器
 func handleShell(ctx context.Context, args ToolArgs) (out string, user string, err error) {
 	script := ToolArgsValue(args, "script", "")
 	summary := ToolArgsValue(args, "summary", "")
 	if summary == "" {
 		summary = "\n```bash\n" + script + "\n```\n"
 	}
-	// 将 summary 注入 context，供 Parse 作脚本名使用
+	// 将 summary 注入 context，供 executor 作脚本名使用（语法错误消息中显示）
 	ctx = context.WithValue(ctx, context.ShellSummaryKey, summary)
 	outfmt.Notice("💻 执行Shell%s", TruncateString(summary, 100))
-	out, err = RunShell(ctx, script)
+
+	// 使用 internal/shell 解释器执行
+	config := ishell.DefaultConfig(ctx)
+	executor := ishell.NewExecutor(ctx, config)
+	result, execErr := executor.Execute(ctx, script)
+
+	if execErr != nil {
+		out = fmt.Sprintf("💻 Shell执行失败:\n错误: %v", execErr)
+		err = fmt.Errorf("shell executor error: %w", execErr)
+		return
+	}
+	if result == nil {
+		out = "💻 Shell执行失败: 内部错误"
+		err = fmt.Errorf("shell executor returned nil result without error")
+		return
+	}
+
+	// 合并 stdout/stderr，保留完整的输出信息
+	combined := result.Stdout
+	if result.Stderr != "" {
+		if combined != "" {
+			combined += "\n"
+		}
+		combined += result.Stderr
+	}
+
+	if result.Err != nil {
+		out = fmt.Sprintf("💻 Shell执行失败:\n错误: %v\n\n输出内容:\n%s", result.Err, combined)
+		err = fmt.Errorf("shell script failed (exit=%d): %w", result.ExitCode, result.Err)
+		return
+	}
+
+	// 成功：截断输出到50字符展示
+	truncatedOutput := TruncateString(combined, 50)
+	out = fmt.Sprintf("💻 Shell执行结果:\n%s", truncatedOutput)
 	return
 }
