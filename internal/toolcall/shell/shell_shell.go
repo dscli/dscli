@@ -81,7 +81,7 @@ func handleShell(ctx context.Context, args ToolArgs) (out string, user string, e
 	}
 	// 将 summary 注入 context，供 executor 作脚本名使用（语法错误消息中显示）
 	ctx = context.WithValue(ctx, context.ShellSummaryKey, summary)
-	outfmt.Notice("💻 执行Shell%s", TruncateString(summary, 100))
+	outfmt.Notice("📋 %s", summary)
 
 	// 使用 internal/shell 解释器执行
 	config := ishell.DefaultConfig(ctx)

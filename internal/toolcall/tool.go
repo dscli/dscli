@@ -332,18 +332,6 @@ which lead to the error:
 		outfmt.Printf("❌ %s 执行失败: %v\n", displayName, err)
 	} else {
 		outfmt.Printf("✅ %s 执行成功\n", displayName)
-		// 如果结果简短，显示结果摘要
-		if result != "" {
-			// 清理结果，移除多余空白
-			cleanResult := strings.TrimSpace(result)
-			if len(cleanResult) > 0 {
-				// 显示前200个字符作为摘要
-				summary := TruncateString(cleanResult, 200)
-				// 移除换行符，使输出更紧凑
-				summary = strings.ReplaceAll(summary, "\n", " ")
-				outfmt.Printf("   结果: %s\n", summary)
-			}
-		}
 	}
 
 	// 记录使用情况

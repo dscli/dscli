@@ -4,8 +4,7 @@ package shell
 import "gitcode.com/dscli/dscli/internal/toolcall"
 
 var (
-	RegisterTool   = toolcall.RegisterTool
-	TruncateString = toolcall.TruncateString
+	RegisterTool = toolcall.RegisterTool
 )
 
 type (
