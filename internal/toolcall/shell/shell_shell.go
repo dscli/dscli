@@ -41,14 +41,7 @@ func init() { // 注册shell工具
 				"script": map[string]any{
 					"type": "string",
 					"description": `要执行的Shell脚本内容。
-脚本执行结果会以格式化文本返回，包含执行统计信息。
-
-示例：
-1. Bash脚本：echo "Hello"
-2. Shell脚本：ls -la
-3. 文件操作：cat file.txt
-4. Git操作：git status
-`,
+脚本执行结果会以格式化文本返回，包含执行统计信息。`,
 				},
 				"summary": map[string]any{
 					"type": "string",
