@@ -31,7 +31,7 @@ func VersionRunE(cmd *cobra.Command, args []string) error {
 	return versionRunE(ctx)
 }
 
-func versionRunE(ctx context.Context) (err error) {
+func versionRunE(_ context.Context) (err error) {
 	projectRoot := context.ProjectRoot
 
 	outfmt.PrintHeader("dscli 版本信息")
