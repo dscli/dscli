@@ -194,33 +194,19 @@ func GetAvailableCommandsDescription(ctx context.Context) string {
 	var b strings.Builder
 
 	for _, cat := range categories {
-		type cmdInfo struct {
-			name    string
-			version string
-		}
-		var available []cmdInfo
-
+		var available []string
 		for _, cmd := range cat.Commands {
-			info, err := VerifySystemCommand(ctx, cmd)
-			if err != nil || !info.Exists {
+			if _, err := exec.LookPath(cmd); err != nil {
 				continue
 			}
-			available = append(available, cmdInfo{cmd, info.Version})
+			available = append(available, cmd)
 		}
-
 		if len(available) == 0 {
 			continue
 		}
-
-		b.WriteString(fmt.Sprintf("### %s\n", cat.Name))
-		for _, c := range available {
-			if c.version != "" {
-				b.WriteString(fmt.Sprintf("%s - %s\n", c.name, c.version))
-			} else {
-				b.WriteString(fmt.Sprintf("%s\n", c.name))
-			}
-		}
-		b.WriteString("\n")
+		fmt.Fprintf(&b, "### %s\n", cat.Name)
+		b.WriteString(strings.Join(available, ", "))
+		b.WriteString("\n\n")
 	}
 
 	result := b.String()

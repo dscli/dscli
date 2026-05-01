@@ -10,9 +10,10 @@ import (
 )
 
 func init() { // 注册shell工具
-	RegisterTool(ToolDef{
-		Name: "shell",
-		Description: `在项目根目录执行Shell脚本。
+	// 获取系统可用命令列表（init 阶段验证一次，后续复用）
+	cmdsDesc := ishell.GetAvailableCommandsDescription(context.Background())
+
+	desc := `在项目根目录执行Shell脚本。
 
 输出格式：
 - 成功时：返回包含执行结果和执行统计的格式化文本
@@ -24,8 +25,16 @@ func init() { // 注册shell工具
 3. 文件操作：cat file.txt
 4. Git操作：git status
 
-注意：谨慎使用，避免破坏性操作。确保脚本在项目目录内执行。`,
-		Strict: true,
+注意：谨慎使用，避免破坏性操作。确保脚本在项目目录内执行。`
+
+	if cmdsDesc != "" {
+		desc += "\n\n## 可用命令\n" + cmdsDesc
+	}
+
+	RegisterTool(ToolDef{
+		Name:        "shell",
+		Description: desc,
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -44,7 +53,7 @@ func init() { // 注册shell工具
 				"summary": map[string]any{
 					"type": "string",
 					"description": `要执行的Shell脚本要做什么的总结。
-别太长，40个字以内。可选，脚本很短（比如40个字以内）可以不加。
+别太长，40个字以内。
 
 示例：
 1. 查找包含Hello方法Go文件
@@ -53,7 +62,7 @@ func init() { // 注册shell工具
 `,
 				},
 			},
-			"required":             []string{"script"},
+			"required":             []string{"script", "summary"},
 			"additionalProperties": false,
 		},
 
@@ -68,7 +77,7 @@ func handleShell(ctx context.Context, args ToolArgs) (out string, user string, e
 	script := ToolArgsValue(args, "script", "")
 	summary := ToolArgsValue(args, "summary", "")
 	if summary == "" {
-		summary = "\n```bash\n" + script + "\n```\n"
+		summary = "(shell script)"
 	}
 	// 将 summary 注入 context，供 executor 作脚本名使用（语法错误消息中显示）
 	ctx = context.WithValue(ctx, context.ShellSummaryKey, summary)
@@ -80,29 +89,20 @@ func handleShell(ctx context.Context, args ToolArgs) (out string, user string, e
 	result, execErr := executor.Execute(ctx, script)
 
 	if execErr != nil {
-		out = fmt.Sprintf("💻 Shell执行失败:\n错误: %v", execErr)
 		err = fmt.Errorf("shell executor error: %w", execErr)
 		return
 	}
 	if result == nil {
-		out = "💻 Shell执行失败: 内部错误"
 		err = fmt.Errorf("shell executor returned nil result without error")
 		return
 	}
 
-	// 标准错误归到 user（Suggestion），供 AI 参考诊断信息
-	if result.Stderr != "" {
-		user = fmt.Sprintf("💻 Shell标准错误输出:\n%s", result.Stderr)
-	}
-
+	// stderr → user (Suggestion)，供 AI 参考诊断信息
+	user = result.Stderr
+	out = result.Stdout
 	if result.Err != nil {
-		out = fmt.Sprintf("💻 Shell执行失败:\n错误: %v\n\n输出内容:\n%s", result.Err, result.Stdout)
 		err = fmt.Errorf("shell script failed (exit=%d): %w", result.ExitCode, result.Err)
 		return
 	}
-
-	// 成功：标准输出归到 out（Result），截断展示
-	truncatedOutput := TruncateString(result.Stdout, 50)
-	out = fmt.Sprintf("💻 Shell执行结果:\n%s", truncatedOutput)
 	return
 }
