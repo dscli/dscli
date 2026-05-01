@@ -114,6 +114,36 @@ func sanitizePath(p string) string {
 	}
 	return p
 }
+// FormatSkillMD 生成带 frontmatter 的 SKILL.md 内容，用于 skill_create 工具。
+// 只序列化 frontmatter 必要字段（name, description, keywords, auto_inject），
+// 正文部分直接拼接。
+func FormatSkillMD(skill *Skill) (string, error) {
+	// 构建 frontmatter YAML
+	type frontmatter struct {
+		Name        string   `yaml:"name"`
+		Description string   `yaml:"description"`
+		Keywords    []string `yaml:"keywords,omitzero"`
+		AutoInject  bool     `yaml:"auto_inject,omitzero"`
+	}
+	fm := frontmatter{
+		Name:        skill.Name,
+		Description: skill.Description,
+		Keywords:    skill.Keywords,
+		AutoInject:  skill.AutoInject,
+	}
+
+	yamlBytes, err := yaml.Marshal(fm)
+	if err != nil {
+		return "", fmt.Errorf("marshal frontmatter: %w", err)
+	}
+
+	var b strings.Builder
+	b.WriteString("---\n")
+	b.Write(yamlBytes)
+	b.WriteString("---\n\n")
+	b.WriteString(skill.Content)
+	return b.String(), nil
+}
 
 func LoadSkills(dir string) (skills map[string]Skill) {
 	skills = map[string]Skill{}
