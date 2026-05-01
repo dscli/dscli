@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"gitcode.com/dscli/dscli/internal/parse"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
@@ -25,7 +26,7 @@ func readCodeStructure(ctx context.Context, path string) (string, error) {
 	// }
 
 	// 解析文件结构
-	structure, err := toolcall.ParseFileStructure(ctx, path)
+	structure, err := parse.ParseFileStructure(ctx, path)
 	if err != nil {
 		return "", fmt.Errorf("解析文件结构失败: %w", err)
 	}
@@ -43,7 +44,7 @@ func readCodeStructure(ctx context.Context, path string) (string, error) {
 }
 
 // buildStructureSummary 构建结构摘要
-func buildStructureSummary(structure *toolcall.FileStructure) string {
+func buildStructureSummary(structure *parse.FileStructure) string {
 	var sb strings.Builder
 
 	// 添加搜索图标，表明这是一个读取/搜索操作

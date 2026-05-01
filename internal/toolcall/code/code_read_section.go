@@ -9,6 +9,7 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
+	"gitcode.com/dscli/dscli/internal/parse"
 )
 
 // readCodeSection 基于代码结构定位并读取特定代码片段
@@ -31,7 +32,7 @@ func readCodeSection(ctx context.Context, path string, selector string) (string,
 	}
 
 	// 解析文件结构
-	structure, err := toolcall.ParseFileStructure(ctx, path)
+	structure, err := parse.ParseFileStructure(ctx, path)
 	if err != nil {
 		return "", fmt.Errorf("解析文件结构失败: %w", err)
 	}
@@ -51,7 +52,7 @@ func readCodeSection(ctx context.Context, path string, selector string) (string,
 }
 
 // locateCodeSection 根据selector定位代码片段
-func locateCodeSection(structure *toolcall.FileStructure, lines []string, selector string) (string, error) {
+func locateCodeSection(structure *parse.FileStructure, lines []string, selector string) (string, error) {
 	// 解析selector
 	parts := strings.SplitN(selector, ":", 2)
 	if len(parts) != 2 {
@@ -76,7 +77,7 @@ func locateCodeSection(structure *toolcall.FileStructure, lines []string, select
 }
 
 // locateFunction 定位函数
-func locateFunction(structure *toolcall.FileStructure, lines []string, functionName string) (string, error) {
+func locateFunction(structure *parse.FileStructure, lines []string, functionName string) (string, error) {
 	for _, fn := range structure.Functions {
 		if fn.Name == functionName {
 			return extractLines(lines, fn.Line, fn.EndLine), nil
@@ -86,7 +87,7 @@ func locateFunction(structure *toolcall.FileStructure, lines []string, functionN
 }
 
 // locateClass 定位类/结构体
-func locateClass(structure *toolcall.FileStructure, lines []string, className string) (string, error) {
+func locateClass(structure *parse.FileStructure, lines []string, className string) (string, error) {
 	for _, cls := range structure.Classes {
 		if cls.Name == className {
 			return extractLines(lines, cls.Line, cls.EndLine), nil
@@ -96,7 +97,7 @@ func locateClass(structure *toolcall.FileStructure, lines []string, className st
 }
 
 // locateMethod 定位方法
-func locateMethod(structure *toolcall.FileStructure, lines []string, methodSelector string) (string, error) {
+func locateMethod(structure *parse.FileStructure, lines []string, methodSelector string) (string, error) {
 	// 方法选择器格式: 类名.方法名
 	parts := strings.Split(methodSelector, ".")
 	if len(parts) != 2 {

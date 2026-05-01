@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"gitcode.com/dscli/dscli/internal/parse"
 
 	"github.com/spf13/cobra"
 )
@@ -40,13 +40,13 @@ func runParse(cmd *cobra.Command, args []string) error {
 	// 获取语言选项
 	lang, _ := cmd.Flags().GetString("language")
 	if lang == "" {
-		lang = toolcall.GuessLanguage(filePath)
+		lang = parse.GuessLanguage(filePath)
 	}
 
 	usePython, _ := cmd.Flags().GetBool("use-python")
 	ctx := cmd.Context()
 	// 解析文件结构
-	fs, err := toolcall.ParseFileStructure0(ctx, filePath, lang, usePython)
+	fs, err := parse.ParseFileStructure0(ctx, filePath, lang, usePython)
 	if err != nil {
 		return fmt.Errorf("failed to parse file: %w", err)
 	}

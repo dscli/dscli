@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/parse"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 	"gitcode.com/dscli/dscli/internal/toolcall/file"
 )
@@ -37,7 +38,7 @@ func searchCodeSemantic(ctx context.Context, path string, searchPattern string, 
 	}
 
 	// 解析文件结构
-	structure, err := toolcall.ParseFileStructure(ctx, path)
+	structure, err := parse.ParseFileStructure(ctx, path)
 	if err != nil {
 		return "", 0, fmt.Errorf("解析文件结构失败: %w", err)
 	}
@@ -83,7 +84,7 @@ func searchMatches(lines []string, searchPattern string, caseSensitive bool, max
 }
 
 // buildSearchResult 构建搜索结果
-func buildSearchResult(path, searchPattern string, contextLines int, caseSensitive bool, maxMatches int, matches []int, lines []string, structure *toolcall.FileStructure) string {
+func buildSearchResult(path, searchPattern string, contextLines int, caseSensitive bool, maxMatches int, matches []int, lines []string, structure *parse.FileStructure) string {
 	var sb strings.Builder
 
 	fmt.Fprintf(&sb, "🔍 搜索文件: %s\n", path)
@@ -141,7 +142,7 @@ func buildSearchResult(path, searchPattern string, contextLines int, caseSensiti
 }
 
 // getStructureInfoForLine 获取指定行所在的结构信息
-func getStructureInfoForLine(structure *toolcall.FileStructure, line int) string {
+func getStructureInfoForLine(structure *parse.FileStructure, line int) string {
 	// 检查是否在函数内
 	for _, fn := range structure.Functions {
 		if line >= fn.Line && line <= fn.EndLine {

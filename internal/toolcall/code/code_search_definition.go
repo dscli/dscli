@@ -7,6 +7,7 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
+	"gitcode.com/dscli/dscli/internal/parse"
 )
 
 func init() {
@@ -84,7 +85,7 @@ func handleSearchCodeDefinition(ctx context.Context, args toolcall.ToolArgs) (ou
 	caseSensitive := toolcall.ToolArgsValue(args, "case_sensitive", false)
 	outfmt.Printf("🔍 搜索代码定义: path=%s pattern=%s typeFilter=%s caseSensitive=%v\n", path, pattern, typeFilter, caseSensitive)
 	// 解析文件结构
-	structure, err := toolcall.ParseFileStructure(ctx, path)
+	structure, err := parse.ParseFileStructure(ctx, path)
 	if err != nil {
 		err = fmt.Errorf("解析文件结构失败: %w", err)
 		return
@@ -183,7 +184,7 @@ func handleSearchCodeDefinition(ctx context.Context, args toolcall.ToolArgs) (ou
 }
 
 // matchesDefinition 检查符号是否匹配搜索条件
-func matchesDefinition(symbol *toolcall.Symbol, pattern, typeFilter string, caseSensitive bool) bool {
+func matchesDefinition(symbol *parse.Symbol, pattern, typeFilter string, caseSensitive bool) bool {
 	// 类型过滤
 	if typeFilter != "" {
 		if !strings.EqualFold(symbol.Type, typeFilter) {
@@ -201,7 +202,7 @@ func matchesDefinition(symbol *toolcall.Symbol, pattern, typeFilter string, case
 }
 
 // formatSymbolResult 格式化符号结果
-func formatSymbolResult(symbol *toolcall.Symbol, symbolType, filePath string) string {
+func formatSymbolResult(symbol *parse.Symbol, symbolType, filePath string) string {
 	var sb strings.Builder
 
 	fmt.Fprintf(&sb, "📋 类型: %s\n", symbolType)

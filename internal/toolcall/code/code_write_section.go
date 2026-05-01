@@ -9,6 +9,7 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
+	"gitcode.com/dscli/dscli/internal/parse"
 )
 
 // writeCodeSection 基于代码结构定位并修改特定代码片段
@@ -33,7 +34,7 @@ func writeCodeSection(ctx context.Context, path string, selector string, newCont
 	}
 
 	// 解析文件结构
-	structure, err := toolcall.ParseFileStructure(ctx, path)
+	structure, err := parse.ParseFileStructure(ctx, path)
 	if err != nil {
 		err = fmt.Errorf("解析文件结构失败: %w", err)
 		return
@@ -64,7 +65,7 @@ func writeCodeSection(ctx context.Context, path string, selector string, newCont
 }
 
 // locateSectionRange 根据selector定位代码片段的范围
-func locateSectionRange(structure *toolcall.FileStructure, lines []string, selector string) (int, int, error) {
+func locateSectionRange(structure *parse.FileStructure, lines []string, selector string) (int, int, error) {
 	// 解析selector
 	parts := strings.SplitN(selector, ":", 2)
 	if len(parts) != 2 {
@@ -89,7 +90,7 @@ func locateSectionRange(structure *toolcall.FileStructure, lines []string, selec
 }
 
 // locateFunctionRange 定位函数的行范围
-func locateFunctionRange(structure *toolcall.FileStructure, functionName string) (int, int, error) {
+func locateFunctionRange(structure *parse.FileStructure, functionName string) (int, int, error) {
 	for _, fn := range structure.Functions {
 		if fn.Name == functionName {
 			return fn.Line, fn.EndLine, nil
@@ -99,7 +100,7 @@ func locateFunctionRange(structure *toolcall.FileStructure, functionName string)
 }
 
 // locateClassRange 定位类/结构体的行范围
-func locateClassRange(structure *toolcall.FileStructure, className string) (int, int, error) {
+func locateClassRange(structure *parse.FileStructure, className string) (int, int, error) {
 	for _, cls := range structure.Classes {
 		if cls.Name == className {
 			return cls.Line, cls.EndLine, nil
@@ -109,7 +110,7 @@ func locateClassRange(structure *toolcall.FileStructure, className string) (int,
 }
 
 // locateMethodRange 定位方法的行范围
-func locateMethodRange(structure *toolcall.FileStructure, methodSelector string) (int, int, error) {
+func locateMethodRange(structure *parse.FileStructure, methodSelector string) (int, int, error) {
 	// 方法选择器格式: 类名.方法名
 	parts := strings.Split(methodSelector, ".")
 	if len(parts) != 2 {

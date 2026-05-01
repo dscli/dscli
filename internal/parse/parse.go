@@ -1,7 +1,8 @@
-package toolcall
+package parse
 
 import (
 	"bytes"
+	"context"
 	"crypto/md5"
 	_ "embed"
 	"encoding/json"
@@ -15,7 +16,6 @@ import (
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/config"
-	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
@@ -45,7 +45,7 @@ type Symbol struct {
 	Receiver  string `json:"receiver,omitempty"`  // 方法接收者
 }
 
-// guessLanguage 根据文件扩展名猜测语言
+// GuessLanguage 根据文件扩展名猜测语言
 func GuessLanguage(path string) string {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
@@ -189,7 +189,6 @@ func parseGoStructure(path string) (*FileStructure, error) {
 	return fs, nil
 }
 
-
 // getOrCreatePythonCacheFile 获取或创建 Python 脚本缓存文件
 // 根据脚本内容计算 MD5 哈希，在配置目录中创建缓存文件
 // getOrCreatePythonCacheFile 为 Python 脚本创建或获取缓存文件
@@ -215,7 +214,6 @@ func getOrCreatePythonCacheFile(script string) (string, error) {
 
 	return cacheFile, nil
 }
-
 
 func runPythonParsePy(ctx context.Context, filePath string, lang string) (output string, err error) {
 	// 从上下文中获取verbose标志
@@ -284,7 +282,6 @@ func runPythonParsePy(ctx context.Context, filePath string, lang string) (output
 
 	return
 }
-
 
 // parseWithPython 使用Python脚本解析文件结构
 func parseWithPython(ctx context.Context, filePath, lang string) (structure *FileStructure, err error) {
