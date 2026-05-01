@@ -492,7 +492,7 @@ func PrintContent(ctx context.Context, reasoning string, content string) {
 
 	reasoning = strings.TrimSpace(reasoning)
 	if reasoning != "" {
-		Println("✨", reasoning)
+		Println("✨", FillParagraph(reasoning, DefaultFillWidth))
 	}
 
 	content = strings.TrimSpace(content)
