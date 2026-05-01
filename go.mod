@@ -10,7 +10,7 @@ require (
 	golang.org/x/net v0.52.0
 	jaytaylor.com/html2text v0.0.0-20260303211410-1a4bdc82ecec
 	modernc.org/sqlite v1.28.0
-	mvdan.cc/sh/v3 v3.13.0
+	mvdan.cc/sh/v3 v3.13.1
 )
 
 ignore ./docs

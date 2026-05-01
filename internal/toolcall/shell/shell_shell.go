@@ -68,6 +68,8 @@ func handleShell(ctx context.Context, args ToolArgs) (out string, user string, e
 	if summary == "" {
 		summary = "\n```bash\n" + script + "\n```\n"
 	}
+	// 将 summary 注入 context，供 Parse 作脚本名使用
+	ctx = context.WithValue(ctx, context.ShellSummaryKey, summary)
 	outfmt.Notice("💻 执行Shell%s", TruncateString(summary, 100))
 	out, err = RunShell(ctx, script)
 	return

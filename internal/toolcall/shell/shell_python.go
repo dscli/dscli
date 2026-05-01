@@ -1,10 +1,10 @@
 package shell
 
 import (
-	"context"
 	"strings"
 	"time"
 
+	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
@@ -75,6 +75,8 @@ func handlePython(ctx context.Context, args ToolArgs) (out string, user string, 
 	if !strings.HasPrefix(strings.TrimSpace(script), "#!") {
 		script = "#!/usr/bin/env python3\n" + script
 	}
+	// 将 summary 注入 context，供 Parse 作脚本名使用
+	ctx = context.WithValue(ctx, context.ShellSummaryKey, summary)
 	outfmt.Printf("🐍 运行Python脚本%s\n", TruncateString(summary, 100))
 	out, err = RunShell(ctx, script)
 	return

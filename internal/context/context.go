@@ -21,6 +21,7 @@ var (
 	CurrentDomainIDKey    = ContextKeyType[int64]{"CurrentDomainID"}
 	ToolCallIDKey         = ContextKeyType[string]{"ToolCallID"}
 	ShellNameKey          = ContextKeyType[string]{"ShellName"}
+	ShellSummaryKey       = ContextKeyType[string]{"ShellSummary"}
 	ShellArgsKey          = ContextKeyType[[]string]{"ShellArgs"}
 	ShellStdinKey         = ContextKeyType[io.Reader]{"ShellStdin"}
 	InputContentKey       = ContextKeyType[string]{"InputContent"}

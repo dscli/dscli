@@ -101,7 +101,6 @@ func DefaultConfig(ctx context.Context) *Config {
 }
 
 // DefaultSandboxConfig 返回默认沙箱配置
-// DefaultSandboxConfig 返回默认沙箱配置
 func DefaultSandboxConfig(ctx context.Context) *SandboxConfig {
 	return &SandboxConfig{
 		AllowedCommands:   getAllowedCommands(),
@@ -112,63 +111,114 @@ func DefaultSandboxConfig(ctx context.Context) *SandboxConfig {
 	}
 }
 
-// getAllowedCommands 返回完整的允许命令列表
+// CommandCategory 命令分类，用于组织和描述允许的命令
+type CommandCategory struct {
+	Name     string   // 分类名称，如"基础命令"、"文件系统工具"
+	Commands []string // 该分类下的命令列表
+}
+
+// getCommandCategories 返回按功能分组的命令分类
+//
+// 分类设计原则：
+// 1. baseCommands 包含所有 Shell 脚本的基石命令
+// 2. 扩展命令按功能领域分组，便于理解和维护
+// 3. 每个命令只属于一个分类，避免重复
+func getCommandCategories() []CommandCategory {
+	return []CommandCategory{
+		{
+			Name: "基础命令",
+			Commands: []string{
+				"echo", "cat", "ls", "pwd", "grep", "wc", "find",
+				"mkdir", "rmdir", "touch", "rm", "cp", "mv",
+				"head", "tail", "sort", "uniq", "cut", "paste",
+				"tr", "sed", "awk", "xargs",
+				"date",
+			},
+		},
+		{
+			Name: "文件系统工具",
+			Commands: []string{
+				"du", "basename", "dirname", "which", "chmod", "chown",
+				"stat", "file", "realpath", "readlink", "ln",
+			},
+		},
+		{
+			Name: "文档处理工具",
+			Commands: []string{
+				"pandoc", "tectonic", "xelatex",
+			},
+		},
+		{
+			Name: "版本控制工具",
+			Commands: []string{
+				"git",
+			},
+		},
+		{
+			Name: "网络工具",
+			Commands: []string{
+				"curl", "wget",
+			},
+		},
+		{
+			Name: "压缩工具",
+			Commands: []string{
+				"tar", "gzip", "bzip2", "unzip", "zip",
+			},
+		},
+		{
+			Name: "开发工具",
+			Commands: []string{
+				"go", "make", "cmake", "python", "python3",
+			},
+		},
+		{
+			Name: "数据处理工具",
+			Commands: []string{
+				"bc", "jq", "diff",
+			},
+		},
+		{
+			Name: "搜索工具",
+			Commands: []string{
+				"rg",
+			},
+		},
+		{
+			Name: "系统/通用工具",
+			Commands: []string{
+				"nproc", "df", "tee", "sleep",
+			},
+		},
+	}
+}
+
+// getAllowedCommands 返回完整的允许命令列表（从分类中提取）
 func getAllowedCommands() []string {
-	// 基础命令（来自 DefaultSandboxConfig）
-	baseCommands := []string{
-		"echo", "cat", "ls", "pwd", "grep", "wc", "find",
-		"mkdir", "rmdir", "touch", "rm", "cp", "mv",
-		"head", "tail", "sort", "uniq", "cut", "paste",
-		"tr", "sed", "awk", "xargs",
+	categories := getCommandCategories()
+
+	// 预估容量，避免多次扩容
+	totalCmds := 0
+	for _, cat := range categories {
+		totalCmds += len(cat.Commands)
 	}
 
-	// 扩展命令（项目特定需求）
-	extendedCommands := []string{
-		// 文件系统工具
-		"du", "basename", "which", "chmod", "chown",
+	allCommands := make([]string, 0, totalCmds)
+	commandSet := make(map[string]bool, totalCmds)
 
-		// 文档处理工具
-		"pandoc", "bc",
-
-		// 版本控制工具
-		"git",
-
-		// 网络工具
-		"curl", "wget",
-
-		// 压缩工具
-		"tar", "gzip", "unzip",
-
-		// 开发工具
-		"go", "make", "python", "python3",
-
-		// 系统工具
-		"date",
-	}
-
-	// 合并命令列表，去重
-	allCommands := make([]string, 0, len(baseCommands)+len(extendedCommands))
-	commandSet := make(map[string]bool)
-
-	// 添加基础命令
-	for _, cmd := range baseCommands {
-		if !commandSet[cmd] {
-			commandSet[cmd] = true
-			allCommands = append(allCommands, cmd)
-		}
-	}
-
-	// 添加扩展命令
-	for _, cmd := range extendedCommands {
-		if !commandSet[cmd] {
-			commandSet[cmd] = true
-			allCommands = append(allCommands, cmd)
+	for _, cat := range categories {
+		for _, cmd := range cat.Commands {
+			if !commandSet[cmd] {
+				commandSet[cmd] = true
+				allCommands = append(allCommands, cmd)
+			}
 		}
 	}
 
 	return allCommands
 }
 
+// ShellExecConfig 在 Shell 执行上下文中创建配置
 func ShellExecConfig(ctx context.Context) *Config {
 	projectRoot := context.ProjectRoot
 	if projectRoot == "" {
@@ -222,8 +272,11 @@ func (e *Executor) ExecuteWithTimeout(ctx context.Context, script string, timeou
 		defer cancel()
 	}
 
+	// 从 context 获取脚本名（summary），供语法错误消息使用
+	name := context.ContextValue(ctx, context.ShellSummaryKey, "")
+
 	// 解析脚本
-	prog, err := e.parser.Parse(strings.NewReader(script), "")
+	prog, err := e.parser.Parse(strings.NewReader(script), name)
 	if err != nil {
 		return nil, fmt.Errorf("语法解析失败: %w", err)
 	}
@@ -301,7 +354,7 @@ func (e *Executor) buildSandboxOptions(ctx context.Context) ([]interp.RunnerOpti
 
 	// 命令执行处理器
 	if !config.AllowExternalExec && len(config.AllowedCommands) > 0 {
-		opts = append(opts, interp.ExecHandler(e.createCommandFilter()))
+		opts = append(opts, interp.ExecHandlers(e.createCommandFilter))
 	}
 
 	// 文件访问处理器
@@ -316,7 +369,7 @@ func (e *Executor) buildSandboxOptions(ctx context.Context) ([]interp.RunnerOpti
 }
 
 // createCommandFilter 创建命令过滤器
-func (e *Executor) createCommandFilter() interp.ExecHandlerFunc {
+func (e *Executor) createCommandFilter(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 	allowedCommands := make(map[string]bool)
 	for _, cmd := range e.config.SandboxConfig.AllowedCommands {
 		allowedCommands[cmd] = true
@@ -333,7 +386,7 @@ func (e *Executor) createCommandFilter() interp.ExecHandlerFunc {
 		}
 
 		// 使用默认执行处理器（带超时）
-		return interp.DefaultExecHandler(2*time.Second)(ctx, args)
+		return next(ctx, args)
 	}
 }
 
