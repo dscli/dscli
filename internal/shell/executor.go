@@ -169,7 +169,7 @@ func getCommandCategories() []CommandCategory {
 		{
 			Name: "开发工具",
 			Commands: []string{
-				"go", "make", "cmake", "python", "python3",
+				"go", "make", "cmake", "python", "python3", "dscli",
 			},
 		},
 		{
@@ -257,20 +257,9 @@ func NewExecutor(ctx context.Context, config *Config) *Executor {
 }
 
 // Execute 执行 Shell 脚本
+// 注意：超时由上层（工具调用层）通过 context 控制，执行器不重复设置超时
 func (e *Executor) Execute(ctx context.Context, script string) (*Result, error) {
-	return e.ExecuteWithTimeout(ctx, script, e.config.Timeout)
-}
-
-// ExecuteWithTimeout 执行 Shell 脚本（指定超时）
-func (e *Executor) ExecuteWithTimeout(ctx context.Context, script string, timeout time.Duration) (*Result, error) {
 	start := time.Now()
-
-	// 设置超时
-	if timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
-	}
 
 	// 从 context 获取脚本名（summary），供语法错误消息使用
 	name := context.ContextValue(ctx, context.ShellSummaryKey, "")

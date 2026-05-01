@@ -126,10 +126,10 @@ func TestSafeExecute(t *testing.T) {
 	}
 }
 
-func TestExecutor_ExecuteWithTimeout(t *testing.T) {
+func TestExecutor_Execute(t *testing.T) {
 	ctx := t.Context()
 
-	// 使用无沙箱配置测试超时
+	// 使用无沙箱配置测试正常执行
 	config := DefaultConfig(ctx)
 	config.SandboxMode = false
 	executor := NewExecutor(ctx, config)

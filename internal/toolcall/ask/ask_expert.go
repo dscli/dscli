@@ -10,6 +10,7 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/shell"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
@@ -118,15 +119,12 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (reply string,
 
 // AskExpert 调用AI专家模型进行咨询并返回回复
 //
-// 该函数通过执行shell命令调用AI模型来处理输入内容，并将模型回复返回给调用者。
-// 函数使用标准输入(stdin)传递输入内容，避免了命令行长度限制。
+// 该函数通过 internal/shell 包执行 dscli chat 命令，将输入内容写入临时文件，
+// 通过 --input 参数传递给 dscli，避免了命令行长度限制和 stdin 传递问题。
 //
 // 参数:
 //
-//	ctx: 上下文对象，用于传递执行环境配置。函数会设置以下上下文值（将覆盖原有值）:
-//	     - ShellName: shell执行器名称，设置为"/usr/bin/env"
-//	     - ShellArgs: shell参数，设置为[]string{"bash"}
-//	     - ShellStdin: 包含输入内容的io.Reader
+//	ctx: 上下文对象，用于传递执行环境配置
 //	input: 要发送给AI模型的输入文本，可以是任意长度（受系统内存限制）
 //
 // 返回值:
@@ -134,19 +132,17 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (reply string,
 //	reply: AI模型的回复文本。如果执行失败且没有获得回复，返回空字符串。
 //	err: 执行过程中的错误。如果执行成功，返回nil。常见错误包括：
 //	     - dscli命令执行失败
-//	     - shell命令执行失败
-//	     - 上下文配置错误
+//	     - 临时文件创建/写入失败
 //
 // 功能说明:
 //
 //	函数通过执行以下命令调用AI模型:
-//	     dscli chat --no-color --no-timestamp --model <模型名称>
-//	其中模型名称由ModelDeepseekReasoner变量指定，默认为"deepseek-reasoner"。
+//	     dscli chat --no-color --no-timestamp --histsize 0 --model <模型名称> --input <临时文件>
+//	其中模型名称由ModelDeepseekReasoner变量指定。
 //
 // 注意事项:
 //   - 确保dscli命令行工具已正确安装并配置
-//   - 函数会覆盖上下文中的ShellName、ShellArgs和ShellStdin值
-//   - 输入内容通过标准输入传递，可以包含任意字符，没有EOF标记限制
+//   - 输入内容通过临时文件传递，执行后自动清理
 //
 // 示例:
 //
@@ -159,13 +155,27 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (reply string,
 //	}
 //
 // 参见:
-//   - ShellExec: 执行shell命令的函数
+//   - shell.SimpleExecute: 执行shell命令的函数
+//   - handleAskExpert: 使用此函数的工具处理函数
 //   - handleAskExpert: 使用此函数的工具处理函数
 func AskExpert(ctx context.Context, input string) (reply string, err error) {
-	script := fmt.Sprintf(`unset InsideShellExec
-dscli chat --no-color --no-timestamp --histsize 0 --model %s`, context.ModelDeepseekReasoner)
-	ctx = context.WithValue(ctx, context.ShellStdinKey, strings.NewReader(input))
-	reply, err = toolcall.ShellExec(ctx, script)
+	// 将输入内容写入临时文件，避免 shell 命令长度限制和 stdin 传递问题
+	tmpFile, err := os.CreateTemp("", "dscli-ask-*.md")
+	if err != nil {
+		return "", fmt.Errorf("创建临时文件失败: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmpFile.WriteString(input); err != nil {
+		tmpFile.Close()
+		return "", fmt.Errorf("写入临时文件失败: %w", err)
+	}
+	tmpFile.Close()
+
+	script := fmt.Sprintf(`dscli chat --no-color --no-timestamp --histsize 0 --model %s --input %s`,
+		context.ModelDeepseekReasoner, tmpPath)
+	reply, err = shell.SimpleExecute(ctx, script)
 	return
 }
 

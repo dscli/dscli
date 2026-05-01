@@ -2,6 +2,7 @@ package toolcall
 
 import (
 	"bytes"
+	"crypto/md5"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"gitcode.com/dscli/dscli/internal/config"
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 )
@@ -187,6 +189,30 @@ func parseGoStructure(path string) (*FileStructure, error) {
 	return fs, nil
 }
 
+
+// getOrCreatePythonCacheFile 获取或创建 Python 脚本缓存文件
+// 根据脚本内容计算 MD5 哈希，在配置目录中创建缓存文件
+func getOrCreatePythonCacheFile(script string) (string, error) {
+	hash := fmt.Sprintf("%x", md5.Sum([]byte(script)))
+	cacheDir := filepath.Join(config.ConfigDir, "scripts", "python")
+	cacheFile := filepath.Join(cacheDir, hash+".py")
+
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		return "", fmt.Errorf("failed to create cache directory: %w", err)
+	}
+
+	if _, err := os.Stat(cacheFile); os.IsNotExist(err) {
+		if err := os.WriteFile(cacheFile, []byte(script), 0o644); err != nil {
+			return "", fmt.Errorf("failed to write cache file: %w", err)
+		}
+	} else if err != nil {
+		return "", fmt.Errorf("failed to stat cache file: %w", err)
+	}
+
+	return cacheFile, nil
+}
+
+
 func runPythonParsePy(ctx context.Context, filePath string, lang string) (output string, err error) {
 	// 从上下文中获取verbose标志
 	verbose := outfmt.GetVerbose()
@@ -214,8 +240,7 @@ func runPythonParsePy(ctx context.Context, filePath string, lang string) (output
 		fmt.Fprintf(os.Stderr, "Using Python parser for language: %s\n", lang)
 		fmt.Fprintf(os.Stderr, "Input size: %d bytes\n", len(jsonInput))
 	}
-	ctx = context.WithValue(ctx, context.ShellNameKey, "python")
-	cacheFile, err := GetOrCreateCacheFile(ctx, pythonScript)
+	cacheFile, err := getOrCreatePythonCacheFile(pythonScript)
 	if err != nil {
 		return
 	}
@@ -255,6 +280,7 @@ func runPythonParsePy(ctx context.Context, filePath string, lang string) (output
 
 	return
 }
+
 
 // parseWithPython 使用Python脚本解析文件结构
 func parseWithPython(ctx context.Context, filePath, lang string) (structure *FileStructure, err error) {

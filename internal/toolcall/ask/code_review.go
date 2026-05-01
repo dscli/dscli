@@ -8,6 +8,7 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/shell"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
@@ -88,7 +89,7 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (reply string
 	fmt.Println("🔍 检查是否有未提交的更改...")
 	// 只检查已修改但未提交的变更，忽略未跟踪文件
 	statusScript := `git status --porcelain | grep -E '^(M|A|D|R|C)'`
-	status, shellErr := toolcall.ShellExec(ctx, statusScript)
+	status, shellErr := shell.SimpleExecute(ctx, statusScript)
 	if shellErr != nil {
 		// grep返回非零退出码表示没有匹配，这是正常情况
 		status = ""
@@ -107,7 +108,7 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (reply string
 	if testCommand != "" {
 		outfmt.Println("🔍 运行单元测试:", testCommand)
 		testOutput := ""
-		testOutput, err = toolcall.ShellExec(ctx, testCommand)
+		testOutput, err = shell.SimpleExecute(ctx, testCommand)
 		if err != nil {
 			outfmt.Println("❌ 单元测试未通过")
 			errorMsg := fmt.Sprintf("单元测试未通过，请修复测试后再审查。\n测试命令：%s\n", testCommand)
@@ -132,7 +133,7 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (reply string
 	}
 	// 获取最新的提交信息
 	logScript := `git log --oneline -` + strconv.Itoa(reviewCommitCount)
-	log, err := toolcall.ShellExec(ctx, logScript)
+	log, err := shell.SimpleExecute(ctx, logScript)
 	if err != nil {
 		outfmt.Println("❌ 获取提交历史失败")
 		err = fmt.Errorf("获取提交历史失败: %w", err)
@@ -150,14 +151,14 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (reply string
 
 	// 获取完整的提交信息用于构建请求
 	fullLogScript := `git log --format="%B" -` + strconv.Itoa(reviewCommitCount)
-	fullLog, err := toolcall.ShellExec(ctx, fullLogScript)
+	fullLog, err := shell.SimpleExecute(ctx, fullLogScript)
 	if err != nil {
 		fullLog = log // 如果失败，使用简短的log
 	}
 
 	// 生成patch
 	patchScript := `git --no-pager format-patch --stdout -` + strconv.Itoa(reviewCommitCount)
-	patch, err := toolcall.ShellExec(ctx, patchScript)
+	patch, err := shell.SimpleExecute(ctx, patchScript)
 	if err != nil {
 		fmt.Println("❌ 生成patch失败")
 		err = fmt.Errorf("生成patch失败: %w", err)
