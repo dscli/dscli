@@ -1,4 +1,4 @@
-// Package shell for shell tools like shell and python
+// Package shell for shell tools
 package shell
 
 import "gitcode.com/dscli/dscli/internal/toolcall"

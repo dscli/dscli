@@ -83,8 +83,7 @@ Usage:
   skill_by_name(skill_name="test-skill")
 
 Notes:
-- skill_name is case-sensitive, max 128 chars
-- Scripts are listed with paths; execute via shell (bash <path>) or python (python3 <path>) tools
+- Scripts are listed with paths; execute via shell (bash &lt;path&gt;)
 - Reference documents can be read via read_file or shell (cat <path>)`,
 		Strict: true,
 		Parameters: map[string]any{

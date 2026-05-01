@@ -555,7 +555,7 @@ func BuildSkillPrompt(ctx context.Context) string {
 	if len(manualSkills) > 0 {
 		builder.WriteString("## Available Skills\n\n")
 		builder.WriteString("Fetch full content via `skill_by_name` tool, ")
-		builder.WriteString("then execute scripts via `shell` or `python` tools.\n")
+		builder.WriteString("then execute scripts via `shell` tool.\n")
 		builder.WriteString("Not sure which skill to use? Try `skill_search` with keywords.\n\n")
 		builder.WriteString("| Name | Description | Keywords |\n")
 		builder.WriteString("|------|-------------|----------|\n")
