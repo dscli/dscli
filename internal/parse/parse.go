@@ -317,215 +317,111 @@ func parseWithPython(ctx context.Context, filePath, lang string) (structure *Fil
 		FilePath: filePath,
 	}
 
-	// 对于Markdown等非编程语言，处理不同的结构
 	switch lang {
 	case "markdown", "org":
-		// 处理Markdown标题
-		if headings, ok := pythonResult["headings"].([]any); ok {
-			for _, h := range headings {
-				if headingMap, ok := h.(map[string]any); ok {
-					symbol := &Symbol{
-						Name: getString(headingMap, "name"),
-						Type: getString(headingMap, "type"),
-					}
-					if line, ok := headingMap["lineno"].(float64); ok {
-						symbol.Line = int(line)
-					}
-					if endLine, ok := headingMap["end_lineno"].(float64); ok {
-						symbol.EndLine = int(endLine)
-					} else {
-						symbol.EndLine = symbol.Line
-					}
-					fs.Classes = append(fs.Classes, symbol)
-				}
-			}
-		}
-
-		// 处理代码块
-		if codeBlocks, ok := pythonResult["code_blocks"].([]any); ok {
-			for _, cb := range codeBlocks {
-				if cbMap, ok := cb.(map[string]any); ok {
-					symbol := &Symbol{
-						Name: getString(cbMap, "name"),
-						Type: getString(cbMap, "type"),
-					}
-					if line, ok := cbMap["lineno"].(float64); ok {
-						symbol.Line = int(line)
-					}
-					if endLine, ok := cbMap["end_lineno"].(float64); ok {
-						symbol.EndLine = int(endLine)
-					} else {
-						symbol.EndLine = symbol.Line
-					}
-					fs.Functions = append(fs.Functions, symbol)
-				}
-			}
-		}
-
-		// 处理列表项
-		if lists, ok := pythonResult["lists"].([]any); ok {
-			for _, l := range lists {
-				if listMap, ok := l.(map[string]any); ok {
-					// 将列表项添加到Imports字段
-					listItem := getString(listMap, "name")
-					if listItem != "" {
-						fs.Imports = append(fs.Imports, listItem)
-					}
-				}
-			}
-		}
-
-		// 处理链接
-		if links, ok := pythonResult["links"].([]any); ok {
-			for _, l := range links {
-				if linkMap, ok := l.(map[string]any); ok {
-					symbol := &Symbol{
-						Name: getString(linkMap, "name"),
-						Type: getString(linkMap, "type"),
-					}
-					if line, ok := linkMap["lineno"].(float64); ok {
-						symbol.Line = int(line)
-					}
-					if endLine, ok := linkMap["end_lineno"].(float64); ok {
-						symbol.EndLine = int(endLine)
-					} else {
-						symbol.EndLine = symbol.Line
-					}
-					fs.Functions = append(fs.Functions, symbol)
-				}
-			}
-		}
+		fs.Classes = extractSymbols(pythonResult, "headings")
+		fs.Functions = extractSymbols(pythonResult, "code_blocks")
+		fs.Imports = extractNames(pythonResult, "lists")
+		fs.Functions = append(fs.Functions, extractSymbols(pythonResult, "links")...)
 	case "vimscript":
-		// 特殊处理vimscript
-		// 解析函数
-		if functions, ok := pythonResult["functions"].([]any); ok {
-			for _, f := range functions {
-				if funcMap, ok := f.(map[string]any); ok {
-					symbol := &Symbol{
-						Name: getString(funcMap, "name"),
-						Type: getString(funcMap, "type"),
-					}
-					if line, ok := funcMap["lineno"].(float64); ok {
-						symbol.Line = int(line)
-					}
-					if endLine, ok := funcMap["end_lineno"].(float64); ok {
-						symbol.EndLine = int(endLine)
-					} else {
-						symbol.EndLine = symbol.Line
-					}
-					fs.Functions = append(fs.Functions, symbol)
-				}
-			}
-		}
-
-		// 解析命令（映射到Classes）
-		if commands, ok := pythonResult["commands"].([]any); ok {
-			for _, c := range commands {
-				if cmdMap, ok := c.(map[string]any); ok {
-					symbol := &Symbol{
-						Name: getString(cmdMap, "name"),
-						Type: getString(cmdMap, "type"),
-					}
-					if line, ok := cmdMap["lineno"].(float64); ok {
-						symbol.Line = int(line)
-						symbol.EndLine = int(line)
-					}
-					fs.Classes = append(fs.Classes, symbol)
-				}
-			}
-		}
-
-		// 解析变量（映射到Imports）
-		if variables, ok := pythonResult["variables"].([]any); ok {
-			for _, v := range variables {
-				if varMap, ok := v.(map[string]any); ok {
-					varName := getString(varMap, "name")
-					varType := getString(varMap, "type")
-					fs.Imports = append(fs.Imports, fmt.Sprintf("%s (%s)", varName, varType))
-				}
-			}
-		}
-
-		// 解析映射（也映射到Imports）
-		if mappings, ok := pythonResult["mappings"].([]any); ok {
-			for _, m := range mappings {
-				if mapMap, ok := m.(map[string]any); ok {
-					mapName := getString(mapMap, "name")
-					fs.Imports = append(fs.Imports, fmt.Sprintf("mapping: %s", mapName))
-				}
-			}
-		}
-
-		// 解析自动命令组（也映射到Imports）
-		if augroups, ok := pythonResult["augroups"].([]any); ok {
-			for _, a := range augroups {
-				if augroupMap, ok := a.(map[string]any); ok {
-					augroupName := getString(augroupMap, "name")
-					fs.Imports = append(fs.Imports, fmt.Sprintf("augroup: %s", augroupName))
-				}
-			}
-		}
+		fs.Functions = extractSymbols(pythonResult, "functions")
+		fs.Classes = extractSymbols(pythonResult, "commands")
+		appendFormatted(pythonResult, "variables", &fs.Imports, "%s (%s)", "name", "type")
+		appendFormatted(pythonResult, "mappings", &fs.Imports, "mapping: %s", "name")
+		appendFormatted(pythonResult, "augroups", &fs.Imports, "augroup: %s", "name")
 	default:
-		// 对于其他编程语言，处理函数和类
-		// 解析函数
-		if functions, ok := pythonResult["functions"].([]any); ok {
-			for _, f := range functions {
-				if funcMap, ok := f.(map[string]any); ok {
-					symbol := &Symbol{
-						Name: getString(funcMap, "name"),
-						Type: getString(funcMap, "type"),
-					}
-					if line, ok := funcMap["lineno"].(float64); ok {
-						symbol.Line = int(line)
-					}
-					if endLine, ok := funcMap["end_lineno"].(float64); ok {
-						symbol.EndLine = int(endLine)
-					} else {
-						// 如果没有end_lineno，使用lineno作为默认值
-						symbol.EndLine = symbol.Line
-					}
-					fs.Functions = append(fs.Functions, symbol)
-				}
-			}
-		}
-
-		// 解析类
-		if classes, ok := pythonResult["classes"].([]any); ok {
-			for _, c := range classes {
-				if classMap, ok := c.(map[string]any); ok {
-					symbol := &Symbol{
-						Name: getString(classMap, "name"),
-						Type: getString(classMap, "type"),
-					}
-					if line, ok := classMap["lineno"].(float64); ok {
-						symbol.Line = int(line)
-						symbol.EndLine = int(line)
-					}
-					fs.Classes = append(fs.Classes, symbol)
-				}
-			}
-		}
-
-		// 解析导入
-		if imports, ok := pythonResult["imports"].([]any); ok {
-			for _, imp := range imports {
-				if impStr, ok := imp.(string); ok {
-					fs.Imports = append(fs.Imports, impStr)
-				}
-			}
-		}
+		fs.Functions = extractSymbols(pythonResult, "functions")
+		fs.Classes = extractSymbols(pythonResult, "classes")
+		fs.Imports = extractStrings(pythonResult, "imports")
 	}
 
 	// 解析错误
-	if errors, ok := pythonResult["errors"].([]any); ok {
-		for _, err := range errors {
-			if errStr, ok := err.(string); ok {
-				fs.Errors = append(fs.Errors, errStr)
+	fs.Errors = extractStrings(pythonResult, "errors")
+
+	return fs, nil
+}
+
+// symbolFromMap 从map中构建Symbol，自动处理lineno/end_lineno默认值
+func symbolFromMap(m map[string]any) *Symbol {
+	s := &Symbol{
+		Name: getString(m, "name"),
+		Type: getString(m, "type"),
+	}
+	if line, ok := m["lineno"].(float64); ok {
+		s.Line = int(line)
+	}
+	if endLine, ok := m["end_lineno"].(float64); ok {
+		s.EndLine = int(endLine)
+	} else {
+		s.EndLine = s.Line
+	}
+	return s
+}
+
+// extractSymbols 从result中提取指定key的Symbol列表
+func extractSymbols(result map[string]any, key string) []*Symbol {
+	items, ok := result[key].([]any)
+	if !ok {
+		return nil
+	}
+	symbols := make([]*Symbol, 0, len(items))
+	for _, item := range items {
+		if m, ok := item.(map[string]any); ok {
+			symbols = append(symbols, symbolFromMap(m))
+		}
+	}
+	return symbols
+}
+
+// extractStrings 从result中提取指定key的字符串列表（元素为string类型）
+func extractStrings(result map[string]any, key string) []string {
+	items, ok := result[key].([]any)
+	if !ok {
+		return nil
+	}
+	strs := make([]string, 0, len(items))
+	for _, item := range items {
+		if s, ok := item.(string); ok {
+			strs = append(strs, s)
+		}
+	}
+	return strs
+}
+
+// extractNames 从result中提取指定key的name字段列表（跳过空字符串）
+func extractNames(result map[string]any, key string) []string {
+	items, ok := result[key].([]any)
+	if !ok {
+		return nil
+	}
+	names := make([]string, 0, len(items))
+	for _, item := range items {
+		if m, ok := item.(map[string]any); ok {
+			if name := getString(m, "name"); name != "" {
+				names = append(names, name)
 			}
 		}
 	}
+	return names
+}
 
-	return fs, nil
+// appendFormatted 从result中提取指定key的map，按格式追加到target
+func appendFormatted(result map[string]any, key string, target *[]string, format string, mapKeys ...string) {
+	items, ok := result[key].([]any)
+	if !ok {
+		return
+	}
+	for _, item := range items {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		args := make([]any, len(mapKeys))
+		for i, k := range mapKeys {
+			args[i] = getString(m, k)
+		}
+		*target = append(*target, fmt.Sprintf(format, args...))
+	}
 }
 
 // getString 安全地从map中获取字符串
