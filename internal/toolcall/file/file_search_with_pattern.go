@@ -16,7 +16,6 @@ func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "search_file_with_pattern",
 		Description: `搜索文件中匹配指定模式的行，并显示上下文内容。
-⚠️ 注意：这是基于行号操作的旧工具。建议优先使用基于语义的新工具 search_code_semantic。
 
 参数：
   path: 文件路径（必需）
@@ -32,9 +31,9 @@ func init() {
 适用场景：
 - 简单的文本模式搜索
 - 处理非代码文件（如日志文件、配置文件等）
-- 新工具 search_code_semantic 无法满足需求时的后备方案
 
 示例：
+  # 搜索包含"error"的行，显示前后5行上下文
   # 搜索包含"error"的行，显示前后5行上下文
   search_file_with_pattern(path="app.log", pattern="error")
   
