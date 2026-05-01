@@ -21,7 +21,7 @@ const (
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "write_file",
-		Description: `将内容写入文件。支持自动创建目录结构。append=false覆盖或创建文件，append=true追加内容（默认true）。content最大262144字符，超过请分多次调用。`,
+		Description: `将内容写入文件。支持自动创建目录结构。append=true追加内容，append=false覆盖写入（默认false）。content最大262144字符，超过请分多次调用。`,
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
@@ -32,7 +32,7 @@ func init() {
 				},
 				"append": map[string]any{
 					"type":        "boolean",
-					"description": "是否追加，false 覆盖或创建，true 在文件末尾追加, 默认为true",
+					"description": "是否追加，false 覆盖或创建，true 在文件末尾追加, 默认为false",
 				},
 				"content": map[string]any{
 					"type":        "string",
@@ -67,7 +67,7 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result string, suggest
 		return
 	}
 
-	append := toolcall.ToolArgsValue(args, "append", true)
+	append := toolcall.ToolArgsValue(args, "append", false)
 
 	fullPath := ResolvePath(ctx, path)
 	dirPath := filepath.Dir(fullPath)
@@ -128,11 +128,13 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result string, suggest
 	if content == "" || strings.HasSuffix(content, "\n") {
 		lines = strings.Count(content, "\n")
 	}
-
-	outfmt.Notice("追加内容到文件 \"%s\"，添加 %d 行", path, lines)
-
-	// 构建最终结果
-	result = fmt.Sprintf("成功追加内容到文件 \"%s\"，添加 %d 行。", path, lines)
+	if append {
+		outfmt.Notice("追加内容到文件 \"%s\"，添加 %d 行", path, lines)
+		result = fmt.Sprintf("成功追加内容到文件 \"%s\"，添加 %d 行。", path, lines)
+	} else {
+		outfmt.Notice("写入文件 \"%s\"，%d 行", path, lines)
+		result = fmt.Sprintf("成功写入文件 \"%s\"，%d 行。", path, lines)
+	}
 
 	if truncated {
 		suggestion = fmt.Sprintf(`此次写入文件 %s 的内容是截断的内容。
