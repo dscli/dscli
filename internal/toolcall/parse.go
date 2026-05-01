@@ -192,12 +192,16 @@ func parseGoStructure(path string) (*FileStructure, error) {
 
 // getOrCreatePythonCacheFile 获取或创建 Python 脚本缓存文件
 // 根据脚本内容计算 MD5 哈希，在配置目录中创建缓存文件
+// getOrCreatePythonCacheFile 为 Python 脚本创建或获取缓存文件
+//
+// 使用 MD5 哈希（仅用于缓存路径标识，不涉及安全性）生成唯一的缓存文件名，
+// 避免重复写入。缓存目录位于 $HOME/.config/dscli/scripts/python。
 func getOrCreatePythonCacheFile(script string) (string, error) {
 	hash := fmt.Sprintf("%x", md5.Sum([]byte(script)))
 	cacheDir := filepath.Join(config.ConfigDir, "scripts", "python")
 	cacheFile := filepath.Join(cacheDir, hash+".py")
 
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
 		return "", fmt.Errorf("failed to create cache directory: %w", err)
 	}
 

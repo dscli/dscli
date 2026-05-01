@@ -171,7 +171,9 @@ func AskExpert(ctx context.Context, input string) (reply string, err error) {
 		tmpFile.Close()
 		return "", fmt.Errorf("写入临时文件失败: %w", err)
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		return "", fmt.Errorf("关闭临时文件失败: %w", err)
+	}
 
 	script := fmt.Sprintf(`dscli chat --no-color --no-timestamp --histsize 0 --model %s --input %s`,
 		context.ModelDeepseekReasoner, tmpPath)

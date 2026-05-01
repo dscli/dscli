@@ -257,7 +257,9 @@ func NewExecutor(ctx context.Context, config *Config) *Executor {
 }
 
 // Execute 执行 Shell 脚本
-// 注意：超时由上层（工具调用层）通过 context 控制，执行器不重复设置超时
+//
+// 超时由上层（工具调用层）通过 context 控制，执行器不重复设置超时。
+// 这使得不同工具可以配置各自合理的超时时间，避免被执行器层覆盖。
 func (e *Executor) Execute(ctx context.Context, script string) (*Result, error) {
 	start := time.Now()
 
