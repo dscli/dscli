@@ -122,3 +122,131 @@ print("OK")`
 	hash2 := fmt.Sprintf("%x", md5.Sum([]byte(script)))
 	t.Log(hash2)
 }
+
+func TestSymbolFromMap(t *testing.T) {
+	// 完整字段
+	m := map[string]any{
+		"name":        "TestFunc",
+		"type":        "function",
+		"lineno":      float64(10),
+		"end_lineno":  float64(25),
+	}
+	s := symbolFromMap(m)
+	if s.Name != "TestFunc" {
+		t.Errorf("Name = %q, want %q", s.Name, "TestFunc")
+	}
+	if s.Type != "function" {
+		t.Errorf("Type = %q, want %q", s.Type, "function")
+	}
+	if s.Line != 10 {
+		t.Errorf("Line = %d, want 10", s.Line)
+	}
+	if s.EndLine != 25 {
+		t.Errorf("EndLine = %d, want 25", s.EndLine)
+	}
+
+	// 无end_lineno时应默认为Line
+	m2 := map[string]any{
+		"name":   "NoEnd",
+		"type":   "class",
+		"lineno": float64(5),
+	}
+	s2 := symbolFromMap(m2)
+	if s2.EndLine != 5 {
+		t.Errorf("EndLine = %d, want 5 (default to Line)", s2.EndLine)
+	}
+
+	// 无lineno时两者均为0
+	m3 := map[string]any{
+		"name": "NoLine",
+		"type": "variable",
+	}
+	s3 := symbolFromMap(m3)
+	if s3.Line != 0 || s3.EndLine != 0 {
+		t.Errorf("Line=%d, EndLine=%d, want both 0", s3.Line, s3.EndLine)
+	}
+}
+
+func TestExtractSymbols(t *testing.T) {
+	result := map[string]any{
+		"funcs": []any{
+			map[string]any{"name": "f1", "type": "function", "lineno": float64(1)},
+			map[string]any{"name": "f2", "type": "function", "lineno": float64(5), "end_lineno": float64(10)},
+		},
+	}
+	symbols := extractSymbols(result, "funcs")
+	if len(symbols) != 2 {
+		t.Fatalf("len = %d, want 2", len(symbols))
+	}
+	if symbols[0].Line != 1 || symbols[0].EndLine != 1 {
+		t.Errorf("f1: Line=%d, EndLine=%d; want 1,1", symbols[0].Line, symbols[0].EndLine)
+	}
+	if symbols[1].Line != 5 || symbols[1].EndLine != 10 {
+		t.Errorf("f2: Line=%d, EndLine=%d; want 5,10", symbols[1].Line, symbols[1].EndLine)
+	}
+
+	// key不存在时返回nil
+	if symbols := extractSymbols(result, "nonexistent"); symbols != nil {
+		t.Errorf("expected nil for nonexistent key, got %v", symbols)
+	}
+}
+
+func TestExtractStrings(t *testing.T) {
+	result := map[string]any{
+		"imports": []any{"fmt", "os", "strings"},
+		"mixed":   []any{"a", 123, "b"}, // 非string元素被跳过
+	}
+	strs := extractStrings(result, "imports")
+	if len(strs) != 3 {
+		t.Errorf("len = %d, want 3", len(strs))
+	}
+	strs2 := extractStrings(result, "mixed")
+	if len(strs2) != 2 {
+		t.Errorf("len = %d, want 2 (non-strings skipped)", len(strs2))
+	}
+	if strs := extractStrings(result, "nonexistent"); strs != nil {
+		t.Errorf("expected nil, got %v", strs)
+	}
+}
+
+func TestExtractNames(t *testing.T) {
+	result := map[string]any{
+		"lists": []any{
+			map[string]any{"name": "item1"},
+			map[string]any{"name": ""},       // 空字符串跳过
+			map[string]any{"name": "item3"},
+			map[string]any{"other": "value"}, // 无name字段跳过
+		},
+	}
+	names := extractNames(result, "lists")
+	if len(names) != 2 {
+		t.Fatalf("len = %d, want 2", len(names))
+	}
+	if names[0] != "item1" || names[1] != "item3" {
+		t.Errorf("names = %v, want [item1 item3]", names)
+	}
+}
+
+func TestAppendFormatted(t *testing.T) {
+	result := map[string]any{
+		"vars": []any{
+			map[string]any{"name": "a", "type": "str"},
+			map[string]any{"name": "b", "type": "int"},
+		},
+	}
+	var out []string
+	appendFormatted(result, "vars", &out, "%s (%s)", "name", "type")
+	if len(out) != 2 {
+		t.Fatalf("len = %d, want 2", len(out))
+	}
+	if out[0] != "a (str)" || out[1] != "b (int)" {
+		t.Errorf("out = %v, want [a (str) b (int)]", out)
+	}
+
+	// 单key映射
+	var out2 []string
+	appendFormatted(result, "vars", &out2, "mapping: %s", "name")
+	if out2[0] != "mapping: a" || out2[1] != "mapping: b" {
+		t.Errorf("out2 = %v", out2)
+	}
+}
