@@ -200,14 +200,11 @@ func configName(envName string) string {
 }
 
 // parseConfig 解析配置内容
-// parseConfig 解析配置内容
 func parseConfig(data string) (map[string]string, error) {
 	config := make(map[string]string)
 
-	// 使用兼容的字符串分割方式
-	lines := strings.Split(data, "\n")
-
-	for _, line := range lines {
+	// 使用 SplitSeq 避免中间切片分配
+	for line := range strings.SplitSeq(data, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

@@ -125,7 +125,7 @@ func buildSearchResult(path, searchPattern string, contextLines int, caseSensiti
 		// 显示匹配行所在的代码结构信息
 		structureInfo := getStructureInfoForLine(structure, matchLine)
 		if structureInfo != "" {
-			sb.WriteString(fmt.Sprintf("📋 结构信息: %s\n\n", structureInfo))
+			fmt.Fprintf(&sb, "📋 结构信息: %s\n\n", structureInfo)
 		}
 	}
 
@@ -290,7 +290,7 @@ func handleSearchCodeSemantic(ctx context.Context, args toolcall.ToolArgs) (outp
 	if len(errors) > 0 {
 		sb.WriteString("❌ 错误信息:\n")
 		for _, err := range errors {
-			sb.WriteString(fmt.Sprintf("  - %s\n", err))
+			fmt.Fprintf(&sb, "  - %s\n", err)
 		}
 		sb.WriteString("\n")
 	}
@@ -302,13 +302,13 @@ func handleSearchCodeSemantic(ctx context.Context, args toolcall.ToolArgs) (outp
 	}
 
 	// 显示统计信息
-	sb.WriteString(fmt.Sprintf("\n📈 全局统计:\n"))
-	sb.WriteString(fmt.Sprintf("  - 搜索文件数: %d\n", len(files)))
-	sb.WriteString(fmt.Sprintf("  - 成功搜索文件数: %d\n", len(results)))
-	sb.WriteString(fmt.Sprintf("  - 失败文件数: %d\n", len(errors)))
-	sb.WriteString(fmt.Sprintf("  - 总匹配数: %d\n", totalMatches))
+	fmt.Fprintf(&sb, "\n📈 全局统计:\n")
+	fmt.Fprintf(&sb, "  - 搜索文件数: %d\n", len(files))
+	fmt.Fprintf(&sb, "  - 成功搜索文件数: %d\n", len(results))
+	fmt.Fprintf(&sb, "  - 失败文件数: %d\n", len(errors))
+	fmt.Fprintf(&sb, "  - 总匹配数: %d\n", totalMatches)
 	if maxMatches > 0 && totalMatches >= maxMatches {
-		sb.WriteString(fmt.Sprintf("  - 注意: 已达到全局最大匹配数限制 (%d)\n", maxMatches))
+		fmt.Fprintf(&sb, "  - 注意: 已达到全局最大匹配数限制 (%d)\n", maxMatches)
 	}
 	output = sb.String()
 	return

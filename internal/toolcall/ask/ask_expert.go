@@ -204,7 +204,7 @@ func buildStructuredRequest(userSummary string, originalContent string, attachme
 			}
 
 			// 使用Markdown代码块格式
-			attachmentContent.WriteString(fmt.Sprintf("### %s\n```\n%s\n```\n\n", filename, content))
+			fmt.Fprintf(&attachmentContent, "### %s\n```\n%s\n```\n\n", filename, content)
 		}
 
 		if attachmentContent.Len() > len("\n## 附件\n") {
