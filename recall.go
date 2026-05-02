@@ -34,10 +34,23 @@ func init() {
 }
 
 func recallPreRunE(cmd *cobra.Command, args []string) (err error) {
-	// 设置输出模式（复用root的配置逻辑）
+	// 委托 root 的 PersistentPreRunE 进行通用初始化（outfmt、db路径等）
+	// recall 不需要 API key，绕过其检查：临时将 key 设置后再让 root 检查
+	// 但 root PreRunE 会因缺少 key 而报错？不，由于 recall 有自己的 PersistentPreRunE，
+	// root 的 PersistentPreRunE 不会自动执行。这里手动调用以获取 outfmt、db 等初始化。
+	//
+	// 注意：必须防止 root PreRunE 中的 API key 检查导致错误。
+	// 采用更安全的方式：直接继承必要的初始化逻辑，不调用 root PreRunE。
+	// （cobra 不支持 PreRunE 链，子 PersistentPreRunE 会覆盖父的）
+
+	// 设置输出模式（复用 root 的配置逻辑）
 	mode, err := cmd.Flags().GetString("mode")
 	if err != nil {
 		return
+	}
+	// mode 未显式设置时使用默认值
+	if mode == "" {
+		mode = "markdown"
 	}
 	switch mode {
 	case "markdown":
@@ -63,11 +76,7 @@ func recallPreRunE(cmd *cobra.Command, args []string) (err error) {
 		sqlite.SetDBPath(dbPath)
 	}
 
-	// 初始化数据库（recall不需要API key）
-	if _, err := sqlite.OpenDB(); err != nil {
-		return fmt.Errorf("数据库初始化失败: %w", err)
-	}
-
+	// 注意：不在 PreRun 中打开数据库连接，由 SearchMessages 按需打开
 	return nil
 }
 
@@ -82,7 +91,10 @@ func recallSearchRunE(cmd *cobra.Command, args []string) (err error) {
 		return err
 	}
 
-	// 从 args 中提取关键词（cobra 已切分好，但多词可能在同一个 arg 中）
+	// 从 args 中提取关键词
+	// 注意：引号包裹的短语会被 cobra 作为一个 arg 传递，此处用 Fields 切分
+	// 意味着 "Go 错误处理" 会被拆成 ["Go", "错误处理"] 两个独立关键词
+	// 如需精确短语搜索，未来可添加 --exact 标志
 	var keywords []string
 	for _, arg := range args {
 		for _, kw := range strings.Fields(arg) {
@@ -93,7 +105,7 @@ func recallSearchRunE(cmd *cobra.Command, args []string) (err error) {
 		}
 	}
 
-	results, err := recall.SearchMessages(keywords, days, limit, false, 0)
+	results, err := recall.SearchMessages(keywords, days, limit)
 	if err != nil {
 		return err
 	}

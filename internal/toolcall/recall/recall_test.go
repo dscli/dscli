@@ -54,8 +54,8 @@ func TestTruncate(t *testing.T) {
 }
 
 func TestSearchMessages(t *testing.T) {
-	// 基本烟雾测试：搜索一个不可能存在的词
-	results, err := SearchMessages([]string{"xyznonexistent12345"}, 1, 5, false, 0)
+	// 烟雾测试：搜索一个不可能存在的词
+	results, err := SearchMessages([]string{"xzzyyzzzyxnotexist128937128937"}, 1, 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,13 +64,13 @@ func TestSearchMessages(t *testing.T) {
 	}
 
 	// 测试空关键词报错
-	_, err = SearchMessages([]string{""}, 1, 5, false, 0)
+	_, err = SearchMessages([]string{""}, 1, 5)
 	if err == nil || !strings.Contains(err.Error(), "没有有效的搜索关键词") {
 		t.Errorf("空关键词应该报错: %v", err)
 	}
 
 	// 测试空输入报错
-	_, err = SearchMessages(nil, 1, 5, false, 0)
+	_, err = SearchMessages(nil, 1, 5)
 	if err == nil || !strings.Contains(err.Error(), "至少需要一个搜索关键词") {
 		t.Errorf("nil 关键词应该报错: %v", err)
 	}

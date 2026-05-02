@@ -18,7 +18,9 @@ type Result struct {
 
 // SearchMessages 搜索消息，支持多关键词（空格分隔），按 LIKE 匹配
 // 只搜索 role=user 和 role=assistant(无tool_calls) 的消息
-func SearchMessages(keywords []string, days int, limit int, currentSessionOnly bool, sessionID int64) ([]Result, error) {
+// days: 搜索最近N天，<=0 表示不限时间
+// limit: 返回结果数量上限
+func SearchMessages(keywords []string, days int, limit int) ([]Result, error) {
 	if len(keywords) == 0 {
 		return nil, fmt.Errorf("至少需要一个搜索关键词")
 	}
@@ -35,15 +37,16 @@ func SearchMessages(keywords []string, days int, limit int, currentSessionOnly b
 		`(m.role = 'user' OR (m.role = 'assistant' AND (m.tool_calls IS NULL OR m.tool_calls = '' OR m.tool_calls = '[]')))`,
 	}
 
-	// 时间过滤
+	var args []any
+
+	// 时间过滤（参数化查询，避免 SQL 注入）
 	if days > 0 {
-		conditions = append(conditions,
-			fmt.Sprintf(`m.created_at >= datetime('now', '-%d days')`, days))
+		conditions = append(conditions, `m.created_at >= ?`)
+		args = append(args, time.Now().AddDate(0, 0, -days).Format("2006-01-02 15:04:05"))
 	}
 
-	// 关键词 LIKE 条件
+	// 关键词 LIKE 条件（OR 逻辑）
 	var likeConditions []string
-	var args []any
 	for _, kw := range keywords {
 		kw = strings.TrimSpace(kw)
 		if kw == "" {
@@ -56,12 +59,6 @@ func SearchMessages(keywords []string, days int, limit int, currentSessionOnly b
 		return nil, fmt.Errorf("没有有效的搜索关键词")
 	}
 	conditions = append(conditions, "("+strings.Join(likeConditions, " OR ")+")")
-
-	// 当前会话过滤
-	if currentSessionOnly && sessionID > 0 {
-		conditions = append(conditions, `m.session_id = ?`)
-		args = append(args, sessionID)
-	}
 
 	whereClause := strings.Join(conditions, " AND ")
 
@@ -94,9 +91,6 @@ func SearchMessages(keywords []string, days int, limit int, currentSessionOnly b
 		}
 		if toolCallID.Valid {
 			r.Message.ToolCallID = toolCallID.String
-		}
-		if toolCalls.Valid && toolCalls.String != "" && toolCalls.String != "[]" {
-			// 理论上不会进入这里（已被WHERE过滤），但保留健壮性
 		}
 		results = append(results, r)
 	}
