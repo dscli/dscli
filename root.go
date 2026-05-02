@@ -102,13 +102,15 @@ func RootPersistentPreRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	key := config.Get("deepseek-api-key", "")
-	if key == "" {
+	if key == "" && cmd.Name() != "flycheck" && cmd.Name() != "version" {
 		err = fmt.Errorf("no api key specified")
 		return
 	}
 
-	url := config.Get("deepseek-base-url", "https://api.deepseek.com")
-	DeepseekClient = dsc.NewClient(key, url)
+	if key != "" {
+		url := config.Get("deepseek-base-url", "https://api.deepseek.com")
+		DeepseekClient = dsc.NewClient(key, url)
+	}
 	return nil
 }
 
