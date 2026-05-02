@@ -119,6 +119,7 @@ func locateMethod(structure *parse.FileStructure, lines []string, methodSelector
 }
 
 // locateLines 定位行范围（后备方案）
+// locateLines 定位行范围（后备方案）
 func locateLines(lines []string, lineSelector string) (string, error) {
 	// 行选择器格式: 开始行-结束行
 	parts := strings.Split(lineSelector, "-")
@@ -132,11 +133,25 @@ func locateLines(lines []string, lineSelector string) (string, error) {
 		return "", fmt.Errorf("行号必须为数字")
 	}
 
-	if startLine < 1 || endLine > len(lines) || startLine > endLine {
-		return "", fmt.Errorf("行号范围无效: %d-%d (文件总行数: %d)", startLine, endLine, len(lines))
+	if startLine < 1 || startLine > endLine {
+		return "", fmt.Errorf("行号范围无效: %d-%d", startLine, endLine)
 	}
 
-	return extractLines(lines, startLine, endLine), nil
+	if startLine > len(lines) {
+		return "", fmt.Errorf("起始行 %d 超出文件总行数 %d", startLine, len(lines))
+	}
+
+	// 如果结束行超出文件范围，截断到文件末尾并添加说明
+	// LLM 无法预知文件总行数，请求超出范围是正常行为，不应报错
+	note := ""
+	if endLine > len(lines) {
+		note = fmt.Sprintf("[注意：请求范围 %d-%d，文件只有 %d 行，已截断返回 %d-%d]\n",
+			startLine, endLine, len(lines), startLine, len(lines))
+		endLine = len(lines)
+	}
+
+	result := extractLines(lines, startLine, endLine)
+	return note + result, nil
 }
 
 // extractLines 提取指定行范围的代码
