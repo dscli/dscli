@@ -505,6 +505,24 @@ func SimpleExecute(ctx context.Context, script string) (string, error) {
 	return result.Stdout, nil
 }
 
+// SimpleExecuteSeparate 与 SimpleExecute 类似，但分别返回 stdout 和 stderr。
+//
+// 对于像 staticcheck 这样通过 stdout 输出检查结果、通过非零退出码表示发现问题的工具，
+// 调用方可以区分 stdout（有用输出）和 stderr（错误信息），做出更精确的判断。
+func SimpleExecuteSeparate(ctx context.Context, script string) (stdout, stderr string, err error) {
+	executor := NewExecutor(ctx, DefaultConfig(ctx))
+	result, execErr := executor.Execute(ctx, script)
+	if execErr != nil {
+		return "", "", execErr
+	}
+
+	if result.Err != nil {
+		return result.Stdout, result.Stderr, result.Err
+	}
+
+	return result.Stdout, result.Stderr, nil
+}
+
 // SafeExecute 安全执行 Shell 脚本（启用沙箱模式）
 func SafeExecute(ctx context.Context, script string) (string, error) {
 	config := DefaultConfig(ctx)

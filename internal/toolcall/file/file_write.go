@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/flycheck"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
@@ -135,7 +136,6 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result string, suggest
 		outfmt.Notice("写入文件 \"%s\"，%d 行", path, lines)
 		result = fmt.Sprintf("成功写入文件 \"%s\"，%d 行。", path, lines)
 	}
-
 	if truncated {
 		suggestion = fmt.Sprintf(`此次写入文件 %s 的内容是截断的内容。
 请从上次输出内容的最后一完整行继续生成，并调用工具 write_file(path="%s", append=true, content="...继续生成的内容...") 
@@ -144,5 +144,14 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result string, suggest
 %s---
 如果觉得信息不足以继续生成，可以停下来询问。`, path, path, path, lastlines)
 	}
+
+	// Run flycheck on the written file and append issues to suggestion
+	if flyResult, _, flyErr := flycheck.Flycheck(ctx, path); flyErr == nil && flyResult != "" {
+		if suggestion != "" {
+			suggestion += "\n\n"
+		}
+		suggestion += flyResult
+	}
+
 	return
 }

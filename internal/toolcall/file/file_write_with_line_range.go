@@ -2,11 +2,12 @@ package file
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"os"
 	"strings"
 
+	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/flycheck"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
@@ -73,7 +74,7 @@ func init() {
 
 // handleWriteFileWithLineRange 写入文件指定行范围的内容
 // 如果 content 为空字符串，则删除指定行范围
-func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result string, user string, err error) {
+func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result string, suggestion string, err error) {
 	// 检查必需参数
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
@@ -235,5 +236,14 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result st
 
 	// 构建最终结果
 	result = fmt.Sprintf("成功%s文件 \"%s\" 行范围 %s", operation, path, rangeDesc)
+
+	// Run flycheck on the written file and append issues as suggestion
+	if flyResult, _, flyErr := flycheck.Flycheck(ctx, path); flyErr == nil && flyResult != "" {
+		if suggestion != "" {
+			suggestion += "\n\n"
+		}
+		suggestion += flyResult
+	}
+
 	return
 }

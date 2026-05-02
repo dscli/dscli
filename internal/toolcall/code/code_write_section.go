@@ -1,15 +1,16 @@
 package code
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 
+	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/flycheck"
 	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/toolcall"
 	"gitcode.com/dscli/dscli/internal/parse"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 // writeCodeSection 基于代码结构定位并修改特定代码片段
@@ -282,6 +283,18 @@ func handleWriteCodeSection(ctx context.Context, args toolcall.ToolArgs) (output
 	PrintWriteSession(path, selector)
 
 	output, err = writeCodeSection(ctx, path, selector, newContent)
+	if err != nil {
+		return
+	}
+
+	// Run flycheck on the written file and append issues as suggestion
+	if flyResult, _, flyErr := flycheck.Flycheck(ctx, path); flyErr == nil && flyResult != "" {
+		if user != "" {
+			user += "\n\n"
+		}
+		user += flyResult
+	}
+
 	return
 }
 
