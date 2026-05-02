@@ -9,6 +9,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	// Version information - set via ldflags during build
+	Version = "0.7.5"
+	Build   = ""
+)
+
 // boolToString 将布尔值转换为字符串
 func boolToString(b bool) string {
 	if b {
