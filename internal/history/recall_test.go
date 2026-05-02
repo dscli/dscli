@@ -1,6 +1,7 @@
-package recall
+package history
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -54,23 +55,27 @@ func TestTruncate(t *testing.T) {
 }
 
 func TestSearchMessages(t *testing.T) {
-	// 烟雾测试：搜索一个不可能存在的词
-	results, err := SearchMessages([]string{"xzzyyzzzyxnotexist128937128937"}, 1, 5)
+	// 烟雾测试：搜索一个不可能存在的词（加时间戳确保唯一性）
+	bogusKeyword := "smoketest-no-match-20260503-171200-x"
+	results, err := SearchMessages(context.Background(), []string{bogusKeyword}, 1, 5)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(results) != 0 {
+		for _, r := range results {
+			t.Logf("unexpected match: ID=%d Role=%s Content=%q", r.Message.ID, r.Message.Role, Truncate(r.Message.Content, 80))
+		}
 		t.Errorf("预期0结果，实际 %d", len(results))
 	}
 
 	// 测试空关键词报错
-	_, err = SearchMessages([]string{""}, 1, 5)
+	_, err = SearchMessages(context.Background(), []string{""}, 1, 5)
 	if err == nil || !strings.Contains(err.Error(), "没有有效的搜索关键词") {
 		t.Errorf("空关键词应该报错: %v", err)
 	}
 
 	// 测试空输入报错
-	_, err = SearchMessages(nil, 1, 5)
+	_, err = SearchMessages(context.Background(), nil, 1, 5)
 	if err == nil || !strings.Contains(err.Error(), "至少需要一个搜索关键词") {
 		t.Errorf("nil 关键词应该报错: %v", err)
 	}

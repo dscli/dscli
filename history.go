@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/editor"
+	"gitcode.com/dscli/dscli/internal/history"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 	"github.com/spf13/cobra"
@@ -42,6 +44,21 @@ func init() {
 		RunE: historyEditRunE,
 	})
 
+	recallCmd := AddCommand(historyCmd, &cobra.Command{
+		Use:   "recall [keywords...]",
+		Short: "搜索消息内容（空格分隔多关键词，OR逻辑，匹配任一即返回）",
+		Long: `搜索历史消息，只匹配 user 消息和助手总结（无工具调用的 assistant 消息）。
+
+示例：
+  dscli recall search "Go 错误处理"
+  dscli recall search goroutine channel`,
+		Args: cobra.MinimumNArgs(1),
+		RunE: recallSearchRunE,
+	})
+
+	recallCmd.Flags().Int("days", 30, "搜索最近N天的消息")
+	recallCmd.Flags().Int("limit", 5, "返回结果数量上限")
+
 	historyCmd.PersistentFlags().Int("histsize", 32, "history size")
 	historyCmd.PersistentFlags().String("filter", "all", "filter true, false, all")
 	historyCmd.PersistentFlags().String("model", context.ModelDeepseekChat, "model")
@@ -54,7 +71,7 @@ func historyShowRunE(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
-	message, err := toolcall.ShowMessage(ctx, int64(id))
+	message, err := history.ShowMessage(ctx, int64(id))
 	if err != nil {
 		return
 	}
@@ -65,7 +82,7 @@ func historyShowRunE(cmd *cobra.Command, args []string) (err error) {
 	wrt.Println("SessionID", fmt.Sprint(message.SessionID))
 	wrt.Println("Role", message.Role)
 	wrt.Println("ToolCallID", message.ToolCallID)
-	wrt.Println("ToolCalls", toolcall.ToSQLNullString(message.ToolCalls).String)
+	wrt.Println("ToolCalls", history.ToSQLNullString(message.ToolCalls).String)
 	wrt.Println("ReasoningContent", message.ReasoningContent)
 	wrt.Println("Content", message.Content)
 	return
@@ -86,7 +103,7 @@ func historyEditRunE(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 
-	message, err := toolcall.ShowMessage(ctx, int64(id))
+	message, err := history.ShowMessage(ctx, int64(id))
 	if err != nil {
 		return
 	}
@@ -97,7 +114,7 @@ func historyEditRunE(cmd *cobra.Command, args []string) (err error) {
 		if err != nil {
 			return
 		}
-		err = toolcall.UpdateContent(ctx, int64(id), content)
+		err = history.UpdateContent(ctx, int64(id), content)
 		if err != nil {
 			return
 		}
@@ -114,7 +131,7 @@ func historyEditRunE(cmd *cobra.Command, args []string) (err error) {
 		}
 		tc.Function.Arguments = arguments
 		tcs = []toolcall.ToolCall{tc}
-		err = toolcall.UpdateToolCalls(ctx, int64(id), tcs)
+		err = history.UpdateToolCalls(ctx, int64(id), tcs)
 		if err != nil {
 			return
 		}
@@ -128,7 +145,7 @@ func historyUpdateRunE(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
-	return toolcall.UpdateHistory(ctx, int64(id))
+	return history.UpdateHistory(ctx, int64(id))
 }
 
 func historyPreRunE(cmd *cobra.Command, args []string) (err error) {
@@ -148,7 +165,7 @@ func historyPreRunE(cmd *cobra.Command, args []string) (err error) {
 
 func historyListRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
-	history, err := toolcall.ListHistory(ctx)
+	history, err := history.ListHistory(ctx)
 	if err != nil {
 		return
 	}
@@ -179,7 +196,7 @@ func historyListRunE(cmd *cobra.Command, args []string) (err error) {
 
 func historyLoadRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
-	history, err := toolcall.LoadHistory(ctx)
+	history, err := history.LoadHistory(ctx)
 	if err != nil {
 		return
 	}
@@ -231,4 +248,62 @@ func historyLoadRunE(cmd *cobra.Command, args []string) (err error) {
 		}
 	}
 	return
+}
+
+func recallSearchRunE(cmd *cobra.Command, args []string) (err error) {
+	days, err := cmd.Flags().GetInt("days")
+	if err != nil {
+		return err
+	}
+
+	limit, err := cmd.Flags().GetInt("limit")
+	if err != nil {
+		return err
+	}
+
+	// 从 args 中提取关键词
+	// 注意：引号包裹的短语会被 cobra 作为一个 arg 传递，此处用 Fields 切分
+	// 意味着 "Go 错误处理" 会被拆成 ["Go", "错误处理"] 两个独立关键词
+	// 如需精确短语搜索，未来可添加 --exact 标志
+	var keywords []string
+	for _, arg := range args {
+		for kw := range strings.FieldsSeq(arg) {
+			kw = strings.TrimSpace(kw)
+			if kw != "" {
+				keywords = append(keywords, kw)
+			}
+		}
+	}
+
+	ctx := cmd.Context()
+	results, err := history.SearchMessages(ctx, keywords, days, limit)
+	if err != nil {
+		return err
+	}
+
+	if len(results) == 0 {
+		outfmt.Println("没有找到匹配的消息。")
+		return nil
+	}
+
+	wrt := outfmt.NewTabwrt()
+	defer wrt.Flush()
+
+	for _, r := range results {
+		roleLabel := "🙋 用户"
+		if r.Message.Role == "assistant" {
+			roleLabel = "🤖 助手"
+		}
+		timeStr := history.FormatTime(r.Message.CreatedAt)
+		preview := history.Truncate(r.Message.Content, 120)
+
+		wrt.Println(
+			timeStr,
+			roleLabel,
+			r.ProjectPath,
+			preview,
+		)
+	}
+
+	return nil
 }

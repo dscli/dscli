@@ -1,6 +1,7 @@
-package recall
+package history
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -18,9 +19,10 @@ type Result struct {
 
 // SearchMessages 搜索消息，支持多关键词（空格分隔），按 LIKE 匹配
 // 只搜索 role=user 和 role=assistant(无tool_calls) 的消息
+// 仅搜索当前 session（对应当前项目）的消息，避免跨项目回忆
 // days: 搜索最近N天，<=0 表示不限时间
 // limit: 返回结果数量上限
-func SearchMessages(keywords []string, days int, limit int) ([]Result, error) {
+func SearchMessages(ctx context.Context, keywords []string, days int, limit int) ([]Result, error) {
 	if len(keywords) == 0 {
 		return nil, fmt.Errorf("至少需要一个搜索关键词")
 	}
@@ -31,13 +33,17 @@ func SearchMessages(keywords []string, days int, limit int) ([]Result, error) {
 	}
 	defer db.Close()
 
+	sessionID := GetCurrentSessionID(ctx)
+
 	// 构建 WHERE 条件
 	conditions := []string{
+		// 限定当前项目 session，避免跨项目回忆
+		`m.session_id = ?`,
 		// 只搜索 user 消息和助手总结（无 tool_calls 的 assistant 消息）
 		`(m.role = 'user' OR (m.role = 'assistant' AND (m.tool_calls IS NULL OR m.tool_calls = '' OR m.tool_calls = '[]')))`,
 	}
 
-	var args []any
+	args := []any{sessionID}
 
 	// 时间过滤（参数化查询，避免 SQL 注入）
 	if days > 0 {
