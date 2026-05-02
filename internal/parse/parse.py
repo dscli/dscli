@@ -10,7 +10,7 @@ import sys
 import json
 import ast
 import re
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 import traceback
 import importlib.util
 
@@ -1241,26 +1241,25 @@ class FileStructureParser:
                 if func_match and not in_function:
                     func_name = func_match.group(1)
                     # Check if it's a script-local function
-                    if func_name.startswith('s:'):
-                        func_type = 'script_function'
-                    else:
-                        func_type = 'function'
+                    func_type = 'script_function' if func_name.startswith('s:') else 'function'
 
                     # Vimscript functions end with 'endfunction'
                     in_function = True
                     current_function = func_name
+                    current_function_type = func_type
                     function_start_line = line_num
 
                 # Check for endfunction
                 if in_function and stripped_line == 'endfunction':
                     result['functions'].append({
                         'name': current_function,
-                        'type': 'function',
+                        'type': current_function_type,
                         'lineno': function_start_line,
                         'end_lineno': line_num
                     })
                     in_function = False
                     current_function = None
+                    current_function_type = None
 
                 # Parse command definitions
                 # Match: command! CommandName
@@ -1371,51 +1370,27 @@ class FileStructureParser:
         return result
 
     def _check_dependencies(self) -> bool:
-        required_deps = ['json', 're', 'ast', 'typing', 'traceback', 'importlib.util']
-
+        """Check required standard library dependencies using find_spec."""
+        required_deps = ['json', 're', 'ast', 'typing', 'traceback']
         for dep in required_deps:
-            try:
-                if dep == 'importlib.util':
-                    import importlib.util
-                elif dep == 'json':
-                    import json
-                elif dep == 're':
-                    import re
-                elif dep == 'ast':
-                    import ast
-                elif dep == 'typing':
-                    from typing import Dict, List, Any, Optional
-                elif dep == 'traceback':
-                    import traceback
-            except ImportError:
+            if importlib.util.find_spec(dep) is None:
                 return False
-
         return True
 
 
     def _get_enhanced_capabilities(self) -> List[str]:
-        """Get enhanced parsing capabilities based on available optional dependencies"""
+        """Get enhanced parsing capabilities based on available optional dependencies."""
         capabilities = []
-        try:
-            import astroid
+
+        if importlib.util.find_spec('astroid') is not None:
             capabilities.append('python_enhanced')
-        except ImportError:
-            pass
 
-        # Check for javalang (enhanced Java parsing)
-        try:
-            import javalang
+        if importlib.util.find_spec('javalang') is not None:
             capabilities.append('java_enhanced')
-        except ImportError:
-            pass
 
-        # Check for pycparser (enhanced C/C++ parsing)
-        try:
-            import pycparser
+        if importlib.util.find_spec('pycparser') is not None:
             capabilities.append('c_enhanced')
             capabilities.append('cpp_enhanced')
-        except ImportError:
-            pass
 
         return capabilities
 
