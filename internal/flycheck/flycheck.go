@@ -27,8 +27,6 @@ const (
 )
 
 // Checker defines a syntax checker for a specific language.
-// Each language can have multiple checkers (e.g. go: staticcheck, go vet, errcheck).
-// Checker defines a syntax checker for a specific language.
 // Each language can have multiple checkers (e.g. go: staticcheck, go vet; python: ruff, flake8).
 type Checker struct {
 	Name        string // e.g. "go-staticcheck"

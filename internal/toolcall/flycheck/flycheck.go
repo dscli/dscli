@@ -90,8 +90,12 @@ func handleFlycheck(ctx context.Context, args toolcall.ToolArgs) (result string,
 
 	// 语言不支持
 	if !checkResult.Supported {
-		result = fmt.Sprintf("ℹ️ flycheck 暂不支持 %s 语言（文件: %s）\n   目前支持 Go 和 Python 语言。如需支持其他语言请联系开发者。",
-			checkResult.Language, checkResult.Path)
+		kind := "文件"
+		if checkResult.Mode == "package" {
+			kind = "目录"
+		}
+		result = fmt.Sprintf("ℹ️ flycheck 暂不支持 %s 语言（%s: %s）\n   目前支持 Go 和 Python 语言。如需支持其他语言请联系开发者。",
+			checkResult.Language, kind, checkResult.Path)
 		return
 	}
 
@@ -111,8 +115,7 @@ func handleFlycheck(ctx context.Context, args toolcall.ToolArgs) (result string,
 	return
 }
 
-// formatPackageResult 以 Markdown 格式输出 Go 包检查结果。
-// formatPackageResult 以 Markdown 格式输出 Go 包检查结果。
+// formatPackageResult outputs package/directory check results in Markdown.
 // formatPackageResult outputs package/directory check results in Markdown.
 // Adapts terminology based on language: Go says "个包" and "编译错误",
 // Python says "个目录" and "静态错误".

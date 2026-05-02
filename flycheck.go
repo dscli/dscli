@@ -55,11 +55,14 @@ func flycheckRunEImpl(path string) error {
 		}
 		return err
 	}
-
 	// 语言不支持
 	if !result.Supported {
-		outfmt.Printf("ℹ️ flycheck 暂不支持 %s 语言（文件: %s）\n",
-			langDisplayName(result.Language), result.Path)
+		kind := "文件"
+		if result.Mode == "package" {
+			kind = "目录"
+		}
+		outfmt.Printf("ℹ️ flycheck 暂不支持 %s 语言（%s: %s）\n",
+			langDisplayName(result.Language), kind, result.Path)
 		outfmt.Println("   目前支持 Go 和 Python 语言。如需支持其他语言请联系开发者。")
 		return nil
 	}
