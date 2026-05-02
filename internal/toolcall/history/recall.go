@@ -16,14 +16,14 @@ func init() {
 		Name: "recall",
 		Description: `搜索当前项目的历史消息，支持多关键词（空格分隔，OR逻辑）。
 
-仅搜索 user 消息和助手总结（无工具调用的 assistant 消息），限定当前 session。
+仅搜索 user 消息和助手总结（无工具调用的 assistant 消息），限定当前项目。
 
 参数说明：
 - keywords: 搜索关键词，空格分隔，OR逻辑（匹配任一即返回），必需
 - days: 搜索最近N天的消息，默认30，可选
 - limit: 返回结果数量上限，默认5，可选
 
-返回结果包含时间、角色和内容预览。`,
+返回结果包含时间、角色和内容。`,
 		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",
@@ -94,9 +94,8 @@ func handleRecall(ctx context.Context, args toolcall.ToolArgs) (result string, s
 			roleLabel = "🤖 助手"
 		}
 		timeStr := history.FormatTime(r.Message.CreatedAt)
-		preview := history.Truncate(r.Message.Content, 120)
 
-		b.WriteString(fmt.Sprintf("%d. %s %s %s\n", i+1, timeStr, roleLabel, preview))
+		b.WriteString(fmt.Sprintf("%d. %s %s %s\n", i+1, timeStr, roleLabel, r.Message.Content))
 	}
 
 	result = b.String()
