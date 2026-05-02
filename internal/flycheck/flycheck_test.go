@@ -176,3 +176,92 @@ func TestFormatCheckerOutputWithErrors(t *testing.T) {
 		t.Error("expected urgent fix message")
 	}
 }
+// TestClassifyRuffOutput tests severity classification of ruff diagnostic lines.
+func TestClassifyRuffOutput(t *testing.T) {
+	tests := []struct {
+		name     string
+		line     string
+		expected IssueSeverity
+	}{
+		// Ruff E rules → error (pycodestyle)
+		{"E501 line too long", "script.py:3:5: E501 Line too long (89 > 88 characters)", SevError},
+		{"E302 missing blank lines", "script.py:10:1: E302 expected 2 blank lines, found 1", SevError},
+		// Ruff F rules → error (pyflakes)
+		{"F401 unused import", "script.py:1:1: F401 'os' imported but unused", SevError},
+		{"F841 unused variable", "script.py:5:4: F841 Local variable 'x' is assigned to but never used", SevError},
+		{"F821 undefined name", "script.py:8:1: F821 Undefined name 'foo'", SevError},
+		// Ruff W rules → warning
+		{"W291 trailing whitespace", "script.py:2:10: W291 Trailing whitespace", SevWarning},
+		// Ruff I rules → suggestion (isort)
+		{"I001 isort", "script.py:1:1: I001 Import block is un-sorted or un-formatted", SevSuggestion},
+		// Ruff UP rules → suggestion (pyupgrade)
+		{"UP004 useless inheritance", "script.py:12:1: UP004 Class 'A' inherits from 'object'", SevSuggestion},
+		// Ruff SIM rules → suggestion
+		{"SIM102 nested if", "script.py:15:5: SIM102 Use a single 'if' statement instead of nested 'if'", SevSuggestion},
+		// Ruff C4 rules → suggestion (comprehensions)
+		{"C400 list comprehension", "script.py:20:1: C400 Unnecessary generator - rewrite as a list comprehension", SevSuggestion},
+		// Ruff other rules → warning (default)
+		{"N801 class name", "script.py:3:6: N801 Class name 'myClass' should use CapWords convention", SevWarning},
+		{"RUF001 ambiguous unicode", "script.py:7:1: RUF001 String contains ambiguous unicode character", SevWarning},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := classifyIssueLine(tt.line)
+			if got != tt.expected {
+				t.Errorf("classifyIssueLine(%q) = %v, want %v", tt.line, got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestExtractRuffCode tests rule code extraction from ruff lines.
+func TestExtractRuffCode(t *testing.T) {
+	tests := []struct {
+		line     string
+		expected string
+	}{
+		{"script.py:1:1: F401 'os' imported but unused", "F401"},
+		{"path/to/file.py:10:5: E501 Line too long", "E501"},
+		{"app.py:5:2: W291 Trailing whitespace", "W291"},
+		{"src/utils.py:3:1: UP004 Class inherits from object", "UP004"},
+		{"mod.py:8:1: SIM102 Use single 'if'", "SIM102"},
+		// Non-ruff lines should return empty
+		{"file.go:10:1: syntax error: unexpected EOF (compile)", ""},
+		{"file.go:20:2: func unusedFunc is unused (U1000)", ""},
+		{"plain text without colons", ""},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.line[:min(len(tt.line), 30)], func(t *testing.T) {
+			got := extractRuffCode(tt.line)
+			if got != tt.expected {
+				t.Errorf("extractRuffCode(%q) = %q, want %q", tt.line, got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestClassifyRuffIssuesAndStats tests batch classification of ruff output.
+func TestClassifyRuffIssuesAndStats(t *testing.T) {
+	raw := `app.py:1:1: F401 'os' imported but unused
+app.py:3:5: E501 Line too long (95 > 88 characters)
+app.py:5:2: W291 Trailing whitespace
+app.py:10:1: UP004 Class 'A' inherits from 'object'
+app.py:15:5: SIM102 Use a single 'if' statement instead of nested 'if'`
+
+	issues := ClassifyIssues(raw)
+	if len(issues) != 5 {
+		t.Fatalf("expected 5 issues, got %d", len(issues))
+	}
+
+	stats := CountStats(issues)
+	if stats.Errors != 2 {
+		t.Errorf("expected 2 errors (F401 + E501), got %d", stats.Errors)
+	}
+	if stats.Warnings != 1 {
+		t.Errorf("expected 1 warning (W291), got %d", stats.Warnings)
+	}
+	if stats.Suggestions != 2 {
+		t.Errorf("expected 2 suggestions (UP004 + SIM102), got %d", stats.Suggestions)
+	}
+}

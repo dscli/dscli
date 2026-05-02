@@ -76,10 +76,10 @@ func TestHandleFlycheckOutputFormatting(t *testing.T) {
 	}
 }
 
-// TestPathNormalization verifies the path normalization logic.
+// TestPathNormalization verifies the path normalization logic matches flycheck.NormalizePath.
 func TestPathNormalization(t *testing.T) {
 	tests := []struct {
-		input    string
+		input        string
 		wantRecursive bool
 		wantPath     string
 	}{
@@ -93,19 +93,7 @@ func TestPathNormalization(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			path := strings.TrimPrefix(tt.input, "./")
-			path = strings.TrimRight(path, "/")
-
-			recursive := false
-			if strings.HasSuffix(path, "...") {
-				recursive = true
-				path = strings.TrimSuffix(path, "...")
-				path = strings.TrimRight(path, "/")
-				if path == "" {
-					path = "."
-				}
-			}
-
+			path, recursive := flycheck.NormalizePath(tt.input)
 			if recursive != tt.wantRecursive {
 				t.Errorf("recursive: got %v, want %v", recursive, tt.wantRecursive)
 			}

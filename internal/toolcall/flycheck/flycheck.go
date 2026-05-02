@@ -3,13 +3,10 @@ package flycheck
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/flycheck"
-	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
@@ -20,13 +17,17 @@ func init() {
 
 参数：
   path: 路径（必需），相对于项目根目录。支持三种模式：
-        - 文件：检查该文件所属的 Go 包（如 internal/flycheck/flycheck.go）
-        - 目录：检查该目录及其直接子目录中的所有 Go 包（如 internal/toolcall/）
-        - 递归：目录路径后缀 "..." 递归检查所有子包（如 internal/...）
+        - 文件：检查该文件（Go 文件检查所属包，Python 文件直接检查）
+        - 目录：检查该目录中的所有 Go 包或 Python 文件（如 internal/toolcall/）
+        - 递归：目录路径后缀 "..." 递归检查所有子包/文件（如 internal/...）
+
+支持语言：
+  Go     — staticcheck（自动发现包，包级检查）
+  Python — ruff（快速 linter，支持单文件和目录检查）
 
 工作原理：
-1. 解析路径模式，发现所有待检查的 Go 包
-2. 对每个包运行 staticcheck 检查器
+1. 解析路径模式，发现所有待检查的 Go 包或 Python 文件
+2. 对每个包/文件运行对应的检查器（staticcheck / ruff）
 3. 汇总所有问题并返回统计信息
 
 返回结果：
@@ -36,17 +37,21 @@ func init() {
 
 优势：
 1. 自动发现 unused import、unused variable 等静态分析问题
-2. 支持单文件、目录、递归三种粒度
-3. 返回统计信息帮助判断检查覆盖范围
+2. 支持 Go 和 Python 语言
+3. 支持单文件、目录、递归三种粒度
+4. 返回统计信息帮助判断检查覆盖范围
 
 示例：
-  # 检查单个文件所在包
+  # 检查 Go 文件所在包
   flycheck(path="internal/flycheck/flycheck.go")
 
-  # 检查目录下所有包
+  # 检查 Python 文件
+  flycheck(path="my_script.py")
+
+  # 检查目录下所有包/文件
   flycheck(path="internal/toolcall/")
 
-  # 递归检查所有子包
+  # 递归检查所有子包/文件
   flycheck(path="internal/...")`,
 		Strict: true,
 		Parameters: map[string]any{
@@ -72,133 +77,116 @@ func handleFlycheck(ctx context.Context, args toolcall.ToolArgs) (result string,
 		return
 	}
 
-	projectRoot := context.ProjectRoot
+	checkResult, checkErr := flycheck.CheckPath(ctx, path)
 
-	// Normalize path: strip "./" prefix, then trailing slashes (preserve "..." suffix)
-	// Use filepath.Clean to resolve ".." and redundant separators.
-	path = strings.TrimPrefix(path, "./")
-	path = strings.TrimRight(path, "/")
-	path = filepath.Clean(path)
-	if path == "." {
-		// filepath.Clean turns "./" into ".", keep it as "." for root
-	}
-	// Detect recursive mode: path ends with "..."
-	recursive := false
-	if strings.HasSuffix(path, "...") {
-		recursive = true
-		path = strings.TrimSuffix(path, "...")
-		path = strings.TrimRight(path, "/")
-		if path == "" {
-			path = "."
+	// 处理错误
+	if checkErr != nil {
+		if checkResult != nil && checkResult.Suggestion != "" {
+			suggestion = fmt.Sprintf("💡 %s\n\n%s", checkErr.Error(), checkResult.Suggestion)
 		}
-	}
-
-	// Resolve to absolute path, check existence
-	fullPath := filepath.Join(projectRoot, path)
-	fi, statErr := os.Stat(fullPath)
-	if statErr != nil {
-		err = fmt.Errorf("路径不存在: %s", path)
+		err = checkErr
 		return
 	}
 
-	// Determine package directories to check
-	var pkgDirs []string
+	// 语言不支持
+	if !checkResult.Supported {
+		result = fmt.Sprintf("ℹ️ flycheck 暂不支持 %s 语言（文件: %s）\n   目前支持 Go 和 Python 语言。如需支持其他语言请联系开发者。",
+			checkResult.Language, checkResult.Path)
+		return
+	}
 
-	if fi.IsDir() {
-		// Directory (or recursive): find all Go packages within
-		outfmt.Notice("Flycheck 扫描目录 \"%s\" (recursive=%v) ...", path, recursive)
-		pkgDirs = flycheck.FindGoPackages(path, recursive)
-		if len(pkgDirs) == 0 {
-			return "ℹ️ flycheck: 未找到任何 Go 包", "", nil
-		}
-	} else {
-		// Single file: check its parent package
-		outfmt.Notice("Flycheck 检查 \"%s\" ...", path)
-		pkgDir := filepath.Dir(path)
-		if pkgDir == "." {
-			pkgDirs = []string{"."}
+	// 非 Go/Python 目录检查 → 单文件检查
+	if checkResult.Mode == "file" {
+		if checkResult.RawOutput != "" {
+			result = fmt.Sprintf("> 检查文件: %s\n\n%s", checkResult.Path, checkResult.RawOutput)
 		} else {
-			pkgDirs = []string{pkgDir}
+			result = fmt.Sprintf("✅ flycheck: 检查了 %s，未发现问题", checkResult.Path)
 		}
+		return
 	}
 
-	// Run flycheck on each package directory
-	var allIssues []flycheck.ClassifiedIssue
-	var failedPkgs []string
-	totalFiles := 0
 
-	for _, pkgDir := range pkgDirs {
-		absDir := filepath.Join(projectRoot, pkgDir)
-		nFiles := flycheck.CountGoFiles(absDir)
-		totalFiles += nFiles
+	// 包/目录检查 → Markdown 格式化
+	result = formatPackageResult(checkResult)
+	return
+}
 
-		_, issues, installHint, checkErr := flycheck.FlycheckDir(ctx, pkgDir)
-		if checkErr != nil {
-			if installHint != "" {
-				// Install hint: return immediately
-				suggestion = fmt.Sprintf("💡 %s\n\n%s", checkErr.Error(), installHint)
-				return "", suggestion, checkErr
-			}
-			failedPkgs = append(failedPkgs, pkgDir)
-			continue
-		}
-
-		allIssues = append(allIssues, issues...)
+// formatPackageResult 以 Markdown 格式输出 Go 包检查结果。
+// formatPackageResult 以 Markdown 格式输出 Go 包检查结果。
+// formatPackageResult outputs package/directory check results in Markdown.
+// Adapts terminology based on language: Go says "个包" and "编译错误",
+// Python says "个目录" and "静态错误".
+func formatPackageResult(r *flycheck.CheckResult) string {
+	// Choose terminology based on language
+	unitWord := "个包"
+	errKindWord := "编译错误"
+	if r.Language == "python" {
+		unitWord = "个文件"
+		errKindWord = "静态错误"
 	}
-
-	// Compute overall stats
-	stats := flycheck.CountStats(allIssues)
-
-	// Build final response with severity-aware formatting
-	pkgWord := "个包"
 	fileWord := "个文件"
+	var b strings.Builder
 
-	if len(allIssues) > 0 {
-		var b strings.Builder
-
-		// Prominent header with emoji based on severity
-		if stats.Errors > 0 {
-			b.WriteString("## ❌ flycheck 发现编译错误 — 必须立即修复！\n\n")
+	if len(r.Issues) > 0 {
+		// Header
+		if r.Stats.Errors > 0 {
+			b.WriteString(fmt.Sprintf("## ❌ flycheck 发现%s — 必须立即修复！\n\n", errKindWord))
 			b.WriteString(fmt.Sprintf("> 检查了 **%d %s**（**%d %s**），发现：\n",
-				len(pkgDirs), pkgWord, totalFiles, fileWord))
-			b.WriteString(fmt.Sprintf("> ❌ **%d** 个编译错误", stats.Errors))
-			if stats.Warnings > 0 {
-				b.WriteString(fmt.Sprintf(" / ⚠️ **%d** 个警告", stats.Warnings))
+				r.NPkgs, unitWord, r.NFiles, fileWord))
+			b.WriteString(fmt.Sprintf("> ❌ **%d** %s", r.Stats.Errors, errKindWord))
+			if r.Stats.Warnings > 0 {
+				b.WriteString(fmt.Sprintf(" / ⚠️ **%d** 个警告", r.Stats.Warnings))
 			}
-			if stats.Suggestions > 0 {
-				b.WriteString(fmt.Sprintf(" / 💡 **%d** 个建议", stats.Suggestions))
+			if r.Stats.Suggestions > 0 {
+				b.WriteString(fmt.Sprintf(" / 💡 **%d** 个建议", r.Stats.Suggestions))
 			}
 			b.WriteString("\n\n")
 		} else {
 			b.WriteString("## ⚠️ flycheck 发现问题\n\n")
 			b.WriteString(fmt.Sprintf("> 检查了 **%d %s**（**%d %s**），发现：\n",
-				len(pkgDirs), pkgWord, totalFiles, fileWord))
-			b.WriteString(fmt.Sprintf("> ⚠️ **%d** 个警告", stats.Warnings))
-			if stats.Suggestions > 0 {
-				b.WriteString(fmt.Sprintf(" / 💡 **%d** 个建议", stats.Suggestions))
+				r.NPkgs, unitWord, r.NFiles, fileWord))
+			b.WriteString(fmt.Sprintf("> ⚠️ **%d** 个警告", r.Stats.Warnings))
+			if r.Stats.Suggestions > 0 {
+				b.WriteString(fmt.Sprintf(" / 💡 **%d** 个建议", r.Stats.Suggestions))
 			}
 			b.WriteString("\n\n")
 		}
 
-		// Each issue with severity prefix and code block wrapping
+		// Issues in code block
 		b.WriteString("```\n")
-		for _, iss := range allIssues {
+		for _, iss := range r.Issues {
 			b.WriteString(iss.Severity.String())
 			b.WriteString(" ")
 			b.WriteString(iss.Line)
 			b.WriteString("\n")
 		}
 		b.WriteString("```\n")
-
-		result = b.String()
-	} else if len(failedPkgs) > 0 {
-		result = fmt.Sprintf("⚠️ flycheck: 检查了 %d %s（%d %s），%d 个包检查失败: %s",
-			len(pkgDirs)-len(failedPkgs), pkgWord, totalFiles, fileWord,
-			len(failedPkgs), strings.Join(failedPkgs, ", "))
-	} else {
-		result = fmt.Sprintf("✅ flycheck: 检查了 %d %s（%d %s），未发现问题",
-			len(pkgDirs), pkgWord, totalFiles, fileWord)
 	}
 
-	return
+	// 报告失败的包（即使已有问题也显示）
+	if len(r.FailedPkgs) > 0 {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		failWord := "个包"
+		if r.Language == "python" {
+			failWord = "个目录"
+		}
+		b.WriteString(fmt.Sprintf("> ⚠️ **%d %s检查失败：**\n", len(r.FailedPkgs), failWord))
+		for i, pkg := range r.FailedPkgs {
+			info := ""
+			if i < len(r.FailedInfos) {
+				info = " — " + r.FailedInfos[i]
+			}
+			b.WriteString(fmt.Sprintf("> - `%s`%s\n", pkg, info))
+		}
+	}
+
+	// 全部成功
+	if b.Len() == 0 {
+		b.WriteString(fmt.Sprintf("✅ flycheck: 检查了 %d %s（%d %s），未发现问题",
+			r.NPkgs, unitWord, r.NFiles, fileWord))
+	}
+
+	return b.String()
 }
