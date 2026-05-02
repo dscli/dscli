@@ -7,7 +7,7 @@ import (
 
 var (
 	// Version information - set via ldflags during build
-	Version = "0.7.4"
+	Version = "0.7.5"
 	Build   = ""
 )
 
