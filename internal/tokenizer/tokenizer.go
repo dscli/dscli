@@ -21,9 +21,10 @@ var (
 // ensureInit loads the gse Chinese dictionary once.
 func ensureInit() {
 	segOnce.Do(func() {
-		// Load embedded simplified + traditional Chinese dictionary.
-		// gse default dictionary covers ~150k words.
-		if err := seg.LoadDictEmbed("zh"); err != nil {
+		// Load embedded simplified Chinese dictionary (~100k words).
+		// "zh_s" is simplified-only, half the size of "zh" (simplified+traditional).
+		// Loading time: ~1.4s vs ~2.6s for "zh".
+		if err := seg.LoadDictEmbed("zh_s"); err != nil {
 			// Fallback: try without embed (custom dict path env).
 			if err2 := seg.LoadDict(); err2 != nil {
 				panic("tokenizer: failed to load gse dictionary: " + err.Error() + "; " + err2.Error())

@@ -9,7 +9,7 @@ import (
 // TestWechatCommand 简单粗暴的测试：验证wechat命令及其所有子命令都存在
 func TestWechatCommand(t *testing.T) {
 	// 执行 dscli wechat --help 命令
-	cmd := exec.Command("go", "run", "./...", "wechat", "--help")
+	cmd := exec.Command("go", "run", ".", "wechat", "--help")
 	outputBytes, err := cmd.CombinedOutput()
 	output := string(outputBytes)
 
