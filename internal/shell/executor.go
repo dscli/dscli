@@ -218,27 +218,6 @@ func getAllowedCommands() []string {
 	return allCommands
 }
 
-// ShellExecConfig 在 Shell 执行上下文中创建配置
-func ShellExecConfig(ctx context.Context) *Config {
-	projectRoot := context.ProjectRoot
-	if projectRoot == "" {
-		panic("project root not set")
-	}
-
-	isTesting := context.IsTesting()
-	config := DefaultConfig(ctx)
-
-	// 使用完整的允许命令列表
-	config.SandboxConfig.AllowedCommands = getAllowedCommands()
-
-	config.SandboxConfig.AllowedPaths = append(config.SandboxConfig.AllowedPaths, projectRoot)
-	config.WorkingDir = projectRoot
-	config.Timeout = 60 * time.Second
-	config.SandboxMode = isTesting
-	config.EnvVars = append(os.Environ(), "InsideShellExec=1")
-	return config
-}
-
 // NewExecutor 创建新的执行器
 func NewExecutor(ctx context.Context, config *Config) *Executor {
 	if config == nil {

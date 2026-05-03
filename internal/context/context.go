@@ -25,7 +25,6 @@ var (
 	ShellArgsKey          = ContextKeyType[[]string]{"ShellArgs"}
 	ShellStdinKey         = ContextKeyType[io.Reader]{"ShellStdin"}
 	InputContentKey       = ContextKeyType[string]{"InputContent"}
-	InsideShellExecKey    = ContextKeyType[bool]{"InsideShellExec"}
 	StreamKey             = ContextKeyType[bool]{"Stream"}
 	LeftTokensKey         = ContextKeyType[int]{"LeftTokens"}
 	WechatFormatKey       = ContextKeyType[string]{"WechatFormat"}

@@ -2,6 +2,8 @@ package session
 
 import (
 	"database/sql"
+	"sync"
+	"sync/atomic"
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/sqlite"
@@ -18,19 +20,19 @@ func init() {
 		)`)
 }
 
-var currentSessionID int64
+var currentSessionID atomic.Int64
+var sessionOnce sync.Once
 
+// GetCurrentSessionID 获取当前会话ID（线程安全，仅初始化一次）
 func GetCurrentSessionID(ctx context.Context) (sessionID int64) {
-	if currentSessionID != 0 {
-		sessionID = currentSessionID
-		return
-	}
-	sessionID, err := CreateOrGetSessionID(ctx)
-	if err != nil {
-		panic(err)
-	}
-	currentSessionID = sessionID
-	return
+	sessionOnce.Do(func() {
+		id, err := CreateOrGetSessionID(ctx)
+		if err != nil {
+			panic(err)
+		}
+		currentSessionID.Store(id)
+	})
+	return currentSessionID.Load()
 }
 
 // CreateOrGetSessionID 获取或创建会话ID

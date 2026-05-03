@@ -46,8 +46,6 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 		return
 	}
 	ctx = context.WithValue(ctx, context.CurrentModelIDKey, modelID)
-	// InsideShellExec
-	ctx = context.WithValue(ctx, context.InsideShellExecKey, os.Getenv("InsideShellExec") == "1")
 
 	tools := alltools.GetAllTools(ctx)
 	tokens := 0

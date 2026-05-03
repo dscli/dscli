@@ -16,18 +16,6 @@ var (
 	dbPath = func() string {
 		configDir := config.ConfigDir
 		isTesting := context.IsTesting()
-		insideShellExec := os.Getenv("InsideShellExec")
-
-		// InsideShellExec: 按进程隔离的临时数据库，用于 shell 执行
-		if insideShellExec != "" {
-			dir := filepath.Join(configDir, "inside-shell-exec")
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				panic(err)
-			}
-			name := filepath.Base(os.Args[0])
-			pid := os.Getpid()
-			return filepath.Join(dir, fmt.Sprintf("%s-%d.db", name, pid))
-		}
 
 		// 测试环境：使用临时目录数据库，避免污染生产数据
 		if isTesting {

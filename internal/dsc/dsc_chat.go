@@ -18,20 +18,7 @@ func (c *Deepseek) Chat(ctx context.Context, messages []prompt.Message, tools []
 		}
 	}
 	model := context.ContextValue(ctx, context.CurrentModelNameKey, context.ModelDeepseekChat)
-	insideShellExec := context.ContextValue(ctx, context.InsideShellExecKey, false)
 	stream := context.ContextValue(ctx, context.StreamKey, false)
-
-	// 如果是streaming请求，即使InsideShellExec为true也测试streaming逻辑
-	if insideShellExec && !stream {
-		return &ChatResponse{
-			ID: "id",
-			Choices: []Choice{
-				{
-					Message: prompt.Message{Role: "assistant", Content: "yes, here I heard"},
-				},
-			},
-		}, nil
-	}
 
 	// 如果是streaming请求，使用streaming处理
 	if stream {

@@ -4,7 +4,6 @@ package ask
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -14,9 +13,6 @@ import (
 
 // TestCodeReviewToolStructure tests the basic structure of the code review tool
 func TestCodeReviewToolStructure(t *testing.T) {
-	if os.Getenv("InsideShellExec") != "" {
-		t.SkipNow()
-	}
 
 	// Verify the tool definition exists
 	if codeReviewTool.Name != "code_review" {
@@ -55,9 +51,6 @@ func TestCodeReviewToolStructure(t *testing.T) {
 
 // TestHandleCodeReviewFunction tests that the handler function exists
 func TestHandleCodeReviewFunction(t *testing.T) {
-	if os.Getenv("InsideShellExec") != "" {
-		t.SkipNow()
-	}
 
 	// This is a simple test to verify the function signature
 	// We can't easily test the actual execution without mocking external dependencies
@@ -77,9 +70,7 @@ func TestHandleCodeReviewFunction(t *testing.T) {
 
 // TestErrorMessages tests error message format
 func TestErrorMessages(t *testing.T) {
-	if os.Getenv("InsideShellExec") != "" {
-		t.SkipNow()
-	}
+	// Test the error message format that would be returned
 	// Test the error message format that would be returned
 	testCases := []struct {
 		name          string
