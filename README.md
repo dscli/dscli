@@ -74,7 +74,7 @@ dscli    +---------------+
 ### 安装
 ```bash
 # 方式1：使用 go install（推荐）
-go install gitcode.com/dscli/dscli@v0.7.6
+go install gitcode.com/dscli/dscli@latest
 
 # 方式2：从源码构建
 git clone https://gitcode.com/dscli/dscli.git
