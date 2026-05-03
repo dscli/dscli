@@ -60,12 +60,17 @@ func TestHandleCodeReviewFunction(t *testing.T) {
 
 	// The function should exist and be callable
 	// Note: We're not checking the actual return value since it depends on Git state
-	_, _, err := handleCodeReview(ctx, args)
-	// We expect an error if there are uncommitted changes or no commits
-	// But we don't fail the test based on the error since it's environment-dependent
+	result, _, err := handleCodeReview(ctx, args)
 	if err != nil {
-		t.Logf("handleCodeReview returned error (expected in test environment): %v", err)
+		// Git environment errors (uncommitted changes / no commits) are expected, not a test failure.
+		t.Logf("handleCodeReview returned error (expected): %v", err)
+	} else {
+		// Success path: verify the mock was invoked.
+		if !strings.Contains(result, "[MOCK]") {
+			t.Fatalf("expected [MOCK] in result, got: %s", result)
+		}
 	}
+
 }
 
 // TestErrorMessages tests error message format
