@@ -11,7 +11,11 @@ import (
 	"gitcode.com/dscli/dscli/internal/prompt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
-
+// 防止 recall 结果撑爆 LLM 上下文
+const (
+	maxRecallContentRunes = 2000 // 单条消息截断上限
+	maxRecallResults      = 10   // 单次返回结果上限
+)
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "recall",
@@ -86,17 +90,27 @@ func handleRecall(ctx context.Context, args toolcall.ToolArgs) (result string, s
 		return
 	}
 
-	// 格式化结果
+	// 格式化结果（每条截断 + 总数限制，防止撑爆 LLM 上下文）
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("找到 **%d** 条相关历史消息：\n\n", len(results)))
 	for i, r := range results {
+		if i >= maxRecallResults {
+			b.WriteString(fmt.Sprintf("\n（还有 %d 条结果未显示，可缩小搜索范围或指定 limit）",
+				len(results)-maxRecallResults))
+			break
+		}
 		roleLabel := "🙋 用户"
 		if r.Message.Role == "assistant" {
 			roleLabel = "🤖 助手"
 		}
 		timeStr := prompt.FormatTime(r.Message.CreatedAt)
 
-		b.WriteString(fmt.Sprintf("%d. %s %s %s\n", i+1, timeStr, roleLabel, r.Message.Content))
+		content := r.Message.Content
+		if runes := []rune(content); len(runes) > maxRecallContentRunes {
+			content = string(runes[:maxRecallContentRunes]) + "..."
+		}
+
+		b.WriteString(fmt.Sprintf("%d. %s %s %s\n", i+1, timeStr, roleLabel, content))
 	}
 
 	result = b.String()

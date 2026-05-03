@@ -10,6 +10,12 @@ import (
 	"gitcode.com/dscli/dscli/internal/sqlite"
 )
 
+// MaxNoteContentLen 笔记内容最大长度（rune），供 tool handler 参考
+const MaxNoteContentLen = 40
+
+// defaultNoteDays 加载笔记默认天数
+const defaultNoteDays = 30
+
 // Note 对话笔记，用于跨对话记忆
 type Note struct {
 	ID        int64
@@ -30,16 +36,16 @@ func init() {
 	)
 }
 
-// SaveNote 保存一条对话笔记（限制40字以内）
+// SaveNote 保存一条对话笔记（限制 MaxNoteContentLen 字以内）
 func SaveNote(ctx context.Context, content string) error {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return fmt.Errorf("笔记内容不能为空")
 	}
-	// 按 rune 截断到 40 字
+	// 按 rune 截断
 	runes := []rune(content)
-	if len(runes) > 40 {
-		content = string(runes[:40])
+	if len(runes) > MaxNoteContentLen {
+		content = string(runes[:MaxNoteContentLen])
 	}
 
 	sessionID := session.GetCurrentSessionID(ctx)
@@ -103,9 +109,9 @@ func FormatTime(t time.Time) string {
 	return t.Format("2006-01-02 15:04")
 }
 
+// BuildNotePrompt 从近期笔记构建记忆线索提示词
 func BuildNotePrompt(ctx context.Context) string {
-	// 加载近期笔记作为记忆线索
-	if notes, noteErr := LoadNotes(ctx, 30); noteErr == nil && len(notes) > 0 {
+	if notes, noteErr := LoadNotes(ctx, defaultNoteDays); noteErr == nil && len(notes) > 0 {
 		var b strings.Builder
 		b.WriteString("## 📝 近期对话笔记\n")
 		b.WriteString("以下是此前对话中记录的关键摘要，可作为回忆线索：\n\n")

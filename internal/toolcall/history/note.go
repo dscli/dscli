@@ -44,9 +44,10 @@ func handleNote(ctx context.Context, args toolcall.ToolArgs) (result string, sug
 		return
 	}
 
-	// 警告超过 40 字（实际 SaveNote 也会截断）
-	if len([]rune(content)) > 40 {
-		suggestion = "笔记超过40字已自动截断。下次请控制在40字以内。"
+	// 警告超过限制（实际 SaveNote 也会截断）
+	if len([]rune(content)) > prompt.MaxNoteContentLen {
+		suggestion = fmt.Sprintf("笔记超过%d字已自动截断。下次请控制在%d字以内。",
+			prompt.MaxNoteContentLen, prompt.MaxNoteContentLen)
 	}
 
 	if saveErr := prompt.SaveNote(ctx, content); saveErr != nil {

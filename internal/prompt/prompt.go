@@ -130,20 +130,21 @@ func GetDefaultPromptTemplate(model string) string {
 }
 
 // newPromptTemplate 获取指定模型的模板
+// newPromptTemplate 获取指定模型的模板
+// 对未知 modelID 默认返回 chat 模板，避免 nil pointer。
 func newPromptTemplate(modelID int64) *promptTemplate {
 	switch modelID {
-	case context.DeepseekChat:
-		return &promptTemplate{
-			Name:     context.ModelDeepseekChat,
-			Template: GetPromptTemplate("chat"),
-		}
 	case context.DeepseekReasoner:
 		return &promptTemplate{
 			Name:     context.ModelDeepseekReasoner,
 			Template: GetPromptTemplate("reasoner"),
 		}
 	default:
-		return nil
+		// DeepseekChat (0) 或未知 modelID 统一使用 chat 模板
+		return &promptTemplate{
+			Name:     context.ModelDeepseekChat,
+			Template: GetPromptTemplate("chat"),
+		}
 	}
 }
 
@@ -163,11 +164,16 @@ func (t *promptTemplate) Render(data *promptConfig) (string, error) {
 }
 
 // GeneratePromptWithTemplate 使用模板生成提示词
+// GeneratePromptWithTemplate 使用模板生成提示词
 func (c *promptConfig) GeneratePromptWithTemplate() string {
-	template := newPromptTemplate(c.ModelID)
-	data := c
+	tmpl := newPromptTemplate(c.ModelID)
+	if tmpl == nil {
+		// 防御性编程：理论上 newPromptTemplate 不再返回 nil，
+		// 但保留此检查以防未来重构引入 bug
+		panic("prompt: newPromptTemplate returned nil — this is a bug")
+	}
 
-	prompt, err := template.Render(data)
+	prompt, err := tmpl.Render(c)
 	if err != nil {
 		panic(err)
 	}
