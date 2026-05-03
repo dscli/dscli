@@ -59,9 +59,19 @@ var askExpertTool = toolcall.ToolDef{
 	Handler:  handleAskExpert,
 }
 
+// dscliCmd 是调用 dscli 的命令字符串。
+// 测试环境下自动替换为 echo，避免每次测试触发 ~60s 的 AI 推理模型调用。
+var dscliCmd = "dscli"
+
 func init() {
 	if context.ReasonerModelOK() {
 		toolcall.RegisterTool(askExpertTool)
+	}
+
+	// 测试优化：用 echo 替代 dscli 调用，跳过耗时的 AI 推理。
+	// context.IsTesting() 通过 os.Args[0] 是否以 ".test" 结尾判断。
+	if context.IsTesting() {
+		dscliCmd = "echo '[MOCK]'"
 	}
 }
 
@@ -175,7 +185,7 @@ func AskExpert(ctx context.Context, input string) (reply string, err error) {
 		return "", fmt.Errorf("关闭临时文件失败: %w", err)
 	}
 
-	script := fmt.Sprintf(`dscli chat --no-color --no-timestamp --histsize 0 --model %s --input %s`,
+	script := fmt.Sprintf(`%s chat --no-color --no-timestamp --histsize 0 --model %s --input %s`, dscliCmd,
 		context.ModelDeepseekReasoner, tmpPath)
 	reply, err = shell.SimpleExecute(ctx, script)
 	return

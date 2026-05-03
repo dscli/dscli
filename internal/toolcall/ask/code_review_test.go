@@ -71,7 +71,6 @@ func TestHandleCodeReviewFunction(t *testing.T) {
 // TestErrorMessages tests error message format
 func TestErrorMessages(t *testing.T) {
 	// Test the error message format that would be returned
-	// Test the error message format that would be returned
 	testCases := []struct {
 		name          string
 		gitStatus     string
