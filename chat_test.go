@@ -9,6 +9,7 @@ import (
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/dsc"
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/prompt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
@@ -127,6 +128,6 @@ func (m *MockDeepseekClient) FIM(ctx context.Context, prompt, suffix string, max
 	return nil, nil
 }
 
-func (m *MockDeepseekClient) Chat(ctx context.Context, messages []toolcall.Message, tools []toolcall.Tool) (*dsc.ChatResponse, error) {
+func (m *MockDeepseekClient) Chat(ctx context.Context, messages []prompt.Message, tools []toolcall.Tool) (*dsc.ChatResponse, error) {
 	return nil, nil
 }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/history"
+	"gitcode.com/dscli/dscli/internal/prompt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
@@ -93,7 +94,7 @@ func handleRecall(ctx context.Context, args toolcall.ToolArgs) (result string, s
 		if r.Message.Role == "assistant" {
 			roleLabel = "🤖 助手"
 		}
-		timeStr := history.FormatTime(r.Message.CreatedAt)
+		timeStr := prompt.FormatTime(r.Message.CreatedAt)
 
 		b.WriteString(fmt.Sprintf("%d. %s %s %s\n", i+1, timeStr, roleLabel, r.Message.Content))
 	}

@@ -10,7 +10,7 @@ import (
 	"gitcode.com/dscli/dscli/internal/editor"
 	"gitcode.com/dscli/dscli/internal/history"
 	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"gitcode.com/dscli/dscli/internal/prompt"
 	"github.com/spf13/cobra"
 )
 
@@ -121,7 +121,7 @@ func historyEditRunE(cmd *cobra.Command, args []string) (err error) {
 	case "tool_calls":
 		tcs := message.ToolCalls
 		if len(tcs) == 0 {
-			tcs = append(tcs, toolcall.ToolCall{})
+			tcs = append(tcs, prompt.ToolCall{})
 		}
 		tc := tcs[0]
 		arguments := tc.Function.Arguments
@@ -130,7 +130,7 @@ func historyEditRunE(cmd *cobra.Command, args []string) (err error) {
 			return
 		}
 		tc.Function.Arguments = arguments
-		tcs = []toolcall.ToolCall{tc}
+		tcs = []prompt.ToolCall{tc}
 		err = history.UpdateToolCalls(ctx, int64(id), tcs)
 		if err != nil {
 			return
@@ -180,14 +180,14 @@ func historyListRunE(cmd *cobra.Command, args []string) (err error) {
 	for _, hist := range history {
 		switch filter {
 		case "all":
-			wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, toolcall.ToolCallsID(hist.ToolCalls), fmt.Sprint(hist.OK))
+			wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, prompt.ToolCallsID(hist.ToolCalls), fmt.Sprint(hist.OK))
 		case "true":
 			if hist.OK {
-				wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, toolcall.ToolCallsID(hist.ToolCalls), fmt.Sprint(hist.OK))
+				wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, prompt.ToolCallsID(hist.ToolCalls), fmt.Sprint(hist.OK))
 			}
 		default:
 			if !hist.OK {
-				wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, toolcall.ToolCallsID(hist.ToolCalls), fmt.Sprint(hist.OK))
+				wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, prompt.ToolCallsID(hist.ToolCalls), fmt.Sprint(hist.OK))
 			}
 		}
 	}
@@ -210,7 +210,7 @@ func historyLoadRunE(cmd *cobra.Command, args []string) (err error) {
 		role := hist.Role
 		pass := true
 		if role == "assistant" {
-			toolCallID := toolcall.ToolCallsID(hist.ToolCalls)
+			toolCallID := prompt.ToolCallsID(hist.ToolCalls)
 			if toolCallID != "" {
 				nextToolCallID := history[i+1].ToolCallID
 				if toolCallID != nextToolCallID {
@@ -220,14 +220,14 @@ func historyLoadRunE(cmd *cobra.Command, args []string) (err error) {
 		}
 		switch filter {
 		case "all":
-			wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, toolcall.ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
+			wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, prompt.ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
 		case "true":
 			if pass {
-				wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, toolcall.ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
+				wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, prompt.ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
 			}
 		default:
 			if !pass {
-				wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, toolcall.ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
+				wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, prompt.ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
 			}
 
 		}
@@ -237,14 +237,14 @@ func historyLoadRunE(cmd *cobra.Command, args []string) (err error) {
 	hist := history[len(history)-1]
 	switch filter {
 	case "all":
-		wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, toolcall.ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
+		wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, prompt.ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
 	case "true":
 		if pass {
-			wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, toolcall.ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
+			wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, prompt.ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
 		}
 	default:
 		if !pass {
-			wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, toolcall.ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
+			wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, prompt.ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
 		}
 	}
 	return
@@ -294,7 +294,7 @@ func recallSearchRunE(cmd *cobra.Command, args []string) (err error) {
 		if r.Message.Role == "assistant" {
 			roleLabel = "🤖 助手"
 		}
-		timeStr := history.FormatTime(r.Message.CreatedAt)
+		timeStr := prompt.FormatTime(r.Message.CreatedAt)
 		preview := history.Truncate(r.Message.Content, 120)
 
 		wrt.Println(

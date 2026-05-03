@@ -13,6 +13,7 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/config"
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/skills"
 )
 
 //go:embed chat.md
@@ -291,4 +292,27 @@ func (c *promptConfig) detectProjectType() string {
 	}
 
 	return "通用项目"
+}
+
+// LoadPrompts loads the system prompt combined with skill prompts.
+func LoadPrompts(ctx context.Context) ([]Message, error) {
+	systemPrompt := GetSystemPrompt(ctx)
+	skillPrompt := skills.BuildSkillPrompt(ctx)
+
+	content := systemPrompt
+	if skillPrompt != "" {
+		content += "\n\n"
+		content += skillPrompt
+	}
+
+	notePrompt := BuildNotePrompt(ctx)
+	if notePrompt != "" {
+		content += "\n\n"
+		content += notePrompt
+	}
+
+	return []Message{{
+		Role:    "system",
+		Content: content,
+	}}, nil
 }

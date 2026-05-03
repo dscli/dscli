@@ -7,13 +7,13 @@ import (
 	"strings"
 	"time"
 
+	"gitcode.com/dscli/dscli/internal/prompt"
 	"gitcode.com/dscli/dscli/internal/sqlite"
-	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 // Result 搜索结果
 type Result struct {
-	Message     toolcall.Message
+	Message     prompt.Message
 	ProjectPath string
 }
 
@@ -105,18 +105,6 @@ func SearchMessages(ctx context.Context, keywords []string, days int, limit int)
 	}
 
 	return results, nil
-}
-
-// FormatTime 格式化时间为简短形式
-func FormatTime(t time.Time) string {
-	now := time.Now()
-	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
-		return t.Format("15:04")
-	}
-	if t.Year() == now.Year() {
-		return t.Format("01-02 15:04")
-	}
-	return t.Format("2006-01-02 15:04")
 }
 
 // Truncate 截断内容用于预览

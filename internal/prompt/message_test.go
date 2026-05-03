@@ -1,4 +1,4 @@
-package toolcall
+package prompt
 
 import "testing"
 

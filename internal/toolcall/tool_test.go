@@ -3,6 +3,8 @@ package toolcall
 import (
 	"encoding/json"
 	"testing"
+
+	"gitcode.com/dscli/dscli/internal/prompt"
 )
 
 // TestRegisterToolAndGetAllTools 测试工具注册和获取
@@ -46,7 +48,7 @@ func TestToolCallsUnmarshal(t *testing.T) {
 		`"type":"function","function":{"name":"git","arguments":"{\"command\": ` +
 		`\"commit\", \"args\": [\"-m\",\"fix(git): improve args/arguments ` +
 		`parameter handling logic\"]}"}}]`)
-	tcs := []ToolCall{}
+	tcs := []prompt.ToolCall{}
 
 	err := json.Unmarshal(data, &tcs)
 	if err != nil {

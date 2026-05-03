@@ -1,4 +1,4 @@
-package toolcall
+package prompt
 
 import (
 	"database/sql"
@@ -8,6 +8,7 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/session"
 	"gitcode.com/dscli/dscli/internal/sqlite"
 )
 
@@ -24,6 +25,17 @@ type Message struct {
 	CreatedAt        time.Time  `json:"-"`
 	tokens           int        `json:"-"`
 	OK               bool       `json:"-"`
+}
+
+type ToolCall struct {
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Function ToolCallFunction `json:"function"`
+}
+
+type ToolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"` // JSON 字符串
 }
 
 func (m *Message) GetTokens() int {
@@ -78,7 +90,7 @@ func ToolCallsID(tcs []ToolCall) string {
 
 // SaveMessages 保存消息（事务）
 func SaveMessages(ctx context.Context, msgs ...Message) error {
-	sessionID := GetCurrentSessionID(ctx)
+	sessionID := session.GetCurrentSessionID(ctx)
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	db, err := sqlite.OpenDB()
 	if err != nil {

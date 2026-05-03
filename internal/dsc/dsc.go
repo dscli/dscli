@@ -6,19 +6,20 @@ import (
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/prompt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 // ChatRequest 扩展，支持 tools
 // ChatRequest 扩展，支持 tools
 type ChatRequest struct {
-	Model           string             `json:"model"`
-	Messages        []toolcall.Message `json:"messages"`
-	Tools           []toolcall.Tool    `json:"tools,omitempty"`
-	Stream          bool               `json:"stream"`
-	MaxTokens       int                `json:"max_tokens,omitempty"`
-	Thinking        Thinking           `json:"thinking"`
-	ReasoningEffort string             `json:"reasoning_effort,omitempty"`
+	Model           string           `json:"model"`
+	Messages        []prompt.Message `json:"messages"`
+	Tools           []toolcall.Tool  `json:"tools,omitempty"`
+	Stream          bool             `json:"stream"`
+	MaxTokens       int              `json:"max_tokens,omitempty"`
+	Thinking        Thinking         `json:"thinking"`
+	ReasoningEffort string           `json:"reasoning_effort,omitempty"`
 }
 
 type Thinking struct {
@@ -48,7 +49,7 @@ type ChatResponse struct {
 }
 
 type Choice struct {
-	Message      toolcall.Message `json:"message"`
+	Message      prompt.Message `json:"message"`
 	FinishReason string           `json:"finish_reason"`
 }
 
@@ -80,7 +81,7 @@ type Client interface {
 	Models() (*ModelsResponse, error)
 	Balance() (*BalanceResponse, error)
 	FIM(ctx context.Context, prompt, suffix string, maxTokens int, temperature float64) (*FIMResponse, error)
-	Chat(ctx context.Context, messages []toolcall.Message, tools []toolcall.Tool) (*ChatResponse, error)
+	Chat(ctx context.Context, messages []prompt.Message, tools []toolcall.Tool) (*ChatResponse, error)
 }
 
 func NewClient(apiKey, baseURL string) Client {

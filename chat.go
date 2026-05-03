@@ -13,6 +13,7 @@ import (
 	"gitcode.com/dscli/dscli/internal/dsc"
 	"gitcode.com/dscli/dscli/internal/history"
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/prompt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 	"gitcode.com/dscli/dscli/internal/toolcall/alltools"
 	"github.com/spf13/cobra"
@@ -53,7 +54,7 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 	for _, tool := range tools {
 		tokens += tool.GetTokens()
 	}
-	prompts, err := toolcall.LoadPrompts(ctx)
+	prompts, err := prompt.LoadPrompts(ctx)
 	if err != nil {
 		return
 	}
@@ -115,7 +116,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		ctx = context.WithValue(ctx, context.StartBalanceKey, startBalance)
 	}
 
-	prompts, err := toolcall.LoadPrompts(ctx)
+	prompts, err := prompt.LoadPrompts(ctx)
 	if err != nil {
 		return
 	}
@@ -136,9 +137,9 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 			// Execute tool calls
 			history = append(history, toolInputs...)
 
-			inputs := []toolcall.Message{}
+			inputs := []prompt.Message{}
 			if content != "" {
-				inputs = append(inputs, toolcall.Message{
+				inputs = append(inputs, prompt.Message{
 					Role:    "user",
 					Content: content,
 				})
@@ -149,7 +150,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	return ChatRound(ctx, prompts, history,
-		toolcall.Message{Role: "user", Content: content})
+		prompt.Message{Role: "user", Content: content})
 }
 
 func ReadContentWithTimeout(ctx context.Context) (string, error) {
@@ -289,9 +290,9 @@ func PrintSessionStats(ctx context.Context) {
 	}
 }
 
-func ChatRound(ctx context.Context, prompts []toolcall.Message, history []toolcall.Message, inputs ...toolcall.Message) (err error) {
+func ChatRound(ctx context.Context, prompts []prompt.Message, history []prompt.Message, inputs ...prompt.Message) (err error) {
 	// 1. Construct messages slice (prompts → history → inputs)
-	messages := make([]toolcall.Message, 0, len(prompts)+len(history)+len(inputs))
+	messages := make([]prompt.Message, 0, len(prompts)+len(history)+len(inputs))
 	messages = append(messages, prompts...)
 	messages = append(messages, history...)
 
@@ -299,7 +300,7 @@ func ChatRound(ctx context.Context, prompts []toolcall.Message, history []toolca
 	messages = append(messages, inputs...)
 
 	// 3. Track new messages for this round (for storage)
-	stories := make([]toolcall.Message, 0, len(inputs)+1)
+	stories := make([]prompt.Message, 0, len(inputs)+1)
 	stories = append(stories, inputs...)
 	tools := alltools.GetAllTools(ctx)
 	var resp *dsc.ChatResponse
@@ -337,7 +338,7 @@ func ChatRound(ctx context.Context, prompts []toolcall.Message, history []toolca
 	tcs := story.ToolCalls
 
 	// save stories here
-	err = toolcall.SaveMessages(ctx, stories...)
+	err = prompt.SaveMessages(ctx, stories...)
 	if err != nil {
 		outfmt.Error("%v", err)
 	}

@@ -11,6 +11,7 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/prompt"
 	"gitcode.com/dscli/dscli/internal/sqlite"
 )
 
@@ -54,17 +55,6 @@ type Function struct {
 	Description string         `json:"description"`
 	Strict      bool           `json:"strict,omitempty"`
 	Parameters  map[string]any `json:"parameters"` // JSON Schema 对象
-}
-
-type ToolCall struct {
-	ID       string           `json:"id"`
-	Type     string           `json:"type"`
-	Function ToolCallFunction `json:"function"`
-}
-
-type ToolCallFunction struct {
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"` // JSON 字符串
 }
 
 var (
@@ -175,7 +165,7 @@ func GetAllTools(ctx context.Context) []Tool {
 }
 
 // HandleToolCalls 处理工具调用（带统计）
-func HandleToolCalls(ctx context.Context, tcs []ToolCall) (inputs []Message) {
+func HandleToolCalls(ctx context.Context, tcs []prompt.ToolCall) (inputs []prompt.Message) {
 	// 处理每个工具调用
 	for _, tc := range tcs {
 		id := tc.ID
@@ -187,13 +177,13 @@ func HandleToolCalls(ctx context.Context, tcs []ToolCall) (inputs []Message) {
 			Suggestion: user,
 		}
 
-		input := Message{
+		input := prompt.Message{
 			Role:       "tool",
 			ToolCallID: id,
 			Content:    toolContent.String(),
 		}
 
-		saveErr := SaveMessages(ctx, input)
+		saveErr := prompt.SaveMessages(ctx, input)
 
 		if saveErr != nil {
 			outfmt.Debug("failed to save: %v", err)

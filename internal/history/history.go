@@ -8,16 +8,17 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/prompt"
+	"gitcode.com/dscli/dscli/internal/session"
 	"gitcode.com/dscli/dscli/internal/sqlite"
-	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 type (
-	Message  = toolcall.Message
-	ToolCall = toolcall.ToolCall
+	Message  = prompt.Message
+	ToolCall = prompt.ToolCall
 )
 
-var GetCurrentSessionID = toolcall.GetCurrentSessionID
+var GetCurrentSessionID = session.GetCurrentSessionID
 
 // UpdateContent update message content
 func UpdateContent(ctx context.Context, id int64, content string) (err error) {
@@ -43,7 +44,7 @@ func UpdateContent(ctx context.Context, id int64, content string) (err error) {
 	return
 }
 
-func ToSQLNullString(tcs []toolcall.ToolCall) (toolCalls sql.NullString) {
+func ToSQLNullString(tcs []ToolCall) (toolCalls sql.NullString) {
 	data, err := outfmt.JSONMarshal(tcs)
 	if err != nil {
 		return

@@ -4,11 +4,12 @@ import (
 	"fmt"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/prompt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 // Chat 发送聊天请求
-func (c *Deepseek) Chat(ctx context.Context, messages []toolcall.Message, tools []toolcall.Tool) (*ChatResponse, error) {
+func (c *Deepseek) Chat(ctx context.Context, messages []prompt.Message, tools []toolcall.Tool) (*ChatResponse, error) {
 	// 非工具调用的 assistant 消息，清空 reasoning_content（API 会忽略但保留更安全）
 	for i, message := range messages {
 		if message.Role == "assistant" && len(message.ToolCalls) == 0 && message.ReasoningContent != "" {
@@ -26,7 +27,7 @@ func (c *Deepseek) Chat(ctx context.Context, messages []toolcall.Message, tools 
 			ID: "id",
 			Choices: []Choice{
 				{
-					Message: toolcall.Message{Role: "assistant", Content: "yes, here I heard"},
+					Message: prompt.Message{Role: "assistant", Content: "yes, here I heard"},
 				},
 			},
 		}, nil

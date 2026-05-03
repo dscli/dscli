@@ -12,7 +12,7 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"gitcode.com/dscli/dscli/internal/prompt"
 )
 
 // chatStream 处理streaming聊天请求
@@ -103,7 +103,7 @@ func (c *Deepseek) chatStream(ctx context.Context, req ChatRequest) (*ChatRespon
 		ID: "streaming-response-" + time.Now().Format("20060102150405"),
 		Choices: []Choice{
 			{
-				Message: toolcall.Message{
+				Message: prompt.Message{
 					Role:    "assistant",
 					Content: fullContent.String(),
 				},
