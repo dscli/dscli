@@ -9,19 +9,23 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var skillCmd *cobra.Command
+
 func init() {
-	skillCmd := AddRootCommand(&cobra.Command{
+	skillCmd = AddRootCommand(&cobra.Command{
 		Use:   "skill",
-		Short: "技能管理 - 使用和查询技能",
+		Short: "技能管理 - 安装、使用和查询技能",
 		Long: `skill 命令用于管理和使用技能。
 
 技能是预定义的代码片段或模板，可以快速复用。
 支持本地技能（项目目录）和全局技能（用户配置目录）。
 
 子命令：
-  use              显示指定名称的技能
-  query            查询匹配关键词的技能
+  add              安装或增加技能
+  remove           移除技能
   list             列出所有可用技能
+  query            查询匹配关键词的技能
+  use              使用指定名称的技能
   set-auto-inject  设置技能的自动注入属性`,
 	})
 

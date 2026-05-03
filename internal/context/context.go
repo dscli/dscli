@@ -83,23 +83,10 @@ func GetProjectRoot() (projectRoot string) {
 	if err != nil {
 		panic(err)
 	}
-
-	if cwd != projectRoot {
-		err = os.Chdir(projectRoot)
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	cwd, err = os.Getwd()
-	if err != nil {
-		panic(err)
-	}
-
-	if cwd != projectRoot {
-		err = fmt.Errorf("cwd(%s) != ProjectRoot(%s)", cwd, projectRoot)
-		panic(err)
-	}
+	// 注意：不在此处切换 CWD。
+	// Shell 相关工具通过 interp.Dir 设置工作目录，
+	// 其他工具通过 context.ProjectRoot 解析相对路径。
+	// 保持进程 CWD 不变，避免影响用户指定的相对路径（如 skill add）。
 	return projectRoot
 }
 

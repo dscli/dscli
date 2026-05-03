@@ -2,6 +2,8 @@ package context
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -85,5 +87,40 @@ func TestTimeValue(t *testing.T) {
 				t.Errorf("TimeValue() = %v", got)
 			}
 		})
+	}
+}
+
+// TestGetProjectRootPreservesCWD 验证 GetProjectRoot 不会改变进程的 CWD。
+//
+// v0.7.7 回归修复：之前 GetProjectRoot 在发现 CWD 不等于
+// projectRoot 时会强制 chdir，导致用户传入的相对路径（如 skill add
+// ascend-docker）被错误地相对于项目根目录解析。
+func TestGetProjectRootPreservesCWD(t *testing.T) {
+	cwdBefore, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("获取 CWD 失败: %v", err)
+	}
+
+	// 调用 GetProjectRoot
+	_ = GetProjectRoot()
+
+	cwdAfter, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("获取 CWD 失败: %v", err)
+	}
+
+	if cwdBefore != cwdAfter {
+		t.Errorf("GetProjectRoot 不应改变 CWD:\n  before: %s\n  after:  %s", cwdBefore, cwdAfter)
+	}
+}
+
+// TestGetProjectRootReturnsAbsPath 验证返回的是绝对路径。
+func TestGetProjectRootReturnsAbsPath(t *testing.T) {
+	root := GetProjectRoot()
+	if root == "" {
+		t.Fatal("GetProjectRoot 返回空字符串")
+	}
+	if !filepath.IsAbs(root) {
+		t.Errorf("GetProjectRoot 应返回绝对路径，得到: %s", root)
 	}
 }
