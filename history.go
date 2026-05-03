@@ -8,7 +8,6 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/editor"
-	"gitcode.com/dscli/dscli/internal/history"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/prompt"
 	"github.com/spf13/cobra"
@@ -71,7 +70,7 @@ func historyShowRunE(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
-	message, err := history.ShowMessage(ctx, int64(id))
+	message, err := prompt.ShowMessage(ctx, int64(id))
 	if err != nil {
 		return
 	}
@@ -82,7 +81,7 @@ func historyShowRunE(cmd *cobra.Command, args []string) (err error) {
 	wrt.Println("SessionID", fmt.Sprint(message.SessionID))
 	wrt.Println("Role", message.Role)
 	wrt.Println("ToolCallID", message.ToolCallID)
-	wrt.Println("ToolCalls", history.ToSQLNullString(message.ToolCalls).String)
+	wrt.Println("ToolCalls", prompt.ToSQLNullString(message.ToolCalls).String)
 	wrt.Println("ReasoningContent", message.ReasoningContent)
 	wrt.Println("Content", message.Content)
 	return
@@ -103,7 +102,7 @@ func historyEditRunE(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 
-	message, err := history.ShowMessage(ctx, int64(id))
+	message, err := prompt.ShowMessage(ctx, int64(id))
 	if err != nil {
 		return
 	}
@@ -114,7 +113,7 @@ func historyEditRunE(cmd *cobra.Command, args []string) (err error) {
 		if err != nil {
 			return
 		}
-		err = history.UpdateContent(ctx, int64(id), content)
+		err = prompt.UpdateContent(ctx, int64(id), content)
 		if err != nil {
 			return
 		}
@@ -131,7 +130,7 @@ func historyEditRunE(cmd *cobra.Command, args []string) (err error) {
 		}
 		tc.Function.Arguments = arguments
 		tcs = []prompt.ToolCall{tc}
-		err = history.UpdateToolCalls(ctx, int64(id), tcs)
+		err = prompt.UpdateToolCalls(ctx, int64(id), tcs)
 		if err != nil {
 			return
 		}
@@ -145,7 +144,7 @@ func historyUpdateRunE(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return
 	}
-	return history.UpdateHistory(ctx, int64(id))
+	return prompt.UpdateHistory(ctx, int64(id))
 }
 
 func historyPreRunE(cmd *cobra.Command, args []string) (err error) {
@@ -165,7 +164,7 @@ func historyPreRunE(cmd *cobra.Command, args []string) (err error) {
 
 func historyListRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
-	history, err := history.ListHistory(ctx)
+	history, err := prompt.ListHistory(ctx)
 	if err != nil {
 		return
 	}
@@ -196,7 +195,7 @@ func historyListRunE(cmd *cobra.Command, args []string) (err error) {
 
 func historyLoadRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
-	history, err := history.LoadHistory(ctx)
+	history, err := prompt.LoadHistory(ctx)
 	if err != nil {
 		return
 	}
@@ -276,7 +275,7 @@ func recallSearchRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	ctx := cmd.Context()
-	results, err := history.SearchMessages(ctx, keywords, days, limit)
+	results, err := prompt.SearchMessages(ctx, keywords, days, limit)
 	if err != nil {
 		return err
 	}
@@ -295,7 +294,7 @@ func recallSearchRunE(cmd *cobra.Command, args []string) (err error) {
 			roleLabel = "🤖 助手"
 		}
 		timeStr := prompt.FormatTime(r.Message.CreatedAt)
-		preview := history.Truncate(r.Message.Content, 120)
+		preview := prompt.Truncate(r.Message.Content, 120)
 
 		wrt.Println(
 			timeStr,

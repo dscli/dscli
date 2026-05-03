@@ -130,7 +130,6 @@ func GetDefaultPromptTemplate(model string) string {
 }
 
 // newPromptTemplate 获取指定模型的模板
-// newPromptTemplate 获取指定模型的模板
 // 对未知 modelID 默认返回 chat 模板，避免 nil pointer。
 func newPromptTemplate(modelID int64) *promptTemplate {
 	switch modelID {
@@ -163,7 +162,6 @@ func (t *promptTemplate) Render(data *promptConfig) (string, error) {
 	return strings.TrimSpace(buf.String()), nil
 }
 
-// GeneratePromptWithTemplate 使用模板生成提示词
 // GeneratePromptWithTemplate 使用模板生成提示词
 func (c *promptConfig) GeneratePromptWithTemplate() string {
 	tmpl := newPromptTemplate(c.ModelID)

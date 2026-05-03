@@ -30,7 +30,7 @@ func init() {
 			"required":             []string{"content"},
 			"additionalProperties": false,
 		},
-		Category: "memory",
+		Category: "history",
 		Timeout:  5 * time.Second,
 		Handler:  handleNote,
 	})
@@ -43,18 +43,6 @@ func handleNote(ctx context.Context, args toolcall.ToolArgs) (result string, sug
 		err = fmt.Errorf("笔记内容不能为空")
 		return
 	}
-
-	// 警告超过限制（实际 SaveNote 也会截断）
-	if len([]rune(content)) > prompt.MaxNoteContentLen {
-		suggestion = fmt.Sprintf("笔记超过%d字已自动截断。下次请控制在%d字以内。",
-			prompt.MaxNoteContentLen, prompt.MaxNoteContentLen)
-	}
-
-	if saveErr := prompt.SaveNote(ctx, content); saveErr != nil {
-		err = saveErr
-		return
-	}
-
-	result = "笔记已保存。"
+	result, suggestion, err = prompt.HandleNote(ctx, content)
 	return
 }

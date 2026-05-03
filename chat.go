@@ -11,7 +11,6 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/dsc"
-	"gitcode.com/dscli/dscli/internal/history"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/prompt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
@@ -119,7 +118,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		return
 	}
 
-	history, err := history.LoadHistory(ctx)
+	history, err := prompt.LoadHistory(ctx)
 	if err != nil {
 		return
 	}

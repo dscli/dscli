@@ -1,17 +1,15 @@
-package history
+package prompt
 
 import (
 	"context"
 	"reflect"
 	"testing"
-
-	"gitcode.com/dscli/dscli/internal/prompt"
 )
 
 func TestLoadHistory(t *testing.T) {
 	tests := []struct {
 		name    string // description of this test case
-		want    []prompt.Message
+		want    []Message
 		wantErr bool
 	}{
 		// TODO: Add test cases.
@@ -40,27 +38,27 @@ func TestCleanupReverse(t *testing.T) {
 	tests := []struct {
 		name string // description of this test case
 		// Named input parameters for target function.
-		messages []prompt.Message
-		want     []prompt.Message
+		messages []Message
+		want     []Message
 	}{
 		{
 			"NormalTwo",
-			[]prompt.Message{
+			[]Message{
 				{
 					Role:       "tool",
 					ToolCallID: "01",
 				},
 				{
 					Role: "assistant",
-					ToolCalls: []prompt.ToolCall{
+					ToolCalls: []ToolCall{
 						{ID: "01"},
 					},
 				},
 			},
-			[]prompt.Message{
+			[]Message{
 				{
 					Role: "assistant",
-					ToolCalls: []prompt.ToolCall{
+					ToolCalls: []ToolCall{
 						{ID: "01"},
 					},
 				},
@@ -72,7 +70,7 @@ func TestCleanupReverse(t *testing.T) {
 		},
 		{
 			"NormalThree",
-			[]prompt.Message{
+			[]Message{
 				{
 					Role:       "tool",
 					ToolCallID: "02",
@@ -84,16 +82,16 @@ func TestCleanupReverse(t *testing.T) {
 
 				{
 					Role: "assistant",
-					ToolCalls: []prompt.ToolCall{
+					ToolCalls: []ToolCall{
 						{ID: "01"},
 						{ID: "02"},
 					},
 				},
 			},
-			[]prompt.Message{
+			[]Message{
 				{
 					Role: "assistant",
-					ToolCalls: []prompt.ToolCall{
+					ToolCalls: []ToolCall{
 						{ID: "01"},
 						{ID: "02"},
 					},
@@ -110,7 +108,7 @@ func TestCleanupReverse(t *testing.T) {
 		},
 		{
 			"With1UserMessage",
-			[]prompt.Message{
+			[]Message{
 				{
 					Role:    "user",
 					Content: "content",
@@ -126,16 +124,16 @@ func TestCleanupReverse(t *testing.T) {
 
 				{
 					Role: "assistant",
-					ToolCalls: []prompt.ToolCall{
+					ToolCalls: []ToolCall{
 						{ID: "01"},
 						{ID: "02"},
 					},
 				},
 			},
-			[]prompt.Message{
+			[]Message{
 				{
 					Role: "assistant",
-					ToolCalls: []prompt.ToolCall{
+					ToolCalls: []ToolCall{
 						{ID: "01"},
 						{ID: "02"},
 					},
@@ -157,7 +155,7 @@ func TestCleanupReverse(t *testing.T) {
 
 		{
 			"With2UserMessage",
-			[]prompt.Message{
+			[]Message{
 				{
 					Role:    "user",
 					Content: "content2",
@@ -173,7 +171,7 @@ func TestCleanupReverse(t *testing.T) {
 
 				{
 					Role: "assistant",
-					ToolCalls: []prompt.ToolCall{
+					ToolCalls: []ToolCall{
 						{ID: "01"},
 						{ID: "02"},
 					},
@@ -183,7 +181,7 @@ func TestCleanupReverse(t *testing.T) {
 					Content: "content1",
 				},
 			},
-			[]prompt.Message{
+			[]Message{
 				{
 					Role:    "user",
 					Content: "content1",
@@ -191,7 +189,7 @@ func TestCleanupReverse(t *testing.T) {
 
 				{
 					Role: "assistant",
-					ToolCalls: []prompt.ToolCall{
+					ToolCalls: []ToolCall{
 						{ID: "01"},
 						{ID: "02"},
 					},
@@ -212,7 +210,7 @@ func TestCleanupReverse(t *testing.T) {
 		},
 		{
 			"With2UserMessageBad",
-			[]prompt.Message{
+			[]Message{
 				{
 					Role:    "user",
 					Content: "content2",
@@ -228,7 +226,7 @@ func TestCleanupReverse(t *testing.T) {
 
 				{
 					Role: "assistant",
-					ToolCalls: []prompt.ToolCall{
+					ToolCalls: []ToolCall{
 						{ID: "01"},
 						{ID: "02"},
 					},
@@ -238,7 +236,7 @@ func TestCleanupReverse(t *testing.T) {
 					Content: "content1",
 				},
 			},
-			[]prompt.Message{
+			[]Message{
 				{
 					Role:    "user",
 					Content: "content1",

@@ -10,6 +10,7 @@ import (
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/session"
 	"gitcode.com/dscli/dscli/internal/sqlite"
+	"gitcode.com/dscli/dscli/internal/tokenizer"
 )
 
 // Message 扩展，支持工具调用（注意：Content 字段不再使用 omitempty）
@@ -66,6 +67,10 @@ func init() {
     		reasoning_content TEXT,
 			FOREIGN KEY (session_id) REFERENCES sessions(id)
 		)`,
+		// FTS5 全文搜索虚拟表（独立维护，与 memories_fts 模式一致）
+		`CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+			content, reasoning_content
+		)`,
 	)
 
 	sqlite.RegisterIndexSchema(
@@ -79,6 +84,9 @@ func init() {
 		// 增加 reasoning content
 		`ALTER TABLE messages ADD COLUMN reasoning_content TEXT`,
 	)
+
+	// 升级迁移：为已有消息重建 FTS 索引（仅当 FTS 表为空且有消息时执行一次）
+	sqlite.RegisterPostInitHook(populateMessagesFTS)
 }
 
 func ToolCallsID(tcs []ToolCall) string {
@@ -89,6 +97,7 @@ func ToolCallsID(tcs []ToolCall) string {
 }
 
 // SaveMessages 保存消息（事务）
+// SaveMessages 保存消息（事务），同时同步 FTS5 全文索引。
 func SaveMessages(ctx context.Context, msgs ...Message) error {
 	sessionID := session.GetCurrentSessionID(ctx)
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
@@ -103,14 +112,6 @@ func SaveMessages(ctx context.Context, msgs ...Message) error {
 		return fmt.Errorf("开始事务失败: %w", err)
 	}
 	defer tx.Rollback()
-
-	stmt, err := tx.Prepare(`
-		INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, model_id, reasoning_content)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`)
-	if err != nil {
-		return fmt.Errorf("准备语句失败: %w", err)
-	}
-	defer stmt.Close()
 
 	for _, m := range msgs {
 		var toolCallID, toolCalls sql.NullString
@@ -127,8 +128,30 @@ func SaveMessages(ctx context.Context, msgs ...Message) error {
 			toolCalls.String = string(data)
 			toolCalls.Valid = true
 		}
-		if _, err := stmt.Exec(sessionID, m.Role, m.Content, toolCallID, toolCalls, modelID, m.ReasoningContent); err != nil {
+
+		res, err := tx.Exec(
+			`INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, model_id, reasoning_content)
+			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			sessionID, m.Role, m.Content, toolCallID, toolCalls, modelID, m.ReasoningContent,
+		)
+		if err != nil {
 			return fmt.Errorf("插入消息失败: %w", err)
+		}
+
+		id, err := res.LastInsertId()
+		if err != nil {
+			return fmt.Errorf("获取消息ID失败: %w", err)
+		}
+
+		// 同步 FTS5 全文索引（中文分词后写入）
+		_, err = tx.Exec(
+			`INSERT INTO messages_fts(rowid, content, reasoning_content) VALUES (?, ?, ?)`,
+			id,
+			tokenizer.Tokenize(m.Content),
+			tokenizer.Tokenize(m.ReasoningContent),
+		)
+		if err != nil {
+			return fmt.Errorf("创建全文索引失败: %w", err)
 		}
 	}
 
@@ -140,5 +163,68 @@ func SaveMessages(ctx context.Context, msgs ...Message) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("提交事务失败: %w", err)
 	}
+	return nil
+}
+
+// populateMessagesFTS 是升级迁移钩子：当 messages 表有数据但 messages_fts 为空时，
+// 为所有已有消息重建 FTS5 全文索引（仅执行一次）。
+func populateMessagesFTS(db *sql.DB) error {
+	// 检查 FTS 表是否已有数据（已迁移过则跳过）
+	var ftsCount int
+	if err := db.QueryRow("SELECT COUNT(*) FROM messages_fts").Scan(&ftsCount); err != nil {
+		return fmt.Errorf("populateMessagesFTS: 检查 FTS 表失败: %w", err)
+	}
+	if ftsCount > 0 {
+		return nil // 已迁移，跳过
+	}
+
+	// 检查 messages 表是否有数据
+	var msgCount int
+	if err := db.QueryRow("SELECT COUNT(*) FROM messages").Scan(&msgCount); err != nil {
+		return fmt.Errorf("populateMessagesFTS: 检查 messages 表失败: %w", err)
+	}
+	if msgCount == 0 {
+		return nil // 无消息，无需迁移
+	}
+
+	// 逐条迁移：读取 id, content, reasoning_content，分词后写入 FTS
+	rows, err := db.Query("SELECT id, content, COALESCE(reasoning_content, '') FROM messages")
+	if err != nil {
+		return fmt.Errorf("populateMessagesFTS: 查询消息失败: %w", err)
+	}
+	defer rows.Close()
+
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("populateMessagesFTS: 开始事务失败: %w", err)
+	}
+	defer tx.Rollback()
+
+	count := 0
+	for rows.Next() {
+		var id int64
+		var content, reasoningContent string
+		if err := rows.Scan(&id, &content, &reasoningContent); err != nil {
+			return fmt.Errorf("populateMessagesFTS: 扫描消息失败: %w", err)
+		}
+		if _, err := tx.Exec(
+			`INSERT INTO messages_fts(rowid, content, reasoning_content) VALUES (?, ?, ?)`,
+			id,
+			tokenizer.Tokenize(content),
+			tokenizer.Tokenize(reasoningContent),
+		); err != nil {
+			return fmt.Errorf("populateMessagesFTS: 插入 FTS 失败 (id=%d): %w", id, err)
+		}
+		count++
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("populateMessagesFTS: 遍历消息失败: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("populateMessagesFTS: 提交事务失败: %w", err)
+	}
+
+	outfmt.Debug("populateMessagesFTS: 已为 %d 条已有消息重建 FTS 索引\n", count)
 	return nil
 }

@@ -1,4 +1,4 @@
-package history
+package prompt
 
 import (
 	"database/sql"
@@ -8,15 +8,14 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/prompt"
 	"gitcode.com/dscli/dscli/internal/session"
 	"gitcode.com/dscli/dscli/internal/sqlite"
 )
 
 // 注意：Message 和 ToolCall 类型定义在 prompt 包中。
-// 本包直接使用 prompt.Message 和 prompt.ToolCall，不再提供类型别名。
+// 本包直接使用 Message 和 ToolCall，不再提供类型别名。
 // 历史兼容：旧代码中 import "history" 后使用 history.Message 的地方，
-// 需要改为使用 prompt.Message。
+// 需要改为使用 Message。
 
 var GetCurrentSessionID = session.GetCurrentSessionID
 
@@ -44,7 +43,7 @@ func UpdateContent(ctx context.Context, id int64, content string) (err error) {
 	return
 }
 
-func ToSQLNullString(tcs []prompt.ToolCall) (toolCalls sql.NullString) {
+func ToSQLNullString(tcs []ToolCall) (toolCalls sql.NullString) {
 	data, err := outfmt.JSONMarshal(tcs)
 	if err != nil {
 		return
@@ -55,7 +54,7 @@ func ToSQLNullString(tcs []prompt.ToolCall) (toolCalls sql.NullString) {
 }
 
 // UpdateToolCalls update message content
-func UpdateToolCalls(ctx context.Context, id int64, tcs []prompt.ToolCall) (err error) {
+func UpdateToolCalls(ctx context.Context, id int64, tcs []ToolCall) (err error) {
 	db, err := sqlite.OpenDB()
 	if err != nil {
 		return
@@ -95,7 +94,7 @@ func UpdateHistory(ctx context.Context, id int64) (err error) {
 	return
 }
 
-func ShowMessage(ctx context.Context, id int64) (message *prompt.Message, err error) {
+func ShowMessage(ctx context.Context, id int64) (message *Message, err error) {
 	db, err := sqlite.OpenDB()
 	if err != nil {
 		return
@@ -103,7 +102,7 @@ func ShowMessage(ctx context.Context, id int64) (message *prompt.Message, err er
 	defer db.Close()
 	var toolCalls sql.NullString
 	var toolCallID sql.NullString
-	message = &prompt.Message{}
+	message = &Message{}
 	err = db.QueryRowContext(ctx, `SELECT id, session_id, role, content, tool_call_id, `+
 		`tool_calls, created_at, model_id, reasoning_content FROM messages WHERE `+
 		`id = ?`, id).Scan(&message.ID,
@@ -125,7 +124,7 @@ func ShowMessage(ctx context.Context, id int64) (message *prompt.Message, err er
 }
 
 // ListHistory 加载指定会话的所有历史消息，按时间升序返回
-func ListHistory(ctx context.Context) ([]*prompt.Message, error) {
+func ListHistory(ctx context.Context) ([]*Message, error) {
 	sessionID := GetCurrentSessionID(ctx)
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	histSize := context.ContextValue(ctx, context.HistSizeKey, 8)
@@ -149,9 +148,9 @@ func ListHistory(ctx context.Context) ([]*prompt.Message, error) {
 
 	defer rows.Close()
 
-	var messages []*prompt.Message
+	var messages []*Message
 	for rows.Next() {
-		m := &prompt.Message{}
+		m := &Message{}
 		var toolCallID, toolCalls sql.NullString
 		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt, &m.ReasoningContent); err != nil {
 			return nil, fmt.Errorf("扫描消息失败: %w", err)
@@ -160,7 +159,7 @@ func ListHistory(ctx context.Context) ([]*prompt.Message, error) {
 			m.ToolCallID = toolCallID.String
 		}
 		if toolCalls.Valid {
-			var toolCallsData []prompt.ToolCall
+			var toolCallsData []ToolCall
 			if err := json.Unmarshal([]byte(toolCalls.String), &toolCallsData); err == nil {
 				m.ToolCalls = toolCallsData
 			}
@@ -177,10 +176,10 @@ func ListHistory(ctx context.Context) ([]*prompt.Message, error) {
 }
 
 // LoadHistory 加载指定会话的所有历史消息，按时间升序返回
-func LoadHistory(ctx context.Context) ([]prompt.Message, error) {
+func LoadHistory(ctx context.Context) ([]Message, error) {
 	histSize := context.ContextValue(ctx, context.HistSizeKey, 8)
 	if histSize == 0 {
-		return []prompt.Message{}, nil
+		return []Message{}, nil
 	}
 
 	sessionID := GetCurrentSessionID(ctx)
@@ -206,9 +205,9 @@ func LoadHistory(ctx context.Context) ([]prompt.Message, error) {
 
 	defer rows.Close()
 
-	var messages []prompt.Message
+	var messages []Message
 	for rows.Next() {
-		var m prompt.Message
+		var m Message
 		var toolCallID, toolCalls sql.NullString
 		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt, &m.ReasoningContent); err != nil {
 			return nil, fmt.Errorf("扫描消息失败: %w", err)
@@ -217,7 +216,7 @@ func LoadHistory(ctx context.Context) ([]prompt.Message, error) {
 			m.ToolCallID = toolCallID.String
 		}
 		if toolCalls.Valid {
-			var toolCallsData []prompt.ToolCall
+			var toolCallsData []ToolCall
 			if err := json.Unmarshal([]byte(toolCalls.String), &toolCallsData); err == nil {
 				m.ToolCalls = toolCallsData
 			}
@@ -254,7 +253,7 @@ func LoadHistory(ctx context.Context) ([]prompt.Message, error) {
 }
 
 // JudgeHistory - Cleanup the history
-func JudgeHistory(messages []*prompt.Message) {
+func JudgeHistory(messages []*Message) {
 	// The messages is in decrease order {100, 99, 98, ...}
 	l := len(messages)
 	if l == 0 {
@@ -295,16 +294,16 @@ func JudgeHistory(messages []*prompt.Message) {
 }
 
 // CleanupReverse - make the messages clean, remove the mistake message
-func CleanupReverse(messages []prompt.Message) (cleaned []prompt.Message) {
+func CleanupReverse(messages []Message) (cleaned []Message) {
 	// The messages is in reverse order, say
 	// [{id=5},{id=4},{id=3},{id=1},{id=0}]
 	// We need to find the tool message and check whether
 	// the next is assistant message and the tool is is same with the tool's
 	// The cleanup here only handle the one tool call situation
 	l := len(messages)
-	cleaned = make([]prompt.Message, l)
+	cleaned = make([]Message, l)
 	k := l
-	tms := []prompt.Message{}
+	tms := []Message{}
 	flag := false
 outloop:
 	for _, m := range messages {
@@ -338,7 +337,7 @@ outloop:
 			for i, tm := range tms {
 				cleaned[begin+i+1] = tm
 			}
-			tms = []prompt.Message{}
+			tms = []Message{}
 			k = begin
 			if flag {
 				flag = false
