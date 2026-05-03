@@ -13,27 +13,31 @@ import (
 )
 
 var (
-	// ModelID = int64(0)
 	dbPath = func() string {
 		configDir := config.ConfigDir
 		isTesting := context.IsTesting()
 		insideShellExec := os.Getenv("InsideShellExec")
-		dbname := "sqlite.db"
-		if isTesting && insideShellExec != "" {
-			dbname = fmt.Sprintf("%s.db", filepath.Base(os.Args[0]))
-		}
-		path := filepath.Join(configDir, dbname)
+
+		// InsideShellExec: 按进程隔离的临时数据库，用于 shell 执行
 		if insideShellExec != "" {
 			dir := filepath.Join(configDir, "inside-shell-exec")
-			err := os.MkdirAll(dir, 0o755)
-			if err != nil {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
 				panic(err)
 			}
 			name := filepath.Base(os.Args[0])
 			pid := os.Getpid()
-			path = filepath.Join(dir, fmt.Sprintf("%s-%d.db", name, pid))
+			return filepath.Join(dir, fmt.Sprintf("%s-%d.db", name, pid))
 		}
-		return path
+
+		// 测试环境：使用临时目录数据库，避免污染生产数据
+		if isTesting {
+			name := filepath.Base(os.Args[0])
+			return filepath.Join(os.TempDir(),
+				fmt.Sprintf("dscli-test-%s-%d.db", name, os.Getpid()))
+		}
+
+		// 生产环境
+		return filepath.Join(configDir, "sqlite.db")
 	}()
 
 	// 注册队列
