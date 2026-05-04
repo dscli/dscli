@@ -70,7 +70,7 @@ func init() {
 	})
 }
 
-func handleFlycheck(ctx context.Context, args toolcall.ToolArgs) (result string, suggestion string, err error) {
+func handleFlycheck(ctx context.Context, args toolcall.ToolArgs) (result string, warning string, err error) {
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		err = fmt.Errorf("参数 'path' 缺失")
@@ -82,7 +82,7 @@ func handleFlycheck(ctx context.Context, args toolcall.ToolArgs) (result string,
 	// 处理错误
 	if checkErr != nil {
 		if checkResult != nil && checkResult.Suggestion != "" {
-			suggestion = fmt.Sprintf("💡 %s\n\n%s", checkErr.Error(), checkResult.Suggestion)
+			warning = fmt.Sprintf("💡 %s\n\n%s", checkErr.Error(), checkResult.Suggestion)
 		}
 		err = checkErr
 		return

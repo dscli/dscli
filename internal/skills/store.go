@@ -5,12 +5,14 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 
 	"gitcode.com/dscli/dscli/internal/config"
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 	"github.com/goccy/go-yaml"
 )
 
@@ -355,4 +357,92 @@ func SetAutoInject(name string, autoInject bool, global bool) error {
 		return fmt.Errorf("failed to load local store: %w", err)
 	}
 	return localStore.SetAutoInject(name, autoInject)
+}
+
+func HandleSkillCreate(ctx context.Context, name string, description, content, keywordsStr string, autoInject bool) (result string, warning string, err error) {
+	// Parse keywords from comma-separated string
+	var keywords []string
+	if keywordsStr != "" {
+		for kw := range strings.SplitSeq(keywordsStr, ",") {
+			kw = strings.TrimSpace(kw)
+			if kw != "" {
+				keywords = append(keywords, kw)
+			}
+		}
+	}
+
+	// Build skill struct
+	skill := Skill{
+		Name:        name,
+		Description: description,
+		Content:     content,
+		Keywords:    keywords,
+		AutoInject:  autoInject,
+	}
+
+	// Generate SKILL.md content with frontmatter
+	skillMD, err := FormatSkillMD(&skill)
+	if err != nil {
+		err = fmt.Errorf("failed to format SKILL.md: %w", err)
+		return
+	}
+
+	// Create local skill directory: .dscli/skills/<name>/
+	localDir := filepath.Join(context.ProjectRoot, ".dscli", "skills", name)
+	if err = os.MkdirAll(localDir, 0o755); err != nil {
+		err = fmt.Errorf("failed to create skill directory: %w", err)
+		return
+	}
+
+	// Write SKILL.md
+	skillFile := filepath.Join(localDir, "SKILL.md")
+	if err = os.WriteFile(skillFile, []byte(skillMD), 0o644); err != nil {
+		err = fmt.Errorf("failed to write SKILL.md: %w", err)
+		return
+	}
+
+	// Register in local store so it's immediately usable via skill_by_name / skill_search
+	localStore, err := LocalStore()
+	if err != nil {
+		// Non-fatal: skill file is on disk, will be picked up on next load
+		warning = fmt.Sprintf("Warning: could not update local store cache: %v", err)
+		outfmt.Println(warning)
+		result = fmt.Sprintf("Skill %q created at %s (store cache update skipped).", name, localDir)
+		err = nil
+		return
+	}
+
+	// Parse the newly created SKILL.md to get the full Skill (with resources, etc.)
+	var parsedSkill Skill
+	if err = ParseSkill(skillFile, &parsedSkill); err != nil {
+		err = fmt.Errorf("failed to parse created skill: %w", err)
+		return
+	}
+
+	// Preserve auto_inject if set
+	if autoInject {
+		parsedSkill.AutoInject = true
+	}
+
+	// Add to in-memory store
+	localStore.Skills[name] = parsedSkill
+
+	// Update keywords index: ensure no duplicates
+	for _, kw := range parsedSkill.Keywords {
+		names := localStore.Keywords[kw]
+		if !slices.Contains(names, name) {
+			localStore.Keywords[kw] = append(names, name)
+		}
+	}
+
+	// Persist skills.yaml
+	if err = localStore.Save(); err != nil {
+		warning = fmt.Sprintf("Warning: failed to save skills.yaml: %v", err)
+		outfmt.Println(warning)
+		err = nil
+	}
+
+	result = fmt.Sprintf("Local skill %q created successfully.\n\nPath: %s\nKeywords: %s",
+		name, localDir, strings.Join(parsedSkill.Keywords, ", "))
+	return
 }

@@ -133,7 +133,7 @@ func Truncate(content string, maxLen int) string {
 	return string(runes[:maxLen]) + "..."
 }
 
-func HandleRecall(ctx context.Context, keywordsStr string, days int, limit int) (result string, suggestion string, err error) {
+func HandleRecall(ctx context.Context, keywordsStr string, days int, limit int) (result string, warning string, err error) {
 	// 防止 recall 结果撑爆 LLM 上下文
 	const (
 		maxRecallContentRunes = 2000 // 单条消息截断上限

@@ -76,7 +76,7 @@ func init() {
 }
 
 // handleAskExpert 处理提问工具调用
-func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (reply string, user string, err error) {
+func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result string, warning string, err error) {
 	// 向后兼容：支持旧参数名
 	summary := toolcall.ToolArgsValue(args, "summary", "")
 	content := toolcall.ToolArgsValue(args, "content", "")
@@ -113,14 +113,14 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (reply string,
 		}
 	}
 
-	reply, err = AskExpert(ctx, structuredRequest)
+	result, err = AskExpert(ctx, structuredRequest)
 	if err != nil {
 		outfmt.Println("❌ 专家咨询失败")
 		return
 	}
 
 	// 智能处理专家响应（自动生成摘要）
-	reply = processExpertResponse(reply)
+	result = processExpertResponse(result)
 
 	outfmt.Println("✅ 专家咨询完成")
 

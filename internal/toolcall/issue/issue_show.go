@@ -9,7 +9,7 @@ import (
 )
 
 // handleIssueShow 处理显示单个issue（Tool Calling）
-func handleIssueShow(ctx context.Context, args toolcall.ToolArgs) (output string, user string, err error) {
+func handleIssueShow(ctx context.Context, args toolcall.ToolArgs) (result string, warning string, err error) {
 	number := int(toolcall.ToolArgsValue(args, "number", int64(0)))
 	if number == 0 {
 		err = fmt.Errorf("必须提供issue编号")
@@ -22,22 +22,22 @@ func handleIssueShow(ctx context.Context, args toolcall.ToolArgs) (output string
 	}
 
 	// 构建详细结果
-	var result strings.Builder
-	result.WriteString(strings.Repeat("=", 80) + "\n")
-	fmt.Fprintf(&result, "Issue #%s: %s\n", issue.Number, issue.Title)
-	result.WriteString(strings.Repeat("=", 80) + "\n\n")
+	var b strings.Builder
+	b.WriteString(strings.Repeat("=", 80) + "\n")
+	fmt.Fprintf(&b, "Issue #%s: %s\n", issue.Number, issue.Title)
+	b.WriteString(strings.Repeat("=", 80) + "\n\n")
 
-	fmt.Fprintf(&result, "ID:         %d\n", issue.ID)
-	fmt.Fprintf(&result, "Number:     %s\n", issue.Number)
-	fmt.Fprintf(&result, "State:      %s\n", issue.State)
-	fmt.Fprintf(&result, "Created:    %s\n", formatTime(issue.CreatedAt))
-	fmt.Fprintf(&result, "Updated:    %s\n", formatTime(issue.UpdatedAt))
+	fmt.Fprintf(&b, "ID:         %d\n", issue.ID)
+	fmt.Fprintf(&b, "Number:     %s\n", issue.Number)
+	fmt.Fprintf(&b, "State:      %s\n", issue.State)
+	fmt.Fprintf(&b, "Created:    %s\n", formatTime(issue.CreatedAt))
+	fmt.Fprintf(&b, "Updated:    %s\n", formatTime(issue.UpdatedAt))
 
 	if !issue.ClosedAt.IsZero() {
-		fmt.Fprintf(&result, "Closed:     %s\n", formatTime(issue.ClosedAt))
+		fmt.Fprintf(&b, "Closed:     %s\n", formatTime(issue.ClosedAt))
 	}
 
-	fmt.Fprintf(&result, "Author:     %s (%s)\n", issue.User.Name, issue.User.Login)
+	fmt.Fprintf(&b, "Author:     %s (%s)\n", issue.User.Name, issue.User.Login)
 
 	assigneeInfo := "-"
 	if issue.Assignee != nil {
@@ -47,7 +47,7 @@ func handleIssueShow(ctx context.Context, args toolcall.ToolArgs) (output string
 			assigneeInfo = issue.Assignee.Login
 		}
 	}
-	fmt.Fprintf(&result, "Assignee:   %s\n", assigneeInfo)
+	fmt.Fprintf(&b, "Assignee:   %s\n", assigneeInfo)
 
 	labelsInfo := "-"
 	if len(issue.Labels) > 0 {
@@ -57,21 +57,21 @@ func handleIssueShow(ctx context.Context, args toolcall.ToolArgs) (output string
 		}
 		labelsInfo = strings.Join(labelNames, ", ")
 	}
-	fmt.Fprintf(&result, "Labels:     %s\n", labelsInfo)
+	fmt.Fprintf(&b, "Labels:     %s\n", labelsInfo)
 
-	result.WriteString("\n" + strings.Repeat("-", 80) + "\n")
-	result.WriteString("内容:\n")
-	result.WriteString(strings.Repeat("-", 80) + "\n")
+	b.WriteString("\n" + strings.Repeat("-", 80) + "\n")
+	b.WriteString("内容:\n")
+	b.WriteString(strings.Repeat("-", 80) + "\n")
 
 	if issue.Body != "" {
-		result.WriteString(issue.Body + "\n")
+		b.WriteString(issue.Body + "\n")
 	} else {
-		result.WriteString("（无内容）\n")
+		b.WriteString("（无内容）\n")
 	}
 
-	result.WriteString(strings.Repeat("=", 80) + "\n")
+	b.WriteString(strings.Repeat("=", 80) + "\n")
 
-	output = result.String()
+	result = b.String()
 	return
 }
 

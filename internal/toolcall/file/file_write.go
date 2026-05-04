@@ -49,7 +49,7 @@ func init() {
 }
 
 // handleWriteFile 写入文件
-func handleWriteFile(ctx context.Context, args ToolArgs) (result string, suggestion string, err error) {
+func handleWriteFile(ctx context.Context, args ToolArgs) (result string, warning string, err error) {
 	truncated := context.ContextValue(ctx, context.FinishReasonLengthKey, false)
 	path := toolcall.ToolArgsValue(args, "path", "")
 	content := toolcall.ToolArgsValue(args, "content", "")
@@ -63,7 +63,7 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result string, suggest
 	if path == "" {
 		err = fmt.Errorf("文件路径 path 不能为空")
 		if truncated {
-			suggestion = fmt.Sprintf("内容截断，因为内容长度 %d 超过了最大输出 Tokens 要求 %d，请严格遵守 write_file 要求，严格控制输出。", len(content), maxOutputTokens)
+			warning = fmt.Sprintf("内容截断，因为内容长度 %d 超过了最大输出 Tokens 要求 %d，请严格遵守 write_file 要求，严格控制输出。", len(content), maxOutputTokens)
 		}
 		return
 	}
@@ -137,7 +137,7 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result string, suggest
 		result = fmt.Sprintf("成功写入文件 \"%s\"，%d 行。", path, lines)
 	}
 	if truncated {
-		suggestion = fmt.Sprintf(`此次写入文件 %s 的内容是截断的内容。
+		warning = fmt.Sprintf(`此次写入文件 %s 的内容是截断的内容。
 请从上次输出内容的最后一完整行继续生成，并调用工具 write_file(path="%s", append=true, content="...继续生成的内容...") 
 追加入文件%s，为帮助你找到继续生成的点，现把上次截断内容最后几行展示给你：
 ---
@@ -147,10 +147,10 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result string, suggest
 
 	// Run flycheck on the written file and append issues to suggestion
 	if flyResult, _, flyErr := flycheck.Flycheck(ctx, path); flyErr == nil && flyResult != "" {
-		if suggestion != "" {
-			suggestion += "\n\n"
+		if warning != "" {
+			warning += "\n\n"
 		}
-		suggestion += flyResult
+		warning += flyResult
 	}
 
 	return

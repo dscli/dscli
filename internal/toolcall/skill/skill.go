@@ -3,15 +3,10 @@ package skill
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/skills"
 	"gitcode.com/dscli/dscli/internal/toolcall"
-
-	pctx "gitcode.com/dscli/dscli/internal/context"
 )
 
 var (
@@ -29,7 +24,7 @@ func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
 }
 
 // handleSkillByName fetches a skill's full content by exact name.
-func handleSkillByName(ctx context.Context, args ToolArgs) (content string, user string, err error) {
+func handleSkillByName(ctx context.Context, args ToolArgs) (result string, warning string, err error) {
 	skillName := ToolArgsValue(args, "skill_name", "")
 	if skillName == "" {
 		err = fmt.Errorf("skill name can not be empty")
@@ -45,16 +40,16 @@ func handleSkillByName(ctx context.Context, args ToolArgs) (content string, user
 	}
 
 	if skillContent == "" {
-		content = fmt.Sprintf("Skill %q exists but has no content.", skillName)
+		result = fmt.Sprintf("Skill %q exists but has no content.", skillName)
 		return
 	}
 
-	content = skillContent
+	result = skillContent
 	return
 }
 
 // handleSkillSearch searches skills by keyword query.
-func handleSkillSearch(ctx context.Context, args ToolArgs) (content string, user string, err error) {
+func handleSkillSearch(ctx context.Context, args ToolArgs) (result string, warning string, err error) {
 	query := ToolArgsValue(args, "query", "")
 	if query == "" {
 		err = fmt.Errorf("search query cannot be empty")
@@ -62,19 +57,17 @@ func handleSkillSearch(ctx context.Context, args ToolArgs) (content string, user
 	}
 	outfmt.Printf("Searching skills [%s]\n", query)
 
-	result, err := skills.Query(query)
+	result, err = skills.Query(query)
 	if err != nil {
 		err = fmt.Errorf("skill search failed: %w", err)
 		return
 	}
-
-	content = result
 	return
 }
 
 // handleSkillCreate creates a new local skill (in .dscli/skills/) with proper frontmatter.
 // It overwrites if a skill with the same name already exists locally.
-func handleSkillCreate(ctx context.Context, args ToolArgs) (content string, user string, err error) {
+func handleSkillCreate(ctx context.Context, args ToolArgs) (result string, warning string, err error) {
 	name := ToolArgsValue(args, "name", "")
 	description := ToolArgsValue(args, "description", "")
 	bodyContent := ToolArgsValue(args, "content", "")
@@ -96,94 +89,7 @@ func handleSkillCreate(ctx context.Context, args ToolArgs) (content string, user
 	}
 
 	outfmt.Printf("Creating skill [%s]\n", name)
-
-	// Parse keywords from comma-separated string
-	var keywords []string
-	if keywordsStr != "" {
-		for _, kw := range strings.Split(keywordsStr, ",") {
-			kw = strings.TrimSpace(kw)
-			if kw != "" {
-				keywords = append(keywords, kw)
-			}
-		}
-	}
-
-	// Build skill struct
-	skill := skills.Skill{
-		Name:        name,
-		Description: description,
-		Content:     bodyContent,
-		Keywords:    keywords,
-		AutoInject:  autoInject,
-	}
-
-	// Generate SKILL.md content with frontmatter
-	skillMD, err := skills.FormatSkillMD(&skill)
-	if err != nil {
-		err = fmt.Errorf("failed to format SKILL.md: %w", err)
-		return
-	}
-
-	// Create local skill directory: .dscli/skills/<name>/
-	localDir := filepath.Join(pctx.ProjectRoot, ".dscli", "skills", name)
-	if err = os.MkdirAll(localDir, 0o755); err != nil {
-		err = fmt.Errorf("failed to create skill directory: %w", err)
-		return
-	}
-
-	// Write SKILL.md
-	skillFile := filepath.Join(localDir, "SKILL.md")
-	if err = os.WriteFile(skillFile, []byte(skillMD), 0o644); err != nil {
-		err = fmt.Errorf("failed to write SKILL.md: %w", err)
-		return
-	}
-
-	// Register in local store so it's immediately usable via skill_by_name / skill_search
-	localStore, storeErr := skills.LocalStore()
-	if storeErr != nil {
-		// Non-fatal: skill file is on disk, will be picked up on next load
-		outfmt.Printf("Warning: could not update local store cache: %v\n", storeErr)
-		content = fmt.Sprintf("Skill %q created at %s (store cache update skipped).", name, localDir)
-		return
-	}
-
-	// Parse the newly created SKILL.md to get the full Skill (with resources, etc.)
-	var parsedSkill skills.Skill
-	if parseErr := skills.ParseSkill(skillFile, &parsedSkill); parseErr != nil {
-		err = fmt.Errorf("failed to parse created skill: %w", parseErr)
-		return
-	}
-
-	// Preserve auto_inject if set
-	if autoInject {
-		parsedSkill.AutoInject = true
-	}
-
-	// Add to in-memory store
-	localStore.Skills[name] = parsedSkill
-
-	// Update keywords index: ensure no duplicates
-	for _, kw := range parsedSkill.Keywords {
-		names := localStore.Keywords[kw]
-		found := false
-		for _, n := range names {
-			if n == name {
-				found = true
-				break
-			}
-		}
-		if !found {
-			localStore.Keywords[kw] = append(names, name)
-		}
-	}
-
-	// Persist skills.yaml
-	if saveErr := localStore.Save(); saveErr != nil {
-		outfmt.Printf("Warning: failed to save skills.yaml: %v\n", saveErr)
-	}
-
-	content = fmt.Sprintf("Local skill %q created successfully.\n\nPath: %s\nKeywords: %s",
-		name, localDir, strings.Join(parsedSkill.Keywords, ", "))
+	result, warning, err = skills.HandleSkillCreate(ctx, name, description, bodyContent, keywordsStr, autoInject)
 	return
 }
 

@@ -89,12 +89,12 @@ type ToolResultTruncator struct {
 }
 
 // DefaultToolResultTruncator 默认工具结果截断器。
-// 1M 上下文时代（~250K tokens），大幅提升截断阈值。
-// MaxRunes=200K（~50K tokens），MaxBytes=800KB，
+// 1M 上下文时代（1,000K tokens），大幅提升截断阈值。
+// MaxRunes=1,200K（~600K tokens），MaxBytes=1800KB(~600K tokens)，
 // 仅为极端情况（如误输出超大文件）提供安全网。
 var DefaultToolResultTruncator = &ToolResultTruncator{
-	MaxRunes:         200000,
-	MaxBytes:         800000,
+	MaxRunes:         1200000,
+	MaxBytes:         1800000,
 	KeepBothEnds:     true,
 	TruncationMarker: "\n\n[...内容已截断...]\n\n",
 }

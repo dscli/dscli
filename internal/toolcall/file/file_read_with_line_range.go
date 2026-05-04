@@ -60,7 +60,7 @@ func init() {
 
 // handleReadFileWithLineRange 读取文件指定行范围的内容
 // 输出格式与 awk 'NR>=start && NR<=end {print NR": "$0}' 完全一致
-func handleReadFileWithLineRange(ctx context.Context, args ToolArgs) (output string, user string, err error) {
+func handleReadFileWithLineRange(ctx context.Context, args ToolArgs) (result string, warning string, err error) {
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		err = fmt.Errorf("parameter error: no path specified")
@@ -115,7 +115,7 @@ func handleReadFileWithLineRange(ctx context.Context, args ToolArgs) (output str
 		return
 	}
 
-	output = resultBuilder.String()
+	result = resultBuilder.String()
 
 	// 记录日志
 	rangeDesc := fmt.Sprintf("第%d行 - 第%d行", startLine, endLine)

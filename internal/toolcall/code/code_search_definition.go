@@ -70,7 +70,7 @@ func init() {
 }
 
 // handleSearchCodeDefinition 处理代码定义搜索请求
-func handleSearchCodeDefinition(ctx context.Context, args toolcall.ToolArgs) (output string, user string, err error) {
+func handleSearchCodeDefinition(ctx context.Context, args toolcall.ToolArgs) (result string, warning string, err error) {
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		err = fmt.Errorf("参数 'path' 缺失")
@@ -155,7 +155,7 @@ func handleSearchCodeDefinition(ctx context.Context, args toolcall.ToolArgs) (ou
 		sb.WriteString("3. 尝试不使用类型过滤器\n")
 		sb.WriteString("4. 使用 search_code_semantic 进行文本搜索\n")
 		sb.WriteString("5. 查看文件结构: read_code_structure(path=\"" + path + "\")\n")
-		output = sb.String()
+		result = sb.String()
 		return
 	}
 
@@ -179,7 +179,7 @@ func handleSearchCodeDefinition(ctx context.Context, args toolcall.ToolArgs) (ou
 		fmt.Fprintf(&sb, "  - 搜索效率: %.1f%%\n", efficiency)
 	}
 
-	output = sb.String()
+	result = sb.String()
 	return
 }
 

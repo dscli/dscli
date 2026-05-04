@@ -272,7 +272,7 @@ func init() {
 	})
 }
 
-func handleWriteCodeSection(ctx context.Context, args toolcall.ToolArgs) (output string, user string, err error) {
+func handleWriteCodeSection(ctx context.Context, args toolcall.ToolArgs) (result string, warning string, err error) {
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		err = fmt.Errorf("参数 'path' 缺失")
@@ -293,17 +293,17 @@ func handleWriteCodeSection(ctx context.Context, args toolcall.ToolArgs) (output
 
 	PrintWriteSession(path, selector)
 
-	output, err = writeCodeSection(ctx, path, selector, newContent)
+	result, err = writeCodeSection(ctx, path, selector, newContent)
 	if err != nil {
 		return
 	}
 
 	// Run flycheck on the written file and append issues as suggestion
 	if flyResult, _, flyErr := flycheck.Flycheck(ctx, path); flyErr == nil && flyResult != "" {
-		if user != "" {
-			user += "\n\n"
+		if warning != "" {
+			warning += "\n\n"
 		}
-		user += flyResult
+		warning += flyResult
 	}
 
 	return

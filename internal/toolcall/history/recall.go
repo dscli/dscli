@@ -49,7 +49,7 @@ func init() {
 	})
 }
 
-func handleRecall(ctx context.Context, args toolcall.ToolArgs) (result string, suggestion string, err error) {
+func handleRecall(ctx context.Context, args toolcall.ToolArgs) (result string, warning string, err error) {
 	keywordsStr := toolcall.ToolArgsValue(args, "keywords", "")
 	if keywordsStr == "" {
 		err = fmt.Errorf("参数 'keywords' 缺失")
@@ -58,6 +58,6 @@ func handleRecall(ctx context.Context, args toolcall.ToolArgs) (result string, s
 
 	days := toolcall.ToolArgsValue(args, "days", 30)
 	limit := toolcall.ToolArgsValue(args, "limit", 5)
-	result, suggestion, err = prompt.HandleRecall(ctx, keywordsStr, days, limit)
+	result, warning, err = prompt.HandleRecall(ctx, keywordsStr, days, limit)
 	return
 }

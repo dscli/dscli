@@ -383,26 +383,25 @@ func TestToolArgsValue(t *testing.T) {
 		}
 	}
 }
-
 func TestToolContent(t *testing.T) {
 	tcs := []struct {
-		name       string
-		result     string
-		err        error
-		suggestion string
-		want       string
+		name    string
+		result  string
+		err     error
+		warning string
+		want    string
 	}{
 		{"all empty", "", nil, "", ``},
-		{"err empty", "done", nil, "ok", "### Result\ndone\n\n### Suggestion\nok\n"},
+		{"with warning", "done", nil, "ok", "### Result\ndone\n\n### Warning\nok\n"},
 		{"only error", "", fmt.Errorf("all wrong!"), "", "### Error\nall wrong!\n"},
 	}
 
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
 			toolContent := ToolContent{
-				Result:     tc.result,
-				Suggestion: tc.suggestion,
-				Error:      Error(tc.err),
+				Result:  tc.result,
+				Warning: tc.warning,
+				Error:   Error(tc.err),
 			}
 			actual := toolContent.String()
 			if actual != tc.want {

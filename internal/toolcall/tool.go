@@ -172,9 +172,9 @@ func HandleToolCalls(ctx context.Context, tcs []prompt.ToolCall) (inputs []promp
 		// 使用新的工具调用处理器
 		result, user, err := HandleToolCall(ctx, tc.Function.Name, tc.Function.Arguments)
 		toolContent := ToolContent{
-			Result:     result,
-			Error:      Error(err),
-			Suggestion: user,
+			Result:  result,
+			Error:   Error(err),
+			Warning: user,
 		}
 
 		input := prompt.Message{
@@ -239,13 +239,13 @@ func FixBrokenJSON(broken string) (result string) {
 }
 
 // HandleToolCall 处理工具调用（带统计和超时）
-func HandleToolCall(ctx context.Context, toolName string, argsRaw string) (result string, user string, err error) {
+func HandleToolCall(ctx context.Context, toolName string, argsRaw string) (result string, warning string, err error) {
 	// 获取工具处理器
 	tool, ok := GetToolDef(ctx, toolName)
 	if !ok {
 		err = fmt.Errorf("未知工具: %s", toolName)
-		user = fmt.Sprintf("所调用工具 %q 不存在，请严格按照 tools 列表所提供工具调用", toolName)
-		outfmt.Println(user)
+		warning = fmt.Sprintf("所调用工具 %q 不存在，请严格按照 tools 列表所提供工具调用", toolName)
+		outfmt.Println(warning)
 		return
 	}
 
@@ -310,7 +310,7 @@ which lead to the error:
 	outfmt.Printf("🔄 正在执行 %s...\n", displayName)
 
 	// 执行工具
-	result, user, err = tool.Handler(ctx, args)
+	result, warning, err = tool.Handler(ctx, args)
 
 	// 检查是否超时
 	if ctx.Err() == context.DeadlineExceeded {

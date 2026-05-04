@@ -150,7 +150,7 @@ func init() {
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 // handleMemSave saves a new memory observation.
-func handleMemSave(ctx context.Context, args ToolArgs) (result string, suggest string, err error) {
+func handleMemSave(ctx context.Context, args ToolArgs) (result string, warning string, err error) {
 	title := ToolArgsValue(args, "title", "")
 	body := ToolArgsValue(args, "content", "")
 	typ := ToolArgsValue(args, "type", "manual")
@@ -160,12 +160,12 @@ func handleMemSave(ctx context.Context, args ToolArgs) (result string, suggest s
 		return
 	}
 
-	result, suggest, err = memories.HandleMemSave(ctx, title, body, typ)
+	result, warning, err = memories.HandleMemSave(ctx, title, body, typ)
 	return
 }
 
 // handleMemUpdate updates an existing memory by ID.
-func handleMemUpdate(ctx context.Context, args ToolArgs) (result string, suggest string, err error) {
+func handleMemUpdate(ctx context.Context, args ToolArgs) (result string, warning string, err error) {
 	id := ToolArgsValue(args, "id", int64(0))
 	if id == 0 {
 		err = fmt.Errorf("id 为必填项")
@@ -176,12 +176,12 @@ func handleMemUpdate(ctx context.Context, args ToolArgs) (result string, suggest
 	title := ToolArgsValue(args, "title", "")
 	body := ToolArgsValue(args, "content", "")
 	typ := ToolArgsValue(args, "type", "")
-	result, suggest, err = memories.HandleMemUpdate(ctx, id, title, body, typ)
+	result, warning, err = memories.HandleMemUpdate(ctx, id, title, body, typ)
 	return
 }
 
 // handleMemSearch searches memories using FTS5 full-text search.
-func handleMemSearch(ctx context.Context, args ToolArgs) (result string, suggest string, err error) {
+func handleMemSearch(ctx context.Context, args ToolArgs) (result string, warning string, err error) {
 	query := ToolArgsValue(args, "query", "")
 	typ := ToolArgsValue(args, "type", "")
 	limit := ToolArgsValue(args, "limit", 10)
@@ -195,35 +195,35 @@ func handleMemSearch(ctx context.Context, args ToolArgs) (result string, suggest
 		return
 	}
 
-	result, suggest, err = memories.HandleMemSearch(ctx, query, typ, limit)
+	result, warning, err = memories.HandleMemSearch(ctx, query, typ, limit)
 	return
 }
 
 // handleMemDelete deletes a memory by ID.
-func handleMemDelete(ctx context.Context, args ToolArgs) (result string, suggest string, err error) {
+func handleMemDelete(ctx context.Context, args ToolArgs) (result string, warning string, err error) {
 	id := ToolArgsValue(args, "id", int64(0))
 	if id == 0 {
 		err = fmt.Errorf("id 为必填项")
 		return
 	}
-	result, suggest, err = memories.HandleMemDelete(ctx, id)
+	result, warning, err = memories.HandleMemDelete(ctx, id)
 	return
 }
 
 // handleMemGetObservation retrieves full memory content by ID.
 // Unlike mem_search which returns truncated previews, this returns the complete content.
-func handleMemGetObservation(ctx context.Context, args ToolArgs) (result string, suggest string, err error) {
+func handleMemGetObservation(ctx context.Context, args ToolArgs) (result string, warning string, err error) {
 	id := ToolArgsValue(args, "id", int64(0))
 	if id == 0 {
 		err = fmt.Errorf("id 为必填项")
 		return
 	}
-	result, suggest, err = memories.HandleMemGetObservation(ctx, id)
+	result, warning, err = memories.HandleMemGetObservation(ctx, id)
 	return
 }
 
 // handleMemStats returns memory system statistics.
-func handleMemStats(ctx context.Context, _ ToolArgs) (result string, suggest string, err error) {
-	result, suggest, err = memories.HandleMemStats(ctx)
+func handleMemStats(ctx context.Context, _ ToolArgs) (result string, warning string, err error) {
+	result, warning, err = memories.HandleMemStats(ctx)
 	return
 }

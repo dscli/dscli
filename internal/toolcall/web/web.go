@@ -26,7 +26,7 @@ var webClient = &http.Client{
 }
 
 // handleWebReader 读取网页内容
-func handleWebReader(ctx context.Context, args toolcall.ToolArgs) (output string, user string, err error) {
+func handleWebReader(ctx context.Context, args toolcall.ToolArgs) (result string, warning string, err error) {
 	url := toolcall.ToolArgsValue(args, "url", "")
 	if url == "" {
 		err = fmt.Errorf("no URL or empty URL specified")
@@ -37,7 +37,7 @@ func handleWebReader(ctx context.Context, args toolcall.ToolArgs) (output string
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 		url = "https://" + url
 	}
-	output, err = Web2Markdown(ctx, url)
+	result, err = Web2Markdown(ctx, url)
 	return
 }
 

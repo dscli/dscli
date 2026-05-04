@@ -45,7 +45,7 @@ func init() {
 }
 
 // handleAskUser 处理提问工具调用
-func handleAskUser(ctx context.Context, args toolcall.ToolArgs) (reply string, user string, err error) {
+func handleAskUser(ctx context.Context, args toolcall.ToolArgs) (result string, warning string, err error) {
 	content := toolcall.ToolArgsValue(args, "content", "")
 	if content == "" {
 		err = fmt.Errorf("内容不能为空")
@@ -62,7 +62,7 @@ func handleAskUser(ctx context.Context, args toolcall.ToolArgs) (reply string, u
 	}
 	outfmt.Println("  问题摘要:", string(summary))
 
-	reply, err = editor.OpenEditor(ctx, content)
+	result, err = editor.OpenEditor(ctx, content)
 	if err != nil {
 		outfmt.Println("❌ 获取用户回答失败")
 		err = fmt.Errorf("获取用户回答失败: %v", err)
@@ -70,8 +70,8 @@ func handleAskUser(ctx context.Context, args toolcall.ToolArgs) (reply string, u
 	}
 
 	// 显示用户回答摘要
-	if reply != "" {
-		replySummary := []rune(reply)
+	if result != "" {
+		replySummary := []rune(result)
 		if len(replySummary) > 100 {
 			replySummary = append(replySummary[:97], []rune("...")...)
 		}

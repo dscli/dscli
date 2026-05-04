@@ -43,7 +43,7 @@ func init() {
 }
 
 // handleIssueUpdate 处理更新issue（Tool Calling）
-func handleIssueUpdate(ctx context.Context, args toolcall.ToolArgs) (output string, user string, err error) {
+func handleIssueUpdate(ctx context.Context, args toolcall.ToolArgs) (result string, warning string, err error) {
 	number := int(toolcall.ToolArgsValue(args, "number", int64(0)))
 	if number == 0 {
 		err = fmt.Errorf("必须提供issue编号")
@@ -77,29 +77,29 @@ func handleIssueUpdate(ctx context.Context, args toolcall.ToolArgs) (output stri
 	}
 
 	// 构建成功结果
-	var result strings.Builder
-	result.WriteString("✅ Issue 更新成功!\n\n")
+	var b strings.Builder
+	b.WriteString("✅ Issue 更新成功!\n\n")
 
-	result.WriteString(strings.Repeat("=", 80) + "\n")
-	fmt.Fprintf(&result, "Issue #%s: %s\n", issue.Number, issue.Title)
-	result.WriteString(strings.Repeat("=", 80) + "\n\n")
+	b.WriteString(strings.Repeat("=", 80) + "\n")
+	fmt.Fprintf(&b, "Issue #%s: %s\n", issue.Number, issue.Title)
+	b.WriteString(strings.Repeat("=", 80) + "\n\n")
 
-	fmt.Fprintf(&result, "ID:         %d\n", issue.ID)
-	fmt.Fprintf(&result, "Number:     %s\n", issue.Number)
-	fmt.Fprintf(&result, "State:      %s\n", issue.State)
-	fmt.Fprintf(&result, "Updated:    %s\n", formatTime(issue.UpdatedAt))
+	fmt.Fprintf(&b, "ID:         %d\n", issue.ID)
+	fmt.Fprintf(&b, "Number:     %s\n", issue.Number)
+	fmt.Fprintf(&b, "State:      %s\n", issue.State)
+	fmt.Fprintf(&b, "Updated:    %s\n", formatTime(issue.UpdatedAt))
 
 	if title != "" {
-		fmt.Fprintf(&result, "标题已更新\n")
+		fmt.Fprintf(&b, "标题已更新\n")
 	}
 	if body != "" {
-		fmt.Fprintf(&result, "内容已更新\n")
+		fmt.Fprintf(&b, "内容已更新\n")
 	}
 	if state != "" {
-		fmt.Fprintf(&result, "状态已更新为: %s\n", state)
+		fmt.Fprintf(&b, "状态已更新为: %s\n", state)
 	}
 
-	result.WriteString(strings.Repeat("=", 80) + "\n")
-	output = result.String()
+	b.WriteString(strings.Repeat("=", 80) + "\n")
+	result = b.String()
 	return
 }

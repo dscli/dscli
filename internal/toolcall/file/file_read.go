@@ -28,7 +28,7 @@ func init() {
 }
 
 // handleReadFile 读取文件完整内容（read_file_with_line_range 的简化版本，等价于不传行范围参数）
-func handleReadFile(ctx context.Context, args ToolArgs) (output string, user string, err error) {
-	output, user, err = handleReadFileWithLineRange(ctx, args)
+func handleReadFile(ctx context.Context, args ToolArgs) (result string, warning string, err error) {
+	result, warning, err = handleReadFileWithLineRange(ctx, args)
 	return
 }

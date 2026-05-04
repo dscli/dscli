@@ -66,7 +66,7 @@ func init() { // 注册shell工具
 }
 
 // handleShell 执行Shell脚本，使用 internal/shell 解释器
-func handleShell(ctx context.Context, args ToolArgs) (out string, user string, err error) {
+func handleShell(ctx context.Context, args ToolArgs) (result string, warning string, err error) {
 	script := ToolArgsValue(args, "script", "")
 	summary := ToolArgsValue(args, "summary", "")
 	if summary == "" {
@@ -79,22 +79,23 @@ func handleShell(ctx context.Context, args ToolArgs) (out string, user string, e
 	// 使用 internal/shell 解释器执行
 	config := ishell.DefaultConfig(ctx)
 	executor := ishell.NewExecutor(ctx, config)
-	result, execErr := executor.Execute(ctx, script)
+	res, err := executor.Execute(ctx, script)
 
-	if execErr != nil {
-		err = fmt.Errorf("shell executor error: %w", execErr)
+	if err != nil {
+		err = fmt.Errorf("shell executor error: %w", err)
 		return
 	}
-	if result == nil {
+
+	if res == nil {
 		err = fmt.Errorf("shell executor returned nil result without error")
 		return
 	}
 
 	// stderr → user (Suggestion)，供 AI 参考诊断信息
-	user = result.Stderr
-	out = result.Stdout
-	if result.Err != nil {
-		err = fmt.Errorf("shell script failed (exit=%d): %w", result.ExitCode, result.Err)
+	warning = res.Stderr
+	result = res.Stdout
+	if res.Err != nil {
+		err = fmt.Errorf("shell script failed (exit=%d): %w", res.ExitCode, res.Err)
 		return
 	}
 	return

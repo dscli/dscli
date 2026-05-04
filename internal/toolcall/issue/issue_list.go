@@ -9,7 +9,7 @@ import (
 )
 
 // handleIssueList 处理issue列表查询（Tool Calling）
-func handleIssueList(ctx context.Context, args toolcall.ToolArgs) (output string, user string, err error) {
+func handleIssueList(ctx context.Context, args toolcall.ToolArgs) (result string, warning string, err error) {
 	state := toolcall.ToolArgsValue(args, "state", "open")
 
 	// 验证状态参数
@@ -24,13 +24,13 @@ func handleIssueList(ctx context.Context, args toolcall.ToolArgs) (output string
 	}
 
 	if len(issues) == 0 {
-		output = fmt.Sprintf("没有找到状态为 '%s' 的issues", state)
+		result = fmt.Sprintf("没有找到状态为 '%s' 的issues", state)
 		return
 	}
 
 	// 构建结果
-	var result strings.Builder
-	fmt.Fprintf(&result, "📋 Issues (状态: %s, 总数: %d):\n\n", state, len(issues))
+	var b strings.Builder
+	fmt.Fprintf(&b, "📋 Issues (状态: %s, 总数: %d):\n\n", state, len(issues))
 
 	for _, issue := range issues {
 		assigneeInfo := "-"
@@ -51,23 +51,23 @@ func handleIssueList(ctx context.Context, args toolcall.ToolArgs) (output string
 			labelsInfo = strings.Join(labelNames, ", ")
 		}
 
-		fmt.Fprintf(&result, "## #%s [%s] %s\n", issue.Number, issue.State, issue.Title)
-		fmt.Fprintf(&result, "  ID: %d | 作者: %s | 负责人: %s\n",
+		fmt.Fprintf(&b, "## #%s [%s] %s\n", issue.Number, issue.State, issue.Title)
+		fmt.Fprintf(&b, "  ID: %d | 作者: %s | 负责人: %s\n",
 			issue.ID, issue.User.Login, assigneeInfo)
-		fmt.Fprintf(&result, "  创建时间: %s | 更新时间: %s\n",
+		fmt.Fprintf(&b, "  创建时间: %s | 更新时间: %s\n",
 			formatTime(issue.CreatedAt), formatTime(issue.UpdatedAt))
-		fmt.Fprintf(&result, "  标签: %s\n", labelsInfo)
+		fmt.Fprintf(&b, "  标签: %s\n", labelsInfo)
 
 		if issue.Body != "" {
 			preview := issue.Body
 			if len(preview) > 100 {
 				preview = preview[:100] + "..."
 			}
-			fmt.Fprintf(&result, "  预览: %s\n", preview)
+			fmt.Fprintf(&b, "  预览: %s\n", preview)
 		}
-		result.WriteString("\n")
+		b.WriteString("\n")
 	}
-	output = result.String()
+	result = b.String()
 	return
 }
 

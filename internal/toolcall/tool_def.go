@@ -17,7 +17,7 @@ type ToolDef struct {
 	Parameters  map[string]any
 	Category    string
 	Timeout     time.Duration // 工具执行超时时间
-	Handler     func(ctx context.Context, args ToolArgs) (string, string, error)
+	Handler     func(ctx context.Context, args ToolArgs) (result string, warning string, err error)
 }
 
 // ToolArgs 参数定义
@@ -53,9 +53,9 @@ func Error(err error) string {
 }
 
 type ToolContent struct {
-	Result     string `json:"result,omitzero"`
-	Error      string `json:"error,omitzero"`
-	Suggestion string `json:"suggestion,omitzero"`
+	Result  string `json:"result,omitzero"`
+	Error   string `json:"error,omitzero"`
+	Warning string `json:"warning,omitzero"`
 }
 
 func (tc *ToolContent) String() (content string) {
@@ -73,12 +73,12 @@ func (tc *ToolContent) String() (content string) {
 		b.WriteString(tc.Error)
 		b.WriteString("\n")
 	}
-	if tc.Suggestion != "" {
+	if tc.Warning != "" {
 		if b.Len() > 0 {
 			b.WriteString("\n")
 		}
-		b.WriteString("### Suggestion\n")
-		b.WriteString(tc.Suggestion)
+		b.WriteString("### Warning\n")
+		b.WriteString(tc.Warning)
 		b.WriteString("\n")
 	}
 	content = b.String()

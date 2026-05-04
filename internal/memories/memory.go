@@ -105,7 +105,7 @@ func deleteFTS(db *sql.DB, id int64) error {
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 // HandleMemSave saves a new memory observation.
-func HandleMemSave(ctx context.Context, title string, body string, typ string) (result string, suggest string, err error) {
+func HandleMemSave(ctx context.Context, title string, body string, typ string) (result string, warning string, err error) {
 	if title == "" || body == "" {
 		err = fmt.Errorf("title 和 content 为必填项")
 		return
@@ -150,7 +150,7 @@ func HandleMemSave(ctx context.Context, title string, body string, typ string) (
 }
 
 // HandleMemUpdate updates an existing memory by ID.
-func HandleMemUpdate(ctx context.Context, id int64, title string, body string, typ string) (result string, suggest string, err error) {
+func HandleMemUpdate(ctx context.Context, id int64, title string, body string, typ string) (result string, warning string, err error) {
 	db, err := openDB()
 	if err != nil {
 		err = fmt.Errorf("打开数据库失败: %w", err)
@@ -228,7 +228,7 @@ func HandleMemUpdate(ctx context.Context, id int64, title string, body string, t
 }
 
 // HandleMemSearch searches memories using FTS5 full-text search.
-func HandleMemSearch(ctx context.Context, query string, typ string, limit int) (result string, suggest string, err error) {
+func HandleMemSearch(ctx context.Context, query string, typ string, limit int) (result string, warning string, err error) {
 	db, err := openDB()
 	if err != nil {
 		err = fmt.Errorf("打开数据库失败: %w", err)
@@ -312,7 +312,7 @@ func HandleMemSearch(ctx context.Context, query string, typ string, limit int) (
 }
 
 // HandleMemDelete deletes a memory by ID.
-func HandleMemDelete(ctx context.Context, id int64) (result string, suggest string, err error) {
+func HandleMemDelete(ctx context.Context, id int64) (result string, warning string, err error) {
 	db, err := openDB()
 	if err != nil {
 		err = fmt.Errorf("打开数据库失败: %w", err)
@@ -359,7 +359,7 @@ func HandleMemDelete(ctx context.Context, id int64) (result string, suggest stri
 
 // HandleMemGetObservation retrieves full memory content by ID.
 // Unlike mem_search which returns truncated previews, this returns the complete content.
-func HandleMemGetObservation(ctx context.Context, id int64) (result string, suggest string, err error) {
+func HandleMemGetObservation(ctx context.Context, id int64) (result string, warning string, err error) {
 
 	db, err := openDB()
 	if err != nil {
@@ -389,7 +389,7 @@ func HandleMemGetObservation(ctx context.Context, id int64) (result string, sugg
 }
 
 // HandleMemStats returns memory system statistics.
-func HandleMemStats(ctx context.Context) (result string, suggest string, err error) {
+func HandleMemStats(ctx context.Context) (result string, warning string, err error) {
 	db, err := openDB()
 	if err != nil {
 		err = fmt.Errorf("打开数据库失败: %w", err)

@@ -72,7 +72,7 @@ func init() {
 }
 
 // handleCodeReview 处理代码审查工具调用
-func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (reply string, user string, err error) {
+func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result string, warning string, err error) {
 	// 常量定义：每次审查的提交数量
 	const reviewCommitCount = 1
 
@@ -168,14 +168,14 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (reply string
 	// 构建审查请求
 	structuredRequest := buildCodeReviewRequest(summary, fullLog, patch)
 	outfmt.Printf("📤 发送代码审查请求...\n%s\n", structuredRequest)
-	reply, err = AskExpert(ctx, structuredRequest)
+	result, err = AskExpert(ctx, structuredRequest)
 	if err != nil {
 		outfmt.Println("❌ 代码提交失败")
 		err = fmt.Errorf("代码提交失败: %w", err)
 		return
 	}
 
-	outfmt.Printf("✅ 代码审查结果\n%s\n", reply)
+	outfmt.Printf("✅ 代码审查结果\n%s\n", result)
 	return
 }
 

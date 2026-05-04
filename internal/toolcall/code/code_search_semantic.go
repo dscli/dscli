@@ -232,7 +232,7 @@ func init() {
 	})
 }
 
-func handleSearchCodeSemantic(ctx context.Context, args toolcall.ToolArgs) (output string, user string, err error) {
+func handleSearchCodeSemantic(ctx context.Context, args toolcall.ToolArgs) (result string, warning string, err error) {
 	filePattern := toolcall.ToolArgsValue(args, "file_pattern", "")
 	if filePattern == "" {
 		err = fmt.Errorf("参数 'file_pattern' 缺失")
@@ -257,7 +257,7 @@ func handleSearchCodeSemantic(ctx context.Context, args toolcall.ToolArgs) (outp
 	}
 
 	if len(files) == 0 {
-		output = "❌ 未找到匹配的文件"
+		result = "❌ 未找到匹配的文件"
 		return
 	}
 
@@ -311,6 +311,6 @@ func handleSearchCodeSemantic(ctx context.Context, args toolcall.ToolArgs) (outp
 	if maxMatches > 0 && totalMatches >= maxMatches {
 		fmt.Fprintf(&sb, "  - 注意: 已达到全局最大匹配数限制 (%d)\n", maxMatches)
 	}
-	output = sb.String()
+	result = sb.String()
 	return
 }
