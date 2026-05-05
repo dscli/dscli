@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/roles"
@@ -24,7 +25,7 @@ func init() {
   dscli role list                      列出当前项目所有角色配置
   dscli role show dev                  查看 dev 角色的配置
   dscli role update review --skills all --tools "shell,file_read" --prompt editor
-  dscli role delete review             删除 review 角色的自定义配置`,
+  dscli role reset review              重置 review 角色的自定义配置`,
 	})
 
 	// list 子命令
@@ -65,13 +66,13 @@ func init() {
 	updateCmd.Flags().String("prompt", "", "提示词模板名称（空表示与角色同名）")
 	roleCmd.AddCommand(updateCmd)
 
-	// delete 子命令
+	// reset 子命令
 	roleCmd.AddCommand(&cobra.Command{
-		Use:   "delete <role>",
-		Short: "删除角色的自定义配置（恢复默认行为）",
-		Long:  `删除指定角色在当前项目的自定义配置，恢复为系统默认行为。`,
+		Use:   "reset <role>",
+		Short: "重置角色的自定义配置（恢复默认行为）",
+		Long:  `重置指定角色在当前项目的自定义配置，恢复为系统默认行为。`,
 		Args:  cobra.ExactArgs(1),
-		RunE:  roleDeleteRunE,
+		RunE:  roleResetRunE,
 	})
 }
 
@@ -253,7 +254,8 @@ func validateTools(tools string) error {
 func validateSkills(skillsStr string) error {
 	skillInfos, err := skills.ListAll()
 	if err != nil {
-		// If we can't list skills, skip validation (non-fatal)
+		// If we can't list skills, skip validation but warn the user.
+		fmt.Fprintf(os.Stderr, "警告: 无法验证技能列表: %v\n", err)
 		return nil
 	}
 	knownSet := make(map[string]bool, len(skillInfos))
@@ -269,14 +271,20 @@ func validateSkills(skillsStr string) error {
 	return nil
 }
 
-func roleDeleteRunE(cmd *cobra.Command, args []string) error {
+func roleResetRunE(cmd *cobra.Command, args []string) error {
 	roleName := args[0]
+
+	// Validate role name
+	validRoles := map[string]bool{"dev": true, "expert": true, "review": true}
+	if !validRoles[roleName] {
+		return fmt.Errorf("无效的角色名 %q，支持的角色：dev, expert, review", roleName)
+	}
 
 	sessionID := session.GetCurrentSessionID(cmd.Context())
 	if err := roles.DeleteRoleConfig(roleName, sessionID); err != nil {
-		return fmt.Errorf("删除角色配置失败: %w", err)
+		return fmt.Errorf("重置角色配置失败: %w", err)
 	}
 
-	fmt.Printf("已删除角色 %q 的自定义配置，恢复默认行为。\n", roleName)
+	fmt.Printf("已重置角色 %q 的配置，恢复默认行为。\n", roleName)
 	return nil
 }

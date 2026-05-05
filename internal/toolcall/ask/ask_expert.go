@@ -85,8 +85,13 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 		return result, warning, err
 	}
 
-	// Log consultation
+	// Show what was asked (truncate long content for display)
+	summaryDisplay := summary
+	if summaryDisplay == "" {
+		summaryDisplay = truncateForDisplay(content, 120)
+	}
 	outfmt.Println("📞 Consulting expert...")
+	outfmt.Println("  Question:", summaryDisplay)
 
 	// Build structured request (does not ask expert to generate summary)
 	structuredRequest, attachmentErrors := buildStructuredRequest(summary, content, attachments)
@@ -110,6 +115,15 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 
 	outfmt.Printf("✅ Expert consultation completed\n\n%s\n", result)
 	return result, warning, err
+}
+
+// truncateForDisplay truncates s to maxLen runes for terminal display.
+func truncateForDisplay(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	return string(runes[:maxLen-3]) + "..."
 }
 
 // AskExpert calls the AI expert model for consultation and returns the reply.
@@ -201,6 +215,9 @@ func AskExpertWithRole(ctx context.Context, input, role string) (reply string, e
 	return reply, err
 }
 
+// maxAttachmentSize is the maximum allowed size for a single attachment (1MB).
+const maxAttachmentSize = 1 << 20
+
 // buildStructuredRequest builds a structured request for the expert.
 func buildStructuredRequest(userSummary, originalContent string, attachments []string) (string, []error) {
 	var errors []error
@@ -218,7 +235,7 @@ func buildStructuredRequest(userSummary, originalContent string, attachments []s
 			}
 
 			// Check file size (limit to 1MB)
-			if info, err := os.Stat(filename); err == nil && info.Size() > 1024*1024 {
+			if info, err := os.Stat(filename); err == nil && info.Size() > maxAttachmentSize {
 				errors = append(errors, fmt.Errorf("file too large: %s (%d bytes > 1MB)", filename, info.Size()))
 				continue
 			}
