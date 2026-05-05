@@ -19,14 +19,14 @@ func TestGetEnhancedSystemPrompt(t *testing.T) {
 			"deepseek-chat",
 			context.DeepseekChat,
 			"dev",
-			"专业编程助手",
+			"Professional Programming Assistant",
 			"system_prompt",
 		},
 		{
 			"deepseek-reasoner",
 			context.DeepseekReasoner,
 			"expert",
-			"编程领域专家",
+			"Programming Domain Expert",
 			"system_prompt",
 		},
 	}
@@ -65,7 +65,7 @@ func TestLoadPrompts(t *testing.T) {
 		t.Error("系统提示词内容为空")
 	}
 	// 核心身份标识必须在
-	if !strings.Contains(msgs[0].Content, "专业编程助手") {
+	if !strings.Contains(msgs[0].Content, "Professional Programming Assistant") {
 		t.Error("系统提示词缺少身份标识")
 	}
 	// 不应包含模板占位符 leak
