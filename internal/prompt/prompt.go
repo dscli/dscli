@@ -90,6 +90,144 @@ func GetPromptPath(role string, global bool) (string, error) {
 	return filepath.Join(promptDir, fmt.Sprintf("%s.md", role)), nil
 }
 
+// PromptInfo 提示词基本信息
+type PromptInfo struct {
+	Name        string
+	Description string
+	Source      string // "built-in", "project", "global"
+}
+
+// extractDescription 提取 md 第一行作为描述（去掉 # 前缀）
+func extractDescription(content string) string {
+	lines := strings.SplitN(content, "\n", 2)
+	if len(lines) == 0 {
+		return ""
+	}
+	line := strings.TrimSpace(lines[0])
+	// 去掉开头的 # 符号
+	line = strings.TrimLeft(line, "# ")
+	line = strings.TrimSpace(line)
+	return line
+}
+
+// ListPrompts 列出所有可用提示词（去重，项目优先 > 全局 > 内嵌）
+func ListPrompts() []PromptInfo {
+	seen := map[string]bool{}
+	var result []PromptInfo
+
+	// 1. 内嵌模板（兜底）
+	for name, tmpl := range roleTemplateMap {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		result = append(result, PromptInfo{
+			Name:        name,
+			Description: extractDescription(tmpl),
+			Source:      "built-in",
+		})
+	}
+
+	// 2. 全局自定义 (~/.dscli/prompt/*.md)
+	globalDir := filepath.Join(config.ConfigDir, "prompt")
+	if entries, err := os.ReadDir(globalDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() || filepath.Ext(e.Name()) != ".md" {
+				continue
+			}
+			name := strings.TrimSuffix(e.Name(), ".md")
+			p := filepath.Join(globalDir, e.Name())
+			content := readPromptFile(p)
+			desc := extractDescription(content)
+			if desc == "" {
+				desc = content // fallback
+			}
+			if seen[name] {
+				// 更新描述（全局覆盖内嵌）
+				for i := range result {
+					if result[i].Name == name {
+						result[i].Description = desc
+						result[i].Source = "global"
+						break
+					}
+				}
+			} else {
+				seen[name] = true
+				result = append(result, PromptInfo{
+					Name:        name,
+					Description: desc,
+					Source:      "global",
+				})
+			}
+		}
+	}
+
+	// 3. 项目自定义 (${PROJECT_ROOT}/.dscli/prompt/*.md) — 最高优先级
+	if context.ProjectRoot != "" {
+		projectDir := filepath.Join(context.ProjectRoot, ".dscli", "prompt")
+		if entries, err := os.ReadDir(projectDir); err == nil {
+			for _, e := range entries {
+				if e.IsDir() || filepath.Ext(e.Name()) != ".md" {
+					continue
+				}
+				name := strings.TrimSuffix(e.Name(), ".md")
+				p := filepath.Join(projectDir, e.Name())
+				content := readPromptFile(p)
+				desc := extractDescription(content)
+				if desc == "" {
+					desc = content
+				}
+				if seen[name] {
+					for i := range result {
+						if result[i].Name == name {
+							result[i].Description = desc
+							result[i].Source = "project"
+							break
+						}
+					}
+				} else {
+					seen[name] = true
+					result = append(result, PromptInfo{
+						Name:        name,
+						Description: desc,
+						Source:      "project",
+					})
+				}
+			}
+		}
+	}
+
+	return result
+}
+
+// ResolvePromptEditPath 确定编辑提示词的目标路径
+// 优先编辑项目级别（若已存在）；若不在项目中或文件不存在则使用全局
+func ResolvePromptEditPath(name string) (string, error) {
+	// 先尝试项目级别
+	if context.ProjectRoot != "" {
+		p, err := GetPromptPath(name, false)
+		if err == nil {
+			if _, statErr := os.Stat(p); statErr == nil {
+				return p, nil // 项目级别已存在
+			}
+		}
+	}
+
+	// 尝试全局级别
+	p, err := GetPromptPath(name, true)
+	if err == nil {
+		if _, statErr := os.Stat(p); statErr == nil {
+			return p, nil // 全局级别已存在
+		}
+	}
+
+	// 都不存在：优先项目级别创建
+	if context.ProjectRoot != "" {
+		return GetPromptPath(name, false)
+	}
+	return GetPromptPath(name, true)
+}
+
 // readPromptFile 读取提示词文件
 func readPromptFile(p string) string {
 	if p == "" {

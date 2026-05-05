@@ -14,79 +14,78 @@ func init() {
 	promptCmd := AddRootCommand(&cobra.Command{
 		Use: "prompt",
 	})
-	showCmd := AddCommand(promptCmd, &cobra.Command{
-		Use:  "show",
-		RunE: promptShowRunE,
+
+	_ = AddCommand(promptCmd, &cobra.Command{
+		Use:   "list",
+		Short: "List available prompts",
+		RunE:  promptListRunE,
 	})
 
-	editCmd := AddCommand(promptCmd, &cobra.Command{
-		Use:  "edit",
-		RunE: promptEditRunE,
+	_ = AddCommand(promptCmd, &cobra.Command{
+		Use:   "show <name>",
+		Short: "Show prompt content (args[0]: prompt name, default: dev)",
+		RunE:  promptShowRunE,
 	})
-	editCmd.Flags().Bool("global", false, "global")
-	editCmd.Flags().String("role", "dev", "role: dev|expert|review")
-	showCmd.Flags().String("role", "dev", "role: dev|expert|review")
+
+	_ = AddCommand(promptCmd, &cobra.Command{
+		Use:   "edit <name>",
+		Short: "Edit prompt (args[0]: prompt name, default: dev)",
+		RunE:  promptEditRunE,
+	})
 }
 
-// getRoleFromFlags 从命令行标志获取角色类型
-func getRoleFromFlags(cmd *cobra.Command) (string, error) {
-	role, err := cmd.Flags().GetString("role")
-	if err != nil {
-		return "", fmt.Errorf("获取role标志失败: %w", err)
+// promptName 从 args 获取提示词名称，默认 "dev"
+func promptName(args []string) string {
+	if len(args) > 0 {
+		return args[0]
 	}
-	switch role {
-	case "dev", "expert", "review":
-		return role, nil
-	default:
-		return "", fmt.Errorf("无效角色 %q，支持: dev|expert|review", role)
-	}
+	return "dev"
 }
 
-func promptShowRunE(cmd *cobra.Command, args []string) (err error) {
-	role, err := getRoleFromFlags(cmd)
-	if err != nil {
-		return fmt.Errorf("获取角色类型失败: %w", err)
+// promptListRunE 列出所有可用提示词
+func promptListRunE(cmd *cobra.Command, args []string) error {
+	infos := prompt.ListPrompts()
+	if len(infos) == 0 {
+		outfmt.Println("没有可用的提示词")
+		return nil
 	}
-
-	promptTemplate := prompt.GetPromptTemplate(cmd.Context(), role)
-	outfmt.Println(promptTemplate)
+	for _, info := range infos {
+		outfmt.Printf("%s\t%s\t%s\n", info.Name, info.Source, info.Description)
+	}
 	return nil
 }
 
-func promptEditRunE(cmd *cobra.Command, args []string) (err error) {
-	global, err := cmd.Flags().GetBool("global")
-	if err != nil {
-		return fmt.Errorf("获取global标志失败: %w", err)
-	}
+// promptShowRunE 显示提示词内容
+func promptShowRunE(cmd *cobra.Command, args []string) error {
+	name := promptName(args)
+	content := prompt.GetPromptTemplate(cmd.Context(), name)
+	outfmt.Println(content)
+	return nil
+}
 
-	role, err := getRoleFromFlags(cmd)
-	if err != nil {
-		return fmt.Errorf("获取角色类型失败: %w", err)
-	}
+// promptEditRunE 编辑提示词
+func promptEditRunE(cmd *cobra.Command, args []string) error {
+	name := promptName(args)
 
-	// 获取目标文件路径
-	p, err := prompt.GetPromptPath(role, global)
+	// 确定编辑目标路径
+	p, err := prompt.ResolvePromptEditPath(name)
 	if err != nil {
 		return fmt.Errorf("确定提示词文件路径失败: %w", err)
 	}
 
-	// 检查文件是否存在，若不存在则用默认内容创建
+	// 若文件不存在，用默认内容创建
 	if _, err := os.Stat(p); os.IsNotExist(err) {
-		// 使用内嵌的默认模板内容
-		defaultContent := prompt.GetDefaultPromptTemplate(role)
+		defaultContent := prompt.GetDefaultPromptTemplate(name)
 		if err := os.WriteFile(p, []byte(defaultContent), 0o644); err != nil {
 			return fmt.Errorf("创建初始提示词文件 %s 失败: %w", p, err)
 		}
 	} else if err != nil {
-		// 处理 Stat 的其他错误（如权限）
 		return fmt.Errorf("访问提示词文件 %s 失败: %w", p, err)
 	}
 
-	// 文件已存在或已成功创建，开始编辑
-	ctx := cmd.Context()
-	if err := editor.Edit(ctx, p); err != nil {
+	// 打开编辑器
+	if err := editor.Edit(cmd.Context(), p); err != nil {
 		return fmt.Errorf("编辑器退出错误: %w", err)
 	}
-
 	return nil
 }
