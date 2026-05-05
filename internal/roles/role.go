@@ -1,6 +1,6 @@
 // Package roles manages role-to-skills/tools/prompt mappings stored in SQLite.
 //
-// Each role (dev/expert/review/writer/editor) can have per-session configuration.
+// Each role (dev/expert/review) can have per-session configuration.
 // The table is keyed by (role, session_id), not (role, project_path). This is
 // intentional: session_id is a stable identifier that survives project relocation.
 // When a user copies a project to a new directory, they only need to update
@@ -29,7 +29,7 @@ import (
 // RoleConfig maps a role to its skills, tools, and prompt template.
 type RoleConfig struct {
 	ID        int64
-	Role      string // e.g. "dev", "expert", "review", "writer", "editor"
+	Role      string // e.g. "dev", "expert", "review"
 	Skills    string // "all", "", or comma-separated skill names
 	Tools     string // "all", "", or comma-separated tool names
 	Prompt    string // prompt template name; empty means use role name

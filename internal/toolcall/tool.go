@@ -142,6 +142,19 @@ func GetToolDef(ctx context.Context, toolName string) (tool ToolDef, ok bool) {
 	return tool, ok
 }
 
+// KnownToolNames returns all registered tool names from the in-memory registry.
+func KnownToolNames() []string {
+	toolRegistryRWMutex.RLock()
+	defer toolRegistryRWMutex.RUnlock()
+	names := make([]string, 0, len(toolRegistry))
+	for name := range toolRegistry {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+
 // GetAllTools 获取所有工具定义（用于API调用）
 // GetAllTools returns tools available for the current role.
 // Filters tools by role config from DB; falls back to hardcoded:

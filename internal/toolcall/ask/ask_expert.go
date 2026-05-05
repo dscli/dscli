@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
@@ -18,18 +17,18 @@ import (
 //go:embed ask_expert.md
 var ask_expert_md string
 
-// askExpertTool 工具定义
+// askExpertTool tool definition
 var askExpertTool = toolcall.ToolDef{
 	Name:        "ask_expert",
-	DisplayName: "问专家",
+	DisplayName: "Ask Expert",
 	Description: ask_expert_md,
-	Strict: true,
+	Strict:      true,
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"summary": map[string]any{
 				"type":        "string",
-				"description": "Brief summary (optional, auto-generated if omitted)",
+				"description": "Brief summary (optional)",
 			},
 			"content": map[string]any{
 				"type":        "string",
@@ -48,12 +47,13 @@ var askExpertTool = toolcall.ToolDef{
 		"additionalProperties": false,
 	},
 	Category: "communication",
-	Timeout:  10 * time.Minute, // 给专家10分钟时间回答
+	Timeout:  10 * time.Minute, // 10 minutes for expert to respond
 	Handler:  handleAskExpert,
 }
 
-// dscliCmd 是调用 dscli 的命令字符串。
-// 测试环境下自动替换为 echo，避免每次测试触发 ~60s 的 AI 推理模型调用。
+// dscliCmd is the command string to invoke dscli.
+// In test environments it is automatically replaced with echo to avoid
+// triggering ~60s AI reasoning model calls on every test.
 var dscliCmd = "dscli"
 
 func init() {
@@ -61,46 +61,39 @@ func init() {
 		toolcall.RegisterTool(askExpertTool)
 	}
 
-	// 测试优化：用 echo 替代 dscli 调用，跳过耗时的 AI 推理。
-	// context.IsTesting() 通过 os.Args[0] 是否以 ".test" 结尾判断。
+	// Test optimization: use echo instead of dscli to skip expensive AI inference.
+	// context.IsTesting() checks whether os.Args[0] ends with ".test".
 	if context.IsTesting() {
 		dscliCmd = "echo '[MOCK]'"
 	}
 }
 
-// handleAskExpert 处理提问工具调用
+// handleAskExpert handles the ask_expert tool call.
 func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
-	// 向后兼容：支持旧参数名
+	// Backward compatibility: support old parameter names
 	summary := toolcall.ToolArgsValue(args, "summary", "")
 	content := toolcall.ToolArgsValue(args, "content", "")
 	attachments := toolcall.ToolArgsValue(args, "attachments", []string{})
 
-	// 如果content为空，尝试使用旧参数名
+	// If content is empty, try the old parameter name
 	if content == "" {
 		content = toolcall.ToolArgsValue(args, "question", "")
 	}
 
 	if content == "" {
-		err = fmt.Errorf("问题内容不能为空")
+		err = fmt.Errorf("content cannot be empty")
 		return result, warning, err
 	}
 
-	// 如果用户没有提供summary，自动从content生成
-	if summary == "" {
-		summary = generateUserSummary(content)
-		outfmt.Println("📝 自动生成问题摘要:", summary)
-	}
+	// Log consultation
+	outfmt.Println("📞 Consulting expert...")
 
-	// 输出咨询日志
-	outfmt.Println("📞 正在向专家咨询...")
-	outfmt.Println("  问题摘要:", summary)
-
-	// 构建结构化请求（不再要求专家生成摘要）
+	// Build structured request (does not ask expert to generate summary)
 	structuredRequest, attachmentErrors := buildStructuredRequest(summary, content, attachments)
 
-	// 如果有附件错误，向用户报告但继续执行
+	// Report attachment errors to user but continue execution
 	if len(attachmentErrors) > 0 {
-		outfmt.Println("⚠️  附件处理警告:")
+		outfmt.Println("⚠️  Attachment warnings:")
 		for _, attachmentErr := range attachmentErrors {
 			outfmt.Printf("  - %v\n", attachmentErr)
 		}
@@ -108,92 +101,98 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 
 	result, err = AskExpert(ctx, structuredRequest)
 	if err != nil {
-		outfmt.Println("❌ 专家咨询失败")
+		outfmt.Println("❌ Expert consultation failed")
 		return result, warning, err
 	}
 
-	// 智能处理专家响应（自动生成摘要）
-	result = processExpertResponse(result)
+	// Trim leading/trailing whitespace from expert response
+	result = strings.TrimSpace(result)
 
-	outfmt.Println("✅ 专家咨询完成")
-
+	outfmt.Printf("✅ Expert consultation completed\n\n%s\n", result)
 	return result, warning, err
 }
 
-// AskExpert 调用AI专家模型进行咨询并返回回复
+// AskExpert calls the AI expert model for consultation and returns the reply.
 //
-// 该函数通过 internal/shell 包执行 dscli chat 命令，将输入内容写入临时文件，
-// 通过 --input 参数传递给 dscli，避免了命令行长度限制和 stdin 传递问题。
+// This function executes the dscli chat command via internal/shell, writes
+// the input content to a temporary file, and passes it to dscli via the
+// --input flag, avoiding command-line length limits and stdin issues.
 //
-// 参数:
+// Parameters:
 //
-//	ctx: 上下文对象，用于传递执行环境配置
-//	input: 要发送给AI模型的输入文本，可以是任意长度（受系统内存限制）
+//	ctx: context object for passing execution environment configuration
+//	input: input text to send to the AI model, can be any length
+//	       (limited by system memory)
 //
-// 返回值:
+// Returns:
 //
-//	reply: AI模型的回复文本。如果执行失败且没有获得回复，返回空字符串。
-//	err: 执行过程中的错误。如果执行成功，返回nil。常见错误包括：
-//	     - dscli命令执行失败
-//	     - 临时文件创建/写入失败
+//	reply: the AI model's response text. Returns empty string if execution
+//	       fails without obtaining a reply.
+//	err: error during execution. Returns nil on success. Common errors include:
+//	     - dscli command execution failure
+//	     - temporary file creation/write failure
 //
-// 功能说明:
+// Details:
 //
-//	函数通过执行以下命令调用AI模型:
-//	     dscli chat --no-color --no-timestamp --histsize 0 --model <模型名称> --input <临时文件>
-//	其中模型名称由ModelDeepseekReasoner变量指定。
+//	The function invokes the AI model by executing the following command:
+//	     dscli chat --no-color --no-timestamp --histsize 0 --model <model_name> --input <temp_file>
+//	where the model name is specified by ModelDeepseekReasoner.
 //
-// 注意事项:
-//   - 确保dscli命令行工具已正确安装并配置
-//   - 输入内容通过临时文件传递，执行后自动清理
+// Notes:
+//   - Ensure the dscli CLI tool is properly installed and configured.
+//   - Input content is passed via a temporary file that is automatically
+//     cleaned up after execution.
 //
-// 示例:
+// Example:
 //
 //	ctx := context.Background()
-//	reply, err := AskExpert(ctx, "请分析这段代码的质量")
+//	reply, err := AskExpert(ctx, "Please analyze the quality of this code")
 //	if err != nil {
-//	    log.Printf("咨询失败: %v", err)
+//	    log.Printf("Consultation failed: %v", err)
 //	} else {
 //	    fmt.Println(reply)
 //	}
 //
-// 参见:
-//   - shell.SimpleExecute: 执行shell命令的函数
-//   - handleAskExpert: 使用此函数的工具处理函数
+// See also:
+//   - shell.SimpleExecute: function for executing shell commands
+//   - handleAskExpert: tool handler function that uses this function
 func AskExpert(ctx context.Context, input string) (reply string, err error) {
 	return AskExpertWithRole(ctx, input, "expert")
 }
 
-// AskExpertWithRole 调用AI模型进行咨询，支持指定角色(dev/expert/review)
+// AskExpertWithRole calls the AI model for consultation with a specified
+// role (dev/expert/review).
 //
-// 该函数通过 internal/shell 包执行 dscli chat 命令，将输入内容写入临时文件，
-// 通过 --input 和 --role 参数传递给 dscli。
+// This function executes the dscli chat command via internal/shell, writes
+// the input content to a temporary file, and passes it to dscli via the
+// --input and --role flags.
 //
-// 参数:
+// Parameters:
 //
-//	ctx: 上下文对象
-//	input: 要发送给AI模型的输入文本
-//	role: 角色（dev/expert/review）
+//	ctx: context object
+//	input: input text to send to the AI model
+//	role: role (dev/expert/review)
 //
-// 返回值:
+// Returns:
 //
-//	reply: AI模型的回复文本
-//	err: 执行过程中的错误
+//	reply: the AI model's response text
+//	err: error during execution
 func AskExpertWithRole(ctx context.Context, input, role string) (reply string, err error) {
-	// 将输入内容写入临时文件，避免 shell 命令长度限制和 stdin 传递问题
+	// Write input content to a temporary file to avoid shell command
+	// length limits and stdin passing issues.
 	tmpFile, err := os.CreateTemp("", "dscli-ask-*.md")
 	if err != nil {
-		return "", fmt.Errorf("创建临时文件失败: %w", err)
+		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tmpPath := tmpFile.Name()
 	defer os.Remove(tmpPath)
 
 	if _, err := tmpFile.WriteString(input); err != nil {
 		tmpFile.Close()
-		return "", fmt.Errorf("写入临时文件失败: %w", err)
+		return "", fmt.Errorf("failed to write temp file: %w", err)
 	}
 	if err := tmpFile.Close(); err != nil {
-		return "", fmt.Errorf("关闭临时文件失败: %w", err)
+		return "", fmt.Errorf("failed to close temp file: %w", err)
 	}
 
 	script := fmt.Sprintf(`%s chat --no-color --no-timestamp --histsize 0 --model %s --role %s --input %s`, dscliCmd,
@@ -202,90 +201,97 @@ func AskExpertWithRole(ctx context.Context, input, role string) (reply string, e
 	return reply, err
 }
 
-// buildStructuredRequest 构建结构化请求
+// buildStructuredRequest builds a structured request for the expert.
 func buildStructuredRequest(userSummary, originalContent string, attachments []string) (string, []error) {
 	var errors []error
 	attachmentSection := ""
 
 	if len(attachments) > 0 {
 		var attachmentContent strings.Builder
-		attachmentContent.WriteString("\n## 附件\n")
+		attachmentContent.WriteString("\n## Attachments\n")
 
 		for _, filename := range attachments {
-			// 安全检查：防止路径遍历攻击
+			// Security check: prevent path traversal attacks
 			if !isSafePath(filename) {
-				errors = append(errors, fmt.Errorf("不安全路径: %s", filename))
+				errors = append(errors, fmt.Errorf("unsafe path: %s", filename))
 				continue
 			}
 
-			// 检查文件大小（限制为1MB）
+			// Check file size (limit to 1MB)
 			if info, err := os.Stat(filename); err == nil && info.Size() > 1024*1024 {
-				errors = append(errors, fmt.Errorf("文件过大: %s (%d字节 > 1MB)", filename, info.Size()))
+				errors = append(errors, fmt.Errorf("file too large: %s (%d bytes > 1MB)", filename, info.Size()))
 				continue
 			}
 
 			b, err := os.ReadFile(filename)
 			if err != nil {
-				errors = append(errors, fmt.Errorf("读取文件失败 %s: %w", filename, err))
+				errors = append(errors, fmt.Errorf("failed to read file %s: %w", filename, err))
 				continue
 			}
 
 			content := strings.TrimSpace(string(b))
 			if content == "" {
-				errors = append(errors, fmt.Errorf("文件为空: %s", filename))
+				errors = append(errors, fmt.Errorf("file is empty: %s", filename))
 				continue
 			}
 
-			// 使用Markdown代码块格式
+			// Use Markdown code block format
 			fmt.Fprintf(&attachmentContent, "### %s\n```\n%s\n```\n\n", filename, content)
 		}
 
-		if attachmentContent.Len() > len("\n## 附件\n") {
+		if attachmentContent.Len() > len("\n## Attachments\n") {
 			attachmentSection = attachmentContent.String()
 		}
 	}
 
-	request := `请以结构化格式回答以下问题。
+	request := `Please answer the following question in a structured format.
 
-## 问题背景
+`
+	if userSummary != "" {
+		request += `
+## Background
 ` + userSummary + `
 
-## 详细问题
-` + originalContent + attachmentSection + `
+## Detailed Question
+` + originalContent + attachmentSection
+	} else {
+		request += originalContent + attachmentSection
+	}
+	request += `
 
-## 回答要求
-请提供详细的分析和建议，包括：
-1. 问题分析：深入分析问题的核心和关键点
-2. 解决方案：提供具体可行的解决方案
-3. 建议：给出可操作的建议和注意事项
-4. 风险评估：指出潜在的风险和应对措施
+## Response Requirements
+Please provide detailed analysis and advice, including:
+1. Problem Analysis: In-depth analysis of the core issues and key points
+2. Solutions: Specific and feasible solutions
+3. Suggestions: Actionable recommendations and considerations
+4. Risk Assessment: Identify potential risks and countermeasures
 
-## 注意事项
-- 分析要逻辑严谨，考虑全面
-- 建议要具体可行，有优先级
-- 风险评估要客观全面
+## Notes
+- Analysis should be logically rigorous and comprehensive
+- Suggestions should be specific, actionable, and prioritized
+- Risk assessment should be objective and thorough
 
 `
 	return request, errors
 }
 
-// isSafePath 检查文件路径是否安全
-// 防止路径遍历攻击，只允许当前目录及其子目录
+// isSafePath checks if the file path is safe.
+// Prevents path traversal attacks, only allows current directory and subdirectories.
 func isSafePath(filename string) bool {
-	// 清理路径
+	// Clean path
 	cleanPath := filepath.Clean(filename)
 
-	// 检查是否包含路径遍历
+	// Check for path traversal
 	if strings.Contains(cleanPath, "..") {
 		return false
 	}
 
-	// 检查是否为绝对路径
+	// Check if absolute path
 	if filepath.IsAbs(cleanPath) {
 		return false
 	}
 
-	// 检查是否在当前工作目录下
+	// Check if under current working directory
 	cwd, err := os.Getwd()
 	if err != nil {
 		return false
@@ -297,165 +303,4 @@ func isSafePath(filename string) bool {
 	}
 
 	return strings.HasPrefix(fullPath, cwd)
-}
-
-// processExpertResponse 处理专家响应
-func processExpertResponse(response string) string {
-	// 清理响应
-	cleanResponse := strings.TrimSpace(response)
-
-	// 提取专家生成的摘要
-	expertSummary := extractExpertSummary(cleanResponse)
-	if expertSummary != "" {
-		outfmt.Println("  专家回答摘要:", expertSummary)
-	}
-
-	// 返回完整的响应
-	return cleanResponse
-}
-
-// extractExpertSummary 从专家响应中提取摘要
-func extractExpertSummary(response string) string {
-	// 尝试从专家回答中提取摘要
-	// 专家回答通常以"## 摘要"或"**摘要**"开头
-
-	// 查找摘要标记
-	summaryMarkers := []string{
-		"## 摘要",
-		"**摘要**",
-		"摘要：",
-		"Summary:",
-		"## Summary",
-		"**Summary**",
-	}
-
-	for _, marker := range summaryMarkers {
-		idx := strings.Index(response, marker)
-		if idx != -1 {
-			// 找到摘要标记，提取摘要内容
-			summaryStart := idx + len(marker)
-			summaryEnd := strings.Index(response[summaryStart:], "\n\n")
-			if summaryEnd == -1 {
-				summaryEnd = len(response) - summaryStart
-			}
-
-			summary := strings.TrimSpace(response[summaryStart : summaryStart+summaryEnd])
-			if summary != "" {
-				// 如果摘要太长，截断
-				runes := []rune(summary)
-				if len(runes) > 150 {
-					summary = string(runes[:147]) + "..."
-				}
-
-				return summary
-			}
-		}
-	}
-
-	// 如果没有找到摘要标记，尝试提取第一段
-	for line := range strings.SplitSeq(response, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed != "" {
-			// 取第一段非空行作为摘要
-			runes := []rune(trimmed)
-			if len(runes) > 150 {
-				trimmed = string(runes[:147]) + "..."
-			}
-			return trimmed
-		}
-	}
-
-	return "专家未提供摘要"
-}
-
-// generateUserSummary 从用户内容自动生成摘要
-func generateUserSummary(content string) string {
-	// 如果内容很短，直接返回
-	if len(content) <= 100 {
-		return content
-	}
-
-	// 策略1：尝试提取第一段
-	paragraphs := strings.Split(content, "\n\n")
-	if len(paragraphs) > 0 {
-		firstPara := strings.TrimSpace(paragraphs[0])
-		if len(firstPara) > 20 && len(firstPara) <= 150 {
-			return firstPara
-		}
-	}
-
-	// 策略2：提取前几个句子
-	sentences := extractFirstSentences(content, 2)
-	if len(sentences) > 0 {
-		summary := strings.Join(sentences, " ")
-		if len(summary) <= 150 {
-			return summary
-		}
-	}
-
-	// 策略3：智能截断
-	return smartTruncate(content, 100)
-}
-
-// extractFirstSentences 提取前n个句子
-func extractFirstSentences(content string, n int) []string {
-	var sentences []string
-	var currentSentence strings.Builder
-
-	for _, r := range content {
-		currentSentence.WriteRune(r)
-
-		// 检查句子结束标记
-		if isSentenceEnd(r) {
-			sentence := strings.TrimSpace(currentSentence.String())
-			if sentence != "" {
-				sentences = append(sentences, sentence)
-				if len(sentences) >= n {
-					break
-				}
-			}
-			currentSentence.Reset()
-		}
-	}
-
-	// 如果最后一个句子不完整但有内容，也添加
-	if currentSentence.Len() > 0 {
-		sentence := strings.TrimSpace(currentSentence.String())
-		if sentence != "" {
-			sentences = append(sentences, sentence)
-		}
-	}
-
-	return sentences
-}
-
-// isSentenceEnd 检查是否是句子结束标记
-func isSentenceEnd(r rune) bool {
-	sentenceEnds := []rune{'.', '。', '!', '！', '?', '？'}
-	return slices.Contains(sentenceEnds, r)
-}
-
-// smartTruncate 智能截断文本
-func smartTruncate(content string, maxLength int) string {
-	runes := []rune(content)
-	if len(runes) <= maxLength {
-		return content
-	}
-
-	// 确保摘要以完整句子结束
-	for i := maxLength - 1; i >= 0; i-- {
-		if isSentenceEnd(runes[i]) {
-			return string(runes[:i+1])
-		}
-	}
-
-	// 如果没有找到句子结束标记，查找最后一个空格
-	for i := maxLength - 1; i >= 0; i-- {
-		if runes[i] == ' ' || runes[i] == '\n' || runes[i] == '\t' {
-			return string(runes[:i]) + "..."
-		}
-	}
-
-	// 如果连空格都没有，直接截断
-	return string(runes[:maxLength]) + "..."
 }
