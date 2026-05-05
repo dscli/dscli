@@ -2,21 +2,25 @@ package file
 
 import (
 	"context"
+	_ "embed"
 
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
+//go:embed file_read.md
+var file_read_md string
+
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "read_file",
-		Description: "Read file content with line numbers.\n\nOutput format matches: awk 'NR>=1 {print NR\": \"$0}'.\n\nEquivalent to read_file_with_line_range without line range parameters.",
+		Description: file_read_md,
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "文件路径，如main.go",
+					"description": "File path, e.g. main.go",
 				},
 			},
 			"required":             []string{"path"},

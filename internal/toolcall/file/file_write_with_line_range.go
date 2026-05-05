@@ -2,6 +2,7 @@ package file
 
 import (
 	"bufio"
+	_ "embed"
 	"fmt"
 	"os"
 	"strings"
@@ -12,43 +13,33 @@ import (
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
+//go:embed file_write_with_line_range.md
+var file_write_with_line_range_md string
+
 func init() {
 	// 注册文件行范围写入工具
 	toolcall.RegisterTool(toolcall.ToolDef{
-		Name: "write_file_with_line_range",
-		Description: `Write file line range with replace/insert/delete.
-
-Write content to a specific line range in a file. Supports:
-1. Replace: overwrite the specified line range with new content
-2. Delete: set content to empty string to remove lines
-3. Insert: when start_line exceeds file length, append at end
-4. Create: create a new file if it doesn't exist
-
-Best for non-code files (configs, docs) needing precise line control.
-
-Examples:
-  # Replace lines 5-10: write_file_with_line_range(path="file.txt", start_line=5, end_line=10, content="new")
-  # Delete lines 5-10: write_file_with_line_range(path="file.txt", start_line=5, end_line=10, content="")
-  # From line 5 to end: write_file_with_line_range(path="file.txt", start_line=5, content="new")`,
-		Strict: true,
+		Name:        "write_file_with_line_range",
+		Description: file_write_with_line_range_md,
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "文件路径，如main.go",
+					"description": "File path, e.g. main.go",
 				},
 				"content": map[string]any{
 					"type":        "string",
-					"description": "要写入的内容，可以为空字符串表示删除, 建议不超过4096个字符",
+					"description": "Content to write; empty string to delete lines, max 4096 chars recommended",
 				},
 				"start_line": map[string]any{
 					"type":        "integer",
-					"description": "起始行号（从1开始），可选，默认1",
+					"description": "Start line (1-based), optional, default 1",
 				},
 				"end_line": map[string]any{
 					"type":        "integer",
-					"description": "结束行号，可选，默认到文件末尾",
+					"description": "End line, optional, default end of file",
 				},
 			},
 			"required":             []string{"path", "content"},

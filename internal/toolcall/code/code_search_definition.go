@@ -2,6 +2,7 @@ package code
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"strings"
 
@@ -10,38 +11,33 @@ import (
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
+//go:embed code_search_definition.md
+var code_search_definition_md string
+
 func init() {
 	// 注册代码定义搜索工具
 	toolcall.RegisterTool(toolcall.ToolDef{
-		Name: "search_code_definition",
-		Description: `Find code definitions (functions, methods, classes, structs).
-
-Searches code files for definitions by name with optional type filter.
-More precise than text search — understands code structure.
-
-Examples:
-  # Find "user" definitions: search_code_definition(path="user.go", pattern="user")
-  # Functions only: search_code_definition(path="main.go", pattern="handle", type_filter="function")
-  # All methods: search_code_definition(path="service.go", pattern="", type_filter="method")`,
-		Strict: true,
+		Name:        "search_code_definition",
+		Description: code_search_definition_md,
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "文件路径，如main.go",
+					"description": "File path, e.g. main.go",
 				},
 				"pattern": map[string]any{
 					"type":        "string",
-					"description": "搜索模式（支持部分匹配）",
+					"description": "Search pattern (supports partial match)",
 				},
 				"type_filter": map[string]any{
 					"type":        "string",
-					"description": "类型过滤器，如 function, method, class, struct",
+					"description": "Type filter: function, method, class, struct",
 				},
 				"case_sensitive": map[string]any{
 					"type":        "boolean",
-					"description": "是否区分大小写，默认为false",
+					"description": "Case-sensitive search, default false",
 				},
 			},
 			"required":             []string{"path", "pattern"},

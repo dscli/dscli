@@ -2,6 +2,7 @@ package code
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,6 +12,8 @@ import (
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
+//go:embed code_read_structure.md
+var code_read_structure_md string
 // 这个工具让LLM能够获取代码文件的结构信息（函数、类、方法等），
 // 为后续的代码操作提供基础。
 func readCodeStructure(ctx context.Context, path string) (string, error) {
@@ -121,22 +124,15 @@ func buildStructureSummary(structure *parse.FileStructure) string {
 func init() {
 	// 注册 readCodeStructure 工具
 	toolcall.RegisterTool(toolcall.ToolDef{
-		Name: "read_code_structure",
-		Description: `Read code file structure (functions, classes, imports).
-
-Returns a human-readable summary and complete JSON structure.
-Use before write_code_section or read_code_section to understand file layout.
-
-Examples:
-  read_code_structure(path="main.go")
-  read_code_structure(path="user.py")`,
-		Strict: true,
+		Name:        "read_code_structure",
+		Description: code_read_structure_md,
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "文件路径（相对于项目根目录）",
+					"description": "File path (relative to project root)",
 				},
 			},
 			"required":             []string{"path"},

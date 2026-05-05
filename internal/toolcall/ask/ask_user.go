@@ -2,6 +2,7 @@ package ask
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"time"
 
@@ -10,21 +11,22 @@ import (
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
+
+//go:embed ask_user.md
+var ask_user_md string
+
 // AskTool 工具定义
 var askUserTool = toolcall.ToolDef{
 	Name:        "ask_user",
 	DisplayName: "问用户",
-	Description: `Ask user for clarification or feedback.
-
-Ask the user when requirements are unclear, resources are insufficient,
-or to request expert review of the current plan.`,
+	Description: ask_user_md,
 	Strict: true,
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"content": map[string]any{
 				"type":        "string",
-				"description": "要咨询的内容",
+				"description": "Content to ask about",
 			},
 		},
 		"required":             []string{"content"},

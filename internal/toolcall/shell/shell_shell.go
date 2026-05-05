@@ -1,6 +1,7 @@
 package shell
 
 import (
+	_ "embed"
 	"fmt"
 	"time"
 
@@ -9,26 +10,15 @@ import (
 	ishell "gitcode.com/dscli/dscli/internal/shell"
 )
 
+//go:embed shell_shell.md
+var shell_shell_md string
 func init() { // 注册shell工具
 	// 获取系统可用命令列表（init 阶段验证一次，后续复用）
 	cmdsDesc := ishell.GetAvailableCommandsDescription(context.Background())
 
-	desc := `Run shell scripts in the project root directory.
-
-Output format:
-- Success: formatted text with execution result and statistics
-- Failure: formatted text with error info, output content, and execution statistics
-
-Examples:
-  1. Bash: echo "Hello"
-  2. Shell: ls -la
-  3. Files: cat file.txt
-  4. Git: git status
-
-Caution: Avoid destructive operations. Scripts run within the project directory.`
-
+	desc := shell_shell_md
 	if cmdsDesc != "" {
-		desc += "\n\n## 可用命令\n" + cmdsDesc
+		desc += "\n\n## Available Commands\n" + cmdsDesc
 	}
 
 	RegisterTool(ToolDef{
@@ -39,20 +29,12 @@ Caution: Avoid destructive operations. Scripts run within the project directory.
 			"type": "object",
 			"properties": map[string]any{
 				"script": map[string]any{
-					"type": "string",
-					"description": `要执行的Shell脚本内容。
-脚本执行结果会以格式化文本返回，包含执行统计信息。`,
+					"type":        "string",
+					"description": "Shell script content to execute. Results returned as formatted text with execution stats.",
 				},
 				"summary": map[string]any{
-					"type": "string",
-					"description": `要执行的Shell脚本要做什么的总结。
-别太长，40个字以内。
-
-示例：
-1. 查找包含Hello方法Go文件
-2. 处理Json数据
-3. 读文件
-`,
+					"type":        "string",
+					"description": "Brief summary of what the script does, max 40 chars. E.g. 'List Go files', 'Parse JSON', 'Read file'.",
 				},
 			},
 			"required":             []string{"script", "summary"},

@@ -1,6 +1,7 @@
 package ask
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,38 +15,32 @@ import (
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
+//go:embed ask_expert.md
+var ask_expert_md string
+
 // askExpertTool 工具定义
 var askExpertTool = toolcall.ToolDef{
 	Name:        "ask_expert",
 	DisplayName: "问专家",
-	Description: `Ask expert for review or help.
-
-Ask an expert to review plans and answer difficult questions.
-
-Parameters:
-- content: detailed question (required)
-- summary: brief summary (optional, auto-generated if omitted)
-- attachments: file attachments list (optional)
-
-Use when facing technical difficulties, needing plan review, or requiring in-depth analysis.`,
+	Description: ask_expert_md,
 	Strict: true,
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"summary": map[string]any{
 				"type":        "string",
-				"description": "问题摘要（可选），用于快速理解问题背景",
+				"description": "Brief summary (optional, auto-generated if omitted)",
 			},
 			"content": map[string]any{
 				"type":        "string",
-				"description": "要询问的详细内容（必填）",
+				"description": "Detailed question (required)",
 			},
 			"attachments": map[string]any{
 				"type":        "array",
-				"description": `作为附件的文件名列表`,
+				"description": "File attachments list (optional)",
 				"items": map[string]string{
 					"type":        "string",
-					"description": "作为附件的文件名",
+					"description": "Attachment filename",
 				},
 			},
 		},

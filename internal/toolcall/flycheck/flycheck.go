@@ -2,6 +2,7 @@
 package flycheck
 
 import (
+	_ "embed"
 	"fmt"
 	"strings"
 
@@ -10,27 +11,20 @@ import (
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
+//go:embed flycheck.md
+var flycheck_md string
+
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
-		Name: "flycheck",
-		Description: `Static analysis check (like Emacs flycheck).
-
-Run static checks on files, directories, or packages.
-Supports Go (staticcheck) and Python (ruff). Three modes: file, directory, recursive (...).
-
-Returns file:line:col: message diagnostics on issues, or success summary when clean.
-
-Examples:
-  # Check Go file: flycheck(path="internal/flycheck/flycheck.go")
-  # Check directory: flycheck(path="internal/toolcall/")
-  # Recursive: flycheck(path="internal/...")`,
-		Strict: true,
+		Name:        "flycheck",
+		Description: flycheck_md,
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "文件/目录/包路径（相对于项目根目录），支持 '...' 递归模式",
+					"description": "File/directory/package path (relative to project root), supports '...' for recursion",
 				},
 			},
 			"required":             []string{"path"},

@@ -2,11 +2,15 @@ package issue
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
+
+//go:embed issue_list.md
+var issue_list_md string
 
 // handleIssueList 处理issue列表查询（Tool Calling）
 func handleIssueList(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
@@ -75,14 +79,14 @@ func init() {
 	// 注册issue相关工具
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "issue_list",
-		Description: "List project issues, filterable by state.\n\nParameters: state (open/closed/all, default open).",
+		Description: issue_list_md,
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"state": map[string]any{
 					"type":        "string",
-					"description": "issue状态：open（打开）、closed（关闭）、all（全部），默认为open",
+					"description": "Issue state: open, closed, all (default open)",
 					"enum":        []string{"open", "closed", "all"},
 				},
 			},

@@ -2,6 +2,7 @@ package code
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"os"
 	"strings"
@@ -11,6 +12,9 @@ import (
 	"gitcode.com/dscli/dscli/internal/toolcall"
 	"gitcode.com/dscli/dscli/internal/toolcall/file"
 )
+
+//go:embed code_search_semantic.md
+var code_search_semantic_md string
 
 // searchCodeSemantic 基于语义搜索代码中的特定模式
 // 参数：
@@ -170,39 +174,31 @@ func getStructureInfoForLine(structure *parse.FileStructure, line int) string {
 func init() {
 	// 注册 searchCodeSemantic 工具
 	toolcall.RegisterTool(toolcall.ToolDef{
-		Name: "search_code_semantic",
-		Description: `Search code text with structure-aware context.
-
-Search for patterns in code files, showing matches with function/class context info.
-
-Supports: single file, wildcards (*.go), multiple files, current dir (.), recursive (**/*.go).
-
-Examples:
-  # Search *.go for "error": search_code_semantic(file_pattern="*.go", search_pattern="error")
-  # Search "TODO" in specific files: search_code_semantic(file_pattern="main.go root.go", search_pattern="TODO", context_lines="3")`,
-		Strict: true,
+		Name:        "search_code_semantic",
+		Description: code_search_semantic_md,
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"file_pattern": map[string]any{
 					"type":        "string",
-					"description": "文件搜索模式，支持：单个文件、通配符、多个文件、当前目录、递归搜索",
+					"description": "File search pattern: single file, wildcards, multiple files, current dir, recursive",
 				},
 				"search_pattern": map[string]any{
 					"type":        "string",
-					"description": "搜索模式（字符串包含匹配）",
+					"description": "Search pattern (substring match)",
 				},
 				"context_lines": map[string]any{
 					"type":        "integer",
-					"description": "上下文行数（前后各N行），可选，默认5",
+					"description": "Context lines (N before and after), optional, default 5",
 				},
 				"case_sensitive": map[string]any{
 					"type":        "boolean",
-					"description": "是否区分大小写，可选，默认false",
+					"description": "Case-sensitive search, optional, default false",
 				},
 				"max_matches": map[string]any{
 					"type":        "integer",
-					"description": "最大匹配数，可选，默认无限制",
+					"description": "Max matches, optional, default unlimited",
 				},
 			},
 			"required":             []string{"file_pattern", "search_pattern"},

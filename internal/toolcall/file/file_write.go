@@ -1,6 +1,7 @@
 package file
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,9 @@ import (
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
+//go:embed file_write.md
+var file_write_md string
+
 const (
 	// previewLastChars 截断时预览显示的最后字符数
 	previewLastChars = 2048
@@ -22,24 +26,22 @@ const (
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "write_file",
-		Description: `Write content to file, auto-creating directories.
-
-append=true appends, append=false overwrites (default). Content max 262144 chars; split into multiple calls for larger content.`,
+		Description: file_write_md,
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "文件路径",
+					"description": "File path",
 				},
 				"append": map[string]any{
 					"type":        "boolean",
-					"description": "是否追加，false 覆盖或创建，true 在文件末尾追加, 默认为false",
+					"description": "Append mode: false overwrites, true appends, default false",
 				},
 				"content": map[string]any{
 					"type":        "string",
-					"description": "写入的内容",
+					"description": "Content to write",
 				},
 			},
 			"required":             []string{"path", "content"},

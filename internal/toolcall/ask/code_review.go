@@ -1,6 +1,7 @@
 package ask
 
 import (
+	_ "embed"
 	"fmt"
 	"strconv"
 	"strings"
@@ -12,32 +13,30 @@ import (
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
+//go:embed code_review.md
+var code_review_md string
+
 var codeReviewTool = toolcall.ToolDef{
 	Name:        "code_review",
 	DisplayName: "Code Review",
-	Description: `Review the latest Git commit.
-
-Review the most recent commit (HEAD) with expert-level improvement suggestions.
-Checks for uncommitted changes first; optionally runs tests before review.
-
-Use before pushing code or to learn better practices.`,
-	Strict: true,
+	Description: code_review_md,
+	Strict:      true,
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"summary": map[string]any{
 				"type":        "string",
-				"description": "必选，提供本次提交的背景说明，关注重点，帮助专家理解上下文, 长度1-1024字符",
+				"description": "Required, background and focus of this commit, 1-1024 chars",
 			},
 			"test_command": map[string]any{
 				"type":        "string",
-				"description": "可选，单元测试命令，默认为空，跳过测试, 长度1-128字符",
+				"description": "Optional test command, default empty skips tests, 1-128 chars",
 			},
 		},
 		"required":             []string{"summary"},
 		"additionalProperties": false,
 	},
-		Category: "communication",
+	Category: "communication",
 	Timeout:  5 * time.Minute, // 5分钟超时
 	Handler:  handleCodeReview,
 }

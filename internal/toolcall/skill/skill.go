@@ -2,12 +2,22 @@ package skill
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/skills"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
+
+//go:embed skill_by_name.md
+var skill_by_name_md string
+
+//go:embed skill_search.md
+var skill_search_md string
+
+//go:embed skill_save.md
+var skill_save_md string
 
 var RegisterTool = toolcall.RegisterTool
 
@@ -97,21 +107,8 @@ func init() {
 	RegisterTool(ToolDef{
 		Name:        "skill_by_name",
 		DisplayName: "Get Skill",
-		Description: `Fetch skill by name.
-
-Fetch a skill's full content by name. Skills contain best practices, tips, conventions, and executable scripts.
-
-Returns:
-- SKILL.md content (instructions)
-- Resource listings (scripts, references, templates, examples) with absolute paths
-
-Usage:
-  skill_by_name(skill_name="test-skill")
-
-Notes:
-- Scripts are listed with paths; execute via shell (bash <path>)
-- Reference documents can be read via read_file or shell (cat <path>)`,
-		Strict: true,
+		Description: skill_by_name_md,
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -131,19 +128,8 @@ Notes:
 	RegisterTool(ToolDef{
 		Name:        "skill_search",
 		DisplayName: "Search Skills",
-		Description: `Search skills by keyword.
-
-Search available skills by keyword. Use when unsure which skill to use or to discover relevant skills for a task.
-
-Usage:
-  skill_search(query="test")
-  skill_search(query="build deploy")
-
-Notes:
-- query is case-insensitive, max 128 chars
-- Returns matching skill names with description summaries
-- After finding a skill, use skill_by_name to get full content`,
-		Strict: true,
+		Description: skill_search_md,
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -163,27 +149,8 @@ Notes:
 	RegisterTool(ToolDef{
 		Name:        "skill_save",
 		DisplayName: "Save Skill",
-		Description: `Save a local skill.
-
-Create or update a local skill in .dscli/skills/ with proper YAML frontmatter.
-
-Creates or overwrites SKILL.md with name, description, keywords, and auto_inject frontmatter fields,
-making it discoverable via skill_search and loadable via skill_by_name.
-
-If a skill with the same name already exists locally, it will be overwritten.
-
-Usage:
-  skill_save(name="go-fix", description="Go code modernization helper", content="# go-fix\n\n...", keywords="go, fix, modernize")
-
-Parameters:
-- name: skill name (required, e.g. "go-fix")
-- description: skill description for display and search (required)
-- content: skill body in Markdown, without frontmatter (required)
-- keywords: comma-separated search keywords (optional, e.g. "go, modernize, refactor")
-- auto_inject: auto-inject into conversation context (optional, default false)
-
-After saving, the skill is immediately usable via skill_by_name and skill_search.`,
-		Strict: true,
+		Description: skill_save_md,
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

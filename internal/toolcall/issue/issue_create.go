@@ -2,11 +2,15 @@ package issue
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
+
+//go:embed issue_create.md
+var issue_create_md string
 
 // handleIssueCreate 处理创建issue（Tool Calling）
 func handleIssueCreate(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
@@ -56,18 +60,18 @@ func handleIssueCreate(ctx context.Context, args toolcall.ToolArgs) (result, war
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "issue_create",
-		Description: "Create new issue.\n\nCreate a new issue in the project.\nParameters: title (required, max 128 chars), body (optional, 1-4096 chars).",
+		Description: issue_create_md,
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"title": map[string]any{
 					"type":        "string",
-					"description": "issue标题（必需）,不能包含换行符，长度1-128字符",
+					"description": "Issue title (required, max 128 chars, no newlines)",
 				},
 				"body": map[string]any{
 					"type":        "string",
-					"description": "issue内容（可选），长度1-4096字符",
+					"description": "Issue body (optional, 1-4096 chars)",
 				},
 			},
 			"required":             []string{"title"},

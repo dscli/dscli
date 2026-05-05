@@ -2,35 +2,39 @@ package issue
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
+//go:embed issue_update.md
+var issue_update_md string
+
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "issue_update",
-		Description: "Update an issue.\n\nUpdate an existing issue.\nParameters: number (required), title (optional), body (optional), state (open/closed, optional).",
+		Description: issue_update_md,
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"number": map[string]any{
 					"type":        "integer",
-					"description": "issue编号，必须是数字",
+					"description": "Issue number (required, must be a number)",
 				},
 				"title": map[string]any{
 					"type":        "string",
-					"description": "更新issue标题（可选）,不可有回车，长度1-128字符",
+					"description": "New title (optional, max 128 chars, no newlines)",
 				},
 				"body": map[string]any{
 					"type":        "string",
-					"description": "更新issue内容（可选），长度1-4096字符",
+					"description": "New body (optional, 1-4096 chars)",
 				},
 				"state": map[string]any{
 					"type":        "string",
-					"description": "更新issue状态：open（打开）、closed（关闭）（可选）",
+					"description": "New state: open or closed (optional)",
 					"enum":        []string{"open", "closed"},
 				},
 			},

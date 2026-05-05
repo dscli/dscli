@@ -2,11 +2,15 @@ package issue
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
+
+//go:embed issue_show.md
+var issue_show_md string
 
 // handleIssueShow 处理显示单个issue（Tool Calling）
 func handleIssueShow(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
@@ -78,14 +82,14 @@ func handleIssueShow(ctx context.Context, args toolcall.ToolArgs) (result, warni
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "issue_show",
-		Description: "Show issue details.",
+		Description: issue_show_md,
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"number": map[string]any{
 					"type":        "integer",
-					"description": "issue编号，必须是数字",
+					"description": "Issue number (required, must be a number)",
 				},
 			},
 			"required":             []string{"number"},

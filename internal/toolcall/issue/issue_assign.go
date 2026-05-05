@@ -2,10 +2,14 @@ package issue
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
+
+//go:embed issue_assign.md
+var issue_assign_md string
 
 // handleIssueAssign 处理分配issue（Tool Calling）
 func handleIssueAssign(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
@@ -37,18 +41,18 @@ func handleIssueAssign(ctx context.Context, args toolcall.ToolArgs) (result, war
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "issue_assign",
-		Description: "Assign issue to a specific user.",
+		Description: issue_assign_md,
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"number": map[string]any{
 					"type":        "integer",
-					"description": "issue编号，必须是数字",
+					"description": "Issue number (required, must be a number)",
 				},
 				"username": map[string]any{
 					"type":        "string",
-					"description": "用户名",
+					"description": "Username to assign",
 				},
 			},
 			"required":             []string{"number", "username"},

@@ -2,10 +2,14 @@ package issue
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
+
+//go:embed issue_close.md
+var issue_close_md string
 
 // handleIssueClose 处理关闭issue（Tool Calling）
 func handleIssueClose(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
@@ -27,14 +31,14 @@ func handleIssueClose(ctx context.Context, args toolcall.ToolArgs) (result, warn
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "issue_close",
-		Description: "Close an issue.",
+		Description: issue_close_md,
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"number": map[string]any{
 					"type":        "integer",
-					"description": "issue编号，必须是数字",
+					"description": "Issue number (required, must be a number)",
 				},
 			},
 			"required":             []string{"number"},

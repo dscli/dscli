@@ -3,6 +3,7 @@ package file
 import (
 	"bufio"
 	"context"
+	_ "embed"
 	"fmt"
 	"os"
 	"strings"
@@ -11,37 +12,29 @@ import (
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
+//go:embed file_read_with_line_range.md
+var file_read_with_line_range_md string
+
 func init() {
 	// 注册文件行范围读取工具（与awk格式完全兼容）
 	toolcall.RegisterTool(toolcall.ToolDef{
-		Name: "read_file_with_line_range",
-		Description: `Read file line range, awk-compatible output.
-
-Read specific lines from a file. Output format matches:
-  awk 'NR>=start && NR<=end {print NR": "$0}'
-
-Best for non-code files (configs, docs) needing precise line control.
-
-Examples:
-  # All lines: read_file_with_line_range(path="file.txt")
-  # Single line: read_file_with_line_range(path="file.txt", start_line=3, end_line=3)
-  # Range: read_file_with_line_range(path="file.txt", start_line=10, end_line=20)
-  # From line to end: read_file_with_line_range(path="file.txt", start_line=50)`,
-		Strict: true,
+		Name:        "read_file_with_line_range",
+		Description: file_read_with_line_range_md,
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "文件路径，如main.go",
+					"description": "File path, e.g. main.go",
 				},
 				"start_line": map[string]any{
 					"type":        "integer",
-					"description": "起始行号（从1开始），可选，默认1",
+					"description": "Start line (1-based), optional, default 1",
 				},
 				"end_line": map[string]any{
 					"type":        "integer",
-					"description": "结束行号，可选，默认到文件末尾",
+					"description": "End line, optional, default end of file",
 				},
 			},
 			"required":             []string{"path"},

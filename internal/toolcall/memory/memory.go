@@ -4,11 +4,30 @@ package memory
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 
 	"gitcode.com/dscli/dscli/internal/memories"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
+
+//go:embed mem_save.md
+var mem_save_md string
+
+//go:embed mem_update.md
+var mem_update_md string
+
+//go:embed mem_search.md
+var mem_search_md string
+
+//go:embed mem_delete.md
+var mem_delete_md string
+
+//go:embed mem_get_observation.md
+var mem_get_observation_md string
+
+//go:embed mem_stats.md
+var mem_stats_md string
 
 var RegisterTool = toolcall.RegisterTool
 
@@ -22,28 +41,19 @@ func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
 	return toolcall.ToolArgsValue(args, key, defaultValue)
 }
 
-// ─── SQLite Schema (registered via init) ──────────────────────────────────────
-
 func init() {
 	// ── Tools ──
 	RegisterTool(ToolDef{
-		Name: "mem_save",
-		Description: `Save to persistent memory with FTS5 search.
-
-Save important info for later retrieval. Use for:
-- Recording architectural decisions
-- Documenting bug fixes
-- Saving discoveries, lessons, configurations
-
-Parameters: title (required), content (required), type (decision/architecture/bugfix/pattern/config/discovery/learning).`,
-		Category: "memory",
-		Strict:   true,
+		Name:        "mem_save",
+		Description: mem_save_md,
+		Category:    "memory",
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"title":   map[string]any{"type": "string", "description": "简短可搜索的标题，如'JWT认证中间件实现'"},
-				"content": map[string]any{"type": "string", "description": "详细内容，建议使用 **What**/**Why**/**Where**/**Learned** 格式"},
-				"type":    map[string]any{"type": "string", "description": "类型: decision, architecture, bugfix, pattern, config, discovery, learning"},
+				"title":   map[string]any{"type": "string", "description": "Short searchable title, e.g. 'JWT auth middleware'"},
+				"content": map[string]any{"type": "string", "description": "Detailed content, recommended format: **What**/**Why**/**Where**/**Learned**"},
+				"type":    map[string]any{"type": "string", "description": "Type: decision, architecture, bugfix, pattern, config, discovery, learning"},
 			},
 			"required":             []string{"title", "content"},
 			"additionalProperties": false,
@@ -53,16 +63,16 @@ Parameters: title (required), content (required), type (decision/architecture/bu
 
 	RegisterTool(ToolDef{
 		Name:        "mem_update",
-		Description: "Update memory by ID.\n\nUpdate an existing memory. Only provided fields are modified.\nParameters: id (required), title (optional), content (optional), type (optional).",
+		Description: mem_update_md,
 		Category:    "memory",
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"id":      map[string]any{"type": "integer", "description": "要更新的记忆ID（必填）"},
-				"title":   map[string]any{"type": "string", "description": "新标题（可选）"},
-				"content": map[string]any{"type": "string", "description": "新内容（可选）"},
-				"type":    map[string]any{"type": "string", "description": "新类型（可选）"},
+				"id":      map[string]any{"type": "integer", "description": "Memory ID to update (required)"},
+				"title":   map[string]any{"type": "string", "description": "New title (optional)"},
+				"content": map[string]any{"type": "string", "description": "New content (optional)"},
+				"type":    map[string]any{"type": "string", "description": "New type (optional)"},
 			},
 			"required":             []string{"id"},
 			"additionalProperties": false,
@@ -71,24 +81,16 @@ Parameters: title (required), content (required), type (decision/architecture/bu
 	})
 
 	RegisterTool(ToolDef{
-		Name: "mem_search",
-		Description: `Search memories with FTS5 full-text search.
-
-Full-text search all persistent memories with optional type filtering and result limit.
-
-Use when:
-- Finding previous decisions
-- Searching fixed bug records
-- Looking up patterns or conventions
-- Reviewing previous work context`,
-		Category: "memory",
-		Strict:   true,
+		Name:        "mem_search",
+		Description: mem_search_md,
+		Category:    "memory",
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"query": map[string]any{"type": "string", "description": "搜索查询——自然语言或关键词（必填）"},
-				"type":  map[string]any{"type": "string", "description": "按类型过滤: decision, architecture, bugfix, pattern, config, discovery, learning"},
-				"limit": map[string]any{"type": "integer", "description": "最大结果数（默认10，最大50）"},
+				"query": map[string]any{"type": "string", "description": "Search query — natural language or keywords (required)"},
+				"type":  map[string]any{"type": "string", "description": "Filter by type: decision, architecture, bugfix, pattern, config, discovery, learning"},
+				"limit": map[string]any{"type": "integer", "description": "Max results (default 10, max 50)"},
 			},
 			"required":             []string{"query"},
 			"additionalProperties": false,
@@ -98,13 +100,13 @@ Use when:
 
 	RegisterTool(ToolDef{
 		Name:        "mem_delete",
-		Description: "Delete memory by ID. Irreversible.",
+		Description: mem_delete_md,
 		Category:    "memory",
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"id": map[string]any{"type": "integer", "description": "要删除的记忆ID（必填）"},
+				"id": map[string]any{"type": "integer", "description": "Memory ID to delete (required)"},
 			},
 			"required":             []string{"id"},
 			"additionalProperties": false,
@@ -114,13 +116,13 @@ Use when:
 
 	RegisterTool(ToolDef{
 		Name:        "mem_get_observation",
-		Description: "Get memory content by ID.\n\nRetrieve full memory content. Use when mem_search returns truncated previews and you need the complete text.",
+		Description: mem_get_observation_md,
 		Category:    "memory",
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"id": map[string]any{"type": "integer", "description": "记忆ID（必填）"},
+				"id": map[string]any{"type": "integer", "description": "Memory ID (required)"},
 			},
 			"required":             []string{"id"},
 			"additionalProperties": false,
@@ -130,7 +132,7 @@ Use when:
 
 	RegisterTool(ToolDef{
 		Name:        "mem_stats",
-		Description: "Memory stats: total count, type distribution.",
+		Description: mem_stats_md,
 		Category:    "memory",
 		Strict:      true,
 		Parameters: map[string]any{
@@ -151,7 +153,7 @@ func handleMemSave(ctx context.Context, args ToolArgs) (result, warning string, 
 	typ := ToolArgsValue(args, "type", "manual")
 
 	if title == "" || body == "" {
-		err = fmt.Errorf("title 和 content 为必填项")
+		err = fmt.Errorf("title and content are required")
 		return result, warning, err
 	}
 
@@ -163,7 +165,7 @@ func handleMemSave(ctx context.Context, args ToolArgs) (result, warning string, 
 func handleMemUpdate(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	id := ToolArgsValue(args, "id", int64(0))
 	if id == 0 {
-		err = fmt.Errorf("id 为必填项")
+		err = fmt.Errorf("id is required")
 		return result, warning, err
 	}
 
@@ -186,7 +188,7 @@ func handleMemSearch(ctx context.Context, args ToolArgs) (result, warning string
 	}
 
 	if query == "" {
-		err = fmt.Errorf("query 为必填项")
+		err = fmt.Errorf("query is required")
 		return result, warning, err
 	}
 
@@ -198,7 +200,7 @@ func handleMemSearch(ctx context.Context, args ToolArgs) (result, warning string
 func handleMemDelete(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	id := ToolArgsValue(args, "id", int64(0))
 	if id == 0 {
-		err = fmt.Errorf("id 为必填项")
+		err = fmt.Errorf("id is required")
 		return result, warning, err
 	}
 	result, warning, err = memories.HandleMemDelete(ctx, id)
@@ -210,7 +212,7 @@ func handleMemDelete(ctx context.Context, args ToolArgs) (result, warning string
 func handleMemGetObservation(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	id := ToolArgsValue(args, "id", int64(0))
 	if id == 0 {
-		err = fmt.Errorf("id 为必填项")
+		err = fmt.Errorf("id is required")
 		return result, warning, err
 	}
 	result, warning, err = memories.HandleMemGetObservation(ctx, id)

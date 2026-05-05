@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +17,9 @@ import (
 
 	"jaytaylor.com/html2text"
 )
+
+//go:embed web.md
+var web_md string
 
 // 创建HTTP客户端，设置超时
 var webClient = &http.Client{
@@ -219,14 +223,14 @@ func init() {
 	// 注册网页读取工具
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "web_reader",
-		Description: "Fetch web page as Markdown.\n\nFetch web page content and intelligently convert to Markdown format. Supports HTTP/HTTPS URLs, ideal for reading technical documentation.",
+		Description: web_md,
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"url": map[string]any{
 					"type":        "string",
-					"description": "网页URL，如 https://www.baidu.com/s?wd=Golang+教程 或 https://github.com/golang/go",
+					"description": "Web page URL, e.g. https://github.com/golang/go",
 				},
 			},
 			"required":             []string{"url"},

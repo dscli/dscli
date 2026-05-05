@@ -3,6 +3,7 @@ package file
 import (
 	"bufio"
 	"context"
+	_ "embed"
 	"fmt"
 	"os"
 	"strings"
@@ -11,42 +12,36 @@ import (
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
+//go:embed file_search_with_pattern.md
+var file_search_with_pattern_md string
 func init() {
 	// 注册文件模式搜索工具
 	toolcall.RegisterTool(toolcall.ToolDef{
-		Name: "search_file_with_pattern",
-		Description: `Search file by pattern with context lines.
-
-Search for lines matching a pattern in a file, showing surrounding context.
-
-Best for non-code files: logs, configs, etc. Supports case-sensitive, max matches.
-
-Examples:
-  # Search for "error": search_file_with_pattern(path="app.log", pattern="error")
-  # Search "TODO" with 3 lines context: search_file_with_pattern(path="main.go", pattern="TODO", context_lines="3")`,
-		Strict: true,
+		Name:        "search_file_with_pattern",
+		Description: file_search_with_pattern_md,
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "文件路径，如main.go",
+					"description": "File path, e.g. main.go",
 				},
 				"pattern": map[string]any{
 					"type":        "string",
-					"description": "搜索模式（字符串包含匹配）",
+					"description": "Search pattern (substring match)",
 				},
 				"context_lines": map[string]any{
 					"type":        "integer",
-					"description": "上下文行数（前后各N行），可选，默认5",
+					"description": "Context lines (N before and after), optional, default 5",
 				},
 				"case_sensitive": map[string]any{
 					"type":        "boolean",
-					"description": "是否区分大小写，可选，默认false",
+					"description": "Case-sensitive search, optional, default false",
 				},
 				"max_matches": map[string]any{
 					"type":        "integer",
-					"description": "最大匹配数，可选，默认无限制",
+					"description": "Max matches, optional, default unlimited",
 				},
 			},
 			"required":             []string{"path", "pattern"},

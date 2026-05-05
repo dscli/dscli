@@ -3,6 +3,7 @@ package history
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"time"
 
@@ -10,33 +11,27 @@ import (
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
+//go:embed recall.md
+var recall_md string
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
-		Name: "recall",
-		Description: `Recall conversation history by keywords.
-
-Search historical messages in the current project. Multiple keywords (space-separated, OR logic).
-Only searches user messages and assistant summaries, limited to current project.
-
-Parameters:
-- keywords: search keywords, space-separated, OR logic (required)
-- days: search N recent days (default 30)
-- limit: max results (default 5)`,
-		Strict: true,
+		Name:        "recall",
+		Description: recall_md,
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"keywords": map[string]any{
 					"type":        "string",
-					"description": "搜索关键词，空格分隔，OR逻辑（匹配任一即返回）",
+					"description": "Search keywords, space-separated, OR logic (matches any)",
 				},
 				"days": map[string]any{
 					"type":        "integer",
-					"description": "搜索最近N天的消息（默认30）",
+					"description": "Search N recent days (default 30)",
 				},
 				"limit": map[string]any{
 					"type":        "integer",
-					"description": "返回结果数量上限（默认5）",
+					"description": "Max results (default 5)",
 				},
 			},
 			"required":             []string{"keywords"},

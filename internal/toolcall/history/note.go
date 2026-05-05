@@ -3,6 +3,7 @@ package history
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"strings"
 	"time"
@@ -11,22 +12,20 @@ import (
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
+//go:embed note.md
+var note_md string
+
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
-		Name: "note",
-		Description: `Summarize session for future recall.
-
-Record a key summary of the current conversation. Call at the end of a conversation.
-
-Content: 40 characters or less, containing key events and keywords (e.g., "Implemented recall tool with session_id filter").
-Auto-truncates content over 40 characters.`,
-		Strict: true,
+		Name:        "note",
+		Description: note_md,
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"content": map[string]any{
 					"type":        "string",
-					"description": "对话摘要，40字以内，包含关键事件和关键词",
+					"description": "Summary content, max 40 chars, with key events and keywords",
 				},
 			},
 			"required":             []string{"content"},

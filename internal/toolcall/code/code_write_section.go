@@ -1,6 +1,7 @@
 package code
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"strconv"
@@ -12,6 +13,9 @@ import (
 	"gitcode.com/dscli/dscli/internal/parse"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
+
+//go:embed code_write_section.md
+var code_write_section_md string
 
 // writeCodeSection 基于代码结构定位并修改特定代码片段
 // selector语法：
@@ -223,30 +227,23 @@ func writeToFile(path string, lines []string, startLine, endLine int, newContent
 func init() {
 	// 注册 writeCodeSection 工具
 	toolcall.RegisterTool(toolcall.ToolDef{
-		Name: "write_code_section",
-		Description: `Write code section by semantic selector.
-
-Modify specific code sections using semantic selectors:
-  function:name, class:name, method:Type.Method, lines:start-end.
-
-Examples:
-  write_code_section(path="main.go", selector="function:main", new_content="func main() {...}")
-  write_code_section(path="user.go", selector="method:User.GetName", new_content="...")`,
-		Strict: true,
+		Name:        "write_code_section",
+		Description: code_write_section_md,
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "文件路径（相对于项目根目录）",
+					"description": "File path (relative to project root)",
 				},
 				"selector": map[string]any{
 					"type":        "string",
-					"description": "代码片段选择器，例如：function:main、class:User、method:User.GetName、lines:10-20",
+					"description": "Code selector, e.g. function:main, class:User, method:User.GetName, lines:10-20",
 				},
 				"new_content": map[string]any{
 					"type":        "string",
-					"description": "要写入的新内容, 建议不超过4096字符",
+					"description": "New content to write, max 4096 chars recommended",
 				},
 			},
 			"required":             []string{"path", "selector", "new_content"},

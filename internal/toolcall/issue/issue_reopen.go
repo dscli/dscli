@@ -2,22 +2,26 @@ package issue
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
+//go:embed issue_reopen.md
+var issue_reopen_md string
+
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "issue_reopen",
-		Description: "Reopen an issue.",
+		Description: issue_reopen_md,
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"number": map[string]any{
 					"type":        "integer",
-					"description": "issue编号，必须是数字",
+					"description": "Issue number (required, must be a number)",
 				},
 			},
 			"required":             []string{"number"},

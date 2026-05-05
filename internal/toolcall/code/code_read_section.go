@@ -2,6 +2,7 @@ package code
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"os"
 	"strconv"
@@ -11,6 +12,9 @@ import (
 	"gitcode.com/dscli/dscli/internal/parse"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
+
+//go:embed code_read_section.md
+var code_read_section_md string
 
 // readCodeSection 基于代码结构定位并读取特定代码片段
 // selector语法：
@@ -176,34 +180,19 @@ func extractLines(lines []string, startLine, endLine int) string {
 func init() {
 	// 注册 readCodeSection 工具
 	toolcall.RegisterTool(toolcall.ToolDef{
-		Name: "read_code_section",
-		Description: `Read code section by semantic selector.
-
-Read specific code sections using semantic selectors instead of line numbers.
-
-Selectors:
-  function:name  — read a function
-  class:name     — read a class/struct  
-  method:Type.Method — read a method
-  lines:start-end — read line range (fallback)
-
-Smarter than line-based tools — auto-locates code by structure.
-
-Examples:
-  read_code_section(path="main.go", selector="function:main")
-  read_code_section(path="user.go", selector="method:User.GetName")
-  read_code_section(path="config.yaml", selector="lines:10-20")`,
-		Strict: true,
+		Name:        "read_code_section",
+		Description: code_read_section_md,
+		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
-					"description": "文件路径（相对于项目根目录）",
+					"description": "File path (relative to project root)",
 				},
 				"selector": map[string]any{
 					"type":        "string",
-					"description": "代码片段选择器，例如：function:main、class:User、method:User.GetName、lines:10-20",
+					"description": "Code selector, e.g. function:main, class:User, method:User.GetName, lines:10-20",
 				},
 			},
 			"required":             []string{"path", "selector"},

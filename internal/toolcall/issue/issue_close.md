@@ -1,0 +1,1 @@
+Close an issue.
