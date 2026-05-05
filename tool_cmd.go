@@ -67,8 +67,8 @@ func toolListRunE(cmd *cobra.Command, _ []string) error {
 			cat = "-"
 		}
 		desc := firstLine(t.Description)
-		if len([]rune(desc)) > 20 {
-			desc = toolcall.TruncateHead(desc, 20)
+		if len([]rune(desc)) > 48 {
+			desc = toolcall.TruncateHead(desc, 48)
 		}
 		rows = append(rows, row{
 			Name:     t.Name,
