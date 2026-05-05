@@ -1,6 +1,5 @@
 // Package memory implements persistent memory tools (mem_save, mem_update, mem_search,
-// mem_delete, mem_get_observation, mem_stats) 
-//
+// mem_delete, mem_get_observation, mem_stats)
 package memory
 
 import (
@@ -11,9 +10,7 @@ import (
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
-var (
-	RegisterTool = toolcall.RegisterTool
-)
+var RegisterTool = toolcall.RegisterTool
 
 type (
 	ToolArgs  = toolcall.ToolArgs
@@ -30,7 +27,7 @@ func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
 func init() {
 	// ── Tools ──
 	RegisterTool(ToolDef{
-		Name:        "mem_save",
+		Name: "mem_save",
 		Description: `🗄️ 将重要信息保存到持久记忆中。使用FTS5全文搜索，支持后续检索。
 
 何时使用：
@@ -43,8 +40,8 @@ func init() {
 - title: 简洁、可搜索的标题（必填）
 - content: 详细内容，建议使用结构化格式（必填）
 - type: 类型，如 decision, architecture, bugfix, pattern, config, discovery, learning（默认 manual）`,
-		Category:    "memory",
-		Strict:      true,
+		Category: "memory",
+		Strict:   true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -78,7 +75,7 @@ func init() {
 	})
 
 	RegisterTool(ToolDef{
-		Name:        "mem_search",
+		Name: "mem_search",
 		Description: `🔍 全文搜索所有持久记忆。支持按类型过滤和限制结果数量。使用FTS5搜索引擎。
 
 使用场景：
@@ -86,8 +83,8 @@ func init() {
 - 搜索已修复的bug记录
 - 查找特定模式或约定的使用
 - 回顾之前的工作上下文`,
-		Category:    "memory",
-		Strict:      true,
+		Category: "memory",
+		Strict:   true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -150,26 +147,26 @@ func init() {
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 // handleMemSave saves a new memory observation.
-func handleMemSave(ctx context.Context, args ToolArgs) (result string, warning string, err error) {
+func handleMemSave(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	title := ToolArgsValue(args, "title", "")
 	body := ToolArgsValue(args, "content", "")
 	typ := ToolArgsValue(args, "type", "manual")
 
 	if title == "" || body == "" {
 		err = fmt.Errorf("title 和 content 为必填项")
-		return
+		return result, warning, err
 	}
 
 	result, warning, err = memories.HandleMemSave(ctx, title, body, typ)
-	return
+	return result, warning, err
 }
 
 // handleMemUpdate updates an existing memory by ID.
-func handleMemUpdate(ctx context.Context, args ToolArgs) (result string, warning string, err error) {
+func handleMemUpdate(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	id := ToolArgsValue(args, "id", int64(0))
 	if id == 0 {
 		err = fmt.Errorf("id 为必填项")
-		return
+		return result, warning, err
 	}
 
 	// Build update with provided fields only
@@ -177,11 +174,11 @@ func handleMemUpdate(ctx context.Context, args ToolArgs) (result string, warning
 	body := ToolArgsValue(args, "content", "")
 	typ := ToolArgsValue(args, "type", "")
 	result, warning, err = memories.HandleMemUpdate(ctx, id, title, body, typ)
-	return
+	return result, warning, err
 }
 
 // handleMemSearch searches memories using FTS5 full-text search.
-func handleMemSearch(ctx context.Context, args ToolArgs) (result string, warning string, err error) {
+func handleMemSearch(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	query := ToolArgsValue(args, "query", "")
 	typ := ToolArgsValue(args, "type", "")
 	limit := ToolArgsValue(args, "limit", 10)
@@ -192,38 +189,38 @@ func handleMemSearch(ctx context.Context, args ToolArgs) (result string, warning
 
 	if query == "" {
 		err = fmt.Errorf("query 为必填项")
-		return
+		return result, warning, err
 	}
 
 	result, warning, err = memories.HandleMemSearch(ctx, query, typ, limit)
-	return
+	return result, warning, err
 }
 
 // handleMemDelete deletes a memory by ID.
-func handleMemDelete(ctx context.Context, args ToolArgs) (result string, warning string, err error) {
+func handleMemDelete(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	id := ToolArgsValue(args, "id", int64(0))
 	if id == 0 {
 		err = fmt.Errorf("id 为必填项")
-		return
+		return result, warning, err
 	}
 	result, warning, err = memories.HandleMemDelete(ctx, id)
-	return
+	return result, warning, err
 }
 
 // handleMemGetObservation retrieves full memory content by ID.
 // Unlike mem_search which returns truncated previews, this returns the complete content.
-func handleMemGetObservation(ctx context.Context, args ToolArgs) (result string, warning string, err error) {
+func handleMemGetObservation(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	id := ToolArgsValue(args, "id", int64(0))
 	if id == 0 {
 		err = fmt.Errorf("id 为必填项")
-		return
+		return result, warning, err
 	}
 	result, warning, err = memories.HandleMemGetObservation(ctx, id)
-	return
+	return result, warning, err
 }
 
 // handleMemStats returns memory system statistics.
-func handleMemStats(ctx context.Context, _ ToolArgs) (result string, warning string, err error) {
+func handleMemStats(ctx context.Context, _ ToolArgs) (result, warning string, err error) {
 	result, warning, err = memories.HandleMemStats(ctx)
-	return
+	return result, warning, err
 }

@@ -16,15 +16,14 @@
 //
 // Execution order inside initDatabase():
 //
-//	1. Table schemas   — fatal on error
-//	2. Index schemas   — fatal on error
-//	3. Upgrade schemas — best-effort (errors silently ignored)
-//	4. Post-init hooks — best-effort (errors logged to Debug)
+//  1. Table schemas   — fatal on error
+//  2. Index schemas   — fatal on error
+//  3. Upgrade schemas — best-effort (errors silently ignored)
+//  4. Post-init hooks — best-effort (errors logged to Debug)
 //
 // This order matters: indexes run before upgrades.  If an upgrade adds a column,
 // any index on that column MUST be registered in RegisterUpgradeSchema after the
 // ALTER TABLE — never in RegisterIndexSchema.
-//
 //
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Database Path Selection (Test Isolation)
@@ -42,7 +41,6 @@
 //
 // Per-test customization: tests that need fully independent databases can call
 // allowing re-initialization with the new path.
-//
 //
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Upgrade Schema: Adding & Removing Columns
@@ -78,7 +76,6 @@
 // RegisterIndexSchema runs first — if the column doesn't exist yet, the index
 // creation fails fatally and initDatabase returns an error.
 //
-//
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // FTS5 Full-Text Search
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -103,7 +100,6 @@
 // independent tokens.  This is handled at the application layer — the sqlite
 // package is unaware of tokenization.
 //
-//
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Connection Parameters
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -113,7 +109,6 @@
 //	_journal=WAL     — write-ahead logging, better concurrent reads
 //	_timeout=5000    — 5-second busy timeout before SQLITE_BUSY
 //	_fk=1            — enforce foreign key constraints
-//
 //
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Consumer Example

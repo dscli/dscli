@@ -24,29 +24,31 @@ func init() {
 		RunE: promptEditRunE,
 	})
 	editCmd.Flags().Bool("global", false, "global")
-	editCmd.Flags().Bool("reasoner", false, "reasoner")
-	showCmd.Flags().Bool("reasoner", false, "reasoner")
+	editCmd.Flags().String("role", "dev", "role: dev|expert|review")
+	showCmd.Flags().String("role", "dev", "role: dev|expert|review")
 }
 
-// getModelFromFlags 从命令行标志获取模型类型
-func getModelFromFlags(cmd *cobra.Command) (string, error) {
-	reasoner, err := cmd.Flags().GetBool("reasoner")
+// getRoleFromFlags 从命令行标志获取角色类型
+func getRoleFromFlags(cmd *cobra.Command) (string, error) {
+	role, err := cmd.Flags().GetString("role")
 	if err != nil {
-		return "", fmt.Errorf("获取reasoner标志失败: %w", err)
+		return "", fmt.Errorf("获取role标志失败: %w", err)
 	}
-	if reasoner {
-		return "reasoner", nil
+	switch role {
+	case "dev", "expert", "review":
+		return role, nil
+	default:
+		return "", fmt.Errorf("无效角色 %q，支持: dev|expert|review", role)
 	}
-	return "chat", nil
 }
 
 func promptShowRunE(cmd *cobra.Command, args []string) (err error) {
-	model, err := getModelFromFlags(cmd)
+	role, err := getRoleFromFlags(cmd)
 	if err != nil {
-		return fmt.Errorf("获取模型类型失败: %w", err)
+		return fmt.Errorf("获取角色类型失败: %w", err)
 	}
 
-	promptTemplate := prompt.GetPromptTemplate(model)
+	promptTemplate := prompt.GetPromptTemplate(cmd.Context(), role)
 	outfmt.Println(promptTemplate)
 	return nil
 }
@@ -57,13 +59,13 @@ func promptEditRunE(cmd *cobra.Command, args []string) (err error) {
 		return fmt.Errorf("获取global标志失败: %w", err)
 	}
 
-	model, err := getModelFromFlags(cmd)
+	role, err := getRoleFromFlags(cmd)
 	if err != nil {
-		return fmt.Errorf("获取模型类型失败: %w", err)
+		return fmt.Errorf("获取角色类型失败: %w", err)
 	}
 
 	// 获取目标文件路径
-	p, err := prompt.GetPromptPath(model, global)
+	p, err := prompt.GetPromptPath(role, global)
 	if err != nil {
 		return fmt.Errorf("确定提示词文件路径失败: %w", err)
 	}
@@ -71,7 +73,7 @@ func promptEditRunE(cmd *cobra.Command, args []string) (err error) {
 	// 检查文件是否存在，若不存在则用默认内容创建
 	if _, err := os.Stat(p); os.IsNotExist(err) {
 		// 使用内嵌的默认模板内容
-		defaultContent := prompt.GetDefaultPromptTemplate(model)
+		defaultContent := prompt.GetDefaultPromptTemplate(role)
 		if err := os.WriteFile(p, []byte(defaultContent), 0o644); err != nil {
 			return fmt.Errorf("创建初始提示词文件 %s 失败: %w", p, err)
 		}

@@ -119,7 +119,7 @@ func TestClassifyIssueLine(t *testing.T) {
 		{"file.go:10:1: syntax error: unexpected EOF, expected } (compile)", SevError},
 		{"file.go:5:2: undefined: someFunc (compile)", SevError},
 		{"file.go:175:1: syntax error: unexpected EOF", SevError}, // syntax error without (compile) suffix
-		{"file.go:3:5: expected ';', got '}'", SevWarning}, // expected/got without (compile) → warning
+		{"file.go:3:5: expected ';', got '}'", SevWarning},        // expected/got without (compile) → warning
 		// Warnings (lint)
 		{"file.go:20:2: func unusedFunc is unused (U1000)", SevWarning},
 		{"file.go:15:3: should use time.Since instead of time.Now().Sub (S1012)", SevWarning},
@@ -176,6 +176,7 @@ func TestFormatCheckerOutputWithErrors(t *testing.T) {
 		t.Error("expected urgent fix message")
 	}
 }
+
 // TestClassifyRuffOutput tests severity classification of ruff diagnostic lines.
 func TestClassifyRuffOutput(t *testing.T) {
 	tests := []struct {

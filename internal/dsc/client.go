@@ -57,7 +57,7 @@ func isRetryableError(err error) bool {
 }
 
 // doRequestSingle 单次请求（不带重试）
-func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (err error) {
+func (c *Deepseek) doRequestSingle(method, path string, body, result any) (err error) {
 	url := c.baseURL + path
 
 	var reqBody io.Reader
@@ -66,7 +66,7 @@ func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (e
 		data, err = outfmt.JSONMarshal(body)
 		if err != nil {
 			err = fmt.Errorf("序列化请求失败: %w", err)
-			return
+			return err
 		}
 
 		defer outfmt.DebugBytes("json", data)
@@ -77,7 +77,7 @@ func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (e
 	req, err := http.NewRequest(method, url, reqBody)
 	if err != nil {
 		err = fmt.Errorf("创建请求失败: %w", err)
-		return
+		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -91,7 +91,7 @@ func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (e
 		} else {
 			err = fmt.Errorf("网络请求失败: %w", err)
 		}
-		return
+		return err
 	}
 
 	defer resp.Body.Close()
@@ -99,26 +99,26 @@ func (c *Deepseek) doRequestSingle(method, path string, body any, result any) (e
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		err = fmt.Errorf("读取响应失败: %w", err)
-		return
+		return err
 	}
 
 	defer outfmt.DebugBytes("", respBody)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		err = fmt.Errorf("API 返回错误状态码 %d: %s", resp.StatusCode, string(respBody))
-		return
+		return err
 	}
 
 	if result != nil {
 		if err = json.Unmarshal(respBody, result); err != nil {
 			err = fmt.Errorf("解析响应失败: %w", err)
-			return
+			return err
 		}
 	}
-	return
+	return err
 }
 
 // doRequest 请求方法（自动重试）
-func (c *Deepseek) doRequest(method, path string, body any, result any) (err error) {
+func (c *Deepseek) doRequest(method, path string, body, result any) (err error) {
 	defer outfmt.StartWaiting(time.Second * 3)()
 	var lastErr error
 	attempt := 0

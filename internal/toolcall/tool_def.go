@@ -17,7 +17,7 @@ type ToolDef struct {
 	Parameters  map[string]any
 	Category    string
 	Timeout     time.Duration // 工具执行超时时间
-	Handler     func(ctx context.Context, args ToolArgs) (result string, warning string, err error)
+	Handler     func(ctx context.Context, args ToolArgs) (result, warning string, err error)
 }
 
 // ToolArgs 参数定义
@@ -82,7 +82,7 @@ func (tc *ToolContent) String() (content string) {
 		b.WriteString("\n")
 	}
 	content = b.String()
-	return
+	return content
 }
 
 func ToArrayType[T PrimitiveType](anyValues []any, anyValuesLen int) []T {

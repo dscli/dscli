@@ -3,9 +3,7 @@ package shell
 
 import "gitcode.com/dscli/dscli/internal/toolcall"
 
-var (
-	RegisterTool = toolcall.RegisterTool
-)
+var RegisterTool = toolcall.RegisterTool
 
 type (
 	ToolDef   = toolcall.ToolDef

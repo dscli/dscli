@@ -118,7 +118,6 @@ func init() {
 	}
 	setAutoInjectCmd.Flags().BoolP("global", "g", false, "修改全局技能而非本地技能")
 	skillCmd.AddCommand(setAutoInjectCmd)
-
 }
 
 // SkillListRunE 列出所有技能

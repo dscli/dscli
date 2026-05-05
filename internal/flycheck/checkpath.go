@@ -19,6 +19,7 @@ import (
 // LanguageKey 用于 context.WithValue 传递目标语言。
 // 示例：ctx = context.WithValue(ctx, flycheck.LanguageKey, "python")
 var LanguageKey = dsctx.ContextKeyType[string]{}
+
 // LanguageFromContext 从 context 中读取目标语言，若未设置返回空字符串。
 func LanguageFromContext(ctx context.Context) string {
 	return dsctx.ContextValue(ctx, LanguageKey, "")
@@ -31,7 +32,7 @@ func LanguageFromContext(ctx context.Context) string {
 // CheckResult 封装一次 flycheck 检查的完整结果。
 // 调用方根据 Mode / Language / Supported 字段区别处理。
 type CheckResult struct {
-	Path      string // 规范化后的路径
+	Path string // 规范化后的路径
 
 	Language  string // 检测到的语言（"go", "python", …）
 	Mode      string // "package"（Go 包检查）或 "file"（单文件检查）

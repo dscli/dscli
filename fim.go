@@ -36,31 +36,31 @@ func FimRunE(cmd *cobra.Command, args []string) (err error) {
 		var data []byte
 		data, err = io.ReadAll(os.Stdin)
 		if err != nil {
-			return
+			return err
 		}
 		prompt = strings.TrimSpace(string(data))
 	}
 	if prompt == "" {
 		err = fmt.Errorf("错误: prompt 不能为空")
-		return
+		return err
 	}
 	fimModel, err := cmd.Flags().GetString("model")
 	if err != nil {
-		return
+		return err
 	}
 
 	fimSuffix, err := cmd.Flags().GetString("suffix")
 	if err != nil {
-		return
+		return err
 	}
 
 	fimMaxTokens, err := cmd.Flags().GetInt("max-tokens")
 	if err != nil {
-		return
+		return err
 	}
 	fimTemp, err := cmd.Flags().GetFloat64("temperature")
 	if err != nil {
-		return
+		return err
 	}
 	ctx := cmd.Context()
 	ctx = context.WithValue(ctx, context.CurrentModelIDKey, fimModel)
@@ -76,5 +76,5 @@ func FimRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	outfmt.Println(resp.Choices[0].Text)
-	return
+	return err
 }

@@ -50,7 +50,7 @@ type ChatResponse struct {
 
 type Choice struct {
 	Message      prompt.Message `json:"message"`
-	FinishReason string           `json:"finish_reason"`
+	FinishReason string         `json:"finish_reason"`
 }
 
 type FIMRequest struct {

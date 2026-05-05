@@ -36,13 +36,13 @@ func init() {
 	})
 }
 
-func handleNote(ctx context.Context, args toolcall.ToolArgs) (result string, warning string, err error) {
+func handleNote(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
 	content := toolcall.ToolArgsValue(args, "content", "")
 	content = strings.TrimSpace(content)
 	if content == "" {
 		err = fmt.Errorf("笔记内容不能为空")
-		return
+		return result, warning, err
 	}
 	result, warning, err = prompt.HandleNote(ctx, content)
-	return
+	return result, warning, err
 }

@@ -72,7 +72,7 @@ func init() {
 }
 
 // handleCodeReview 处理代码审查工具调用
-func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result string, warning string, err error) {
+func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
 	// 常量定义：每次审查的提交数量
 	const reviewCommitCount = 1
 
@@ -82,7 +82,7 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result strin
 	if summary == "" {
 		outfmt.Println("❌ 必须提供提交摘要")
 		err = fmt.Errorf("必须提供提交摘要")
-		return
+		return result, warning, err
 	}
 
 	// 检查是否有未提交的更改
@@ -100,7 +100,7 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result strin
 		outfmt.Println("当前状态：")
 		outfmt.Println(status)
 		err = fmt.Errorf("请使用 'git status' 查看详情，并使用 'git add' 和 'git commit' 提交所有更改后再进行审查")
-		return
+		return result, warning, err
 	}
 
 	outfmt.Println("✅ 没有未提交的更改")
@@ -124,7 +124,7 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result strin
 			}
 			outfmt.Println("❌ 单元测试失败")
 			err = fmt.Errorf("%s: %w", errorMsg, err)
-			return
+			return result, warning, err
 		}
 		if testOutput != "" {
 			outfmt.Println(testOutput)
@@ -137,13 +137,13 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result strin
 	if err != nil {
 		outfmt.Println("❌ 获取提交历史失败")
 		err = fmt.Errorf("获取提交历史失败: %w", err)
-		return
+		return result, warning, err
 	}
 
 	if strings.TrimSpace(log) == "" {
 		outfmt.Println("❌ 没有找到提交记录")
 		err = fmt.Errorf("没有找到提交记录，请先提交代码")
-		return
+		return result, warning, err
 	}
 
 	outfmt.Println("📝 提交信息:")
@@ -162,24 +162,23 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result strin
 	if err != nil {
 		fmt.Println("❌ 生成patch失败")
 		err = fmt.Errorf("生成patch失败: %w", err)
-		return
+		return result, warning, err
 	}
 
 	// 构建审查请求
 	structuredRequest := buildCodeReviewRequest(summary, fullLog, patch)
 	outfmt.Printf("📤 发送代码审查请求...\n%s\n", structuredRequest)
-	result, err = AskExpert(ctx, structuredRequest)
+	result, err = AskExpertWithRole(ctx, structuredRequest, "review")
 	if err != nil {
-		outfmt.Println("❌ 代码提交失败")
 		err = fmt.Errorf("代码提交失败: %w", err)
-		return
+		return result, warning, err
 	}
 
 	outfmt.Printf("✅ 代码审查结果\n%s\n", result)
-	return
+	return result, warning, err
 }
 
-func buildCodeReviewRequest(summary string, commitLog string, patch string) string {
+func buildCodeReviewRequest(summary, commitLog, patch string) string {
 	return `请对以下代码提交进行审查，提供详细的改进建议。
 
 ## 提交背景

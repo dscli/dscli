@@ -26,7 +26,7 @@ const (
 func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 	model, err := cmd.Flags().GetString("model")
 	if err != nil {
-		return
+		return err
 	}
 	ctx := cmd.Context()
 	var modelID int64
@@ -42,18 +42,30 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 		if verbose, _ := cmd.Flags().GetBool("verbose"); verbose {
 			fmt.Printf("[DEBUG] ChatPreRunE: unsupported model error: %v\n", err)
 		}
-		return
+		return err
 	}
 	ctx = context.WithValue(ctx, context.CurrentModelIDKey, modelID)
 
+	// 读取 --role 标志并存入 context
+	role, err := cmd.Flags().GetString("role")
+	if err != nil {
+		return err
+	}
+	if role == "" {
+		role = "dev"
+	}
+	ctx = context.WithValue(ctx, context.CurrentRoleKey, role)
+
+	// 计算工具 tokens
+	var tokens int
 	tools := alltools.GetAllTools(ctx)
-	tokens := 0
 	for _, tool := range tools {
 		tokens += tool.GetTokens()
 	}
+
 	prompts, err := prompt.LoadPrompts(ctx)
 	if err != nil {
-		return
+		return err
 	}
 	for _, p := range prompts {
 		tokens += p.GetTokens()
@@ -62,23 +74,23 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 	ctx = context.WithValue(ctx, context.LeftTokensKey, 131072-tokens)
 	cmd.SetContext(ctx)
 
-	return
+	return err
 }
 
 func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 	err = chatCommonPreRunE(cmd, args)
 	if err != nil {
-		return
+		return err
 	}
 	ctx := cmd.Context()
 	// 获取stream标志
 	stream, err := cmd.Flags().GetBool("stream")
 	if err != nil {
-		return
+		return err
 	}
 	ctx = context.WithValue(ctx, context.StreamKey, stream)
 	cmd.SetContext(ctx)
-	return
+	return err
 }
 
 func ChatRunE(cmd *cobra.Command, args []string) (err error) {
@@ -90,18 +102,18 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	} else {
 		input, err = cmd.Flags().GetString("input")
 		if err != nil {
-			return
+			return err
 		}
 		ctx = context.WithValue(ctx, context.InputContentKey, input)
 
 		content, err = ReadContentWithTimeout(ctx)
 		if err != nil {
-			return
+			return err
 		}
 	}
 	histSize, err := cmd.Flags().GetInt("histsize")
 	if err != nil {
-		return
+		return err
 	}
 	ctx = context.WithValue(ctx, context.HistSizeKey, histSize)
 	ctx = context.WithValue(ctx, context.StartTimeKey, time.Now())
@@ -115,12 +127,12 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 
 	prompts, err := prompt.LoadPrompts(ctx)
 	if err != nil {
-		return
+		return err
 	}
 
 	history, err := prompt.LoadHistory(ctx)
 	if err != nil {
-		return
+		return err
 	}
 
 	// Check if there is history and the last message has tool calls
@@ -183,17 +195,17 @@ func ReadContent(ctx context.Context) (content string, err error) {
 		reader := bufio.NewReader(os.Stdin)
 		b, err = io.ReadAll(reader)
 		if err != nil {
-			return
+			return content, err
 		}
 		content = strings.TrimSpace(string(b))
-		return
+		return content, err
 	}
 	b, err = os.ReadFile(input)
 	if err != nil {
-		return
+		return content, err
 	}
 	content = strings.TrimSpace(string(b))
-	return
+	return content, err
 }
 
 // calculateCost 计算花费
@@ -287,7 +299,7 @@ func PrintSessionStats(ctx context.Context) {
 	}
 }
 
-func ChatRound(ctx context.Context, prompts []prompt.Message, history []prompt.Message, inputs ...prompt.Message) (err error) {
+func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ...prompt.Message) (err error) {
 	// 1. Construct messages slice (prompts → history → inputs)
 	messages := make([]prompt.Message, 0, len(prompts)+len(history)+len(inputs))
 	messages = append(messages, prompts...)
@@ -299,7 +311,10 @@ func ChatRound(ctx context.Context, prompts []prompt.Message, history []prompt.M
 	// 3. Track new messages for this round (for storage)
 	stories := make([]prompt.Message, 0, len(inputs)+1)
 	stories = append(stories, inputs...)
+
+	// 加载工具（非 dev 角色 GetAllTools 内部返回空）
 	tools := alltools.GetAllTools(ctx)
+
 	var resp *dsc.ChatResponse
 	resp, err = DeepseekClient.Chat(ctx, messages, tools)
 	if err != nil {
@@ -309,12 +324,12 @@ func ChatRound(ctx context.Context, prompts []prompt.Message, history []prompt.M
 		} else {
 			err = fmt.Errorf("chat request failed: %w\nmessages=%s", err, string(messagesJSON))
 		}
-		return
+		return err
 	}
 
 	if len(resp.Choices) == 0 {
 		err = fmt.Errorf("error: no response received")
-		return
+		return err
 	}
 
 	// story retains ReasoningContent (for persistence and display),
@@ -347,7 +362,7 @@ func ChatRound(ctx context.Context, prompts []prompt.Message, history []prompt.M
 	if len(tcs) == 0 {
 		// Conversation ended, print stats
 		PrintSessionStats(ctx)
-		return
+		return err
 	}
 
 	toolInputs := toolcall.HandleToolCalls(ctx, tcs)
@@ -356,7 +371,7 @@ func ChatRound(ctx context.Context, prompts []prompt.Message, history []prompt.M
 		history = append(history, toolInputs...)
 		return ChatRound(ctx, prompts, history)
 	}
-	return
+	return err
 }
 
 func init() {
@@ -375,6 +390,7 @@ func init() {
 		RunE:    ChatRunE,
 	})
 	chatCmd.Flags().String("model", context.ModelDeepseekChat, "使用的模型名称")
+	chatCmd.Flags().String("role", "dev", "角色：dev（开发助手）/ expert（领域专家）/ review（代码审查）")
 	chatCmd.Flags().Int("histsize", 8, "history size loaded")
 	chatCmd.Flags().String("input", "", "read content from input file or read content from stdin if input file empty")
 	chatCmd.Flags().Bool("stream", false, "启用流式输出（SSE）")

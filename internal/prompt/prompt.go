@@ -13,14 +13,20 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/config"
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/roles"
+	"gitcode.com/dscli/dscli/internal/session"
 	"gitcode.com/dscli/dscli/internal/skills"
 )
 
-//go:embed chat.md
-var chatTemplate string
+//go:embed dev.md
+var devTemplate string
 
-//go:embed reasoner.md
-var reasonerTemplate string
+//go:embed expert.md
+var expertTemplate string
+
+//go:embed review.md
+var reviewTemplate string
 
 // promptTemplate 系统提示词模板
 type promptTemplate struct {
@@ -30,6 +36,7 @@ type promptTemplate struct {
 	Name string
 }
 
+// promptConfig 模板数据
 // promptConfig 模板数据
 type promptConfig struct {
 	// 基础信息
@@ -52,13 +59,19 @@ type promptConfig struct {
 	Hostname         string
 	Username         string
 
+	// 角色（dev/expert/review）
+	Role string
+
 	// 模型特定配置
 	ModelID int64
+
+	// context（用于数据库查询等）
+	ctx context.Context
 }
 
 // GetPromptPath 获取提示词文件路径
 // global: true表示全局配置，false表示项目配置
-func GetPromptPath(model string, global bool) (string, error) {
+func GetPromptPath(role string, global bool) (string, error) {
 	var promptDir string
 	if global {
 		promptDir = filepath.Join(config.ConfigDir, "prompt")
@@ -74,7 +87,7 @@ func GetPromptPath(model string, global bool) (string, error) {
 		return "", fmt.Errorf("创建提示词目录失败 %s: %w", promptDir, err)
 	}
 
-	return filepath.Join(promptDir, fmt.Sprintf("%s.md", model)), nil
+	return filepath.Join(promptDir, fmt.Sprintf("%s.md", role)), nil
 }
 
 // readPromptFile 读取提示词文件
@@ -97,10 +110,23 @@ func readPromptFile(p string) string {
 }
 
 // GetPromptTemplate 获取当前生效的提示词模板
-// 优先级：项目配置 > 全局配置 > 内嵌默认模板
-func GetPromptTemplate(model string) string {
-	// 先尝试项目配置
-	p, err := GetPromptPath(model, false)
+// 优先级：项目配置(.dscli/prompt/) > 全局配置 > 内嵌默认模板
+// GetPromptTemplate 获取当前生效的提示词模板。
+// 优先级：项目配置(.dscli/prompt/) > 全局配置 > 内嵌默认模板。
+// 当数据库中存在 role→prompt 映射时，使用映射后的 prompt 名称加载模板；
+func GetPromptTemplate(ctx context.Context, role string) string {
+	// 检查数据库中是否有 role→prompt 映射
+	promptName := role
+	sessionID := session.GetCurrentSessionID(ctx)
+	if cfg, err := roles.GetRoleConfig(role, sessionID); err == nil && cfg != nil {
+		if cfg.Prompt != "" {
+			promptName = cfg.Prompt
+		}
+	}
+
+	// 按文档约定优先级: .dscli/prompt/ → ~/.dscli/prompt/ → 内嵌
+	// 先尝试项目级配置 (${PROJECT_ROOT}/.dscli/prompt/)
+	p, err := GetPromptPath(promptName, false)
 	if err == nil {
 		prompt := readPromptFile(p)
 		if prompt != "" {
@@ -108,8 +134,8 @@ func GetPromptTemplate(model string) string {
 		}
 	}
 
-	// 再尝试全局配置
-	p, err = GetPromptPath(model, true)
+	// 再尝试系统级配置 (~/.dscli/prompt/)
+	p, err = GetPromptPath(promptName, true)
 	if err == nil {
 		prompt := readPromptFile(p)
 		if prompt != "" {
@@ -117,33 +143,35 @@ func GetPromptTemplate(model string) string {
 		}
 	}
 
-	// 最后返回内嵌默认模板
-	return GetDefaultPromptTemplate(model)
+	// 最后返回内嵌默认模板（只读兜底）
+	return GetDefaultPromptTemplate(promptName)
+}
+
+// roleTemplateMap 角色到内嵌模板的映射
+var roleTemplateMap = map[string]string{
+	"dev":    devTemplate,
+	"expert": expertTemplate,
+	"review": reviewTemplate,
 }
 
 // GetDefaultPromptTemplate 获取内嵌的默认提示词模板
-func GetDefaultPromptTemplate(model string) string {
-	if model == "chat" {
-		return chatTemplate
+// role: dev, expert, review
+func GetDefaultPromptTemplate(role string) string {
+	if tmpl, ok := roleTemplateMap[role]; ok {
+		return tmpl
 	}
-	return reasonerTemplate
+	return devTemplate // 未知角色默认使用 dev 模板
 }
 
-// newPromptTemplate 获取指定模型的模板
-// 对未知 modelID 默认返回 chat 模板，避免 nil pointer。
-func newPromptTemplate(modelID int64) *promptTemplate {
-	switch modelID {
-	case context.DeepseekReasoner:
-		return &promptTemplate{
-			Name:     context.ModelDeepseekReasoner,
-			Template: GetPromptTemplate("reasoner"),
-		}
-	default:
-		// DeepseekChat (0) 或未知 modelID 统一使用 chat 模板
-		return &promptTemplate{
-			Name:     context.ModelDeepseekChat,
-			Template: GetPromptTemplate("chat"),
-		}
+// newPromptTemplate 根据角色获取模板
+// role: dev/expert/review
+// newPromptTemplate 根据角色获取模板
+// role: dev/expert/review
+func newPromptTemplate(ctx context.Context, role string) *promptTemplate {
+	tmpl := GetPromptTemplate(ctx, role)
+	return &promptTemplate{
+		Name:     role,
+		Template: tmpl,
 	}
 }
 
@@ -163,8 +191,9 @@ func (t *promptTemplate) Render(data *promptConfig) (string, error) {
 }
 
 // GeneratePromptWithTemplate 使用模板生成提示词
+// GeneratePromptWithTemplate 使用模板生成提示词
 func (c *promptConfig) GeneratePromptWithTemplate() string {
-	tmpl := newPromptTemplate(c.ModelID)
+	tmpl := newPromptTemplate(c.ctx, c.Role)
 	if tmpl == nil {
 		// 防御性编程：理论上 newPromptTemplate 不再返回 nil，
 		// 但保留此检查以防未来重构引入 bug
@@ -186,9 +215,11 @@ func GetSystemPrompt(ctx context.Context) string {
 }
 
 // newPromptConfig 创建系统提示词配置
+// newPromptConfig 创建系统提示词配置
 func newPromptConfig(ctx context.Context) *promptConfig {
 	projectRoot := context.ProjectRoot
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, int64(0))
+	role := context.ContextValue(ctx, context.CurrentRoleKey, "dev")
 	config := &promptConfig{
 		CurrentDate:      time.Now().Format("2006年01月02日"),
 		ProjectRoot:      projectRoot,
@@ -196,7 +227,9 @@ func newPromptConfig(ctx context.Context) *promptConfig {
 		WorkingDirectory: getWorkingDirectory(),
 		Hostname:         getHostname(),
 		Username:         getUsername(),
+		Role:             role,
 		ModelID:          modelID,
+		ctx:              ctx,
 	}
 
 	// 获取Git信息
@@ -298,17 +331,49 @@ func (c *promptConfig) detectProjectType() string {
 	return "通用项目"
 }
 
-// LoadPrompts loads the system prompt combined with skill prompts.
+// LoadPrompts loads the system prompt combined with skill and note prompts.
+// Only dev role gets skills and notes; expert/review roles skip them.
+// LoadPrompts loads the system prompt combined with skill and note prompts.
+// Skills are injected according to role config; when no config exists,
+// only dev role gets skills (hardcoded fallback).
 func LoadPrompts(ctx context.Context) ([]Message, error) {
 	systemPrompt := GetSystemPrompt(ctx)
-	skillPrompt := skills.BuildSkillPrompt(ctx)
 
 	content := systemPrompt
+
+	// 根据角色配置决定是否注入 skill prompt
+	role := context.ContextValue(ctx, context.CurrentRoleKey, "dev")
+	// 查找数据库中的角色配置
+	sessionID := session.GetCurrentSessionID(ctx)
+	cfg, cfgErr := roles.GetRoleConfig(role, sessionID)
+	if cfgErr != nil {
+		outfmt.Debug("获取角色配置失败: %v，回退到默认行为\n", cfgErr)
+	}
+
+	var skillPrompt string
+	if cfg == nil {
+		// Fallback: 只有 dev 角色获得 skill prompt
+		if role == "dev" || role == "" {
+			skillPrompt = skills.BuildSkillPrompt(ctx)
+		}
+	} else {
+		allowedSkills := roles.ParseSkillsList(cfg.Skills)
+		if allowedSkills == nil {
+			// "all" — 加载所有技能
+			skillPrompt = skills.BuildSkillPrompt(ctx)
+		} else if len(allowedSkills) > 0 {
+			// 指定技能列表 — 按名称过滤
+			skillPrompt = skills.BuildSkillPrompt(ctx, allowedSkills...)
+		}
+		// else: 空列表 → 不注入 skill prompt
+	}
+
 	if skillPrompt != "" {
 		content += "\n\n"
 		content += skillPrompt
 	}
 
+	// 笔记提示词所有角色都加载（帮助回忆上下文）
 	notePrompt := BuildNotePrompt(ctx)
 	if notePrompt != "" {
 		content += "\n\n"

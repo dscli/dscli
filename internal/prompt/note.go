@@ -124,7 +124,7 @@ func BuildNotePrompt(ctx context.Context) string {
 	return ""
 }
 
-func HandleNote(ctx context.Context, content string) (result string, warning string, err error) {
+func HandleNote(ctx context.Context, content string) (result, warning string, err error) {
 	// 警告超过限制（实际 SaveNote 也会截断）
 	if len([]rune(content)) > MaxNoteContentLen {
 		warning = fmt.Sprintf("笔记超过%d字已自动截断。下次请控制在%d字以内。",
@@ -133,9 +133,9 @@ func HandleNote(ctx context.Context, content string) (result string, warning str
 
 	if saveErr := SaveNote(ctx, content); saveErr != nil {
 		err = saveErr
-		return
+		return result, warning, err
 	}
 
 	result = "笔记已保存。"
-	return
+	return result, warning, err
 }

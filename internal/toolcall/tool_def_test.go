@@ -383,6 +383,7 @@ func TestToolArgsValue(t *testing.T) {
 		}
 	}
 }
+
 func TestToolContent(t *testing.T) {
 	tcs := []struct {
 		name    string

@@ -215,7 +215,7 @@ func getOrCreatePythonCacheFile(script string) (string, error) {
 	return cacheFile, nil
 }
 
-func runPythonParsePy(ctx context.Context, filePath string, lang string) (output string, err error) {
+func runPythonParsePy(ctx context.Context, filePath, lang string) (output string, err error) {
 	// 从上下文中获取verbose标志
 	verbose := outfmt.GetVerbose()
 
@@ -223,7 +223,7 @@ func runPythonParsePy(ctx context.Context, filePath string, lang string) (output
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		err = fmt.Errorf("failed to read file: %w", err)
-		return
+		return output, err
 	}
 
 	// 准备输入数据
@@ -235,7 +235,7 @@ func runPythonParsePy(ctx context.Context, filePath string, lang string) (output
 	jsonInput, err := json.Marshal(inputData)
 	if err != nil {
 		err = fmt.Errorf("failed to marshal input data: %w", err)
-		return
+		return output, err
 	}
 
 	if verbose {
@@ -244,7 +244,7 @@ func runPythonParsePy(ctx context.Context, filePath string, lang string) (output
 	}
 	cacheFile, err := getOrCreatePythonCacheFile(pythonScript)
 	if err != nil {
-		return
+		return output, err
 	}
 
 	// 执行缓存的Python脚本
@@ -269,7 +269,7 @@ func runPythonParsePy(ctx context.Context, filePath string, lang string) (output
 		} else {
 			err = fmt.Errorf("python脚本执行失败: %v", runErr)
 		}
-		return
+		return output, err
 	}
 
 	output = stdout.String()
@@ -280,7 +280,7 @@ func runPythonParsePy(ctx context.Context, filePath string, lang string) (output
 		}
 	}
 
-	return
+	return output, err
 }
 
 // parseWithPython 使用Python脚本解析文件结构

@@ -7,8 +7,8 @@
 package flycheck
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -130,7 +130,7 @@ func Flycheck(ctx context.Context, filename string) (result, suggestion string, 
 		result = strings.Join(results, "\n")
 	}
 
-	return
+	return result, suggestion, err
 }
 
 // runChecker executes a single checker and returns its stdout (issues).
@@ -190,9 +190,9 @@ func isNotFoundError(err error) bool {
 type IssueSeverity int
 
 const (
-	SevError   IssueSeverity = iota // ❌ compile/syntax error
-	SevWarning                      // ⚠️ lint warning
-	SevSuggestion                   // 💡 improvement suggestion
+	SevError      IssueSeverity = iota // ❌ compile/syntax error
+	SevWarning                         // ⚠️ lint warning
+	SevSuggestion                      // 💡 improvement suggestion
 )
 
 // String returns the emoji prefix for the severity.
@@ -219,21 +219,22 @@ func (s IssueSeverity) String() string {
 //  2. "syntax error" keyword → ❌ compile error
 //  3. "QF" in code → 💡 suggestion
 //  4. Everything else → ⚠️ warning
+//
 // classifyIssueLine determines the severity of a single issue line.
 //
 // Supports two checker output formats:
 //
 // 1. staticcheck (Go): file.go:line:col: message (code)
-//    - "(compile)" suffix → ❌ compile error
-//    - "syntax error" keyword → ❌ compile error
-//    - "QF" code → 💡 suggestion
-//    - default → ⚠️ warning
+//   - "(compile)" suffix → ❌ compile error
+//   - "syntax error" keyword → ❌ compile error
+//   - "QF" code → 💡 suggestion
+//   - default → ⚠️ warning
 //
 // 2. ruff (Python): path.py:line:col: RULECODE message
-//    - E/F rule codes → ❌ error (pycodestyle errors / pyflakes undefined names)
-//    - W rule codes → ⚠️ warning
-//    - I/UP/SIM/C4 rule codes → 💡 suggestion (isort, pyupgrade, simplify, comprehensions)
-//    - default → ⚠️ warning
+//   - E/F rule codes → ❌ error (pycodestyle errors / pyflakes undefined names)
+//   - W rule codes → ⚠️ warning
+//   - I/UP/SIM/C4 rule codes → 💡 suggestion (isort, pyupgrade, simplify, comprehensions)
+//   - default → ⚠️ warning
 func classifyIssueLine(line string) IssueSeverity {
 	// === staticcheck patterns ===
 
@@ -317,6 +318,7 @@ func extractRuffCode(line string) string {
 	}
 	return ""
 }
+
 // ClassifiedIssue holds a single checker issue with its severity.
 type ClassifiedIssue struct {
 	Severity IssueSeverity
@@ -484,7 +486,7 @@ func FlycheckDir(ctx context.Context, lang, dir string) (result string, rawIssue
 	}
 	rawIssues = allIssues
 
-	return
+	return result, rawIssues, suggestion, err
 }
 
 // runCheckerOnDir is like runChecker but takes a project-relative directory
@@ -586,6 +588,7 @@ func hasGoFiles(dir string) bool {
 	}
 	return false
 }
+
 // CountGoFiles 统计目录下的 .go 文件数量。
 func CountGoFiles(dir string) int {
 	entries, err := os.ReadDir(dir)

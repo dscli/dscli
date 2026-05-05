@@ -16,7 +16,7 @@ func getEditor() (editor string) {
 		editor = os.Getenv("EDITOR")
 	}
 	if editor != "" {
-		return
+		return editor
 	}
 
 	for _, p := range []string{"vi", "nano"} {
@@ -26,7 +26,7 @@ func getEditor() (editor string) {
 			break
 		}
 	}
-	return
+	return editor
 }
 
 func getExt() (ext string) {
@@ -36,50 +36,50 @@ func getExt() (ext string) {
 	} else {
 		ext = "org"
 	}
-	return
+	return ext
 }
 
-func createTempfile(initialContent string, ext string) (name string, err error) {
+func createTempfile(initialContent, ext string) (name string, err error) {
 	tmpFile, err := os.CreateTemp("", "dscli_editor_*."+ext)
 	if err != nil {
-		return
+		return name, err
 	}
 	err = tmpFile.Close()
 	if err != nil {
-		return
+		return name, err
 	}
 	name = tmpFile.Name()
 	err = os.WriteFile(name, []byte(initialContent), 0o655)
 	if err != nil {
-		return
+		return name, err
 	}
-	return
+	return name, err
 }
 
 func OpenEditor(ctx context.Context, initialContent string) (content string, err error) {
 	ext := getExt()
 	path, err := createTempfile(initialContent, ext)
 	if err != nil {
-		return
+		return content, err
 	}
 	defer os.RemoveAll(path)
 	if err = Edit(ctx, path); err != nil {
-		return
+		return content, err
 	}
 
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return
+		return content, err
 	}
 	content = strings.TrimSpace(string(b))
-	return
+	return content, err
 }
 
 func Edit(ctx context.Context, filename string) (err error) {
 	editor := getEditor()
 	if editor == "" {
 		err = fmt.Errorf("no editor specified")
-		return
+		return err
 	}
 	cmdParts := strings.Fields(editor)
 	name := cmdParts[0]
@@ -91,7 +91,7 @@ func Edit(ctx context.Context, filename string) (err error) {
 	cmd.Stderr = os.Stderr
 	outfmt.Println(cmd.String())
 	if err = cmd.Run(); err != nil {
-		return
+		return err
 	}
-	return
+	return err
 }

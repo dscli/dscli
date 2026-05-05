@@ -64,5 +64,5 @@ func versionRunE(_ context.Context) (err error) {
 	outfmt.PrintSection("模型配置")
 	outfmt.PrintKeyValue("聊天模型", context.ModelDeepseekChat)
 	outfmt.PrintKeyValue("推理模型", context.ModelDeepseekReasoner)
-	return
+	return err
 }

@@ -20,8 +20,10 @@ func init() {
 		)`)
 }
 
-var currentSessionID atomic.Int64
-var sessionOnce sync.Once
+var (
+	currentSessionID atomic.Int64
+	sessionOnce      sync.Once
+)
 
 // GetCurrentSessionID 获取当前会话ID（线程安全，仅初始化一次）
 func GetCurrentSessionID(ctx context.Context) (sessionID int64) {
@@ -43,7 +45,7 @@ func CreateOrGetSessionID(ctx context.Context) (sessionID int64, err error) {
 	}
 	db, err := sqlite.OpenDB()
 	if err != nil {
-		return
+		return sessionID, err
 	}
 	defer db.Close()
 
@@ -52,23 +54,23 @@ func CreateOrGetSessionID(ctx context.Context) (sessionID int64, err error) {
 		projectRoot).Scan(&id)
 	if err != nil {
 		if err != sql.ErrNoRows {
-			return
+			return sessionID, err
 		}
 	} else if id > 0 {
 		sessionID = id
-		return
+		return sessionID, err
 	}
 
 	result, err := db.Exec("INSERT INTO sessions (project_path) VALUES (?)",
 		projectRoot)
 	if err != nil {
-		return
+		return sessionID, err
 	}
 
 	id, err = result.LastInsertId()
 	if err != nil {
-		return
+		return sessionID, err
 	}
 	sessionID = id
-	return
+	return sessionID, err
 }

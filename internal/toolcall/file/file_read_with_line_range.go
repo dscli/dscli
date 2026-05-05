@@ -60,11 +60,11 @@ func init() {
 
 // handleReadFileWithLineRange 读取文件指定行范围的内容
 // 输出格式与 awk 'NR>=start && NR<=end {print NR": "$0}' 完全一致
-func handleReadFileWithLineRange(ctx context.Context, args ToolArgs) (result string, warning string, err error) {
+func handleReadFileWithLineRange(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		err = fmt.Errorf("parameter error: no path specified")
-		return
+		return result, warning, err
 	}
 
 	fullPath := ResolvePath(ctx, path)
@@ -72,14 +72,14 @@ func handleReadFileWithLineRange(ctx context.Context, args ToolArgs) (result str
 	startLine, endLine, err := ParseLineRange(args)
 	if err != nil {
 		err = fmt.Errorf("failed to parse line range: %w", err)
-		return
+		return result, warning, err
 	}
 
 	// 打开文件
 	file, err := os.Open(fullPath)
 	if err != nil {
 		err = fmt.Errorf("failed to open file: %w", err)
-		return
+		return result, warning, err
 	}
 	defer file.Close()
 
@@ -107,12 +107,12 @@ func handleReadFileWithLineRange(ctx context.Context, args ToolArgs) (result str
 
 	if err = scanner.Err(); err != nil {
 		err = fmt.Errorf("failed to read file line by line: %w", err)
-		return
+		return result, warning, err
 	}
 
 	// 如果起始行号超出文件范围，返回空字符串（与awk行为一致）
 	if linesRead == 0 {
-		return
+		return result, warning, err
 	}
 
 	result = resultBuilder.String()
@@ -124,5 +124,5 @@ func handleReadFileWithLineRange(ctx context.Context, args ToolArgs) (result str
 	}
 	outfmt.Notice("读取文件 \"%s\" 行范围 %s，共 %d 行", path, rangeDesc, linesRead)
 
-	return
+	return result, warning, err
 }

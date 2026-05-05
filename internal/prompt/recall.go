@@ -23,7 +23,7 @@ type Result struct {
 // keywords: 搜索关键词（空格分隔，OR 逻辑，匹配任一即返回）。
 // days: 搜索最近N天，<=0 表示不限时间。
 // limit: 返回结果数量上限。
-func SearchMessages(ctx context.Context, keywords []string, days int, limit int) ([]Result, error) {
+func SearchMessages(ctx context.Context, keywords []string, days, limit int) ([]Result, error) {
 	if len(keywords) == 0 {
 		return nil, fmt.Errorf("至少需要一个搜索关键词")
 	}
@@ -133,7 +133,7 @@ func Truncate(content string, maxLen int) string {
 	return string(runes[:maxLen]) + "..."
 }
 
-func HandleRecall(ctx context.Context, keywordsStr string, days int, limit int) (result string, warning string, err error) {
+func HandleRecall(ctx context.Context, keywordsStr string, days, limit int) (result, warning string, err error) {
 	// 防止 recall 结果撑爆 LLM 上下文
 	const (
 		maxRecallContentRunes = 2000 // 单条消息截断上限
@@ -151,18 +151,18 @@ func HandleRecall(ctx context.Context, keywordsStr string, days int, limit int) 
 
 	if len(keywords) == 0 {
 		err = fmt.Errorf("没有有效的搜索关键词")
-		return
+		return result, warning, err
 	}
 
 	results, searchErr := SearchMessages(ctx, keywords, days, limit)
 	if searchErr != nil {
 		err = searchErr
-		return
+		return result, warning, err
 	}
 
 	if len(results) == 0 {
 		result = "没有找到匹配的历史消息。"
-		return
+		return result, warning, err
 	}
 
 	// 格式化结果（每条截断 + 总数限制，防止撑爆 LLM 上下文）
@@ -188,5 +188,5 @@ func HandleRecall(ctx context.Context, keywordsStr string, days int, limit int) 
 		fmt.Fprintf(&b, "%d. %s %s %s\n", i+1, timeStr, roleLabel, content)
 	}
 	result = b.String()
-	return
+	return result, warning, err
 }

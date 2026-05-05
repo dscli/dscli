@@ -114,7 +114,8 @@ func sanitizePath(p string) string {
 	}
 	return p
 }
-// FormatSkillMD 生成带 frontmatter 的 SKILL.md 内容，用于 skill_create 工具。
+
+// FormatSkillMD 生成带 frontmatter 的 SKILL.md 内容，用于 skill_save 工具。
 // 只序列化 frontmatter 必要字段（name, description, keywords, auto_inject），
 // 正文部分直接拼接。
 func FormatSkillMD(skill *Skill) (string, error) {
@@ -155,7 +156,7 @@ func LoadSkills(dir string) (skills map[string]Skill) {
 			skills[skill.Name] = skill
 		}
 	}
-	return
+	return skills
 }
 
 // SkillFiles returns all skill files (SKILL.md) under `dir`.
@@ -176,7 +177,7 @@ func SkillFiles(dir string) (skillFiles []string) {
 		}
 		return nil
 	})
-	return
+	return skillFiles
 }
 
 // ParseSkill 解析指定路径的 SKILL.md 文件，填充 skill 对象。
@@ -526,7 +527,11 @@ func loadExamples(skillDir string, skill *Skill) error {
 // Use skill_search tool for keyword-based discovery of manual skills.
 // Store loading errors are gracefully degraded to empty stores
 // so that skill failures never block conversation.
-func BuildSkillPrompt(ctx context.Context) string {
+// BuildSkillPrompt builds the skill injection prompt.
+// When allowed is empty or nil, all skills are included (backward compatible).
+// When allowed contains "all", all skills are included.
+// When allowed contains specific names, only those skills are included.
+func BuildSkillPrompt(ctx context.Context, allowed ...string) string {
 	localStore, localErr := LocalStore()
 	if localErr != nil {
 		localStore = &Store{}
@@ -541,6 +546,21 @@ func BuildSkillPrompt(ctx context.Context) string {
 	allSkills := make(map[string]Skill)
 	maps.Copy(allSkills, globalStore.Skills)
 	maps.Copy(allSkills, localStore.Skills)
+
+	// Apply allowlist filter if specified
+	if len(allowed) > 0 && !(len(allowed) == 1 && allowed[0] == "all") {
+		allowSet := make(map[string]bool, len(allowed))
+		for _, a := range allowed {
+			allowSet[a] = true
+		}
+		filtered := make(map[string]Skill)
+		for name, skill := range allSkills {
+			if allowSet[name] {
+				filtered[name] = skill
+			}
+		}
+		allSkills = filtered
+	}
 
 	if len(allSkills) == 0 {
 		return "" // No skills, no injection

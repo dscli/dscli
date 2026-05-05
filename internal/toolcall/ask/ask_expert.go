@@ -76,7 +76,7 @@ func init() {
 }
 
 // handleAskExpert 处理提问工具调用
-func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result string, warning string, err error) {
+func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
 	// 向后兼容：支持旧参数名
 	summary := toolcall.ToolArgsValue(args, "summary", "")
 	content := toolcall.ToolArgsValue(args, "content", "")
@@ -89,7 +89,7 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result string
 
 	if content == "" {
 		err = fmt.Errorf("问题内容不能为空")
-		return
+		return result, warning, err
 	}
 
 	// 如果用户没有提供summary，自动从content生成
@@ -116,7 +116,7 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result string
 	result, err = AskExpert(ctx, structuredRequest)
 	if err != nil {
 		outfmt.Println("❌ 专家咨询失败")
-		return
+		return result, warning, err
 	}
 
 	// 智能处理专家响应（自动生成摘要）
@@ -124,7 +124,7 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result string
 
 	outfmt.Println("✅ 专家咨询完成")
 
-	return
+	return result, warning, err
 }
 
 // AskExpert 调用AI专家模型进行咨询并返回回复
@@ -167,8 +167,26 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result string
 // 参见:
 //   - shell.SimpleExecute: 执行shell命令的函数
 //   - handleAskExpert: 使用此函数的工具处理函数
-//   - handleAskExpert: 使用此函数的工具处理函数
 func AskExpert(ctx context.Context, input string) (reply string, err error) {
+	return AskExpertWithRole(ctx, input, "expert")
+}
+
+// AskExpertWithRole 调用AI模型进行咨询，支持指定角色(dev/expert/review)
+//
+// 该函数通过 internal/shell 包执行 dscli chat 命令，将输入内容写入临时文件，
+// 通过 --input 和 --role 参数传递给 dscli。
+//
+// 参数:
+//
+//	ctx: 上下文对象
+//	input: 要发送给AI模型的输入文本
+//	role: 角色（dev/expert/review）
+//
+// 返回值:
+//
+//	reply: AI模型的回复文本
+//	err: 执行过程中的错误
+func AskExpertWithRole(ctx context.Context, input, role string) (reply string, err error) {
 	// 将输入内容写入临时文件，避免 shell 命令长度限制和 stdin 传递问题
 	tmpFile, err := os.CreateTemp("", "dscli-ask-*.md")
 	if err != nil {
@@ -185,14 +203,14 @@ func AskExpert(ctx context.Context, input string) (reply string, err error) {
 		return "", fmt.Errorf("关闭临时文件失败: %w", err)
 	}
 
-	script := fmt.Sprintf(`%s chat --no-color --no-timestamp --histsize 0 --model %s --input %s`, dscliCmd,
-		context.ModelDeepseekReasoner, tmpPath)
+	script := fmt.Sprintf(`%s chat --no-color --no-timestamp --histsize 0 --model %s --role %s --input %s`, dscliCmd,
+		context.ModelDeepseekReasoner, role, tmpPath)
 	reply, err = shell.SimpleExecute(ctx, script)
-	return
+	return reply, err
 }
 
 // buildStructuredRequest 构建结构化请求
-func buildStructuredRequest(userSummary string, originalContent string, attachments []string) (string, []error) {
+func buildStructuredRequest(userSummary, originalContent string, attachments []string) (string, []error) {
 	var errors []error
 	attachmentSection := ""
 

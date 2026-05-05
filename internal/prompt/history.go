@@ -23,41 +23,41 @@ var GetCurrentSessionID = session.GetCurrentSessionID
 func UpdateContent(ctx context.Context, id int64, content string) (err error) {
 	db, err := sqlite.OpenDB()
 	if err != nil {
-		return
+		return err
 	}
 	defer db.Close()
 	res, err := db.ExecContext(ctx,
 		`UPDATE messages SET content = ? WHERE id = ?`,
 		content, id)
 	if err != nil {
-		return
+		return err
 	}
 	affected, err := res.RowsAffected()
 	if err != nil {
-		return
+		return err
 	}
 
 	if affected != 1 {
 		err = fmt.Errorf("failed to update message content")
 	}
-	return
+	return err
 }
 
 func ToSQLNullString(tcs []ToolCall) (toolCalls sql.NullString) {
 	data, err := outfmt.JSONMarshal(tcs)
 	if err != nil {
-		return
+		return toolCalls
 	}
 	toolCalls.String = string(data)
 	toolCalls.Valid = true
-	return
+	return toolCalls
 }
 
 // UpdateToolCalls update message content
 func UpdateToolCalls(ctx context.Context, id int64, tcs []ToolCall) (err error) {
 	db, err := sqlite.OpenDB()
 	if err != nil {
-		return
+		return err
 	}
 	defer db.Close()
 	toolCalls := ToSQLNullString(tcs)
@@ -65,39 +65,39 @@ func UpdateToolCalls(ctx context.Context, id int64, tcs []ToolCall) (err error) 
 		`UPDATE messages SET tool_calls = ? WHERE id = ?`,
 		&toolCalls, id)
 	if err != nil {
-		return
+		return err
 	}
 	affected, err := res.RowsAffected()
 	if err != nil {
-		return
+		return err
 	}
 
 	if affected != 1 {
 		err = fmt.Errorf("failed to update message content")
 	}
-	return
+	return err
 }
 
 // UpdateHistory update message session_id to 0
 func UpdateHistory(ctx context.Context, id int64) (err error) {
 	db, err := sqlite.OpenDB()
 	if err != nil {
-		return
+		return err
 	}
 	defer db.Close()
 	_, err = db.ExecContext(ctx,
 		`UPDATE messages SET session_id = 0 WHERE id = ?`,
 		id)
 	if err != nil {
-		return
+		return err
 	}
-	return
+	return err
 }
 
 func ShowMessage(ctx context.Context, id int64) (message *Message, err error) {
 	db, err := sqlite.OpenDB()
 	if err != nil {
-		return
+		return message, err
 	}
 	defer db.Close()
 	var toolCalls sql.NullString
@@ -109,12 +109,12 @@ func ShowMessage(ctx context.Context, id int64) (message *Message, err error) {
 		&message.SessionID, &message.Role, &message.Content, &toolCallID,
 		&toolCalls, &message.CreatedAt, &message.ModelID, &message.ReasoningContent)
 	if err != nil {
-		return
+		return message, err
 	}
 	if toolCalls.Valid {
 		err = json.Unmarshal([]byte(toolCalls.String), &message.ToolCalls)
 		if err != nil {
-			return
+			return message, err
 		}
 	}
 	if toolCallID.Valid {

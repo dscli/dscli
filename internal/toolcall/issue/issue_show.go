@@ -9,16 +9,16 @@ import (
 )
 
 // handleIssueShow 处理显示单个issue（Tool Calling）
-func handleIssueShow(ctx context.Context, args toolcall.ToolArgs) (result string, warning string, err error) {
+func handleIssueShow(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
 	number := int(toolcall.ToolArgsValue(args, "number", int64(0)))
 	if number == 0 {
 		err = fmt.Errorf("必须提供issue编号")
-		return
+		return result, warning, err
 	}
 
 	issue, err := ShowIssue(ctx, number)
 	if err != nil {
-		return
+		return result, warning, err
 	}
 
 	// 构建详细结果
@@ -72,7 +72,7 @@ func handleIssueShow(ctx context.Context, args toolcall.ToolArgs) (result string
 	b.WriteString(strings.Repeat("=", 80) + "\n")
 
 	result = b.String()
-	return
+	return result, warning, err
 }
 
 func init() {

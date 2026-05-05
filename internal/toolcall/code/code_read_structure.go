@@ -171,12 +171,12 @@ func init() {
 	})
 }
 
-func handleReadCodeStructure(ctx context.Context, args toolcall.ToolArgs) (result string, warning string, err error) {
+func handleReadCodeStructure(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		result, err = "", fmt.Errorf("参数 'path' 缺失")
-		return
+		return result, warning, err
 	}
 	result, err = readCodeStructure(ctx, path)
-	return
+	return result, warning, err
 }

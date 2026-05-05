@@ -56,7 +56,7 @@ func GlobalStore() (*Store, error) {
 	return globalStore, err
 }
 
-func NewSkillStore(dir string, source string) (*Store, error) {
+func NewSkillStore(dir, source string) (*Store, error) {
 	store := &Store{
 		dir:    dir,
 		source: source,
@@ -95,18 +95,18 @@ func (store *Store) Load() (err error) {
 		var data []byte
 		data, err = os.ReadFile(path)
 		if err != nil {
-			return
+			return err
 		}
 		err = yaml.Unmarshal(data, store)
 		if err != nil {
-			return
+			return err
 		}
 		// 注入 Source（缓存中不保存 Source）
 		for name, skill := range store.Skills {
 			skill.Source = store.source
 			store.Skills[name] = skill
 		}
-		return
+		return err
 	}
 
 	// 缓存无效或不存在，重新从 SKILL.md 文件加载
@@ -126,7 +126,7 @@ func (store *Store) Load() (err error) {
 	skills := LoadSkills(store.dir)
 	if len(skills) == 0 {
 		err = fmt.Errorf("no skill loaded")
-		return
+		return err
 	}
 
 	kws := map[string][]string{}
@@ -158,7 +158,7 @@ func (store *Store) Load() (err error) {
 		fmt.Printf("Warning: failed to save skills.yaml: %v\n", err)
 	}
 
-	return
+	return err
 }
 
 func (store *Store) Save() error {
@@ -187,18 +187,18 @@ func (store *Store) Query(query string) (matched map[string]Skill) {
 			}
 		}
 	}
-	return
+	return matched
 }
 
 func (store *Store) Use(name string) (content string, err error) {
 	skill, ok := store.Skills[name]
 	if ok {
 		content = skill.FormatFull()
-		return
+		return content, err
 	}
 
 	err = fmt.Errorf("skill %s not exists", name)
-	return
+	return content, err
 }
 
 func Query(q string) (string, error) {
@@ -343,7 +343,7 @@ func (store *Store) SetAutoInject(name string, autoInject bool) error {
 
 // SetAutoInject 设置技能的 auto_inject 属性。
 // 优先修改本地 store；若指定了 global 则修改全局 store。
-func SetAutoInject(name string, autoInject bool, global bool) error {
+func SetAutoInject(name string, autoInject, global bool) error {
 	if global {
 		globalStore, err := GlobalStore()
 		if err != nil {
@@ -359,7 +359,7 @@ func SetAutoInject(name string, autoInject bool, global bool) error {
 	return localStore.SetAutoInject(name, autoInject)
 }
 
-func HandleSkillCreate(ctx context.Context, name string, description, content, keywordsStr string, autoInject bool) (result string, warning string, err error) {
+func HandleSkillCreate(ctx context.Context, name, description, content, keywordsStr string, autoInject bool) (result, warning string, err error) {
 	// Parse keywords from comma-separated string
 	var keywords []string
 	if keywordsStr != "" {
@@ -384,21 +384,21 @@ func HandleSkillCreate(ctx context.Context, name string, description, content, k
 	skillMD, err := FormatSkillMD(&skill)
 	if err != nil {
 		err = fmt.Errorf("failed to format SKILL.md: %w", err)
-		return
+		return result, warning, err
 	}
 
 	// Create local skill directory: .dscli/skills/<name>/
 	localDir := filepath.Join(context.ProjectRoot, ".dscli", "skills", name)
 	if err = os.MkdirAll(localDir, 0o755); err != nil {
 		err = fmt.Errorf("failed to create skill directory: %w", err)
-		return
+		return result, warning, err
 	}
 
 	// Write SKILL.md
 	skillFile := filepath.Join(localDir, "SKILL.md")
 	if err = os.WriteFile(skillFile, []byte(skillMD), 0o644); err != nil {
 		err = fmt.Errorf("failed to write SKILL.md: %w", err)
-		return
+		return result, warning, err
 	}
 
 	// Register in local store so it's immediately usable via skill_by_name / skill_search
@@ -409,14 +409,14 @@ func HandleSkillCreate(ctx context.Context, name string, description, content, k
 		outfmt.Println(warning)
 		result = fmt.Sprintf("Skill %q created at %s (store cache update skipped).", name, localDir)
 		err = nil
-		return
+		return result, warning, err
 	}
 
 	// Parse the newly created SKILL.md to get the full Skill (with resources, etc.)
 	var parsedSkill Skill
 	if err = ParseSkill(skillFile, &parsedSkill); err != nil {
 		err = fmt.Errorf("failed to parse created skill: %w", err)
-		return
+		return result, warning, err
 	}
 
 	// Preserve auto_inject if set
@@ -444,5 +444,5 @@ func HandleSkillCreate(ctx context.Context, name string, description, content, k
 
 	result = fmt.Sprintf("Local skill %q created successfully.\n\nPath: %s\nKeywords: %s",
 		name, localDir, strings.Join(parsedSkill.Keywords, ", "))
-	return
+	return result, warning, err
 }

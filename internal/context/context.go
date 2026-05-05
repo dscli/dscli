@@ -19,6 +19,7 @@ var (
 	CurrentModelIDKey     = ContextKeyType[int64]{"CurrentModelID"}
 	CurrentModelNameKey   = ContextKeyType[string]{"CurrentModelName"}
 	CurrentDomainIDKey    = ContextKeyType[int64]{"CurrentDomainID"}
+	CurrentRoleKey        = ContextKeyType[string]{"CurrentRole"}
 	ToolCallIDKey         = ContextKeyType[string]{"ToolCallID"}
 	ShellNameKey          = ContextKeyType[string]{"ShellName"}
 	ShellSummaryKey       = ContextKeyType[string]{"ShellSummary"}
@@ -50,6 +51,13 @@ var (
 const (
 	DeepseekChat     = int64(0)
 	DeepseekReasoner = int64(1)
+)
+
+// Role constants for --role flag
+const (
+	RoleDev    = "dev"
+	RoleExpert = "expert"
+	RoleReview = "review"
 )
 
 type (

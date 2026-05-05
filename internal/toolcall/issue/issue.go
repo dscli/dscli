@@ -266,14 +266,14 @@ func IssueAPIBaseURL(originURL string, issueConfig *IssueConfig) (err error) {
 		parts := strings.Split(originURL, ":")
 		if len(parts) != 2 {
 			err = fmt.Errorf("invalid SSH URL format: %s", originURL)
-			return
+			return err
 		}
 		host = strings.TrimPrefix(parts[0], "git@")
 		path := parts[1]
 		pathParts := strings.Split(path, "/")
 		if len(pathParts) != 2 {
 			err = fmt.Errorf("invalid path in SSH URL: %s", path)
-			return
+			return err
 		}
 		owner = pathParts[0]
 		repo = pathParts[1] // 需要repo参数用于请求体
@@ -286,14 +286,14 @@ func IssueAPIBaseURL(originURL string, issueConfig *IssueConfig) (err error) {
 		parts := strings.Split(urlWithoutProtocol, "/")
 		if len(parts) < 3 {
 			err = fmt.Errorf("invalid HTTPS URL format: %s", originURL)
-			return
+			return err
 		}
 		host = parts[0]
 		owner = parts[1]
 		repo = parts[2] // 需要repo参数用于请求体
 	} else {
 		err = fmt.Errorf("unsupported URL format: %s", originURL)
-		return
+		return err
 	}
 
 	apiHost := map[string]string{
@@ -302,17 +302,17 @@ func IssueAPIBaseURL(originURL string, issueConfig *IssueConfig) (err error) {
 
 	if apiHost == "" {
 		err = fmt.Errorf("%s not support yet", host)
-		return
+		return err
 	}
 
 	// 使用纯Go实现从.netrc获取token
 	token, err := toolcall.GetTokenFromNetrc(host)
 	if err != nil {
-		return
+		return err
 	}
 	if token == "" {
 		err = fmt.Errorf("no token found for %s in ~/.netrc", host)
-		return
+		return err
 	}
 	issueConfig.APIHost = apiHost
 	// 尝试使用/repos/:owner/:repo/issues格式
@@ -320,5 +320,5 @@ func IssueAPIBaseURL(originURL string, issueConfig *IssueConfig) (err error) {
 	issueConfig.Token = token
 	issueConfig.Owner = owner
 	issueConfig.Repo = repo
-	return
+	return err
 }

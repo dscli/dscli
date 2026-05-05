@@ -60,7 +60,7 @@ type CommandInfo struct {
 // VerifySystemCommand 验证命令在系统中真实存在且为期望的命令
 //
 // 使用 exec.LookPath 查找命令路径，然后通过尝试多种版本查询方式
-//（--version、-version、version 子命令等）获取版本信息来验证命令身份。
+// （--version、-version、version 子命令等）获取版本信息来验证命令身份。
 //
 // 某些命令（如 rg）可能被用户同名脚本覆盖，此方法通过版本输出检测此类情况。
 // 版本输出非空即认为命令身份已经过验证——真实的命令行工具都会响应版本查询，

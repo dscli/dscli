@@ -20,25 +20,25 @@ import (
 //	class:类名          - 修改指定类/结构体
 //	method:类名.方法名   - 修改指定方法
 //	lines:开始行-结束行  - 修改指定行范围（后备方案）
-func writeCodeSection(ctx context.Context, path string, selector string, newContent string) (result string, err error) {
+func writeCodeSection(ctx context.Context, path, selector, newContent string) (result string, err error) {
 	// 检查文件是否存在
 	if _, err = os.Stat(path); os.IsNotExist(err) {
 		err = fmt.Errorf("文件不存在: %s", path)
-		return
+		return result, err
 	}
 
 	// 读取文件内容
 	content, err := os.ReadFile(path)
 	if err != nil {
 		err = fmt.Errorf("读取文件失败: %w", err)
-		return
+		return result, err
 	}
 
 	// 解析文件结构
 	structure, err := parse.ParseFileStructure(ctx, path)
 	if err != nil {
 		err = fmt.Errorf("解析文件结构失败: %w", err)
-		return
+		return result, err
 	}
 
 	// 根据selector定位代码片段
@@ -50,7 +50,7 @@ func writeCodeSection(ctx context.Context, path string, selector string, newCont
 	startLine, endLine, err := locateSectionRange(structure, lines, selector)
 	if err != nil {
 		err = fmt.Errorf("获取区域范围失败: %w", err)
-		return
+		return result, err
 	}
 
 	// 构建结果
@@ -58,11 +58,11 @@ func writeCodeSection(ctx context.Context, path string, selector string, newCont
 
 	if err = writeToFile(path, lines, startLine, endLine, newContent); err != nil {
 		err = fmt.Errorf("写入文件失败: %w", err)
-		return
+		return result, err
 	}
 	result += "\n✅ 文件已成功更新"
 
-	return
+	return result, err
 }
 
 // locateSectionRange 根据selector定位代码片段的范围
@@ -272,30 +272,30 @@ func init() {
 	})
 }
 
-func handleWriteCodeSection(ctx context.Context, args toolcall.ToolArgs) (result string, warning string, err error) {
+func handleWriteCodeSection(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		err = fmt.Errorf("参数 'path' 缺失")
-		return
+		return result, warning, err
 	}
 
 	// selector, ok := args["selector"]
 	selector := toolcall.ToolArgsValue(args, "selector", "")
 	if selector == "" {
 		err = fmt.Errorf("参数 'selector' 缺失")
-		return
+		return result, warning, err
 	}
 	newContent := toolcall.ToolArgsValue(args, "new_content", "")
 	if newContent == "" {
 		err = fmt.Errorf("参数 'new_content' 缺失")
-		return
+		return result, warning, err
 	}
 
 	PrintWriteSession(path, selector)
 
 	result, err = writeCodeSection(ctx, path, selector, newContent)
 	if err != nil {
-		return
+		return result, warning, err
 	}
 
 	// Run flycheck on the written file and append issues as suggestion
@@ -306,10 +306,10 @@ func handleWriteCodeSection(ctx context.Context, args toolcall.ToolArgs) (result
 		warning += flyResult
 	}
 
-	return
+	return result, warning, err
 }
 
-func PrintWriteSession(path string, selector string) {
+func PrintWriteSession(path, selector string) {
 	run := ""
 	outfmt.Printf("修改文件%s代码片段%s%s\n", path, selector, run)
 }

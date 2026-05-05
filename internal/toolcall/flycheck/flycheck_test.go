@@ -13,9 +13,9 @@ func TestHandleFlycheckOutputFormatting(t *testing.T) {
 	// Test stats-based output formatting (extracted logic)
 
 	tests := []struct {
-		name          string
-		issues        []flycheck.ClassifiedIssue
-		wantContains  []string
+		name           string
+		issues         []flycheck.ClassifiedIssue
+		wantContains   []string
 		wantNotContain []string
 	}{
 		{
@@ -30,7 +30,7 @@ func TestHandleFlycheckOutputFormatting(t *testing.T) {
 			issues: []flycheck.ClassifiedIssue{
 				{Severity: flycheck.SevWarning, Line: "file.go:1:1: unused (U1000)"},
 			},
-			wantContains:    []string{"⚠️", "发现问题"},
+			wantContains:   []string{"⚠️", "发现问题"},
 			wantNotContain: []string{"❌ 发现编译错误", "必须立即修复"},
 		},
 		{
@@ -79,9 +79,9 @@ func TestHandleFlycheckOutputFormatting(t *testing.T) {
 // TestPathNormalization verifies the path normalization logic matches flycheck.NormalizePath.
 func TestPathNormalization(t *testing.T) {
 	tests := []struct {
-		input        string
+		input         string
 		wantRecursive bool
-		wantPath     string
+		wantPath      string
 	}{
 		{"./...", true, "."},
 		{"internal/...", true, "internal"},

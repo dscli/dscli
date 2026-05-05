@@ -12,6 +12,8 @@ import (
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/prompt"
+	"gitcode.com/dscli/dscli/internal/roles"
+	"gitcode.com/dscli/dscli/internal/session"
 	"gitcode.com/dscli/dscli/internal/sqlite"
 )
 
@@ -137,20 +139,52 @@ func GetToolDef(ctx context.Context, toolName string) (tool ToolDef, ok bool) {
 	toolRegistryRWMutex.RLock()
 	defer toolRegistryRWMutex.RUnlock()
 	tool, ok = toolRegistry[toolName]
-	return
+	return tool, ok
 }
 
 // GetAllTools 获取所有工具定义（用于API调用）
+// GetAllTools returns tools available for the current role.
+// Filters tools by role config from DB; falls back to hardcoded:
+// dev gets all, others get none.
 func GetAllTools(ctx context.Context) []Tool {
-	toolRegistryRWMutex.RLock()
-	defer toolRegistryRWMutex.RUnlock()
+	role := context.ContextValue(ctx, context.CurrentRoleKey, "dev")
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	if modelID == context.DeepseekReasoner {
 		return nil
 	}
+	// Determine which tools to include
+	var allowSet map[string]bool // nil = all, non-nil = filter
+
+	sessionID := session.GetCurrentSessionID(ctx)
+	cfg, _ := roles.GetRoleConfig(role, sessionID)
+	if cfg == nil {
+		// Fallback: only dev gets tools
+		if role != "dev" {
+			return nil
+		}
+		// allowSet remains nil → return all
+	} else {
+		allowedTools := roles.ParseToolsList(cfg.Tools)
+		if allowedTools != nil {
+			if len(allowedTools) == 0 {
+				return nil // explicit empty = no tools
+			}
+			allowSet = make(map[string]bool, len(allowedTools))
+			for _, t := range allowedTools {
+				allowSet[t] = true
+			}
+		}
+		// allowSet stays nil for "all"
+	}
+
+	toolRegistryRWMutex.RLock()
+	defer toolRegistryRWMutex.RUnlock()
 
 	var tools []Tool
 	for name, def := range toolRegistry {
+		if allowSet != nil && !allowSet[name] {
+			continue
+		}
 		tools = append(tools, Tool{
 			Type: "function",
 			Function: Function{
@@ -201,7 +235,7 @@ func FixBrokenJSON(broken string) (result string) {
 
 	if len(broken) < 3 {
 		result = broken
-		return
+		return result
 	}
 	result = broken
 	lastCh := broken[len(broken)-1]
@@ -210,43 +244,43 @@ func FixBrokenJSON(broken string) (result string) {
 	// no closing curly brace
 	if lastCh == '"' && lastCh2 != '\\' {
 		result += "}"
-		return
+		return result
 	}
 
 	//  fake right closing curly brace
 	if lastCh == '}' && lastCh2 != '"' && lastCh3 != '\\' {
 		result += "\"}"
-		return
+		return result
 	}
 
 	// fake right quote
 	if lastCh == '"' && lastCh2 == '\\' {
 		result += "\"}"
-		return
+		return result
 	}
 
 	if lastCh == '}' && lastCh2 == '"' && lastCh3 != '\\' {
-		return
+		return result
 	}
 
 	if lastCh == '\\' && lastCh2 != '\\' {
 		result = result[0 : len(result)-1]
 		result += "\"}"
-		return
+		return result
 	}
 	result += "\"}"
-	return
+	return result
 }
 
 // HandleToolCall 处理工具调用（带统计和超时）
-func HandleToolCall(ctx context.Context, toolName string, argsRaw string) (result string, warning string, err error) {
+func HandleToolCall(ctx context.Context, toolName, argsRaw string) (result, warning string, err error) {
 	// 获取工具处理器
 	tool, ok := GetToolDef(ctx, toolName)
 	if !ok {
 		err = fmt.Errorf("未知工具: %s", toolName)
 		warning = fmt.Sprintf("所调用工具 %q 不存在，请严格按照 tools 列表所提供工具调用", toolName)
 		outfmt.Println(warning)
-		return
+		return result, warning, err
 	}
 
 	truncated := context.ContextValue(ctx, context.FinishReasonLengthKey, false)
@@ -340,7 +374,7 @@ which lead to the error:
 		result = TruncateToolResult(result)
 	}
 
-	return
+	return result, warning, err
 }
 
 // GetOrCreateTool 获取或创建工具

@@ -68,11 +68,11 @@ func historyShowRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
 	id, err := strconv.Atoi(args[0])
 	if err != nil {
-		return
+		return err
 	}
 	message, err := prompt.ShowMessage(ctx, int64(id))
 	if err != nil {
-		return
+		return err
 	}
 	wrt := outfmt.NewTabwrt()
 	defer wrt.Flush()
@@ -84,38 +84,38 @@ func historyShowRunE(cmd *cobra.Command, args []string) (err error) {
 	wrt.Println("ToolCalls", prompt.ToSQLNullString(message.ToolCalls).String)
 	wrt.Println("ReasoningContent", message.ReasoningContent)
 	wrt.Println("Content", message.Content)
-	return
+	return err
 }
 
 func historyEditRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
 	id, err := strconv.Atoi(args[0])
 	if err != nil {
-		return
+		return err
 	}
 	column, err := cmd.Flags().GetString("column")
 	if err != nil {
-		return
+		return err
 	}
 	if !slices.Contains([]string{"content", "tool_calls"}, column) {
 		err = fmt.Errorf("not support %s", column)
-		return
+		return err
 	}
 
 	message, err := prompt.ShowMessage(ctx, int64(id))
 	if err != nil {
-		return
+		return err
 	}
 	switch column {
 	case "content":
 		content := message.Content
 		content, err = editor.OpenEditor(ctx, content)
 		if err != nil {
-			return
+			return err
 		}
 		err = prompt.UpdateContent(ctx, int64(id), content)
 		if err != nil {
-			return
+			return err
 		}
 	case "tool_calls":
 		tcs := message.ToolCalls
@@ -126,23 +126,23 @@ func historyEditRunE(cmd *cobra.Command, args []string) (err error) {
 		arguments := tc.Function.Arguments
 		arguments, err = editor.OpenEditor(ctx, arguments)
 		if err != nil {
-			return
+			return err
 		}
 		tc.Function.Arguments = arguments
 		tcs = []prompt.ToolCall{tc}
 		err = prompt.UpdateToolCalls(ctx, int64(id), tcs)
 		if err != nil {
-			return
+			return err
 		}
 	}
-	return
+	return err
 }
 
 func historyUpdateRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
 	id, err := strconv.Atoi(args[0])
 	if err != nil {
-		return
+		return err
 	}
 	return prompt.UpdateHistory(ctx, int64(id))
 }
@@ -150,28 +150,28 @@ func historyUpdateRunE(cmd *cobra.Command, args []string) (err error) {
 func historyPreRunE(cmd *cobra.Command, args []string) (err error) {
 	err = chatCommonPreRunE(cmd, args)
 	if err != nil {
-		return
+		return err
 	}
 	ctx := cmd.Context()
 	histsize, err := cmd.Flags().GetInt("histsize")
 	if err != nil {
-		return
+		return err
 	}
 	ctx = context.WithValue(ctx, context.HistSizeKey, histsize)
 	cmd.SetContext(ctx)
-	return
+	return err
 }
 
 func historyListRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
 	history, err := prompt.ListHistory(ctx)
 	if err != nil {
-		return
+		return err
 	}
 
 	filter, err := cmd.Flags().GetString("filter")
 	if err != nil {
-		return
+		return err
 	}
 
 	wrt := outfmt.NewTabwrt()
@@ -190,18 +190,18 @@ func historyListRunE(cmd *cobra.Command, args []string) (err error) {
 			}
 		}
 	}
-	return
+	return err
 }
 
 func historyLoadRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
 	history, err := prompt.LoadHistory(ctx)
 	if err != nil {
-		return
+		return err
 	}
 	filter, err := cmd.Flags().GetString("filter")
 	if err != nil {
-		return
+		return err
 	}
 	wrt := outfmt.NewTabwrt()
 	defer wrt.Flush()
@@ -246,7 +246,7 @@ func historyLoadRunE(cmd *cobra.Command, args []string) (err error) {
 			wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, prompt.ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
 		}
 	}
-	return
+	return err
 }
 
 func recallSearchRunE(cmd *cobra.Command, args []string) (err error) {

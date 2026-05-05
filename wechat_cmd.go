@@ -124,17 +124,17 @@ func init() {
 func wechatPersistentPreRunE(cmd *cobra.Command, args []string) (err error) {
 	wechatSimple, err := cmd.Flags().GetBool("simple")
 	if err != nil {
-		return
+		return err
 	}
 
 	wechatMarkdown, err := cmd.Flags().GetBool("markdown")
 	if err != nil {
-		return
+		return err
 	}
 
 	wechatOrg, err := cmd.Flags().GetBool("org")
 	if err != nil {
-		return
+		return err
 	}
 
 	// 设置输出格式

@@ -43,11 +43,11 @@ func init() {
 }
 
 // handleIssueUpdate 处理更新issue（Tool Calling）
-func handleIssueUpdate(ctx context.Context, args toolcall.ToolArgs) (result string, warning string, err error) {
+func handleIssueUpdate(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
 	number := int(toolcall.ToolArgsValue(args, "number", int64(0)))
 	if number == 0 {
 		err = fmt.Errorf("必须提供issue编号")
-		return
+		return result, warning, err
 	}
 
 	// 验证至少提供了一个更新字段
@@ -57,13 +57,13 @@ func handleIssueUpdate(ctx context.Context, args toolcall.ToolArgs) (result stri
 
 	if title == "" && body == "" && state == "" {
 		err = fmt.Errorf("必须提供至少一个更新字段（title, body 或 state）")
-		return
+		return result, warning, err
 	}
 
 	// 验证状态参数
 	if state != "" && state != "open" && state != "closed" {
 		err = fmt.Errorf("状态必须是 'open' 或 'closed'，收到: %s", state)
-		return
+		return result, warning, err
 	}
 
 	issue, err := UpdateIssue(ctx, UpdateIssueOptions{
@@ -73,7 +73,7 @@ func handleIssueUpdate(ctx context.Context, args toolcall.ToolArgs) (result stri
 		State:  state,
 	})
 	if err != nil {
-		return
+		return result, warning, err
 	}
 
 	// 构建成功结果
@@ -101,5 +101,5 @@ func handleIssueUpdate(ctx context.Context, args toolcall.ToolArgs) (result stri
 
 	b.WriteString(strings.Repeat("=", 80) + "\n")
 	result = b.String()
-	return
+	return result, warning, err
 }

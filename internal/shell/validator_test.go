@@ -170,11 +170,11 @@ func TestVerifySystemCommand(t *testing.T) {
 	ctx := t.Context()
 
 	tests := []struct {
-		name          string
-		cmd           string
-		wantExists    bool
-		wantVerified  bool
-		checkVersion  bool // 是否检查版本信息非空
+		name         string
+		cmd          string
+		wantExists   bool
+		wantVerified bool
+		checkVersion bool // 是否检查版本信息非空
 	}{
 		{
 			name:         "系统命令 echo",
@@ -263,8 +263,8 @@ func TestTryGetVersion(t *testing.T) {
 
 	// 只测试已知会返回版本信息的命令
 	tests := []struct {
-		name       string
-		cmd        string
+		name         string
+		cmd          string
 		wantNonEmpty bool
 	}{
 		{"echo 命令", "echo", true},

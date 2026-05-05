@@ -70,11 +70,11 @@ func init() {
 	})
 }
 
-func handleFlycheck(ctx context.Context, args toolcall.ToolArgs) (result string, warning string, err error) {
+func handleFlycheck(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		err = fmt.Errorf("参数 'path' 缺失")
-		return
+		return result, warning, err
 	}
 
 	checkResult, checkErr := flycheck.CheckPath(ctx, path)
@@ -85,7 +85,7 @@ func handleFlycheck(ctx context.Context, args toolcall.ToolArgs) (result string,
 			warning = fmt.Sprintf("💡 %s\n\n%s", checkErr.Error(), checkResult.Suggestion)
 		}
 		err = checkErr
-		return
+		return result, warning, err
 	}
 
 	// 语言不支持
@@ -96,7 +96,7 @@ func handleFlycheck(ctx context.Context, args toolcall.ToolArgs) (result string,
 		}
 		result = fmt.Sprintf("ℹ️ flycheck 暂不支持 %s 语言（%s: %s）\n   目前支持 Go 和 Python 语言。如需支持其他语言请联系开发者。",
 			checkResult.Language, kind, checkResult.Path)
-		return
+		return result, warning, err
 	}
 
 	// 非 Go/Python 目录检查 → 单文件检查
@@ -106,13 +106,12 @@ func handleFlycheck(ctx context.Context, args toolcall.ToolArgs) (result string,
 		} else {
 			result = fmt.Sprintf("✅ flycheck: 检查了 %s，未发现问题", checkResult.Path)
 		}
-		return
+		return result, warning, err
 	}
-
 
 	// 包/目录检查 → Markdown 格式化
 	result = formatPackageResult(checkResult)
-	return
+	return result, warning, err
 }
 
 // formatPackageResult outputs package/directory check results in Markdown.

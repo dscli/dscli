@@ -49,7 +49,7 @@ func init() {
 }
 
 // handleWriteFile 写入文件
-func handleWriteFile(ctx context.Context, args ToolArgs) (result string, warning string, err error) {
+func handleWriteFile(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	truncated := context.ContextValue(ctx, context.FinishReasonLengthKey, false)
 	path := toolcall.ToolArgsValue(args, "path", "")
 	content := toolcall.ToolArgsValue(args, "content", "")
@@ -65,7 +65,7 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result string, warning
 		if truncated {
 			warning = fmt.Sprintf("内容截断，因为内容长度 %d 超过了最大输出 Tokens 要求 %d，请严格遵守 write_file 要求，严格控制输出。", len(content), maxOutputTokens)
 		}
-		return
+		return result, warning, err
 	}
 
 	append := toolcall.ToolArgsValue(args, "append", false)
@@ -76,7 +76,7 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result string, warning
 	fi, err = os.Stat(dirPath)
 	if err == nil && !fi.IsDir() {
 		err = fmt.Errorf("%s is not directory", dirPath)
-		return
+		return result, warning, err
 	}
 
 	if err != nil && os.IsNotExist(err) {
@@ -85,7 +85,7 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result string, warning
 
 	if err != nil {
 		err = fmt.Errorf("failed to get or create directory %s: %w", dirPath, err)
-		return
+		return result, warning, err
 	}
 
 	var file *os.File
@@ -96,7 +96,7 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result string, warning
 	}
 	if err != nil {
 		err = fmt.Errorf("无法打开文件: %w", err)
-		return
+		return result, warning, err
 	}
 	defer file.Close()
 
@@ -104,7 +104,7 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result string, warning
 	fi, err = os.Stat(fullPath)
 	if err != nil && !os.IsNotExist(err) {
 		err = fmt.Errorf("获取文件信息失败: %w", err)
-		return
+		return result, warning, err
 	}
 
 	// 如果文件存在且不为空，先添加换行符（除非追加内容以换行符开头）
@@ -114,7 +114,7 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result string, warning
 			// 总是添加换行符，确保追加内容在新行
 			if _, err = file.WriteString("\n"); err != nil {
 				err = fmt.Errorf("写入换行符失败: %w", err)
-				return
+				return result, warning, err
 			}
 		}
 	}
@@ -122,7 +122,7 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result string, warning
 	// 写入内容
 	if _, err = file.WriteString(content); err != nil {
 		err = fmt.Errorf("写入内容失败: %w", err)
-		return
+		return result, warning, err
 	}
 
 	lines := strings.Count(content, "\n") + 1
@@ -153,5 +153,5 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result string, warning
 		warning += flyResult
 	}
 
-	return
+	return result, warning, err
 }

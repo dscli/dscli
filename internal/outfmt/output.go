@@ -100,7 +100,7 @@ func Println(a ...any) (n int, err error) {
 	if outputMode == "org" {
 		input := fmt.Sprintln(a...)
 		err = markdown.ConvertLines(input, outputWriter)
-		return
+		return n, err
 	}
 	return fmt.Fprintln(outputWriter, a...)
 }
@@ -115,7 +115,7 @@ func Print(a ...any) (n int, err error) {
 	if outputMode == "org" {
 		input := fmt.Sprint(a...)
 		err = markdown.ConvertLines(input, outputWriter)
-		return
+		return n, err
 	}
 	return fmt.Fprint(outputWriter, a...)
 }
@@ -139,7 +139,7 @@ func Printf(format string, a ...any) (n int, err error) {
 	if outputMode == "org" {
 		input := fmt.Sprintf(format, a...)
 		err = markdown.ConvertLines(input, outputWriter)
-		return
+		return n, err
 	}
 	return fmt.Fprintf(outputWriter, format, a...)
 }
@@ -486,7 +486,7 @@ func IsVerbose() bool {
 	return outputVerbose
 }
 
-func PrintContent(ctx context.Context, reasoning string, content string) {
+func PrintContent(ctx context.Context, reasoning, content string) {
 	// 检查是否是streaming模式
 	stream := context.ContextValue(ctx, context.StreamKey, false)
 

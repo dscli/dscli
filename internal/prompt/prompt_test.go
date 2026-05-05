@@ -11,18 +11,21 @@ func TestGetEnhancedSystemPrompt(t *testing.T) {
 	tests := []struct {
 		name        string
 		modelID     int64
+		role        string
 		contains    string
 		notcontains string
 	}{
 		{
 			"deepseek-chat",
 			context.DeepseekChat,
+			"dev",
 			"专业编程助手",
 			"system_prompt",
 		},
 		{
 			"deepseek-reasoner",
 			context.DeepseekReasoner,
+			"expert",
 			"编程领域专家",
 			"system_prompt",
 		},
@@ -31,6 +34,7 @@ func TestGetEnhancedSystemPrompt(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
 			ctx = context.WithValue(ctx, context.CurrentModelIDKey, tt.modelID)
+			ctx = context.WithValue(ctx, context.CurrentRoleKey, tt.role)
 			content := GetSystemPrompt(ctx)
 			if !strings.Contains(content, tt.contains) {
 				t.Fatal(content, tt.contains)
@@ -71,19 +75,26 @@ func TestLoadPrompts(t *testing.T) {
 }
 
 // TestNewPromptTemplate_NilSafety 验证未知 modelID 不返回 nil
+// TestNewPromptTemplate_NilSafety 验证未知角色不返回 nil
+// TestNewPromptTemplate_NilSafety 验证未知 modelID 不返回 nil
+// TestNewPromptTemplate_NilSafety 验证未知角色不返回 nil
 func TestNewPromptTemplate_NilSafety(t *testing.T) {
-	invalidIDs := []int64{-1, 2, 100, 999}
-	for _, id := range invalidIDs {
-		tmpl := newPromptTemplate(id)
+	ctx := context.Background()
+	invalidRoles := []string{"invalid", "unknown", ""}
+	for _, role := range invalidRoles {
+		tmpl := newPromptTemplate(ctx, role)
 		if tmpl == nil {
-			t.Errorf("newPromptTemplate(%d) 返回 nil，期望非 nil", id)
+			t.Errorf("newPromptTemplate(%q) 返回 nil，期望非 nil", role)
 		}
 	}
-	// DeepseekChat 和 DeepseekReasoner 也应返回非 nil
-	if tmpl := newPromptTemplate(context.DeepseekChat); tmpl == nil {
-		t.Error("newPromptTemplate(DeepseekChat) 返回 nil")
+	// dev, expert, review 也应返回非 nil
+	if tmpl := newPromptTemplate(ctx, "dev"); tmpl == nil {
+		t.Error("newPromptTemplate(dev) 返回 nil")
 	}
-	if tmpl := newPromptTemplate(context.DeepseekReasoner); tmpl == nil {
-		t.Error("newPromptTemplate(DeepseekReasoner) 返回 nil")
+	if tmpl := newPromptTemplate(ctx, "expert"); tmpl == nil {
+		t.Error("newPromptTemplate(expert) 返回 nil")
+	}
+	if tmpl := newPromptTemplate(ctx, "review"); tmpl == nil {
+		t.Error("newPromptTemplate(review) 返回 nil")
 	}
 }

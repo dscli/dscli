@@ -27,7 +27,7 @@ func GetIssueConfig(ctx context.Context) (issueConfig *IssueConfig, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("解析API URL失败: %w", err)
 	}
-	return
+	return issueConfig, err
 }
 
 // ListIssues 列出issues
@@ -326,7 +326,7 @@ func CloseIssue(ctx context.Context, number int) (issue *Issue, err error) {
 	issue, err = ShowIssue(ctx, number)
 	if err != nil {
 		err = fmt.Errorf("failed to get issue before close it: %w", err)
-		return
+		return issue, err
 	}
 
 	issue, err = UpdateIssue(ctx, UpdateIssueOptions{
@@ -337,7 +337,7 @@ func CloseIssue(ctx context.Context, number int) (issue *Issue, err error) {
 	})
 	if err != nil {
 		err = fmt.Errorf("关闭issue失败: %w", err)
-		return
+		return issue, err
 	}
 	return issue, nil
 }
@@ -347,7 +347,7 @@ func ReopenIssue(ctx context.Context, number int) (issue *Issue, err error) {
 	issue, err = ShowIssue(ctx, number)
 	if err != nil {
 		err = fmt.Errorf("failed to get issue before reopen it: %w", err)
-		return
+		return issue, err
 	}
 	// 使用UpdateIssue来重新打开issue
 	issue, err = UpdateIssue(ctx, UpdateIssueOptions{
@@ -375,7 +375,7 @@ func AssignIssue(ctx context.Context, number int, username string) (issue *Issue
 	issue, err = ShowIssue(ctx, number)
 	if err != nil {
 		err = fmt.Errorf("failed to get issue before assign: %w", err)
-		return
+		return issue, err
 	}
 
 	opts := UpdateIssueOptions{
@@ -386,7 +386,7 @@ func AssignIssue(ctx context.Context, number int, username string) (issue *Issue
 	}
 
 	issue, err = UpdateIssue(ctx, opts)
-	return
+	return issue, err
 }
 
 // ReadBodyFromStdinOrFile 从标准输入或文件读取内容

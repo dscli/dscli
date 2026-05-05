@@ -647,7 +647,7 @@ func (g *defaultTokenGetter) GetToken(host string) (string, error) {
 }
 
 // issueAPIBaseURLWithDeps 可测试的版本，接受依赖注入
-func issueAPIBaseURLWithDeps(originURL string, getter tokenGetter) (baseURL string, token string, repo string, err error) {
+func issueAPIBaseURLWithDeps(originURL string, getter tokenGetter) (baseURL, token, repo string, err error) {
 	originURL = strings.TrimSpace(originURL)
 
 	// 移除.git后缀
@@ -661,14 +661,14 @@ func issueAPIBaseURLWithDeps(originURL string, getter tokenGetter) (baseURL stri
 		parts := strings.Split(originURL, ":")
 		if len(parts) != 2 {
 			err = fmt.Errorf("invalid SSH URL format: %s", originURL)
-			return
+			return baseURL, token, repo, err
 		}
 		host = strings.TrimPrefix(parts[0], "git@")
 		path := parts[1]
 		pathParts := strings.Split(path, "/")
 		if len(pathParts) != 2 {
 			err = fmt.Errorf("invalid path in SSH URL: %s", path)
-			return
+			return baseURL, token, repo, err
 		}
 		owner = pathParts[0]
 		repo = pathParts[1] // 需要repo参数用于请求体
@@ -681,14 +681,14 @@ func issueAPIBaseURLWithDeps(originURL string, getter tokenGetter) (baseURL stri
 		parts := strings.Split(urlWithoutProtocol, "/")
 		if len(parts) < 3 {
 			err = fmt.Errorf("invalid HTTPS URL format: %s", originURL)
-			return
+			return baseURL, token, repo, err
 		}
 		host = parts[0]
 		owner = parts[1]
 		repo = parts[2] // 需要repo参数用于请求体
 	} else {
 		err = fmt.Errorf("unsupported URL format: %s", originURL)
-		return
+		return baseURL, token, repo, err
 	}
 
 	apiHost := map[string]string{
@@ -697,24 +697,24 @@ func issueAPIBaseURLWithDeps(originURL string, getter tokenGetter) (baseURL stri
 
 	if apiHost == "" {
 		err = fmt.Errorf("%s not support yet", host)
-		return
+		return baseURL, token, repo, err
 	}
 
 	// 使用注入的token获取器
 	token, err = getter.GetToken(host)
 	if err != nil {
-		return
+		return baseURL, token, repo, err
 	}
 	if token == "" {
 		err = fmt.Errorf("no token found for %s in ~/.netrc", host)
-		return
+		return baseURL, token, repo, err
 	}
 
 	// GitCode API格式: /api/v5/repos/:owner/issues
 	// 注意：URL中不包含repo，repo在请求体中
 	baseURL = fmt.Sprintf("https://%s/repos/%s/issues",
 		apiHost, owner)
-	return
+	return baseURL, token, repo, err
 }
 
 // mockTokenGetter 模拟token获取器

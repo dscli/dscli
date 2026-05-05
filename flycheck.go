@@ -46,7 +46,6 @@ func flycheckRunE(cmd *cobra.Command, args []string) error {
 func flycheckRunEImpl(path string) error {
 	ctx := context.Background()
 	result, err := flycheck.CheckPath(ctx, path)
-
 	// 处理错误
 	if err != nil {
 		outfmt.Error("%v", err)

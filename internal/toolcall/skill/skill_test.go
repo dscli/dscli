@@ -16,7 +16,7 @@ import (
 func TestRegistration(t *testing.T) {
 	ctx := context.Background()
 
-	for _, name := range []string{"skill_by_name", "skill_search", "skill_create"} {
+	for _, name := range []string{"skill_by_name", "skill_search", "skill_save"} {
 		t.Run(name, func(t *testing.T) {
 			tool, ok := toolcall.GetToolDef(ctx, name)
 			if !ok {
@@ -41,9 +41,9 @@ func TestRegistration(t *testing.T) {
 	}
 }
 
-// TestHandleSkillCreate verifies that handleSkillCreate creates a valid SKILL.md
+// TestHandleSkillSave verifies that handleSkillSave creates a valid SKILL.md
 // with frontmatter, and that the resulting skill can be loaded and queried.
-func TestHandleSkillCreate(t *testing.T) {
+func TestHandleSkillSave(t *testing.T) {
 	// Save and restore original ProjectRoot
 	origRoot := pctx.ProjectRoot
 	defer func() { pctx.ProjectRoot = origRoot }()
@@ -67,9 +67,9 @@ func TestHandleSkillCreate(t *testing.T) {
 		"auto_inject": true,
 	}
 
-	content, _, err := handleSkillCreate(ctx, args)
+	content, _, err := handleSkillSave(ctx, args)
 	if err != nil {
-		t.Fatalf("handleSkillCreate failed: %v", err)
+		t.Fatalf("handleSkillSave failed: %v", err)
 	}
 	t.Logf("result: %s", content)
 
@@ -120,9 +120,9 @@ func TestHandleSkillCreate(t *testing.T) {
 
 	// Verify overwrite
 	args["content"] = "# Updated\n\nNew body."
-	content2, _, err2 := handleSkillCreate(ctx, args)
+	content2, _, err2 := handleSkillSave(ctx, args)
 	if err2 != nil {
-		t.Fatalf("handleSkillCreate (overwrite) failed: %v", err2)
+		t.Fatalf("handleSkillSave (overwrite) failed: %v", err2)
 	}
 	t.Logf("overwrite result: %s", content2)
 
@@ -136,8 +136,8 @@ func TestHandleSkillCreate(t *testing.T) {
 	}
 }
 
-// TestHandleSkillCreateValidation tests input validation.
-func TestHandleSkillCreateValidation(t *testing.T) {
+// TestHandleSkillSaveValidation tests input validation.
+func TestHandleSkillSaveValidation(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
@@ -151,7 +151,7 @@ func TestHandleSkillCreateValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := handleSkillCreate(ctx, tt.args)
+			_, _, err := handleSkillSave(ctx, tt.args)
 			if err == nil {
 				t.Errorf("expected error for %s, got nil", tt.name)
 			}

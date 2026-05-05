@@ -105,16 +105,16 @@ func deleteFTS(db *sql.DB, id int64) error {
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 // HandleMemSave saves a new memory observation.
-func HandleMemSave(ctx context.Context, title string, body string, typ string) (result string, warning string, err error) {
+func HandleMemSave(ctx context.Context, title, body, typ string) (result, warning string, err error) {
 	if title == "" || body == "" {
 		err = fmt.Errorf("title 和 content 为必填项")
-		return
+		return result, warning, err
 	}
 
 	db, err := openDB()
 	if err != nil {
 		err = fmt.Errorf("打开数据库失败: %w", err)
-		return
+		return result, warning, err
 	}
 	defer db.Close()
 
@@ -131,7 +131,7 @@ func HandleMemSave(ctx context.Context, title string, body string, typ string) (
 	)
 	if err != nil {
 		err = fmt.Errorf("保存记忆失败: %w", err)
-		return
+		return result, warning, err
 	}
 
 	id, _ := res.LastInsertId()
@@ -139,22 +139,22 @@ func HandleMemSave(ctx context.Context, title string, body string, typ string) (
 	// Sync FTS index with space-separated CJK content
 	if ftsErr := insertFTS(db, id, title, body, typ); ftsErr != nil {
 		err = fmt.Errorf("创建全文索引失败: %w", ftsErr)
-		return
+		return result, warning, err
 	}
 
 	outfmt.Printf("Memory saved: #%d %q (%s)\n", id, title, typ)
 
 	result = fmt.Sprintf("✅ 记忆已保存: #%d\n标题: %s\n类型: %s\n时间: %s",
 		id, title, typ, time.Now().Format("2006-01-02 15:04:05"))
-	return
+	return result, warning, err
 }
 
 // HandleMemUpdate updates an existing memory by ID.
-func HandleMemUpdate(ctx context.Context, id int64, title string, body string, typ string) (result string, warning string, err error) {
+func HandleMemUpdate(ctx context.Context, id int64, title, body, typ string) (result, warning string, err error) {
 	db, err := openDB()
 	if err != nil {
 		err = fmt.Errorf("打开数据库失败: %w", err)
-		return
+		return result, warning, err
 	}
 	defer db.Close()
 
@@ -169,11 +169,11 @@ func HandleMemUpdate(ctx context.Context, id int64, title string, body string, t
 		&existing.CreatedAt, &existing.UpdatedAt)
 	if err == sql.ErrNoRows {
 		err = fmt.Errorf("记忆 #%d 不存在或不属于当前项目", id)
-		return
+		return result, warning, err
 	}
 	if err != nil {
 		err = fmt.Errorf("查询记忆失败: %w", err)
-		return
+		return result, warning, err
 	}
 
 	var sets []string
@@ -209,30 +209,30 @@ func HandleMemUpdate(ctx context.Context, id int64, title string, body string, t
 	_, err = db.Exec(sql, vals...)
 	if err != nil {
 		err = fmt.Errorf("更新记忆失败: %w", err)
-		return
+		return result, warning, err
 	}
 
 	// Rebuild FTS entry: delete old, insert new with tokenized content
 	if ftsErr := deleteFTS(db, id); ftsErr != nil {
 		err = fmt.Errorf("删除旧全文索引失败: %w", ftsErr)
-		return
+		return result, warning, err
 	}
 	if ftsErr := insertFTS(db, id, newTitle, newBody, newType); ftsErr != nil {
 		err = fmt.Errorf("重建全文索引失败: %w", ftsErr)
-		return
+		return result, warning, err
 	}
 
 	outfmt.Printf("Memory updated: #%d %q\n", id, existing.Title)
 	result = fmt.Sprintf("✅ 记忆已更新: #%d\n原标题: %s", id, existing.Title)
-	return
+	return result, warning, err
 }
 
 // HandleMemSearch searches memories using FTS5 full-text search.
-func HandleMemSearch(ctx context.Context, query string, typ string, limit int) (result string, warning string, err error) {
+func HandleMemSearch(ctx context.Context, query, typ string, limit int) (result, warning string, err error) {
 	db, err := openDB()
 	if err != nil {
 		err = fmt.Errorf("打开数据库失败: %w", err)
-		return
+		return result, warning, err
 	}
 	defer db.Close()
 
@@ -260,7 +260,7 @@ func HandleMemSearch(ctx context.Context, query string, typ string, limit int) (
 	rows, err := db.Query(sqlQ, vals...)
 	if err != nil {
 		err = fmt.Errorf("搜索失败: %w（提示：尝试用更简单的关键词）", err)
-		return
+		return result, warning, err
 	}
 	defer rows.Close()
 
@@ -279,7 +279,7 @@ func HandleMemSearch(ctx context.Context, query string, typ string, limit int) (
 
 	if len(results) == 0 {
 		result = fmt.Sprintf("🔍 未找到匹配的记忆: %q", query)
-		return
+		return result, warning, err
 	}
 
 	var b strings.Builder
@@ -308,15 +308,15 @@ func HandleMemSearch(ctx context.Context, query string, typ string, limit int) (
 	}
 
 	result = b.String()
-	return
+	return result, warning, err
 }
 
 // HandleMemDelete deletes a memory by ID.
-func HandleMemDelete(ctx context.Context, id int64) (result string, warning string, err error) {
+func HandleMemDelete(ctx context.Context, id int64) (result, warning string, err error) {
 	db, err := openDB()
 	if err != nil {
 		err = fmt.Errorf("打开数据库失败: %w", err)
-		return
+		return result, warning, err
 	}
 	defer db.Close()
 
@@ -327,23 +327,23 @@ func HandleMemDelete(ctx context.Context, id int64) (result string, warning stri
 	err = db.QueryRow(`SELECT title FROM memories WHERE id = ? AND session_id = ?`, id, sessionID).Scan(&title)
 	if err == sql.ErrNoRows {
 		err = fmt.Errorf("记忆 #%d 不存在或不属于当前项目", id)
-		return
+		return result, warning, err
 	}
 	if err != nil {
 		err = fmt.Errorf("查询记忆失败: %w", err)
-		return
+		return result, warning, err
 	}
 
 	res, err := db.Exec(`DELETE FROM memories WHERE id = ? AND session_id = ?`, id, sessionID)
 	if err != nil {
 		err = fmt.Errorf("删除记忆失败: %w", err)
-		return
+		return result, warning, err
 	}
 
 	rows, _ := res.RowsAffected()
 	if rows == 0 {
 		err = fmt.Errorf("记忆 #%d 不存在或不属于当前项目", id)
-		return
+		return result, warning, err
 	}
 
 	// Remove from FTS index
@@ -354,17 +354,16 @@ func HandleMemDelete(ctx context.Context, id int64) (result string, warning stri
 
 	outfmt.Printf("Memory deleted: #%d %q\n", id, title)
 	result = fmt.Sprintf("✅ 记忆已删除: #%d %q", id, title)
-	return
+	return result, warning, err
 }
 
 // HandleMemGetObservation retrieves full memory content by ID.
 // Unlike mem_search which returns truncated previews, this returns the complete content.
-func HandleMemGetObservation(ctx context.Context, id int64) (result string, warning string, err error) {
-
+func HandleMemGetObservation(ctx context.Context, id int64) (result, warning string, err error) {
 	db, err := openDB()
 	if err != nil {
 		err = fmt.Errorf("打开数据库失败: %w", err)
-		return
+		return result, warning, err
 	}
 	defer db.Close()
 
@@ -376,24 +375,24 @@ func HandleMemGetObservation(ctx context.Context, id int64) (result string, warn
 	).Scan(&m.ID, &m.Title, &m.Content, &m.Type, &m.CreatedAt, &m.UpdatedAt)
 	if err == sql.ErrNoRows {
 		err = fmt.Errorf("记忆 #%d 不存在或不属于当前项目", id)
-		return
+		return result, warning, err
 	}
 	if err != nil {
 		err = fmt.Errorf("查询记忆失败: %w", err)
-		return
+		return result, warning, err
 	}
 
 	result = fmt.Sprintf("#%d [%s] %s\n\n%s\n\n创建: %s | 更新: %s",
 		m.ID, m.Type, m.Title, m.Content, m.CreatedAt, m.UpdatedAt)
-	return
+	return result, warning, err
 }
 
 // HandleMemStats returns memory system statistics.
-func HandleMemStats(ctx context.Context) (result string, warning string, err error) {
+func HandleMemStats(ctx context.Context) (result, warning string, err error) {
 	db, err := openDB()
 	if err != nil {
 		err = fmt.Errorf("打开数据库失败: %w", err)
-		return
+		return result, warning, err
 	}
 	defer db.Close()
 
@@ -403,19 +402,19 @@ func HandleMemStats(ctx context.Context) (result string, warning string, err err
 	err = db.QueryRow(`SELECT COUNT(*) FROM memories WHERE session_id = ?`, sessionID).Scan(&total)
 	if err != nil {
 		err = fmt.Errorf("统计失败: %w", err)
-		return
+		return result, warning, err
 	}
 
 	if total == 0 {
 		result = "📊 记忆系统为空，还没有任何记忆。"
-		return
+		return result, warning, err
 	}
 
 	// Type distribution
 	rows, err := db.Query(`SELECT type, COUNT(*) FROM memories WHERE session_id = ? GROUP BY type ORDER BY COUNT(*) DESC`, sessionID)
 	if err != nil {
 		err = fmt.Errorf("类型统计失败: %w", err)
-		return
+		return result, warning, err
 	}
 	defer rows.Close()
 
@@ -443,5 +442,5 @@ func HandleMemStats(ctx context.Context) (result string, warning string, err err
 	}
 
 	result = b.String()
-	return
+	return result, warning, err
 }

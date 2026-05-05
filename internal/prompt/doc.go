@@ -1,18 +1,37 @@
-// Package prompt 负责 prompt 构建、消息持久化、历史回忆与对话笔记。
+// Package prompt 负责系统提示词构建、消息持久化、历史回忆与对话笔记。
 //
 // 本包提供两类功能：
-//  - 底层实现（SearchMessages, SaveNote 等）：供上层调用
-//  - 工具处理函数（HandleRecall, HandleNote）：供 toolcall/history 直接注册为 LLM 工具
+//   - 底层实现（SearchMessages, SaveNote 等）：供上层调用
+//   - 工具处理函数（HandleRecall, HandleNote）：供 toolcall/history 直接注册为 LLM 工具
 //
 // recall 和 note 归入 history 类别（toolcall/history），与 memory 系列
 // （toolcall/memory）区分：前者限定当前 session，后者是跨 session 的全局持久记忆。
 //
-// # Prompt 构建 (prompt.go)
+// # 角色驱动的 Prompt 系统 (prompt.go)
 //
-// 按优先级加载 chat.md / reasoner.md：
-//  1. ${PROJECT_ROOT}/.dscli/prompt/  — 项目级（可编辑）
-//  2. ~/.dscli/prompt/                 — 系统级（可编辑）
-//  3. 内嵌源文件                         — 只读兜底
+// 系统支持三种角色，每种角色有独立的提示词模板：
+//
+//	dev    — "专业编程助手"，日常开发编码，主动执行、注重实效
+//	expert — "编程领域专家"，深度分析推理，严谨审慎、追求洞察
+//	review — "代码审查专家"，专注审查建议，发现隐患、给出改进
+//
+// 设计原则：角色名即文件名。角色名直接对应内嵌模板文件名和用户可编辑的
+// 外部文件名，无需别名映射：
+//
+//	dev    → dev.md
+//	expert → expert.md
+//	review → review.md
+//
+// # 模板加载优先级
+//
+// 三级 fallback 链，逐级降级，保证始终有可用模板：
+//
+//  1. ${PROJECT_ROOT}/.dscli/prompt/{role}.md  — 项目级（用户可编辑）
+//  2. ~/.dscli/prompt/{role}.md                 — 系统级（用户可编辑）
+//  3. 内嵌模板                                     — 只读兜底（我们提供）
+//
+// 未知角色 fallback 到 dev 模板。模板使用 Go text/template 渲染，
+// 注入日期、项目信息、Git 状态等运行时上下文。
 //
 // # 消息持久化 (message.go)
 //

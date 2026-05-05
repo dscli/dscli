@@ -26,11 +26,11 @@ var webClient = &http.Client{
 }
 
 // handleWebReader 读取网页内容
-func handleWebReader(ctx context.Context, args toolcall.ToolArgs) (result string, warning string, err error) {
+func handleWebReader(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
 	url := toolcall.ToolArgsValue(args, "url", "")
 	if url == "" {
 		err = fmt.Errorf("no URL or empty URL specified")
-		return
+		return result, warning, err
 	}
 
 	// 确保URL以http://或https://开头
@@ -38,7 +38,7 @@ func handleWebReader(ctx context.Context, args toolcall.ToolArgs) (result string
 		url = "https://" + url
 	}
 	result, err = Web2Markdown(ctx, url)
-	return
+	return result, warning, err
 }
 
 // htmlToMarkdown 将HTML转换为简化的Markdown格式
@@ -47,7 +47,7 @@ func htmlToMarkdown(inputHTML string) (text string) {
 	if err != nil {
 		text = ""
 	}
-	return
+	return text
 }
 
 // extractMainContent 尝试提取网页主要内容

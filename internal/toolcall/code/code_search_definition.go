@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/toolcall"
 	"gitcode.com/dscli/dscli/internal/parse"
+	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
 func init() {
@@ -70,16 +70,16 @@ func init() {
 }
 
 // handleSearchCodeDefinition 处理代码定义搜索请求
-func handleSearchCodeDefinition(ctx context.Context, args toolcall.ToolArgs) (result string, warning string, err error) {
+func handleSearchCodeDefinition(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		err = fmt.Errorf("参数 'path' 缺失")
-		return
+		return result, warning, err
 	}
 	pattern := toolcall.ToolArgsValue(args, "pattern", "")
 	if pattern == "" {
 		err = fmt.Errorf("参数 'pattern' 缺失")
-		return
+		return result, warning, err
 	}
 	typeFilter := toolcall.ToolArgsValue(args, "type_filter", "")
 	caseSensitive := toolcall.ToolArgsValue(args, "case_sensitive", false)
@@ -88,7 +88,7 @@ func handleSearchCodeDefinition(ctx context.Context, args toolcall.ToolArgs) (re
 	structure, err := parse.ParseFileStructure(ctx, path)
 	if err != nil {
 		err = fmt.Errorf("解析文件结构失败: %w", err)
-		return
+		return result, warning, err
 	}
 
 	// 准备搜索
@@ -156,7 +156,7 @@ func handleSearchCodeDefinition(ctx context.Context, args toolcall.ToolArgs) (re
 		sb.WriteString("4. 使用 search_code_semantic 进行文本搜索\n")
 		sb.WriteString("5. 查看文件结构: read_code_structure(path=\"" + path + "\")\n")
 		result = sb.String()
-		return
+		return result, warning, err
 	}
 
 	// 显示所有匹配结果
@@ -180,7 +180,7 @@ func handleSearchCodeDefinition(ctx context.Context, args toolcall.ToolArgs) (re
 	}
 
 	result = sb.String()
-	return
+	return result, warning, err
 }
 
 // matchesDefinition 检查符号是否匹配搜索条件

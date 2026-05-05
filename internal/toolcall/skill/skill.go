@@ -9,9 +9,7 @@ import (
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
-var (
-	RegisterTool = toolcall.RegisterTool
-)
+var RegisterTool = toolcall.RegisterTool
 
 type (
 	ToolArgs  = toolcall.ToolArgs
@@ -24,11 +22,11 @@ func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
 }
 
 // handleSkillByName fetches a skill's full content by exact name.
-func handleSkillByName(ctx context.Context, args ToolArgs) (result string, warning string, err error) {
+func handleSkillByName(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	skillName := ToolArgsValue(args, "skill_name", "")
 	if skillName == "" {
 		err = fmt.Errorf("skill name can not be empty")
-		return
+		return result, warning, err
 	}
 	outfmt.Printf("Fetching skill [%s]\n", skillName)
 
@@ -36,38 +34,38 @@ func handleSkillByName(ctx context.Context, args ToolArgs) (result string, warni
 	skillContent, err := skills.Use(skillName)
 	if err != nil {
 		err = fmt.Errorf("failed to fetch skill %s: %w", skillName, err)
-		return
+		return result, warning, err
 	}
 
 	if skillContent == "" {
 		result = fmt.Sprintf("Skill %q exists but has no content.", skillName)
-		return
+		return result, warning, err
 	}
 
 	result = skillContent
-	return
+	return result, warning, err
 }
 
 // handleSkillSearch searches skills by keyword query.
-func handleSkillSearch(ctx context.Context, args ToolArgs) (result string, warning string, err error) {
+func handleSkillSearch(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	query := ToolArgsValue(args, "query", "")
 	if query == "" {
 		err = fmt.Errorf("search query cannot be empty")
-		return
+		return result, warning, err
 	}
 	outfmt.Printf("Searching skills [%s]\n", query)
 
 	result, err = skills.Query(query)
 	if err != nil {
 		err = fmt.Errorf("skill search failed: %w", err)
-		return
+		return result, warning, err
 	}
-	return
+	return result, warning, err
 }
 
-// handleSkillCreate creates a new local skill (in .dscli/skills/) with proper frontmatter.
+// handleSkillSave creates or updates a local skill (in .dscli/skills/) with proper frontmatter.
 // It overwrites if a skill with the same name already exists locally.
-func handleSkillCreate(ctx context.Context, args ToolArgs) (result string, warning string, err error) {
+func handleSkillSave(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	name := ToolArgsValue(args, "name", "")
 	description := ToolArgsValue(args, "description", "")
 	bodyContent := ToolArgsValue(args, "content", "")
@@ -77,20 +75,20 @@ func handleSkillCreate(ctx context.Context, args ToolArgs) (result string, warni
 	// Validate required params
 	if name == "" {
 		err = fmt.Errorf("skill name cannot be empty")
-		return
+		return result, warning, err
 	}
 	if description == "" {
 		err = fmt.Errorf("skill description cannot be empty")
-		return
+		return result, warning, err
 	}
 	if bodyContent == "" {
 		err = fmt.Errorf("skill content cannot be empty")
-		return
+		return result, warning, err
 	}
 
-	outfmt.Printf("Creating skill [%s]\n", name)
+	outfmt.Printf("Saving skill [%s]\n", name)
 	result, warning, err = skills.HandleSkillCreate(ctx, name, description, bodyContent, keywordsStr, autoInject)
-	return
+	return result, warning, err
 }
 
 // init registers the skill tools with the global registry.
@@ -157,19 +155,19 @@ Notes:
 		Handler:  handleSkillSearch,
 	})
 
-	// Register skill_create — create a new local skill with YAML frontmatter.
+	// Register skill_save — create or update a local skill with YAML frontmatter.
 	RegisterTool(ToolDef{
-		Name:        "skill_create",
-		DisplayName: "Create Skill",
-		Description: `Create a new local skill in .dscli/skills/ with proper YAML frontmatter.
+		Name:        "skill_save",
+		DisplayName: "Save Skill",
+		Description: `Create or update a local skill in .dscli/skills/ with proper YAML frontmatter.
 
-Creates SKILL.md with name, description, keywords, and auto_inject frontmatter fields,
+Creates or overwrites SKILL.md with name, description, keywords, and auto_inject frontmatter fields,
 making it discoverable via skill_search and loadable via skill_by_name.
 
 If a skill with the same name already exists locally, it will be overwritten.
 
 Usage:
-  skill_create(name="go-fix", description="Go code modernization helper", content="# go-fix\n\n...", keywords="go, fix, modernize")
+  skill_save(name="go-fix", description="Go code modernization helper", content="# go-fix\n\n...", keywords="go, fix, modernize")
 
 Parameters:
 - name: skill name (required, e.g. "go-fix")
@@ -178,7 +176,7 @@ Parameters:
 - keywords: comma-separated search keywords (optional, e.g. "go, modernize, refactor")
 - auto_inject: auto-inject into conversation context (optional, default false)
 
-After creation, the skill is immediately usable via skill_by_name and skill_search.`,
+After saving, the skill is immediately usable via skill_by_name and skill_search.`,
 		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",
@@ -208,6 +206,6 @@ After creation, the skill is immediately usable via skill_by_name and skill_sear
 			"additionalProperties": false,
 		},
 		Category: "skill",
-		Handler:  handleSkillCreate,
+		Handler:  handleSkillSave,
 	})
 }

@@ -38,7 +38,7 @@ func init() {
 	rootCmd.PersistentFlags().String("db", "", "数据库文件路径（默认：~/.dscli/sqlite.db）")
 }
 
-func AddCommand(parent *cobra.Command, child *cobra.Command) *cobra.Command {
+func AddCommand(parent, child *cobra.Command) *cobra.Command {
 	parent.AddCommand(child)
 	return child
 }
@@ -50,22 +50,22 @@ func AddRootCommand(child *cobra.Command) *cobra.Command {
 func RootPersistentPreRunE(cmd *cobra.Command, args []string) (err error) {
 	verbose, err := cmd.Flags().GetBool("verbose")
 	if err != nil {
-		return
+		return err
 	}
 
 	mode, err := cmd.Flags().GetString("mode")
 	if err != nil {
-		return
+		return err
 	}
 
 	colorEnabled, err := cmd.Flags().GetBool("no-color")
 	if err != nil {
-		return
+		return err
 	}
 
 	showTimestamp, err := cmd.Flags().GetBool("no-timestamp")
 	if err != nil {
-		return
+		return err
 	}
 
 	// 设置颜色输出
@@ -85,11 +85,11 @@ func RootPersistentPreRunE(cmd *cobra.Command, args []string) (err error) {
 		outfmt.SetOutputMode(mode)
 	default:
 		err = fmt.Errorf("do not support %s", mode)
-		return
+		return err
 	}
 	path, err := cmd.Flags().GetString("db")
 	if err != nil {
-		return
+		return err
 	}
 	// 设置数据库路径（如果指定了--db选项）
 	if path != "" {
@@ -104,7 +104,7 @@ func RootPersistentPreRunE(cmd *cobra.Command, args []string) (err error) {
 	key := config.Get("deepseek-api-key", "")
 	if key == "" && cmd.Name() != "flycheck" && cmd.Name() != "version" {
 		err = fmt.Errorf("no api key specified")
-		return
+		return err
 	}
 
 	if key != "" {

@@ -26,7 +26,7 @@ import (
 //	result: 搜索结果字符串
 //	matchCount: 匹配行数
 //	error: 错误信息
-func searchCodeSemantic(ctx context.Context, path string, searchPattern string, contextLines int, caseSensitive bool, maxMatches int) (string, int, error) {
+func searchCodeSemantic(ctx context.Context, path, searchPattern string, contextLines int, caseSensitive bool, maxMatches int) (string, int, error) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return "", 0, fmt.Errorf("文件不存在: %s", path)
 	}
@@ -232,16 +232,16 @@ func init() {
 	})
 }
 
-func handleSearchCodeSemantic(ctx context.Context, args toolcall.ToolArgs) (result string, warning string, err error) {
+func handleSearchCodeSemantic(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
 	filePattern := toolcall.ToolArgsValue(args, "file_pattern", "")
 	if filePattern == "" {
 		err = fmt.Errorf("参数 'file_pattern' 缺失")
-		return
+		return result, warning, err
 	}
 	searchPattern := toolcall.ToolArgsValue(args, "search_pattern", "")
 	if searchPattern == "" {
 		err = fmt.Errorf("参数 'search_pattern' 缺失")
-		return
+		return result, warning, err
 	}
 
 	// 解析可选参数
@@ -253,12 +253,12 @@ func handleSearchCodeSemantic(ctx context.Context, args toolcall.ToolArgs) (resu
 	files, err := file.ExpandFilePattern(filePattern)
 	if err != nil {
 		err = fmt.Errorf("扩展文件模式失败: %w", err)
-		return
+		return result, warning, err
 	}
 
 	if len(files) == 0 {
 		result = "❌ 未找到匹配的文件"
-		return
+		return result, warning, err
 	}
 
 	outfmt.Printf("🔍 搜索%d个文件中匹配指定模式%s的行\n", len(files), searchPattern)
@@ -312,5 +312,5 @@ func handleSearchCodeSemantic(ctx context.Context, args toolcall.ToolArgs) (resu
 		fmt.Fprintf(&sb, "  - 注意: 已达到全局最大匹配数限制 (%d)\n", maxMatches)
 	}
 	result = sb.String()
-	return
+	return result, warning, err
 }

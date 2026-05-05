@@ -23,7 +23,7 @@ func configEditRunE(cmd *cobra.Command, args []string) (err error) {
 	filename := config.Get("filename", "")
 	if filename == "" {
 		err = fmt.Errorf("no config filename found")
-		return
+		return err
 	}
 	ctx := cmd.Context()
 	return editor.Edit(ctx, filename)

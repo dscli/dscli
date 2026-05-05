@@ -126,10 +126,10 @@ print("OK")`
 func TestSymbolFromMap(t *testing.T) {
 	// 完整字段
 	m := map[string]any{
-		"name":        "TestFunc",
-		"type":        "function",
-		"lineno":      float64(10),
-		"end_lineno":  float64(25),
+		"name":       "TestFunc",
+		"type":       "function",
+		"lineno":     float64(10),
+		"end_lineno": float64(25),
 	}
 	s := symbolFromMap(m)
 	if s.Name != "TestFunc" {
@@ -213,7 +213,7 @@ func TestExtractNames(t *testing.T) {
 	result := map[string]any{
 		"lists": []any{
 			map[string]any{"name": "item1"},
-			map[string]any{"name": ""},       // 空字符串跳过
+			map[string]any{"name": ""}, // 空字符串跳过
 			map[string]any{"name": "item3"},
 			map[string]any{"other": "value"}, // 无name字段跳过
 		},

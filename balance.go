@@ -22,7 +22,7 @@ func BalanceRunE(cmd *cobra.Command, args []string) (err error) {
 	resp, err := DeepseekClient.Balance()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "查询余额失败: %v\n", err)
-		return
+		return err
 	}
 
 	// 使用新的格式化接口
@@ -45,5 +45,5 @@ func BalanceRunE(cmd *cobra.Command, args []string) (err error) {
 	if !resp.IsAvailable {
 		fmt.Fprintln(os.Stderr, "警告: 账户当前不可用")
 	}
-	return
+	return err
 }
