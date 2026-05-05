@@ -155,46 +155,12 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result, warn
 }
 
 func buildCodeReviewRequest(summary, commitLog, patch string) string {
-	return `请对以下代码提交进行审查，提供详细的改进建议。
-
-## 提交背景
+	return `## Commit Background
 ` + summary + `
 
-## 提交信息
+## Commit Message
 ` + commitLog + `
 
-## 代码变更
-` + patch + `
-
-## 审查要求
-请按以下结构提供审查意见：
-
-### 1. 总体评价
-- 代码质量总体评价
-- 是否符合最佳实践
-- 是否有明显的设计问题
-
-### 2. 具体问题
-- 代码风格问题（命名、格式、注释等）
-- 逻辑错误或潜在bug
-- 性能问题
-- 安全问题
-- 可维护性问题
-
-### 3. 改进建议
-- 具体的修改建议
-- 重构建议（如有必要）
-- 测试建议
-
-### 4. 总结
-- 最重要的几点建议
-- 优先级建议（哪些需要立即修改，哪些可以后续优化）
-
-## 注意事项
-- 请具体指出问题所在的行号或代码片段
-- 提供具体的修改示例
-- 考虑代码的可读性、可维护性和性能
-- 如果是新功能，考虑其设计合理性
-
-现在请开始您的代码审查：`
+## Code Changes
+` + patch
 }
