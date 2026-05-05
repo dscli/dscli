@@ -1,4 +1,4 @@
-Save a local skill
+Save a local skill.
 
 Create or update a local skill in .dscli/skills/ with proper
 YAML frontmatter.

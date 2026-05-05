@@ -1,4 +1,4 @@
-Fetch skill by name
+Fetch skill by name.
 
 Fetch a skill's full content by name. Skills contain best
 practices, tips, conventions, and executable scripts.

@@ -1,4 +1,4 @@
-Write code section by semantic selector
+Write code section by semantic selector.
 
 Modify specific code sections using semantic selectors:
   function:name, class:name, method:Type.Method, lines:start-end.

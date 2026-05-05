@@ -1,4 +1,4 @@
-Find code definitions by name with type filter
+Find code definitions by name with type filter.
 
 Searches code files for definitions by name with optional
 type filter. More precise than text search — understands

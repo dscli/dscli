@@ -1,4 +1,4 @@
-Save to persistent memory with FTS5 search
+Save to persistent memory with FTS5 search.
 
 Save important info for later retrieval. Use for:
 - Recording architectural decisions

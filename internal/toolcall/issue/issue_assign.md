@@ -1,1 +1,1 @@
-Assign issue to a specific user
+Assign issue to a specific user.

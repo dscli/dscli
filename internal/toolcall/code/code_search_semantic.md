@@ -1,4 +1,4 @@
-Search code text with structure-aware context
+Search code text with structure-aware context.
 
 Search for patterns in code files, showing matches with
 function/class context info.

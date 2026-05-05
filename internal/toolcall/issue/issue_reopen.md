@@ -1,1 +1,1 @@
-Reopen an issue
+Reopen an issue.

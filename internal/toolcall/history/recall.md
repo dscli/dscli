@@ -1,4 +1,4 @@
-Recall conversation history by keywords
+Recall conversation history by keywords.
 
 Search historical messages in the current project. Multiple
 keywords (space-separated, OR logic). Only searches user

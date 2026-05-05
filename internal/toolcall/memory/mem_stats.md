@@ -1,1 +1,1 @@
-Memory stats: total count, type distribution
+Memory stats: total count, type distribution.
