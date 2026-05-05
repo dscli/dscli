@@ -202,6 +202,8 @@ func ListPrompts() []PromptInfo {
 
 // ResolvePromptEditPath 确定编辑提示词的目标路径
 // 优先编辑项目级别（若已存在）；若不在项目中或文件不存在则使用全局
+// ResolvePromptEditPath 确定编辑提示词的目标路径
+// 优先编辑项目级别（若已存在）；若不在项目中或文件不存在则使用全局
 func ResolvePromptEditPath(name string) (string, error) {
 	// 先尝试项目级别
 	if context.ProjectRoot != "" {
@@ -224,6 +226,20 @@ func ResolvePromptEditPath(name string) (string, error) {
 	// 都不存在：优先项目级别创建
 	if context.ProjectRoot != "" {
 		return GetPromptPath(name, false)
+	}
+	return GetPromptPath(name, true)
+}
+
+// ResolvePromptRemovePath 确定删除提示词的目标路径
+// 优先项目级别（若存在），否则全局
+func ResolvePromptRemovePath(name string) (string, error) {
+	if context.ProjectRoot != "" {
+		p, err := GetPromptPath(name, false)
+		if err == nil {
+			if _, statErr := os.Stat(p); statErr == nil {
+				return p, nil
+			}
+		}
 	}
 	return GetPromptPath(name, true)
 }
