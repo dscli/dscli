@@ -1,4 +1,4 @@
-Read code file structure (functions/classes).
+Read code file structure (functions/classes)
 
 Returns a human-readable summary and complete JSON structure.
 Use before write_code_section or read_code_section to

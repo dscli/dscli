@@ -1,4 +1,4 @@
-Run bash script.
+Run bash script
 
 Executes a shell script via mvdan/sh. Returns three signals:
 - result — stdout (green, script succeeded)

@@ -1,4 +1,4 @@
-Read file line range, awk-compatible output.
+Read file line range, awk-compatible output
 
 Read specific lines from a file. Output format matches:
   awk 'NR>=start && NR<=end {print NR": "$0}'

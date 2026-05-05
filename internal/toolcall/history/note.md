@@ -1,4 +1,4 @@
-Summarize session for future recall.
+Summarize session for future recall
 
 Record a key summary of the current conversation. Call at the
 end of a conversation.

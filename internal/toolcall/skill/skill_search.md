@@ -1,4 +1,4 @@
-Search skills by keyword.
+Search skills by keyword
 
 Search available skills by keyword. Use when unsure which
 skill to use or to discover relevant skills for a task.

@@ -1,1 +1,1 @@
-Close an issue.
+Close an issue

@@ -1,1 +1,1 @@
-Delete memory by ID. Irreversible.
+Delete memory by ID. Irreversible

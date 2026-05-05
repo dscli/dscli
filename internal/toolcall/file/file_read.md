@@ -1,4 +1,4 @@
-Read file content with line numbers.
+Read file content with line numbers
 
 Output format matches:
   awk 'NR>=1 {print NR": "$0}'

@@ -1,4 +1,4 @@
-Ask expert for help.
+Ask expert for help
 
 Ask an expert to review plans or answer difficult questions.
 

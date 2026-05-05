@@ -1,1 +1,1 @@
-Show issue details.
+Show issue details

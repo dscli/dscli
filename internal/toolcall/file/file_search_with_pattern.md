@@ -1,4 +1,4 @@
-Search file by pattern with context lines.
+Search file by pattern with context lines
 
 Search for lines matching a pattern in a file, showing
 surrounding context.

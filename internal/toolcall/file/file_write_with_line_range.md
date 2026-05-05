@@ -1,4 +1,4 @@
-Write file content with line range.
+Write file content with line range
 
 Write content to a specific line range in a file. Supports:
 1. Replace: overwrite the specified line range with new content

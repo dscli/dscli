@@ -1,4 +1,4 @@
-Search memories with FTS5 full-text search.
+Search memories with FTS5 full-text search
 
 Full-text search all persistent memories with optional type
 filtering and result limit.
