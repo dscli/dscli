@@ -291,7 +291,7 @@ func handleWriteCodeSection(ctx context.Context, args toolcall.ToolArgs) (result
 		return result, warning, err
 	}
 
-	PrintWriteSession(path, selector)
+	PrintWriteSection(path, selector)
 
 	result, err = writeCodeSection(ctx, path, selector, newContent)
 	if err != nil {
@@ -309,7 +309,7 @@ func handleWriteCodeSection(ctx context.Context, args toolcall.ToolArgs) (result
 	return result, warning, err
 }
 
-func PrintWriteSession(path, selector string) {
+func PrintWriteSection(path, selector string) {
 	run := ""
 	outfmt.Printf("修改文件%s代码片段%s%s\n", path, selector, run)
 }
