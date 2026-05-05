@@ -48,12 +48,10 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 
 	// 读取 --role 标志并存入 context
 	role, err := cmd.Flags().GetString("role")
-	if err != nil {
-		return err
-	}
-	if role == "" {
+	if err != nil || role == "" {
 		role = "dev"
 	}
+
 	ctx = context.WithValue(ctx, context.CurrentRoleKey, role)
 
 	// 计算工具 tokens

@@ -52,90 +52,9 @@ func init() {
 			UNIQUE(role, session_id)
 		)`,
 	)
-
-	// Migration runs as post-init hook so sessions table exists when we join on it.
-	sqlite.RegisterPostInitHook(migrateRoleConfigs)
-}
-
-// migrateRoleConfigs detects old schema (project_path column) and migrates to
-// session_id. For new installs it just ensures the index exists.
-func migrateRoleConfigs(db *sql.DB) error {
-	// Check if migration is needed.
-	rows, err := db.Query(`PRAGMA table_info(role_configs)`)
-	if err != nil {
-		// Table might not exist — fresh DB, just ensure index exists.
-		_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_role_configs_session ON role_configs(session_id)`)
-		return nil
-	}
-
-	var hasProjectPath bool
-	for rows.Next() {
-		var cid int
-		var name, colType string
-		var notNull, pk int
-		var dflt sql.NullString
-		if err := rows.Scan(&cid, &name, &colType, &notNull, &dflt, &pk); err != nil {
-			continue
-		}
-		if name == "project_path" {
-			hasProjectPath = true
-			break
-		}
-	}
-	rows.Close() // must close before DDL to avoid SQLITE_BUSY
-
-	if !hasProjectPath {
-		// Already migrated or new install — just ensure index.
-		_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_role_configs_session ON role_configs(session_id)`)
-		return nil
-	}
-
-	// Step 1: Create new table.
-	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS role_configs_new (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			role TEXT NOT NULL,
-			skills TEXT NOT NULL DEFAULT 'all',
-			tools TEXT NOT NULL DEFAULT 'all',
-			prompt TEXT NOT NULL DEFAULT '',
-			session_id INTEGER NOT NULL DEFAULT 0,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			UNIQUE(role, session_id)
-		)`)
-	if err != nil {
-		return fmt.Errorf("roles: 创建新表失败: %w", err)
-	}
-
-	// Step 2: Migrate data via sessions join.
-	_, err = db.Exec(`
-		INSERT OR IGNORE INTO role_configs_new
-			(role, skills, tools, prompt, session_id, created_at, updated_at)
-		SELECT o.role, o.skills, o.tools, o.prompt,
-			COALESCE(s.id, 0), o.created_at, o.updated_at
-		FROM role_configs o
-		LEFT JOIN sessions s ON s.project_path = o.project_path`)
-	if err != nil {
-		return fmt.Errorf("roles: 迁移数据失败: %w", err)
-	}
-
-	// Step 3: Swap tables.
-	_, err = db.Exec(`DROP TABLE role_configs`)
-	if err != nil {
-		return fmt.Errorf("roles: 删除旧表失败: %w", err)
-	}
-	_, err = db.Exec(`ALTER TABLE role_configs_new RENAME TO role_configs`)
-	if err != nil {
-		return fmt.Errorf("roles: 重命名新表失败: %w", err)
-	}
-
-	// Step 4: Create index.
-	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_role_configs_session ON role_configs(session_id)`)
-	return nil
 }
 
 // GetRoleConfig retrieves the role config for a given role and session.
-// Returns nil if no config exists (caller should fall back to hardcoded defaults).
 func GetRoleConfig(role string, sessionID int64) (*RoleConfig, error) {
 	db, err := sqlite.OpenDB()
 	if err != nil {
