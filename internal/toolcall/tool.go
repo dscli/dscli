@@ -1,10 +1,10 @@
 // Package toolcall provides toolcall framework
 package toolcall
-
 import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -441,39 +441,61 @@ func GetToolByName(name string) (*ToolDesc, error) {
 }
 
 // ListTools 列出所有工具（可按分类过滤）
+// ListTools 列出所有工具（可按分类过滤）。
+// 以运行时注册表为权威来源，合并 DB 中的使用统计。
 func ListTools(category string) ([]ToolDesc, error) {
-	db, err := sqlite.OpenDB()
-	if err != nil {
-		return nil, err
+	// 1. 从 DB 获取使用统计
+	dbStats := map[string]ToolDesc{}
+	if db, err := sqlite.OpenDB(); err == nil {
+		func() {
+			defer db.Close()
+			rows, err := db.Query(`SELECT id, name, description, category, usage_count, created_at, updated_at FROM tools`)
+			if err != nil {
+				return
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var t ToolDesc
+				if err := rows.Scan(&t.ID, &t.Name, &t.Description, &t.Category,
+					&t.UsageCount, &t.CreatedAt, &t.UpdatedAt); err != nil {
+					continue
+				}
+				dbStats[t.Name] = t
+			}
+		}()
 	}
-	defer db.Close()
-	var rows *sql.Rows
 
-	if category == "" {
-		rows, err = db.Query(`
-			SELECT id, name, description, category, usage_count, created_at, updated_at
-			FROM tools ORDER BY usage_count DESC, name`)
-	} else {
-		rows, err = db.Query(`
-			SELECT id, name, description, category, usage_count, created_at, updated_at
-			FROM tools WHERE category = ? ORDER BY usage_count DESC, name`, category)
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("查询工具失败: %w", err)
-	}
-	defer rows.Close()
+	// 2. 以注册表为准生成列表
+	toolRegistryRWMutex.RLock()
+	defer toolRegistryRWMutex.RUnlock()
 
 	var tools []ToolDesc
-	for rows.Next() {
-		var tool ToolDesc
-		if err := rows.Scan(
-			&tool.ID, &tool.Name, &tool.Description, &tool.Category,
-			&tool.UsageCount, &tool.CreatedAt, &tool.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("扫描工具失败: %w", err)
+	for name, def := range toolRegistry {
+		if category != "" && def.Category != category {
+			continue
 		}
-		tools = append(tools, tool)
+		td := ToolDesc{
+			Name:        name,
+			Description: def.Description,
+			Category:    def.Category,
+		}
+		if db, ok := dbStats[name]; ok {
+			td.ID = db.ID
+			td.UsageCount = db.UsageCount
+			td.CreatedAt = db.CreatedAt
+			td.UpdatedAt = db.UpdatedAt
+		}
+		tools = append(tools, td)
 	}
+
+	// 3. 按使用次数降序、名称升序排序
+	sort.Slice(tools, func(i, j int) bool {
+		if tools[i].UsageCount != tools[j].UsageCount {
+			return tools[i].UsageCount > tools[j].UsageCount
+		}
+		return tools[i].Name < tools[j].Name
+	})
+
 	return tools, nil
 }
 
