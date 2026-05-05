@@ -2,11 +2,11 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"gitcode.com/dscli/dscli/internal/toolcall"
 	"github.com/spf13/cobra"
 )
-
 func init() {
 	toolCmd := AddRootCommand(&cobra.Command{
 		Use:   "tool",
@@ -51,16 +51,29 @@ func toolListRunE(cmd *cobra.Command, _ []string) error {
 		Category string
 		Desc     string
 	}
+
+	// firstLine 取描述的首行（到第一个换行符为止）
+	firstLine := func(s string) string {
+		if idx := strings.IndexByte(s, '\n'); idx >= 0 {
+			return s[:idx]
+		}
+		return s
+	}
+
 	var rows []row
 	for _, t := range tools {
 		cat := t.Category
 		if cat == "" {
 			cat = "-"
 		}
+		desc := firstLine(t.Description)
+		if len([]rune(desc)) > 20 {
+			desc = toolcall.TruncateHead(desc, 20)
+		}
 		rows = append(rows, row{
 			Name:     t.Name,
 			Category: cat,
-			Desc:     t.Description,
+			Desc:     desc,
 		})
 	}
 
