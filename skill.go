@@ -14,18 +14,18 @@ var skillCmd *cobra.Command
 func init() {
 	skillCmd = AddRootCommand(&cobra.Command{
 		Use:   "skill",
-		Short: "技能管理 - 安装、使用和查询技能",
+		Short: "技能管理 - 安装、显示和查询技能",
 		Long: `skill 命令用于管理和使用技能。
 
 技能是预定义的代码片段或模板，可以快速复用。
 支持本地技能（项目目录）和全局技能（用户配置目录）。`,
 	})
 
-	// use 子命令
-	useCmd := &cobra.Command{
-		Use:   "use <skill name>",
-		Short: "使用指定名称的技能",
-		Long: `使用指定名称的技能。
+	// show 子命令
+	showCmd := &cobra.Command{
+		Use:   "show <skill name>",
+		Short: "显示指定名称的技能",
+		Long: `显示指定名称的技能。
 
 技能名称可以是本地技能或全局技能。
 本地技能优先于全局技能。`,
@@ -41,7 +41,7 @@ func init() {
 			return nil
 		},
 	}
-	skillCmd.AddCommand(useCmd)
+	skillCmd.AddCommand(showCmd)
 
 	// query 子命令
 	queryCmd := &cobra.Command{
