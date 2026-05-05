@@ -57,6 +57,23 @@ func RegisterPostInitHook(hook func(*sql.DB) error) {
 
 // 初始化数据库（延迟执行，确保所有init()已完成）
 func initDatabase(db *sql.DB) error {
+	// 0. 确保 db_metadata 表存在（用于检测 DB 重建）
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS db_metadata (
+		key TEXT PRIMARY KEY,
+		value TEXT
+	)`); err != nil {
+		return fmt.Errorf("创建 db_metadata 表失败: %w", err)
+	}
+
+	// 检查是否已初始化过，若否则记录时间戳
+	var initializedAt string
+	err := db.QueryRow(`SELECT value FROM db_metadata WHERE key = 'initialized_at'`).Scan(&initializedAt)
+	if err == sql.ErrNoRows {
+		if _, err := db.Exec(`INSERT INTO db_metadata (key, value) VALUES ('initialized_at', CURRENT_TIMESTAMP)`); err != nil {
+			return fmt.Errorf("记录初始化时间失败: %w", err)
+		}
+	}
+
 	// 1. 创建表
 	for _, query := range tableSchemas {
 		if _, err := db.Exec(query); err != nil {
@@ -123,4 +140,18 @@ func SetDBPath(path string) {
 
 func GetDBPath() string {
 	return dbPath
+}
+
+// GetMetadata 读取 db_metadata 表中的值，用于诊断 DB 状态。
+// 返回空字符串表示 key 不存在（DB 尚未初始化完成）。
+func GetMetadata(key string) string {
+	db, err := OpenDB()
+	if err != nil {
+		return ""
+	}
+	defer db.Close()
+
+	var value string
+	_ = db.QueryRow(`SELECT value FROM db_metadata WHERE key = ?`, key).Scan(&value)
+	return value
 }
