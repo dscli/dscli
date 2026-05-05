@@ -16,33 +16,20 @@ func init() {
 	// 注册文件行范围写入工具
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "write_file_with_line_range",
-		Description: `写入文件指定行范围的内容，支持替换、插入和删除操作。
+		Description: `Write file line range with replace/insert/delete.
 
-参数：
-  path: 文件路径（必需）
-  content: 要写入的内容（必需，可以为空字符串表示删除, 建议不超过4096字符）
-  start_line: 起始行号（可选，默认1）
-  end_line: 结束行号（可选，默认到文件末尾）
+Write content to a specific line range in a file. Supports:
+1. Replace: overwrite the specified line range with new content
+2. Delete: set content to empty string to remove lines
+3. Insert: when start_line exceeds file length, append at end
+4. Create: create a new file if it doesn't exist
 
-功能说明：
-1. 替换：用 content 替换指定行范围的内容
-2. 删除：当 content 为空字符串时，删除指定行范围的内容
-3. 插入：当 start_line 超出文件行数时，在文件末尾追加内容
-4. 新建：当文件不存在时，创建新文件并写入内容
+Best for non-code files (configs, docs) needing precise line control.
 
-适用场景：
-- 处理非代码文件（如配置文件、文档等）
-- 需要精确行号控制的场景
-
-示例：
-  # 替换第5-10行的内容
-  write_file_with_line_range(path="file.txt", start_line=5, end_line=10, content="新内容")
-  
-  # 删除第5-10行的内容
-  write_file_with_line_range(path="file.txt", start_line=5, end_line=10, content="")
-  
-  # 从第5行开始替换到文件末尾
-  write_file_with_line_range(path="file.txt", start_line=5, content="新内容")`,
+Examples:
+  # Replace lines 5-10: write_file_with_line_range(path="file.txt", start_line=5, end_line=10, content="new")
+  # Delete lines 5-10: write_file_with_line_range(path="file.txt", start_line=5, end_line=10, content="")
+  # From line 5 to end: write_file_with_line_range(path="file.txt", start_line=5, content="new")`,
 		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",

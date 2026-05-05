@@ -18,20 +18,18 @@ func TestCodeReviewToolStructure(t *testing.T) {
 		t.Errorf("Expected tool name 'code_review', got '%s'", codeReviewTool.Name)
 	}
 
-	if codeReviewTool.DisplayName != "代码审查" {
-		t.Errorf("Expected display name '代码审查', got '%s'", codeReviewTool.DisplayName)
+	if codeReviewTool.DisplayName != "Code Review" {
+		t.Errorf("Expected display name 'Code Review', got '%s'", codeReviewTool.DisplayName)
 	}
 
 	// Check that description contains key information
 	description := codeReviewTool.Description
 	requiredKeywords := []string{
-		"未提交的更改",
-		"错误",
-		"提交",
-		"审查",
-		"专家",
-		"单元测试",
-		"test_command",
+		"commit",
+		"review",
+		"uncommitted",
+		"test",
+		"HEAD",
 	}
 
 	for _, keyword := range requiredKeywords {
@@ -43,8 +41,8 @@ func TestCodeReviewToolStructure(t *testing.T) {
 		t.Errorf("Expected timeout 5 minutes, got %v", codeReviewTool.Timeout)
 	}
 
-	if codeReviewTool.Category != "git" {
-		t.Errorf("Expected category 'git', got '%s'", codeReviewTool.Category)
+	if codeReviewTool.Category != "communication" {
+		t.Errorf("Expected category 'communication', got '%s'", codeReviewTool.Category)
 	}
 }
 
@@ -155,27 +153,27 @@ func TestDocumentationCompleteness(t *testing.T) {
 
 	// Check for key sections in documentation
 	sections := []string{
-		"参数说明",
-		"使用场景",
-		"审查流程",
-		"错误处理",
-		"注意",
+		"commit",
+		"review",
+		"uncommitted",
+		"test",
+		"HEAD",
 	}
 
 	for _, section := range sections {
 		if !strings.Contains(desc, section) {
-			t.Errorf("Documentation missing section: %s", section)
+			t.Errorf("Documentation missing section/keyword: %s", section)
 		}
 	}
 
 	// Check that error handling is documented
-	if !strings.Contains(desc, "如果检测到未提交的更改，工具会立即返回错误") &&
-		!strings.Contains(desc, "如果检测到多个未push的提交，工具会返回错误") &&
-		!strings.Contains(desc, "如果单元测试未通过，工具会返回错误") {
-		t.Error("Documentation should mention error returns for various checks")
+	if !strings.Contains(desc, "uncommitted changes") &&
+		!strings.Contains(desc, "before pushing") {
+		t.Error("Documentation should mention uncommitted changes or push workflow")
 	}
 	// Check that user guidance is provided
-	if !strings.Contains(desc, "用户需要先解决所有问题") {
-		t.Error("Documentation should instruct users to resolve all issues first")
+	if !strings.Contains(desc, "before pushing") &&
+		!strings.Contains(desc, "better practices") {
+		t.Error("Documentation should instruct users about best practices")
 	}
 }

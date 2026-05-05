@@ -14,10 +14,12 @@ import (
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "note",
-		Description: `记录当前对话的关键摘要，供未来对话回忆使用。应在对话结束时调用。
+		Description: `Summarize session for future recall.
 
-内容要求：40字以内，包含关键事件和关键词（如"实现recall工具，添加session_id过滤"）。
-自动截断超过40字的内容。`,
+Record a key summary of the current conversation. Call at the end of a conversation.
+
+Content: 40 characters or less, containing key events and keywords (e.g., "Implemented recall tool with session_id filter").
+Auto-truncates content over 40 characters.`,
 		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",

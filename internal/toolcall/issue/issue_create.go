@@ -56,7 +56,7 @@ func handleIssueCreate(ctx context.Context, args toolcall.ToolArgs) (result, war
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "issue_create",
-		Description: "创建新的issue",
+		Description: "Create new issue.\n\nCreate a new issue in the project.\nParameters: title (required, max 128 chars), body (optional, 1-4096 chars).",
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",

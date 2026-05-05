@@ -13,46 +13,17 @@ import (
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "flycheck",
-		Description: `对指定文件/目录/包运行静态语法/语义检查，类似 Emacs flycheck。
+		Description: `Static analysis check (like Emacs flycheck).
 
-参数：
-  path: 路径（必需），相对于项目根目录。支持三种模式：
-        - 文件：检查该文件（Go 文件检查所属包，Python 文件直接检查）
-        - 目录：检查该目录中的所有 Go 包或 Python 文件（如 internal/toolcall/）
-        - 递归：目录路径后缀 "..." 递归检查所有子包/文件（如 internal/...）
+Run static checks on files, directories, or packages.
+Supports Go (staticcheck) and Python (ruff). Three modes: file, directory, recursive (...).
 
-支持语言：
-  Go     — staticcheck（自动发现包，包级检查）
-  Python — ruff（快速 linter，支持单文件和目录检查）
+Returns file:line:col: message diagnostics on issues, or success summary when clean.
 
-工作原理：
-1. 解析路径模式，发现所有待检查的 Go 包或 Python 文件
-2. 对每个包/文件运行对应的检查器（staticcheck / ruff）
-3. 汇总所有问题并返回统计信息
-
-返回结果：
-- 检查发现问题时：返回统计摘要 + file:line:col: message 格式的诊断信息
-- 检查通过时：返回 "✅ flycheck: 检查了 X 个包（Y 个文件），未发现问题"
-- 检查器未安装时：返回安装提示
-
-优势：
-1. 自动发现 unused import、unused variable 等静态分析问题
-2. 支持 Go 和 Python 语言
-3. 支持单文件、目录、递归三种粒度
-4. 返回统计信息帮助判断检查覆盖范围
-
-示例：
-  # 检查 Go 文件所在包
-  flycheck(path="internal/flycheck/flycheck.go")
-
-  # 检查 Python 文件
-  flycheck(path="my_script.py")
-
-  # 检查目录下所有包/文件
-  flycheck(path="internal/toolcall/")
-
-  # 递归检查所有子包/文件
-  flycheck(path="internal/...")`,
+Examples:
+  # Check Go file: flycheck(path="internal/flycheck/flycheck.go")
+  # Check directory: flycheck(path="internal/toolcall/")
+  # Recursive: flycheck(path="internal/...")`,
 		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",

@@ -219,7 +219,7 @@ func init() {
 	// 注册网页读取工具
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "web_reader",
-		Description: "从互联网获取网页内容并智能转换为Markdown格式。支持HTTP/HTTPS URL，特别适合技术文档阅读和整理。",
+		Description: "Fetch web page as Markdown.\n\nFetch web page content and intelligently convert to Markdown format. Supports HTTP/HTTPS URLs, ideal for reading technical documentation.",
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",

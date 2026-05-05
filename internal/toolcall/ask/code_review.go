@@ -14,36 +14,13 @@ import (
 
 var codeReviewTool = toolcall.ToolDef{
 	Name:        "code_review",
-	DisplayName: "代码审查",
-	Description: `对当前最新的Git提交进行代码审查，由专家提供改进建议。
+	DisplayName: "Code Review",
+	Description: `Review the latest Git commit.
 
-参数说明：
-- summary: 必选，提供本次提交的背景说明，关注重点，帮助专家理解上下文，长度1-1024字符
-- test_command: 可选，单元测试命令，默认为空，跳过测试，长度1-128字符
+Review the most recent commit (HEAD) with expert-level improvement suggestions.
+Checks for uncommitted changes first; optionally runs tests before review.
 
-使用场景：
-1. 提交代码前，让专家review一下
-2. 学习更好的编程实践
-3. 检查潜在的性能、安全、可维护性问题
-
-审查流程：
-1. 检查是否有未提交的更改（如果有则返回错误）
-2. 运行单元测试（确保代码质量），test_command为空跳过测试
-3. 获取最新的提交（HEAD）
-4. 生成该提交的patch格式代码变更
-5. 发送给专家进行审查并返回建议
-
-错误处理：
-- 如果检测到未提交的更改，工具会立即返回错误
-- 如果单元测试设置但未通过，工具会返回错误
-- 错误信息包含详细的原因和修复建议
-- 用户需要先解决所有问题，然后才能使用代码审查工具
-
-注意：
-- 默认只审查最新的1个提交（HEAD）
-- 专家会看到该提交的完整代码变更
-- 建议在push之前使用此工具，但也可以审查已push的代码
-- 确保所有更改都已提交，否则工具会返回错误`,
+Use before pushing code or to learn better practices.`,
 	Strict: true,
 	Parameters: map[string]any{
 		"type": "object",
@@ -60,7 +37,7 @@ var codeReviewTool = toolcall.ToolDef{
 		"required":             []string{"summary"},
 		"additionalProperties": false,
 	},
-	Category: "git",
+		Category: "communication",
 	Timeout:  5 * time.Minute, // 5分钟超时
 	Handler:  handleCodeReview,
 }

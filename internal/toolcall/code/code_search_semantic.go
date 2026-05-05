@@ -171,34 +171,15 @@ func init() {
 	// 注册 searchCodeSemantic 工具
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "search_code_semantic",
-		Description: `搜索文件中匹配指定模式的行，并显示上下文内容。
+		Description: `Search code text with structure-aware context.
 
-参数：
-  file_pattern: 文件搜索模式（必需），支持：
-    1. 单个文件：main.go
-    2. 通配符：*.go (当前目录)
-    3. 多个文件：main.go root.go
-    4. 当前目录：. (当前目录所有非隐藏文件)
-    5. 递归搜索：**/*.go (所有子目录)
-  search_pattern: 搜索模式（必需）
-  context_lines: 上下文行数（可选，默认5）
-  case_sensitive: 是否区分大小写（可选，默认false）
-  max_matches: 最大匹配数（可选，默认无限制）
+Search for patterns in code files, showing matches with function/class context info.
 
-优势：
-1. 基于语义搜索，能理解代码结构
-2. 显示匹配行所在的函数、类、方法信息
-3. 提供丰富的上下文信息
+Supports: single file, wildcards (*.go), multiple files, current dir (.), recursive (**/*.go).
 
-示例：
-  # 搜索当前目录所有.go文件中的"error"
-  search_code_semantic(file_pattern="*.go", search_pattern="error")
-  
-  # 搜索main.go和root.go中的"TODO"注释
-  search_code_semantic(file_pattern="main.go root.go", search_pattern="TODO", context_lines="3")
-  
-  # 搜索当前目录所有文件中的"Config"（区分大小写）
-  search_code_semantic(file_pattern=".", search_pattern="Config", case_sensitive="true")`,
+Examples:
+  # Search *.go for "error": search_code_semantic(file_pattern="*.go", search_pattern="error")
+  # Search "TODO" in specific files: search_code_semantic(file_pattern="main.go root.go", search_pattern="TODO", context_lines="3")`,
 		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",

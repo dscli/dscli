@@ -14,15 +14,10 @@ import (
 var askUserTool = toolcall.ToolDef{
 	Name:        "ask_user",
 	DisplayName: "问用户",
-	Description: `向 user 提问需求，期望用户把需求澄清
-期望expert对自己方案审阅，给出建设性意见
+	Description: `Ask user for clarification or feedback.
 
-参数说明：
-- content: 要咨询的内容
-
-使用场景：
-需求不明确，资源不到位问用户
-`,
+Ask the user when requirements are unclear, resources are insufficient,
+or to request expert review of the current plan.`,
 	Strict: true,
 	Parameters: map[string]any{
 		"type": "object",

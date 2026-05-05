@@ -75,7 +75,7 @@ func init() {
 	// 注册issue相关工具
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "issue_list",
-		Description: "列出项目中的issues，支持按状态过滤",
+		Description: "List project issues, filterable by state.\n\nParameters: state (open/closed/all, default open).",
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",

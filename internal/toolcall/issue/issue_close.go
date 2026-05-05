@@ -27,7 +27,7 @@ func handleIssueClose(ctx context.Context, args toolcall.ToolArgs) (result, warn
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "issue_close",
-		Description: "关闭指定的issue",
+		Description: "Close an issue.",
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",

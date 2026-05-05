@@ -15,43 +15,15 @@ func init() {
 	// 注册文件模式搜索工具
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "search_file_with_pattern",
-		Description: `搜索文件中匹配指定模式的行，并显示上下文内容。
+		Description: `Search file by pattern with context lines.
 
-参数：
-  path: 文件路径（必需）
-  pattern: 搜索模式（必需）
-  context_lines: 上下文行数（可选，默认5）
-  case_sensitive: 是否区分大小写（可选，默认false）
-  max_matches: 最大匹配数（可选，默认无限制）
+Search for lines matching a pattern in a file, showing surrounding context.
 
-输出格式：
-  > 匹配行号: 匹配行内容（用 > 标记）
-     上下文行号: 上下文行内容
+Best for non-code files: logs, configs, etc. Supports case-sensitive, max matches.
 
-适用场景：
-- 简单的文本模式搜索
-- 处理非代码文件（如日志文件、配置文件等）
-
-示例：
-  # 搜索包含"error"的行，显示前后5行上下文
-  # 搜索包含"error"的行，显示前后5行上下文
-  search_file_with_pattern(path="app.log", pattern="error")
-  
-  # 搜索"TODO"注释，显示前后3行上下文
-  search_file_with_pattern(path="main.go", pattern="TODO", context_lines="3")
-  
-  # 区分大小写搜索"Config"
-  search_file_with_pattern(path="config.yaml", pattern="Config", case_sensitive="true")
-  
-  # 只显示前10个匹配项
-  search_file_with_pattern(path="large.log", pattern="warning", max_matches="10")
-
-功能特点：
-1. 支持简单的字符串包含匹配
-2. 显示匹配行及其上下文，便于理解上下文
-3. 避免重复输出重叠的上下文区域
-4. 支持大小写敏感/不敏感搜索
-5. 可限制最大匹配数，避免输出过多内容`,
+Examples:
+  # Search for "error": search_file_with_pattern(path="app.log", pattern="error")
+  # Search "TODO" with 3 lines context: search_file_with_pattern(path="main.go", pattern="TODO", context_lines="3")`,
 		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",

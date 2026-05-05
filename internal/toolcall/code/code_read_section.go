@@ -177,36 +177,21 @@ func init() {
 	// 注册 readCodeSection 工具
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "read_code_section",
-		Description: `基于代码结构定位并读取特定代码片段。支持function:函数名、class:类名、method:类名.方法名、lines:开始行-结束行等选择器。
-✅ 推荐：这是基于代码结构的新工具，比基于行号的操作更智能、更准确。
+		Description: `Read code section by semantic selector.
 
-参数：
-  path: 文件路径（相对于项目根目录）
-  selector: 代码片段选择器，例如：function:main、class:User、method:User.GetName、lines:10-20
+Read specific code sections using semantic selectors instead of line numbers.
 
-选择器语法：
-  function:函数名      - 读取指定函数
-  class:类名          - 读取指定类/结构体
-  method:类名.方法名   - 读取指定方法
-  lines:开始行-结束行  - 读取指定行范围（后备方案）
+Selectors:
+  function:name  — read a function
+  class:name     — read a class/struct  
+  method:Type.Method — read a method
+  lines:start-end — read line range (fallback)
 
-优势：
-1. 基于代码结构，能理解函数、类、方法的语义
-2. 自动定位代码片段，无需手动计算行号
-3. 支持多种编程语言（通过文件结构解析）
-4. 比 read_file_with_line_range 更智能、更准确
+Smarter than line-based tools — auto-locates code by structure.
 
-示例：
-  # 读取main函数
+Examples:
   read_code_section(path="main.go", selector="function:main")
-  
-  # 读取User类
-  read_code_section(path="user.go", selector="class:User")
-  
-  # 读取User类的GetName方法
   read_code_section(path="user.go", selector="method:User.GetName")
-  
-  # 读取第10-20行（后备方案）
   read_code_section(path="config.yaml", selector="lines:10-20")`,
 		Strict: true,
 		Parameters: map[string]any{

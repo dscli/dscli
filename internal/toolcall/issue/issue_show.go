@@ -78,7 +78,7 @@ func handleIssueShow(ctx context.Context, args toolcall.ToolArgs) (result, warni
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "issue_show",
-		Description: "显示指定编号的issue详情",
+		Description: "Show issue details.",
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",

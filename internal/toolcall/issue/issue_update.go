@@ -11,7 +11,7 @@ import (
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "issue_update",
-		Description: "更新指定的issue",
+		Description: "Update an issue.\n\nUpdate an existing issue.\nParameters: number (required), title (optional), body (optional), state (open/closed, optional).",
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",

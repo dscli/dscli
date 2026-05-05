@@ -488,8 +488,11 @@ func ListTools(category string) ([]ToolDesc, error) {
 		tools = append(tools, td)
 	}
 
-	// 3. 按使用次数降序、名称升序排序
+	// 3. 按分类分组，分类内按使用次数降序、名称升序排序
 	sort.Slice(tools, func(i, j int) bool {
+		if tools[i].Category != tools[j].Category {
+			return tools[i].Category < tools[j].Category
+		}
 		if tools[i].UsageCount != tools[j].UsageCount {
 			return tools[i].UsageCount > tools[j].UsageCount
 		}

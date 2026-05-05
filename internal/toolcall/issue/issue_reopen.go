@@ -10,7 +10,7 @@ import (
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "issue_reopen",
-		Description: "重新打开指定的issue",
+		Description: "Reopen an issue.",
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",

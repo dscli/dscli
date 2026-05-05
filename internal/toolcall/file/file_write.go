@@ -22,7 +22,9 @@ const (
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "write_file",
-		Description: `将内容写入文件。支持自动创建目录结构。append=true追加内容，append=false覆盖写入（默认false）。content最大262144字符，超过请分多次调用。`,
+		Description: `Write content to file, auto-creating directories.
+
+append=true appends, append=false overwrites (default). Content max 262144 chars; split into multiple calls for larger content.`,
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",

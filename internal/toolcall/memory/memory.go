@@ -28,18 +28,14 @@ func init() {
 	// ── Tools ──
 	RegisterTool(ToolDef{
 		Name: "mem_save",
-		Description: `🗄️ 将重要信息保存到持久记忆中。使用FTS5全文搜索，支持后续检索。
+		Description: `Save to persistent memory with FTS5 search.
 
-何时使用：
-- 保存架构决策、设计思路
-- 记录bug修复过程和解决方案
-- 保存重要发现、教训和经验
-- 记录配置变更、环境设置
+Save important info for later retrieval. Use for:
+- Recording architectural decisions
+- Documenting bug fixes
+- Saving discoveries, lessons, configurations
 
-参数：
-- title: 简洁、可搜索的标题（必填）
-- content: 详细内容，建议使用结构化格式（必填）
-- type: 类型，如 decision, architecture, bugfix, pattern, config, discovery, learning（默认 manual）`,
+Parameters: title (required), content (required), type (decision/architecture/bugfix/pattern/config/discovery/learning).`,
 		Category: "memory",
 		Strict:   true,
 		Parameters: map[string]any{
@@ -57,7 +53,7 @@ func init() {
 
 	RegisterTool(ToolDef{
 		Name:        "mem_update",
-		Description: "✏️ 通过ID更新已有记忆。只更新提供的字段。",
+		Description: "Update memory by ID.\n\nUpdate an existing memory. Only provided fields are modified.\nParameters: id (required), title (optional), content (optional), type (optional).",
 		Category:    "memory",
 		Strict:      true,
 		Parameters: map[string]any{
@@ -76,13 +72,15 @@ func init() {
 
 	RegisterTool(ToolDef{
 		Name: "mem_search",
-		Description: `🔍 全文搜索所有持久记忆。支持按类型过滤和限制结果数量。使用FTS5搜索引擎。
+		Description: `Search memories with FTS5 full-text search.
 
-使用场景：
-- 查找之前做过的决策
-- 搜索已修复的bug记录
-- 查找特定模式或约定的使用
-- 回顾之前的工作上下文`,
+Full-text search all persistent memories with optional type filtering and result limit.
+
+Use when:
+- Finding previous decisions
+- Searching fixed bug records
+- Looking up patterns or conventions
+- Reviewing previous work context`,
 		Category: "memory",
 		Strict:   true,
 		Parameters: map[string]any{
@@ -100,7 +98,7 @@ func init() {
 
 	RegisterTool(ToolDef{
 		Name:        "mem_delete",
-		Description: "🗑️ 按ID删除记忆。删除操作不可逆。",
+		Description: "Delete memory by ID. Irreversible.",
 		Category:    "memory",
 		Strict:      true,
 		Parameters: map[string]any{
@@ -116,7 +114,7 @@ func init() {
 
 	RegisterTool(ToolDef{
 		Name:        "mem_get_observation",
-		Description: "📖 按ID获取记忆完整内容（mem_search 返回截断预览，用此工具查看全文）。",
+		Description: "Get memory content by ID.\n\nRetrieve full memory content. Use when mem_search returns truncated previews and you need the complete text.",
 		Category:    "memory",
 		Strict:      true,
 		Parameters: map[string]any{
@@ -132,7 +130,7 @@ func init() {
 
 	RegisterTool(ToolDef{
 		Name:        "mem_stats",
-		Description: "📊 记忆系统统计：总数、类型分布。",
+		Description: "Memory stats: total count, type distribution.",
 		Category:    "memory",
 		Strict:      true,
 		Parameters: map[string]any{

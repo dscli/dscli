@@ -13,19 +13,19 @@ func init() { // 注册shell工具
 	// 获取系统可用命令列表（init 阶段验证一次，后续复用）
 	cmdsDesc := ishell.GetAvailableCommandsDescription(context.Background())
 
-	desc := `在项目根目录执行Shell脚本。
+	desc := `Run shell scripts in the project root directory.
 
-输出格式：
-- 成功时：返回包含执行结果和执行统计的格式化文本
-- 失败时：返回包含错误信息、输出内容和执行统计的格式化文本
+Output format:
+- Success: formatted text with execution result and statistics
+- Failure: formatted text with error info, output content, and execution statistics
 
-示例：
-1. Bash脚本：echo "Hello"
-2. Shell脚本：ls -la
-3. 文件操作：cat file.txt
-4. Git操作：git status
+Examples:
+  1. Bash: echo "Hello"
+  2. Shell: ls -la
+  3. Files: cat file.txt
+  4. Git: git status
 
-注意：谨慎使用，避免破坏性操作。确保脚本在项目目录内执行。`
+Caution: Avoid destructive operations. Scripts run within the project directory.`
 
 	if cmdsDesc != "" {
 		desc += "\n\n## 可用命令\n" + cmdsDesc

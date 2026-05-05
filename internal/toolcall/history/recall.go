@@ -13,16 +13,15 @@ import (
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "recall",
-		Description: `搜索当前项目的历史消息，支持多关键词（空格分隔，OR逻辑）。
+		Description: `Recall conversation history by keywords.
 
-仅搜索 user 消息和助手总结（无工具调用的 assistant 消息），限定当前项目。
+Search historical messages in the current project. Multiple keywords (space-separated, OR logic).
+Only searches user messages and assistant summaries, limited to current project.
 
-参数说明：
-- keywords: 搜索关键词，空格分隔，OR逻辑（匹配任一即返回），必需
-- days: 搜索最近N天的消息，默认30，可选
-- limit: 返回结果数量上限，默认5，可选
-
-返回结果包含时间、角色和内容。`,
+Parameters:
+- keywords: search keywords, space-separated, OR logic (required)
+- days: search N recent days (default 30)
+- limit: max results (default 5)`,
 		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",

@@ -97,7 +97,9 @@ func init() {
 	RegisterTool(ToolDef{
 		Name:        "skill_by_name",
 		DisplayName: "Get Skill",
-		Description: `Fetch a skill's full content by name. Skills contain best practices, tips, conventions, and executable scripts.
+		Description: `Fetch skill by name.
+
+Fetch a skill's full content by name. Skills contain best practices, tips, conventions, and executable scripts.
 
 Returns:
 - SKILL.md content (instructions)
@@ -107,7 +109,7 @@ Usage:
   skill_by_name(skill_name="test-skill")
 
 Notes:
-- Scripts are listed with paths; execute via shell (bash &lt;path&gt;)
+- Scripts are listed with paths; execute via shell (bash <path>)
 - Reference documents can be read via read_file or shell (cat <path>)`,
 		Strict: true,
 		Parameters: map[string]any{
@@ -129,7 +131,9 @@ Notes:
 	RegisterTool(ToolDef{
 		Name:        "skill_search",
 		DisplayName: "Search Skills",
-		Description: `Search available skills by keyword. Use this when unsure which skill to use or to discover relevant skills for a task.
+		Description: `Search skills by keyword.
+
+Search available skills by keyword. Use when unsure which skill to use or to discover relevant skills for a task.
 
 Usage:
   skill_search(query="test")
@@ -159,7 +163,9 @@ Notes:
 	RegisterTool(ToolDef{
 		Name:        "skill_save",
 		DisplayName: "Save Skill",
-		Description: `Create or update a local skill in .dscli/skills/ with proper YAML frontmatter.
+		Description: `Save a local skill.
+
+Create or update a local skill in .dscli/skills/ with proper YAML frontmatter.
 
 Creates or overwrites SKILL.md with name, description, keywords, and auto_inject frontmatter fields,
 making it discoverable via skill_search and loadable via skill_by_name.

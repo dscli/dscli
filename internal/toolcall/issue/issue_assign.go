@@ -37,7 +37,7 @@ func handleIssueAssign(ctx context.Context, args toolcall.ToolArgs) (result, war
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "issue_assign",
-		Description: "分配issue给指定用户",
+		Description: "Assign issue to a specific user.",
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",

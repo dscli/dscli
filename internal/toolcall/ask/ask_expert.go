@@ -18,18 +18,16 @@ import (
 var askExpertTool = toolcall.ToolDef{
 	Name:        "ask_expert",
 	DisplayName: "问专家",
-	Description: `向专家发问，期望专家审阅方案，解答疑难问题
+	Description: `Ask expert for review or help.
 
-参数说明：
-- content: 要询问的详细内容（必填）
-- summary: 问题摘要（可选），用于快速理解问题背景，如不提供会自动生成
+Ask an expert to review plans and answer difficult questions.
 
-使用场景：
-1. 技术上有困难时
-2. 技术方案需审阅
-3. 需要专家深度分析时
+Parameters:
+- content: detailed question (required)
+- summary: brief summary (optional, auto-generated if omitted)
+- attachments: file attachments list (optional)
 
-注意：程序会自动从专家回答中提取摘要，无需专家手动生成。`,
+Use when facing technical difficulties, needing plan review, or requiring in-depth analysis.`,
 	Strict: true,
 	Parameters: map[string]any{
 		"type": "object",

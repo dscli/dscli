@@ -14,32 +14,15 @@ func init() {
 	// 注册代码定义搜索工具
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "search_code_definition",
-		Description: `搜索代码文件中的定义（函数、方法、类、结构体等）。
+		Description: `Find code definitions (functions, methods, classes, structs).
 
-参数：
-  path: 必需，文件路径，长度1-128字符
-  pattern: 必需，搜索模式（支持部分匹配）
-  type_filter: 可选，类型过滤器，如 "function", "method", "class", "struct" 等
-  case_sensitive: 可选，是否区分大小写，默认为 false
+Searches code files for definitions by name with optional type filter.
+More precise than text search — understands code structure.
 
-功能：
-1. 搜索代码文件中的定义（函数、方法、类等）
-2. 支持类型过滤，只搜索特定类型的定义
-3. 显示定义的详细信息（名称、类型、位置、签名等）
-4. 基于代码结构解析，比文本搜索更精确
-
-示例：
-  # 搜索所有包含"user"的定义
-  search_code_definition(path="user.go", pattern="user")
-  
-  # 只搜索函数定义
-  search_code_definition(path="main.go", pattern="handle", type_filter="function")
-  
-  # 区分大小写搜索
-  search_code_definition(path="config.go", pattern="Config", case_sensitive="true")
-  
-  # 搜索所有方法
-  search_code_definition(path="service.go", pattern="", type_filter="method")`,
+Examples:
+  # Find "user" definitions: search_code_definition(path="user.go", pattern="user")
+  # Functions only: search_code_definition(path="main.go", pattern="handle", type_filter="function")
+  # All methods: search_code_definition(path="service.go", pattern="", type_filter="method")`,
 		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",

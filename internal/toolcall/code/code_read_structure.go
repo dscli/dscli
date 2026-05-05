@@ -122,37 +122,13 @@ func init() {
 	// 注册 readCodeStructure 工具
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name: "read_code_structure",
-		Description: `读取代码文件的结构信息（函数、类、方法、导入等）。返回人类可读的摘要和完整的JSON结构信息。
-✅ 推荐：这是基于代码结构的新工具，为代码操作提供基础信息。
+		Description: `Read code file structure (functions, classes, imports).
 
-参数：
-  path: 文件路径（相对于项目根目录）
+Returns a human-readable summary and complete JSON structure.
+Use before write_code_section or read_code_section to understand file layout.
 
-功能：
-1. 读取文件的完整结构信息
-2. 提供人类可读的摘要
-3. 返回详细的JSON格式结构信息
-4. 支持多种编程语言（通过文件结构解析）
-
-输出包含：
-1. 文件基本信息（路径、语言、包名）
-2. 导入列表
-3. 函数/方法列表（包含行号、签名等信息）
-4. 类/结构体列表
-5. 解析警告（如果有）
-6. 完整的JSON结构信息
-
-优势：
-1. 为 write_code_section 和 read_code_section 提供基础信息
-2. 帮助理解代码文件的结构
-3. 支持多种编程语言
-4. 提供详细的结构信息，便于后续代码操作
-
-示例：
-  # 读取main.go文件的结构信息
+Examples:
   read_code_structure(path="main.go")
-  
-  # 读取user.py文件的结构信息
   read_code_structure(path="user.py")`,
 		Strict: true,
 		Parameters: map[string]any{
