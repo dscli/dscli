@@ -1,4 +1,4 @@
-Static analysis check (like Emacs flycheck).
+Static analysis check.
 
 Run static checks on files, directories, or packages.
 Supports Go (staticcheck) and Python (ruff). Three modes:

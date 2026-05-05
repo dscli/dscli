@@ -12,13 +12,15 @@ import (
 
 //go:embed shell_shell.md
 var shell_shell_md string
+
 func init() { // 注册shell工具
 	// 获取系统可用命令列表（init 阶段验证一次，后续复用）
 	cmdsDesc := ishell.GetAvailableCommandsDescription(context.Background())
 
 	desc := shell_shell_md
 	if cmdsDesc != "" {
-		desc += "\n\n## Available Commands\n" + cmdsDesc
+		desc += "\n\n## Available Commands\n"
+		desc += cmdsDesc
 	}
 
 	RegisterTool(ToolDef{
@@ -42,7 +44,7 @@ func init() { // 注册shell工具
 		},
 
 		Category: "system",
-		Timeout:  60 * time.Second, // 设置60秒超时
+		Timeout:  120 * time.Second, // 设置120秒超时
 		Handler:  handleShell,
 	})
 }
