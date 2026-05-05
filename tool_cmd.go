@@ -66,7 +66,7 @@ func toolListRunE(cmd *cobra.Command, _ []string) error {
 		if cat == "" {
 			cat = "-"
 		}
-		desc := firstLine(t.Description)
+		desc := strings.TrimSuffix(firstLine(t.Description), ".")
 		if len([]rune(desc)) > 48 {
 			desc = toolcall.TruncateHead(desc, 48)
 		}
