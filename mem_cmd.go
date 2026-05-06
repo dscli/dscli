@@ -89,7 +89,7 @@ func memListRunE(cmd *cobra.Command, _ []string) error {
 	}
 
 	if len(rows) == 0 {
-		fmt.Println("📊 记忆系统为空，还没有任何记忆。")
+		fmt.Fprintln(cmd.OutOrStdout(), "📊 记忆系统为空，还没有任何记忆。")
 		return nil
 	}
 
@@ -182,7 +182,7 @@ func memShowRunE(cmd *cobra.Command, args []string) error {
 	if warning != "" {
 		fmt.Fprintln(cmd.ErrOrStderr(), "⚠️ ", warning)
 	}
-	fmt.Println(result)
+	fmt.Fprintln(cmd.OutOrStdout(), result)
 	return nil
 }
 
@@ -192,15 +192,15 @@ func memDeleteRunE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("无效的 ID: %w", err)
 	}
 
-	result, warning, err := memories.HandleMemDelete(context.Background(), id)
+	// HandleMemDelete prints confirmation via outfmt.Printf; result is for
+	// LLM tool calls so we discard it here to avoid double output.
+	_, warning, err := memories.HandleMemDelete(context.Background(), id)
 	if err != nil {
 		return err
 	}
 	if warning != "" {
 		fmt.Fprintln(cmd.ErrOrStderr(), "⚠️ ", warning)
 	}
-	// HandleMemDelete already prints via outfmt.Printf, result is for LLM
-	fmt.Println(result)
 	return nil
 }
 
