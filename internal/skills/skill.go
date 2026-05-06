@@ -152,10 +152,11 @@ func LoadSkills(dir string) (skills map[string]Skill) {
 	filenames := SkillFiles(dir)
 	for _, filename := range filenames {
 		var skill Skill
-		err := ParseSkill(filename, &skill)
-		if err == nil {
-			skills[skill.Name] = skill
+		if err := ParseSkill(filename, &skill); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: parse skill %s failed: %v\n", filename, err)
+			continue
 		}
+		skills[skill.Name] = skill
 	}
 	return skills
 }
@@ -250,8 +251,8 @@ func parseSkillFrontmatter(r io.Reader, skill *Skill) error {
 		return err
 	}
 
-	// 解析 YAML
-	frontMatter := strings.Join(yamlLines, "\n")
+	// 解析 YAML（先规范化易出错字段）
+	frontMatter := normalizeFrontmatter(strings.Join(yamlLines, "\n"))
 	if err := yaml.Unmarshal([]byte(frontMatter), skill); err != nil {
 		return fmt.Errorf("yaml unmarshal: %w", err)
 	}
@@ -264,6 +265,34 @@ func parseSkillFrontmatter(r io.Reader, skill *Skill) error {
 	}
 	skill.Content = builder.String()
 	return nil
+}
+
+// reKeywordLine 匹配单行 keywords: <value>（非 block 格式）。
+var reKeywordLine = regexp.MustCompile(`(?m)^keywords:\s*(.+)$`)
+
+// normalizeFrontmatter 修复常见的 YAML frontmatter 书写错误，使其能被解析。
+// 例如：keywords: go, modern → keywords: [go, modern]
+func normalizeFrontmatter(fm string) string {
+	return reKeywordLine.ReplaceAllStringFunc(fm, func(match string) string {
+		after := strings.TrimSpace(match[len("keywords:"):])
+		// Already valid YAML list (block or inline)? Keep.
+		if after == "" || after[0] == '[' || after[0] == '-' {
+			return match
+		}
+		// Plain string — treat as comma-separated, convert to YAML inline list.
+		after = strings.Trim(after, `"'`)
+		parts := strings.Split(after, ",")
+		var list []string
+		for _, p := range parts {
+			if p = strings.TrimSpace(p); p != "" {
+				list = append(list, p)
+			}
+		}
+		if len(list) == 0 {
+			return "keywords: []"
+		}
+		return "keywords: [" + strings.Join(list, ", ") + "]"
+	})
 }
 
 // extractKeywords 从 description 中提取关键词。
