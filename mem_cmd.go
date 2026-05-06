@@ -4,17 +4,17 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/memories"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 	"github.com/spf13/cobra"
 )
 
 func init() {
 	memCmd := AddRootCommand(&cobra.Command{
 		Use:   "memory",
-		Short: "记忆管理 - 列出、搜索、查看和删除记忆",
+		Short: "记忆管理 - 列出、搜索、查看和统计记忆",
 		Long:  `memory 命令用于管理持久化记忆。`,
 	})
 
@@ -52,16 +52,6 @@ func init() {
 	}
 	memCmd.AddCommand(showCmd)
 
-	// ── delete ──────────────────────────────────────────────────────────
-	deleteCmd := &cobra.Command{
-		Use:   "delete <id>",
-		Short: "删除记忆",
-		Long:  "根据 ID 删除一条记忆。此操作不可逆。",
-		Args:  cobra.ExactArgs(1),
-		RunE:  memDeleteRunE,
-	}
-	memCmd.AddCommand(deleteCmd)
-
 	// ── stats ───────────────────────────────────────────────────────────
 	statsCmd := &cobra.Command{
 		Use:   "stats",
@@ -75,33 +65,15 @@ func init() {
 
 // ─── RunE helpers ──────────────────────────────────────────────────────────
 
-func memListRunE(cmd *cobra.Command, _ []string) error {
+func memListRunE(_ *cobra.Command, _ []string) error {
 	rows, err := memories.HandleMemList(context.Background())
 	if err != nil {
 		return err
 	}
 
 	if len(rows) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "📊 记忆系统为空，还没有任何记忆。")
+		outfmt.Println("📊 记忆系统为空，还没有任何记忆。")
 		return nil
-	}
-
-	// firstLine returns the first line of content (up to \n).
-	firstLine := func(s string) string {
-		before, _, found := strings.Cut(s, "\n")
-		if found {
-			return before
-		}
-		return s
-	}
-
-	// truncateRunes truncates s to max runes, appending "..." if needed.
-	truncateRunes := func(s string, max int) string {
-		runes := []rune(s)
-		if len(runes) <= max {
-			return s
-		}
-		return string(runes[:max]) + "..."
 	}
 
 	// formatTime parses SQLite datetime (RFC3339 from modernc driver),
@@ -118,33 +90,21 @@ func memListRunE(cmd *cobra.Command, _ []string) error {
 		return t.Local().Format(time.Stamp)
 	}
 
-	type row struct {
-		ID        string
-		Title     string
-		Content   string
-		CreatedAt string
-	}
+	wrt := outfmt.NewTabwrt()
+	defer wrt.Flush()
 
-	var data []row
+	wrt.Println("ID", "TITLE", "Created At", "Updated At")
+
 	for _, r := range rows {
-		content := truncateRunes(firstLine(r.Content), 20)
-		data = append(data, row{
-			ID:        strconv.FormatInt(r.ID, 10),
-			Title:     r.Title,
-			Content:   content,
-			CreatedAt: formatTime(r.CreatedAt),
-		})
+		wrt.Println(
+			strconv.FormatInt(r.ID, 10),
+			r.Title,
+			formatTime(r.CreatedAt),
+			formatTime(r.UpdatedAt),
+		)
 	}
 
-	headers := []string{"ID", "TITLE", "CONTENT", "Created At"}
-	rowFn := func(d any) []string {
-		if r, ok := d.(row); ok {
-			return []string{r.ID, r.Title, r.Content, r.CreatedAt}
-		}
-		return nil
-	}
-
-	return FormatOutput(data, "table", headers, rowFn)
+	return nil
 }
 
 func memSearchRunE(cmd *cobra.Command, args []string) error {
@@ -159,7 +119,7 @@ func memSearchRunE(cmd *cobra.Command, args []string) error {
 	if warning != "" {
 		fmt.Fprintln(cmd.ErrOrStderr(), "⚠️ ", warning)
 	}
-	fmt.Print(result)
+	outfmt.Print(result)
 	return nil
 }
 
@@ -176,25 +136,7 @@ func memShowRunE(cmd *cobra.Command, args []string) error {
 	if warning != "" {
 		fmt.Fprintln(cmd.ErrOrStderr(), "⚠️ ", warning)
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), result)
-	return nil
-}
-
-func memDeleteRunE(cmd *cobra.Command, args []string) error {
-	id, err := strconv.ParseInt(args[0], 10, 64)
-	if err != nil {
-		return fmt.Errorf("无效的 ID: %w", err)
-	}
-
-	// HandleMemDelete prints confirmation via outfmt.Printf; result is for
-	// LLM tool calls so we discard it here to avoid double output.
-	_, warning, err := memories.HandleMemDelete(context.Background(), id)
-	if err != nil {
-		return err
-	}
-	if warning != "" {
-		fmt.Fprintln(cmd.ErrOrStderr(), "⚠️ ", warning)
-	}
+	outfmt.Println(result)
 	return nil
 }
 
@@ -206,6 +148,6 @@ func memStatsRunE(cmd *cobra.Command, _ []string) error {
 	if warning != "" {
 		fmt.Fprintln(cmd.ErrOrStderr(), "⚠️ ", warning)
 	}
-	fmt.Print(result)
+	outfmt.Print(result)
 	return nil
 }

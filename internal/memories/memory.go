@@ -451,8 +451,8 @@ func HandleMemStats(ctx context.Context) (result, warning string, err error) {
 type ListRow struct {
 	ID        int64
 	Title     string
-	Content   string
 	CreatedAt string
+	UpdatedAt string
 }
 
 // HandleMemList lists all memories for the current project, ordered by
@@ -467,7 +467,7 @@ func HandleMemList(ctx context.Context) ([]ListRow, error) {
 	sessionID := session.GetCurrentSessionID(ctx)
 
 	rows, err := db.Query(
-		`SELECT id, title, content, created_at FROM memories
+		`SELECT id, title, created_at, updated_at FROM memories
 		 WHERE session_id = ? ORDER BY created_at DESC`, sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("查询记忆列表失败: %w", err)
@@ -477,7 +477,7 @@ func HandleMemList(ctx context.Context) ([]ListRow, error) {
 	var result []ListRow
 	for rows.Next() {
 		var r ListRow
-		if err := rows.Scan(&r.ID, &r.Title, &r.Content, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.Title, &r.CreatedAt, &r.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("扫描结果失败: %w", err)
 		}
 		result = append(result, r)
