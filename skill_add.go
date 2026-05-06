@@ -48,13 +48,18 @@ func runSkillAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("解析源路径失败: %w", err)
 	}
 
-	// 2. 检查源目录是否存在
+	// 2. 检查源目录是否存在（os.Stat 会跟随符号链接）
 	srcInfo, err := os.Stat(absSource)
 	if err != nil {
 		return fmt.Errorf("源路径不存在: %w", err)
 	}
 	if !srcInfo.IsDir() {
 		return fmt.Errorf("源路径不是目录: %s", absSource)
+	}
+
+	// 2.5 解析符号链接，获取真实路径（filepath.WalkDir 不跟随根符号链接）
+	if absSource, err = filepath.EvalSymlinks(absSource); err != nil {
+		return fmt.Errorf("解析源路径符号链接失败: %w", err)
 	}
 
 	// 3. 查找 SKILL.md
@@ -142,7 +147,8 @@ func resolvePath(p string) (string, error) {
 	return filepath.Abs(p)
 }
 
-// copyDir 递归复制目录。
+// copyDir 递归复制目录。支持符号链接：目录符号链接仅创建目录本身，
+// 普通文件和指向文件的符号链接按内容复制。
 func copyDir(src, dst string) error {
 	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -156,19 +162,36 @@ func copyDir(src, dst string) error {
 		}
 		targetPath := filepath.Join(dst, relPath)
 
+		// WalkDir 使用 Lstat 判断类型，对符号链接返回非目录。
+		// 需要用 os.Stat 跟随符号链接来正确判断目标类型。
+		fi, statErr := os.Stat(path)
+		if statErr == nil && fi.IsDir() {
+			return os.MkdirAll(targetPath, 0o755)
+		}
+
+		// 符号链接到目录：WalkDir 不会递归进入，只创建目录本身
 		if d.IsDir() {
 			return os.MkdirAll(targetPath, 0o755)
 		}
 
-		// 复制文件
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("读取 %s 失败: %w", path, err)
-		}
-
+		// 检查是否为符号链接（Lstat 模式）
 		info, err := d.Info()
 		if err != nil {
 			return fmt.Errorf("获取 %s 文件信息失败: %w", path, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			// 保留符号链接：读取目标 → 在目标位置创建相同指向的符号链接
+			linkTarget, readErr := os.Readlink(path)
+			if readErr != nil {
+				return fmt.Errorf("读取符号链接 %s 失败: %w", path, readErr)
+			}
+			return os.Symlink(linkTarget, targetPath)
+		}
+
+		// 普通文件：按内容复制
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("读取 %s 失败: %w", path, err)
 		}
 
 		if err := os.WriteFile(targetPath, data, info.Mode().Perm()); err != nil {
