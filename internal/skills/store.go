@@ -77,7 +77,7 @@ func NewSkillStore(dir, source string) (*Store, error) {
 
 // indexSkillKeywords 将技能关键词和名称索引到倒排表中。
 // 除了 skill.Keywords 中的显式关键词外，还会将技能名称（全名和分词后的 token）
-// 加入索引，使得 skill_search("use-modern-go") 可以精确命中。
+// 加入索引（过滤停用词），使得 skill_search("use-modern-go") 可以精确命中。
 func indexSkillKeywords(kws map[string][]string, name string, keywords []string) {
 	addKW := func(kw string) {
 		names := kws[kw]
@@ -90,9 +90,11 @@ func indexSkillKeywords(kws map[string][]string, name string, keywords []string)
 	}
 	// 名称全名作为关键词（退化为精确查找）
 	addKW(strings.ToLower(name))
-	// 名称分词作为关键词
+	// 名称分词作为关键词（过滤停用词，与 extractKeywordsFromNameAndDesc 一致）
 	for _, token := range tokenizeName(name) {
-		addKW(token)
+		if !isStopword(token) {
+			addKW(token)
+		}
 	}
 }
 
@@ -217,13 +219,13 @@ func (store *Store) Query(query string) (matched map[string]Skill) {
 // QueryScored 使用 token 匹配搜索技能，返回按分数降序排列的结果。
 //
 // 评分策略（按优先级）：
-//  1. 精确名称匹配：+100
-//  2. 查询 token 命中名称 token：每个 +10
-//  3. 查询 token 命中关键词：每个 +5
+//  1. 精确名称匹配（大小写不敏感）：+100
+//  2. 查询 token 命中名称整体或名称分词：每个 +10
+//  3. 查询 token 命中显式关键词（skill.Keywords）：每个 +5
 //  4. 查询 token 命中描述词（回退）：每个 +1
 //
 // 匹配采用双向子串包含：token 包含 keyword 或 keyword 包含 token。
-// 这使 "modernize" 能匹配关键词 "modern"，反之亦然。
+// 所有匹配均为大小写不敏感。
 func (store *Store) QueryScored(query string) []ScoredSkill {
 	if query == "" {
 		return nil
@@ -235,16 +237,13 @@ func (store *Store) QueryScored(query string) []ScoredSkill {
 		skill Skill
 		score int
 	}
-	scores := make(map[string]*scoreEntry)
-
-	// 预计算描述 token（回退匹配用）
-	descTokens := make(map[string][]string, len(store.Skills))
+	scores := make(map[string]*scoreEntry, len(store.Skills))
 
 	for name, skill := range store.Skills {
 		entry := &scoreEntry{skill: skill}
 		scores[name] = entry
 
-		// 1. 精确名称匹配
+		// 1. 精确名称匹配（大小写不敏感）
 		if strings.EqualFold(queryLower, name) {
 			entry.score += 100
 		}
@@ -252,7 +251,6 @@ func (store *Store) QueryScored(query string) []ScoredSkill {
 		// 2. 名称 token 匹配
 		nameTokens := tokenizeName(name)
 		for _, qt := range queryTokens {
-			// 查询 token 与名称整体匹配
 			if matchToken(qt, name) {
 				entry.score += 10
 				continue
@@ -265,24 +263,20 @@ func (store *Store) QueryScored(query string) []ScoredSkill {
 			}
 		}
 
-		// 3. 关键词匹配
+		// 3. 显式关键词匹配（skill.Keywords，不含名称派生词）
 		for _, qt := range queryTokens {
-			for keyword := range store.Keywords {
-				if slices.Contains(store.Keywords[keyword], name) {
-					if matchToken(qt, keyword) {
-						entry.score += 5
-						break
-					}
+			for _, kw := range skill.Keywords {
+				if matchToken(qt, kw) {
+					entry.score += 5
+					break
 				}
 			}
 		}
 
 		// 4. 描述词匹配（回退）
-		if _, ok := descTokens[name]; !ok {
-			descTokens[name] = tokenizeText(skill.Description)
-		}
+		descToks := tokenizeText(skill.Description)
 		for _, qt := range queryTokens {
-			for _, dw := range descTokens[name] {
+			for _, dw := range descToks {
 				if matchToken(qt, dw) {
 					entry.score += 1
 					break
@@ -315,15 +309,13 @@ func (store *Store) QueryScored(query string) []ScoredSkill {
 
 // matchToken 检查 query token 是否匹配索引 token。
 // 双向子串包含：query 包含 idx 或 idx 包含 query。
-// matchToken 检查 query token 是否匹配索引 token。
-// 双向子串包含：query 包含 idx 或 idx 包含 query。
-// 空字符串不做匹配。
+// 空字符串不做匹配。匹配为大小写不敏感。
 func matchToken(queryToken, idxToken string) bool {
 	if queryToken == "" || idxToken == "" {
 		return false
 	}
-	return strings.Contains(queryToken, idxToken) ||
-		strings.Contains(idxToken, queryToken)
+	return strings.Contains(strings.ToLower(queryToken), strings.ToLower(idxToken)) ||
+		strings.Contains(strings.ToLower(idxToken), strings.ToLower(queryToken))
 }
 
 func (store *Store) Use(name string) (content string, err error) {

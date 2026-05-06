@@ -271,11 +271,6 @@ func parseSkillFrontmatter(r io.Reader, skill *Skill) error {
 //   - "关键词：abc, def, xyz"
 //   - "Keywords: abc, def, xyz"
 //   - "TRIGGER when: ... 关键词: foo, bar"
-// extractKeywords 从 description 中提取关键词。
-// 支持格式：
-//   - "关键词：abc, def, xyz"
-//   - "Keywords: abc, def, xyz"
-//   - "TRIGGER when: ... 关键词: foo, bar"
 //
 // 如果以上模式均未匹配，则回退到基于 name 和 description 的自动提取。
 func extractKeywords(name, desc string) []string {
@@ -313,11 +308,6 @@ func extractKeywords(name, desc string) []string {
 // 策略：
 //  1. 名称分词（按 - _ . 分割）
 //  2. 描述分词（过滤英文停用词和短词）
-//  3. 合并去重
-// extractKeywordsFromNameAndDesc 从技能名称和描述中自动提取关键词。
-// 策略：
-//  1. 名称分词（按 - _ . 分割）
-//  2. 描述分词（过滤英文停用词）
 //  3. 合并去重
 func extractKeywordsFromNameAndDesc(name, desc string) []string {
 	seen := make(map[string]bool)
