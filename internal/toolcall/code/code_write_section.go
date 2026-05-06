@@ -38,17 +38,24 @@ func writeCodeSection(ctx context.Context, path, selector, newContent string) (r
 		return result, err
 	}
 
-	// 解析文件结构
-	structure, err := parse.ParseFileStructure(ctx, path)
-	if err != nil {
-		err = fmt.Errorf("解析文件结构失败: %w", err)
-		return result, err
+	// 判断是否需要解析文件结构（lines selector 不需要）
+	needsParse := !strings.HasPrefix(selector, "lines:")
+
+	var structure *parse.FileStructure
+	if needsParse {
+		structure, err = parse.ParseFileStructure(ctx, path)
+		if err != nil {
+			err = fmt.Errorf("解析文件结构失败: %w", err)
+			return result, err
+		}
 	}
 
 	// 根据selector定位代码片段
 	lines := strings.Split(string(content), "\n")
+	// 记录原始文件是否有尾随换行符
+	hadTrailingNewline := len(lines) > 0 && lines[len(lines)-1] == ""
 	// 去除文件末尾换行符产生的空元素（与bufio.Scanner行为一致）
-	if len(lines) > 0 && lines[len(lines)-1] == "" {
+	if hadTrailingNewline {
 		lines = lines[:len(lines)-1]
 	}
 	startLine, endLine, err := locateSectionRange(structure, lines, selector)
@@ -60,7 +67,7 @@ func writeCodeSection(ctx context.Context, path, selector, newContent string) (r
 	// 构建结果
 	result = buildWriteResult(path, selector, startLine, endLine, lines, newContent)
 
-	if err = writeToFile(path, lines, startLine, endLine, newContent); err != nil {
+	if err = writeToFile(path, lines, startLine, endLine, newContent, hadTrailingNewline); err != nil {
 		err = fmt.Errorf("写入文件失败: %w", err)
 		return result, err
 	}
@@ -206,7 +213,16 @@ func buildWriteResult(path, selector string, startLine, endLine int, lines []str
 }
 
 // writeToFile 将修改写入文件
-func writeToFile(path string, lines []string, startLine, endLine int, newContent string) error {
+// writeToFile 将修改写入文件
+func writeToFile(path string, lines []string, startLine, endLine int, newContent string, hadTrailingNewline bool) error {
+	// 防御性边界检查：防止因解析器返回异常值导致的切片越界 panic
+	if startLine < 1 || startLine > len(lines) {
+		return fmt.Errorf("startLine %d 越界，文件共 %d 行", startLine, len(lines))
+	}
+	if endLine < startLine || endLine > len(lines) {
+		return fmt.Errorf("endLine %d 越界，有效范围 [%d, %d]", endLine, startLine, len(lines))
+	}
+
 	// 构建新文件内容
 	var newLines []string
 
@@ -219,8 +235,11 @@ func writeToFile(path string, lines []string, startLine, endLine int, newContent
 	// 添加结束行之后的内容
 	newLines = append(newLines, lines[endLine:]...)
 
-	// 写入文件
+	// 写入文件，保留原始文件的尾随换行符状态
 	newContentStr := strings.Join(newLines, "\n")
+	if hadTrailingNewline {
+		newContentStr += "\n"
+	}
 	return os.WriteFile(path, []byte(newContentStr), 0o644)
 }
 
