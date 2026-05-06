@@ -15,14 +15,7 @@ func init() {
 	memCmd := AddRootCommand(&cobra.Command{
 		Use:   "memory",
 		Short: "记忆管理 - 列出、搜索、查看和删除记忆",
-		Long: `memory 命令用于管理持久化记忆。
-
-子命令：
-  list    列出当前项目的所有记忆
-  search  搜索记忆
-  show    查看记忆完整内容
-  delete  删除记忆
-  stats   显示记忆系统统计`,
+		Long:  `memory 命令用于管理持久化记忆。`,
 	})
 
 	// ── list ────────────────────────────────────────────────────────────
@@ -45,8 +38,8 @@ func init() {
 		Args: cobra.ExactArgs(1),
 		RunE: memSearchRunE,
 	}
-	searchCmd.Flags().StringP("type", "t", "", "按类型过滤（如 decision, bugfix, pattern）")
-	searchCmd.Flags().IntP("limit", "n", 10, "最大结果数")
+	searchCmd.Flags().String("type", "", "按类型过滤（如 decision, bugfix, pattern）")
+	searchCmd.Flags().Int("limit", 10, "最大结果数")
 	memCmd.AddCommand(searchCmd)
 
 	// ── show ────────────────────────────────────────────────────────────
@@ -95,8 +88,9 @@ func memListRunE(cmd *cobra.Command, _ []string) error {
 
 	// firstLine returns the first line of content (up to \n).
 	firstLine := func(s string) string {
-		if idx := strings.IndexByte(s, '\n'); idx >= 0 {
-			return s[:idx]
+		before, _, found := strings.Cut(s, "\n")
+		if found {
+			return before
 		}
 		return s
 	}
@@ -110,8 +104,8 @@ func memListRunE(cmd *cobra.Command, _ []string) error {
 		return string(runes[:max]) + "..."
 	}
 
-	// formatTime parses SQLite datetime (RFC3339 from modernc driver)
-	// and formats as Go time.Stamp ("Jan _2 15:04:05").
+	// formatTime parses SQLite datetime (RFC3339 from modernc driver),
+	// converts to local timezone, and formats as Go time.Stamp ("Jan _2 15:04:05").
 	formatTime := func(raw string) string {
 		t, err := time.Parse(time.RFC3339, raw)
 		if err != nil {
@@ -121,7 +115,7 @@ func memListRunE(cmd *cobra.Command, _ []string) error {
 				return raw
 			}
 		}
-		return t.Format(time.Stamp)
+		return t.Local().Format(time.Stamp)
 	}
 
 	type row struct {
