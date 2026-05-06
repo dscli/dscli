@@ -444,3 +444,46 @@ func HandleMemStats(ctx context.Context) (result, warning string, err error) {
 	result = b.String()
 	return result, warning, err
 }
+
+// ─── HandleMemList ─────────────────────────────────────────────────────────
+
+// ListRow is a single memory row for list display.
+type ListRow struct {
+	ID        int64
+	Title     string
+	Content   string
+	CreatedAt string
+}
+
+// HandleMemList lists all memories for the current project, ordered by
+// most recently created first.
+func HandleMemList(ctx context.Context) ([]ListRow, error) {
+	db, err := openDB()
+	if err != nil {
+		return nil, fmt.Errorf("打开数据库失败: %w", err)
+	}
+	defer db.Close()
+
+	sessionID := session.GetCurrentSessionID(ctx)
+
+	rows, err := db.Query(
+		`SELECT id, title, content, created_at FROM memories
+		 WHERE session_id = ? ORDER BY created_at DESC`, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("查询记忆列表失败: %w", err)
+	}
+	defer rows.Close()
+
+	var result []ListRow
+	for rows.Next() {
+		var r ListRow
+		if err := rows.Scan(&r.ID, &r.Title, &r.Content, &r.CreatedAt); err != nil {
+			return nil, fmt.Errorf("扫描结果失败: %w", err)
+		}
+		result = append(result, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("遍历结果失败: %w", err)
+	}
+	return result, nil
+}
