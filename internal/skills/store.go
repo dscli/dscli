@@ -101,12 +101,22 @@ func (store *Store) Load() (err error) {
 		if err != nil {
 			return err
 		}
-		// 注入 Source（缓存中不保存 Source）
-		for name, skill := range store.Skills {
-			skill.Source = store.source
-			store.Skills[name] = skill
+		// 验证缓存条目：如果技能目录已被手动删除，则缓存失效，触发重建
+		for _, skill := range store.Skills {
+			if _, statErr := os.Stat(skill.Path); os.IsNotExist(statErr) {
+				needReload = true
+				break
+			}
 		}
-		return err
+		if !needReload {
+			// 注入 Source（缓存中不保存 Source）
+			for name, skill := range store.Skills {
+				skill.Source = store.source
+				store.Skills[name] = skill
+			}
+			return err
+		}
+		// 有僵尸条目，继续执行下面的重建逻辑
 	}
 
 	// 缓存无效或不存在，重新从 SKILL.md 文件加载

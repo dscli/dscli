@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	icontext "gitcode.com/dscli/dscli/internal/context"
 	"github.com/spf13/cobra"
@@ -47,15 +48,27 @@ func runSkillRemove(cmd *cobra.Command, args []string) error {
 		skillsDir = filepath.Join(icontext.ProjectRoot, ".dscli", "skills")
 	}
 
+	scope := "本地"
+	if global {
+		scope = "全局"
+	}
+
 	// 技能路径
 	skillDir := filepath.Join(skillsDir, skillName)
 
-	// 检查是否存在
+	// 检查目录是否存在
 	info, err := os.Stat(skillDir)
 	if os.IsNotExist(err) {
-		scope := "本地"
-		if global {
-			scope = "全局"
+		// 目录不存在，检查是否为缓存中的僵尸条目（目录已删除但 skills.yaml 未更新）
+		if isStaleCacheEntry(skillName, skillsDir) {
+			// 删除 skills.yaml 强制重建，清除僵尸条目
+			yamlPath := filepath.Join(skillsDir, "skills.yaml")
+			if removeErr := os.Remove(yamlPath); removeErr != nil && !os.IsNotExist(removeErr) {
+				return fmt.Errorf("清理缓存文件失败: %w", removeErr)
+			}
+			fmt.Printf("✅ 已清理 %s 技能缓存中的僵尸条目 %q\n", scope, skillName)
+			fmt.Printf("   skills.yaml 已删除，下次加载时将自动重建。\n")
+			return nil
 		}
 		return fmt.Errorf("技能 %q 在 %s 技能目录中不存在", skillName, scope)
 	}
@@ -77,10 +90,6 @@ func runSkillRemove(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("移除技能目录失败: %w", err)
 	}
 
-	scope := "本地"
-	if global {
-		scope = "全局"
-	}
 	fmt.Printf("✅ 已从 %s 技能目录移除 %q\n", scope, skillName)
 
 	// 如果 skills.yaml 存在，删除之，强制下次 Load 时重建
@@ -94,4 +103,19 @@ func runSkillRemove(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// isStaleCacheEntry checks if a skill is listed in skills.yaml but its
+// directory is missing on disk — a "zombie" entry from manual deletion.
+// It reads the yaml directly (bypassing the store) to avoid triggering
+// Load's auto-clean which would remove the evidence before we can check.
+func isStaleCacheEntry(skillName string, skillsDir string) bool {
+	yamlPath := filepath.Join(skillsDir, "skills.yaml")
+	data, err := os.ReadFile(yamlPath)
+	if err != nil {
+		return false
+	}
+	// Skill entries in skills.yaml appear as "  <name>:" top-level keys.
+	// A simple substring match is sufficient for this diagnostic check.
+	return strings.Contains(string(data), "\n  "+skillName+":")
 }
