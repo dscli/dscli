@@ -1,25 +1,34 @@
-Save a local skill.
+Save a local skill — create or update with partial merge.
 
-Create or update a local skill in .dscli/skills/ with proper
-YAML frontmatter.
+Creates a local skill in .dscli/skills/ with proper YAML
+frontmatter, or updates an existing one. When updating,
+only provided fields are changed; omitted fields retain
+their existing values.
 
-Creates or overwrites SKILL.md with name, description,
-keywords, and auto_inject frontmatter fields, making it
-discoverable via skill_search and loadable via skill_by_name.
+For new skills, name, description, and content are required.
+For existing skills, only name is required — provide only
+the fields you want to change.
 
-If a skill with the same name already exists locally, it will
-be overwritten.
+Creates or overwrites SKILL.md with merged frontmatter fields,
+making it discoverable via skill_search and loadable via
+skill_by_name.
 
-Usage:
+Usage (create):
   skill_save(name="go-fix", description="Go code modernization helper",
     content="# go-fix\n\n...", keywords="go, fix, modernize")
 
+Usage (update keywords only):
+  skill_save(name="go-fix", keywords="go, fix, modernize, refactor")
+
+Usage (toggle auto_inject):
+  skill_save(name="go-fix", auto_inject=true)
+
 Parameters:
 - name: skill name (required, e.g. "go-fix")
-- description: skill description for display and search (required)
-- content: skill body in Markdown, without frontmatter (required)
-- keywords: comma-separated search keywords (optional, e.g. "go, modernize")
-- auto_inject: auto-inject into conversation context (optional, default false)
+- description: skill description (required for new, optional for update)
+- content: skill body in Markdown without frontmatter (required for new, optional for update)
+- keywords: comma-separated keywords (optional, e.g. "go, modernize")
+- auto_inject: auto-inject into conversation context (optional, default false for new, preserved on update)
 
 After saving, the skill is immediately usable via skill_by_name
 and skill_search.

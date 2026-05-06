@@ -16,7 +16,7 @@ import (
 func TestRegistration(t *testing.T) {
 	ctx := context.Background()
 
-	for _, name := range []string{"skill_by_name", "skill_search", "skill_save"} {
+	for _, name := range []string{"skill_by_name", "skill_search", "skill_save", "skill_set_auto_inject"} {
 		t.Run(name, func(t *testing.T) {
 			tool, ok := toolcall.GetToolDef(ctx, name)
 			if !ok {
@@ -51,6 +51,9 @@ func TestHandleSkillSave(t *testing.T) {
 	// Use a temp dir as project root
 	tmpDir := t.TempDir()
 	pctx.ProjectRoot = tmpDir
+
+	// Reset cached local store so it re-initializes with the new ProjectRoot
+	skills.ResetLocalStore()
 
 	// Ensure .dscli/skills dir exists
 	skillsDir := filepath.Join(tmpDir, ".dscli", "skills")
@@ -118,7 +121,7 @@ func TestHandleSkillSave(t *testing.T) {
 	}
 	t.Logf("Query result: %s", searchResult)
 
-	// Verify overwrite
+	// Verify overwrite (full update — all fields provided)
 	args["content"] = "# Updated\n\nNew body."
 	content2, _, err2 := handleSkillSave(ctx, args)
 	if err2 != nil {
@@ -136,8 +139,150 @@ func TestHandleSkillSave(t *testing.T) {
 	}
 }
 
+// TestHandleSkillSavePartialUpdate verifies partial update behavior:
+// when updating an existing skill with only some fields, the omitted
+// fields retain their existing values.
+func TestHandleSkillSavePartialUpdate(t *testing.T) {
+	origRoot := pctx.ProjectRoot
+	defer func() { pctx.ProjectRoot = origRoot }()
+
+	tmpDir := t.TempDir()
+	pctx.ProjectRoot = tmpDir
+
+	// Reset cached local store so it re-initializes with the new ProjectRoot
+	skills.ResetLocalStore()
+
+	ctx := context.Background()
+
+	// Step 1: Create a skill with all fields
+	createArgs := toolcall.ToolArgs{
+		"name":        "partial-test",
+		"description": "Original description",
+		"content":     "# Original\n\nBody.",
+		"keywords":    "go, test",
+		"auto_inject": true,
+	}
+	_, _, err := handleSkillSave(ctx, createArgs)
+	if err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+
+	// Step 2: Update only keywords — description, content, auto_inject should be preserved
+	updateArgs := toolcall.ToolArgs{
+		"name":     "partial-test",
+		"keywords": "go, test, updated",
+	}
+	_, _, err = handleSkillSave(ctx, updateArgs)
+	if err != nil {
+		t.Fatalf("partial update failed: %v", err)
+	}
+
+	// Verify: description and content preserved, keywords updated
+	skillFile := filepath.Join(tmpDir, ".dscli", "skills", "partial-test", "SKILL.md")
+	var skill skills.Skill
+	if err := skills.ParseSkill(skillFile, &skill); err != nil {
+		t.Fatalf("ParseSkill failed: %v", err)
+	}
+	if skill.Description != "Original description" {
+		t.Errorf("Description = %q, want %q (should be preserved)", skill.Description, "Original description")
+	}
+	// ParseSkill appends \n to content
+	if skill.Content != "# Original\n\nBody.\n" {
+		t.Errorf("Content = %q, want %q (should be preserved)", skill.Content, "# Original\n\nBody.\n")
+	}
+	if !skill.AutoInject {
+		t.Error("AutoInject should still be true (preserved)")
+	}
+	if len(skill.Keywords) != 3 {
+		t.Errorf("Keywords len = %d, want 3: %v", len(skill.Keywords), skill.Keywords)
+	}
+
+	// Step 3: Update only auto_inject to false — other fields preserved
+	updateArgs2 := toolcall.ToolArgs{
+		"name":        "partial-test",
+		"auto_inject": false,
+	}
+	_, _, err = handleSkillSave(ctx, updateArgs2)
+	if err != nil {
+		t.Fatalf("auto_inject update failed: %v", err)
+	}
+
+	var skill2 skills.Skill
+	if err := skills.ParseSkill(skillFile, &skill2); err != nil {
+		t.Fatalf("ParseSkill after auto_inject update failed: %v", err)
+	}
+	if skill2.AutoInject {
+		t.Error("AutoInject should be false after update")
+	}
+	if skill2.Description != "Original description" {
+		t.Error("Description should still be preserved")
+	}
+}
+
+// TestHandleSkillSetAutoInject verifies the skill_set_auto_inject tool.
+func TestHandleSkillSetAutoInject(t *testing.T) {
+	origRoot := pctx.ProjectRoot
+	defer func() { pctx.ProjectRoot = origRoot }()
+
+	tmpDir := t.TempDir()
+	pctx.ProjectRoot = tmpDir
+
+	// Reset cached local store so it re-initializes with the new ProjectRoot
+	skills.ResetLocalStore()
+
+	ctx := context.Background()
+
+	// Create a skill first (auto_inject = false)
+	createArgs := toolcall.ToolArgs{
+		"name":        "auto-inject-test",
+		"description": "Test auto inject toggle",
+		"content":     "# Auto Inject Test\n\nBody.",
+	}
+	_, _, err := handleSkillSave(ctx, createArgs)
+	if err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+
+	// Enable auto-inject
+	enableArgs := toolcall.ToolArgs{
+		"skill_name":  "auto-inject-test",
+		"auto_inject": true,
+	}
+	result, _, err := handleSkillSetAutoInject(ctx, enableArgs)
+	if err != nil {
+		t.Fatalf("enable auto_inject failed: %v", err)
+	}
+	t.Logf("enable result: %s", result)
+
+	// Verify via store
+	_, useErr := skills.Use("auto-inject-test")
+	if useErr != nil {
+		t.Fatalf("skills.Use failed: %v", useErr)
+	}
+
+	// Disable auto-inject
+	disableArgs := toolcall.ToolArgs{
+		"skill_name":  "auto-inject-test",
+		"auto_inject": false,
+	}
+	result2, _, err := handleSkillSetAutoInject(ctx, disableArgs)
+	if err != nil {
+		t.Fatalf("disable auto_inject failed: %v", err)
+	}
+	t.Logf("disable result: %s", result2)
+}
+
 // TestHandleSkillSaveValidation tests input validation.
 func TestHandleSkillSaveValidation(t *testing.T) {
+	origRoot := pctx.ProjectRoot
+	defer func() { pctx.ProjectRoot = origRoot }()
+
+	tmpDir := t.TempDir()
+	pctx.ProjectRoot = tmpDir
+
+	// Reset cached local store so it re-initializes with the new ProjectRoot
+	skills.ResetLocalStore()
+
 	ctx := context.Background()
 
 	tests := []struct {

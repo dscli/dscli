@@ -4,7 +4,11 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
+	pctx "gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/skills"
 	"gitcode.com/dscli/dscli/internal/toolcall"
@@ -18,6 +22,9 @@ var skill_search_md string
 
 //go:embed skill_save.md
 var skill_save_md string
+
+//go:embed skill_set_auto_inject.md
+var skill_set_auto_inject_md string
 
 var RegisterTool = toolcall.RegisterTool
 
@@ -74,7 +81,8 @@ func handleSkillSearch(ctx context.Context, args ToolArgs) (result, warning stri
 }
 
 // handleSkillSave creates or updates a local skill (in .dscli/skills/) with proper frontmatter.
-// It overwrites if a skill with the same name already exists locally.
+// For new skills: name, description, and content are required.
+// For existing skills: only name is required — omitted fields keep existing values.
 func handleSkillSave(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	name := ToolArgsValue(args, "name", "")
 	description := ToolArgsValue(args, "description", "")
@@ -82,22 +90,78 @@ func handleSkillSave(ctx context.Context, args ToolArgs) (result, warning string
 	keywordsStr := ToolArgsValue(args, "keywords", "")
 	autoInject := ToolArgsValue(args, "auto_inject", false)
 
-	// Validate required params
+	// name is always required
 	if name == "" {
 		err = fmt.Errorf("skill name cannot be empty")
 		return result, warning, err
 	}
-	if description == "" {
-		err = fmt.Errorf("skill description cannot be empty")
-		return result, warning, err
+
+	// Detect which fields were explicitly provided (present in args map)
+	_, hasDescription := args["description"]
+	_, hasContent := args["content"]
+	_, hasKeywords := args["keywords"]
+	_, hasAutoInject := args["auto_inject"]
+
+	// Try to read existing skill on disk for partial update merge
+	skillFile := filepath.Join(pctx.ProjectRoot, ".dscli", "skills", name, "SKILL.md")
+	var existing *skills.Skill
+	if _, statErr := os.Stat(skillFile); statErr == nil {
+		var s skills.Skill
+		if parseErr := skills.ParseSkill(skillFile, &s); parseErr == nil {
+			existing = &s
+		}
 	}
-	if bodyContent == "" {
-		err = fmt.Errorf("skill content cannot be empty")
-		return result, warning, err
+
+	if existing == nil {
+		// Creating new skill: description and content are required
+		if description == "" {
+			err = fmt.Errorf("skill description cannot be empty for new skills")
+			return result, warning, err
+		}
+		if bodyContent == "" {
+			err = fmt.Errorf("skill content cannot be empty for new skills")
+			return result, warning, err
+		}
+	} else {
+		// Updating existing skill: merge — use new values where provided, keep existing otherwise
+		if !hasDescription {
+			description = existing.Description
+		}
+		if !hasContent {
+			bodyContent = existing.Content
+		}
+		if !hasKeywords && keywordsStr == "" {
+			keywordsStr = strings.Join(existing.Keywords, ", ")
+		}
+		if !hasAutoInject {
+			autoInject = existing.AutoInject
+		}
 	}
 
 	outfmt.Printf("Saving skill [%s]\n", name)
 	result, warning, err = skills.HandleSkillCreate(ctx, name, description, bodyContent, keywordsStr, autoInject)
+	return result, warning, err
+}
+
+// handleSkillSetAutoInject toggles auto-inject for an existing skill (local by default).
+func handleSkillSetAutoInject(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	skillName := ToolArgsValue(args, "skill_name", "")
+	autoInject := ToolArgsValue(args, "auto_inject", false)
+
+	if skillName == "" {
+		err = fmt.Errorf("skill_name cannot be empty")
+		return result, warning, err
+	}
+
+	if err = skills.SetAutoInject(skillName, autoInject, false); err != nil {
+		return result, warning, err
+	}
+
+	state := "disabled"
+	if autoInject {
+		state = "enabled"
+	}
+	result = fmt.Sprintf("Auto-inject %s for skill %q.", state, skillName)
 	return result, warning, err
 }
 
@@ -145,7 +209,8 @@ func init() {
 		Handler:  handleSkillSearch,
 	})
 
-	// Register skill_save — create or update a local skill with YAML frontmatter.
+	// Register skill_save — create or update a local skill with partial merge support.
+	// When updating an existing skill, only name is required; omitted fields preserve existing values.
 	RegisterTool(ToolDef{
 		Name:        "skill_save",
 		DisplayName: "Save Skill",
@@ -160,11 +225,11 @@ func init() {
 				},
 				"description": map[string]any{
 					"type":        "string",
-					"description": "Skill description for display in lists and search matching",
+					"description": "Skill description for display and search (required for new, optional for update)",
 				},
 				"content": map[string]any{
 					"type":        "string",
-					"description": "Skill body in Markdown format (without YAML frontmatter, it will be added automatically)",
+					"description": "Skill body in Markdown, without frontmatter (required for new, optional for update)",
 				},
 				"keywords": map[string]any{
 					"type":        "string",
@@ -175,10 +240,35 @@ func init() {
 					"description": "Whether to auto-inject full skill content into each conversation (optional, default false)",
 				},
 			},
-			"required":             []string{"name", "description", "content"},
+			"required":             []string{"name"},
 			"additionalProperties": false,
 		},
 		Category: "skill",
 		Handler:  handleSkillSave,
+	})
+
+	// Register skill_set_auto_inject — toggle auto-inject for an existing skill.
+	RegisterTool(ToolDef{
+		Name:        "skill_set_auto_inject",
+		DisplayName: "Set Auto-Inject",
+		Description: skill_set_auto_inject_md,
+		Strict:      true,
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"skill_name": map[string]any{
+					"type":        "string",
+					"description": "Exact skill name (required, case-sensitive)",
+				},
+				"auto_inject": map[string]any{
+					"type":        "boolean",
+					"description": "Whether to auto-inject (required)",
+				},
+			},
+			"required":             []string{"skill_name", "auto_inject"},
+			"additionalProperties": false,
+		},
+		Category: "skill",
+		Handler:  handleSkillSetAutoInject,
 	})
 }

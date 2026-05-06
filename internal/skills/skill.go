@@ -263,7 +263,8 @@ func parseSkillFrontmatter(r io.Reader, skill *Skill) error {
 		builder.WriteString(scanner.Text())
 		builder.WriteString("\n")
 	}
-	skill.Content = builder.String()
+	// 去除前导空行（frontmatter 闭合符 "---" 后的分隔空行）
+	skill.Content = strings.TrimLeft(builder.String(), "\n")
 	return nil
 }
 

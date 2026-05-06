@@ -22,6 +22,13 @@ var (
 	localOnce   sync.Once
 )
 
+// ResetLocalStore clears the cached local store, forcing re-initialization on next LocalStore() call.
+// This is primarily for tests that switch between different ProjectRoot directories.
+func ResetLocalStore() {
+	localStore = nil
+	localOnce = sync.Once{}
+}
+
 type Store struct {
 	dir      string
 	source   string              // "local" 或 "global"
