@@ -2,7 +2,6 @@ package skills
 
 import (
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -28,6 +27,12 @@ type Store struct {
 	source   string              // "local" 或 "global"
 	Skills   map[string]Skill    `yaml:"skills,omitzero"`
 	Keywords map[string][]string `yaml:"keywords,omitzero"`
+}
+
+// ScoredSkill 带匹配分数的技能，用于搜索结果排序。
+type ScoredSkill struct {
+	Skill Skill
+	Score int
 }
 
 func LocalStore() (*Store, error) {
@@ -68,6 +73,27 @@ func NewSkillStore(dir, source string) (*Store, error) {
 		return store, nil
 	}
 	return store, nil
+}
+
+// indexSkillKeywords 将技能关键词和名称索引到倒排表中。
+// 除了 skill.Keywords 中的显式关键词外，还会将技能名称（全名和分词后的 token）
+// 加入索引，使得 skill_search("use-modern-go") 可以精确命中。
+func indexSkillKeywords(kws map[string][]string, name string, keywords []string) {
+	addKW := func(kw string) {
+		names := kws[kw]
+		if !slices.Contains(names, name) {
+			kws[kw] = append(names, name)
+		}
+	}
+	for _, kw := range keywords {
+		addKW(kw)
+	}
+	// 名称全名作为关键词（退化为精确查找）
+	addKW(strings.ToLower(name))
+	// 名称分词作为关键词
+	for _, token := range tokenizeName(name) {
+		addKW(token)
+	}
 }
 
 func (store *Store) Load() (err error) {
@@ -148,15 +174,7 @@ func (store *Store) Load() (err error) {
 			skill.AutoInject = old.AutoInject
 		}
 
-		for _, word := range skill.Keywords {
-			var kw []string
-			var ok bool
-			if kw, ok = kws[word]; !ok {
-				kw = []string{}
-			}
-			kw = append(kw, name)
-			kws[word] = kw
-		}
+		indexSkillKeywords(kws, name, skill.Keywords)
 		skills[name] = skill
 	}
 	store.Skills = skills
@@ -185,19 +203,127 @@ func (store *Store) Save() error {
 	return nil
 }
 
+// Query 使用 token 匹配搜索技能。
+// 保留向后兼容的 map 返回类型。
 func (store *Store) Query(query string) (matched map[string]Skill) {
-	matched = map[string]Skill{}
+	scored := store.QueryScored(query)
+	matched = make(map[string]Skill, len(scored))
+	for _, s := range scored {
+		matched[s.Skill.Name] = s.Skill
+	}
+	return matched
+}
+
+// QueryScored 使用 token 匹配搜索技能，返回按分数降序排列的结果。
+//
+// 评分策略（按优先级）：
+//  1. 精确名称匹配：+100
+//  2. 查询 token 命中名称 token：每个 +10
+//  3. 查询 token 命中关键词：每个 +5
+//  4. 查询 token 命中描述词（回退）：每个 +1
+//
+// 匹配采用双向子串包含：token 包含 keyword 或 keyword 包含 token。
+// 这使 "modernize" 能匹配关键词 "modern"，反之亦然。
+func (store *Store) QueryScored(query string) []ScoredSkill {
+	if query == "" {
+		return nil
+	}
 	queryLower := strings.ToLower(query)
-	for keyword, names := range store.Keywords {
-		if strings.Contains(queryLower, keyword) {
-			for _, name := range names {
-				if skill, ok := store.Skills[name]; ok {
-					matched[name] = skill
+	queryTokens := tokenizeQuery(queryLower)
+
+	type scoreEntry struct {
+		skill Skill
+		score int
+	}
+	scores := make(map[string]*scoreEntry)
+
+	// 预计算描述 token（回退匹配用）
+	descTokens := make(map[string][]string, len(store.Skills))
+
+	for name, skill := range store.Skills {
+		entry := &scoreEntry{skill: skill}
+		scores[name] = entry
+
+		// 1. 精确名称匹配
+		if strings.EqualFold(queryLower, name) {
+			entry.score += 100
+		}
+
+		// 2. 名称 token 匹配
+		nameTokens := tokenizeName(name)
+		for _, qt := range queryTokens {
+			// 查询 token 与名称整体匹配
+			if matchToken(qt, name) {
+				entry.score += 10
+				continue
+			}
+			for _, nt := range nameTokens {
+				if matchToken(qt, nt) {
+					entry.score += 10
+					break
+				}
+			}
+		}
+
+		// 3. 关键词匹配
+		for _, qt := range queryTokens {
+			for keyword := range store.Keywords {
+				if slices.Contains(store.Keywords[keyword], name) {
+					if matchToken(qt, keyword) {
+						entry.score += 5
+						break
+					}
+				}
+			}
+		}
+
+		// 4. 描述词匹配（回退）
+		if _, ok := descTokens[name]; !ok {
+			descTokens[name] = tokenizeText(skill.Description)
+		}
+		for _, qt := range queryTokens {
+			for _, dw := range descTokens[name] {
+				if matchToken(qt, dw) {
+					entry.score += 1
+					break
 				}
 			}
 		}
 	}
-	return matched
+
+	// 收集有分数的结果
+	results := make([]ScoredSkill, 0, len(scores))
+	for name, entry := range scores {
+		if entry.score > 0 {
+			results = append(results, ScoredSkill{
+				Skill: store.Skills[name],
+				Score: entry.score,
+			})
+		}
+	}
+
+	// 按分数降序，分数相同时按名称字母序
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].Score != results[j].Score {
+			return results[i].Score > results[j].Score
+		}
+		return results[i].Skill.Name < results[j].Skill.Name
+	})
+
+	return results
+}
+
+// matchToken 检查 query token 是否匹配索引 token。
+// 双向子串包含：query 包含 idx 或 idx 包含 query。
+// matchToken 检查 query token 是否匹配索引 token。
+// 双向子串包含：query 包含 idx 或 idx 包含 query。
+// 空字符串不做匹配。
+func matchToken(queryToken, idxToken string) bool {
+	if queryToken == "" || idxToken == "" {
+		return false
+	}
+	return strings.Contains(queryToken, idxToken) ||
+		strings.Contains(idxToken, queryToken)
 }
 
 func (store *Store) Use(name string) (content string, err error) {
@@ -211,6 +337,7 @@ func (store *Store) Use(name string) (content string, err error) {
 	return content, err
 }
 
+// Query 在本地和全局 store 中搜索技能，返回按分数排序的格式化结果。
 func Query(q string) (string, error) {
 	localStore, err := LocalStore()
 	if err != nil {
@@ -222,22 +349,51 @@ func Query(q string) (string, error) {
 		return "", fmt.Errorf("failed to load global store: %w", err)
 	}
 
-	localMatched := localStore.Query(q)
-	matched := globalStore.Query(q)
-	maps.Copy(matched, localMatched)
+	localScored := localStore.QueryScored(q)
+	globalScored := globalStore.QueryScored(q)
 
-	if len(matched) == 0 {
+	// 合并：local 优先（同分时 local 排前面）
+	merged := mergeScored(localScored, globalScored)
+
+	if len(merged) == 0 {
 		return "", fmt.Errorf("no skills found for query: %s", q)
 	}
 
 	var builder strings.Builder
-	for name, skill := range matched {
+	for _, s := range merged {
 		builder.WriteString("---skill name: ")
-		builder.WriteString(name)
+		builder.WriteString(s.Skill.Name)
 		builder.WriteString("---\n")
-		builder.WriteString(skill.Summary())
+		builder.WriteString(s.Skill.Summary())
 	}
 	return builder.String(), nil
+}
+
+// mergeScored 合并 local 和 global 评分结果。
+// local 优先：同名 skill 只保留 local；其他按分数降序排列。
+func mergeScored(local, global []ScoredSkill) []ScoredSkill {
+	seen := make(map[string]bool, len(local)+len(global))
+	var merged []ScoredSkill
+
+	for _, s := range local {
+		seen[s.Skill.Name] = true
+		merged = append(merged, s)
+	}
+	for _, s := range global {
+		if seen[s.Skill.Name] {
+			continue
+		}
+		seen[s.Skill.Name] = true
+		merged = append(merged, s)
+	}
+
+	sort.Slice(merged, func(i, j int) bool {
+		if merged[i].Score != merged[j].Score {
+			return merged[i].Score > merged[j].Score
+		}
+		return merged[i].Skill.Name < merged[j].Skill.Name
+	})
+	return merged
 }
 
 func Use(name string) (content string, err error) {
@@ -437,13 +593,8 @@ func HandleSkillCreate(ctx context.Context, name, description, content, keywords
 	// Add to in-memory store
 	localStore.Skills[name] = parsedSkill
 
-	// Update keywords index: ensure no duplicates
-	for _, kw := range parsedSkill.Keywords {
-		names := localStore.Keywords[kw]
-		if !slices.Contains(names, name) {
-			localStore.Keywords[kw] = append(names, name)
-		}
-	}
+	// Update keywords index (including name-based indexing)
+	indexSkillKeywords(localStore.Keywords, name, parsedSkill.Keywords)
 
 	// Persist skills.yaml
 	if err = localStore.Save(); err != nil {

@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/goccy/go-yaml"
 )
@@ -204,7 +205,7 @@ func ParseSkill(path string, skill *Skill) error {
 
 	// 如果YAML中没有关键词，则从description中提取
 	if len(skill.Keywords) == 0 {
-		skill.Keywords = extractKeywords(skill.Description)
+		skill.Keywords = extractKeywords(skill.Name, skill.Description)
 	}
 	// 加载子资源
 	if err := loadScripts(skillDir, skill); err != nil {
@@ -270,7 +271,14 @@ func parseSkillFrontmatter(r io.Reader, skill *Skill) error {
 //   - "关键词：abc, def, xyz"
 //   - "Keywords: abc, def, xyz"
 //   - "TRIGGER when: ... 关键词: foo, bar"
-func extractKeywords(desc string) []string {
+// extractKeywords 从 description 中提取关键词。
+// 支持格式：
+//   - "关键词：abc, def, xyz"
+//   - "Keywords: abc, def, xyz"
+//   - "TRIGGER when: ... 关键词: foo, bar"
+//
+// 如果以上模式均未匹配，则回退到基于 name 和 description 的自动提取。
+func extractKeywords(name, desc string) []string {
 	// 正则匹配中文或英文关键词前缀后的内容
 	patterns := []string{
 		`关键词[:：]\s*([^\n]+)`,
@@ -296,7 +304,128 @@ func extractKeywords(desc string) []string {
 			return keywords
 		}
 	}
-	return nil
+
+	// 回退：从 name 和 description 自动提取关键词
+	return extractKeywordsFromNameAndDesc(name, desc)
+}
+
+// extractKeywordsFromNameAndDesc 从技能名称和描述中自动提取关键词。
+// 策略：
+//  1. 名称分词（按 - _ . 分割）
+//  2. 描述分词（过滤英文停用词和短词）
+//  3. 合并去重
+// extractKeywordsFromNameAndDesc 从技能名称和描述中自动提取关键词。
+// 策略：
+//  1. 名称分词（按 - _ . 分割）
+//  2. 描述分词（过滤英文停用词）
+//  3. 合并去重
+func extractKeywordsFromNameAndDesc(name, desc string) []string {
+	seen := make(map[string]bool)
+
+	// 名称分词：user-modern-go → ["user", "modern", "go"]
+	for _, token := range tokenizeName(name) {
+		if !isStopword(token) {
+			seen[token] = true
+		}
+	}
+
+	// 描述分词
+	for _, token := range tokenizeText(desc) {
+		seen[token] = true
+	}
+
+	keywords := make([]string, 0, len(seen))
+	for kw := range seen {
+		keywords = append(keywords, kw)
+	}
+	sort.Strings(keywords)
+	return keywords
+}
+
+// tokenizeName 将技能名称按分隔符拆分为 token。
+// "use-modern-go" → ["use", "modern", "go"]
+// "go_fix" → ["go", "fix"]
+func tokenizeName(name string) []string {
+	parts := strings.FieldsFunc(name, func(r rune) bool {
+		return r == '-' || r == '_' || r == '.'
+	})
+	tokens := make([]string, 0, len(parts))
+	seen := make(map[string]bool, len(parts))
+	for _, p := range parts {
+		p = strings.ToLower(strings.TrimSpace(p))
+		if p != "" && !seen[p] {
+			seen[p] = true
+			tokens = append(tokens, p)
+		}
+	}
+	return tokens
+}
+// tokenizeText 将文本拆分为英文 token（小写、去标点、去停用词）。
+// 用于 description 的关键词提取，过滤高频无信息量词汇。
+// tokenizeText 将文本拆分为英文 token（小写、去标点、去停用词）。
+// 用于 description 的关键词提取，过滤高频无信息量词汇。
+// 短词（≤2 字符）也被过滤，防止 "on", "s" 等造成误匹配。
+func tokenizeText(text string) []string {
+	words := strings.FieldsFunc(text, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+	})
+	tokens := make([]string, 0, len(words))
+	seen := make(map[string]bool, len(words))
+	for _, w := range words {
+		w = strings.ToLower(strings.TrimSpace(w))
+		if w != "" && len(w) > 2 && !isStopword(w) && !seen[w] {
+			seen[w] = true
+			tokens = append(tokens, w)
+		}
+	}
+	return tokens
+}
+
+// tokenizeQuery 将查询字符串拆分为 token（小写、去标点、不过滤停用词）。
+// 与 tokenizeText 不同：查询中不应过滤停用词，因为用户可能按 skill 名称搜索。
+func tokenizeQuery(text string) []string {
+	words := strings.FieldsFunc(text, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+	})
+	tokens := make([]string, 0, len(words))
+	seen := make(map[string]bool, len(words))
+	for _, w := range words {
+		w = strings.ToLower(strings.TrimSpace(w))
+		if w != "" && !seen[w] {
+			seen[w] = true
+			tokens = append(tokens, w)
+		}
+	}
+	return tokens
+}
+
+// isStopword 判断是否为英文停用词（高频低信息量词汇）。
+//
+// 停用词列表涵盖英语中最常见的功能词（冠词、代词、介词等）
+// 以及与 skill 描述相关的常见高频词（use, ask, apply, based 等）。
+// 停用词总数为 ~80 个，在实际场景中经过调优。
+func isStopword(word string) bool {
+	// 内联停用词集合 — 避免运行时构建开销
+	switch word {
+	case "a", "an", "the",
+		"is", "are", "was", "were", "be", "been", "being",
+		"have", "has", "had", "do", "does", "did",
+		"will", "would", "shall", "should", "may", "might", "must", "can", "could",
+		"you", "he", "she", "they", "him", "her", "them",
+		"this", "that", "these", "those",
+		"and", "but", "nor", "not", "then", "else",
+		"how", "what", "which", "who", "whom", "why",
+		"from", "into", "through", "during", "before", "after",
+		"above", "below", "between", "under", "over",
+		"all", "any", "both", "each", "few", "more", "most", "other", "some", "such",
+		"only", "own", "same", "than", "too", "very", "just",
+		"use", "used", "using", "ask", "asked", "apply",
+		"applied", "based", "when", "where", "here", "there",
+		"about", "also", "back", "make", "made",
+		"get", "got", "see", "need":
+		return true
+	}
+	return false
 }
 
 // loadScripts 加载 scripts 目录下的可执行脚本资源。
