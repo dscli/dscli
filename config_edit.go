@@ -10,7 +10,8 @@ import (
 
 func init() {
 	configCmd := AddRootCommand(&cobra.Command{
-		Use: "config",
+		Use:   "config",
+		Short: "配置文件管理",
 	})
 
 	AddCommand(configCmd, &cobra.Command{

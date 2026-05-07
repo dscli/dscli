@@ -15,7 +15,8 @@ import (
 
 func init() {
 	promptCmd := AddRootCommand(&cobra.Command{
-		Use: "prompt",
+		Use:   "prompt",
+		Short: "提示词管理",
 	})
 
 	_ = AddCommand(promptCmd, &cobra.Command{

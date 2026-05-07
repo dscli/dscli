@@ -15,32 +15,38 @@ import (
 
 func init() {
 	historyCmd := AddRootCommand(&cobra.Command{
-		Use:               "history",
+		Use:   "history",
+		Short: "历史消息管理",
 		PersistentPreRunE: historyPreRunE,
 	})
 	_ = AddCommand(historyCmd, &cobra.Command{
-		Use:  "list",
-		RunE: historyListRunE,
+		Use:   "list",
+		Short: "列出历史消息",
+		RunE:  historyListRunE,
 	})
 	_ = AddCommand(historyCmd, &cobra.Command{
-		Use:  "load",
-		RunE: historyLoadRunE,
+		Use:   "load",
+		Short: "加载并校验历史消息中助手回复与工具调用的匹配关系",
+		RunE:  historyLoadRunE,
 	})
 	_ = AddCommand(historyCmd, &cobra.Command{
-		Use:  "update",
-		Args: cobra.ExactArgs(1),
-		RunE: historyUpdateRunE,
+		Use:   "update",
+		Short: "将指定消息标记为历史（更新其 ok 状态）",
+		Args:  cobra.ExactArgs(1),
+		RunE:  historyUpdateRunE,
 	})
 	_ = AddCommand(historyCmd, &cobra.Command{
-		Use:  "show",
-		Args: cobra.ExactArgs(1),
-		RunE: historyShowRunE,
+		Use:   "show",
+		Short: "显示指定消息的完整信息",
+		Args:  cobra.ExactArgs(1),
+		RunE:  historyShowRunE,
 	})
 
 	editCmd := AddCommand(historyCmd, &cobra.Command{
-		Use:  "edit",
-		Args: cobra.ExactArgs(1),
-		RunE: historyEditRunE,
+		Use:   "edit",
+		Short: "编辑指定消息的 content 或 tool_calls 字段",
+		Args:  cobra.ExactArgs(1),
+		RunE:  historyEditRunE,
 	})
 
 	recallCmd := AddCommand(historyCmd, &cobra.Command{
