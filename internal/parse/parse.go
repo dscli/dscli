@@ -79,6 +79,10 @@ func GuessLanguage(path string) string {
 		return "shell"
 	case ".md", ".markdown":
 		return "markdown"
+	case ".org":
+		return "org"
+	case ".el":
+		return "elisp"
 	case ".json":
 		return "json"
 	case ".yaml", ".yml":
@@ -329,6 +333,12 @@ func parseWithPython(ctx context.Context, filePath, lang string) (structure *Fil
 		appendFormatted(pythonResult, "variables", &fs.Imports, "%s (%s)", "name", "type")
 		appendFormatted(pythonResult, "mappings", &fs.Imports, "mapping: %s", "name")
 		appendFormatted(pythonResult, "augroups", &fs.Imports, "augroup: %s", "name")
+	case "elisp":
+		fs.Functions = extractSymbols(pythonResult, "functions")
+		fs.Functions = append(fs.Functions, extractSymbols(pythonResult, "macros")...)
+		fs.Classes = extractSymbols(pythonResult, "variables")
+		fs.Classes = append(fs.Classes, extractSymbols(pythonResult, "custom_variables")...)
+		appendFormatted(pythonResult, "provides", &fs.Imports, "provide: %s", "name")
 	default:
 		fs.Functions = extractSymbols(pythonResult, "functions")
 		fs.Classes = extractSymbols(pythonResult, "classes")
