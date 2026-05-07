@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"gitcode.com/dscli/dscli/internal/chimein"
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/dsc"
 	"gitcode.com/dscli/dscli/internal/outfmt"
@@ -368,6 +369,18 @@ func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ..
 	if len(toolInputs) > 0 {
 		// Tool call inputs saved in db, move them to history
 		history = append(history, toolInputs...)
+
+		// Check for chime-in: user may have inserted a message during tool execution
+		if content, getErr := chimein.Get(ctx); getErr == nil && content != "" {
+			msg := prompt.Message{Role: "user", Content: content}
+			history = append(history, msg)
+			outfmt.PrintUserContent(ctx, content)
+			if saveErr := prompt.SaveMessages(ctx, msg); saveErr != nil {
+				outfmt.Debug("failed to save chimein message: %v", saveErr)
+			}
+			chimein.Reset(ctx)
+		}
+
 		return ChatRound(ctx, prompts, history)
 	}
 	return err
