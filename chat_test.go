@@ -131,3 +131,8 @@ func (m *MockDeepseekClient) FIM(ctx context.Context, prompt, suffix string, max
 func (m *MockDeepseekClient) Chat(ctx context.Context, messages []prompt.Message, tools []toolcall.Tool) (*dsc.ChatResponse, error) {
 	return nil, nil
 }
+
+func (m *MockDeepseekClient) ChatStreamChan(ctx context.Context, messages []prompt.Message, tools []toolcall.Tool, ch chan<- dsc.StreamChunk) (*dsc.ChatResponse, error) {
+	close(ch)
+	return nil, nil
+}

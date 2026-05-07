@@ -49,6 +49,36 @@ dscli    +---------------+
 - **`dscli models`** — 查看可用的 AI 模型列表
 - **`dscli balance`** — 查询 API 余额和使用情况
 
+### 🖥️ TUI 终端界面
+- **`dscli tui`** — 启动交互式终端用户界面（Terminal UI），在同一界面中访问所有功能
+
+TUI 提供以下功能面板：
+  - 🏠 **Dashboard** — 主菜单导航，Logo 展示
+  - 💰 **Balance** — 查看账户余额和可用状态
+  - 🤖 **Models** — 浏览可用 AI 模型列表
+  - 📜 **History** — 查看会话历史消息，支持查看详情
+  - 🔧 **Skills** — 浏览已安装的技能列表
+  - 📝 **Prompt** — 查看系统提示词内容
+  - 💬 **Chat** — 与 DeepSeek 实时对话，支持推理内容、工具调用展示
+
+TUI 操作方式：
+  - `j/k` 或 `↑/↓` — 导航
+  - `Enter` — 选择/确认
+  - `i` — 聚焦输入框（Chat 模式）
+  - `q/esc` — 返回上级
+  - `Ctrl+C` — 退出
+
+启动方式：
+```bash
+# 默认启动（使用聊天模型）
+dscli tui
+
+# 使用推理模型
+dscli tui --model deepseek-reasoner
+
+# 指定加载的历史消息数量
+dscli tui --histsize 16
+```
 ### 📝 会话管理
 - **`dscli history`** — 对话历史管理（list / load / show / edit / update）
 - **`dscli history recall <关键词>`** — 搜索历史消息，回忆过往讨论
@@ -151,11 +181,22 @@ dscli models --format json
 dscli balance --format json
 ```
 
-### 5. 查看版本信息
+### 5. TUI 终端界面
+```bash
+# 启动交互式终端界面
+dscli tui
+
+# 使用推理模型启动
+dscli tui --model deepseek-reasoner
+
+# 加载更多历史消息
+dscli tui --histsize 32
+```
+
+### 6. 查看版本信息
 ```bash
 dscli version
 ```
-
 ## ⚙️ 高级配置
 
 ### 环境变量
@@ -170,7 +211,6 @@ export DEEPSEEK_BASE_URL="https://api.deepseek.com"
 export MODEL_DEEPSEEK_CHAT="deepseek-chat"
 export MODEL_DEEPSEEK_REASONER="deepseek-reasoner"
 ```
-
 ### 配置文件
 - 配置目录：`~/.dscli/`
 - 配置文件：`~/.dscli/config.dscli`
@@ -186,7 +226,6 @@ export MODEL_DEEPSEEK_REASONER="deepseek-reasoner"
 
 ## 🏗️ 项目结构
 
-```
 dscli/
 ├── main.go                    # 主入口
 ├── root.go                    # 根命令与初始化
@@ -203,10 +242,10 @@ dscli/
 ├── prompt.go                  # 提示词管理（prompt 命令）
 ├── config_edit.go             # 配置编辑（config 命令）
 ├── wechat_cmd.go              # 微信集成（wechat 命令）
+├── tui.go                     # TUI 终端界面（tui 命令）
 ├── parse.go                   # 解析工具
 ├── formatter.go               # 格式化器
 ├── Makefile                   # 构建脚本
-│
 └── internal/
     ├── config/                 # 配置管理（配置文件读写）
     ├── context/                # 上下文管理（Context key/value）
@@ -236,8 +275,10 @@ dscli/
     │   ├── shell/              # Shell 执行工具
     │   ├── skill/              # skill 工具
     │   └── web/                # Web 内容获取（web_reader）
+    ├── tui/                    # TUI 界面模型（bubbletea）
     └── wechat/                 # 微信客户端（登录/消息/好友/群组）
 ## 🔄 工作流程
+
 
 1. **项目感知** — 自动识别 Git 仓库根目录，确定项目上下文
 2. **系统提示词** — 加载项目/全局/默认三级提示词，注入技能和笔记
@@ -248,7 +289,6 @@ dscli/
 ## 🤝 贡献
 
 欢迎贡献代码、报告问题或提出建议！
-
 1. Fork 项目
 2. 创建功能分支
 3. 提交更改

@@ -161,6 +161,7 @@ func buildCodeReviewRequest(summary, commitLog, patch string) string {
 ## Commit Message
 ` + commitLog + `
 
+<<<<<<< HEAD
 ## Code Changes
 ` + patch
 }

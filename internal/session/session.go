@@ -17,7 +17,8 @@ func init() {
 			project_path TEXT UNIQUE NOT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)`)
+		)`,
+	)
 }
 
 var (

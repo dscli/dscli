@@ -142,7 +142,7 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result, warning string
 	}
 	if truncated {
 		warning = fmt.Sprintf(`此次写入文件 %s 的内容是截断的内容。
-请从上次输出内容的最后一完整行继续生成，并调用工具 write_file(path="%s", append=true, content="...继续生成的内容...") 
+请从上次输出内容的最后一完整行继续生成，并调用工具 write_file(path="%s", append=true, content="...继续生成的内容...")
 追加入文件%s，为帮助你找到继续生成的点，现把上次截断内容最后几行展示给你：
 ---
 %s---

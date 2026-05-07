@@ -102,6 +102,9 @@ func Println(a ...any) (n int, err error) {
 		err = markdown.ConvertLines(input, outputWriter)
 		return n, err
 	}
+	if outputMode == "tui" {
+		return
+	}
 	return fmt.Fprintln(outputWriter, a...)
 }
 
@@ -116,6 +119,9 @@ func Print(a ...any) (n int, err error) {
 		input := fmt.Sprint(a...)
 		err = markdown.ConvertLines(input, outputWriter)
 		return n, err
+	}
+	if outputMode == "tui" {
+		return
 	}
 	return fmt.Fprint(outputWriter, a...)
 }
@@ -140,6 +146,9 @@ func Printf(format string, a ...any) (n int, err error) {
 		input := fmt.Sprintf(format, a...)
 		err = markdown.ConvertLines(input, outputWriter)
 		return n, err
+	}
+	if outputMode == "tui" {
+		return
 	}
 	return fmt.Fprintf(outputWriter, format, a...)
 }

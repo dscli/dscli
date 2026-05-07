@@ -88,6 +88,7 @@ type Client interface {
 	Balance() (*BalanceResponse, error)
 	FIM(ctx context.Context, prompt, suffix string, maxTokens int, temperature float64) (*FIMResponse, error)
 	Chat(ctx context.Context, messages []prompt.Message, tools []toolcall.Tool) (*ChatResponse, error)
+	ChatStreamChan(ctx context.Context, messages []prompt.Message, tools []toolcall.Tool, ch chan<- StreamChunk) (*ChatResponse, error)
 }
 
 func NewClient(apiKey, baseURL string) Client {

@@ -311,8 +311,8 @@ func HandleToolCall(ctx context.Context, toolName, argsRaw string) (result, warn
 --------IMPORTANT-------NOTICE-----IMPORTANT----------
 Looks you are using write_file tool to write large file
 (around %d characters), you can seperate the file into several parts,
- keep each part around 300 lines, after write the first part, 
-use append = true to append the left parts one by one IN ORDER. 
+ keep each part around 300 lines, after write the first part,
+use append = true to append the left parts one by one IN ORDER.
 DO NOT MISORDER! THIS UNMARSHAL CONTENT WILL BE DISCARD!
 -------------------------NOTICE------------------------`, n)
 			err = fmt.Errorf(`failed to unmarshal arguments: %w, below `+
@@ -326,7 +326,7 @@ DO NOT MISORDER! THIS UNMARSHAL CONTENT WILL BE DISCARD!
 				TruncateHead(input, 40), TruncateTail(input, 40), notice)
 		} else {
 			err = fmt.Errorf(`failed to unmarshal arguments: %w, below `+
-				`is the details about the raw argument tool %q received, 
+				`is the details about the raw argument tool %q received,
 which lead to the error:
 - the length of the argument string：%d
 - the argument raw：%q`, err, toolName, n, string(argsRaw))
@@ -427,7 +427,8 @@ func GetTool(id int64) (*ToolDesc, error) {
 		SELECT id, name, description, category, usage_count, created_at, updated_at
 		FROM tools WHERE id = ?`, id).Scan(
 		&tool.ID, &tool.Name, &tool.Description, &tool.Category,
-		&tool.UsageCount, &tool.CreatedAt, &tool.UpdatedAt)
+		&tool.UsageCount, &tool.CreatedAt, &tool.UpdatedAt,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("获取工具失败: %w", err)
 	}
@@ -446,7 +447,8 @@ func GetToolByName(name string) (*ToolDesc, error) {
 		SELECT id, name, description, category, usage_count, created_at, updated_at
 		FROM tools WHERE name = ?`, name).Scan(
 		&tool.ID, &tool.Name, &tool.Description, &tool.Category,
-		&tool.UsageCount, &tool.CreatedAt, &tool.UpdatedAt)
+		&tool.UsageCount, &tool.CreatedAt, &tool.UpdatedAt,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("获取工具失败: %w", err)
 	}
@@ -550,7 +552,7 @@ func GetToolUsageStats(days int) ([]ToolUsageStat, error) {
 	var rows *sql.Rows
 
 	query := `
-		SELECT 
+		SELECT
 			t.name,
 			t.usage_count,
 			COALESCE(SUM(CASE WHEN tu.success THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 100) as success_rate,
@@ -601,7 +603,7 @@ func GetProjectToolUsage(ctx context.Context, days int) ([]ToolUsageStat, error,
 	var rows *sql.Rows
 
 	query := `
-		SELECT 
+		SELECT
 			t.name,
 			COUNT(tu.id) as usage_count,
 			MAX(tu.used_at) as last_used
