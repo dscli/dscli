@@ -109,6 +109,8 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 			return err
 		}
 	}
+
+	outfmt.PrintUserContent(ctx, content)
 	histSize, err := cmd.Flags().GetInt("histsize")
 	if err != nil {
 		return err
@@ -122,7 +124,6 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		startBalance = resp.BalanceInfos[0]
 		ctx = context.WithValue(ctx, context.StartBalanceKey, startBalance)
 	}
-
 	prompts, err := prompt.LoadPrompts(ctx)
 	if err != nil {
 		return err

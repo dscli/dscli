@@ -486,6 +486,16 @@ func IsVerbose() bool {
 	return outputVerbose
 }
 
+func PrintUserContent(ctx context.Context, content string) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		Println("👤", "CONTINUE...")
+	} else {
+		Println("👤", content)
+	}
+	Println("------")
+}
+
 func PrintContent(ctx context.Context, reasoning, content string) {
 	// 检查是否是streaming模式
 	stream := context.ContextValue(ctx, context.StreamKey, false)
