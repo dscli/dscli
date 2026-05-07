@@ -1,12 +1,3 @@
-// Package chimein 提供用户插话功能。
-//
-// 在 LLM 与 ToolCall 交互过程中，允许用户通过 dscli climein 命令
-// 追加消息。内容存储在 chimeins 表中，每个 session 仅一行。
-//
-// 方法：
-//   - Append: 追加内容到当前 session 的 chimein（自动添加空行分隔）
-//   - Get: 获取当前 session 的 chimein 内容
-//   - Reset: 清空当前 session 的 chimein 内容
 package chimein
 
 import (
