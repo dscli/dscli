@@ -374,7 +374,7 @@ func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ..
 		if content, getErr := chimein.Get(ctx); getErr == nil && content != "" {
 			msg := prompt.Message{Role: "user", Content: content}
 			history = append(history, msg)
-			outfmt.PrintUserContent(ctx, content)
+			outfmt.PrintClimeinContent(ctx, content)
 			if saveErr := prompt.SaveMessages(ctx, msg); saveErr != nil {
 				outfmt.Debug("failed to save chimein message: %v", saveErr)
 			}

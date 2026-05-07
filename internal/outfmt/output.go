@@ -486,14 +486,23 @@ func IsVerbose() bool {
 	return outputVerbose
 }
 
+func PrintClimeinContent(ctx context.Context, content string) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		Println("📋", "CONTINUE...")
+	} else {
+		Println("📋", content)
+	}
+}
+
 func PrintUserContent(ctx context.Context, content string) {
 	content = strings.TrimSpace(content)
 	if content == "" {
-		Println("👤", "CONTINUE...")
+		Println("\n👤", "CONTINUE...")
 	} else {
-		Println("👤", content)
+		Println("\n👤", content)
 	}
-	Println("------")
+	Println("\n------")
 }
 
 func PrintContent(ctx context.Context, reasoning, content string) {
