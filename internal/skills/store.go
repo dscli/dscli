@@ -75,6 +75,19 @@ func GlobalStore() (*Store, error) {
 			return
 		}
 		globalStore, err = NewSkillStore(dir, "global")
+
+		// Secondary: ~/.agents/skills/ (cross-client user-level interoperability)
+		// Skills installed by other agents (Claude Code, Codex, etc.) at the
+		// user level are merged with lower priority.
+		if err == nil {
+			home, homeErr := os.UserHomeDir()
+			if homeErr == nil {
+				agentsDir := filepath.Join(home, ".agents", "skills")
+				if info, statErr := os.Stat(agentsDir); statErr == nil && info.IsDir() {
+					mergeCrossClientSkills(globalStore, agentsDir)
+				}
+			}
+		}
 	})
 	return globalStore, err
 }
