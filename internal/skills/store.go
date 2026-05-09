@@ -45,12 +45,23 @@ type ScoredSkill struct {
 func LocalStore() (*Store, error) {
 	var err error
 	localOnce.Do(func() {
-		dir := filepath.Join(context.ProjectRoot, ".dscli", "skills")
-		err = os.MkdirAll(dir, 0o755)
+		// Primary: <project>/.dscli/skills/ (dscli-native location)
+		dscliDir := filepath.Join(context.ProjectRoot, ".dscli", "skills")
+		err = os.MkdirAll(dscliDir, 0o755)
 		if err != nil {
 			return
 		}
-		localStore, err = NewSkillStore(dir, "local")
+		localStore, err = NewSkillStore(dscliDir, "local")
+
+		// Secondary: <project>/.agents/skills/ (cross-client interoperability)
+		// Skills from .agents/skills/ are loaded and merged with lower priority:
+		// same-name skills in .dscli/skills/ take precedence.
+		if err == nil {
+			agentsDir := filepath.Join(context.ProjectRoot, ".agents", "skills")
+			if info, statErr := os.Stat(agentsDir); statErr == nil && info.IsDir() {
+				mergeCrossClientSkills(localStore, agentsDir)
+			}
+		}
 	})
 	return localStore, err
 }
@@ -80,6 +91,33 @@ func NewSkillStore(dir, source string) (*Store, error) {
 		return store, nil
 	}
 	return store, nil
+}
+
+// mergeCrossClientSkills loads skills from a secondary directory (e.g. .agents/skills/)
+// and merges them into the primary store. Skills already present in the primary store
+// are NOT overwritten — the primary store (dscli-native) takes precedence.
+// This enables cross-client interoperability: skills installed by other agents
+// (Claude Code, Codex, etc.) in .agents/skills/ become automatically available.
+func mergeCrossClientSkills(store *Store, agentsDir string) {
+	crossSkills := LoadSkills(agentsDir)
+	if len(crossSkills) == 0 {
+		return
+	}
+
+	merged := 0
+	for name, skill := range crossSkills {
+		// Don't overwrite skills already in the primary store
+		if _, exists := store.Skills[name]; exists {
+			continue
+		}
+		skill.Source = store.source
+		store.Skills[name] = skill
+		indexSkillKeywords(store.Keywords, name, skill.Keywords)
+		merged++
+	}
+	if merged > 0 {
+		fmt.Fprintf(os.Stderr, "Loaded %d skill(s) from %s (cross-client)\n", merged, agentsDir)
+	}
 }
 
 // indexSkillKeywords 将技能关键词和名称索引到倒排表中。

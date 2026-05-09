@@ -163,12 +163,41 @@ func LoadSkills(dir string) (skills map[string]Skill) {
 
 // SkillFiles returns all skill files (SKILL.md) under `dir`.
 // It walks the directory tree recursively and returns absolute paths.
+// SkillFiles returns all skill files (SKILL.md) under `dir`.
+// It walks the directory tree recursively and returns absolute paths.
+// Skips common non-skill directories (.git, node_modules, etc.) and respects
+// a max depth bound to prevent runaway scanning in large directory trees.
+// SkillFiles returns all skill files (SKILL.md) under `dir`.
+// It walks the directory tree recursively and returns absolute paths.
+// Skips common non-skill directories (.git, node_modules, etc.) and respects
+// a max depth bound to prevent runaway scanning in large directory trees.
 func SkillFiles(dir string) (skillFiles []string) {
+	// Count depth relative to base directory by counting path separators
+	relDepth := func(base, target string) int {
+		// Use relative path to count separator differences
+		rel, err := filepath.Rel(base, target)
+		if err != nil {
+			return 0
+		}
+		return strings.Count(rel, string(filepath.Separator))
+	}
+
 	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil // 忽略错误，继续遍历
 		}
 		if d.IsDir() {
+			name := d.Name()
+			// Skip directories that won't contain skills
+			if name == ".git" || name == "node_modules" ||
+				name == ".venv" || name == "__pycache__" ||
+				name == "vendor" || (strings.HasPrefix(name, ".") && name != "." && name != "..") {
+				return filepath.SkipDir
+			}
+			// Max depth bound: 6 levels from the base
+			if relDepth(dir, path) > 6 {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if d.Name() == "SKILL.md" {
@@ -204,6 +233,13 @@ func ParseSkill(path string, skill *Skill) error {
 	skillDir := filepath.Dir(absPath)
 	skill.Path = skillDir
 
+	// 名称验证（宽松模式：警告但不阻断加载）
+	validateSkillName(skill.Name, skillDir, absPath)
+
+	// 描述验证（规范要求：空描述必须跳过技能）
+	if strings.TrimSpace(skill.Description) == "" {
+		return fmt.Errorf("description is empty")
+	}
 	// 如果YAML中没有关键词，则从description中提取
 	if len(skill.Keywords) == 0 {
 		skill.Keywords = extractKeywords(skill.Name, skill.Description)
@@ -223,6 +259,26 @@ func ParseSkill(path string, skill *Skill) error {
 	}
 
 	return nil
+}
+
+// validateSkillName checks skill name against the spec constraints.
+// Issues are logged as warnings; loading continues (lenient validation).
+func validateSkillName(name, skillDir, skillPath string) {
+	dirName := filepath.Base(skillDir)
+
+	// Check: name matches parent directory (spec requirement)
+	if name != dirName {
+		fmt.Fprintf(os.Stderr,
+			"Warning: skill name %q does not match directory %q in %s\n",
+			name, dirName, skillPath)
+	}
+
+	// Check: name length ≤ 64 characters
+	if len(name) > 64 {
+		fmt.Fprintf(os.Stderr,
+			"Warning: skill name %q exceeds 64 characters (is %d) in %s\n",
+			name, len(name), skillPath)
+	}
 }
 
 // parseSkillFrontmatter 解析 r 中的 frontmatter 和正文。
@@ -271,10 +327,14 @@ func parseSkillFrontmatter(r io.Reader, skill *Skill) error {
 // reKeywordLine 匹配单行 keywords: <value>（非 block 格式）。
 var reKeywordLine = regexp.MustCompile(`(?m)^keywords:\s*(.+)$`)
 
+// reDescColon 匹配单行 description: <value>，用于检测未引号冒号。
+var reDescColon = regexp.MustCompile(`(?m)^description:\s*(.+)$`)
+
 // normalizeFrontmatter 修复常见的 YAML frontmatter 书写错误，使其能被解析。
 // 例如：keywords: go, modern → keywords: [go, modern]
+// 例如：description: Use when: user asks → description: 'Use when: user asks'
 func normalizeFrontmatter(fm string) string {
-	return reKeywordLine.ReplaceAllStringFunc(fm, func(match string) string {
+	fm = reKeywordLine.ReplaceAllStringFunc(fm, func(match string) string {
 		after := strings.TrimSpace(match[len("keywords:"):])
 		// Already valid YAML list (block or inline)? Keep.
 		if after == "" || after[0] == '[' || after[0] == '-' {
@@ -294,6 +354,34 @@ func normalizeFrontmatter(fm string) string {
 		}
 		return "keywords: [" + strings.Join(list, ", ") + "]"
 	})
+	fm = reDescColon.ReplaceAllStringFunc(fm, func(match string) string {
+		after := strings.TrimSpace(match[len("description:"):])
+		if after == "" {
+			return match
+		}
+		// Already block scalar or quoted? Keep.
+		if after[0] == '|' || after[0] == '>' || after[0] == '"' || after[0] == '\'' {
+			return match
+		}
+		// No colon to escape? Keep.
+		if !strings.Contains(after, ":") {
+			return match
+		}
+		// Quote the value to prevent YAML from treating colon as mapping indicator.
+		return "description: " + quoteYAMLValue(after)
+	})
+	return fm
+}
+
+// quoteYAMLValue 对包含特殊字符的 YAML 值加引号包裹。
+// 优先使用单引号（无需转义），包含单引号时用双引号并转义反斜杠和双引号。
+func quoteYAMLValue(value string) string {
+	if !strings.Contains(value, "'") {
+		return "'" + value + "'"
+	}
+	escaped := strings.ReplaceAll(value, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+	return `"` + escaped + `"`
 }
 
 // extractKeywords 从 description 中提取关键词。
@@ -749,7 +837,6 @@ func BuildSkillPrompt(ctx context.Context, allowed ...string) string {
 		builder.WriteString(skill.Content)
 		builder.WriteString("\n\n")
 	}
-
 	// === Part 2: Manual skill list ===
 	if len(manualSkills) > 0 {
 		builder.WriteString("## Available Skills\n\n")
@@ -764,9 +851,11 @@ func BuildSkillPrompt(ctx context.Context, allowed ...string) string {
 			if len(skill.Keywords) > 0 {
 				keywords = strings.Join(skill.Keywords, ", ")
 			}
+			// Include sanitized path in description for path resolution
+			desc := truncateSkillDesc(skill.Description, 80)
 			fmt.Fprintf(&builder, "| %s | %s | %s |\n",
 				skill.Name,
-				truncateSkillDesc(skill.Description, 80),
+				desc,
 				keywords,
 			)
 		}
@@ -775,6 +864,15 @@ func BuildSkillPrompt(ctx context.Context, allowed ...string) string {
 			fmt.Fprintf(&builder, "| ... | _(%d more skills, use skill_search to discover)_ | ... |\n",
 				len(names)-len(autoSkills)-maxManualListed)
 		}
+
+		// Provide valid skill names to prevent hallucination
+		builder.WriteString("\n**Valid skill names**: ")
+		listedNames := make([]string, len(manualSkills))
+		for i, s := range manualSkills {
+			listedNames[i] = s.Name
+		}
+		builder.WriteString(strings.Join(listedNames, ", "))
+		builder.WriteString("\n_(use exact names above with `skill_by_name` tool)_\n")
 	}
 
 	// === Part 3: Usage instructions with example ===
