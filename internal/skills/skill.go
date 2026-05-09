@@ -889,14 +889,17 @@ func BuildSkillPrompt(ctx context.Context, allowed ...string) string {
 			fmt.Fprintf(&builder, "| ... | _(%d more skills, use skill_search to discover)_ | ... |\n",
 				len(names)-len(autoSkills)-maxManualListed)
 		}
-
 		// Provide valid skill names to prevent hallucination
-		builder.WriteString("\n**Valid skill names**: ")
-		listedNames := make([]string, len(manualSkills))
-		for i, s := range manualSkills {
-			listedNames[i] = s.Name
+		// List ALL valid names (not just capped table entries) so the LLM
+		// knows the complete set of skills available via skill_by_name.
+		allManualNames := make([]string, 0, len(names)-len(autoSkills))
+		for _, name := range names {
+			if skill := allSkills[name]; !skill.AutoInject {
+				allManualNames = append(allManualNames, name)
+			}
 		}
-		builder.WriteString(strings.Join(listedNames, ", "))
+		builder.WriteString("\n**Valid skill names**: ")
+		builder.WriteString(strings.Join(allManualNames, ", "))
 		builder.WriteString("\n_(use exact names above with `skill_by_name` tool)_\n")
 	}
 
