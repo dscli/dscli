@@ -94,21 +94,10 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 
 func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
-	content := ""
-	input := ""
-	if len(args) > 0 {
-		content = strings.Join(args, " ")
-	} else {
-		input, err = cmd.Flags().GetString("input")
-		if err != nil {
-			return err
-		}
-		ctx = context.WithValue(ctx, context.InputContentKey, input)
 
-		content, err = ReadContentWithTimeout(ctx)
-		if err != nil {
-			return err
-		}
+	content, err := ReadInputWithTimeout(cmd, args)
+	if err != nil {
+		return err
 	}
 
 	outfmt.PrintUserContent(ctx, content)
@@ -162,50 +151,60 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		prompt.Message{Role: "user", Content: content})
 }
 
-func ReadContentWithTimeout(ctx context.Context) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
+// ReadInput reads user input content from CLI args or --input flag.
+// Priority: positional args (space-joined) > --input flag (file path or "-" for stdin).
+func ReadInput(cmd *cobra.Command, args []string) (string, error) {
+	if len(args) > 0 {
+		return strings.Join(args, " "), nil
+	}
+	input, err := cmd.Flags().GetString("input")
+	if err != nil {
+		return "", err
+	}
+	return readInputSource(input)
+}
+
+// readInputSource reads content from stdin or file.
+// If source is "" or "-", reads from stdin; otherwise reads the file at the given path.
+func readInputSource(source string) (string, error) {
+	var b []byte
+	var err error
+	if source == "" || source == "-" {
+		b, err = io.ReadAll(bufio.NewReader(os.Stdin))
+	} else {
+		b, err = os.ReadFile(source)
+	}
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(b)), nil
+}
+
+// ReadInputWithTimeout reads input with a 10s timeout to avoid hanging on empty stdin.
+func ReadInputWithTimeout(cmd *cobra.Command, args []string) (string, error) {
+	ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
 	defer cancel()
-	// 用于传递读取结果的通道
+
 	resultCh := make(chan string, 1)
 	errCh := make(chan error, 1)
 
 	go func() {
-		content, err := ReadContent(ctx)
+		content, err := ReadInput(cmd, args)
 		if err != nil {
 			errCh <- err
+		} else {
+			resultCh <- content
 		}
-		resultCh <- content
 	}()
 
 	select {
 	case <-ctx.Done():
-		// context 超时或取消
 		return "", ctx.Err()
 	case res := <-resultCh:
 		return res, nil
 	case err := <-errCh:
 		return "", err
 	}
-}
-
-func ReadContent(ctx context.Context) (content string, err error) {
-	input := context.ContextValue(ctx, context.InputContentKey, "")
-	var b []byte
-	if input == "" || input == "-" {
-		reader := bufio.NewReader(os.Stdin)
-		b, err = io.ReadAll(reader)
-		if err != nil {
-			return content, err
-		}
-		content = strings.TrimSpace(string(b))
-		return content, err
-	}
-	b, err = os.ReadFile(input)
-	if err != nil {
-		return content, err
-	}
-	content = strings.TrimSpace(string(b))
-	return content, err
 }
 
 // calculateCost 计算花费

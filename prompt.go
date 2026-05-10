@@ -89,6 +89,7 @@ func promptShowRunE(cmd *cobra.Command, args []string) error {
 }
 
 // promptEditRunE 编辑提示词
+// 若目标文件不存在，自动从更高作用域（全局/内建）拷贝内容作为编辑起点。
 func promptEditRunE(cmd *cobra.Command, args []string) error {
 	name, err := promptName(args)
 	if err != nil {
@@ -106,9 +107,10 @@ func promptEditRunE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("确定提示词文件路径失败: %w", err)
 	}
 
-	// 若文件不存在，创建空文件；若存在则继续编辑
+	// 若文件不存在，从更高作用域获取种子内容；完全新建时内容为空
 	if _, err := os.Stat(p); os.IsNotExist(err) {
-		if err := os.WriteFile(p, []byte{}, 0o644); err != nil {
+		seed := prompt.GetPromptSourceContent(name, global)
+		if err := os.WriteFile(p, []byte(seed+"\n"), 0o644); err != nil {
 			return fmt.Errorf("创建提示词文件 %s 失败: %w", p, err)
 		}
 	} else if err != nil {

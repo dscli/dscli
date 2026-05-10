@@ -1,11 +1,6 @@
 package main
 
 import (
-	"bufio"
-	"io"
-	"os"
-	"strings"
-
 	"gitcode.com/dscli/dscli/internal/chimein"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"github.com/spf13/cobra"
@@ -32,30 +27,10 @@ func init() {
 
 func ClimeinRunE(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	content := ""
 
-	if len(args) > 0 {
-		content = strings.Join(args, " ")
-	} else {
-		input, err := cmd.Flags().GetString("input")
-		if err != nil {
-			return err
-		}
-
-		if input == "" || input == "-" {
-			reader := bufio.NewReader(os.Stdin)
-			b, err := io.ReadAll(reader)
-			if err != nil {
-				return err
-			}
-			content = strings.TrimSpace(string(b))
-		} else {
-			b, err := os.ReadFile(input)
-			if err != nil {
-				return err
-			}
-			content = strings.TrimSpace(string(b))
-		}
+	content, err := ReadInput(cmd, args)
+	if err != nil {
+		return err
 	}
 
 	if content == "" {

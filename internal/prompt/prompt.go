@@ -244,6 +244,27 @@ func ResolvePromptRemovePath(name string) (string, error) {
 	return GetPromptPath(name, true)
 }
 
+// GetPromptSourceContent 获取用于初始化新提示词文件的种子内容。
+// 非 global 作用域（项目）：先尝试全局文件，再尝试内建模板。
+// global 作用域：只尝试内建模板（已知内建名才返回内容）。
+// 无可用来源时返回空字符串，调用方创建空文件。
+func GetPromptSourceContent(name string, global bool) string {
+	if !global {
+		// 先尝试全局文件（比内建更近的作用域）
+		p, err := GetPromptPath(name, true)
+		if err == nil {
+			if content := readPromptFile(p); content != "" {
+				return content
+			}
+		}
+	}
+	// 再尝试内建模板（仅已知内建名）
+	if tmpl, ok := roleTemplateMap[name]; ok {
+		return tmpl
+	}
+	return ""
+}
+
 // readPromptFile 读取提示词文件
 func readPromptFile(p string) string {
 	if p == "" {
