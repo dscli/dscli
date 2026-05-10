@@ -153,15 +153,27 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 
 // ReadInput reads user input content from CLI args or --input flag.
 // Priority: positional args (space-joined) > --input flag (file path or "-" for stdin).
+// When output mode is "org", the input (org format) is converted to markdown
+// before being used as message/chimein content.
 func ReadInput(cmd *cobra.Command, args []string) (string, error) {
+	var content string
 	if len(args) > 0 {
-		return strings.Join(args, " "), nil
+		content = strings.Join(args, " ")
+	} else {
+		input, err := cmd.Flags().GetString("input")
+		if err != nil {
+			return "", err
+		}
+		content, err = readInputSource(input)
+		if err != nil {
+			return "", err
+		}
 	}
-	input, err := cmd.Flags().GetString("input")
-	if err != nil {
-		return "", err
+
+	if outfmt.GetOutputMode() == "org" {
+		content = outfmt.OrgToMarkdown(content)
 	}
-	return readInputSource(input)
+	return content, nil
 }
 
 // readInputSource reads content from stdin or file.
