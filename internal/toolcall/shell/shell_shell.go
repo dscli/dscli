@@ -74,11 +74,17 @@ func handleShell(ctx context.Context, args ToolArgs) (result, warning string, er
 		return result, warning, err
 	}
 
-	// stderr → user (Suggestion)，供 AI 参考诊断信息
+	// stderr → warning (yellow), 供 AI 参考诊断信息
 	warning = res.Stderr
 	result = res.Stdout
 	if res.Err != nil {
-		err = fmt.Errorf("shell script failed (exit=%d): %w", res.ExitCode, res.Err)
+		// Include stderr in the error so the LLM can diagnose the failure.
+		// res.Err alone is just "exit status N" — useless without stderr.
+		if res.Stderr != "" {
+			err = fmt.Errorf("shell script failed (exit=%d): %s", res.ExitCode, res.Stderr)
+		} else {
+			err = fmt.Errorf("shell script failed (exit=%d): %w", res.ExitCode, res.Err)
+		}
 		return result, warning, err
 	}
 	return result, warning, err
