@@ -12,7 +12,7 @@ auto_inject: true
 
 ## 1. Prompt — 提示词
 
-`dscli role` 按角色定制提示词。每个角色（dev、writing 等）有独立的
+每个角色（dev、expert、review 等）有独立的
 tools、skills、prompt。
 
 用户从软件开发转向其他领域时（比如写作），第一件事是让你把 dev 提示词
