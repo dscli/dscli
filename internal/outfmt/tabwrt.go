@@ -1,18 +1,20 @@
 package outfmt
 
 import (
-	"fmt"
 	"strings"
 	"text/tabwriter"
 )
 
 type tabwrt struct {
 	*tabwriter.Writer
+	buf *strings.Builder
 }
 
 func NewTabwrt() *tabwrt {
+	buf := &strings.Builder{}
 	return &tabwrt{
-		tabwriter.NewWriter(outputWriter, 0, 0, 2, ' ', tabwriter.TabIndent),
+		Writer: tabwriter.NewWriter(buf, 0, 0, 2, ' ', tabwriter.TabIndent),
+		buf:    buf,
 	}
 }
 
@@ -21,11 +23,13 @@ func (t *tabwrt) Println(a ...string) {
 	_, _ = t.Write(b)
 }
 
+// Flush flushes the tabwriter and outputs content through mode-aware Print.
 func (t *tabwrt) Flush() error {
 	err := t.Writer.Flush()
 	if err != nil {
-		fmt.Println(err)
 		return err
 	}
+	// Route through Print() to respect --mode flag (markdown/org conversion).
+	Print(t.buf.String())
 	return nil
 }
