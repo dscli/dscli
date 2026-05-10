@@ -1,45 +1,102 @@
 ---
 name: dscli
-description: dscli built-in skill. Documents dscli-unique tools: memory, skill management, session notes, role config.
-keywords: [dscli, built-in]
+description:  dscli 核心概念：提示词、历史、技能、记忆。不讲参数，只讲 AI 不知道的事。
+keywords: [dscli, built-in, core, concepts]
 auto_inject: true
 ---
 
-# dscli-unique Tools
+# dscli 核心概念
 
-These tools are dscli-specific. Use them directly; their names and parameters are as listed.
+系统提示词已包含工具的 JSON schema，本文不重复参数。这里只讲你
+**不知道**的事：何时用、为何用、怎么用得对。
 
-## Memory (persistent, cross-session)
+## 1. Prompt — 提示词
 
-| Tool | Parameters |
-|------|-----------|
-| `mem_save` | `title` (required), `content` (required), `type` (optional: decision/bugfix/pattern/config/discovery/learning) |
-| `mem_search` | `query` (required), `type` (optional), `limit` (optional, default 10) |
-| `mem_update` | `id` (required), `title` (optional), `content` (optional), `type` (optional) |
-| `mem_delete` | `id` (required) — irreversible |
-| `mem_get_observation` | `id` (required) |
-| `mem_stats` | none |
+`dscli role` 按角色定制提示词。每个角色（dev、writing 等）有独立的
+tools、skills、prompt。
 
-Before solving a problem, search memories with `mem_search` to avoid repeating past mistakes.
+用户从软件开发转向其他领域时（比如写作），第一件事是让你把 dev 提示词
+"改"成新领域的提示词。
 
-## Skill Management
+**你的做法**：先研究 dev 提示词的结构——语气、章节、规则、约束——然后
+刻意模仿它的架构来写新领域的提示词。照猫画虎，不要从零创作。
 
-| Tool | Parameters |
-|------|-----------|
-| `skill_save` | `name` (required), `description` (required for new), `content` (required for new), `keywords` (optional, comma-separated), `auto_inject` (optional, default false) |
-| `skill_set_auto_inject` | `skill_name` (required), `auto_inject` (required, boolean) |
-| `skill_search` | `query` (required) |
-| `skill_by_name` | `skill_name` (required) |
+## 2. History — 历史
 
-CLI validation: `dscli skill validate <skill_name>` validates a skill by name or path.
+忘记历史就意味着背叛。但对 AI 而言，忘记才是常态——上下文窗口有限，
+旧的对话迟早被丢弃。
 
-## Session
+两个工具对抗遗忘：
 
-| Tool | Parameters |
-|------|-----------|
-| `note` | `content` (required, ≤40 chars) — summary injected into next session |
-| `recall` | `keywords` (required), `days` (optional, default 30), `limit` (optional, default 5) |
+- **`note`**：会话结束时留一条线索（≤40 字），注入下一次会话
+- **`recall`**：按关键词搜索过去的线索
 
-## Role Configuration
+**不记 note，recall 就等于瞎了。** 历史沉入漫漫黑夜。
 
-Each role controls its own tools, skills, and prompt via the `role_configs` table (SQLite). Changes take effect immediately. Use `dscli role` to manage.
+### 你倾向于不记——这是错的
+
+你天然觉得记 note 没必要。但这三种情况**必须记**：
+
+1. **难解的 bug 长时间才解决。**
+   解 bug 走了无数弯路，关键信息散落在漫长的对话里。不记 note，
+   下月再遇同类 bug，又得从头走弯路。
+
+2. **技术决策重要或反常识。**
+   绕了好几个弯才得出的结论。记下来，下次直达。
+
+3. **刚学过/写过技能。**
+   `skill_save` 了新技能但不记 note，未来会话根本不知道它的存在。
+   `recall` 加对关键词，能把埋没的技能重新挖出来。
+
+### 何时 recall
+
+在以下操作**之前**先 recall：
+- `mem_save` 之前——查是否已记过类似内容
+- 写或更新 skill 之前——查过去的经验教训
+- 排查似曾相识的 bug——你可能已解过一次
+
+## 3. Skill — 技能
+
+技能是解决问题的诀窍。你通过 `skill_save` 自己写技能。
+
+**技能的哲学**：今天花的 10 分钟写技能，是明天省下的指数级时间。
+
+### 什么是好技能
+
+- **可执行**：一步一步的指令，不是理论文章
+- **自包含**：包含完成任务所需的一切，含脚本
+- **可检索**：好的 keywords，让 `skill_search` 找得到
+
+### 何时写技能
+
+解决了一个会重复出现的非平凡问题——尤其涉及多个步骤、特定命令、
+或你费了一番功夫才发现的领域知识。
+
+技能创建后可用 `dscli skill validate <name>` 校验格式。
+
+## 4. Memory — 记忆
+
+记忆和历史不同。
+
+| | 历史 (History) | 记忆 (Memory) |
+|---|---|---|
+| **本质** | 只读。发生过就是发生过。 | 可修改。真理可以被更新。 |
+| **记录方式** | `note` — 简短线索 | `mem_save` — 详细知识 |
+| **用途** | 为 `recall` 留面包屑 | 持久化真理，避免重复发现 |
+| **生命周期** | 会话级 | 跨会话知识库 |
+
+记忆和笔记也不同：
+- **笔记** (`note`/`recall`) 是面包屑——指向历史
+- **记忆** (`mem_save`/`mem_search`) 是真理——记录发现的规律
+
+### 何时写记忆
+
+- 发现了一个模式 → type: `pattern`
+- 做了一个设计决策 → type: `decision`
+- 修了一个非显而易见的 bug → type: `bugfix`
+- 学到了关于代码库的知识 → type: `learning`
+
+### 写记忆之前
+
+**必须先 `mem_search`**——你可能已经记过了。用 `mem_update`
+更新已有记忆，避免重复。
