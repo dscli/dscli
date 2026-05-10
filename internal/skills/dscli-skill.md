@@ -24,41 +24,43 @@ new domain's prompt. Follow the blueprint; don't create from scratch.
 
 ## 2. History
 
-To forget history is a mistake. But for an AI, forgetting is the default — the
-context window is finite, and old conversations are eventually discarded.
+Your context window has a hard limit. When a session ends, every debugging
+breakthrough, every design decision, every lesson learned — gone. The next
+session wakes up with zero access to this conversation.
 
-Two tools fight against forgetting:
+Two tools are your only bridge:
 
-- **`note`**: leave one clue (≤40 chars) at session end, injected into the next session
-- **`recall`**: search past clues by keyword
+- **`note`**: leave a short clue (≤40 chars) at session end. It gets injected
+  into the next session so you know what happened.
+- **`recall`**: search past clues by keyword before taking action.
 
-**Without a note, `recall` is blind.** History sinks into silence.
+**Without `note`, `recall` is useless.** No notes = no search results = every
+session starts blind.
 
-### You tend not to record — and that's a mistake
+### End every session with `note`
 
-It feels natural to skip recording a note. But these three
-situations **require** one:
+It costs 5 seconds. Skipping it can cost hours of re-work next month.
 
-1. **A stubborn bug solved after a long struggle.**
-   The fix took countless detours, with key insights scattered across a
-   sprawling conversation. Without a note, when a similar bug appears next
-   month, you'll retrace every wrong turn.
+Three situations where forgetting to `note` hurts the most:
 
-2. **A technical decision that was important or counterintuitive.**
-   A conclusion reached only after several roundabout paths. Record it, and
-   next time go straight there.
+1. **Bug fixed after long struggle.** The fix took many dead ends, insights
+   scattered across a long conversation. Without a note, when a similar bug
+   appears weeks later, you repeat every wrong turn.
 
-3. **You just learned or wrote a skill.**
-   You `skill_save` a new skill but don't record a note — future sessions
-   will never know it exists. A `recall` with the right keywords can
-   resurrect buried skills.
+2. **Important or counterintuitive decision made.** A conclusion reached only
+   after exploring many paths. A note lets the next session go straight to the
+   answer.
 
-### When to recall
+3. **Skill created or updated.** `skill_save` without `note` → future sessions
+   never discover the skill. Buried.
 
-Run `recall` **before**:
-- `mem_save` — check if something similar was already recorded
-- Writing or updating a skill — check past lessons learned
-- Investigating a familiar-looking bug — you may have solved it before
+### Run `recall` before these actions
+
+| Before | Why |
+|--------|-----|
+| `mem_save` | A similar memory may already exist — update instead of duplicate |
+| Writing/updating a skill | Past sessions may have learned hard lessons on this topic |
+| Investigating any bug | You may have already solved it |
 
 ## 3. Skill
 
@@ -93,7 +95,6 @@ Memory is not the same as history.
 | **Purpose**  | Leave breadcrumbs for `recall` | Persist truth; avoid rediscovery |
 | **Lifespan** | Session-level               | Cross-session knowledge base |
 
-Memory and notes also differ:
 - **Notes** (`note`/`recall`) are breadcrumbs — pointing to history
 - **Memories** (`mem_save`/`mem_search`) are truth — recording discovered patterns
 
