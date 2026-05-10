@@ -377,6 +377,63 @@ func matchToken(queryToken, idxToken string) bool {
 		strings.Contains(strings.ToLower(idxToken), strings.ToLower(queryToken))
 }
 
+// scoreSkill scores a single skill against a query string.
+// Used for built-in skill fallback in Query().
+// Scoring rules (same as Store.QueryScored):
+//  1. Exact name match: +100
+//  2. Query token in name or name tokens: +10 each
+//  3. Query token in explicit keywords: +5 each
+//  4. Query token in description: +1 each
+func scoreSkill(query, name string, skill *Skill) int {
+	queryLower := strings.ToLower(query)
+	queryTokens := tokenizeQuery(queryLower)
+
+	score := 0
+
+	// 1. Exact name match (case-insensitive)
+	if strings.EqualFold(queryLower, name) {
+		score += 100
+	}
+
+	// 2. Name token match
+	nameTokens := tokenizeName(name)
+	for _, qt := range queryTokens {
+		if matchToken(qt, name) {
+			score += 10
+			continue
+		}
+		for _, nt := range nameTokens {
+			if matchToken(qt, nt) {
+				score += 10
+				break
+			}
+		}
+	}
+
+	// 3. Explicit keyword match
+	for _, qt := range queryTokens {
+		for _, kw := range skill.Keywords {
+			if matchToken(qt, kw) {
+				score += 5
+				break
+			}
+		}
+	}
+
+	// 4. Description token match (fallback)
+	descToks := tokenizeText(skill.Description)
+	for _, qt := range queryTokens {
+		for _, dw := range descToks {
+			if matchToken(qt, dw) {
+				score += 1
+				break
+			}
+		}
+	}
+
+	return score
+}
+
 func (store *Store) Use(name string) (content string, err error) {
 	skill, ok := store.Skills[name]
 	if ok {
@@ -405,6 +462,28 @@ func Query(q string) (string, error) {
 
 	// 合并：local 优先（同分时 local 排前面）
 	merged := mergeScored(localScored, globalScored)
+
+	// Fallback: query built-in skills not shadowed by local/global
+	seen := make(map[string]bool, len(merged))
+	for _, s := range merged {
+		seen[s.Skill.Name] = true
+	}
+	for name, skill := range builtinSkills() {
+		if seen[name] {
+			continue
+		}
+		if s := scoreSkill(q, name, &skill); s > 0 {
+			merged = append(merged, ScoredSkill{Skill: skill, Score: s})
+		}
+	}
+
+	// Re-sort after adding built-in results
+	sort.Slice(merged, func(i, j int) bool {
+		if merged[i].Score != merged[j].Score {
+			return merged[i].Score > merged[j].Score
+		}
+		return merged[i].Skill.Name < merged[j].Skill.Name
+	})
 
 	if len(merged) == 0 {
 		return "", fmt.Errorf("no skills found for query: %s", q)
@@ -467,6 +546,12 @@ func Use(name string) (content string, err error) {
 	if err == nil {
 		return content, nil
 	}
+
+	// Fallback to built-in skills
+	if skill, ok := builtinSkills()[name]; ok {
+		return skill.FormatFull(), nil
+	}
+
 	return "", fmt.Errorf("skill %s not found in local or global store", name)
 }
 
@@ -505,9 +590,8 @@ func (store *Store) List() []string {
 	return names
 }
 
-// ListAll 返回所有技能（本地和全局）的列表。
-// The built-in dscli skill (Source="built-in", Path="(built-in)") is excluded —
-// it exists only in BuildSkillPrompt and is never stored in local/global stores.
+// ListAll 返回所有技能（本地、全局和内置）的列表。
+// 优先级：local > global > built-in（同名时只保留最高优先级的）。
 func ListAll() ([]SkillInfo, error) {
 	localStore, err := LocalStore()
 	if err != nil {
@@ -556,6 +640,24 @@ func ListAll() ([]SkillInfo, error) {
 			skillInfos = append(skillInfos, SkillInfo{
 				Name:       name,
 				Scope:      "global",
+				AutoInject: skill.AutoInject,
+			})
+		}
+	}
+
+	// 添加内置技能（排除已被 local/global 覆盖的）
+	for name, skill := range builtinSkills() {
+		shadowed := false
+		for _, info := range skillInfos {
+			if info.Name == name {
+				shadowed = true
+				break
+			}
+		}
+		if !shadowed {
+			skillInfos = append(skillInfos, SkillInfo{
+				Name:       name,
+				Scope:      "built-in",
 				AutoInject: skill.AutoInject,
 			})
 		}

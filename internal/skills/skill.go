@@ -50,6 +50,15 @@ func builtinDscliSkill() Skill {
 	return dscliSkillValue
 }
 
+// builtinSkills returns all built-in skills keyed by name.
+// Built-in skills have the lowest priority: local > global > built-in.
+// When adding a new built-in skill, register it here.
+func builtinSkills() map[string]Skill {
+	return map[string]Skill{
+		"dscli": builtinDscliSkill(),
+	}
+}
+
 var ErrInvalidFrontmatter = errors.New("invalid frontmatter format")
 
 type Resource struct {
@@ -828,11 +837,12 @@ func BuildSkillPrompt(ctx context.Context, allowed ...string) string {
 		allSkills = filtered
 	}
 
-	// Inject built-in dscli skill if not overridden by user.
-	// Placed after allowlist filter so it's always present regardless of filtering.
-	if _, exists := allSkills["dscli"]; !exists {
-		builtin := builtinDscliSkill()
-		allSkills["dscli"] = builtin
+	// Inject built-in skills not overridden by user.
+	// Placed after allowlist filter so they're always present regardless of filtering.
+	for name, skill := range builtinSkills() {
+		if _, exists := allSkills[name]; !exists {
+			allSkills[name] = skill
+		}
 	}
 
 	if len(allSkills) == 0 {
