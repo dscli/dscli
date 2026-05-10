@@ -256,7 +256,7 @@ func handleSearchCodeSemantic(ctx context.Context, args toolcall.ToolArgs) (resu
 
 		// 检查全局匹配数限制
 		if maxMatches > 0 && totalMatches >= maxMatches {
-			outfmt.Printf("⚠️ 已达到全局最大匹配数限制 (%d)，停止搜索", maxMatches)
+			outfmt.Printf("⚠️ 已达到全局最大匹配数限制 (%d)，停止搜索\n", maxMatches)
 			break
 		}
 	}

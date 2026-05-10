@@ -576,13 +576,10 @@ func SetAutoInject(name string, autoInject, global bool) error {
 }
 
 func HandleSkillCreate(ctx context.Context, name, description, content, keywordsStr string, autoInject bool) (result, warning string, err error) {
-	// Validate name against spec: lowercase alphanumeric + hyphens, ≤ 64 chars
-	if !validSkillNamePattern(name) {
-		err = fmt.Errorf("invalid skill name %q: must be lowercase letters, digits, and hyphens only (kebab-case), e.g. 'my-helper'", name)
-		return result, warning, err
-	}
-	if len(name) > 64 {
-		err = fmt.Errorf("skill name %q exceeds 64 characters (is %d)", name, len(name))
+	// Validate name against spec rules
+	errs := validateName(name)
+	if len(errs) > 0 {
+		err = fmt.Errorf("invalid skill name %q: %s", name, strings.Join(errs, "; "))
 		return result, warning, err
 	}
 

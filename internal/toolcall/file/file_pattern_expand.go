@@ -96,7 +96,7 @@ func recursiveGlob(pattern string, config SearchConfig) ([]string, error) {
 	err := filepath.Walk(baseDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			// 记录错误但继续
-			outfmt.Printf("⚠️ 访问路径 %s 时出错: %v", path, err)
+			outfmt.Printf("⚠️ 访问路径 %s 时出错: %v\n", path, err)
 			return nil
 		}
 
@@ -143,7 +143,7 @@ func recursiveGlob(pattern string, config SearchConfig) ([]string, error) {
 			// 匹配目标模式
 			matched, err := filepath.Match(pattern, info.Name())
 			if err != nil {
-				outfmt.Printf("⚠️ 模式匹配错误 %s: %v", pattern, err)
+				outfmt.Printf("⚠️ 模式匹配错误 %s: %v\n", pattern, err)
 				return nil
 			}
 			if matched {

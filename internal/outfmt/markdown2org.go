@@ -286,7 +286,20 @@ func (c *MarkdownToOrgConverter) convertItalicInBold(text string) string {
 }
 
 // ConvertLines converts input to output line by line (simpler, more reliable)
+// ConvertLines converts input to output line by line (simpler, more reliable)
 func (c *MarkdownToOrgConverter) ConvertLines(input string, output io.Writer) error {
+	// Reset state to prevent cross-call corruption.
+	// A previous call might have left inCodeBlock=true
+	// (e.g. DebugBytes interrupted, or malformed Printf without closing fence),
+	// which would cause subsequent output to misinterpret
+	// opening/closing fences and produce reversed begin_src/end_src.
+	c.inCodeBlock = false
+	c.inOrgBlock = false
+	c.currentCodeLang = ""
+	// Discard any leftover content from previous malformed calls
+	// (e.g. Printf without trailing \n that left content in buf).
+	c.buf.Reset()
+
 	for _, r := range input {
 		if r != '\n' {
 			c.buf.WriteRune(r)
@@ -299,5 +312,16 @@ func (c *MarkdownToOrgConverter) ConvertLines(input string, output io.Writer) er
 			c.buf.Reset()
 		}
 	}
+
+	// Flush remaining content when input doesn't end with \n.
+	if c.buf.Len() > 0 {
+		line := c.buf.String()
+		converted := c.ConvertLine(line + "\n")
+		if _, err := output.Write([]byte(converted)); err != nil {
+			return fmt.Errorf("failed to write output: %w", err)
+		}
+		c.buf.Reset()
+	}
+
 	return nil
 }

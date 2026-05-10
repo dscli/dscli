@@ -224,11 +224,10 @@ func JSONMarshal(v any) ([]byte, error) {
 }
 
 // DebugBytes output bytes if debug
+// DebugBytes output bytes if debug
 func DebugBytes(lang string, b []byte) {
 	if outputVerbose {
-		Printf("```%s\n", lang)
-		Println(string(b))
-		Println("```")
+		Printf("```%s\n%s\n```\n", lang, string(b))
 	}
 }
 

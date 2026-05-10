@@ -16,6 +16,7 @@ import (
 	"unicode"
 
 	"github.com/goccy/go-yaml"
+	"golang.org/x/text/unicode/norm"
 )
 
 //go:embed how_to_use_a_skill.md
@@ -257,55 +258,29 @@ func ParseSkill(path string, skill *Skill) error {
 
 // validateSkillName checks skill name against the spec constraints.
 // Issues are logged as warnings; loading continues (lenient validation).
+// validateSkillName checks skill name against the spec constraints.
+// Issues are logged as warnings; loading continues (lenient validation).
 func validateSkillName(name, skillDir, skillPath string) {
 	dirName := filepath.Base(skillDir)
 
+	// Use normalized name for checks
+	normalized := norm.NFKC.String(name)
+	normalizedDir := norm.NFKC.String(dirName)
+
 	// Check: name matches parent directory (spec requirement)
-	if name != dirName {
+	if normalized != normalizedDir {
 		fmt.Fprintf(os.Stderr,
 			"Warning: skill name %q does not match directory %q in %s\n",
 			name, dirName, skillPath)
 	}
 
-	// Check: name length ≤ 64 characters
-	if len(name) > 64 {
-		fmt.Fprintf(os.Stderr,
-			"Warning: skill name %q exceeds 64 characters (is %d) in %s\n",
-			name, len(name), skillPath)
-	}
-
-	// Check: name format — lowercase alphanumeric + hyphens only (kebab-case)
-	if !validSkillNamePattern(name) {
-		fmt.Fprintf(os.Stderr,
-			"Warning: skill name %q contains invalid characters; use only lowercase letters, digits, and hyphens in %s\n",
-			name, skillPath)
+	// Run full name validation
+	errs := validateName(normalized)
+	for _, e := range errs {
+		fmt.Fprintf(os.Stderr, "Warning: %s in %s\n", e, skillPath)
 	}
 }
 
-// validSkillNamePattern checks whether the name follows the spec:
-// lowercase alphanumeric characters and hyphens only (kebab-case).
-func validSkillNamePattern(name string) bool {
-	if name == "" {
-		return false
-	}
-	for i, r := range name {
-		if r >= 'a' && r <= 'z' {
-			continue
-		}
-		if r >= '0' && r <= '9' {
-			continue
-		}
-		if r == '-' {
-			// hyphens allowed but not at start or end
-			if i == 0 || i == len(name)-1 {
-				return false
-			}
-			continue
-		}
-		return false
-	}
-	return true
-}
 // parseSkillFrontmatter 解析 r 中的 frontmatter 和正文。
 func parseSkillFrontmatter(r io.Reader, skill *Skill) error {
 	scanner := bufio.NewScanner(r)
