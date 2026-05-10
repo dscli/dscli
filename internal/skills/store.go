@@ -470,6 +470,25 @@ func Use(name string) (content string, err error) {
 	return "", fmt.Errorf("skill %s not found in local or global store", name)
 }
 
+// ResolveSkillDir resolves a skill name to its directory path by looking up
+// local and global stores. Returns empty string if the skill is not found.
+// The built-in dscli skill (virtual, no directory) is NOT resolved by this function.
+func ResolveSkillDir(name string) string {
+	localStore, err := LocalStore()
+	if err == nil {
+		if skill, ok := localStore.Skills[name]; ok && skill.Path != "(built-in)" {
+			return skill.Path
+		}
+	}
+	globalStore, err := GlobalStore()
+	if err == nil {
+		if skill, ok := globalStore.Skills[name]; ok && skill.Path != "(built-in)" {
+			return skill.Path
+		}
+	}
+	return ""
+}
+
 // List 返回存储中的所有技能名称
 func (store *Store) List() []string {
 	if store == nil || store.Skills == nil {
@@ -486,7 +505,9 @@ func (store *Store) List() []string {
 	return names
 }
 
-// ListAll 返回所有技能（本地和全局）的列表
+// ListAll 返回所有技能（本地和全局）的列表。
+// The built-in dscli skill (Source="built-in", Path="(built-in)") is excluded —
+// it exists only in BuildSkillPrompt and is never stored in local/global stores.
 func ListAll() ([]SkillInfo, error) {
 	localStore, err := LocalStore()
 	if err != nil {
@@ -504,6 +525,10 @@ func ListAll() ([]SkillInfo, error) {
 	// 添加本地技能
 	for _, name := range localStore.List() {
 		skill := localStore.Skills[name]
+		// Skip built-in skill sentinel (should never be in a store, but guard defensively)
+		if skill.Source == "built-in" || skill.Path == "(built-in)" {
+			continue
+		}
 		skillInfos = append(skillInfos, SkillInfo{
 			Name:       name,
 			Scope:      "local",
@@ -524,6 +549,10 @@ func ListAll() ([]SkillInfo, error) {
 
 		if !hasLocal {
 			skill := globalStore.Skills[name]
+			// Skip built-in skill sentinel (should never be in a store, but guard defensively)
+			if skill.Source == "built-in" || skill.Path == "(built-in)" {
+				continue
+			}
 			skillInfos = append(skillInfos, SkillInfo{
 				Name:       name,
 				Scope:      "global",

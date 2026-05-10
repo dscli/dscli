@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"gitcode.com/dscli/dscli/internal/skills"
 	"github.com/spf13/cobra"
@@ -9,9 +10,12 @@ import (
 
 func init() {
 	validateCmd := &cobra.Command{
-		Use:   "validate <path>",
+		Use:   "validate <path|skill-name>",
 		Short: "校验技能目录是否符合 Agent Skills 规范",
-		Long: `校验指定的技能目录是否符合 Agent Skills 规范。
+		Long: `校验指定的技能目录或技能名称是否符合 Agent Skills 规范。
+
+接受技能目录路径或技能名称。给定名称时，从本地和全局 store 中查找该技能
+并校验其目录。
 
 检查项包括：
   - 目录存在且可访问
@@ -28,20 +32,42 @@ func init() {
 
 示例：
   dscli skill validate ./my-skill
+  dscli skill validate go-fix
   dscli skill validate ~/src/agent-skills/skills/go-fix`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := args[0]
-			errors := skills.ValidateSkillDir(path)
-			if len(errors) == 0 {
-				fmt.Println("✅ 技能目录校验通过")
+			arg := args[0]
+
+			// 1. Try as directory path first
+			if info, err := os.Stat(arg); err == nil && info.IsDir() {
+				errs := skills.ValidateSkillDir(arg)
+				if len(errs) == 0 {
+					fmt.Println("✅ 技能目录校验通过")
+					return nil
+				}
+				fmt.Println("❌ 技能目录校验失败:")
+				for _, e := range errs {
+					fmt.Printf("   - %s\n", e)
+				}
+				return fmt.Errorf("发现 %d 个问题", len(errs))
+			}
+
+			// 2. Try as skill name — resolve to directory via local/global store
+			dir := skills.ResolveSkillDir(arg)
+			if dir == "" {
+				return fmt.Errorf("not a valid directory or skill name: %q", arg)
+			}
+
+			errs := skills.ValidateSkillDir(dir)
+			if len(errs) == 0 {
+				fmt.Printf("✅ 技能 %q 校验通过 (%s)\n", arg, dir)
 				return nil
 			}
-			fmt.Println("❌ 技能目录校验失败:")
-			for _, e := range errors {
+			fmt.Printf("❌ 技能 %q 校验失败 (%s):\n", arg, dir)
+			for _, e := range errs {
 				fmt.Printf("   - %s\n", e)
 			}
-			return fmt.Errorf("发现 %d 个问题", len(errors))
+			return fmt.Errorf("发现 %d 个问题", len(errs))
 		},
 	}
 	skillCmd.AddCommand(validateCmd)
