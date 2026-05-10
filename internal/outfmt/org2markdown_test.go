@@ -271,3 +271,147 @@ func TestOrgToMarkdown_ZeroWidthSpace(t *testing.T) {
 		t.Errorf("OrgToMarkdown with ZWS: got %q, want %q", got, want)
 	}
 }
+
+func TestOrgToMarkdown_Table(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name: "basic org table",
+			input: strings.Join([]string{
+				"| Name  | Phone | Age |",
+				"|-------+-------+-----|",
+				"| Peter |  1234 |  17 |",
+				"| Anna  |  4321 |  25 |",
+			}, "\n"),
+			want: strings.Join([]string{
+				"| Name  | Phone | Age |",
+				"|-------|-------|-----|",
+				"| Peter | 1234  | 17  |",
+				"| Anna  | 4321  | 25  |",
+			}, "\n"),
+		},
+		{
+			name: "org table with inline formatting",
+			input: strings.Join([]string{
+				"| *Bold* | /Italic/ | =code= |",
+				"|--------+----------+--------|",
+				"| +strike+ | _under_ | ~verb~ |",
+			}, "\n"),
+			want: strings.Join([]string{
+				"| **Bold**   | *Italic*     | `code` |",
+				"|------------|--------------|--------|",
+				"| ~~strike~~ | <u>under</u> | `verb` |",
+			}, "\n"),
+		},
+		{
+			name: "org table with mid-table separator",
+			input: strings.Join([]string{
+				"| Name  | Score |",
+				"|-------+-------|",
+				"| Alice |    95 |",
+				"| Bob   |    87 |",
+				"|-------+-------|",
+				"| Total |   182 |",
+			}, "\n"),
+			want: strings.Join([]string{
+				"| Name  | Score |",
+				"|-------|-------|",
+				"| Alice | 95    |",
+				"| Bob   | 87    |",
+				"| Total | 182   |",
+			}, "\n"),
+		},
+		{
+			name: "org table with links in cells",
+			input: strings.Join([]string{
+				"| Site  | URL |",
+				"|-------+-----|",
+				"| [[https://go.dev][Go]] | [[https://example.com]] |",
+			}, "\n"),
+			want: strings.Join([]string{
+				"| Site                 | URL                                        |",
+				"|----------------------|--------------------------------------------|",
+				"| [Go](https://go.dev) | [https://example.com](https://example.com) |",
+			}, "\n"),
+		},
+		{
+			name: "not a table - missing separator",
+			input: strings.Join([]string{
+				"| Name | Phone |",
+				"| Peter | 1234 |",
+			}, "\n"),
+			want: strings.Join([]string{
+				"| Name | Phone |",
+				"| Peter | 1234 |",
+			}, "\n"),
+		},
+		{
+			name: "single row passes through",
+			input: "| just a row |",
+			want:  "| just a row |",
+		},
+		{
+			name: "table inside code block - not converted",
+			input: strings.Join([]string{
+				"#+begin_src text",
+				"| Name | Value |",
+				"|------+-------|",
+				"| foo  | bar   |",
+				"#+end_src",
+			}, "\n"),
+			want: strings.Join([]string{
+				"```text",
+				"| Name | Value |",
+				"|------+-------|",
+				"| foo  | bar   |",
+				"```",
+			}, "\n"),
+		},
+		{
+			name: "table with leading whitespace",
+			input: strings.Join([]string{
+				"  | Name | Value |",
+				"  |------+-------|",
+				"  | foo  | bar   |",
+			}, "\n"),
+			want: strings.Join([]string{
+				"| Name | Value |",
+				"|------|-------|",
+				"| foo  | bar   |",
+			}, "\n"),
+		},
+		{
+			name: "two consecutive tables",
+			input: strings.Join([]string{
+				"| A | B |",
+				"|---+---|",
+				"| 1 | 2 |",
+				"",
+				"| C | D |",
+				"|---+---|",
+				"| 3 | 4 |",
+			}, "\n"),
+			want: strings.Join([]string{
+				"| A | B |",
+				"|---|---|",
+				"| 1 | 2 |",
+				"",
+				"| C | D |",
+				"|---|---|",
+				"| 3 | 4 |",
+			}, "\n"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := OrgToMarkdown(tt.input)
+			if got != tt.want {
+				t.Errorf("OrgToMarkdown table:\n got:\n%q\n want:\n%q", got, tt.want)
+			}
+		})
+	}
+}

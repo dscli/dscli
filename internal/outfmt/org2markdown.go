@@ -17,8 +17,8 @@ type orgToMarkdownConverter struct {
 	inSrcBlock     bool
 	inQuoteBlock   bool
 	inExampleBlock bool
+	tableBuf       []string // buffered table rows for multi-line processing
 }
-
 // convert converts org content line by line.
 func (c *orgToMarkdownConverter) convert(input string) string {
 	// Normalize line endings: split on \n, handle \r\n
@@ -26,11 +26,28 @@ func (c *orgToMarkdownConverter) convert(input string) string {
 	input = strings.ReplaceAll(input, "\r", "\n")
 	lines := strings.Split(input, "\n")
 
-	// Convert each line, collecting results.
 	var outLines []string
 	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Table row detection — only outside code/example/quote blocks.
+		if !c.inSrcBlock && !c.inExampleBlock && !c.inQuoteBlock && isTableRow(trimmed) {
+			c.tableBuf = append(c.tableBuf, trimmed)
+			continue
+		}
+
+		// Flush any buffered table rows before processing this line.
+		if len(c.tableBuf) > 0 {
+			outLines = append(outLines, c.flushOrgTableBuf()...)
+		}
+
 		converted := c.convertLine(line)
 		outLines = append(outLines, converted)
+	}
+
+	// Flush remaining table buffer at end of input.
+	if len(c.tableBuf) > 0 {
+		outLines = append(outLines, c.flushOrgTableBuf()...)
 	}
 
 	// Trim leading/trailing empty lines that result from
@@ -45,6 +62,114 @@ func (c *orgToMarkdownConverter) convert(input string) string {
 	}
 
 	return strings.Join(outLines[start:end], "\n")
+}
+
+// flushOrgTableBuf converts buffered org table rows to markdown table.
+// Returns the converted lines. If no valid table separator is found,
+// returns the buffered lines processed through convertLine individually.
+func (c *orgToMarkdownConverter) flushOrgTableBuf() []string {
+	defer func() { c.tableBuf = nil }()
+
+	if len(c.tableBuf) < 2 {
+		return c.passThroughTableBuf()
+	}
+
+	// Find the separator line index.
+	sepIdx := -1
+	for i, line := range c.tableBuf {
+		if isOrgTableSeparator(line) {
+			sepIdx = i
+			break
+		}
+	}
+
+	// No separator, or separator at first position (no header).
+	if sepIdx <= 0 {
+		return c.passThroughTableBuf()
+	}
+
+	// Parse all rows, skipping separator lines.
+	var rows [][]string
+	for _, line := range c.tableBuf {
+		if isOrgTableSeparator(line) {
+			continue
+		}
+		cells := parseTableRow(line)
+		if cells != nil {
+			rows = append(rows, cells)
+		}
+	}
+
+	if len(rows) == 0 {
+		return c.passThroughTableBuf()
+	}
+
+	// Determine max columns across all rows.
+	maxCols := 0
+	for _, row := range rows {
+		if len(row) > maxCols {
+			maxCols = len(row)
+		}
+	}
+
+	// Calculate per-column widths based on inline-converted cell content.
+	colWidths := make([]int, maxCols)
+	for _, row := range rows {
+		for i, cell := range row {
+			converted := c.convertInline(cell)
+			if len(converted) > colWidths[i] {
+				colWidths[i] = len(converted)
+			}
+		}
+	}
+
+	// Build markdown table output.
+	var out []string
+	for rowIdx, row := range rows {
+		var sb strings.Builder
+		sb.WriteString("|")
+		for colIdx := 0; colIdx < maxCols; colIdx++ {
+			var cell string
+			if colIdx < len(row) {
+				cell = c.convertInline(row[colIdx])
+			}
+			sb.WriteString(" ")
+			sb.WriteString(cell)
+			// Right-pad to column width.
+			pad := colWidths[colIdx] - len(cell)
+			for pad > 0 {
+				sb.WriteByte(' ')
+				pad--
+			}
+			sb.WriteString(" |")
+		}
+		out = append(out, sb.String())
+
+		// Insert separator after header (first) row.
+		if rowIdx == 0 {
+			var sep strings.Builder
+			sep.WriteString("|")
+			for colIdx := 0; colIdx < maxCols; colIdx++ {
+				for i := 0; i < colWidths[colIdx]+2; i++ {
+					sep.WriteByte('-')
+				}
+				sep.WriteString("|")
+			}
+			out = append(out, sep.String())
+		}
+	}
+
+	return out
+}
+
+// passThroughTableBuf passes buffered table lines through convertLine
+// individually, used when the buffer doesn't contain a valid table.
+func (c *orgToMarkdownConverter) passThroughTableBuf() []string {
+	var out []string
+	for _, line := range c.tableBuf {
+		out = append(out, c.convertLine(line))
+	}
+	return out
 }
 
 // convertLine converts a single org line to markdown.
