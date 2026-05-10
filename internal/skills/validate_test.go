@@ -73,7 +73,7 @@ func TestValidateNameUppercase(t *testing.T) {
 }
 
 func TestValidateNameTooLong(t *testing.T) {
-	longName := "a" + string(make([]byte, 69))[1:] // 70 chars, exceeds 64 limit
+	longName := "a" + string(make([]byte, 69))[1:]                                     // 70 chars, exceeds 64 limit
 	longName = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" // 69 a's
 	dir := t.TempDir()
 	skillDir := filepath.Join(dir, longName)

@@ -15,8 +15,8 @@ import (
 
 func init() {
 	historyCmd := AddRootCommand(&cobra.Command{
-		Use:   "history",
-		Short: "历史消息管理",
+		Use:               "history",
+		Short:             "历史消息管理",
 		PersistentPreRunE: historyPreRunE,
 	})
 	_ = AddCommand(historyCmd, &cobra.Command{

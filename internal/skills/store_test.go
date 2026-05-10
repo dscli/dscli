@@ -341,8 +341,8 @@ func TestMatchToken(t *testing.T) {
 	}{
 		{"go", "go", true},
 		{"go", "go-fix", true},        // "go-fix" 包含 "go"
-		{"modernize", "modern", true},  // query 包含 idx
-		{"modern", "modernize", true},  // idx 包含 query
+		{"modernize", "modern", true}, // query 包含 idx
+		{"modern", "modernize", true}, // idx 包含 query
 		{"python", "go", false},
 		{"", "go", false},
 		{"go", "", false},

@@ -1,5 +1,6 @@
 // Package toolcall provides toolcall framework
 package toolcall
+
 import (
 	"database/sql"
 	"encoding/json"
@@ -153,7 +154,6 @@ func KnownToolNames() []string {
 	sort.Strings(names)
 	return names
 }
-
 
 // GetAllTools 获取所有工具定义（用于API调用）
 // GetAllTools returns tools available for the current role.

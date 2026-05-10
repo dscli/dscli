@@ -11,7 +11,6 @@ import (
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
-
 //go:embed ask_user.md
 var ask_user_md string
 
@@ -20,7 +19,7 @@ var askUserTool = toolcall.ToolDef{
 	Name:        "ask_user",
 	DisplayName: "Ask User",
 	Description: ask_user_md,
-	Strict: true,
+	Strict:      true,
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{

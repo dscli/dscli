@@ -5,12 +5,18 @@ import (
 	"fmt"
 	"time"
 
+	"gitcode.com/dscli/dscli/internal/config"
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/prompt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
-// ChatRequest 扩展，支持 tools
+// DefaultMaxTokens 默认 max_tokens，可通过 config max-tokens 覆盖
+var DefaultMaxTokens = config.GetInt("max-tokens", 8192*48) // 384K
+
+// V4Enabled deepseek-v4 专有参数开关，默认开启。
+var V4Enabled = config.GetBool("deepseek-v4", true)
+
 // ChatRequest 扩展，支持 tools
 type ChatRequest struct {
 	Model           string           `json:"model"`

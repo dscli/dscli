@@ -19,7 +19,7 @@ func TestWriteToFile_BasicReplace(t *testing.T) {
 	path := filepath.Join(tmpDir, "test.go")
 
 	orig := "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\n"
-	os.WriteFile(path, []byte(orig), 0644)
+	os.WriteFile(path, []byte(orig), 0o644)
 
 	lines := splitAndStrip(orig)
 
@@ -40,7 +40,7 @@ func TestWriteToFile_ReplaceFirstLine(t *testing.T) {
 	path := filepath.Join(tmpDir, "test.go")
 
 	orig := "line1\nline2\nline3\n"
-	os.WriteFile(path, []byte(orig), 0644)
+	os.WriteFile(path, []byte(orig), 0o644)
 
 	lines := splitAndStrip(orig)
 
@@ -61,7 +61,7 @@ func TestWriteToFile_ReplaceLastLine(t *testing.T) {
 	path := filepath.Join(tmpDir, "test.go")
 
 	orig := "line1\nline2\nline3\n"
-	os.WriteFile(path, []byte(orig), 0644)
+	os.WriteFile(path, []byte(orig), 0o644)
 
 	lines := splitAndStrip(orig)
 
@@ -82,7 +82,7 @@ func TestWriteToFile_ReplaceEntireFile(t *testing.T) {
 	path := filepath.Join(tmpDir, "test.go")
 
 	orig := "line1\nline2\nline3\n"
-	os.WriteFile(path, []byte(orig), 0644)
+	os.WriteFile(path, []byte(orig), 0o644)
 
 	lines := splitAndStrip(orig)
 
@@ -103,7 +103,7 @@ func TestWriteToFile_NoTrailingNewlinePreserved(t *testing.T) {
 	path := filepath.Join(tmpDir, "test.go")
 
 	orig := "line1\nline2\nline3"
-	os.WriteFile(path, []byte(orig), 0644)
+	os.WriteFile(path, []byte(orig), 0o644)
 
 	lines := splitAndStrip(orig)
 
@@ -124,7 +124,7 @@ func TestWriteToFile_MultiLineReplacement(t *testing.T) {
 	path := filepath.Join(tmpDir, "test.go")
 
 	orig := "line1\nline2\nline3\nline4\nline5\n"
-	os.WriteFile(path, []byte(orig), 0644)
+	os.WriteFile(path, []byte(orig), 0o644)
 
 	lines := splitAndStrip(orig)
 
@@ -145,7 +145,7 @@ func TestWriteToFile_BoundsCheckStartLine(t *testing.T) {
 	path := filepath.Join(tmpDir, "test.go")
 
 	orig := "line1\nline2\n"
-	os.WriteFile(path, []byte(orig), 0644)
+	os.WriteFile(path, []byte(orig), 0o644)
 
 	lines := splitAndStrip(orig)
 
@@ -162,7 +162,7 @@ func TestWriteToFile_BoundsCheckEndLine(t *testing.T) {
 	path := filepath.Join(tmpDir, "test.go")
 
 	orig := "line1\nline2\n"
-	os.WriteFile(path, []byte(orig), 0644)
+	os.WriteFile(path, []byte(orig), 0o644)
 
 	lines := splitAndStrip(orig)
 
@@ -179,7 +179,7 @@ func TestWriteToFile_BoundsCheckEndBeforeStart(t *testing.T) {
 	path := filepath.Join(tmpDir, "test.go")
 
 	orig := "line1\nline2\nline3\n"
-	os.WriteFile(path, []byte(orig), 0644)
+	os.WriteFile(path, []byte(orig), 0o644)
 
 	lines := splitAndStrip(orig)
 
@@ -250,7 +250,7 @@ func TestWriteCodeSection_FunctionSelector(t *testing.T) {
 	path := filepath.Join(tmpDir, "test.go")
 
 	goCode := "package test\n\nfunc Foo() int {\n\tx := 1\n\ty := 2\n\treturn x + y\n}\n\nfunc Bar() string {\n\treturn \"hello\"\n}\n"
-	os.WriteFile(path, []byte(goCode), 0644)
+	os.WriteFile(path, []byte(goCode), 0o644)
 
 	ctx := context.Background()
 
@@ -291,7 +291,7 @@ func TestBar(t *testing.T) {
 	t.Log("bar")
 }
 `
-	os.WriteFile(path, []byte(goCode), 0644)
+	os.WriteFile(path, []byte(goCode), 0o644)
 
 	ctx := context.Background()
 
@@ -339,7 +339,7 @@ func main() {
 	fmt.Println("line6")
 }
 `
-	os.WriteFile(path, []byte(goCode), 0644)
+	os.WriteFile(path, []byte(goCode), 0o644)
 
 	ctx := context.Background()
 
@@ -375,7 +375,7 @@ func TestWriteCodeSection_TrailingNewlinePreserved(t *testing.T) {
 	path := filepath.Join(tmpDir, "test.go")
 
 	goCode := "package test\n\nfunc Foo() int {\n\treturn 1\n}\n"
-	os.WriteFile(path, []byte(goCode), 0644)
+	os.WriteFile(path, []byte(goCode), 0o644)
 
 	ctx := context.Background()
 

@@ -109,7 +109,7 @@ func runSkillRemove(cmd *cobra.Command, args []string) error {
 // directory is missing on disk — a "zombie" entry from manual deletion.
 // It reads the yaml directly (bypassing the store) to avoid triggering
 // Load's auto-clean which would remove the evidence before we can check.
-func isStaleCacheEntry(skillName string, skillsDir string) bool {
+func isStaleCacheEntry(skillName, skillsDir string) bool {
 	yamlPath := filepath.Join(skillsDir, "skills.yaml")
 	data, err := os.ReadFile(yamlPath)
 	if err != nil {

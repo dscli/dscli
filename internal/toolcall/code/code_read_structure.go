@@ -14,6 +14,7 @@ import (
 
 //go:embed code_read_structure.md
 var code_read_structure_md string
+
 // 这个工具让LLM能够获取代码文件的结构信息（函数、类、方法等），
 // 为后续的代码操作提供基础。
 func readCodeStructure(ctx context.Context, path string) (string, error) {

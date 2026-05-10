@@ -7,6 +7,7 @@ import (
 	"gitcode.com/dscli/dscli/internal/toolcall"
 	"github.com/spf13/cobra"
 )
+
 func init() {
 	toolCmd := AddRootCommand(&cobra.Command{
 		Use:   "tool",

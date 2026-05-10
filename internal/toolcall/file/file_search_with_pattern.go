@@ -14,6 +14,7 @@ import (
 
 //go:embed file_search_with_pattern.md
 var file_search_with_pattern_md string
+
 func init() {
 	// 注册文件模式搜索工具
 	toolcall.RegisterTool(toolcall.ToolDef{

@@ -468,6 +468,7 @@ func tokenizeName(name string) []string {
 	}
 	return tokens
 }
+
 // tokenizeText 将文本拆分为英文 token（小写、去标点、去停用词）。
 // 用于 description 的关键词提取，过滤高频无信息量词汇。
 // 短词（≤2 字符）也被过滤，防止 "on", "s" 等造成误匹配。

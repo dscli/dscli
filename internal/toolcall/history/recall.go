@@ -13,6 +13,7 @@ import (
 
 //go:embed recall.md
 var recall_md string
+
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "recall",
