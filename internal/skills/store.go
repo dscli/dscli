@@ -289,69 +289,11 @@ func (store *Store) QueryScored(query string) []ScoredSkill {
 	if query == "" {
 		return nil
 	}
-	queryLower := strings.ToLower(query)
-	queryTokens := tokenizeQuery(queryLower)
 
-	type scoreEntry struct {
-		skill Skill
-		score int
-	}
-	scores := make(map[string]*scoreEntry, len(store.Skills))
-
+	var results []ScoredSkill
 	for name, skill := range store.Skills {
-		entry := &scoreEntry{skill: skill}
-		scores[name] = entry
-
-		// 1. 精确名称匹配（大小写不敏感）
-		if strings.EqualFold(queryLower, name) {
-			entry.score += 100
-		}
-
-		// 2. 名称 token 匹配
-		nameTokens := tokenizeName(name)
-		for _, qt := range queryTokens {
-			if matchToken(qt, name) {
-				entry.score += 10
-				continue
-			}
-			for _, nt := range nameTokens {
-				if matchToken(qt, nt) {
-					entry.score += 10
-					break
-				}
-			}
-		}
-
-		// 3. 显式关键词匹配（skill.Keywords，不含名称派生词）
-		for _, qt := range queryTokens {
-			for _, kw := range skill.Keywords {
-				if matchToken(qt, kw) {
-					entry.score += 5
-					break
-				}
-			}
-		}
-
-		// 4. 描述词匹配（回退）
-		descToks := tokenizeText(skill.Description)
-		for _, qt := range queryTokens {
-			for _, dw := range descToks {
-				if matchToken(qt, dw) {
-					entry.score += 1
-					break
-				}
-			}
-		}
-	}
-
-	// 收集有分数的结果
-	results := make([]ScoredSkill, 0, len(scores))
-	for name, entry := range scores {
-		if entry.score > 0 {
-			results = append(results, ScoredSkill{
-				Skill: store.Skills[name],
-				Score: entry.score,
-			})
+		if s := skill.Score(query); s > 0 {
+			results = append(results, ScoredSkill{Skill: store.Skills[name], Score: s})
 		}
 	}
 
@@ -377,63 +319,9 @@ func matchToken(queryToken, idxToken string) bool {
 		strings.Contains(strings.ToLower(idxToken), strings.ToLower(queryToken))
 }
 
-// scoreSkill scores a single skill against a query string.
-// Used for built-in skill fallback in Query().
-// Scoring rules (same as Store.QueryScored):
-//  1. Exact name match: +100
-//  2. Query token in name or name tokens: +10 each
-//  3. Query token in explicit keywords: +5 each
-//  4. Query token in description: +1 each
-func scoreSkill(query, name string, skill *Skill) int {
-	queryLower := strings.ToLower(query)
-	queryTokens := tokenizeQuery(queryLower)
-
-	score := 0
-
-	// 1. Exact name match (case-insensitive)
-	if strings.EqualFold(queryLower, name) {
-		score += 100
-	}
-
-	// 2. Name token match
-	nameTokens := tokenizeName(name)
-	for _, qt := range queryTokens {
-		if matchToken(qt, name) {
-			score += 10
-			continue
-		}
-		for _, nt := range nameTokens {
-			if matchToken(qt, nt) {
-				score += 10
-				break
-			}
-		}
-	}
-
-	// 3. Explicit keyword match
-	for _, qt := range queryTokens {
-		for _, kw := range skill.Keywords {
-			if matchToken(qt, kw) {
-				score += 5
-				break
-			}
-		}
-	}
-
-	// 4. Description token match (fallback)
-	descToks := tokenizeText(skill.Description)
-	for _, qt := range queryTokens {
-		for _, dw := range descToks {
-			if matchToken(qt, dw) {
-				score += 1
-				break
-			}
-		}
-	}
-
-	return score
-}
-
+// Use looks up a skill by name within this specific store.
+// It does not check global or built-in skills.
+// For full resolution including fallback, use the package-level Use function.
 func (store *Store) Use(name string) (content string, err error) {
 	skill, ok := store.Skills[name]
 	if ok {
@@ -472,7 +360,7 @@ func Query(q string) (string, error) {
 		if seen[name] {
 			continue
 		}
-		if s := scoreSkill(q, name, &skill); s > 0 {
+		if s := skill.Score(q); s > 0 {
 			merged = append(merged, ScoredSkill{Skill: skill, Score: s})
 		}
 	}
@@ -546,13 +434,12 @@ func Use(name string) (content string, err error) {
 	if err == nil {
 		return content, nil
 	}
-
 	// Fallback to built-in skills
 	if skill, ok := builtinSkills()[name]; ok {
 		return skill.FormatFull(), nil
 	}
 
-	return "", fmt.Errorf("skill %s not found in local or global store", name)
+	return "", fmt.Errorf("skill %s not found in local, global, or built-in stores", name)
 }
 
 // ResolveSkillDir resolves a skill name to its directory path by looking up
@@ -646,23 +533,21 @@ func ListAll() ([]SkillInfo, error) {
 	}
 
 	// 添加内置技能（排除已被 local/global 覆盖的）
-	for name, skill := range builtinSkills() {
-		shadowed := false
-		for _, info := range skillInfos {
-			if info.Name == name {
-				shadowed = true
-				break
-			}
-		}
-		if !shadowed {
-			skillInfos = append(skillInfos, SkillInfo{
-				Name:       name,
-				Scope:      "built-in",
-				AutoInject: skill.AutoInject,
-			})
-		}
+	// 添加内置技能（排除已被 local/global 覆盖的）
+	seen := make(map[string]bool, len(skillInfos))
+	for _, info := range skillInfos {
+		seen[info.Name] = true
 	}
-
+	for name, skill := range builtinSkills() {
+		if seen[name] {
+			continue
+		}
+		skillInfos = append(skillInfos, SkillInfo{
+			Name:       name,
+			Scope:      "built-in",
+			AutoInject: skill.AutoInject,
+		})
+	}
 	// 按名称排序
 	sort.Slice(skillInfos, func(i, j int) bool {
 		return skillInfos[i].Name < skillInfos[j].Name

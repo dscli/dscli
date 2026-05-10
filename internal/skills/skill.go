@@ -117,6 +117,62 @@ func (skill *Skill) FormatFull() string {
 	return builder.String()
 }
 
+// Score computes a relevance score for this skill against a query string.
+// Scoring rules:
+//  1. Exact name match: +100
+//  2. Query token in name or name tokens: +10 each
+//  3. Query token in explicit keywords: +5 each
+//  4. Query token in description: +1 each
+func (skill *Skill) Score(query string) int {
+	queryLower := strings.ToLower(query)
+	queryTokens := tokenizeQuery(queryLower)
+
+	score := 0
+
+	// 1. Exact name match (case-insensitive)
+	if strings.EqualFold(queryLower, skill.Name) {
+		score += 100
+	}
+
+	// 2. Name token match
+	nameTokens := tokenizeName(skill.Name)
+	for _, qt := range queryTokens {
+		if matchToken(qt, skill.Name) {
+			score += 10
+			continue
+		}
+		for _, nt := range nameTokens {
+			if matchToken(qt, nt) {
+				score += 10
+				break
+			}
+		}
+	}
+
+	// 3. Explicit keyword match
+	for _, qt := range queryTokens {
+		for _, kw := range skill.Keywords {
+			if matchToken(qt, kw) {
+				score += 5
+				break
+			}
+		}
+	}
+
+	// 4. Description token match (fallback)
+	descToks := tokenizeText(skill.Description)
+	for _, qt := range queryTokens {
+		for _, dw := range descToks {
+			if matchToken(qt, dw) {
+				score += 1
+				break
+			}
+		}
+	}
+
+	return score
+}
+
 // formatResourceSection 格式化单个资源类型的列表，仅包含路径和描述。
 func formatResourceSection(builder *strings.Builder, title string, resources []Resource) {
 	if len(resources) == 0 {
