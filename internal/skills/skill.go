@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/goccy/go-yaml"
@@ -21,6 +22,33 @@ import (
 
 //go:embed how_to_use_a_skill.md
 var how_to_use_a_skill_md string
+
+//go:embed dscli-skill.md
+var dscliSkillMD string
+
+// dscliSkill holds the parsed built-in dscli skill, lazily initialized.
+var (
+	dscliSkillOnce  sync.Once
+	dscliSkillValue Skill
+)
+
+// builtinDscliSkill returns the built-in dscli skill, parsed from embedded dscli-skill.md.
+// This is a fallback: if the user creates a local/global dscli skill, that takes precedence.
+func builtinDscliSkill() Skill {
+	dscliSkillOnce.Do(func() {
+		if err := parseSkillFrontmatter(strings.NewReader(dscliSkillMD), &dscliSkillValue); err != nil {
+			// Should never happen for embedded content validated at build time.
+			panic("dscli-skill: failed to parse built-in skill: " + err.Error())
+		}
+		dscliSkillValue.Path = "(built-in)"
+		dscliSkillValue.Source = "built-in"
+		// Extract keywords from name+description if YAML frontmatter didn't provide them.
+		if len(dscliSkillValue.Keywords) == 0 {
+			dscliSkillValue.Keywords = extractKeywords(dscliSkillValue.Name, dscliSkillValue.Description)
+		}
+	})
+	return dscliSkillValue
+}
 
 var ErrInvalidFrontmatter = errors.New("invalid frontmatter format")
 
@@ -798,6 +826,13 @@ func BuildSkillPrompt(ctx context.Context, allowed ...string) string {
 			}
 		}
 		allSkills = filtered
+	}
+
+	// Inject built-in dscli skill if not overridden by user.
+	// Placed after allowlist filter so it's always present regardless of filtering.
+	if _, exists := allSkills["dscli"]; !exists {
+		builtin := builtinDscliSkill()
+		allSkills["dscli"] = builtin
 	}
 
 	if len(allSkills) == 0 {
