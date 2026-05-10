@@ -533,7 +533,6 @@ func ListAll() ([]SkillInfo, error) {
 	}
 
 	// 添加内置技能（排除已被 local/global 覆盖的）
-	// 添加内置技能（排除已被 local/global 覆盖的）
 	seen := make(map[string]bool, len(skillInfos))
 	for _, info := range skillInfos {
 		seen[info.Name] = true
