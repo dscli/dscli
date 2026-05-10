@@ -1,102 +1,110 @@
 ---
 name: dscli
-description:  dscli 核心概念：提示词、历史、技能、记忆。不讲参数，只讲 AI 不知道的事。
+description:  dscli core concepts: prompt, history, skills, memory. Not about parameters — only what the AI doesn't already know.
 keywords: [dscli, built-in, core, concepts]
 auto_inject: true
 ---
 
-# dscli 核心概念
+# dscli Core Concepts
 
-系统提示词已包含工具的 JSON schema，本文不重复参数。这里只讲你
-**不知道**的事：何时用、为何用、怎么用得对。
+The system prompt already includes tool JSON schemas — this document won't
+repeat parameters. Here we only cover what you **don't already know**: when to
+use each tool, why, and how to use it correctly.
 
-## 1. Prompt — 提示词
+## 1. Prompt
 
-每个角色（dev、expert、review 等）有独立的
-tools、skills、prompt。
+Each role (dev, expert, review, etc.) has its own tools, skills, and prompt.
 
-用户从软件开发转向其他领域时（比如写作），第一件事是让你把 dev 提示词
-"改"成新领域的提示词。
+When the user switches domains — say, from software development to writing —
+the first thing to do is adapt the dev prompt for the new domain.
 
-**你的做法**：先研究 dev 提示词的结构——语气、章节、规则、约束——然后
-刻意模仿它的架构来写新领域的提示词。照猫画虎，不要从零创作。
+**Your approach**: study the dev prompt's structure — its tone, sections,
+rules, constraints — then deliberately imitate its architecture to craft the
+new domain's prompt. Follow the blueprint; don't create from scratch.
 
-## 2. History — 历史
+## 2. History
 
-忘记历史就意味着背叛。但对 AI 而言，忘记才是常态——上下文窗口有限，
-旧的对话迟早被丢弃。
+To forget history is a mistake. But for an AI, forgetting is the default — the
+context window is finite, and old conversations are eventually discarded.
 
-两个工具对抗遗忘：
+Two tools fight against forgetting:
 
-- **`note`**：会话结束时留一条线索（≤40 字），注入下一次会话
-- **`recall`**：按关键词搜索过去的线索
+- **`note`**: leave one clue (≤40 chars) at session end, injected into the next session
+- **`recall`**: search past clues by keyword
 
-**不记 note，recall 就等于瞎了。** 历史沉入漫漫黑夜。
+**Without a note, `recall` is blind.** History sinks into silence.
 
-### 你倾向于不记——这是错的
+### You tend not to record — and that's a mistake
 
-你天然觉得记 note 没必要。但这三种情况**必须记**：
+It feels natural to skip recording a note. But these three
+situations **require** one:
 
-1. **难解的 bug 长时间才解决。**
-   解 bug 走了无数弯路，关键信息散落在漫长的对话里。不记 note，
-   下月再遇同类 bug，又得从头走弯路。
+1. **A stubborn bug solved after a long struggle.**
+   The fix took countless detours, with key insights scattered across a
+   sprawling conversation. Without a note, when a similar bug appears next
+   month, you'll retrace every wrong turn.
 
-2. **技术决策重要或反常识。**
-   绕了好几个弯才得出的结论。记下来，下次直达。
+2. **A technical decision that was important or counterintuitive.**
+   A conclusion reached only after several roundabout paths. Record it, and
+   next time go straight there.
 
-3. **刚学过/写过技能。**
-   `skill_save` 了新技能但不记 note，未来会话根本不知道它的存在。
-   `recall` 加对关键词，能把埋没的技能重新挖出来。
+3. **You just learned or wrote a skill.**
+   You `skill_save` a new skill but don't record a note — future sessions
+   will never know it exists. A `recall` with the right keywords can
+   resurrect buried skills.
 
-### 何时 recall
+### When to recall
 
-在以下操作**之前**先 recall：
-- `mem_save` 之前——查是否已记过类似内容
-- 写或更新 skill 之前——查过去的经验教训
-- 排查似曾相识的 bug——你可能已解过一次
+Run `recall` **before**:
+- `mem_save` — check if something similar was already recorded
+- Writing or updating a skill — check past lessons learned
+- Investigating a familiar-looking bug — you may have solved it before
 
-## 3. Skill — 技能
+## 3. Skill
 
-技能是解决问题的诀窍。你通过 `skill_save` 自己写技能。
+A skill is a reusable problem-solving recipe. You create skills yourself via
+`skill_save`.
 
-**技能的哲学**：今天花的 10 分钟写技能，是明天省下的指数级时间。
+**The philosophy of skills**: the 10 minutes you spend writing a skill today
+saves exponential time tomorrow.
 
-### 什么是好技能
+### What makes a good skill
 
-- **可执行**：一步一步的指令，不是理论文章
-- **自包含**：包含完成任务所需的一切，含脚本
-- **可检索**：好的 keywords，让 `skill_search` 找得到
+- **Executable**: step-by-step instructions, not a theoretical article
+- **Self-contained**: everything needed to complete the task, including scripts
+- **Searchable**: good keywords so `skill_search` can find it
 
-### 何时写技能
+### When to write a skill
 
-解决了一个会重复出现的非平凡问题——尤其涉及多个步骤、特定命令、
-或你费了一番功夫才发现的领域知识。
+When you've solved a non-trivial problem that will recur — especially one
+involving multiple steps, specific commands, or domain knowledge you had to
+work to discover.
 
-技能创建后可用 `dscli skill validate <name>` 校验格式。
+After creating a skill, validate it with `dscli skill validate <name>`.
 
-## 4. Memory — 记忆
+## 4. Memory
 
-记忆和历史不同。
+Memory is not the same as history.
 
-| | 历史 (History) | 记忆 (Memory) |
-|---|---|---|
-| **本质** | 只读。发生过就是发生过。 | 可修改。真理可以被更新。 |
-| **记录方式** | `note` — 简短线索 | `mem_save` — 详细知识 |
-| **用途** | 为 `recall` 留面包屑 | 持久化真理，避免重复发现 |
-| **生命周期** | 会话级 | 跨会话知识库 |
+|              | History                     | Memory                      |
+|--------------|-----------------------------|-----------------------------|
+| **Nature**   | Read-only. What happened, happened. | Mutable. Truth can be updated. |
+| **Recording**| `note` — a short clue       | `mem_save` — detailed knowledge |
+| **Purpose**  | Leave breadcrumbs for `recall` | Persist truth; avoid rediscovery |
+| **Lifespan** | Session-level               | Cross-session knowledge base |
 
-记忆和笔记也不同：
-- **笔记** (`note`/`recall`) 是面包屑——指向历史
-- **记忆** (`mem_save`/`mem_search`) 是真理——记录发现的规律
+Memory and notes also differ:
+- **Notes** (`note`/`recall`) are breadcrumbs — pointing to history
+- **Memories** (`mem_save`/`mem_search`) are truth — recording discovered patterns
 
-### 何时写记忆
+### When to write a memory
 
-- 发现了一个模式 → type: `pattern`
-- 做了一个设计决策 → type: `decision`
-- 修了一个非显而易见的 bug → type: `bugfix`
-- 学到了关于代码库的知识 → type: `learning`
+- Discovered a pattern → type: `pattern`
+- Made a design decision → type: `decision`
+- Fixed a non-obvious bug → type: `bugfix`
+- Learned something about the codebase → type: `learning`
 
-### 写记忆之前
+### Before writing a memory
 
-**必须先 `mem_search`**——你可能已经记过了。用 `mem_update`
-更新已有记忆，避免重复。
+**Always `mem_search` first** — you may have already recorded it. Use
+`mem_update` to update existing memories rather than creating duplicates.
