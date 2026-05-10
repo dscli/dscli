@@ -17,8 +17,10 @@ import (
 
 var (
 	globalStore *Store
+	globalErr   error
 	globalOnce  sync.Once
 	localStore  *Store
+	localErr    error
 	localOnce   sync.Once
 )
 
@@ -26,6 +28,7 @@ var (
 // This is primarily for tests that switch between different ProjectRoot directories.
 func ResetLocalStore() {
 	localStore = nil
+	localErr = nil
 	localOnce = sync.Once{}
 }
 
@@ -43,43 +46,41 @@ type ScoredSkill struct {
 }
 
 func LocalStore() (*Store, error) {
-	var err error
 	localOnce.Do(func() {
 		// Primary: <project>/.dscli/skills/ (dscli-native location)
 		dscliDir := filepath.Join(context.ProjectRoot, ".dscli", "skills")
-		err = os.MkdirAll(dscliDir, 0o755)
-		if err != nil {
+		localErr = os.MkdirAll(dscliDir, 0o755)
+		if localErr != nil {
 			return
 		}
-		localStore, err = NewSkillStore(dscliDir, "local")
+		localStore, localErr = NewSkillStore(dscliDir, "local")
 
 		// Secondary: <project>/.agents/skills/ (cross-client interoperability)
 		// Skills from .agents/skills/ are loaded and merged with lower priority:
 		// same-name skills in .dscli/skills/ take precedence.
-		if err == nil {
+		if localErr == nil {
 			agentsDir := filepath.Join(context.ProjectRoot, ".agents", "skills")
 			if info, statErr := os.Stat(agentsDir); statErr == nil && info.IsDir() {
 				mergeCrossClientSkills(localStore, agentsDir)
 			}
 		}
 	})
-	return localStore, err
+	return localStore, localErr
 }
 
 func GlobalStore() (*Store, error) {
-	var err error
 	globalOnce.Do(func() {
 		dir := filepath.Join(config.ConfigDir, "skills")
-		err = os.MkdirAll(dir, 0o755)
-		if err != nil {
+		globalErr = os.MkdirAll(dir, 0o755)
+		if globalErr != nil {
 			return
 		}
-		globalStore, err = NewSkillStore(dir, "global")
+		globalStore, globalErr = NewSkillStore(dir, "global")
 
 		// Secondary: ~/.agents/skills/ (cross-client user-level interoperability)
 		// Skills installed by other agents (Claude Code, Codex, etc.) at the
 		// user level are merged with lower priority.
-		if err == nil {
+		if globalErr == nil {
 			home, homeErr := os.UserHomeDir()
 			if homeErr == nil {
 				agentsDir := filepath.Join(home, ".agents", "skills")
@@ -89,7 +90,7 @@ func GlobalStore() (*Store, error) {
 			}
 		}
 	})
-	return globalStore, err
+	return globalStore, globalErr
 }
 
 func NewSkillStore(dir, source string) (*Store, error) {

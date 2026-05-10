@@ -771,12 +771,12 @@ func loadExamples(skillDir string, skill *Skill) error {
 // When allowed contains specific names, only those skills are included.
 func BuildSkillPrompt(ctx context.Context, allowed ...string) string {
 	localStore, localErr := LocalStore()
-	if localErr != nil {
+	if localErr != nil || localStore == nil {
 		localStore = &Store{}
 	}
 
 	globalStore, globalErr := GlobalStore()
-	if globalErr != nil {
+	if globalErr != nil || globalStore == nil {
 		globalStore = &Store{}
 	}
 
