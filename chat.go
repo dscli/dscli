@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/chimein"
+	"gitcode.com/dscli/dscli/internal/config"
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/dsc"
 	"gitcode.com/dscli/dscli/internal/outfmt"
@@ -108,11 +109,13 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx = context.WithValue(ctx, context.HistSizeKey, histSize)
 	ctx = context.WithValue(ctx, context.StartTimeKey, time.Now())
 
-	// Fetch starting balance
+	// Fetch starting balance (only when user-balance is enabled)
 	var startBalance map[string]string
-	if resp, err := DeepseekClient.Balance(); err == nil && len(resp.BalanceInfos) > 0 {
-		startBalance = resp.BalanceInfos[0]
-		ctx = context.WithValue(ctx, context.StartBalanceKey, startBalance)
+	if config.GetBool("user-balance", true) {
+		if resp, err := DeepseekClient.Balance(); err == nil && len(resp.BalanceInfos) > 0 {
+			startBalance = resp.BalanceInfos[0]
+			ctx = context.WithValue(ctx, context.StartBalanceKey, startBalance)
+		}
 	}
 	prompts, err := prompt.LoadPrompts(ctx)
 	if err != nil {
@@ -271,8 +274,8 @@ func PrintSessionStats(ctx context.Context) {
 		stats = append(stats, fmt.Sprintf("⏱️ %s", durationStr))
 	}
 
-	// 花费和余额
-	if startBalance["currency"] != "" {
+	// 花费和余额 (only when user-balance is enabled)
+	if config.GetBool("user-balance", true) && startBalance["currency"] != "" {
 		if resp, err := DeepseekClient.Balance(); err == nil && len(resp.BalanceInfos) > 0 {
 			for _, balance := range resp.BalanceInfos {
 				if balance["currency"] == startBalance["currency"] {
