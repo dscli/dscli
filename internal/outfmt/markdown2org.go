@@ -100,9 +100,9 @@ func (c *MarkdownToOrgConverter) convertLineCore(line string) string {
 	if c.inCodeBlock || c.inOrgBlock {
 		// 保持原始行的换行符
 		if hasNewline && !strings.HasSuffix(line, "\n") {
-			return strings.ReplaceAll(line, "_", "_\u200b") + "\n"
+			return line + "\n"
 		}
-		return strings.ReplaceAll(line, "_", "_\u200b")
+		return line
 	}
 
 	// Convert headers (# -> *, ## -> **, etc.)
@@ -182,12 +182,11 @@ func (c *MarkdownToOrgConverter) flushMdTableBuf() string {
 	}
 
 	// Calculate per-column widths based on converted cell content.
-	// Use visibleLen because convertMarkdownSimple inserts zero-width spaces.
 	colWidths := make([]int, maxCols)
 	for _, row := range rows {
 		for i, cell := range row {
 			converted := c.convertMarkdownSimple(cell)
-			w := visibleLen(converted)
+			w := len(converted)
 			if w > colWidths[i] {
 				colWidths[i] = w
 			}
@@ -205,8 +204,8 @@ func (c *MarkdownToOrgConverter) flushMdTableBuf() string {
 			}
 			result.WriteString(" ")
 			result.WriteString(cell)
-			// Right-pad to column width (use visibleLen for accurate spacing).
-			pad := colWidths[colIdx] - visibleLen(cell)
+			// Right-pad to column width.
+			pad := colWidths[colIdx] - len(cell)
 			for pad > 0 {
 				result.WriteByte(' ')
 				pad--
@@ -260,9 +259,9 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 					boldText := text[i+2 : j]
 					// 递归处理粗体中的斜体
 					boldText = c.convertItalicInBold(boldText)
-					result.WriteString("\u200b*")
+					result.WriteString("*")
 					result.WriteString(boldText)
-					result.WriteString("*\u200b")
+					result.WriteString("*")
 					i = j + 2
 					break
 				}
@@ -284,9 +283,9 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 				if text[j] == '*' && (j+1 >= n || text[j+1] != '*') {
 					// Found closing *
 					italicText := text[i+1 : j]
-					result.WriteString("\u200b/")
+					result.WriteString("/")
 					result.WriteString(italicText)
-					result.WriteString("/\u200b")
+					result.WriteString("/")
 					i = j + 1
 					break
 				}
@@ -306,9 +305,9 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 			for j < n {
 				if j+1 < n && text[j] == '~' && text[j+1] == '~' {
 					strikeText := text[i+2 : j]
-					result.WriteString("\u200b+")
+					result.WriteString("+")
 					result.WriteString(strikeText)
-					result.WriteString("+\u200b")
+					result.WriteString("+")
 					i = j + 2
 					break
 				}
@@ -329,9 +328,9 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 			}
 			if j < n {
 				codeText := text[i+1 : j]
-				result.WriteString("\u200b=")
+				result.WriteString("=")
 				result.WriteString(codeText)
-				result.WriteString("=\u200b")
+				result.WriteString("=")
 				i = j + 1
 			} else {
 				result.WriteByte(text[i])
@@ -396,9 +395,9 @@ func (c *MarkdownToOrgConverter) convertItalicInBold(text string) string {
 				if text[j] == '*' && (j+1 >= n || text[j+1] != '*') {
 					// Found closing *
 					italicText := text[i+1 : j]
-					result.WriteString("\u200b/")
+					result.WriteString("/")
 					result.WriteString(italicText)
-					result.WriteString("/\u200b")
+					result.WriteString("/")
 					i = j + 1
 					break
 				}

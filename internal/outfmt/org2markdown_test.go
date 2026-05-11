@@ -263,12 +263,12 @@ func TestOrgToMarkdown_PreservesNonOrg(t *testing.T) {
 }
 
 func TestOrgToMarkdown_ZeroWidthSpace(t *testing.T) {
-	// Zero-width spaces inserted by markdown2org should be stripped
+	// Zero-width spaces are preserved (no longer stripped, as markdown2org
+	// no longer inserts them).
 	input := "text with \u200bzero-width\u200b spaces"
-	want := "text with zero-width spaces"
 	got := OrgToMarkdown(input)
-	if got != want {
-		t.Errorf("OrgToMarkdown with ZWS: got %q, want %q", got, want)
+	if got != input {
+		t.Errorf("OrgToMarkdown with ZWS: got %q, want %q (pass-through)", got, input)
 	}
 }
 

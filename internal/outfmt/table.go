@@ -73,9 +73,3 @@ func isMarkdownTableSeparator(line string) bool {
 	}
 	return hasMinus
 }
-
-// visibleLen returns the visible length of a string by stripping
-// zero-width spaces inserted by the markdown→org converter.
-func visibleLen(s string) int {
-	return len(strings.ReplaceAll(s, "\u200b", ""))
-}

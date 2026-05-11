@@ -174,10 +174,6 @@ func (c *orgToMarkdownConverter) passThroughTableBuf() []string {
 
 // convertLine converts a single org line to markdown.
 func (c *orgToMarkdownConverter) convertLine(line string) string {
-	// Strip zero-width spaces inserted by markdown2org converter
-	// (defensive: clean input that might have been round-tripped)
-	line = strings.ReplaceAll(line, "\u200b", "")
-
 	trimmed := strings.TrimLeft(line, " \t")
 	indent := line[:len(line)-len(trimmed)]
 

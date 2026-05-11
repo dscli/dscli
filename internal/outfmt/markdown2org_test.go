@@ -31,30 +31,30 @@ func TestMarkdownToOrgConverter_ConvertLine(t *testing.T) {
 		{
 			name:     "粗体文本",
 			input:    "This is **bold** text\n",
-			expected: "This is \u200b*bold*\u200b text\n",
+			expected: "This is *bold* text\n",
 		},
 		{
 			name:     "多个粗体",
 			input:    "**bold1** and **bold2**\n",
-			expected: "\u200b*bold1*\u200b and \u200b*bold2*\u200b\n",
+			expected: "*bold1* and *bold2*\n",
 		},
 		// 斜体测试
 		{
 			name:     "斜体文本",
 			input:    "This is *italic* text\n",
-			expected: "This is \u200b/italic/\u200b text\n",
+			expected: "This is /italic/ text\n",
 		},
 		// 删除线测试
 		{
 			name:     "删除线文本",
 			input:    "This is ~~strikethrough~~ text\n",
-			expected: "This is \u200b+strikethrough+\u200b text\n",
+			expected: "This is +strikethrough+ text\n",
 		},
 		// 内联代码测试
 		{
 			name:     "内联代码",
 			input:    "Use `fmt.Println` function\n",
-			expected: "Use \u200b=fmt.Println=\u200b function\n",
+			expected: "Use =fmt.Println= function\n",
 		},
 		// 链接测试
 		{
@@ -66,7 +66,7 @@ func TestMarkdownToOrgConverter_ConvertLine(t *testing.T) {
 		{
 			name:     "混合格式",
 			input:    "# Title with **bold** and *italic*\n",
-			expected: "* Title with \u200b*bold*\u200b and \u200b/italic/\u200b\n",
+			expected: "* Title with *bold* and /italic/\n",
 		},
 		// 列表测试（保持不变）
 		{
@@ -208,7 +208,7 @@ func TestMarkdownToOrgConverter_EdgeCases(t *testing.T) {
 		{
 			name:     "嵌套格式",
 			input:    "**bold *italic* bold**\n",
-			expected: "\u200b*bold \u200b/italic/\u200b bold*\u200b\n",
+			expected: "*bold /italic/ bold*\n",
 		},
 		{
 			name:     "代码块无语言",
@@ -252,7 +252,7 @@ func TestMarkdownToOrgConverter_BoldItalicOrder(t *testing.T) {
 
 	// 测试粗体和斜体的顺序
 	input := "**bold** and *italic* and **bold with *nested* italic**\n"
-	expected := "\u200b*bold*\u200b and \u200b/italic/\u200b and \u200b*bold with \u200b/nested/\u200b italic*\u200b\n"
+	expected := "*bold* and /italic/ and *bold with /nested/ italic*\n"
 
 	result := converter.ConvertLine(input)
 	if result != expected {
@@ -264,7 +264,7 @@ func TestMarkdownToOrgConverter_BoldItalicOrder(t *testing.T) {
 func TestMarkdownToOrgConverter_CodeBlockUnderscore(t *testing.T) {
 	converter := NewMarkdownToOrgConverter()
 
-	// 测试1: Python代码块
+	// 测试1: Python代码块 - 下划线现在保持原样（不再插入零宽度空格）
 	input1 := "```python\ndef test_function():\n    my_variable = \"test\"\n    another_var = 123\n    print(my_variable)\n```\n"
 
 	lines1 := strings.Split(input1, "\n")
@@ -273,13 +273,13 @@ func TestMarkdownToOrgConverter_CodeBlockUnderscore(t *testing.T) {
 		result1.WriteString(converter.ConvertLine(line + "\n"))
 	}
 
-	// 检查是否包含零宽度空格
+	// 检查不包含零宽度空格
 	output1 := result1.String()
-	if !strings.Contains(output1, "\u200b") {
-		t.Error("Python代码块输出中应该包含零宽度空格")
+	if strings.Contains(output1, "\u200b") {
+		t.Error("Python代码块输出中不应该包含零宽度空格")
 	}
 
-	// 测试2: 普通文本中的下划线（不应该添加零宽度空格）
+	// 测试2: 普通文本中的下划线（保持不变）
 	input2 := "This is normal_text with underscores.\n"
 	expected2 := "This is normal_text with underscores.\n"
 	result2 := converter.ConvertLine(input2)
@@ -289,7 +289,7 @@ func TestMarkdownToOrgConverter_CodeBlockUnderscore(t *testing.T) {
 
 	// 测试3: 格式化文本中的下划线
 	input3 := "**bold_text** and `code_with_underscores`\n"
-	expected3 := "\u200b*bold_text*\u200b and \u200b=code_with_underscores=\u200b\n"
+	expected3 := "*bold_text* and =code_with_underscores=\n"
 	result3 := converter.ConvertLine(input3)
 	if result3 != expected3 {
 		t.Errorf("格式化文本下划线处理错误: got %q, want %q", result3, expected3)
@@ -368,9 +368,9 @@ func TestMarkdownToOrgConverter_Table(t *testing.T) {
 				"",
 			}, "\n"),
 			expected: strings.Join([]string{
-				"| \u200b*Bold*\u200b   | \u200b/Italic/\u200b     | \u200b=code=\u200b |\n",
+				"| *Bold*   | /Italic/     | =code= |\n",
 				"|----------+--------------+--------|\n",
-				"| \u200b+strike+\u200b | <u>under</u> | text   |\n",
+				"| +strike+ | <u>under</u> | text   |\n",
 				"\n",
 			}, ""),
 		},
