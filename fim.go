@@ -24,8 +24,9 @@ func init() {
 	flags := fimCmd.Flags()
 	flags.String("model", "deepseek-coder", "使用的模型名称")
 	flags.String("suffix", "", "补全后缀 (可选)")
-	flags.Int("max-tokens", 1024, "最大生成 token 数")
+	flags.Int("max-tokens", 0, "最大生成 token 数（0 使用配置默认值）")
 	flags.Float64("temperature", 0.7, "采样温度")
+	flags.StringArray("stop", nil, "停止词，可重复使用 (如: --stop '###' --stop 'END')")
 }
 
 func FimRunE(cmd *cobra.Command, args []string) (err error) {
@@ -62,6 +63,20 @@ func FimRunE(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return err
 	}
+
+	fimStop, err := cmd.Flags().GetStringArray("stop")
+	if err != nil {
+		return err
+	}
+	var stop any
+	switch len(fimStop) {
+	case 0:
+	case 1:
+		stop = fimStop[0]
+	default:
+		stop = fimStop
+	}
+
 	ctx := cmd.Context()
 	ctx = context.WithValue(ctx, context.CurrentModelIDKey, fimModel)
 	resp, err := DeepseekClient.FIM(ctx, dsc.FIMRequest{
@@ -70,6 +85,7 @@ func FimRunE(cmd *cobra.Command, args []string) (err error) {
 		Suffix:      fimSuffix,
 		MaxTokens:   fimMaxTokens,
 		Temperature: fimTemp,
+		Stop:        stop,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "FIM 请求失败: %v\n", err)

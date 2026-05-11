@@ -69,7 +69,7 @@ type FIMRequest struct {
 	TopP        float64 `json:"top_p,omitzero"`
 	Stream      bool    `json:"stream,omitzero"`
 	Echo        bool    `json:"echo,omitzero"`
-	Logprobs    int     `json:"logprobs,omitzero"`
+	Stop        any     `json:"stop,omitzero"`
 }
 
 // FIMResponse non-streaming FIM response.
