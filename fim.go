@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/dsc"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"github.com/spf13/cobra"
 )
@@ -64,8 +65,13 @@ func FimRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 	ctx := cmd.Context()
 	ctx = context.WithValue(ctx, context.CurrentModelIDKey, fimModel)
-	resp, err := DeepseekClient.FIM(ctx, prompt, fimSuffix, fimMaxTokens, fimTemp)
-	log.Printf("FIM请求成功，生成 %d 个补全结果", len(resp.Choices))
+	resp, err := DeepseekClient.FIM(ctx, dsc.FIMRequest{
+		Model:       fimModel,
+		Prompt:      prompt,
+		Suffix:      fimSuffix,
+		MaxTokens:   fimMaxTokens,
+		Temperature: fimTemp,
+	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "FIM 请求失败: %v\n", err)
 		os.Exit(1)
@@ -75,6 +81,7 @@ func FimRunE(cmd *cobra.Command, args []string) (err error) {
 		os.Exit(1)
 	}
 
+	log.Printf("FIM请求成功，生成 %d 个补全结果", len(resp.Choices))
 	outfmt.Println(resp.Choices[0].Text)
-	return err
+	return nil
 }

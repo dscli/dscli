@@ -2,7 +2,6 @@
 package dsc
 
 import (
-	"fmt"
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/config"
@@ -59,21 +58,47 @@ type Choice struct {
 	FinishReason string         `json:"finish_reason"`
 }
 
+// FIMRequest FIM (Fill-In-the-Middle) completion request.
+// For streaming, set Stream=true or use context.StreamKey.
 type FIMRequest struct {
 	Model       string  `json:"model"`
 	Prompt      string  `json:"prompt"`
 	Suffix      string  `json:"suffix,omitempty"`
 	MaxTokens   int     `json:"max_tokens,omitempty"`
 	Temperature float64 `json:"temperature,omitempty"`
+	TopP        float64 `json:"top_p,omitempty"`
+	Stream      bool    `json:"stream,omitempty"`
+	Echo        bool    `json:"echo,omitempty"`
+	Logprobs    int     `json:"logprobs,omitempty"`
 }
 
+// FIMResponse non-streaming FIM response.
 type FIMResponse struct {
 	ID      string      `json:"id"`
 	Choices []FIMChoice `json:"choices"`
+	Usage   FIMUsage    `json:"usage,omitempty"`
 }
 
 type FIMChoice struct {
-	Text string `json:"text"`
+	Text         string `json:"text"`
+	Index        int    `json:"index"`
+	FinishReason string `json:"finish_reason,omitempty"`
+}
+
+type FIMUsage struct {
+	CompletionTokens int `json:"completion_tokens"`
+	PromptTokens     int `json:"prompt_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
+// FIMStreamChunk SSE streaming response chunk for FIM.
+type FIMStreamChunk struct {
+	ID      string      `json:"id"`
+	Object  string      `json:"object"`
+	Created int64       `json:"created"`
+	Model   string      `json:"model"`
+	Choices []FIMChoice `json:"choices"`
+	Usage   *FIMUsage   `json:"usage,omitempty"`
 }
 
 type Deepseek struct {
@@ -86,7 +111,7 @@ type Deepseek struct {
 type Client interface {
 	Models() (*ModelsResponse, error)
 	Balance() (*BalanceResponse, error)
-	FIM(ctx context.Context, prompt, suffix string, maxTokens int, temperature float64) (*FIMResponse, error)
+	FIM(ctx context.Context, req FIMRequest) (*FIMResponse, error)
 	Chat(ctx context.Context, messages []prompt.Message, tools []toolcall.Tool) (*ChatResponse, error)
 }
 
@@ -115,10 +140,4 @@ func (c *Deepseek) Balance() (*BalanceResponse, error) {
 	var resp BalanceResponse
 	err := c.doRequest("GET", "/user/balance", nil, &resp)
 	return &resp, err
-}
-
-// FIM 实现填充中间代码功能
-func (c *Deepseek) FIM(ctx context.Context, prompt, suffix string, maxTokens int, temperature float64) (*FIMResponse, error) {
-	// TODO: 实现FIM功能
-	return nil, fmt.Errorf("FIM功能暂未实现")
 }

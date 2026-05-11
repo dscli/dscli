@@ -124,7 +124,7 @@ func (m *MockDeepseekClient) Models() (*dsc.ModelsResponse, error) {
 	return nil, nil
 }
 
-func (m *MockDeepseekClient) FIM(ctx context.Context, prompt, suffix string, maxTokens int, temperature float64) (*dsc.FIMResponse, error) {
+func (m *MockDeepseekClient) FIM(ctx context.Context, req dsc.FIMRequest) (*dsc.FIMResponse, error) {
 	return nil, nil
 }
 
