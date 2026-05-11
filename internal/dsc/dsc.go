@@ -20,11 +20,11 @@ var V4Enabled = config.GetBool("deepseek-v4", true)
 type ChatRequest struct {
 	Model           string           `json:"model"`
 	Messages        []prompt.Message `json:"messages"`
-	Tools           []toolcall.Tool  `json:"tools,omitempty"`
+	Tools           []toolcall.Tool  `json:"tools,omitzero"`
 	Stream          bool             `json:"stream"`
-	MaxTokens       int              `json:"max_tokens,omitempty"`
+	MaxTokens       int              `json:"max_tokens,omitzero"`
 	Thinking        Thinking         `json:"thinking"`
-	ReasoningEffort string           `json:"reasoning_effort,omitempty"`
+	ReasoningEffort string           `json:"reasoning_effort,omitzero"`
 }
 
 type Thinking struct {
@@ -63,26 +63,26 @@ type Choice struct {
 type FIMRequest struct {
 	Model       string  `json:"model"`
 	Prompt      string  `json:"prompt"`
-	Suffix      string  `json:"suffix,omitempty"`
-	MaxTokens   int     `json:"max_tokens,omitempty"`
-	Temperature float64 `json:"temperature,omitempty"`
-	TopP        float64 `json:"top_p,omitempty"`
-	Stream      bool    `json:"stream,omitempty"`
-	Echo        bool    `json:"echo,omitempty"`
-	Logprobs    int     `json:"logprobs,omitempty"`
+	Suffix      string  `json:"suffix,omitzero"`
+	MaxTokens   int     `json:"max_tokens,omitzero"`
+	Temperature float64 `json:"temperature,omitzero"`
+	TopP        float64 `json:"top_p,omitzero"`
+	Stream      bool    `json:"stream,omitzero"`
+	Echo        bool    `json:"echo,omitzero"`
+	Logprobs    int     `json:"logprobs,omitzero"`
 }
 
 // FIMResponse non-streaming FIM response.
 type FIMResponse struct {
 	ID      string      `json:"id"`
 	Choices []FIMChoice `json:"choices"`
-	Usage   FIMUsage    `json:"usage,omitempty"`
+	Usage   FIMUsage    `json:"usage,omitzero"`
 }
 
 type FIMChoice struct {
 	Text         string `json:"text"`
 	Index        int    `json:"index"`
-	FinishReason string `json:"finish_reason,omitempty"`
+	FinishReason string `json:"finish_reason,omitzero"`
 }
 
 type FIMUsage struct {
@@ -98,7 +98,7 @@ type FIMStreamChunk struct {
 	Created int64       `json:"created"`
 	Model   string      `json:"model"`
 	Choices []FIMChoice `json:"choices"`
-	Usage   *FIMUsage   `json:"usage,omitempty"`
+	Usage   *FIMUsage   `json:"usage,omitzero"`
 }
 
 type Deepseek struct {

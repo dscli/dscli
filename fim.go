@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"strings"
 
@@ -81,7 +80,6 @@ func FimRunE(cmd *cobra.Command, args []string) (err error) {
 		os.Exit(1)
 	}
 
-	log.Printf("FIM请求成功，生成 %d 个补全结果", len(resp.Choices))
 	outfmt.Println(resp.Choices[0].Text)
 	return nil
 }
