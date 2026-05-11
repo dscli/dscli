@@ -225,7 +225,7 @@ export MODEL_DEEPSEEK_REASONER="deepseek-reasoner"
 - 优先级：项目配置 > 全局配置 > 内置默认
 
 ## 🏗️ 项目结构
-
+```
 dscli/
 ├── main.go                    # 主入口
 ├── root.go                    # 根命令与初始化
@@ -277,8 +277,9 @@ dscli/
     │   └── web/                # Web 内容获取（web_reader）
     ├── tui/                    # TUI 界面模型（bubbletea）
     └── wechat/                 # 微信客户端（登录/消息/好友/群组）
-## 🔄 工作流程
+```
 
+## 🔄 工作流程
 
 1. **项目感知** — 自动识别 Git 仓库根目录，确定项目上下文
 2. **系统提示词** — 加载项目/全局/默认三级提示词，注入技能和笔记
