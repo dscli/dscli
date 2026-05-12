@@ -9,6 +9,8 @@ require (
 	github.com/goccy/go-yaml v1.19.2
 	github.com/spf13/cobra v1.8.0
 	golang.org/x/net v0.52.0
+	golang.org/x/term v0.41.0
+	golang.org/x/text v0.35.0
 	jaytaylor.com/html2text v0.0.0-20260303211410-1a4bdc82ecec
 	modernc.org/sqlite v1.28.0
 	mvdan.cc/sh/v3 v3.13.1
@@ -40,8 +42,6 @@ require (
 	golang.org/x/mod v0.33.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
-	golang.org/x/term v0.41.0 // indirect
-	golang.org/x/text v0.35.0 // indirect
 	golang.org/x/tools v0.42.0 // indirect
 	lukechampine.com/uint128 v1.2.0 // indirect
 	modernc.org/cc/v3 v3.40.0 // indirect

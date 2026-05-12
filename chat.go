@@ -19,6 +19,7 @@ import (
 	"gitcode.com/dscli/dscli/internal/toolcall"
 	"gitcode.com/dscli/dscli/internal/toolcall/alltools"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 const (
@@ -97,23 +98,42 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
 
-	content, err := ReadInputWithTimeout(cmd, args)
+	// 1. 优先从非阻塞来源读取内容（args 或 --input 文件路径）。
+	//    此时不读取 stdin，避免在没有主进程时因无输入而超时出错。
+	content, needStdin, err := gatherInput(cmd, args)
 	if err != nil {
 		return err
 	}
 
-	// 尝试获取项目级文件锁。
-	// 若已有其他 dscli chat 进程在运行，降级为 climein 模式：
-	// 将内容写入 chimeins 表，由主进程在下一轮 ChatRound 注入。
+	// 2. 尝试获取项目级文件锁。
+	//    若已有其他 dscli chat 进程在运行，降级为 climein 模式：
+	//    将内容写入 chimeins 表，由主进程在下一轮 ChatRound 注入。
 	lk, isPrimary, err := lockfile.TryLockLocal()
 	if err != nil {
 		return fmt.Errorf("lockfile: %w", err)
 	}
 	if !isPrimary {
 		// 降级为 climein
+		if needStdin {
+			input, _ := cmd.Flags().GetString("input")
+			// --input - 明确要求读取 stdin；或 stdin 是管道（非 TTY）时也读取，
+			// 避免丢弃用户通过管道传入的内容（如 echo "msg" | dscli chat）。
+			if input != "-" && isTerminal(os.Stdin) {
+				outfmt.Println("⚠️ 插话内容为空，未执行任何操作。")
+				return nil
+			}
+			b, readErr := io.ReadAll(bufio.NewReader(os.Stdin))
+			if readErr != nil {
+				return fmt.Errorf("读取标准输入失败: %w", readErr)
+			}
+			content = strings.TrimSpace(string(b))
+		}
 		if content == "" {
 			outfmt.Println("⚠️ 插话内容为空，未执行任何操作。")
 			return nil
+		}
+		if outfmt.GetOutputMode() == "org" {
+			content = outfmt.OrgToMarkdown(content)
 		}
 		if appendErr := chimein.Append(ctx, content); appendErr != nil {
 			return appendErr
@@ -124,6 +144,19 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 	// 主进程：持有锁直到进程退出
 	defer lk.Close()
+
+	// 3. 主进程：如果还需要从 stdin 读取，现在阻塞读取（没有超时限制，
+	//    因为用户正在主动使用 chat）。
+	if needStdin {
+		b, readErr := io.ReadAll(bufio.NewReader(os.Stdin))
+		if readErr != nil {
+			return fmt.Errorf("读取标准输入失败: %w", readErr)
+		}
+		content = strings.TrimSpace(string(b))
+	}
+	if outfmt.GetOutputMode() == "org" {
+		content = outfmt.OrgToMarkdown(content)
+	}
 
 	outfmt.PrintUserContent(ctx, content)
 	histSize, err := cmd.Flags().GetInt("histsize")
@@ -219,31 +252,31 @@ func readInputSource(source string) (string, error) {
 	return strings.TrimSpace(string(b)), nil
 }
 
-// ReadInputWithTimeout reads input with a 10s timeout to avoid hanging on empty stdin.
-func ReadInputWithTimeout(cmd *cobra.Command, args []string) (string, error) {
-	ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
-	defer cancel()
-
-	resultCh := make(chan string, 1)
-	errCh := make(chan error, 1)
-
-	go func() {
-		content, err := ReadInput(cmd, args)
-		if err != nil {
-			errCh <- err
-		} else {
-			resultCh <- content
-		}
-	}()
-
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	case res := <-resultCh:
-		return res, nil
-	case err := <-errCh:
-		return "", err
+// gatherInput reads input from args or --input flag without blocking on stdin.
+// Returns content, whether stdin read is still needed, and any error.
+// When needStdin=true, the caller must read from os.Stdin to get the content.
+func gatherInput(cmd *cobra.Command, args []string) (content string, needStdin bool, err error) {
+	if len(args) > 0 {
+		return strings.Join(args, " "), false, nil
 	}
+	input, err := cmd.Flags().GetString("input")
+	if err != nil {
+		return "", false, err
+	}
+	if input == "" || input == "-" {
+		return "", true, nil // caller must read stdin
+	}
+	// Read from file
+	b, err := os.ReadFile(input)
+	if err != nil {
+		return "", false, fmt.Errorf("读取输入文件 %s 失败: %w", input, err)
+	}
+	return strings.TrimSpace(string(b)), false, nil
+}
+
+// isTerminal reports whether the given file descriptor is a terminal.
+func isTerminal(f *os.File) bool {
+	return term.IsTerminal(int(f.Fd()))
 }
 
 // calculateCost 计算花费
