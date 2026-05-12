@@ -8,7 +8,6 @@ import (
 )
 
 // MarkdownToOrgConverter converts Markdown to Org mode
-// MarkdownToOrgConverter converts Markdown to Org mode
 type MarkdownToOrgConverter struct {
 	inCodeBlock     bool
 	inOrgBlock      bool
@@ -243,6 +242,7 @@ func (c *MarkdownToOrgConverter) passThroughMdTableBuf() string {
 	}
 	return result.String()
 }
+
 func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 	var result strings.Builder
 	i := 0
@@ -322,15 +322,29 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 
 		// Check for inline code `
 		if text[i] == '`' {
+			// Count consecutive backticks
+			tickCount := 1
+			for i+tickCount < n && text[i+tickCount] == '`' {
+				tickCount++
+			}
+			// 2+ backticks (`` or ```...): not inline code, pass through
+			if tickCount >= 2 {
+				for k := 0; k < tickCount; k++ {
+					result.WriteByte('`')
+				}
+				i += tickCount
+				continue
+			}
+			// Single backtick: inline code
 			j := i + 1
 			for j < n && text[j] != '`' {
 				j++
 			}
 			if j < n {
 				codeText := text[i+1 : j]
-				result.WriteString("=")
+				result.WriteString(" =")
 				result.WriteString(codeText)
-				result.WriteString("=")
+				result.WriteString("= ")
 				i = j + 1
 			} else {
 				result.WriteByte(text[i])
@@ -420,7 +434,7 @@ func (c *MarkdownToOrgConverter) convertItalicInBold(text string) string {
 }
 
 // ConvertLines converts input to output line by line (simpler, more reliable)
-// ConvertLines converts input to output line by line (simpler, more reliable)
+
 func (c *MarkdownToOrgConverter) ConvertLines(input string, output io.Writer) error {
 	// Reset state to prevent cross-call corruption.
 	// A previous call might have left inCodeBlock=true

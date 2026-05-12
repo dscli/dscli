@@ -54,7 +54,7 @@ func TestMarkdownToOrgConverter_ConvertLine(t *testing.T) {
 		{
 			name:     "内联代码",
 			input:    "Use `fmt.Println` function\n",
-			expected: "Use =fmt.Println= function\n",
+			expected: "Use  =fmt.Println=  function\n",
 		},
 		// 链接测试
 		{
@@ -289,7 +289,7 @@ func TestMarkdownToOrgConverter_CodeBlockUnderscore(t *testing.T) {
 
 	// 测试3: 格式化文本中的下划线
 	input3 := "**bold_text** and `code_with_underscores`\n"
-	expected3 := "*bold_text* and =code_with_underscores=\n"
+	expected3 := "*bold_text* and  =code_with_underscores= \n"
 	result3 := converter.ConvertLine(input3)
 	if result3 != expected3 {
 		t.Errorf("格式化文本下划线处理错误: got %q, want %q", result3, expected3)
@@ -368,9 +368,9 @@ func TestMarkdownToOrgConverter_Table(t *testing.T) {
 				"",
 			}, "\n"),
 			expected: strings.Join([]string{
-				"| *Bold*   | /Italic/     | =code= |\n",
-				"|----------+--------------+--------|\n",
-				"| +strike+ | <u>under</u> | text   |\n",
+				"| *Bold*   | /Italic/     |  =code=  |\n",
+				"|----------+--------------+----------|\n",
+				"| +strike+ | <u>under</u> | text     |\n",
 				"\n",
 			}, ""),
 		},

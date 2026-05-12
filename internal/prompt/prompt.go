@@ -37,7 +37,6 @@ type promptTemplate struct {
 }
 
 // promptConfig 模板数据
-// promptConfig 模板数据
 type promptConfig struct {
 	// 基础信息
 	CurrentDate string
@@ -366,7 +365,6 @@ func (t *promptTemplate) Render(data *promptConfig) (string, error) {
 }
 
 // GeneratePromptWithTemplate 使用模板生成提示词
-// GeneratePromptWithTemplate 使用模板生成提示词
 func (c *promptConfig) GeneratePromptWithTemplate() string {
 	tmpl := newPromptTemplate(c.ctx, c.Role)
 	if tmpl == nil {
@@ -389,7 +387,6 @@ func GetSystemPrompt(ctx context.Context) string {
 	return config.GeneratePromptWithTemplate()
 }
 
-// newPromptConfig 创建系统提示词配置
 // newPromptConfig 创建系统提示词配置
 func newPromptConfig(ctx context.Context) *promptConfig {
 	projectRoot := context.ProjectRoot

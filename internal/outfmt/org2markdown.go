@@ -19,6 +19,7 @@ type orgToMarkdownConverter struct {
 	inExampleBlock bool
 	tableBuf       []string // buffered table rows for multi-line processing
 }
+
 // convert converts org content line by line.
 func (c *orgToMarkdownConverter) convert(input string) string {
 	// Normalize line endings: split on \n, handle \r\n

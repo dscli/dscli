@@ -123,7 +123,6 @@ func locateMethod(structure *parse.FileStructure, lines []string, methodSelector
 }
 
 // locateLines 定位行范围（后备方案）
-// locateLines 定位行范围（后备方案）
 func locateLines(lines []string, lineSelector string) (string, error) {
 	// 行选择器格式: 开始行-结束行
 	parts := strings.Split(lineSelector, "-")

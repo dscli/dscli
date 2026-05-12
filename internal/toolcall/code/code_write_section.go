@@ -143,7 +143,6 @@ func locateMethodRange(structure *parse.FileStructure, methodSelector string) (i
 }
 
 // locateLinesRange 定位行范围（后备方案）
-// locateLinesRange 定位行范围（后备方案）
 func locateLinesRange(lines []string, lineSelector string) (int, int, error) {
 	// 行选择器格式: 开始行-结束行
 	parts := strings.Split(lineSelector, "-")
@@ -212,7 +211,6 @@ func buildWriteResult(path, selector string, startLine, endLine int, lines []str
 	return sb.String()
 }
 
-// writeToFile 将修改写入文件
 // writeToFile 将修改写入文件
 func writeToFile(path string, lines []string, startLine, endLine int, newContent string, hadTrailingNewline bool) error {
 	// 防御性边界检查：防止因解析器返回异常值导致的切片越界 panic

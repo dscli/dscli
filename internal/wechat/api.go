@@ -20,7 +20,6 @@ type Client struct {
 }
 
 // NewClient 创建新的微信客户端
-// NewClient 创建新的微信客户端
 func NewClient(config *Config) (*Client, error) {
 	// 确保数据库目录存在
 	dbDir := filepath.Dir(config.DBPath)

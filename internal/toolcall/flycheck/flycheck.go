@@ -80,7 +80,6 @@ func handleFlycheck(ctx context.Context, args toolcall.ToolArgs) (result, warnin
 }
 
 // formatPackageResult outputs package/directory check results in Markdown.
-// formatPackageResult outputs package/directory check results in Markdown.
 // Adapts terminology based on language: Go says "个包" and "编译错误",
 // Python says "个目录" and "静态错误".
 func formatPackageResult(r *flycheck.CheckResult) string {

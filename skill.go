@@ -149,7 +149,6 @@ source 为技能目录路径（包含 SKILL.md 的目录）。
 
 	addCmd.Flags().String("target", "local", "安装目标：global、local 或项目路径")
 	AddCommand(skillCmd, addCmd)
-
 }
 
 func skillValidateRunE(cmd *cobra.Command, args []string) error {

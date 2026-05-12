@@ -875,7 +875,6 @@ func TestIssueAPIBaseURLWithDeps(t *testing.T) {
 }
 
 // TestIssueAPIBaseURLCompatibility 测试与原始函数的兼容性
-// TestIssueAPIBaseURLCompatibility 测试与原始函数的兼容性
 func TestIssueAPIBaseURLCompatibility(t *testing.T) {
 	// 这个测试验证 issueAPIBaseURLWithDeps 与 IssueAPIBaseURL 行为一致
 	// 使用默认的token获取器

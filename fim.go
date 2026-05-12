@@ -2,9 +2,7 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"os"
-	"strings"
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/dsc"
@@ -17,29 +15,32 @@ func init() {
 		Use:   "fim [prompt...]",
 		Short: "FIM 代码补全",
 		Long: `发送提示给 DeepSeek FIM 模型进行代码补全。
-如果提供了参数，则将所有参数拼接作为 prompt；
-如果没有参数，则从标准输入读取 prompt。`,
+内容通过位置参数、标准输入提供，或通过 --input 指定文件。
+
+示例：
+   dscli fim 实现一个快速排序函数
+   echo "func fib(n int) int {" | dscli fim --suffix "}"
+   dscli fim --input prompt.txt
+   dscli fim <<EOF
+   func handleError(err error) {
+   EOF
+   dscli fim "实现冒泡排序" --stop '###' --stop 'END'`,
+
 		RunE: FimRunE,
 	})
 	flags := fimCmd.Flags()
-	flags.String("model", "deepseek-coder", "使用的模型名称")
+	flags.String("model", context.ModelDeepseekChat, "使用的模型名称")
 	flags.String("suffix", "", "补全后缀 (可选)")
 	flags.Int("max-tokens", 0, "最大生成 token 数（0 使用配置默认值）")
 	flags.Float64("temperature", 0.7, "采样温度")
 	flags.StringArray("stop", nil, "停止词，可重复使用 (如: --stop '###' --stop 'END')")
+	flags.String("input", "", "从文件读取 prompt（留空则从标准输入读取）")
 }
 
 func FimRunE(cmd *cobra.Command, args []string) (err error) {
-	var prompt string
-	if len(args) > 0 {
-		prompt = strings.Join(args, " ")
-	} else {
-		var data []byte
-		data, err = io.ReadAll(os.Stdin)
-		if err != nil {
-			return err
-		}
-		prompt = strings.TrimSpace(string(data))
+	prompt, err := ReadInput(cmd, args)
+	if err != nil {
+		return err
 	}
 	if prompt == "" {
 		err = fmt.Errorf("错误: prompt 不能为空")

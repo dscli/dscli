@@ -8,7 +8,7 @@ import (
 func TestOrgToMarkdown_Headings(t *testing.T) {
 	tests := []struct {
 		name  string
-	input string
+		input string
 		want  string
 	}{
 		{
@@ -349,7 +349,7 @@ func TestOrgToMarkdown_Table(t *testing.T) {
 			}, "\n"),
 		},
 		{
-			name: "single row passes through",
+			name:  "single row passes through",
 			input: "| just a row |",
 			want:  "| just a row |",
 		},

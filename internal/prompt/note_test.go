@@ -70,7 +70,6 @@ func TestSaveNoteAndBuildNotePrompt(t *testing.T) {
 }
 
 // TestSaveNote_Truncation 验证超过40字自动截断
-// TestSaveNote_Truncation 验证超过40字自动截断
 func TestSaveNote_Truncation(t *testing.T) {
 	ctx := context.Background()
 
