@@ -13,6 +13,7 @@ import (
 	"gitcode.com/dscli/dscli/internal/config"
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/dsc"
+	"gitcode.com/dscli/dscli/internal/lockfile"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/prompt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
@@ -100,6 +101,29 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return err
 	}
+
+	// 尝试获取项目级文件锁。
+	// 若已有其他 dscli chat 进程在运行，降级为 climein 模式：
+	// 将内容写入 chimeins 表，由主进程在下一轮 ChatRound 注入。
+	lk, isPrimary, err := lockfile.TryLockLocal()
+	if err != nil {
+		return fmt.Errorf("lockfile: %w", err)
+	}
+	if !isPrimary {
+		// 降级为 climein
+		if content == "" {
+			outfmt.Println("⚠️ 插话内容为空，未执行任何操作。")
+			return nil
+		}
+		if appendErr := chimein.Append(ctx, content); appendErr != nil {
+			return appendErr
+		}
+		outfmt.PrintUserContent(ctx, content)
+		outfmt.Println("✅ 已有主 chat 进程运行中，内容已作为插话追加。")
+		return nil
+	}
+	// 主进程：持有锁直到进程退出
+	defer lk.Close()
 
 	outfmt.PrintUserContent(ctx, content)
 	histSize, err := cmd.Flags().GetInt("histsize")
