@@ -159,11 +159,7 @@ dscli version
 ## ⚙️ 高级配置
 
 ### 配置文件
-- 配置目录：`~/.dscli/`
 - 配置文件：`~/.dscli/config.dscli`
-- 数据库：`~/.dscli/sqlite.db`
-- 全局提示词：`~/.dscli/prompt/chat.md`、`~/.dscli/prompt/reasoner.md`
-- 全局技能：`~/.dscli/skills/`
 
 ### 项目级配置
 - 项目配置目录：`<project>/.dscli/`
