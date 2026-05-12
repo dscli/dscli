@@ -105,13 +105,34 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		return err
 	}
 
-	// 2. 尝试获取项目级文件锁。
+	// 提前读取 histSize，用于判断是否为 standalone 模式。
+	histSize, err := cmd.Flags().GetInt("histsize")
+	if err != nil {
+		return err
+	}
+	ctx = context.WithValue(ctx, context.HistSizeKey, histSize)
+
+	// Standalone 模式：--histsize 0 且 role 非 dev（expert/review）。
+	// 这些是由工具处理器（ask_expert / code_review）发起的一次性查询，
+	// 不需要对话历史，且必须通过 stdout 同步返回 AI 响应——
+	// 因此绕过锁检查，避免被强制降级为 chimein。
+	role := context.ContextValue(ctx, context.CurrentRoleKey, "dev")
+	isStandalone := histSize == 0 && role != "dev"
+
+	// 2. 尝试获取项目级文件锁（standalone 模式跳过）。
 	//    若已有其他 dscli chat 进程在运行，降级为 climein 模式：
 	//    将内容写入 chimeins 表，由主进程在下一轮 ChatRound 注入。
-	lk, isPrimary, err := lockfile.TryLockLocal()
-	if err != nil {
-		return fmt.Errorf("lockfile: %w", err)
+	var lk *lockfile.Lock
+	var isPrimary bool
+	if !isStandalone {
+		lk, isPrimary, err = lockfile.TryLockLocal()
+		if err != nil {
+			return fmt.Errorf("lockfile: %w", err)
+		}
+	} else {
+		isPrimary = true
 	}
+
 	if !isPrimary {
 		// 降级为 climein
 		if needStdin {
@@ -142,8 +163,10 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		outfmt.Println("✅ 已有主 chat 进程运行中，内容已作为插话追加。")
 		return nil
 	}
-	// 主进程：持有锁直到进程退出
-	defer lk.Close()
+	// 主进程（或 standalone 模式）：持有锁直到进程退出
+	if lk != nil {
+		defer lk.Close()
+	}
 
 	// 3. 主进程：如果还需要从 stdin 读取，现在阻塞读取（没有超时限制，
 	//    因为用户正在主动使用 chat）。
@@ -159,11 +182,6 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	outfmt.PrintUserContent(ctx, content)
-	histSize, err := cmd.Flags().GetInt("histsize")
-	if err != nil {
-		return err
-	}
-	ctx = context.WithValue(ctx, context.HistSizeKey, histSize)
 	ctx = context.WithValue(ctx, context.StartTimeKey, time.Now())
 
 	// Fetch starting balance (only when user-balance is enabled)
