@@ -158,19 +158,6 @@ dscli version
 
 ## ⚙️ 高级配置
 
-### 环境变量
-```bash
-# 必需：API 密钥
-export DEEPSEEK_API_KEY="your-api-key"
-
-# 可选：API 地址（默认 https://api.deepseek.com）
-export DEEPSEEK_BASE_URL="https://api.deepseek.com"
-
-# 可选：模型配置
-export MODEL_DEEPSEEK_CHAT="deepseek-chat"
-export MODEL_DEEPSEEK_REASONER="deepseek-reasoner"
-```
-
 ### 配置文件
 - 配置目录：`~/.dscli/`
 - 配置文件：`~/.dscli/config.dscli`
