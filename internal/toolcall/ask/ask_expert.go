@@ -42,6 +42,10 @@ var askExpertTool = toolcall.ToolDef{
 					"description": "Attachment filename",
 				},
 			},
+			"timeout": map[string]any{
+				"type":        "integer",
+				"description": "Timeout in seconds (default 600). Set longer for complex questions requiring deep analysis.",
+			},
 		},
 		"required":             []string{"content"},
 		"additionalProperties": false,

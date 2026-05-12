@@ -32,6 +32,10 @@ var codeReviewTool = toolcall.ToolDef{
 				"type":        "string",
 				"description": "Optional test command, default empty skips tests, 1-128 chars",
 			},
+			"timeout": map[string]any{
+				"type":        "integer",
+				"description": "Timeout in seconds (default 300). Set longer (e.g. 600) for large projects with many tests.",
+			},
 		},
 		"required":             []string{"summary"},
 		"additionalProperties": false,

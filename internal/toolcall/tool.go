@@ -334,10 +334,19 @@ which lead to the error:
 		return "", "", err
 	}
 
+	seconds := ToolArgsValue(args, "timeout", int64(0))
+	var timeout time.Duration
+	if seconds > int64(0) {
+		timeout = time.Second * time.Duration(seconds)
+	}
+	if timeout <= 0 {
+		timeout = tool.Timeout
+	}
+
 	// 创建带超时的context（如果工具设置了超时）
 	var cancel context.CancelFunc
-	if tool.Timeout > 0 {
-		ctx, cancel = context.WithTimeout(ctx, tool.Timeout)
+	if timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
 

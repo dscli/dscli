@@ -232,6 +232,10 @@ func init() {
 					"type":        "string",
 					"description": "Web page URL, e.g. https://github.com/golang/go",
 				},
+				"timeout": map[string]any{
+					"type":        "integer",
+					"description": "Timeout in seconds (default 60). Set longer (e.g. 120) for slow websites.",
+				},
 			},
 			"required":             []string{"url"},
 			"additionalProperties": false,

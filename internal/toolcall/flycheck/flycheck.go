@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"fmt"
 	"strings"
+	"time"
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/flycheck"
@@ -26,11 +27,16 @@ func init() {
 					"type":        "string",
 					"description": "File/directory/package path (relative to project root), supports '...' for recursion",
 				},
+				"timeout": map[string]any{
+					"type":        "integer",
+					"description": "Timeout in seconds (default 120). Set a longer timeout (e.g. 600) for large codebases.",
+				},
 			},
 			"required":             []string{"path"},
 			"additionalProperties": false,
 		},
 		Category: "code_ops",
+		Timeout:  120 * time.Second,
 		Handler:  handleFlycheck,
 	})
 }

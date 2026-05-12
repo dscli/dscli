@@ -38,6 +38,10 @@ func init() { // 注册shell工具
 					"type":        "string",
 					"description": "Brief summary of what the script does, max 40 chars. E.g. 'List Go files', 'Parse JSON', 'Read file'.",
 				},
+				"timeout": map[string]any{
+					"type":        "integer",
+					"description": "Timeout in seconds (default 120). Set a value to override the default — use a short timeout for quick commands, or a long timeout (e.g. 1200) for lengthy tasks like running tests.",
+				},
 			},
 			"required":             []string{"script", "summary"},
 			"additionalProperties": false,

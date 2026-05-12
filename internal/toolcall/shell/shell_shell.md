@@ -19,4 +19,5 @@ Examples:
   3. Files: cat file.txt
   4. Git: git status
 
+Timeout: default 120s. Set `timeout` (seconds) to override — shorter for quick commands, longer (e.g. 1200) for lengthy tasks like running tests.
 Caution: Avoid destructive operations.

@@ -27,6 +27,10 @@ var askUserTool = toolcall.ToolDef{
 				"type":        "string",
 				"description": "Content to ask about",
 			},
+			"timeout": map[string]any{
+				"type":        "integer",
+				"description": "Timeout in seconds (default 3600). Set shorter (e.g. 300) for simple confirmations.",
+			},
 		},
 		"required":             []string{"content"},
 		"additionalProperties": false,
