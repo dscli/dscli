@@ -36,10 +36,8 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 	var modelID int64
 	switch model {
 	case context.ModelDeepseekChat:
-		ctx = context.WithValue(ctx, context.CurrentModelNameKey, context.ModelDeepseekChat)
 		modelID = DeepseekChat
 	case context.ModelDeepseekReasoner:
-		ctx = context.WithValue(ctx, context.CurrentModelNameKey, context.ModelDeepseekReasoner)
 		modelID = DeepseekReasoner
 	default:
 		err = fmt.Errorf("do not support %s", model)
@@ -48,34 +46,19 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 		}
 		return err
 	}
-	ctx = context.WithValue(ctx, context.CurrentModelIDKey, modelID)
 
+	ctx = context.WithValue(ctx, context.CurrentModelNameKey, model)
+	ctx = context.WithValue(ctx, context.CurrentModelIDKey, modelID)
 	// 读取 --role 标志并存入 context
 	role, err := cmd.Flags().GetString("role")
 	if err != nil || role == "" {
 		role = "dev"
 	}
 
-	ctx = context.WithValue(ctx, context.CurrentRoleKey, role)
-
-	// 计算工具 tokens
-	var tokens int
-	tools := alltools.GetAllTools(ctx)
-	for _, tool := range tools {
-		tokens += tool.GetTokens()
-	}
-
-	prompts, err := prompt.LoadPrompts(ctx)
-	if err != nil {
-		return err
-	}
-	for _, p := range prompts {
-		tokens += p.GetTokens()
-	}
-
-	ctx = context.WithValue(ctx, context.LeftTokensKey, 131072-tokens)
+	// 设置 Token 预算为足够大的值，历史消息截断由 histsize 控制，
+	// 无需基于 token 数的二次限制（DeepSeek 上下文窗口 128K，8-10 条历史远低于此）。
+	ctx = context.WithValue(ctx, context.LeftTokensKey, 1000000)
 	cmd.SetContext(ctx)
-
 	return err
 }
 
@@ -91,6 +74,13 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 		return err
 	}
 	ctx = context.WithValue(ctx, context.StreamKey, stream)
+
+	histSize, err := cmd.Flags().GetInt("histsize")
+	if err != nil {
+		return err
+	}
+
+	ctx = context.WithValue(ctx, context.HistSizeKey, histSize)
 	cmd.SetContext(ctx)
 	return err
 }
@@ -104,33 +94,14 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return err
 	}
-
-	// 提前读取 histSize，用于判断是否为 standalone 模式。
-	histSize, err := cmd.Flags().GetInt("histsize")
-	if err != nil {
-		return err
-	}
-	ctx = context.WithValue(ctx, context.HistSizeKey, histSize)
-
-	// Standalone 模式：--histsize 0 且 role 非 dev（expert/review）。
-	// 这些是由工具处理器（ask_expert / code_review）发起的一次性查询，
-	// 不需要对话历史，且必须通过 stdout 同步返回 AI 响应——
-	// 因此绕过锁检查，避免被强制降级为 chimein。
-	role := context.ContextValue(ctx, context.CurrentRoleKey, "dev")
-	isStandalone := histSize == 0 && role != "dev"
-
-	// 2. 尝试获取项目级文件锁（standalone 模式跳过）。
+	// 2. 尝试获取项目级文件锁。
 	//    若已有其他 dscli chat 进程在运行，降级为 climein 模式：
 	//    将内容写入 chimeins 表，由主进程在下一轮 ChatRound 注入。
-	var lk *lockfile.Lock
-	var isPrimary bool
-	if !isStandalone {
-		lk, isPrimary, err = lockfile.TryLockLocal()
-		if err != nil {
-			return fmt.Errorf("lockfile: %w", err)
-		}
-	} else {
-		isPrimary = true
+	//    子进程（code review / ask expert）在 lockfile 层通过父进程 PID
+	//    判定自动放行，此处无需特殊处理。
+	lk, isPrimary, err := lockfile.TryLockLocal()
+	if err != nil {
+		return fmt.Errorf("lockfile: %w", err)
 	}
 
 	if !isPrimary {
@@ -163,6 +134,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		outfmt.Println("✅ 已有主 chat 进程运行中，内容已作为插话追加。")
 		return nil
 	}
+
 	// 主进程（或 standalone 模式）：持有锁直到进程退出
 	if lk != nil {
 		defer lk.Close()
@@ -177,6 +149,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		}
 		content = strings.TrimSpace(string(b))
 	}
+
 	if outfmt.GetOutputMode() == "org" {
 		content = outfmt.OrgToMarkdown(content)
 	}

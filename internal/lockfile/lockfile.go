@@ -60,6 +60,12 @@ func tryLock(configDir string) (*Lock, bool, error) {
 	if err != nil {
 		f.Close()
 		if err == syscall.EWOULDBLOCK || err == syscall.EAGAIN {
+			// 锁已被持有。若持有者是当前进程的父进程
+			// （code review / ask expert 由主 chat 进程 fork），
+			// 视为已获取锁，允许子进程继续执行。
+			if PID(configDir) == os.Getppid() {
+				return nil, true, nil
+			}
 			return nil, false, nil // 已被其他进程持有，正常情况
 		}
 		return nil, false, fmt.Errorf("lockfile: flock %s: %w", path, err)
