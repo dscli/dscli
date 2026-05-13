@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"gitcode.com/dscli/dscli/internal/config"
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/editor"
 	"gitcode.com/dscli/dscli/internal/outfmt"
@@ -65,6 +66,7 @@ func init() {
 	recallCmd.Flags().Int("limit", 5, "返回结果数量上限")
 
 	historyCmd.PersistentFlags().Int("histsize", 32, "history size")
+	historyCmd.PersistentFlags().String("role", "dev", "role: dev, expert, review")
 	historyCmd.PersistentFlags().String("filter", "all", "filter true, false, all")
 	historyCmd.PersistentFlags().String("model", context.ModelDeepseekChat, "model")
 	editCmd.Flags().String("column", "content", "column name to edit, default content, others like tool_calls can be edited too.")
@@ -154,11 +156,45 @@ func historyUpdateRunE(cmd *cobra.Command, args []string) (err error) {
 }
 
 func historyPreRunE(cmd *cobra.Command, args []string) (err error) {
-	err = chatCommonPreRunE(cmd, args)
+	model, err := cmd.Flags().GetString("model")
 	if err != nil {
 		return err
 	}
 	ctx := cmd.Context()
+	var modelID int64
+	switch model {
+	case context.ModelDeepseekChat:
+		modelID = DeepseekChat
+	case context.ModelDeepseekReasoner:
+		modelID = DeepseekReasoner
+	default:
+		err = fmt.Errorf("do not support %s", model)
+		if verbose, _ := cmd.Flags().GetBool("verbose"); verbose {
+			fmt.Printf("[DEBUG] ChatPreRunE: unsupported model error: %v\n", err)
+		}
+		return err
+	}
+
+	ctx = context.WithValue(ctx, context.CurrentModelNameKey, model)
+	ctx = context.WithValue(ctx, context.CurrentModelIDKey, modelID)
+	// 读取 --role 标志并存入 context
+	role, err := cmd.Flags().GetString("role")
+	if err != nil {
+		return err
+	}
+
+	if role == "" {
+		role = "dev"
+	}
+
+	ctx = context.WithValue(ctx, context.CurrentRoleKey, role)
+
+	// 从配置读取上下文窗口大小（默认 1,000,000，对应 DeepSeek V4 百万 token 上下文）。
+	// 此值用作历史消息 token 预算的上限，实际截断主要由 --histsize 控制。
+	// 配置文件 key: context-window，环境变量: CONTEXT_WINDOW。
+	contextWindow := config.GetInt("context-window", 1000000)
+	ctx = context.WithValue(ctx, context.LeftTokensKey, contextWindow)
+
 	histsize, err := cmd.Flags().GetInt("histsize")
 	if err != nil {
 		return err

@@ -27,7 +27,7 @@ const (
 	DeepseekReasoner = int64(1)
 )
 
-func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
+func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 	model, err := cmd.Flags().GetString("model")
 	if err != nil {
 		return err
@@ -51,25 +51,22 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 	ctx = context.WithValue(ctx, context.CurrentModelIDKey, modelID)
 	// 读取 --role 标志并存入 context
 	role, err := cmd.Flags().GetString("role")
-	if err != nil || role == "" {
+	if err != nil {
+		return err
+	}
+
+	if role == "" {
 		role = "dev"
 	}
+
+	ctx = context.WithValue(ctx, context.CurrentRoleKey, role)
 
 	// 从配置读取上下文窗口大小（默认 1,000,000，对应 DeepSeek V4 百万 token 上下文）。
 	// 此值用作历史消息 token 预算的上限，实际截断主要由 --histsize 控制。
 	// 配置文件 key: context-window，环境变量: CONTEXT_WINDOW。
 	contextWindow := config.GetInt("context-window", 1000000)
 	ctx = context.WithValue(ctx, context.LeftTokensKey, contextWindow)
-	cmd.SetContext(ctx)
-	return err
-}
 
-func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
-	err = chatCommonPreRunE(cmd, args)
-	if err != nil {
-		return err
-	}
-	ctx := cmd.Context()
 	// 获取stream标志
 	stream, err := cmd.Flags().GetBool("stream")
 	if err != nil {
