@@ -105,8 +105,10 @@ func handleSearchCodeDefinition(ctx context.Context, args toolcall.ToolArgs) (re
 	fmt.Fprintf(&sb, "📝 搜索模式: %s\n", pattern)
 	if len(files) > 1 {
 		fmt.Fprintf(&sb, "📂 搜索范围: %s (%d 个文件)\n", path, len(files))
-	} else {
+	} else if len(files) == 1 {
 		fmt.Fprintf(&sb, "📂 文件: %s\n", files[0])
+	} else {
+		fmt.Fprintf(&sb, "📂 搜索范围: %s (0 个文件)\n", path)
 	}
 	if typeFilter != "" {
 		fmt.Fprintf(&sb, "⚙️  类型过滤: %s\n", typeFilter)
