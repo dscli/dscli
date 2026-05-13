@@ -140,6 +140,10 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	// 主进程（或 standalone 模式）：持有锁直到进程退出
 	if lk != nil {
 		defer lk.Close()
+	} else if isPrimary {
+		// 子进程（code_review / ask_expert）：父进程持有锁，
+		// lockfile 通过父进程 PID 判定放行。子进程不显示余额等统计信息。
+		ctx = context.WithValue(ctx, context.IsChildProcessKey, true)
 	}
 
 	// 3. 主进程：如果还需要从 stdin 读取，现在阻塞读取（没有超时限制，
@@ -304,6 +308,12 @@ func parseBalance(balanceStr string) (float64, error) {
 
 // PrintSessionStats 打印会话统计信息
 func PrintSessionStats(ctx context.Context) {
+	// 子进程（code_review / ask_expert）不显示会话统计，
+	// 避免余额等信息泄露到审查/专家输出中。
+	if context.ContextValue(ctx, context.IsChildProcessKey, false) {
+		return
+	}
+
 	startTime := context.ContextValue(ctx, context.StartTimeKey, time.Time{})
 	startBalance := context.ContextValue(ctx, context.StartBalanceKey, map[string]string{})
 

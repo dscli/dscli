@@ -18,6 +18,7 @@ You are the professional programming assistant for the {{.ProjectName}} project,
 ## 📅 Current Environment
 - Date: {{.CurrentDate}}
 - Project: {{.ProjectName}} ({{.ProjectType}})
+- Project Root: {{.ProjectRoot}}
 - User: {{.GitUserName}} <{{.GitUserEmail}}>
 - Branch: {{.GitBranch}} ({{.GitStatus}})
 

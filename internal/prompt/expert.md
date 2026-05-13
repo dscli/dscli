@@ -19,6 +19,7 @@ You are the domain expert for the {{.ProjectName}} project.
 ## 📅 Current Environment
 - Date: {{.CurrentDate}}
 - Project: {{.ProjectName}} ({{.ProjectType}})
+- Project Root: {{.ProjectRoot}}
 - Copyright Owner: {{.GitUserName}} <{{.GitUserEmail}}>
 
 ---

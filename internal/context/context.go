@@ -31,6 +31,7 @@ var (
 	ToolDisplayNameKey    = ContextKeyType[string]{"ToolDisplayName"}
 	FinishReasonLengthKey = ContextKeyType[bool]{"FinishReasonLength"}
 	GitWorkingDirKey      = ContextKeyType[string]{"GitWorkingDir"}
+	IsChildProcessKey     = ContextKeyType[bool]{"IsChildProcess"}
 )
 
 var (
