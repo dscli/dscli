@@ -55,9 +55,11 @@ func chatCommonPreRunE(cmd *cobra.Command, _ []string) (err error) {
 		role = "dev"
 	}
 
-	// 设置 Token 预算为足够大的值，历史消息截断由 histsize 控制，
-	// 无需基于 token 数的二次限制（DeepSeek 上下文窗口 128K，8-10 条历史远低于此）。
-	ctx = context.WithValue(ctx, context.LeftTokensKey, 1000000)
+	// 从配置读取上下文窗口大小（默认 1,000,000，对应 DeepSeek V4 百万 token 上下文）。
+	// 此值用作历史消息 token 预算的上限，实际截断主要由 --histsize 控制。
+	// 配置文件 key: context-window，环境变量: CONTEXT_WINDOW。
+	contextWindow := config.GetInt("context-window", 1000000)
+	ctx = context.WithValue(ctx, context.LeftTokensKey, contextWindow)
 	cmd.SetContext(ctx)
 	return err
 }
