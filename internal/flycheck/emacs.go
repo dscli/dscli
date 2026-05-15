@@ -1,17 +1,16 @@
 package flycheck
 
 import (
-	"bytes"
-	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 
-	dsctx "gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/shell"
 )
 
 //go:embed dscli-flycheck.sh
@@ -56,32 +55,32 @@ type emacsFlycheckResult struct {
 // filePath 是相对于项目根目录的路径。
 // timeoutSecs 是每个 checker 的超时秒数。
 func runEmacsFlycheck(ctx context.Context, filePath string, timeoutSecs int) (*emacsFlycheckResult, error) {
-	absPath := filepath.Join(dsctx.ProjectRoot, filePath)
+	absPath := filepath.Join(context.ProjectRoot, filePath)
 
-	// 通过 bash -s 执行内嵌脚本，脚本内容经 stdin 传入
-	cmd := exec.CommandContext(ctx, "bash", "-s", absPath, fmt.Sprintf("%d", timeoutSecs))
-	cmd.Stdin = bytes.NewReader([]byte(flycheckScript))
+	// 通过 heredoc 将内嵌脚本传给 bash 执行
+	script := fmt.Sprintf("bash -s -- %s %d <<'FLYCHECK_SCRIPT_EOF'\n%s\nFLYCHECK_SCRIPT_EOF",
+		absPath, timeoutSecs, flycheckScript)
 
-	output, err := cmd.Output()
+	output, err := shell.SimpleExecute(ctx, script)
 	if err != nil {
 		// 脚本返回非零退出码时尝试解析 JSON（可能包含 error 字段）
 		if len(output) > 0 {
 			var result emacsFlycheckResult
-			if jsonErr := json.Unmarshal(output, &result); jsonErr == nil && result.ErrorStr != "" {
+			if jsonErr := json.Unmarshal([]byte(output), &result); jsonErr == nil && result.ErrorStr != "" {
 				return nil, fmt.Errorf("flycheck 错误: %s", result.ErrorStr)
 			}
 		}
-		return nil, fmt.Errorf("emacs flycheck 执行失败: %w\n输出: %s", err, string(output))
+		return nil, fmt.Errorf("emacs flycheck 执行失败: %w\n输出: %s", err, output)
 	}
 
-	unquoted, err := strconv.Unquote(string(output))
+	unquoted, err := strconv.Unquote(strings.TrimSpace(output))
 	if err == nil {
-		output = []byte(unquoted)
+		output = unquoted
 	}
 
 	var result emacsFlycheckResult
-	if err := json.Unmarshal(output, &result); err != nil {
-		return nil, fmt.Errorf("解析 flycheck JSON 失败: %w\n原始输出: %s", err, string(output))
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		return nil, fmt.Errorf("解析 flycheck JSON 失败: %w\n原始输出: %s", err, output)
 	}
 
 	// 检查 JSON 中的错误字段
@@ -152,7 +151,7 @@ func checkPathEmacs(ctx context.Context, path string) (*CheckResult, error) {
 	// 规范化路径（去除 "./", "..." 等）
 	path, _ = NormalizePath(path)
 
-	fullPath := filepath.Join(dsctx.ProjectRoot, path)
+	fullPath := filepath.Join(context.ProjectRoot, path)
 	fi, err := os.Stat(fullPath)
 	if err != nil {
 		return nil, fmt.Errorf("路径不存在: %s", path)
@@ -175,7 +174,7 @@ func checkPathEmacsFile(ctx context.Context, path string) (*CheckResult, error) 
 
 // checkPathEmacsDir 对目录执行 Emacs flycheck（遍历文件）。
 func checkPathEmacsDir(ctx context.Context, dir string) (*CheckResult, error) {
-	absDir := filepath.Join(dsctx.ProjectRoot, dir)
+	absDir := filepath.Join(context.ProjectRoot, dir)
 	entries, err := os.ReadDir(absDir)
 	if err != nil {
 		return nil, fmt.Errorf("读取目录失败: %w", err)
