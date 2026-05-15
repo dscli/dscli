@@ -7,7 +7,6 @@
 package flycheck
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -16,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	dsctx "gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/parse"
 	"gitcode.com/dscli/dscli/internal/shell"
 )
@@ -51,12 +50,12 @@ var goStaticcheck = Checker{
 		// since shell.SimpleExecute may run in a different working directory.
 		pkgDir := filepath.Dir(filename)
 		if pkgDir == "." {
-			return []string{"-tests", dsctx.ProjectRoot}
+			return []string{"-tests", context.ProjectRoot}
 		}
-		return []string{"-tests", filepath.Join(dsctx.ProjectRoot, pkgDir)}
+		return []string{"-tests", filepath.Join(context.ProjectRoot, pkgDir)}
 	},
 	BuildDirArgs: func(dir string) []string {
-		return []string{"-tests", filepath.Join(dsctx.ProjectRoot, dir)}
+		return []string{"-tests", filepath.Join(context.ProjectRoot, dir)}
 	},
 }
 
@@ -69,10 +68,10 @@ var pythonRuff = Checker{
   pip install ruff
   或: brew install ruff`,
 	BuildArgs: func(filename string) []string {
-		return []string{"check", "--output-format=concise", filepath.Join(dsctx.ProjectRoot, filename)}
+		return []string{"check", "--output-format=concise", filepath.Join(context.ProjectRoot, filename)}
 	},
 	BuildDirArgs: func(dir string) []string {
-		return []string{"check", "--output-format=concise", filepath.Join(dsctx.ProjectRoot, dir)}
+		return []string{"check", "--output-format=concise", filepath.Join(context.ProjectRoot, dir)}
 	},
 }
 
@@ -534,7 +533,7 @@ func runCheckerOnDir(ctx context.Context, checker Checker, dir string) (string, 
 func FindGoPackages(baseDir string, recursive bool) []string {
 	var pkgs []string
 
-	absBase := filepath.Join(dsctx.ProjectRoot, baseDir)
+	absBase := filepath.Join(context.ProjectRoot, baseDir)
 
 	// Check baseDir itself
 	if hasGoFiles(absBase) {
@@ -559,14 +558,14 @@ func FindGoPackages(baseDir string, recursive bool) []string {
 					return nil
 				}
 				if hasGoFiles(path) {
-					rel, _ := filepath.Rel(dsctx.ProjectRoot, path)
+					rel, _ := filepath.Rel(context.ProjectRoot, path)
 					pkgs = append(pkgs, rel)
 				}
 				return nil
 			})
 		} else {
 			if hasGoFiles(subDir) {
-				rel, _ := filepath.Rel(dsctx.ProjectRoot, subDir)
+				rel, _ := filepath.Rel(context.ProjectRoot, subDir)
 				pkgs = append(pkgs, rel)
 			}
 		}
@@ -607,7 +606,7 @@ func CountGoFiles(dir string) int {
 // FindPyFiles 返回给定目录下所有 .py 文件的相对路径。
 // 如果 recursive 为 true，递归查找所有子目录；否则只查找目录本身。
 func FindPyFiles(baseDir string, recursive bool) []string {
-	absBase := filepath.Join(dsctx.ProjectRoot, baseDir)
+	absBase := filepath.Join(context.ProjectRoot, baseDir)
 	var files []string
 
 	if recursive {
@@ -616,7 +615,7 @@ func FindPyFiles(baseDir string, recursive bool) []string {
 				return nil
 			}
 			if !info.IsDir() && strings.HasSuffix(info.Name(), ".py") {
-				rel, _ := filepath.Rel(dsctx.ProjectRoot, path)
+				rel, _ := filepath.Rel(context.ProjectRoot, path)
 				files = append(files, rel)
 			}
 			return nil
@@ -638,7 +637,7 @@ func FindPyFiles(baseDir string, recursive bool) []string {
 
 // CountPyFiles 统计目录下的 .py 文件数量（递归）。
 func CountPyFiles(dir string) int {
-	absDir := filepath.Join(dsctx.ProjectRoot, dir)
+	absDir := filepath.Join(context.ProjectRoot, dir)
 	entries, err := os.ReadDir(absDir)
 	if err != nil {
 		return 0

@@ -9,11 +9,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 
 	dsctx "gitcode.com/dscli/dscli/internal/context"
 )
 
-//go:embed scripts/dscli-flycheck.sh
+//go:embed dscli-flycheck.sh
 var flycheckScript string
 
 // isEmacsEnv 检查是否在 Emacs 环境中运行。
@@ -71,6 +72,11 @@ func runEmacsFlycheck(ctx context.Context, filePath string, timeoutSecs int) (*e
 			}
 		}
 		return nil, fmt.Errorf("emacs flycheck 执行失败: %w\n输出: %s", err, string(output))
+	}
+
+	unquoted, err := strconv.Unquote(string(output))
+	if err == nil {
+		output = []byte(unquoted)
 	}
 
 	var result emacsFlycheckResult
