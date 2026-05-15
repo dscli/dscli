@@ -13,12 +13,12 @@ import (
 )
 
 //go:embed flycheck.md
-var flycheck_md string
+var flycheckMd string
 
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "flycheck",
-		Description: flycheck_md,
+		Description: flycheckMd,
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
