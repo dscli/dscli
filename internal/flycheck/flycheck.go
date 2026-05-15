@@ -173,9 +173,7 @@ func isNotFoundError(err error) bool {
 	if err == nil {
 		return false
 	}
-	// Use errors.As to handle wrapped errors.
-	var execErr *exec.Error
-	if errors.As(err, &execErr) {
+	if execErr, ok := errors.AsType[*exec.Error](err); ok {
 		return execErr.Err == exec.ErrNotFound
 	}
 	return false
