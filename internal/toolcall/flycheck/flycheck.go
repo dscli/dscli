@@ -70,6 +70,12 @@ func handleFlycheck(ctx context.Context, args toolcall.ToolArgs) (result, warnin
 		return result, warning, err
 	}
 
+	// Emacs flycheck 结果（单文件或目录）
+	if checkResult.Mode == "emacs" || checkResult.Mode == "emacs-dir" {
+		result = formatEmacsResult(checkResult)
+		return result, warning, err
+	}
+
 	// 非 Go/Python 目录检查 → 单文件检查
 	if checkResult.Mode == "file" {
 		if checkResult.RawOutput != "" {
@@ -158,6 +164,75 @@ func formatPackageResult(r *flycheck.CheckResult) string {
 	if b.Len() == 0 {
 		b.WriteString(fmt.Sprintf("✅ flycheck: 检查了 %d %s（%d %s），未发现问题",
 			r.NPkgs, unitWord, r.NFiles, fileWord))
+	}
+
+	return b.String()
+}
+
+// formatEmacsResult formats Emacs flycheck results (single file or directory) in Markdown.
+//
+// Unlike formatPackageResult, this uses generic terminology (not Go/Python specific).
+func formatEmacsResult(r *flycheck.CheckResult) string {
+	kind := "文件"
+	if r.Mode == "emacs-dir" {
+		kind = "目录"
+	}
+
+	var b strings.Builder
+
+	if len(r.Issues) > 0 {
+		if r.Stats.Errors > 0 {
+			b.WriteString("## ❌ flycheck 发现静态错误 — 必须立即修复！\n\n")
+			b.WriteString(fmt.Sprintf("> 检查了 %s `%s`（**%d** 个文件），发现：\n",
+				kind, r.Path, r.NFiles))
+			b.WriteString(fmt.Sprintf("> ❌ **%d** 个错误", r.Stats.Errors))
+			if r.Stats.Warnings > 0 {
+				b.WriteString(fmt.Sprintf(" / ⚠️ **%d** 个警告", r.Stats.Warnings))
+			}
+			if r.Stats.Suggestions > 0 {
+				b.WriteString(fmt.Sprintf(" / 💡 **%d** 个建议", r.Stats.Suggestions))
+			}
+			b.WriteString("\n\n")
+		} else {
+			b.WriteString("## ⚠️ flycheck 发现问题\n\n")
+			b.WriteString(fmt.Sprintf("> 检查了 %s `%s`（**%d** 个文件），发现：\n",
+				kind, r.Path, r.NFiles))
+			b.WriteString(fmt.Sprintf("> ⚠️ **%d** 个警告", r.Stats.Warnings))
+			if r.Stats.Suggestions > 0 {
+				b.WriteString(fmt.Sprintf(" / 💡 **%d** 个建议", r.Stats.Suggestions))
+			}
+			b.WriteString("\n\n")
+		}
+
+		b.WriteString("```\n")
+		for _, iss := range r.Issues {
+			b.WriteString(iss.Severity.String())
+			b.WriteString(" ")
+			b.WriteString(iss.Line)
+			b.WriteString("\n")
+		}
+		b.WriteString("```\n")
+	}
+
+	// 报告失败的文件
+	if len(r.FailedPkgs) > 0 {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(fmt.Sprintf("> ⚠️ **%d 个文件检查失败：**\n", len(r.FailedPkgs)))
+		for i, pkg := range r.FailedPkgs {
+			info := ""
+			if i < len(r.FailedInfos) {
+				info = " — " + r.FailedInfos[i]
+			}
+			b.WriteString(fmt.Sprintf("> - `%s`%s\n", pkg, info))
+		}
+	}
+
+	// 全部成功
+	if b.Len() == 0 {
+		b.WriteString(fmt.Sprintf("✅ flycheck: 检查了 %s `%s`（%d 个文件），未发现问题",
+			kind, r.Path, r.NFiles))
 	}
 
 	return b.String()

@@ -104,6 +104,12 @@ func IsLanguageSupported(lang string) bool {
 //
 // 返回 CheckResult，调用方根据 Mode / Language / Supported 字段区别处理。
 func CheckPath(ctx context.Context, path string) (*CheckResult, error) {
+	// Emacs 环境：使用 Emacs flycheck（支持 119+ 语言）
+	if isEmacsEnv() {
+		return checkPathEmacs(ctx, path)
+	}
+
+	// 原有逻辑：Go/Python 静态检查
 	// 1. 规范化路径
 	path, recursive := NormalizePath(path)
 
