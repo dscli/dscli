@@ -181,9 +181,6 @@ func isNotFoundError(err error) bool {
 	return false
 }
 
-// ---------------------------------------------------------------------------
-// Issue severity classification
-// ---------------------------------------------------------------------------
 
 // IssueSeverity classifies the severity of a checker issue.
 type IssueSeverity int
@@ -286,13 +283,10 @@ func extractRuffCode(line string) string {
 	// parts[3] starts with " CODE message"
 	rest := strings.TrimSpace(parts[3])
 	// Extract the first word (rule code)
-	spaceIdx := strings.IndexByte(rest, ' ')
-	if spaceIdx < 0 {
+	code, _, found := strings.Cut(rest, " ")
+	if !found {
 		return ""
 	}
-	code := rest[:spaceIdx]
-	// Ruff rule codes are uppercase and followed by digits, e.g. F401, E501, UP004
-	// Check that code looks like a ruff rule (all uppercase letters + optional digits)
 	if len(code) >= 2 && len(code) <= 8 {
 		allUpper := true
 		for _, ch := range code {
