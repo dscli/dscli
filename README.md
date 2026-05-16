@@ -158,7 +158,23 @@ dscli skill remove go-fix
 dscli skill set-auto-inject go-fix true
 ```
 
-### 4. 开发工具
+### 4. 记忆管理
+
+```bash
+# 列出当前项目的所有记忆
+dscli memory list
+
+# 搜索记忆
+dscli memory search "flycheck 超时"
+
+# 查看记忆完整内容
+dscli memory show 1
+
+# 记忆统计
+dscli memory stats
+```
+
+### 5. 开发工具
 
 ```bash
 # 静态代码检查
