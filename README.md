@@ -132,21 +132,40 @@ dscli history show 42
 dscli history edit 42
 ```
 
-### 3. 开发工具
+### 3. 技能管理
+
+```bash
+# 列出所有技能
+dscli skill list
+
+# 搜索技能
+dscli skill query "go fix"
+
+# 查看技能详情
+dscli skill show go-fix
+
+# 安装技能
+dscli skill add ~/src/agent-skills/skills/go-fix
+dscli skill add ~/src/agent-skills/skills/go-fix --target=global
+
+# 移除技能
+dscli skill remove go-fix
+
+# 设置自动注入
+dscli skill set-auto-inject go-fix true
+```
+
+### 4. 开发工具
 
 ```bash
 # 静态代码检查
 dscli flycheck internal/...
 
-# 技能管理
-dscli skill list
-dscli skill query "go fix"
-
 # 编辑系统提示词
 dscli prompt edit
 ```
 
-### 4. 查看模型和余额
+### 5. 查看模型和余额
 
 ```bash
 # 查看可用模型
@@ -160,7 +179,7 @@ dscli models --format json
 dscli balance --format json
 ```
 
-### 5. 查看版本信息
+### 6. 查看版本信息
 
 ```bash
 dscli version
