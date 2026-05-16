@@ -20,6 +20,10 @@ import (
 // 示例：ctx = context.WithValue(ctx, flycheck.LanguageKey, "python")
 var LanguageKey = dsctx.ContextKeyType[string]{}
 
+// EmacsKey 用于 context.WithValue 传递 --emacs 选项。
+// 当设置为 true 时，强制使用 Emacs flycheck（而非 dscli 内置实现）。
+var EmacsKey = dsctx.ContextKeyType[bool]{}
+
 // LanguageFromContext 从 context 中读取目标语言，若未设置返回空字符串。
 func LanguageFromContext(ctx context.Context) string {
 	return dsctx.ContextValue(ctx, LanguageKey, "")
@@ -102,9 +106,17 @@ func IsLanguageSupported(lang string) bool {
 //   - 文件：从扩展名自动识别（parse.GuessLanguage）
 //   - 目录：默认查找 Go 包；可通过 context.WithValue(LanguageKey, lang) 指定语言
 //
+// 选项：
+//   - --emacs: 通过 context.WithValue(EmacsKey, true) 强制使用 Emacs flycheck
+//   - 未设置时，自动检测 INSIDE_EMACS/EMACS 环境变量
+//
 // 返回 CheckResult，调用方根据 Mode / Language / Supported 字段区别处理。
 func CheckPath(ctx context.Context, path string) (*CheckResult, error) {
-	// Emacs 环境：使用 Emacs flycheck（支持 119+ 语言）
+	// --emacs 选项：强制使用 Emacs flycheck（支持 119+ 语言）
+	if dsctx.ContextValue(ctx, EmacsKey, false) {
+		return checkPathEmacs(ctx, path)
+	}
+	// Emacs 环境：自动使用 Emacs flycheck（支持 119+ 语言）
 	if isEmacsEnv() {
 		return checkPathEmacs(ctx, path)
 	}

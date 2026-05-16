@@ -9,8 +9,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	flycheckCmd   *cobra.Command
+	flycheckEmacs bool
+)
+
 func init() {
-	_ = AddRootCommand(&cobra.Command{
+	flycheckCmd = AddRootCommand(&cobra.Command{
 		Use:   "flycheck <path>",
 		Short: "静态检查代码（类似 Emacs flycheck）",
 		Long: `对指定文件/目录/包运行静态检查。
@@ -24,6 +29,10 @@ func init() {
   Go     — staticcheck（自动发现包，包级检查）
   Python — ruff（快速 linter，支持单文件和目录检查）
 
+选项：
+  --emacs  使用 Emacs 内置 flycheck 实现（支持 119+ 语言），
+           而非 dscli 内置的 Go/Python 检查器
+
 输出按严重程度分级：
   ❌ 编译错误（必须立即修复）
   ⚠️ 警告
@@ -33,10 +42,14 @@ func init() {
   dscli flycheck internal/flycheck/flycheck.go
   dscli flycheck my_script.py
   dscli flycheck internal/
-  dscli flycheck internal/...`,
+  dscli flycheck internal/...
+  dscli flycheck --emacs internal/`,
 		Args: cobra.ExactArgs(1),
 		RunE: flycheckRunE,
 	})
+
+	flycheckCmd.Flags().BoolVar(&flycheckEmacs, "emacs", false,
+		"使用 Emacs 内置 flycheck（支持 119+ 语言）")
 }
 
 func flycheckRunE(cmd *cobra.Command, args []string) error {
@@ -45,6 +58,9 @@ func flycheckRunE(cmd *cobra.Command, args []string) error {
 
 func flycheckRunEImpl(path string) error {
 	ctx := context.Background()
+	if flycheckEmacs {
+		ctx = context.WithValue(ctx, flycheck.EmacsKey, true)
+	}
 	result, err := flycheck.CheckPath(ctx, path)
 	// 处理错误
 	if err != nil {
