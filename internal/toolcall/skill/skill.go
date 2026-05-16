@@ -1,14 +1,13 @@
 package skill
 
 import (
-	"context"
 	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	pctx "gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/skills"
 	"gitcode.com/dscli/dscli/internal/toolcall"
@@ -103,7 +102,7 @@ func handleSkillSave(ctx context.Context, args ToolArgs) (result, warning string
 	_, hasAutoInject := args["auto_inject"]
 
 	// Try to read existing skill on disk for partial update merge
-	skillFile := filepath.Join(pctx.ProjectRoot, ".dscli", "skills", name, "SKILL.md")
+	skillFile := filepath.Join(context.ProjectRoot, ".dscli", "skills", name, "SKILL.md")
 	var existing *skills.Skill
 	if _, statErr := os.Stat(skillFile); statErr == nil {
 		var s skills.Skill

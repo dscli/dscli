@@ -1,7 +1,6 @@
 package skill
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,7 +8,7 @@ import (
 	"gitcode.com/dscli/dscli/internal/skills"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 
-	pctx "gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/context"
 )
 
 // TestRegistration verifies all skill tools are registered via init().
@@ -45,12 +44,12 @@ func TestRegistration(t *testing.T) {
 // with frontmatter, and that the resulting skill can be loaded and queried.
 func TestHandleSkillSave(t *testing.T) {
 	// Save and restore original ProjectRoot
-	origRoot := pctx.ProjectRoot
-	defer func() { pctx.ProjectRoot = origRoot }()
+	origRoot := context.ProjectRoot
+	defer func() { context.ProjectRoot = origRoot }()
 
 	// Use a temp dir as project root
 	tmpDir := t.TempDir()
-	pctx.ProjectRoot = tmpDir
+	context.ProjectRoot = tmpDir
 
 	// Reset cached local store so it re-initializes with the new ProjectRoot
 	skills.ResetLocalStore()
@@ -143,11 +142,11 @@ func TestHandleSkillSave(t *testing.T) {
 // when updating an existing skill with only some fields, the omitted
 // fields retain their existing values.
 func TestHandleSkillSavePartialUpdate(t *testing.T) {
-	origRoot := pctx.ProjectRoot
-	defer func() { pctx.ProjectRoot = origRoot }()
+	origRoot := context.ProjectRoot
+	defer func() { context.ProjectRoot = origRoot }()
 
 	tmpDir := t.TempDir()
-	pctx.ProjectRoot = tmpDir
+	context.ProjectRoot = tmpDir
 
 	// Reset cached local store so it re-initializes with the new ProjectRoot
 	skills.ResetLocalStore()
@@ -221,11 +220,11 @@ func TestHandleSkillSavePartialUpdate(t *testing.T) {
 
 // TestHandleSkillSetAutoInject verifies the skill_set_auto_inject tool.
 func TestHandleSkillSetAutoInject(t *testing.T) {
-	origRoot := pctx.ProjectRoot
-	defer func() { pctx.ProjectRoot = origRoot }()
+	origRoot := context.ProjectRoot
+	defer func() { context.ProjectRoot = origRoot }()
 
 	tmpDir := t.TempDir()
-	pctx.ProjectRoot = tmpDir
+	context.ProjectRoot = tmpDir
 
 	// Reset cached local store so it re-initializes with the new ProjectRoot
 	skills.ResetLocalStore()
@@ -274,11 +273,11 @@ func TestHandleSkillSetAutoInject(t *testing.T) {
 
 // TestHandleSkillSaveValidation tests input validation.
 func TestHandleSkillSaveValidation(t *testing.T) {
-	origRoot := pctx.ProjectRoot
-	defer func() { pctx.ProjectRoot = origRoot }()
+	origRoot := context.ProjectRoot
+	defer func() { context.ProjectRoot = origRoot }()
 
 	tmpDir := t.TempDir()
-	pctx.ProjectRoot = tmpDir
+	context.ProjectRoot = tmpDir
 
 	// Reset cached local store so it re-initializes with the new ProjectRoot
 	skills.ResetLocalStore()

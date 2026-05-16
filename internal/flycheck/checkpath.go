@@ -1,13 +1,12 @@
 package flycheck
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	dsctx "gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/parse"
 )
 
@@ -18,15 +17,15 @@ import (
 
 // LanguageKey 用于 context.WithValue 传递目标语言。
 // 示例：ctx = context.WithValue(ctx, flycheck.LanguageKey, "python")
-var LanguageKey = dsctx.ContextKeyType[string]{}
+var LanguageKey = context.ContextKeyType[string]{}
 
 // EmacsKey 用于 context.WithValue 传递 --emacs 选项。
 // 当设置为 true 时，强制使用 Emacs flycheck（而非 dscli 内置实现）。
-var EmacsKey = dsctx.ContextKeyType[bool]{}
+var EmacsKey = context.ContextKeyType[bool]{}
 
 // LanguageFromContext 从 context 中读取目标语言，若未设置返回空字符串。
 func LanguageFromContext(ctx context.Context) string {
-	return dsctx.ContextValue(ctx, LanguageKey, "")
+	return context.ContextValue(ctx, LanguageKey, "")
 }
 
 // ---------------------------------------------------------------------------
@@ -113,7 +112,7 @@ func IsLanguageSupported(lang string) bool {
 // 返回 CheckResult，调用方根据 Mode / Language / Supported 字段区别处理。
 func CheckPath(ctx context.Context, path string) (*CheckResult, error) {
 	// --emacs 选项：强制使用 Emacs flycheck（支持 119+ 语言）
-	if dsctx.ContextValue(ctx, EmacsKey, false) {
+	if context.ContextValue(ctx, EmacsKey, false) {
 		return checkPathEmacs(ctx, path)
 	}
 	// Emacs 环境：自动使用 Emacs flycheck（支持 119+ 语言）
@@ -126,7 +125,7 @@ func CheckPath(ctx context.Context, path string) (*CheckResult, error) {
 	path, recursive := NormalizePath(path)
 
 	// 2. 确认路径存在
-	fullPath := filepath.Join(dsctx.ProjectRoot, path)
+	fullPath := filepath.Join(context.ProjectRoot, path)
 	fi, err := os.Stat(fullPath)
 	if err != nil {
 		return nil, fmt.Errorf("路径不存在: %s", path)
@@ -177,7 +176,7 @@ func checkPathDir(ctx context.Context, dir string, recursive bool) (*CheckResult
 // detectDirLanguage 根据目录中的文件扩展名自动检测语言。
 // 优先级：Go > Python > 其他。如果都不匹配返回 "go"。
 func detectDirLanguage(dir string, recursive bool) string {
-	absDir := filepath.Join(dsctx.ProjectRoot, dir)
+	absDir := filepath.Join(context.ProjectRoot, dir)
 
 	hasGo := false
 	hasPy := false
@@ -238,7 +237,7 @@ func checkGoDir(ctx context.Context, dir string, recursive bool, result *CheckRe
 	var allIssues []ClassifiedIssue
 
 	for _, pkgDir := range pkgDirs {
-		absDir := filepath.Join(dsctx.ProjectRoot, pkgDir)
+		absDir := filepath.Join(context.ProjectRoot, pkgDir)
 		result.NFiles += CountGoFiles(absDir)
 
 		_, issues, installHint, checkErr := FlycheckDir(ctx, "go", pkgDir)
@@ -310,7 +309,7 @@ func checkPathFile(ctx context.Context, path string) (*CheckResult, error) {
 			// 文件在项目根目录，就用 "." 作为包目录
 		}
 
-		absDir := filepath.Join(dsctx.ProjectRoot, pkgDir)
+		absDir := filepath.Join(context.ProjectRoot, pkgDir)
 		result.NFiles = CountGoFiles(absDir)
 		result.NPkgs = 1
 		result.Mode = "package" // Go 文件走包级检查
