@@ -285,14 +285,13 @@ deepseek-base-url = https://api.deepseek.com
 
 ## 🤝 贡献
 
-欢迎贡献代码、报告问题或提出建议！
+欢迎贡献代码、报告问题或提出建议！详细规范请参阅 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 1. Fork 项目
 2. 创建功能分支
 3. 提交更改
 4. 推送到分支
 5. 创建 Pull Request
-
 ## 📄 许可证
 
 Apache License 2.0
