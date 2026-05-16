@@ -1,6 +1,6 @@
 # dscli - AI增强的开发者工具箱
 
-```
+```text
      o
     /|\
      |   +---------------+
@@ -22,8 +22,8 @@ dscli    +---------------+
 
 ## 📦 版本信息
 
-
 ### 版本历史
+
 - v0.7.6 (2026-05-03) — P0 nil panic 修复、类型别名清理、recall 限制、11 个新测试
 - v0.7.5 (2026-05-03) — toolcall 结果截断阈值提升至 1M 上下文适配
 - v0.7.4 (2026-04-29) — 重组包结构，整合 prompt / note / session
@@ -44,25 +44,30 @@ dscli    +---------------+
 ## ✨ 核心功能
 
 ### 🤖 AI 对话
+
 - **`dscli chat`** — 与 DeepSeek AI 多轮对话，支持工具调用（文件读写、代码搜索、Git 操作等）
 - **`dscli fim`** — 代码补全（Fill-in-the-Middle），提升编码效率
 - **`dscli models`** — 查看可用的 AI 模型列表
 - **`dscli balance`** — 查询 API 余额和使用情况
 
 ### 📝 会话管理
+
 - **`dscli history`** — 对话历史管理（list / load / show / edit / update）
 - **`dscli history recall <关键词>`** — 搜索历史消息，回忆过往讨论
 
 ### 🛠️ 开发工具
+
 - **`dscli flycheck <路径>`** — 静态代码检查（Go 用 staticcheck，Python 用 ruff）
 - **`dscli skill`** — 技能管理（list / use / query / set-auto-inject）
 - **`dscli prompt`** — 系统提示词管理（show / edit，支持项目级和全局）
 - **`dscli config edit`** — 编辑配置文件
 
 ### 💬 微信集成
+
 - **`dscli wechat`** — 微信 AI 工具接口（登录、收发消息、好友/群组管理）
 
 ### 🎨 通用特性
+
 - **多格式输出** — 支持 `--mode markdown`（默认）和 `--mode org` 输出格式
 - **数据库支持** — SQLite 存储对话历史、配置、笔记等
 - **项目感知** — 自动识别 Git 仓库根目录，按项目隔离对话历史
@@ -72,6 +77,7 @@ dscli    +---------------+
 ## 🚀 快速开始
 
 ### 安装
+
 ```bash
 # 方式1：使用 go install（推荐）
 go install gitcode.com/dscli/dscli@latest
@@ -87,8 +93,10 @@ make install    # 安装到 $GOPATH/bin
 ```
 
 ### 配置
+
 1. 获取 DeepSeek API 密钥：[DeepSeek 平台](https://platform.deepseek.com/)
 2. 设置环境变量：
+
 ```bash
 export DEEPSEEK_API_KEY="your-api-key-here"
 ```
@@ -96,6 +104,7 @@ export DEEPSEEK_API_KEY="your-api-key-here"
 ## 📖 使用示例
 
 ### 1. AI 编程助手
+
 ```bash
 # 基本对话（Markdown 格式输出）
 echo "如何用 Go 实现 HTTP 服务器？" | dscli chat
@@ -111,6 +120,7 @@ echo "def fibonacci(n):" | dscli fim
 ```
 
 ### 2. 会话管理
+
 ```bash
 # 查看对话历史列表
 dscli history list
@@ -126,6 +136,7 @@ dscli history edit 42
 ```
 
 ### 3. 开发工具
+
 ```bash
 # 静态代码检查
 dscli flycheck internal/...
@@ -139,6 +150,7 @@ dscli prompt edit
 ```
 
 ### 4. 查看模型和余额
+
 ```bash
 # 查看可用模型
 dscli models
@@ -152,6 +164,7 @@ dscli balance --format json
 ```
 
 ### 5. 查看版本信息
+
 ```bash
 dscli version
 ```
@@ -159,9 +172,11 @@ dscli version
 ## ⚙️ 高级配置
 
 ### 配置文件
+
 - 配置文件：`~/.dscli/config.dscli`
 
 ### 项目级配置
+
 - 项目配置目录：`<project>/.dscli/`
 - 项目提示词：`<project>/.dscli/prompt/chat.md`
 - 项目技能：`<project>/.dscli/skills/`
