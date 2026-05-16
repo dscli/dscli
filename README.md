@@ -268,10 +268,8 @@ deepseek-base-url = https://api.deepseek.com
 
 | 配置项 | 默认值 | 说明 |
 | -------- | -------- | ------ |
-| `deepseek-api-key` | — | API 密钥 |
+| `deepseek-api-key` |  | API 密钥 |
 | `deepseek-base-url` | `https://api.deepseek.com` | API 基础 URL |
-| `model-deepseek-chat` | `deepseek-v4-pro` | 对话模型 |
-| `model-deepseek-reasoner` | `deepseek-v4-flash` | 推理模型 |
 | `context-window` | `1000000` | 上下文窗口大小（token） |
 | `max-tokens` | `393216` | 单次最大输出 token |
 | `user-balance` | `true` | 对话结束后显示余额消耗 |
