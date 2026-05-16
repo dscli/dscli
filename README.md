@@ -174,17 +174,58 @@ dscli memory show 1
 dscli memory stats
 ```
 
-### 5. 开发工具
+### 5. 提示词与角色配置
+
+dscli 内置三个 AI 角色：**dev**（开发助手，全工具/全技能）、
+**expert**（领域专家，无工具/无技能）、**review**（代码审查，
+shell+file_read/无技能）。每个角色可独立配置系统提示词、可用工具
+和技能列表。
+
+**浏览工具：**
+
+```bash
+# 列出所有可用工具（按分类展示）
+dscli tool list
+
+# 按分类筛选
+dscli tool list --category file
+```
+
+**管理提示词：**
+
+```bash
+# 列出所有提示词
+dscli prompt list
+
+# 查看提示词内容
+dscli prompt show dev
+
+# 编辑提示词（支持项目级覆盖）
+dscli prompt edit
+```
+
+**配置角色：**
+
+```bash
+# 查看当前角色配置
+dscli role list
+dscli role show dev
+
+dscli role update review --skills "go-fix,gofumpt" \
+    --tools "shell,file_read" --prompt editor
+
+# 恢复默认配置
+dscli role reset review
+```
+
+### 6. 开发工具
 
 ```bash
 # 静态代码检查
 dscli flycheck internal/...
-
-# 编辑系统提示词
-dscli prompt edit
 ```
 
-### 5. 查看模型和余额
+### 7. 查看模型和余额
 
 ```bash
 # 查看可用模型
@@ -198,7 +239,7 @@ dscli models --format json
 dscli balance --format json
 ```
 
-### 6. 查看版本信息
+### 8. 查看版本信息
 
 ```bash
 dscli version
