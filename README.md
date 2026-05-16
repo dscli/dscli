@@ -198,10 +198,13 @@ dscli tool list --category file
 dscli prompt list
 
 # 查看提示词内容
-dscli prompt show dev
+dscli prompt show review
 
-# 编辑提示词（支持项目级覆盖）
-dscli prompt edit
+# 基于 review 添加新的提示词 editor
+dscli prompt show review | dscli prompt add editor
+
+# 编辑提示词
+dscli prompt edit editor
 ```
 
 **配置角色：**
