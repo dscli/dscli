@@ -112,9 +112,6 @@ echo "如何用 Go 实现 HTTP 服务器？" | dscli chat
 # Org 模式输出
 echo "解释这个算法的时间复杂度" | dscli chat --mode org
 
-# 使用推理模型
-echo "分析这个代码的性能问题" | dscli chat --model deepseek-reasoner
-
 # 代码补全
 echo "def fibonacci(n):" | dscli fim
 ```
