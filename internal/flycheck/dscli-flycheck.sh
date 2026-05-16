@@ -9,8 +9,7 @@
 
 set -euo pipefail
 
-FILE="$1"
-TIMEOUT="${2:-30}"
+FILE="%s"
 
 if [ ! -f "$FILE" ]; then
     echo "{\"error\": \"file not found: $FILE\"}"
@@ -20,6 +19,5 @@ fi
 ABS_FILE="$(realpath "$FILE")"
 
 # ── 调用 Emacs flycheck ─────────────────────────────────────────────
-# emacsclient --eval 通过 prin1 (Elisp print) 返回结果，
-# 外层包含 Elisp 转义的字符串引号。内层 python3 剥离外层后输出裸 JSON。
-emacsclient --eval "(progn (dscli-flycheck-check-file-json \"$ABS_FILE\" $TIMEOUT))" 2>/dev/null
+# emacsclient --eval 通过 prin1 (Elisp print) 返回结果。
+emacsclient --eval "(progn (dscli-flycheck-check-file-json \"$ABS_FILE\"))" 2>/dev/null

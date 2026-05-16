@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/shell"
@@ -53,13 +54,19 @@ type emacsFlycheckResult struct {
 //
 // 脚本通过 bash -s 执行，脚本内容经 stdin 传入。
 // filePath 是相对于项目根目录的路径。
-// timeoutSecs 是每个 checker 的超时秒数。
+// timeoutSecs 是整体超时秒数（0 表示不设置超时）。
 func runEmacsFlycheck(ctx context.Context, filePath string, timeoutSecs int) (*emacsFlycheckResult, error) {
 	absPath := filepath.Join(context.ProjectRoot, filePath)
 
+	// 外层超时控制：通过 context 传递给 mvdan/sh，超时后自动杀死子进程
+	if timeoutSecs > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSecs)*time.Second)
+		defer cancel()
+	}
+
 	// 通过 heredoc 将内嵌脚本传给 bash 执行
-	script := fmt.Sprintf("bash -s -- %s %d <<'FLYCHECK_SCRIPT_EOF'\n%s\nFLYCHECK_SCRIPT_EOF",
-		absPath, timeoutSecs, flycheckScript)
+	script := fmt.Sprintf(flycheckScript, absPath)
 
 	output, err := shell.SimpleExecute(ctx, script)
 	if err != nil {
