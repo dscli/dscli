@@ -174,7 +174,7 @@ dscli memory show 1
 dscli memory stats
 ```
 
-### 5. 提示词与角色配置
+### 5. 角色定制
 
 dscli 内置三个 AI 角色：**dev**（开发助手，全工具/全技能）、
 **expert**（领域专家，无工具/无技能）、**review**（代码审查，
@@ -226,6 +226,13 @@ dscli role reset review
 ```bash
 # 静态代码检查
 dscli flycheck internal/...
+
+# Emacs flycheck（支持 119+ 语言）
+dscli flycheck --emacs internal/
+
+# 解析文件结构（供 LLM 编辑）
+dscli parse main.go
+dscli parse main.go -l python
 ```
 
 ### 7. 查看模型和余额
