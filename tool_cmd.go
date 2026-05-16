@@ -54,13 +54,13 @@ func toolListRunE(cmd *cobra.Command, _ []string) error {
 	}
 
 	// firstLine 取描述的首行（到第一个换行符为止）
+	// firstLine 取描述的首行（到第一个换行符为止）
 	firstLine := func(s string) string {
-		if idx := strings.IndexByte(s, '\n'); idx >= 0 {
-			return s[:idx]
+		if before, _, found := strings.Cut(s, "\n"); found {
+			return before
 		}
 		return s
 	}
-
 	var rows []row
 	for _, t := range tools {
 		cat := t.Category

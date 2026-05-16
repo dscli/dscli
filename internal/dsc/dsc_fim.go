@@ -65,7 +65,7 @@ func (c *Deepseek) fimStream(ctx context.Context, req FIMRequest) (*FIMResponse,
 		return nil, fmt.Errorf("序列化FIM请求失败: %w", err)
 	}
 
-	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(data))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("创建FIM请求失败: %w", err)
 	}

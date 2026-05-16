@@ -318,7 +318,7 @@ func (e *Executor) buildRunnerOptions(ctx context.Context, stdout, stderr *bytes
 }
 
 // buildSandboxOptions 构建沙箱选项
-func (e *Executor) buildSandboxOptions(ctx context.Context) ([]interp.RunnerOption, error) {
+func (e *Executor) buildSandboxOptions(_ context.Context) ([]interp.RunnerOption, error) {
 	config := e.config.SandboxConfig
 	var opts []interp.RunnerOption
 

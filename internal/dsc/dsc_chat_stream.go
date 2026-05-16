@@ -24,7 +24,7 @@ func (c *Deepseek) chatStream(ctx context.Context, req ChatRequest) (*ChatRespon
 		return nil, fmt.Errorf("序列化请求失败: %w", err)
 	}
 
-	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(data))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("创建请求失败: %w", err)
 	}

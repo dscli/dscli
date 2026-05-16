@@ -372,9 +372,7 @@ func (c *orgToMarkdownConverter) convertLink(text string, start int) (string, in
 	inner := text[start+2 : close] // content between [[ and ]]
 
 	// Check for [[url][desc]] format
-	if bracket := strings.Index(inner, "]["); bracket != -1 {
-		url := inner[:bracket]
-		desc := inner[bracket+2:]
+	if url, desc, found := strings.Cut(inner, "]["); found {
 		return "[" + desc + "](" + url + ")", close + 2 - start
 	}
 

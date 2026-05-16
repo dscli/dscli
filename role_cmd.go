@@ -241,7 +241,7 @@ func validateTools(tools string) error {
 	for _, t := range known {
 		knownSet[t] = true
 	}
-	for _, t := range strings.Split(tools, ",") {
+	for t := range strings.SplitSeq(tools, ",") {
 		t = strings.TrimSpace(t)
 		if t != "" && !knownSet[t] {
 			return fmt.Errorf("未知的工具 %q", t)
@@ -262,7 +262,7 @@ func validateSkills(skillsStr string) error {
 	for _, s := range skillInfos {
 		knownSet[s.Name] = true
 	}
-	for _, s := range strings.Split(skillsStr, ",") {
+	for s := range strings.SplitSeq(skillsStr, ",") {
 		s = strings.TrimSpace(s)
 		if s != "" && !knownSet[s] {
 			return fmt.Errorf("未知的技能 %q", s)
