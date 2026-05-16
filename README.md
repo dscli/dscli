@@ -144,6 +144,9 @@ dscli skill query "go fix"
 # 查看技能详情
 dscli skill show go-fix
 
+# 校验技能
+dscli skill validate go-fix
+
 # 安装技能
 dscli skill add ~/src/agent-skills/skills/go-fix
 dscli skill add ~/src/agent-skills/skills/go-fix --target=global
