@@ -249,24 +249,33 @@ dscli models --format json
 dscli balance --format json
 ```
 
-### 8. 查看版本信息
+### 8. 配置文件
+
+配置文件默认为 `~/.dscli/config.dscli`，首次运行时通过环境变量自动生成：
 
 ```bash
-dscli version
+# 行首注释
+deepseek-api-key = sk-xxx          # 行末注释
+deepseek-base-url = https://api.deepseek.com
 ```
 
-## ⚙️ 高级配置
+格式规则：
 
-### 配置文件
+- 每行一个 `key = value` 配置项
+- `#` 支持行首和行末注释
 
-- 配置文件：`~/.dscli/config.dscli`
+常用配置项：
 
-### 项目级配置
-
-- 项目配置目录：`<project>/.dscli/`
-- 项目提示词：`<project>/.dscli/prompt/chat.md`
-- 项目技能：`<project>/.dscli/skills/`
-- 优先级：项目配置 > 全局配置 > 内置默认
+| 配置项 | 默认值 | 说明 |
+| -------- | -------- | ------ |
+| `deepseek-api-key` | — | API 密钥 |
+| `deepseek-base-url` | `https://api.deepseek.com` | API 基础 URL |
+| `model-deepseek-chat` | `deepseek-v4-pro` | 对话模型 |
+| `model-deepseek-reasoner` | `deepseek-v4-flash` | 推理模型 |
+| `context-window` | `1000000` | 上下文窗口大小（token） |
+| `max-tokens` | `393216` | 单次最大输出 token |
+| `user-balance` | `true` | 对话结束后显示余额消耗 |
+| `deepseek-v4` | `true` | 启用 V4 模型 |
 
 ## 🔄 工作流程
 
