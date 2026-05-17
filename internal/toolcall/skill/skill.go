@@ -113,10 +113,16 @@ func handleSkillSave(ctx context.Context, args ToolArgs) (result, warning string
 		}
 	}
 
-	// Determine author: preserve existing, or derive from git config.
+	// Determine author: preserve existing, or use AI maintainer from session.
 	author := existingAuthor
 	if author == "" {
-		author = context.GitUserName() + " <" + context.GitUserEmail() + ">"
+		nameCN := context.ContextValue(ctx, context.AINameCNKey, "")
+		email := context.ContextValue(ctx, context.AINameEmailKey, "")
+		if nameCN != "" && email != "" {
+			author = nameCN + " <" + email + ">"
+		} else {
+			author = "Bohr <bohr@dscli.io>"
+		}
 	}
 
 	if existing == nil {
