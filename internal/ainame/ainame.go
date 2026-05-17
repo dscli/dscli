@@ -59,6 +59,14 @@ func init() {
 		)`,
 	)
 
+	// Migration: add email column for DBs created before the column existed.
+	// ALTER TABLE ADD COLUMN is a no-op in SQLite if the column already exists
+	// (it fails, but upgrade errors are silently ignored).
+	sqlite.RegisterUpgradeSchema(
+		`ALTER TABLE ai_names ADD COLUMN email TEXT NOT NULL DEFAULT ''`,
+		`UPDATE ai_names SET email = LOWER(name_en) || '@dscli.io' WHERE email = '' OR email IS NULL`,
+	)
+
 	sqlite.RegisterPostInitHook(func(db *sql.DB) error {
 		return seedNames(db)
 	})
