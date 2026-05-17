@@ -11,6 +11,7 @@ import (
 	"text/template"
 	"time"
 
+	"gitcode.com/dscli/dscli/internal/ainame"
 	"gitcode.com/dscli/dscli/internal/config"
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
@@ -18,7 +19,6 @@ import (
 	"gitcode.com/dscli/dscli/internal/session"
 	"gitcode.com/dscli/dscli/internal/skills"
 )
-
 //go:embed dev.md
 var devTemplate string
 
@@ -63,6 +63,12 @@ type promptConfig struct {
 
 	// 模型特定配置
 	ModelID int64
+
+	// AI 名字系统
+	AINameEN        string // e.g. "Newton", "nobody"
+	AIPersonalityEN string // e.g. "steady, forceful, vain"
+	AIDescEN        string // English description for prompt injection
+	AIBirdFrog      string // "bird" | "frog"
 
 	// context（用于数据库查询等）
 	ctx context.Context
@@ -408,6 +414,10 @@ func newPromptConfig(ctx context.Context) *promptConfig {
 	config.loadGitInfo()
 	config.ProjectName = filepath.Base(config.ProjectRoot)
 	config.ProjectType = config.detectProjectType()
+
+	// AI 名字系统（静默分配）
+	config.loadAIName()
+
 	return config
 }
 
@@ -436,19 +446,8 @@ func getWorkingDirectory() string {
 
 // loadGitInfo 加载Git信息
 func (c *promptConfig) loadGitInfo() {
-	// 获取Git用户名
-	if output, err := exec.Command("git", "config", "user.name").Output(); err == nil {
-		c.GitUserName = strings.TrimSpace(string(output))
-	} else {
-		c.GitUserName = "未知"
-	}
-
-	// 获取Git邮箱
-	if output, err := exec.Command("git", "config", "user.email").Output(); err == nil {
-		c.GitUserEmail = strings.TrimSpace(string(output))
-	} else {
-		c.GitUserEmail = "未知"
-	}
+	c.GitUserName = context.GitUserName()
+	c.GitUserEmail = context.GitUserEmail()
 
 	// 获取当前分支
 	if output, err := exec.Command("git", "branch", "--show-current").Output(); err == nil {
@@ -501,6 +500,17 @@ func (c *promptConfig) detectProjectType() string {
 	}
 
 	return "通用项目"
+}
+
+// loadAIName populates AI name fields from session→name assignment.
+// Falls back to "nobody" when no session exists or DB is unavailable.
+func (c *promptConfig) loadAIName() {
+	sessionID := session.GetCurrentSessionID(c.ctx)
+	cfg := ainame.LoadOrAssign(sessionID)
+	c.AINameEN = cfg.NameEN
+	c.AIPersonalityEN = cfg.PersonalityEN
+	c.AIDescEN = cfg.DescEN
+	c.AIBirdFrog = cfg.BirdFrog
 }
 
 // LoadPrompts loads the system prompt combined with skill and note prompts.

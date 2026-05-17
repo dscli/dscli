@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -32,6 +33,10 @@ var (
 	FinishReasonLengthKey = ContextKeyType[bool]{"FinishReasonLength"}
 	GitWorkingDirKey      = ContextKeyType[string]{"GitWorkingDir"}
 	IsChildProcessKey     = ContextKeyType[bool]{"IsChildProcess"}
+	AINameCNKey           = ContextKeyType[string]{"AINameCN"}
+	AINameEmailKey        = ContextKeyType[string]{"AINameEmail"}
+	GitUserNameKey        = ContextKeyType[string]{"GitUserName"}
+	GitUserEmailKey       = ContextKeyType[string]{"GitUserEmail"}
 )
 
 var (
@@ -125,4 +130,22 @@ func ReasonerModelOK() bool {
 	// V4: deepseek-v4-pro vs deepseek-v4-flash
 	// V3: deepseek-chat vs deepseek-reasoner
 	return ModelDeepseekReasoner != ModelDeepseekChat
+}
+
+// GitUserName returns git config user.name, or "未知" on error.
+func GitUserName() string {
+	output, err := exec.Command("git", "config", "user.name").Output()
+	if err != nil {
+		return "未知"
+	}
+	return strings.TrimSpace(string(output))
+}
+
+// GitUserEmail returns git config user.email, or "未知" on error.
+func GitUserEmail() string {
+	output, err := exec.Command("git", "config", "user.email").Output()
+	if err != nil {
+		return "未知"
+	}
+	return strings.TrimSpace(string(output))
 }

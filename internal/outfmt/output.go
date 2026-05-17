@@ -485,39 +485,79 @@ func IsVerbose() bool {
 }
 
 func PrintClimeinContent(ctx context.Context, content string) {
+	userName := context.ContextValue(ctx, context.GitUserNameKey, "")
+	userEmail := context.ContextValue(ctx, context.GitUserEmailKey, "")
+
 	content = strings.TrimSpace(content)
 	if content == "" {
-		Println("📋", "CONTINUE...")
+		if userName != "" && userEmail != "" && userName != "未知" {
+			Printf("\n👤 %s <%s>\n", userName, userEmail)
+		} else {
+			Println("📋", "CONTINUE...")
+		}
 	} else {
-		Println("📋", content)
+		if userName != "" && userEmail != "" && userName != "未知" {
+			Printf("\n👤 %s <%s>\n", userName, userEmail)
+		} else {
+			Println("📋", content)
+		}
 	}
+	Println("------")
 }
 
 func PrintUserContent(ctx context.Context, content string) {
+	userName := context.ContextValue(ctx, context.GitUserNameKey, "")
+	userEmail := context.ContextValue(ctx, context.GitUserEmailKey, "")
+
 	content = strings.TrimSpace(content)
 	if content == "" {
-		Println("\n👤", "CONTINUE...")
+		if userName != "" && userEmail != "" && userName != "未知" {
+			Printf("\n👤 %s <%s>\n", userName, userEmail)
+		} else {
+			Println("\n👤", "CONTINUE...")
+		}
 	} else {
-		Println("\n👤", content)
+		if userName != "" && userEmail != "" && userName != "未知" {
+			Printf("\n👤 %s <%s>\n", userName, userEmail)
+		} else {
+			Println("\n👤", content)
+		}
 	}
-	Println("\n------")
+	Println("------")
 }
-
 func PrintContent(ctx context.Context, reasoning, content string) {
 	// 检查是否是streaming模式
 	stream := context.ContextValue(ctx, context.StreamKey, false)
 
+	// AI name for header
+	nameCN := context.ContextValue(ctx, context.AINameCNKey, "")
+	email := context.ContextValue(ctx, context.AINameEmailKey, "")
+
 	reasoning = strings.TrimSpace(reasoning)
 	if reasoning != "" {
-		Println("✨", FillParagraph(reasoning, DefaultFillWidth))
+		if nameCN != "" && email != "" {
+			Printf("✨ %s <%s>\n", nameCN, email)
+			Println("------")
+			Println(FillParagraph(reasoning, DefaultFillWidth))
+			Println("------")
+		} else {
+			Println("✨", FillParagraph(reasoning, DefaultFillWidth))
+		}
 	}
 
 	content = strings.TrimSpace(content)
 	if content != "" {
 		// 在streaming模式下，内容已经在streaming过程中输出，这里不需要再次输出
 		if !stream {
-			Println("📝", content)
-			Println()
+			if nameCN != "" && email != "" {
+				Printf("🧠 %s <%s>\n", nameCN, email)
+				Println("------")
+				Println(content)
+				Println("------")
+			} else {
+				Println("📝", content)
+				Println()
+			}
 		}
 	}
 }

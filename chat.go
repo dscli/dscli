@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"gitcode.com/dscli/dscli/internal/ainame"
 	"gitcode.com/dscli/dscli/internal/chimein"
 	"gitcode.com/dscli/dscli/internal/config"
 	"gitcode.com/dscli/dscli/internal/context"
@@ -16,6 +17,7 @@ import (
 	"gitcode.com/dscli/dscli/internal/lockfile"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/prompt"
+	"gitcode.com/dscli/dscli/internal/session"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 	"gitcode.com/dscli/dscli/internal/toolcall/alltools"
 	"github.com/spf13/cobra"
@@ -143,6 +145,17 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		ctx = context.WithValue(ctx, context.IsChildProcessKey, true)
 	}
 
+	// Set AI name in context for output formatting
+	sessionID := session.GetCurrentSessionID(ctx)
+	cfg := ainame.LoadOrAssign(sessionID)
+	ctx = context.WithValue(ctx, context.AINameCNKey, cfg.NameCN)
+	ctx = context.WithValue(ctx, context.AINameEmailKey, cfg.Email)
+
+	// Set Git user info in context for output formatting
+	ctx = context.WithValue(ctx, context.GitUserNameKey, context.GitUserName())
+	ctx = context.WithValue(ctx, context.GitUserEmailKey, context.GitUserEmail())
+
+	// 3. 主进程：如果还需要从 stdin 读取，现在阻塞读取（没有超时限制，
 	// 3. 主进程：如果还需要从 stdin 读取，现在阻塞读取（没有超时限制，
 	//    因为用户正在主动使用 chat）。
 	if needStdin {
