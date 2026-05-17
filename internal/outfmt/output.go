@@ -492,12 +492,16 @@ func PrintClimeinContent(ctx context.Context, content string) {
 	if content == "" {
 		if userName != "" && userEmail != "" && userName != "未知" {
 			Printf("\n👤 %s <%s>\n", userName, userEmail)
+			Println("CONTINUE...")
+			Println()
 		} else {
 			Println("📋", "CONTINUE...")
 		}
 	} else {
 		if userName != "" && userEmail != "" && userName != "未知" {
-			Printf("\n👤 %s <%s>\n", userName, userEmail)
+			Printf("\n👤 %s <%s>\n\n", userName, userEmail)
+			Println(content)
+			Println()
 		} else {
 			Println("📋", content)
 		}
@@ -512,13 +516,17 @@ func PrintUserContent(ctx context.Context, content string) {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		if userName != "" && userEmail != "" && userName != "未知" {
-			Printf("\n👤 %s <%s>\n", userName, userEmail)
+			Printf("\n👤 %s <%s>\n\n", userName, userEmail)
+			Println("CONTINUE...")
+			Println()
 		} else {
 			Println("\n👤", "CONTINUE...")
 		}
 	} else {
 		if userName != "" && userEmail != "" && userName != "未知" {
-			Printf("\n👤 %s <%s>\n", userName, userEmail)
+			Printf("\n👤 %s <%s>\n\n", userName, userEmail)
+			Println(content)
+			Println()
 		} else {
 			Println("\n👤", content)
 		}
@@ -536,10 +544,9 @@ func PrintContent(ctx context.Context, reasoning, content string) {
 	reasoning = strings.TrimSpace(reasoning)
 	if reasoning != "" {
 		if nameCN != "" && email != "" {
-			Printf("✨ %s <%s>\n", nameCN, email)
-			Println("------")
+			Printf("\n✨ %s <%s>\n\n", nameCN, email)
 			Println(FillParagraph(reasoning, DefaultFillWidth))
-			Println("------")
+			Println()
 		} else {
 			Println("✨", FillParagraph(reasoning, DefaultFillWidth))
 		}
@@ -550,12 +557,11 @@ func PrintContent(ctx context.Context, reasoning, content string) {
 		// 在streaming模式下，内容已经在streaming过程中输出，这里不需要再次输出
 		if !stream {
 			if nameCN != "" && email != "" {
-				Printf("🧠 %s <%s>\n", nameCN, email)
-				Println("------")
+				Printf("🐋 %s <%s>\n\n", nameCN, email)
 				Println(content)
-				Println("------")
+				Println()
 			} else {
-				Println("📝", content)
+				Println("🐋 ", content)
 				Println()
 			}
 		}
