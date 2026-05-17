@@ -1,6 +1,7 @@
 ---
 name: dscli
 description:  dscli core concepts: prompt, history, skills, memory. Not about parameters — only what the AI doesn't already know.
+author: Bohr <bohr@dscli.io>
 keywords: [dscli, built-in, core, concepts]
 auto_inject: true
 ---
@@ -68,20 +69,22 @@ A skill is a reusable problem-solving recipe. You create skills yourself via
 `skill_save`.
 
 **The philosophy of skills**: the 10 minutes you spend writing a skill today
-saves exponential time tomorrow.
+
 
 ### What makes a good skill
 
 - **Executable**: step-by-step instructions, not a theoretical article
 - **Self-contained**: everything needed to complete the task, including scripts
 - **Searchable**: good keywords so `skill_search` can find it
+- **Signed**: add `author: Your Name <email>` to the YAML frontmatter.
+  It's good practice — gives credit and shows who to ask about the skill.
+  Author is preserved across `skill_save` updates; edit SKILL.md directly to change.
 
 ### When to write a skill
 
 When you've solved a non-trivial problem that will recur — especially one
 involving multiple steps, specific commands, or domain knowledge you had to
 work to discover.
-
 After creating a skill, validate it with `dscli skill validate <name>`.
 
 ## 4. Memory

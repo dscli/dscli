@@ -104,10 +104,12 @@ func handleSkillSave(ctx context.Context, args ToolArgs) (result, warning string
 	// Try to read existing skill on disk for partial update merge
 	skillFile := filepath.Join(context.ProjectRoot, ".dscli", "skills", name, "SKILL.md")
 	var existing *skills.Skill
+	var existingAuthor string
 	if _, statErr := os.Stat(skillFile); statErr == nil {
 		var s skills.Skill
 		if parseErr := skills.ParseSkill(skillFile, &s); parseErr == nil {
 			existing = &s
+			existingAuthor = s.Author
 		}
 	}
 
@@ -135,10 +137,11 @@ func handleSkillSave(ctx context.Context, args ToolArgs) (result, warning string
 		if !hasAutoInject {
 			autoInject = existing.AutoInject
 		}
+		// Author is always preserved from existing; edit SKILL.md directly to change
 	}
 
 	outfmt.Printf("Saving skill [%s]\n", name)
-	result, warning, err = skills.HandleSkillCreate(ctx, name, description, bodyContent, keywordsStr, autoInject)
+	result, warning, err = skills.HandleSkillCreate(ctx, name, description, existingAuthor, bodyContent, keywordsStr, autoInject)
 	return result, warning, err
 }
 

@@ -70,6 +70,7 @@ type Resource struct {
 type Skill struct {
 	Name        string     `yaml:"name,omitzero"`
 	Description string     `yaml:"description,omitzero"`
+	Author      string     `yaml:"author,omitzero"`  // 署名，如 "Bohr <bohr@dscli.io>"（可选）
 	Path        string     `yaml:"path,omitzero"`    // 技能根目录
 	Content     string     `yaml:"content,omitzero"` // SKILL.md 正文
 	Keywords    []string   `yaml:"keywords,omitzero"`
@@ -218,12 +219,14 @@ func FormatSkillMD(skill *Skill) (string, error) {
 	type frontmatter struct {
 		Name        string   `yaml:"name"`
 		Description string   `yaml:"description"`
+		Author      string   `yaml:"author,omitzero"`
 		Keywords    []string `yaml:"keywords,omitzero"`
 		AutoInject  bool     `yaml:"auto_inject,omitzero"`
 	}
 	fm := frontmatter{
 		Name:        skill.Name,
 		Description: skill.Description,
+		Author:      skill.Author,
 		Keywords:    skill.Keywords,
 		AutoInject:  skill.AutoInject,
 	}

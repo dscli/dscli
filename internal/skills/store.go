@@ -591,7 +591,7 @@ func SetAutoInject(name string, autoInject, global bool) error {
 	return localStore.SetAutoInject(name, autoInject)
 }
 
-func HandleSkillCreate(ctx context.Context, name, description, content, keywordsStr string, autoInject bool) (result, warning string, err error) {
+func HandleSkillCreate(ctx context.Context, name, description, author, content, keywordsStr string, autoInject bool) (result, warning string, err error) {
 	// Validate name against spec rules
 	errs := validateName(name)
 	if len(errs) > 0 {
@@ -614,6 +614,7 @@ func HandleSkillCreate(ctx context.Context, name, description, content, keywords
 	skill := Skill{
 		Name:        name,
 		Description: description,
+		Author:      author,
 		Content:     content,
 		Keywords:    keywords,
 		AutoInject:  autoInject,
