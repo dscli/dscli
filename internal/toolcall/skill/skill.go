@@ -117,9 +117,10 @@ func handleSkillSave(ctx context.Context, args ToolArgs) (result, warning string
 	author := existingAuthor
 	if author == "" {
 		nameCN := context.ContextValue(ctx, context.AINameCNKey, "")
+		nameEN := context.ContextValue(ctx, context.AINameENKey, "")
 		email := context.ContextValue(ctx, context.AINameEmailKey, "")
-		if nameCN != "" && email != "" {
-			author = nameCN + " <" + email + ">"
+		if nameCN != "" && email != "" && nameEN != "" {
+			author = nameEN + " <" + email + ">"
 		} else {
 			author = "Bohr <bohr@dscli.io>"
 		}

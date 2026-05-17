@@ -149,6 +149,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	sessionID := session.GetCurrentSessionID(ctx)
 	cfg := ainame.LoadOrAssign(sessionID)
 	ctx = context.WithValue(ctx, context.AINameCNKey, cfg.NameCN)
+	ctx = context.WithValue(ctx, context.AINameENKey, cfg.NameEN)
 	ctx = context.WithValue(ctx, context.AINameEmailKey, cfg.Email)
 
 	// Set Git user info in context for output formatting

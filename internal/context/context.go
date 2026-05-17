@@ -34,6 +34,7 @@ var (
 	GitWorkingDirKey      = ContextKeyType[string]{"GitWorkingDir"}
 	IsChildProcessKey     = ContextKeyType[bool]{"IsChildProcess"}
 	AINameCNKey           = ContextKeyType[string]{"AINameCN"}
+	AINameENKey           = ContextKeyType[string]{"AINameEN"}
 	AINameEmailKey        = ContextKeyType[string]{"AINameEmail"}
 	GitUserNameKey        = ContextKeyType[string]{"GitUserName"}
 	GitUserEmailKey       = ContextKeyType[string]{"GitUserEmail"}
