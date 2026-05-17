@@ -79,4 +79,5 @@ dscli_new
 # Python类
 __pycache__
 !test_*.go
-.dscli
+.dscli/locks
+.dscli/skills/skills.yaml
