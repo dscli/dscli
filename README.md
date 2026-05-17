@@ -24,6 +24,7 @@ dscli    +---------------+
 
 ### 版本历史
 
+- v0.8.0 (2026-05-17) — AI 人物系统（32 位科学家）、技能 author 字段自动填充、输出格式统一、`git author` 风格用户展示
 - v0.7.6 (2026-05-03) — P0 nil panic 修复、类型别名清理、recall 限制、11 个新测试
 - v0.7.5 (2026-05-03) — toolcall 结果截断阈值提升至 1M 上下文适配
 - v0.7.4 (2026-04-29) — 重组包结构，整合 prompt / note / session
@@ -58,8 +59,9 @@ dscli    +---------------+
 ### 🛠️ 开发工具
 
 - **`dscli flycheck <路径>`** — 静态代码检查（Go 用 staticcheck，Python 用 ruff）
-- **`dscli skill`** — 技能管理（list / use / query / set-auto-inject）
+- **`dscli skill`** — 技能管理（list / show / add / remove / query / validate / set-auto-inject / save；含 YAML frontmatter author 自动填充）
 - **`dscli prompt`** — 系统提示词管理（show / edit，支持项目级和全局）
+- **`dscli completion`** — 生成 Shell 自动补全脚本（bash / zsh / fish / powershell）
 - **`dscli config edit`** — 编辑配置文件
 
 ### 💬 微信集成
@@ -74,6 +76,17 @@ dscli    +---------------+
 - **会话统计** — 每次对话后显示耗时、花费、余额
 - **`dscli version`** — 查看版本和运行时信息
 
+### 🎭 AI 人物
+
+每次会话随机分配一位科学家作为 AI 人格——**32 位科学家**，戴森分类法：15 只鸟（bird，俯瞰全局）+ 17 只蛙（frog，深入细节）。每个名字附带唯一性格描述和 `name@dscli.io` 邮箱，对话中以 `👤 Name <email>` 展示。
+
+- **随机分配** — 会话首次使用时随机抽取，持久绑定，不可更改
+- **人格注入** — 人物性格描述自动注入系统提示词，赋予 AI 独特对话风格
+- **Git 集成** — 输出格式结合 `git config` 用户信息，形如 `👤 用户 <user@email>`
+- **无名（nobody）** — 未初始化会话的默认人格：「如 C 语言空指针——无名之辈，不可或缺」
+
+支持的科学家包括：牛顿、黎曼、特斯拉、爱因斯坦、图灵、费曼、杨振宁、普朗克、麦克斯韦、欧拉、高斯、阿基米德、伽利略、开普勒、法拉第、戴森、居里夫人、华罗庚、笛卡尔、莱布尼茨、帕斯卡、玻尔、海森堡、薛定谔、费米、狄拉克、香农、沈括、张衡、墨子、巴斯德——外加无名。
+
 ## 🚀 快速开始
 
 ### 安装
@@ -85,7 +98,7 @@ go install gitcode.com/dscli/dscli@latest
 # 方式2：从源码构建
 git clone https://gitcode.com/dscli/dscli.git
 cd dscli
-git checkout v0.7.6
+git checkout v0.8.0
 make install    # 安装到 $GOPATH/bin
 
 # 方式3：下载预编译二进制
@@ -156,6 +169,9 @@ dscli skill remove go-fix
 
 # 设置自动注入
 dscli skill set-auto-inject go-fix true
+
+# 创建/更新技能（author 自动从 git config 填充）
+dscli skill save --name my-skill --content "..." --desc "说明"
 ```
 
 ### 4. 记忆管理
