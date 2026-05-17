@@ -113,6 +113,12 @@ func handleSkillSave(ctx context.Context, args ToolArgs) (result, warning string
 		}
 	}
 
+	// Determine author: preserve existing, or derive from git config.
+	author := existingAuthor
+	if author == "" {
+		author = context.GitUserName() + " <" + context.GitUserEmail() + ">"
+	}
+
 	if existing == nil {
 		// Creating new skill: description and content are required
 		if description == "" {
@@ -137,11 +143,10 @@ func handleSkillSave(ctx context.Context, args ToolArgs) (result, warning string
 		if !hasAutoInject {
 			autoInject = existing.AutoInject
 		}
-		// Author is always preserved from existing; edit SKILL.md directly to change
 	}
 
 	outfmt.Printf("Saving skill [%s]\n", name)
-	result, warning, err = skills.HandleSkillCreate(ctx, name, description, existingAuthor, bodyContent, keywordsStr, autoInject)
+	result, warning, err = skills.HandleSkillCreate(ctx, name, description, author, bodyContent, keywordsStr, autoInject)
 	return result, warning, err
 }
 
