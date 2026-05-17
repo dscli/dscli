@@ -7,6 +7,7 @@ require (
 	github.com/eatmoreapple/openwechat v1.4.0
 	github.com/go-ego/gse v1.0.2
 	github.com/goccy/go-yaml v1.19.2
+	github.com/mattn/go-runewidth v0.0.19
 	github.com/spf13/cobra v1.8.0
 	golang.org/x/net v0.52.0
 	golang.org/x/term v0.41.0
@@ -29,7 +30,6 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/olekukonko/cat v0.0.0-20250911104152-50322a0618f6 // indirect
 	github.com/olekukonko/errors v1.2.0 // indirect

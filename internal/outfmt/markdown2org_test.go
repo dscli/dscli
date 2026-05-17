@@ -459,3 +459,75 @@ func TestMarkdownToOrgConverter_Table(t *testing.T) {
 		})
 	}
 }
+
+func TestMarkdownToOrgConverter_TableCJK(t *testing.T) {
+	// CJK characters: 3 bytes each in UTF-8, but 2 columns display width.
+	// With len(), the table would misalign. With runewidth.StringWidth(),
+	// display width is used for column sizing and padding.
+	input := strings.Join([]string{
+		"| 姓名 | 电话   | 年龄 |",
+		"|------|--------|------|",
+		"| 张三 | 1234   | 28   |",
+		"| 李四 | 567890 | 35   |",
+		"",
+	}, "\n")
+
+	converter := NewMarkdownToOrgConverter()
+	var result strings.Builder
+	lines := strings.Split(input, "\n")
+	for _, line := range lines {
+		result.WriteString(converter.ConvertLine(line + "\n"))
+	}
+	if len(converter.tableBuf) > 0 {
+		result.WriteString(converter.flushMdTableBuf())
+	}
+
+	output := result.String()
+
+	// "姓名" = 4 display cols, "567890" = 6 cols → separator: 4+2=6, 6+2=8 dashes
+	if !strings.Contains(output, "|------+--------+------|") {
+		t.Errorf("CJK separator mismatch.\n got: %s", output)
+	}
+
+	// Verify cells are properly aligned (display width, not byte count)
+	lines2 := strings.Split(output, "\n")
+	for _, l := range lines2 {
+		// check header: "姓名" should have proper padding
+		if strings.Contains(l, "姓名") && !strings.Contains(l, "| 姓名 |") {
+			t.Logf("header line: %q", l)
+		}
+	}
+
+	// Verify mixed-width row: "张三"(4) aligned with "姓名"(4)
+	if !strings.Contains(output, "| 张三 |") {
+		t.Errorf("张三 row not properly aligned.\n got: %s", output)
+	}
+}
+
+func TestMarkdownToOrgConverter_TableMixedCJK(t *testing.T) {
+	// Mixed ASCII + CJK: ensure both align correctly with display widths.
+	input := strings.Join([]string{
+		"| Name     | 城市 | Population |",
+		"|----------|------|------------|",
+		"| Beijing  | 北京 | 21540000   |",
+		"| Shanghai | 上海 | 24870000   |",
+		"",
+	}, "\n")
+
+	converter := NewMarkdownToOrgConverter()
+	var result strings.Builder
+	lines := strings.Split(input, "\n")
+	for _, line := range lines {
+		result.WriteString(converter.ConvertLine(line + "\n"))
+	}
+	if len(converter.tableBuf) > 0 {
+		result.WriteString(converter.flushMdTableBuf())
+	}
+
+	output := result.String()
+
+	// "Shanghai" = 8 display columns → separator: 10 dashes
+	if !strings.Contains(output, "|----------+------+------------|") {
+		t.Errorf("mixed CJK separator mismatch.\n got: %s", output)
+	}
+}

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/mattn/go-runewidth"
 )
 
 // MarkdownToOrgConverter converts Markdown to Org mode
@@ -180,12 +182,14 @@ func (c *MarkdownToOrgConverter) flushMdTableBuf() string {
 		}
 	}
 
-	// Calculate per-column widths based on converted cell content.
+	// Calculate per-column display widths based on converted cell content.
+	// Uses runewidth.StringWidth (not len) to match Emacs org-string-width
+	// behavior for CJK and other wide characters.
 	colWidths := make([]int, maxCols)
 	for _, row := range rows {
 		for i, cell := range row {
 			converted := c.convertMarkdownSimple(cell)
-			w := len(converted)
+			w := runewidth.StringWidth(converted)
 			if w > colWidths[i] {
 				colWidths[i] = w
 			}
@@ -203,8 +207,8 @@ func (c *MarkdownToOrgConverter) flushMdTableBuf() string {
 			}
 			result.WriteString(" ")
 			result.WriteString(cell)
-			// Right-pad to column width.
-			pad := colWidths[colIdx] - len(cell)
+			// Right-pad to column display width (using runewidth for CJK).
+			pad := colWidths[colIdx] - runewidth.StringWidth(cell)
 			for pad > 0 {
 				result.WriteByte(' ')
 				pad--
