@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/mattn/go-runewidth"
 )
@@ -95,6 +97,55 @@ func isBlockQuoteLine(trimmed string) bool {
 func stripBlockQuotePrefix(line string) string {
 	return strings.TrimLeft(line, " >\t")
 }
+
+// isCJK reports whether r is a CJK character, fullwidth punctuation, or
+// other wide character that prevents Org emphasis markers (*, /, +, =, ~, _,
+// ^) from being recognized without surrounding spaces.
+//
+// The Org manual §12.2 requires emphasis markers to sit at word boundaries
+// (preceded by whitespace or specific punctuation).  CJK text has no
+// inter-word spaces, so markers directly adjacent to CJK characters are
+// invisible to Org — the output must insert a space on the boundary.
+func isCJK(r rune) bool {
+	if r < 0x2000 {
+		return false // fast path for ASCII, Latin-1, general punctuation
+	}
+	return unicode.Is(unicode.Han, r) ||
+		unicode.Is(unicode.Hiragana, r) ||
+		unicode.Is(unicode.Katakana, r) ||
+		unicode.Is(unicode.Hangul, r) ||
+		(r >= 0x3000 && r <= 0x303F) || // CJK Symbols and Punctuation
+		(r >= 0xFF00 && r <= 0xFFEF) || // Halfwidth and Fullwidth Forms
+		(r >= 0xFE30 && r <= 0xFE4F) // CJK Compatibility Forms
+}
+
+// writePreSpaceIfCJK writes a space to sb when the last output rune is CJK.
+// Call this before writing an Org emphasis-marker character so that Org
+// recognises the marker.
+func writePreSpaceIfCJK(sb *strings.Builder) {
+	s := sb.String()
+	if len(s) == 0 {
+		return
+	}
+	runes := []rune(s)
+	if isCJK(runes[len(runes)-1]) {
+		sb.WriteByte(' ')
+	}
+}
+
+// writePostSpaceIfCJK writes a space to sb when the rune at position pos in
+// text is CJK.  Call this after writing an Org emphasis-marker character so
+// that Org recognises the closing marker.
+func writePostSpaceIfCJK(sb *strings.Builder, text string, pos int) {
+	if pos >= len(text) {
+		return
+	}
+	r, _ := utf8.DecodeRuneInString(text[pos:])
+	if r != utf8.RuneError && isCJK(r) {
+		sb.WriteByte(' ')
+	}
+}
+
 
 // convertNonQuoteLine handles code blocks, org blocks, headings, and inline
 // formatting. This is the original convertLineCore logic, extracted so that
@@ -311,10 +362,12 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 					boldText := text[i+2 : j]
 					// 递归处理粗体中的斜体
 					boldText = c.convertItalicInBold(boldText)
+					writePreSpaceIfCJK(&result)
 					result.WriteString("*")
 					result.WriteString(boldText)
 					result.WriteString("*")
 					i = j + 2
+					writePostSpaceIfCJK(&result, text, i)
 					break
 				}
 				j++
@@ -335,10 +388,12 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 				if text[j] == '*' && (j+1 >= n || text[j+1] != '*') {
 					// Found closing *
 					italicText := text[i+1 : j]
+					writePreSpaceIfCJK(&result)
 					result.WriteString("/")
 					result.WriteString(italicText)
 					result.WriteString("/")
 					i = j + 1
+					writePostSpaceIfCJK(&result, text, i)
 					break
 				}
 				j++
@@ -357,10 +412,12 @@ func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 			for j < n {
 				if j+1 < n && text[j] == '~' && text[j+1] == '~' {
 					strikeText := text[i+2 : j]
+					writePreSpaceIfCJK(&result)
 					result.WriteString("+")
 					result.WriteString(strikeText)
 					result.WriteString("+")
 					i = j + 2
+					writePostSpaceIfCJK(&result, text, i)
 					break
 				}
 				j++
@@ -461,10 +518,12 @@ func (c *MarkdownToOrgConverter) convertItalicInBold(text string) string {
 				if text[j] == '*' && (j+1 >= n || text[j+1] != '*') {
 					// Found closing *
 					italicText := text[i+1 : j]
+					writePreSpaceIfCJK(&result)
 					result.WriteString("/")
 					result.WriteString(italicText)
 					result.WriteString("/")
 					i = j + 1
+					writePostSpaceIfCJK(&result, text, i)
 					break
 				}
 				j++
