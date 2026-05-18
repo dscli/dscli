@@ -3,6 +3,7 @@ package dsc
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
@@ -23,6 +25,13 @@ var httpClient = &http.Client{
 func isRetryableError(err error) bool {
 	if err == nil {
 		return false
+	}
+
+	// 上下文超时（绝对可重试）—— 覆盖 io.ReadAll 读响应体超时、
+	// httpClient.Do 超时等场景。errors.Is 沿 %w 链自动解包，
+	// 即使错误被多层 fmt.Errorf 包装也能精准命中。
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
 	}
 
 	errStr := err.Error()
@@ -41,16 +50,18 @@ func isRetryableError(err error) bool {
 		return true
 	}
 
-	// HTTP状态码错误（部分可重试）
-	if strings.Contains(errStr, "API 返回错误状态码") {
-		// 5xx错误可重试，4xx错误不可重试
-		if strings.Contains(errStr, "500") ||
-			strings.Contains(errStr, "502") ||
-			strings.Contains(errStr, "503") ||
-			strings.Contains(errStr, "504") ||
-			strings.Contains(errStr, "429") { // 429 Too Many Requests 也可重试
-			return true
-		}
+	// 5xx 服务端错误（可重试）—— 服务端临时故障，重试是唯一选择。
+	// 不再要求错误消息必须包含 "API 返回错误状态码" 前缀：
+	// 去掉外层守卫，避免重试逻辑绑定到具体措辞。
+	// "500"/"502"/"503"/"504" 这些数字在非 HTTP 上下文中
+	// 极少出现，且即使误判，重试天花板（maxRetries=600）
+	// 也提供了安全网。
+	if strings.Contains(errStr, "500") ||
+		strings.Contains(errStr, "502") ||
+		strings.Contains(errStr, "503") ||
+		strings.Contains(errStr, "504") ||
+		strings.Contains(errStr, "429") { // 429 Too Many Requests 也可重试
+		return true
 	}
 
 	return false
@@ -84,7 +95,6 @@ func (c *Deepseek) doRequestSingle(method, path string, body, result any) (err e
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		// Since error found
 		// 检查是否是网络错误
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 			err = fmt.Errorf("网络请求超时: %w", err)

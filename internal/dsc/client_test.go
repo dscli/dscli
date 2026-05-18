@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gitcode.com/dscli/dscli/internal/context"
 )
 
 // newTestClient 创建测试用的客户端，使用极短的重试延迟
@@ -124,10 +126,61 @@ func Test_isRetryableError(t *testing.T) {
 		want bool
 	}{
 		{
-			"400",
+			"400 不可重试",
 			fmt.Errorf(`API 返回错误状态码 400: {"error":{"message":"An assistant message with 'tool_calls' must be followed by tool messages responding to each 'tool_call_id'. (insufficient tool messages following tool_calls message)","type":"invalid_request_error","param":null,"code":"invalid_request_error"}
 `),
 			false,
+		},
+		{
+			"500 可重试（doRequestSingle 格式）",
+			fmt.Errorf("API 返回错误状态码 500: Internal Server Error"),
+			true,
+		},
+		{
+			"502 可重试",
+			fmt.Errorf("API 返回错误状态码 502: Bad Gateway"),
+			true,
+		},
+		{
+			"503 可重试",
+			fmt.Errorf("API 返回错误状态码 503: Service Unavailable"),
+			true,
+		},
+		{
+			"504 可重试",
+			fmt.Errorf("API 返回错误状态码 504: Gateway Timeout"),
+			true,
+		},
+		{
+			"429 可重试",
+			fmt.Errorf("API 返回错误状态码 429: Too Many Requests"),
+			true,
+		},
+		{
+			"FIM 500 可重试（不同前缀）",
+			fmt.Errorf("FIM API 返回错误状态码 500: FIM error"),
+			true,
+		},
+		{
+			"DeadlineExceeded 直接值",
+			context.DeadlineExceeded,
+			true,
+		},
+		{
+			"DeadlineExceeded 被包装一次（模拟 doRequestSingle）",
+			fmt.Errorf("读取响应失败: %w", context.DeadlineExceeded),
+			true,
+		},
+		{
+			"DeadlineExceeded 被包装两次（模拟 Chat → doRequestSingle 链）",
+			fmt.Errorf("chat request failed: %w",
+				fmt.Errorf("读取响应失败: %w", context.DeadlineExceeded)),
+			true,
+		},
+		{
+			"i/o timeout 字符串匹配",
+			fmt.Errorf("dial tcp 1.2.3.4:443: i/o timeout"),
+			true,
 		},
 	}
 	for _, tt := range tests {
