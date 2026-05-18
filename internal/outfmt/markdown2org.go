@@ -13,6 +13,7 @@ import (
 type MarkdownToOrgConverter struct {
 	inCodeBlock     bool
 	inOrgBlock      bool
+	inBlockQuote    bool
 	currentCodeLang string
 	buf             bytes.Buffer
 	tableBuf        []string // buffered table rows for multi-line processing
@@ -23,6 +24,7 @@ func NewMarkdownToOrgConverter() *MarkdownToOrgConverter {
 	return &MarkdownToOrgConverter{
 		inCodeBlock:     false,
 		inOrgBlock:      false,
+		inBlockQuote:    false,
 		currentCodeLang: "",
 	}
 }
@@ -49,9 +51,55 @@ func (c *MarkdownToOrgConverter) ConvertLine(line string) string {
 	return c.convertLineCore(line)
 }
 
-// convertLineCore contains the original ConvertLine logic (code blocks,
-// headings, inline formatting).
+// convertLineCore handles blockquote state transitions, then delegates
+// inner-line conversion to convertNonQuoteLine. Blockquotes are detected
+// first so that they can contain code blocks, headings, and other elements.
 func (c *MarkdownToOrgConverter) convertLineCore(line string) string {
+	trimmedLine := strings.TrimSpace(line)
+
+	// ---- Blockquote handling (outermost wrapper) ----
+
+	// Exit blockquote: current line is NOT a blockquote line but we were in one.
+	if c.inBlockQuote && !isBlockQuoteLine(trimmedLine) {
+		c.inBlockQuote = false
+		// Close the quote, then process the current line normally.
+		return "#+end_quote\n" + c.convertNonQuoteLine(line)
+	}
+
+	// Enter or continue blockquote.
+	if isBlockQuoteLine(trimmedLine) {
+		// Strip the "> " prefix(es) and process the remaining line.
+		// Nested "> > text" becomes just "text".
+		innerLine := stripBlockQuotePrefix(line)
+		innerResult := c.convertNonQuoteLine(innerLine)
+
+		if !c.inBlockQuote {
+			c.inBlockQuote = true
+			return "#+begin_quote\n" + innerResult
+		}
+		return innerResult
+	}
+
+	// ---- Non-quote line: delegate to original pipeline ----
+	return c.convertNonQuoteLine(line)
+}
+
+// isBlockQuoteLine reports whether trimmed line starts a markdown blockquote.
+func isBlockQuoteLine(trimmed string) bool {
+	return strings.HasPrefix(trimmed, ">")
+}
+
+// stripBlockQuotePrefix removes all leading ">", space, and tab characters
+// from a blockquote line, returning the inner content.
+// "> > text" → "text", ">text" → "text", "> " → "".
+func stripBlockQuotePrefix(line string) string {
+	return strings.TrimLeft(line, " >\t")
+}
+
+// convertNonQuoteLine handles code blocks, org blocks, headings, and inline
+// formatting. This is the original convertLineCore logic, extracted so that
+// blockquote-wrapped lines can recursively pass through it.
+func (c *MarkdownToOrgConverter) convertNonQuoteLine(line string) string {
 	// 保存原始行是否有换行符
 	hasNewline := strings.HasSuffix(line, "\n")
 	trimmedLine := strings.TrimSpace(line)
@@ -133,6 +181,7 @@ func (c *MarkdownToOrgConverter) convertLineCore(line string) string {
 
 	return result
 }
+
 
 // flushMdTableBuf converts buffered markdown table rows to org table.
 // Returns the converted lines as a single string with \n separators.
@@ -236,13 +285,12 @@ func (c *MarkdownToOrgConverter) flushMdTableBuf() string {
 
 	return result.String()
 }
-
-// passThroughMdTableBuf passes buffered table lines through convertLineCore
+// passThroughMdTableBuf passes buffered table lines through convertNonQuoteLine
 // individually, used when the buffer doesn't contain a valid table.
 func (c *MarkdownToOrgConverter) passThroughMdTableBuf() string {
 	var result strings.Builder
 	for _, line := range c.tableBuf {
-		result.WriteString(c.convertLineCore(line + "\n"))
+		result.WriteString(c.convertNonQuoteLine(line + "\n"))
 	}
 	return result.String()
 }
@@ -447,6 +495,7 @@ func (c *MarkdownToOrgConverter) ConvertLines(input string, output io.Writer) er
 	// opening/closing fences and produce reversed begin_src/end_src.
 	c.inCodeBlock = false
 	c.inOrgBlock = false
+	c.inBlockQuote = false
 	c.currentCodeLang = ""
 	c.tableBuf = nil
 	// Discard any leftover content from previous malformed calls
@@ -482,6 +531,14 @@ func (c *MarkdownToOrgConverter) ConvertLines(input string, output io.Writer) er
 		if _, err := output.Write([]byte(flushed)); err != nil {
 			return fmt.Errorf("failed to write table output: %w", err)
 		}
+	}
+
+	// Flush unclosed blockquote (input ended while still in quote).
+	if c.inBlockQuote {
+		if _, err := output.Write([]byte("#+end_quote\n")); err != nil {
+			return fmt.Errorf("failed to write end_quote: %w", err)
+		}
+		c.inBlockQuote = false
 	}
 
 	return nil

@@ -531,3 +531,144 @@ func TestMarkdownToOrgConverter_TableMixedCJK(t *testing.T) {
 		t.Errorf("mixed CJK separator mismatch.\n got: %s", output)
 	}
 }
+
+func TestMarkdownToOrgConverter_BlockQuote(t *testing.T) {
+	// Markdown blockquotes → org #+begin_quote / #+end_quote.
+	input := strings.Join([]string{
+		"> This is a quote",
+		"> with **bold** and *italic*",
+	}, "\n")
+
+	converter := NewMarkdownToOrgConverter()
+	var result strings.Builder
+	lines := strings.Split(input, "\n")
+	for _, line := range lines {
+		result.WriteString(converter.ConvertLine(line + "\n"))
+	}
+	// Flush unclosed quote.
+	if converter.inBlockQuote {
+		result.WriteString("#+end_quote\n")
+	}
+
+	want := strings.Join([]string{
+		"#+begin_quote",
+		"This is a quote",
+		"with *bold* and /italic/",
+		"#+end_quote",
+		"",
+	}, "\n")
+	got := result.String()
+	if got != want {
+		t.Errorf("BlockQuote:\n got: %q\n want: %q", got, want)
+	}
+}
+
+func TestMarkdownToOrgConverter_NestedBlockQuote(t *testing.T) {
+	// Nested "> >" → single-level quote (all > stripped).
+	input := strings.Join([]string{
+		"> > 在俄罗斯，数学家、作曲家、电影制片人彼此交谈",
+		"> > 在冬夜的雪地上一起散步，围着一瓶葡萄酒坐在一起，分享彼此的思想。",
+	}, "\n")
+
+	converter := NewMarkdownToOrgConverter()
+	var result strings.Builder
+	lines := strings.Split(input, "\n")
+	for _, line := range lines {
+		result.WriteString(converter.ConvertLine(line + "\n"))
+	}
+	if converter.inBlockQuote {
+		result.WriteString("#+end_quote\n")
+	}
+
+	output := result.String()
+	if !strings.Contains(output, "#+begin_quote") {
+		t.Error("missing #+begin_quote")
+	}
+	if !strings.Contains(output, "#+end_quote") {
+		t.Error("missing #+end_quote")
+	}
+	if strings.Contains(output, ">") {
+		t.Errorf("still contains '>' marker:\n%s", output)
+	}
+}
+
+func TestMarkdownToOrgConverter_BlockQuoteWithInline(t *testing.T) {
+	// Blockquote line with inline code and link.
+	input := "> Use `fmt.Println` and visit [Go](https://go.dev)\n"
+
+	converter := NewMarkdownToOrgConverter()
+	got := converter.ConvertLine(input)
+	// Entering quote: begin_quote + converted inline content.
+	want := "#+begin_quote\nUse  =fmt.Println=  and visit [[https://go.dev][Go]]\n"
+	if got != want {
+		t.Errorf("got: %q\nwant: %q", got, want)
+	}
+}
+
+func TestMarkdownToOrgConverter_SingleLineBlockQuote(t *testing.T) {
+	// Single-line blockquote: should open and close.
+	input := strings.Join([]string{
+		"> A lone quote",
+		"regular text",
+	}, "\n")
+
+	converter := NewMarkdownToOrgConverter()
+	var result strings.Builder
+	lines := strings.Split(input, "\n")
+	for _, line := range lines {
+		result.WriteString(converter.ConvertLine(line + "\n"))
+	}
+
+	want := strings.Join([]string{
+		"#+begin_quote",
+		"A lone quote",
+		"#+end_quote",
+		"regular text",
+		"",
+	}, "\n")
+	got := result.String()
+	if got != want {
+		t.Errorf("Single-line quote:\n got: %q\n want: %q", got, want)
+	}
+}
+
+func TestMarkdownToOrgConverter_BlockQuoteEmptyLine(t *testing.T) {
+	// Empty blockquote line (">") produces blank line inside quote.
+	input := strings.Join([]string{
+		"> para 1",
+		">",
+		"> para 2",
+	}, "\n")
+
+	converter := NewMarkdownToOrgConverter()
+	var result strings.Builder
+	lines := strings.Split(input, "\n")
+	for _, line := range lines {
+		result.WriteString(converter.ConvertLine(line + "\n"))
+	}
+	if converter.inBlockQuote {
+		result.WriteString("#+end_quote\n")
+	}
+
+	output := result.String()
+	if !strings.Contains(output, "#+begin_quote") || !strings.Contains(output, "#+end_quote") {
+		t.Errorf("missing quote markers:\n%s", output)
+	}
+}
+
+func TestMarkdownToOrgConverter_BlockQuoteViaConvertLines(t *testing.T) {
+	// Test using the ConvertLines API (the real entry point).
+	input := "> Hello **world**\n> *italic* here\nregular\n"
+
+	converter := NewMarkdownToOrgConverter()
+	var out strings.Builder
+	if err := converter.ConvertLines(input, &out); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+
+	want := "#+begin_quote\nHello *world*\n/italic/ here\n#+end_quote\nregular\n"
+	if got != want {
+		t.Errorf("ConvertLines:\n got: %q\n want: %q", got, want)
+	}
+}
