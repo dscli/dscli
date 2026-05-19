@@ -136,11 +136,10 @@ func defaultLightpandaCmdExists() bool {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, path, "--version").Output()
-	if err != nil {
-		return false
-	}
-	return strings.Contains(string(out), "lightpanda")
+	// lightpanda uses "version" subcommand, not "--version" flag.
+	// Output is just version number (e.g. "0.3.0"), so we only
+	// check exit code — no need to inspect stdout content.
+	return exec.CommandContext(ctx, path, "version").Run() == nil
 }
 
 func defaultStartLightpanda() error {
