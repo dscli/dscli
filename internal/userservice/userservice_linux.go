@@ -75,6 +75,74 @@ func stop(name string) error {
 	return systemctl("stop", name)
 }
 
+func deleteSv(name string) error {
+	if !systemdUserAvailable() {
+		return ErrUnsupported
+	}
+
+	hd, err := homeDir()
+	if err != nil {
+		return err
+	}
+
+	unitPath := filepath.Join(hd, ".config", "systemd", "user", name+".service")
+
+	// Stop and disable the service if it exists.
+	systemctl("disable", "--now", name) // best-effort, ignore errors
+
+	if err := os.Remove(unitPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("userservice: remove unit file: %w", err)
+	}
+
+	return systemctl("daemon-reload")
+}
+
+func listSv() ([]string, error) {
+	hd, err := homeDir()
+	if err != nil {
+		return nil, err
+	}
+
+	unitDir := filepath.Join(hd, ".config", "systemd", "user")
+	entries, err := os.ReadDir(unitDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("userservice: read unit dir: %w", err)
+	}
+
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if name, ok := strings.CutSuffix(e.Name(), ".service"); ok && name != "" {
+			names = append(names, name)
+		}
+	}
+	return names, nil
+}
+
+func stale(name string) bool {
+	hd, err := homeDir()
+	if err != nil {
+		return true
+	}
+	unitPath := filepath.Join(hd, ".config", "systemd", "user", name+".service")
+	return staleCheck(unitPath)
+}
+
+func status(name string) (string, error) {
+	if stale(name) {
+		return "stale", nil
+	}
+	if systemdUserAvailable() && systemctlIsActive(name) {
+		return "running", nil
+	}
+	return "stopped", nil
+}
+
 // ---- systemd helpers ----
 
 // systemdUserAvailable reports whether the systemd user instance is reachable.

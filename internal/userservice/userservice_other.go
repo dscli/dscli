@@ -2,16 +2,30 @@
 
 package userservice
 
-import "fmt"
-
 func create(name, desc, execStart string) error {
-	return fmt.Errorf("%w: %s", ErrUnsupported, "only Linux (systemd) and macOS (launchctl) are supported")
+	return ErrUnsupported
 }
 
 func start(name string) error {
-	return fmt.Errorf("%w: %s", ErrUnsupported, "only Linux (systemd) and macOS (launchctl) are supported")
+	return ErrUnsupported
 }
 
 func stop(name string) error {
-	return fmt.Errorf("%w: %s", ErrUnsupported, "only Linux (systemd) and macOS (launchctl) are supported")
+	return ErrUnsupported
+}
+
+func deleteSv(name string) error {
+	return ErrUnsupported
+}
+
+func listSv() ([]string, error) {
+	return nil, ErrUnsupported
+}
+
+func stale(name string) bool {
+	return true
+}
+
+func status(name string) (string, error) {
+	return "unsupported", nil
 }

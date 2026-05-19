@@ -172,6 +172,11 @@ func defaultStartLightpanda() error {
 // (systemd on Linux, launchctl on macOS). It is the default implementation
 // of setupUserService.
 //
+// Flow:
+//  1. If service is "running" and TCP reachable → skip (nothing to do)
+//  2. If service was running before Create (stale or unreachable) → restart
+//  3. Otherwise → create config and start
+//
 // Returns nil on success. Returns an error if the platform doesn't support
 // user services, or if service creation/start fails.
 func defaultSetupUserService() error {
@@ -182,10 +187,29 @@ func defaultSetupUserService() error {
 
 	host, port := localListenAddr()
 	execStart := fmt.Sprintf("%s serve --host %s --port %s", lightpandaPath, host, port)
-
 	desc := "Lightpanda Browser (dscli)"
+
+	st, err := userservice.Status(lightpandaServiceName)
+	if err != nil {
+		return fmt.Errorf("查询用户服务状态失败: %w", err)
+	}
+
+	// Fast path: service is running, config fresh, TCP reachable.
+	if st == "running" && isLocalAvailable() {
+		return nil
+	}
+
+	// If the service was already running (stale or unreachable), we'll
+	// need to restart it after rebuilding the config.
+	needsRestart := isLocalAvailable()
+
+	// Create/update config (idempotent — skips if content unchanged).
 	if err := userservice.Create(lightpandaServiceName, desc, execStart); err != nil {
 		return fmt.Errorf("创建用户服务失败: %w", err)
+	}
+
+	if needsRestart {
+		_ = userservice.Stop(lightpandaServiceName)
 	}
 
 	if err := userservice.Start(lightpandaServiceName); err != nil {

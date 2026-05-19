@@ -60,11 +60,73 @@ func stop(name string) error {
 	plistPath := filepath.Join(hd, "Library", "LaunchAgents", name+".plist")
 
 	// launchctl unload stops and unloads the job.
-	// The plist remains; it will be reloaded at next login.
 	return launchctl("unload", plistPath)
 }
 
-// ---- launchctl helper ----
+func deleteSv(name string) error {
+	hd, err := homeDir()
+	if err != nil {
+		return err
+	}
+
+	plistPath := filepath.Join(hd, "Library", "LaunchAgents", name+".plist")
+
+	// Unload first (best-effort, ignore errors).
+	launchctl("unload", plistPath)
+
+	if err := os.Remove(plistPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("userservice: remove plist: %w", err)
+	}
+	return nil
+}
+
+func listSv() ([]string, error) {
+	hd, err := homeDir()
+	if err != nil {
+		return nil, err
+	}
+
+	plistDir := filepath.Join(hd, "Library", "LaunchAgents")
+	entries, err := os.ReadDir(plistDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("userservice: read LaunchAgents dir: %w", err)
+	}
+
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if name, ok := strings.CutSuffix(e.Name(), ".plist"); ok && name != "" {
+			names = append(names, name)
+		}
+	}
+	return names, nil
+}
+
+func stale(name string) bool {
+	hd, err := homeDir()
+	if err != nil {
+		return true
+	}
+	plistPath := filepath.Join(hd, "Library", "LaunchAgents", name+".plist")
+	return staleCheck(plistPath)
+}
+
+func status(name string) (string, error) {
+	if stale(name) {
+		return "stale", nil
+	}
+	if isLoaded(name) {
+		return "running", nil
+	}
+	return "stopped", nil
+}
+
+// ---- launchctl helpers ----
 
 // launchctl runs launchctl with the given arguments.
 func launchctl(args ...string) error {
@@ -72,6 +134,11 @@ func launchctl(args ...string) error {
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+// isLoaded reports whether the named LaunchAgent is loaded in launchd.
+func isLoaded(label string) bool {
+	return exec.Command("launchctl", "list", label).Run() == nil
 }
 
 // ---- plist formatting ----
