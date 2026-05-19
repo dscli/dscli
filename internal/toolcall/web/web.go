@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"gitcode.com/dscli/dscli/internal/lp"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 	"github.com/PuerkitoBio/goquery"
@@ -30,6 +31,7 @@ var webClient = &http.Client{
 }
 
 // handleWebReader 读取网页内容
+// handleWebReader 通过 lightpanda 浏览器读取网页内容并返回 Markdown。
 func handleWebReader(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
 	url := toolcall.ToolArgsValue(args, "url", "")
 	if url == "" {
@@ -41,8 +43,34 @@ func handleWebReader(ctx context.Context, args toolcall.ToolArgs) (result, warni
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 		url = "https://" + url
 	}
-	result, err = Web2Markdown(ctx, url)
-	return result, warning, err
+
+	startTime := time.Now()
+	markdown, err := lp.Get(ctx, url)
+	elapsed := time.Since(startTime)
+	if err != nil {
+		return result, warning, fmt.Errorf("web_reader: %w", err)
+	}
+
+	outfmt.Notice("读取网页: %q", url)
+
+	result = fmt.Sprintf(`📝 执行结果:
+网页内容（Markdown格式）:
+%s
+
+网页信息:
+- URL: %s
+- 响应时间: %v
+- 输出格式: Markdown（lightpanda）
+
+📊 执行统计:
+执行时间: %v
+状态: 成功`,
+		markdown,
+		url,
+		elapsed,
+		elapsed)
+
+	return result, warning, nil
 }
 
 // htmlToMarkdown 将HTML转换为简化的Markdown格式

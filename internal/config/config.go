@@ -18,6 +18,12 @@ func Get(name, defaultValue string, alias ...string) string {
 	return getGlobalConfig().Get(name, defaultValue, alias...)
 }
 
+// Set 设置全局配置值（仅内存中，不持久化到文件）。
+// 主要用于测试。
+func Set(name, value string) {
+	getGlobalConfig().Set(name, value)
+}
+
 // GetBool 获取布尔配置值
 // 支持 strconv.ParseBool 的格式：1/t/T/TRUE/true/True → true，0/f/F/FALSE/false/False → false
 // 未配置或解析失败时返回 defaultValue
