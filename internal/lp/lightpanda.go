@@ -3,9 +3,13 @@ package lp
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
+	"os"
+	"os/exec"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/config"
@@ -28,17 +32,35 @@ func isRemoteURL(rawURL string) bool {
 	return slices.Contains(remoteHosts, strings.ToLower(u.Host))
 }
 
+// ---- Function variables for test injection ----
+
 // getFromCDP performs the actual CDP interaction to fetch markdown content.
-// It is a variable so that tests can replace it with a mock.
-var getFromCDP = func(ctx context.Context, rawURL, cdpURL string) (string, error) {
-	// Create remote allocator pointing to lightpanda.
+var getFromCDP = defaultGetFromCDP
+
+// isLocalAvailable checks if local lightpanda is listening on 127.2.2.9:9227.
+var isLocalAvailable = defaultIsLocalAvailable
+
+// lightpandaCmdExists checks if the lightpanda command exists and is valid.
+var lightpandaCmdExists = defaultLightpandaCmdExists
+
+// startLightpanda starts lightpanda serve and waits for it to be ready.
+var startLightpanda = defaultStartLightpanda
+
+// startMu prevents concurrent auto-start attempts.
+var startMu sync.Mutex
+
+// startTried records whether we already attempted auto-start.
+var startTried bool
+
+// ---- Default implementations ----
+
+func defaultGetFromCDP(ctx context.Context, rawURL, cdpURL string) (string, error) {
 	allocatorCtx, allocatorCancel := chromedp.NewRemoteAllocator(ctx, cdpURL, chromedp.NoModifyURL)
 	defer allocatorCancel()
 
 	tabCtx, tabCancel := chromedp.NewContext(allocatorCtx)
 	defer tabCancel()
 
-	// Apply timeout.
 	tabCtx, timeoutCancel := context.WithTimeout(tabCtx, 60*time.Second)
 	defer timeoutCancel()
 
@@ -70,25 +92,91 @@ var getFromCDP = func(ctx context.Context, rawURL, cdpURL string) (string, error
 	return markdownContent, nil
 }
 
+func defaultIsLocalAvailable() bool {
+	conn, err := net.DialTimeout("tcp", "127.2.2.9:9227", 2*time.Second)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
+func defaultLightpandaCmdExists() bool {
+	path, err := exec.LookPath("lightpanda")
+	if err != nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, path, "--version").Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "lightpanda")
+}
+
+func defaultStartLightpanda() error {
+	path, err := exec.LookPath("lightpanda")
+	if err != nil {
+		return fmt.Errorf("lightpanda 命令未找到")
+	}
+
+	cmd := exec.Command(path, "serve", "--obey-robots", "--host", "127.2.2.9", "--port", "9227")
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("启动 lightpanda 失败: %w", err)
+	}
+
+	// Wait up to 15 seconds for lightpanda to become available.
+	deadline := time.After(15 * time.Second)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-deadline:
+			// Final check before killing — it may have started just in time.
+			if isLocalAvailable() {
+				return nil
+			}
+			cmd.Process.Kill()
+			return fmt.Errorf("lightpanda 启动超时，请手动启动")
+		case <-ticker.C:
+			if isLocalAvailable() {
+				return nil
+			}
+		}
+	}
+}
+
+// ---- Public API ----
+
 // Get fetches a web page via lightpanda CDP and returns its markdown content.
 //
 // It automatically routes to remote lightpanda for geo-restricted hosts
 // (listed in remoteHosts), and uses local lightpanda for all other URLs.
+// If remote is not configured, even remoteHosts fall back to local.
+//
+// If local lightpanda is not running but the lightpanda command is available,
+// Get will auto-start lightpanda serve in the background before fetching.
 //
 // Config keys used (from ~/.dscli/config.dscli):
 //   - lightpanda-local-url   (default: ws://127.2.2.9:9227)
 //   - lightpanda-remote-url  (default: "")
 //   - lightpanda-remote-token (default: "")
 func Get(ctx context.Context, rawURL string) (string, error) {
-	cdpURL := cdpEndpoint(rawURL)
-	if cdpURL == "" {
-		return "", fmt.Errorf("lightpanda remote URL not configured for %s, "+
-			"set lightpanda-remote-url in ~/.dscli/config.dscli", rawURL)
+	cdpURL, isLocal := cdpEndpoint(rawURL)
+
+	if isLocal {
+		if err := ensureLocalLightpanda(); err != nil {
+			return "", err
+		}
 	}
 
 	markdown, err := getFromCDP(ctx, rawURL, cdpURL)
 	if err != nil {
-		if !isRemoteURL(rawURL) {
+		if isLocal {
 			return "", fmt.Errorf(
 				"lightpanda 连接失败: %w\n\n请确保 lightpanda 已启动:\n"+
 					"  lightpanda serve --obey-robots --host 127.2.2.9 --port 9227",
@@ -101,22 +189,51 @@ func Get(ctx context.Context, rawURL string) (string, error) {
 	return markdown, nil
 }
 
-// cdpEndpoint returns the WebSocket URL for the lightpanda CDP endpoint,
-// with remote token appended for remote connections.
-func cdpEndpoint(rawURL string) string {
+// ensureLocalLightpanda ensures local lightpanda is running, starting it if
+// needed. Only one start attempt is made per process lifetime.
+func ensureLocalLightpanda() error {
+	if isLocalAvailable() {
+		return nil
+	}
+
+	startMu.Lock()
+	defer startMu.Unlock()
+
+	// Double-check after acquiring lock (another goroutine may have started it).
+	if isLocalAvailable() {
+		return nil
+	}
+
+	if startTried {
+		return fmt.Errorf("lightpanda 自动启动失败，请手动启动")
+	}
+	startTried = true
+
+	if !lightpandaCmdExists() {
+		return fmt.Errorf("lightpanda 未安装，请访问 https://lightpanda.io 安装")
+	}
+
+	return startLightpanda()
+}
+
+// cdpEndpoint returns the WebSocket URL and whether it's a local endpoint.
+//
+// For hosts in remoteHosts: returns remote URL if configured, otherwise
+// falls back to local. For all other hosts: returns local URL.
+func cdpEndpoint(rawURL string) (cdpURL string, isLocal bool) {
 	if isRemoteURL(rawURL) {
 		remoteURL := config.Get("lightpanda-remote-url", "")
 		remoteToken := config.Get("lightpanda-remote-token", "")
-		if remoteURL == "" {
-			return ""
-		}
-		if remoteToken != "" {
-			if strings.Contains(remoteURL, "?") {
-				return remoteURL + "&token=" + remoteToken
+		if remoteURL != "" {
+			if remoteToken != "" {
+				if strings.Contains(remoteURL, "?") {
+					return remoteURL + "&token=" + remoteToken, false
+				}
+				return remoteURL + "?token=" + remoteToken, false
 			}
-			return remoteURL + "?token=" + remoteToken
+			return remoteURL, false
 		}
-		return remoteURL
+		// Remote not configured — fallback to local.
 	}
-	return config.Get("lightpanda-local-url", "ws://127.2.2.9:9227")
+	return config.Get("lightpanda-local-url", "ws://127.2.2.9:9227"), true
 }

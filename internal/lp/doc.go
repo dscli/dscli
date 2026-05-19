@@ -37,6 +37,5 @@
 //	markdown, err := lp.Get(ctx, "https://example.com")
 //
 // # Future work
-//   - Auto-start local lightpanda serve when not running
 //   - Web writer support (e.g. interacting with chat.deepseek.com)
 package lp

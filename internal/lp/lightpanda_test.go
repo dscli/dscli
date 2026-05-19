@@ -47,7 +47,7 @@ func TestCdpEndpoint(t *testing.T) {
 	saveCfg := func(name string) string { return config.Get(name, "__unset__") }
 	restore := func(name, val string) {
 		if val == "__unset__" {
-			config.Set(name, "") // clear
+			config.Set(name, "")
 		} else {
 			config.Set(name, val)
 		}
@@ -55,19 +55,23 @@ func TestCdpEndpoint(t *testing.T) {
 
 	t.Run("local", func(t *testing.T) {
 		tests := []struct {
-			name   string
-			rawURL string
-			want   string
+			name      string
+			rawURL    string
+			wantURL   string
+			wantLocal bool
 		}{
-			{"default local", "https://example.com", "ws://127.2.2.9:9227"},
-			{"go.dev", "https://go.dev", "ws://127.2.2.9:9227"},
-			{"github", "https://github.com", "ws://127.2.2.9:9227"},
+			{"default local", "https://example.com", "ws://127.2.2.9:9227", true},
+			{"go.dev", "https://go.dev", "ws://127.2.2.9:9227", true},
+			{"github", "https://github.com", "ws://127.2.2.9:9227", true},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				got := cdpEndpoint(tt.rawURL)
-				if got != tt.want {
-					t.Errorf("cdpEndpoint(%q) = %q, want %q", tt.rawURL, got, tt.want)
+				gotURL, gotLocal := cdpEndpoint(tt.rawURL)
+				if gotURL != tt.wantURL {
+					t.Errorf("cdpEndpoint(%q) url = %q, want %q", tt.rawURL, gotURL, tt.wantURL)
+				}
+				if gotLocal != tt.wantLocal {
+					t.Errorf("cdpEndpoint(%q) isLocal = %v, want %v", tt.rawURL, gotLocal, tt.wantLocal)
 				}
 			})
 		}
@@ -78,20 +82,26 @@ func TestCdpEndpoint(t *testing.T) {
 		defer restore("lightpanda-local-url", oldLocal)
 
 		config.Set("lightpanda-local-url", "ws://localhost:9222")
-		got := cdpEndpoint("https://example.com")
-		if got != "ws://localhost:9222" {
-			t.Errorf("expected custom local URL, got %q", got)
+		gotURL, gotLocal := cdpEndpoint("https://example.com")
+		if gotURL != "ws://localhost:9222" {
+			t.Errorf("expected custom local URL, got %q", gotURL)
+		}
+		if !gotLocal {
+			t.Errorf("expected isLocal=true for custom local URL")
 		}
 	})
 
-	t.Run("remote-not-configured", func(t *testing.T) {
+	t.Run("remote-not-configured-fallback-to-local", func(t *testing.T) {
 		oldRemote := saveCfg("lightpanda-remote-url")
 		defer restore("lightpanda-remote-url", oldRemote)
 
-		config.Set("lightpanda-remote-url", "") // clear
-		got := cdpEndpoint("https://google.com")
-		if got != "" {
-			t.Errorf("expected empty URL when remote not configured, got %q", got)
+		config.Set("lightpanda-remote-url", "")
+		gotURL, gotLocal := cdpEndpoint("https://google.com")
+		if gotURL != "ws://127.2.2.9:9227" {
+			t.Errorf("expected fallback to local URL, got %q", gotURL)
+		}
+		if !gotLocal {
+			t.Errorf("expected isLocal=true when remote not configured, got false")
 		}
 	})
 
@@ -104,10 +114,13 @@ func TestCdpEndpoint(t *testing.T) {
 		config.Set("lightpanda-remote-url", "wss://euwest.cloud.lightpanda.io/ws")
 		config.Set("lightpanda-remote-token", "secret123")
 
-		got := cdpEndpoint("https://google.com")
-		want := "wss://euwest.cloud.lightpanda.io/ws?token=secret123"
-		if got != want {
-			t.Errorf("cdpEndpoint(google) = %q, want %q", got, want)
+		gotURL, gotLocal := cdpEndpoint("https://google.com")
+		wantURL := "wss://euwest.cloud.lightpanda.io/ws?token=secret123"
+		if gotURL != wantURL {
+			t.Errorf("cdpEndpoint(google) = %q, want %q", gotURL, wantURL)
+		}
+		if gotLocal {
+			t.Errorf("expected isLocal=false for remote, got true")
 		}
 	})
 
@@ -120,10 +133,13 @@ func TestCdpEndpoint(t *testing.T) {
 		config.Set("lightpanda-remote-url", "wss://example.com/ws?key=val")
 		config.Set("lightpanda-remote-token", "tok")
 
-		got := cdpEndpoint("https://google.com")
-		want := "wss://example.com/ws?key=val&token=tok"
-		if got != want {
-			t.Errorf("cdpEndpoint(google) = %q, want %q", got, want)
+		gotURL, gotLocal := cdpEndpoint("https://google.com")
+		wantURL := "wss://example.com/ws?key=val&token=tok"
+		if gotURL != wantURL {
+			t.Errorf("cdpEndpoint(google) = %q, want %q", gotURL, wantURL)
+		}
+		if gotLocal {
+			t.Errorf("expected isLocal=false for remote, got true")
 		}
 	})
 
@@ -136,9 +152,12 @@ func TestCdpEndpoint(t *testing.T) {
 		config.Set("lightpanda-remote-url", "wss://example.com/ws")
 		config.Set("lightpanda-remote-token", "")
 
-		got := cdpEndpoint("https://www.google.com")
-		if got != "wss://example.com/ws" {
-			t.Errorf("expected URL without token, got %q", got)
+		gotURL, gotLocal := cdpEndpoint("https://www.google.com")
+		if gotURL != "wss://example.com/ws" {
+			t.Errorf("expected URL without token, got %q", gotURL)
+		}
+		if gotLocal {
+			t.Errorf("expected isLocal=false for remote, got true")
 		}
 	})
 }
@@ -150,6 +169,11 @@ func TestGet(t *testing.T) {
 		return fmt.Sprintf("# Mock\n\nURL: %s\nCDP: %s", rawURL, cdpURL), nil
 	}
 	defer func() { getFromCDP = oldFn }()
+
+	// Mock isLocalAvailable to always return true (skip auto-start).
+	oldAvail := isLocalAvailable
+	isLocalAvailable = func() bool { return true }
+	defer func() { isLocalAvailable = oldAvail }()
 
 	t.Run("success-local", func(t *testing.T) {
 		got, err := Get(context.Background(), "https://example.com")
@@ -184,17 +208,28 @@ func TestGet(t *testing.T) {
 	})
 }
 
-func TestGetRemoteNotConfigured(t *testing.T) {
+func TestGetRemoteFallbackToLocal(t *testing.T) {
+	// When remote is not configured, even google.com uses local.
 	oldRemote := config.Get("lightpanda-remote-url", "__unset__")
 	config.Set("lightpanda-remote-url", "")
 	defer func() { restoreCfg("lightpanda-remote-url", oldRemote) }()
 
-	_, err := Get(context.Background(), "https://google.com")
-	if err == nil {
-		t.Fatal("expected error for unconfigured remote, got nil")
+	oldFn := getFromCDP
+	getFromCDP = func(ctx context.Context, rawURL, cdpURL string) (string, error) {
+		return fmt.Sprintf("CDP: %s", cdpURL), nil
 	}
-	if !strings.Contains(err.Error(), "remote URL not configured") {
-		t.Errorf("expected 'remote URL not configured' error, got: %v", err)
+	defer func() { getFromCDP = oldFn }()
+
+	oldAvail := isLocalAvailable
+	isLocalAvailable = func() bool { return true }
+	defer func() { isLocalAvailable = oldAvail }()
+
+	got, err := Get(context.Background(), "https://google.com")
+	if err != nil {
+		t.Fatalf("Get unexpectedly failed: %v", err)
+	}
+	if !strings.Contains(got, "CDP: ws://127.2.2.9:9227") {
+		t.Errorf("expected fallback to local, got: %s", got)
 	}
 }
 
@@ -204,6 +239,10 @@ func TestGetCDPError(t *testing.T) {
 		return "", errors.New("CDP connection refused")
 	}
 	defer func() { getFromCDP = oldFn }()
+
+	oldAvail := isLocalAvailable
+	isLocalAvailable = func() bool { return true }
+	defer func() { isLocalAvailable = oldAvail }()
 
 	t.Run("local-error", func(t *testing.T) {
 		_, err := Get(context.Background(), "https://example.com")
@@ -236,6 +275,119 @@ func TestGetCDPError(t *testing.T) {
 			t.Errorf("expected wrapped remote error, got: %v", err)
 		}
 	})
+}
+
+// ---- Auto-start tests ----
+
+func TestEnsureLocalLightpanda_CmdNotFound(t *testing.T) {
+	origAvail := isLocalAvailable
+	origCmd := lightpandaCmdExists
+	origStart := startLightpanda
+	origTried := startTried
+	defer func() {
+		isLocalAvailable = origAvail
+		lightpandaCmdExists = origCmd
+		startLightpanda = origStart
+		startTried = origTried
+	}()
+
+	isLocalAvailable = func() bool { return false }
+	lightpandaCmdExists = func() bool { return false }
+	startTried = false
+
+	err := ensureLocalLightpanda()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "未安装") {
+		t.Errorf("expected '未安装' error, got: %v", err)
+	}
+}
+
+func TestEnsureLocalLightpanda_StartSuccess(t *testing.T) {
+	origAvail := isLocalAvailable
+	origCmd := lightpandaCmdExists
+	origStart := startLightpanda
+	origTried := startTried
+	defer func() {
+		isLocalAvailable = origAvail
+		lightpandaCmdExists = origCmd
+		startLightpanda = origStart
+		startTried = origTried
+	}()
+
+	isLocalAvailable = func() bool { return false }
+	lightpandaCmdExists = func() bool { return true }
+	startLightpanda = func() error { return nil }
+	startTried = false
+
+	if err := ensureLocalLightpanda(); err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+}
+
+func TestEnsureLocalLightpanda_StartFailsOnce(t *testing.T) {
+	origAvail := isLocalAvailable
+	origCmd := lightpandaCmdExists
+	origStart := startLightpanda
+	origTried := startTried
+	defer func() {
+		isLocalAvailable = origAvail
+		lightpandaCmdExists = origCmd
+		startLightpanda = origStart
+		startTried = origTried
+	}()
+
+	isLocalAvailable = func() bool { return false }
+	lightpandaCmdExists = func() bool { return true }
+	startLightpanda = func() error { return fmt.Errorf("启动超时") }
+	startTried = false
+
+	// First call — attempts start, fails.
+	err := ensureLocalLightpanda()
+	if err == nil {
+		t.Fatal("expected error on first call")
+	}
+
+	// Second call — should not retry (startTried is true).
+	err2 := ensureLocalLightpanda()
+	if err2 == nil {
+		t.Fatal("expected error on second call (already tried)")
+	}
+	if !strings.Contains(err2.Error(), "自动启动失败") {
+		t.Errorf("expected '自动启动失败' error, got: %v", err2)
+	}
+}
+
+func TestEnsureLocalLightpanda_DoubleCheck(t *testing.T) {
+	// After acquiring lock, double-check isLocalAvailable.
+	// Simulate: first check returns false, but inside lock returns true.
+	origAvail := isLocalAvailable
+	origCmd := lightpandaCmdExists
+	origStart := startLightpanda
+	origTried := startTried
+	defer func() {
+		isLocalAvailable = origAvail
+		lightpandaCmdExists = origCmd
+		startLightpanda = origStart
+		startTried = origTried
+	}()
+
+	callCount := 0
+	isLocalAvailable = func() bool {
+		callCount++
+		return callCount > 1 // First call false, second call (inside lock) true
+	}
+	lightpandaCmdExists = func() bool { return true }
+	startLightpanda = func() error {
+		t.Error("startLightpanda should not be called when double-check passes")
+		return nil
+	}
+	startTried = false
+
+	if err := ensureLocalLightpanda(); err != nil {
+		t.Fatalf("expected no error (double-check passed), got: %v", err)
+	}
 }
 
 // restoreCfg restores a config value, used for test cleanup.
