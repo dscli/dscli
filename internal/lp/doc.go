@@ -28,11 +28,12 @@
 //
 // When local lightpanda is not running, Get automatically starts it:
 //
-//  1. Preferred: systemd user service (dscli-lightpanda.service)
-//     - Unit file created at ~/.config/systemd/user/dscli-lightpanda.service
+//  1. Preferred: user service via internal/userservice
+//     - Linux:   systemd user service (dscli-lightpanda.service)
+//     - macOS:   LaunchAgent (dscli-lightpanda.plist)
 //     - Lifecycle independent of dscli — survives dscli process exit
 //     - Allows multiple dscli instances to share one lightpanda
-//  2. Fallback: child process (if systemd is unavailable)
+//  2. Fallback: child process (if user service is unavailable)
 //     - Lifecycle tied to dscli — exits when dscli exits
 //
 // Config keys (~/.dscli/config.dscli):

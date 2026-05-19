@@ -7,13 +7,13 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/config"
+	"gitcode.com/dscli/dscli/internal/userservice"
 	"github.com/chromedp/chromedp"
 )
 
@@ -47,10 +47,11 @@ var lightpandaCmdExists = defaultLightpandaCmdExists
 // startLightpanda starts lightpanda serve and waits for it to be ready.
 var startLightpanda = defaultStartLightpanda
 
-// trySystemdService attempts to set up and start lightpanda as a systemd
-// user service (lifecycle independent of dscli). Returns error if systemd
-// is unavailable or service setup fails.
-var trySystemdService = defaultTrySystemdService
+// setupUserService creates and starts lightpanda as a user service
+// (systemd on Linux, launchctl on macOS). Returns nil on success.
+// If the platform doesn't support user services, returns an error
+// so the caller can fall back to the child-process path.
+var setupUserService = defaultSetupUserService
 
 // startMu prevents concurrent auto-start attempts.
 var startMu sync.Mutex
@@ -58,7 +59,9 @@ var startMu sync.Mutex
 // startTried records whether we already attempted auto-start.
 var startTried bool
 
-// lightpandaServiceName is the systemd user service name for lightpanda.
+// lightpandaServiceName is the user service name for lightpanda.
+// On Linux this maps to ~/.config/systemd/user/<name>.service
+// On macOS this maps to ~/Library/LaunchAgents/<name>.plist
 const lightpandaServiceName = "dscli-lightpanda"
 
 // ---- Default implementations ----
@@ -163,158 +166,33 @@ func defaultStartLightpanda() error {
 	}
 	return nil
 }
+// ---- User service management ----
 
-// ---- Systemd user service management ----
-
-// defaultTrySystemdService attempts to set up and start lightpanda as a
-// systemd user service. It is the default implementation of trySystemdService.
+// defaultSetupUserService creates and starts lightpanda as a user service
+// (systemd on Linux, launchctl on macOS). It is the default implementation
+// of setupUserService.
 //
-// Returns nil on success. Returns an error if systemd is unavailable, unit
-// file creation fails, or the service fails to become ready.
-func defaultTrySystemdService() error {
-	if !systemdUserAvailable() {
-		return fmt.Errorf("systemd user 服务不可用")
-	}
-
-	host, port := localListenAddr()
+// Returns nil on success. Returns an error if the platform doesn't support
+// user services, or if service creation/start fails.
+func defaultSetupUserService() error {
 	lightpandaPath, err := exec.LookPath("lightpanda")
 	if err != nil {
 		return fmt.Errorf("lightpanda 命令未找到")
 	}
 
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("无法获取用户目录: %w", err)
+	host, port := localListenAddr()
+	execStart := fmt.Sprintf("%s serve --host %s --port %s", lightpandaPath, host, port)
+
+	desc := "Lightpanda Browser (dscli)"
+	if err := userservice.Create(lightpandaServiceName, desc, execStart); err != nil {
+		return fmt.Errorf("创建用户服务失败: %w", err)
 	}
 
-	unitDir := filepath.Join(homeDir, ".config", "systemd", "user")
-	unitPath := filepath.Join(unitDir, lightpandaServiceName+".service")
-
-	// If unit file exists and service is active, verify TCP and freshness.
-	if unitFileExists(unitPath) && systemctlIsActive(lightpandaServiceName) {
-		if isLocalAvailable() && !unitFileStale(unitPath) {
-			return nil
-		}
-		// Either port not responding or unit file is stale — rebuild,
-		// then daemon-reload and restart.
-		if err := writeLightpandaUnitFile(unitPath, lightpandaPath, host, port); err != nil {
-			return fmt.Errorf("写入 unit 文件失败: %w", err)
-		}
-		if err := systemctl("daemon-reload"); err != nil {
-			return fmt.Errorf("systemctl daemon-reload 失败: %w", err)
-		}
-		if err := systemctl("restart", lightpandaServiceName); err != nil {
-			return fmt.Errorf("重启 %s 服务失败: %w", lightpandaServiceName, err)
-		}
-	} else {
-		// Create or update unit file, then enable and start.
-		if err := os.MkdirAll(unitDir, 0755); err != nil {
-			return fmt.Errorf("创建 systemd user 目录失败: %w", err)
-		}
-		if err := writeLightpandaUnitFile(unitPath, lightpandaPath, host, port); err != nil {
-			return fmt.Errorf("写入 unit 文件失败: %w", err)
-		}
-		// Always daemon-reload before start, even for first-time install.
-		// This is cheap and prevents the "bad" state when unit file
-		// changed on disk.
-		if err := systemctl("daemon-reload"); err != nil {
-			return fmt.Errorf("systemctl daemon-reload 失败: %w", err)
-		}
-		if err := systemctl("enable", lightpandaServiceName); err != nil {
-			return fmt.Errorf("启用 %s 服务失败: %w", lightpandaServiceName, err)
-		}
-		if err := systemctl("start", lightpandaServiceName); err != nil {
-			return fmt.Errorf("启动 %s 服务失败: %w", lightpandaServiceName, err)
-		}
+	if err := userservice.Start(lightpandaServiceName); err != nil {
+		return fmt.Errorf("启动用户服务失败: %w", err)
 	}
 
-	// Wait for the service to become available.
 	return waitForTCP(host, port, 15*time.Second)
-}
-
-// systemdUserAvailable reports whether the systemd user instance is reachable.
-func systemdUserAvailable() bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "systemctl", "--user", "--no-pager")
-	return cmd.Run() == nil
-}
-
-// systemctlIsActive reports whether the named systemd user service is active.
-func systemctlIsActive(name string) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "systemctl", "--user", "is-active", name)
-	out, err := cmd.Output()
-	if err != nil {
-		return false
-	}
-	return strings.TrimSpace(string(out)) == "active"
-}
-
-// systemctl runs a systemctl --user command, redirecting output to stderr.
-func systemctl(args ...string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "systemctl", append([]string{"--user"}, args...)...)
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
-// unitFileExists reports whether a systemd unit file exists at path.
-func unitFileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
-// unitFileStale reports whether the unit file at unitPath is older than
-// either the dscli binary or the config file (~/.dscli/config.dscli).
-// A stale unit file should be rebuilt to reflect updated binary or config.
-func unitFileStale(unitPath string) bool {
-	unitInfo, err := os.Stat(unitPath)
-	if err != nil {
-		return true // can't stat → treat as stale
-	}
-	unitModTime := unitInfo.ModTime()
-
-	// Check against dscli binary.
-	if exePath, err := os.Executable(); err == nil {
-		if exeInfo, err := os.Stat(exePath); err == nil {
-			if exeInfo.ModTime().After(unitModTime) {
-				return true
-			}
-		}
-	}
-
-	// Check against config file.
-	homeDir, err := os.UserHomeDir()
-	if err == nil {
-		configPath := filepath.Join(homeDir, ".dscli", "config.dscli")
-		if configInfo, err := os.Stat(configPath); err == nil {
-			if configInfo.ModTime().After(unitModTime) {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
-// writeLightpandaUnitFile writes a systemd user unit file for lightpanda.
-func writeLightpandaUnitFile(unitPath, lightpandaPath, host, port string) error {
-	content := fmt.Sprintf(`[Unit]
-Description=Lightpanda Browser (dscli)
-
-[Service]
-Type=simple
-ExecStart=%s serve --host %s --port %s
-Restart=no
-
-[Install]
-WantedBy=default.target
-`, lightpandaPath, host, port)
-	return os.WriteFile(unitPath, []byte(content), 0644)
 }
 
 // waitForTCP polls a TCP address until it accepts connections or times out.
@@ -387,9 +265,10 @@ func Get(ctx context.Context, rawURL string) (string, error) {
 // ensureLocalLightpanda ensures local lightpanda is running, starting it if
 // needed. Only one start attempt is made per process lifetime.
 //
-// It first tries to set up a systemd user service (lifecycle independent of
-// dscli). If systemd is unavailable or setup fails, it falls back to starting
-// lightpanda as a child process (lifecycle tied to dscli).
+// It first tries to set up a user service (systemd on Linux, launchctl on
+// macOS, lifecycle independent of dscli). If the platform doesn't support
+// user services or setup fails, it falls back to starting lightpanda as a
+// child process (lifecycle tied to dscli).
 func ensureLocalLightpanda() error {
 	if isLocalAvailable() {
 		return nil
@@ -412,8 +291,8 @@ func ensureLocalLightpanda() error {
 		return fmt.Errorf("lightpanda 未安装，请访问 https://lightpanda.io 安装")
 	}
 
-	// Preferred: systemd user service (lifecycle independent of dscli).
-	if err := trySystemdService(); err == nil {
+	// Preferred: user service (lifecycle independent of dscli).
+	if err := setupUserService(); err == nil {
 		return nil
 	}
 
