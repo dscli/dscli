@@ -196,8 +196,14 @@ func defaultTrySystemdService() error {
 		if isLocalAvailable() {
 			return nil
 		}
-		// Service says active but port not responding — try restart.
-		systemctl("restart", lightpandaServiceName)
+		// Service says active but port not responding — daemon-reload
+		// then restart (unit file may have been modified on disk).
+		if err := systemctl("daemon-reload"); err != nil {
+			return fmt.Errorf("systemctl daemon-reload 失败: %w", err)
+		}
+		if err := systemctl("restart", lightpandaServiceName); err != nil {
+			return fmt.Errorf("重启 %s 服务失败: %w", lightpandaServiceName, err)
+		}
 	} else {
 		// Create or update unit file, then enable and start.
 		if err := os.MkdirAll(unitDir, 0755); err != nil {
@@ -206,9 +212,18 @@ func defaultTrySystemdService() error {
 		if err := writeLightpandaUnitFile(unitPath, lightpandaPath, host, port); err != nil {
 			return fmt.Errorf("写入 unit 文件失败: %w", err)
 		}
-		systemctl("daemon-reload")
-		systemctl("enable", lightpandaServiceName)
-		systemctl("start", lightpandaServiceName)
+		// Always daemon-reload before start, even for first-time install.
+		// This is cheap and prevents the "bad" state when unit file
+		// changed on disk.
+		if err := systemctl("daemon-reload"); err != nil {
+			return fmt.Errorf("systemctl daemon-reload 失败: %w", err)
+		}
+		if err := systemctl("enable", lightpandaServiceName); err != nil {
+			return fmt.Errorf("启用 %s 服务失败: %w", lightpandaServiceName, err)
+		}
+		if err := systemctl("start", lightpandaServiceName); err != nil {
+			return fmt.Errorf("启动 %s 服务失败: %w", lightpandaServiceName, err)
+		}
 	}
 
 	// Wait for the service to become available.
