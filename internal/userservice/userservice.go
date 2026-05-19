@@ -1,25 +1,38 @@
 package userservice
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ErrUnsupported is returned when the platform has no service manager backend.
 var ErrUnsupported = errors.New("userservice: platform not supported")
 
+// serviceConfig is persisted to ~/.dscli/services/<name>.json as the
+// source-of-truth registry of dscli-managed user services.
+type serviceConfig struct {
+	Name      string `json:"name"`
+	Desc      string `json:"desc"`
+	ExecStart string `json:"exec_start"`
+}
+
 // Create creates or updates a user service configuration.
 //
 // On Linux: writes a systemd user unit file at
-// ~/.config/systemd/user/<name>.service and runs daemon-reload + enable.
+// ~/.config/systemd/user/<name>.service, runs daemon-reload + enable,
+// then records the config at ~/.dscli/services/<name>.json.
 //
 // On macOS: writes a LaunchAgent plist at
-// ~/Library/LaunchAgents/<name>.plist.
+// ~/Library/LaunchAgents/<name>.plist, then records the config at
+// ~/.dscli/services/<name>.json.
 //
 // Create is idempotent: if the service file already exists with identical
 // content, the file is not rewritten and no reload commands are run.
+// The JSON registry is always refreshed.
 //
 // Parameters:
 //   - name: service name, used as filename stem and service identifier
@@ -32,7 +45,10 @@ func Create(name, desc, execStart string) error {
 	if execStart == "" {
 		return fmt.Errorf("userservice: execStart is required")
 	}
-	return create(name, desc, execStart)
+	if err := create(name, desc, execStart); err != nil {
+		return err
+	}
+	return saveServiceConfig(name, desc, execStart)
 }
 
 // Start starts the user service.
@@ -63,20 +79,51 @@ func Stop(name string) error {
 // On Linux: runs "systemctl --user disable --now <name>" and removes the
 // unit file, then daemon-reload.
 // On macOS: runs "launchctl unload" and removes the plist file.
+//
+// The JSON registry entry at ~/.dscli/services/<name>.json is also
+// removed (best-effort).
 func Delete(name string) error {
 	if name == "" {
 		return fmt.Errorf("userservice: name is required")
 	}
-	return deleteSv(name)
+	err := deleteSv(name)
+	// Best-effort: remove registry even if deleteSv failed partially.
+	_ = removeServiceConfig(name)
+	return err
 }
 
-// List returns the names of all services managed by userservice on this
-// platform.
+// List returns the names of all services managed by userservice.
 //
-// On Linux: lists *.service files in ~/.config/systemd/user/.
-// On macOS: lists *.plist files in ~/Library/LaunchAgents/.
+// It reads the dscli registry at ~/.dscli/services/ — only services
+// created through userservice.Create are listed.  Returns an empty
+// slice (not nil) when the directory does not exist.
 func List() ([]string, error) {
-	return listSv()
+	sd, err := serviceDir()
+	if err != nil {
+		return nil, err
+	}
+
+	entries, err := os.ReadDir(sd)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []string{}, nil
+		}
+		return nil, fmt.Errorf("userservice: read services dir: %w", err)
+	}
+
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if name, ok := strings.CutSuffix(e.Name(), ".json"); ok && name != "" {
+			names = append(names, name)
+		}
+	}
+	if names == nil {
+		return []string{}, nil
+	}
+	return names, nil
 }
 
 // Status returns a summary of the service's state:
@@ -86,15 +133,35 @@ func List() ([]string, error) {
 //   - "stopped"   — config exists and is fresh, but service is not running
 //   - "not_found" — no service config found for this name
 //
+// "not_found" is returned when the registry entry
+// (~/.dscli/services/<name>.json) is missing.  "stale" means the
+// registry entry is older than the dscli binary or the dscli config
+// file.
+//
 // Status returns an error only when it cannot determine the state
-// (e.g. home directory unavailable). On unsupported platforms it
-// returns ("unsupported", nil).
+// (e.g. home directory unavailable).
 func Status(name string) (string, error) {
 	if name == "" {
 		return "not_found", nil
 	}
-	return status(name)
+
+	cfgPath, err := serviceConfigPath(name)
+	if err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
+		return "not_found", nil
+	}
+	if staleCheck(cfgPath) {
+		return "stale", nil
+	}
+	if isRunning(name) {
+		return "running", nil
+	}
+	return "stopped", nil
 }
+
+// ---- internal helpers ----
 
 // homeDir returns the current user's home directory.
 func homeDir() (string, error) {
@@ -103,6 +170,63 @@ func homeDir() (string, error) {
 		return "", fmt.Errorf("userservice: cannot determine home directory: %w", err)
 	}
 	return dir, nil
+}
+
+// serviceDir returns the path to the dscli services registry directory.
+func serviceDir() (string, error) {
+	hd, err := homeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(hd, ".dscli", "services"), nil
+}
+
+// serviceConfigPath returns the path to the JSON registry entry for name.
+func serviceConfigPath(name string) (string, error) {
+	sd, err := serviceDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(sd, name+".json"), nil
+}
+
+// saveServiceConfig writes the registry entry to disk.
+func saveServiceConfig(name, desc, execStart string) error {
+	sd, err := serviceDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(sd, 0755); err != nil {
+		return fmt.Errorf("userservice: create services dir: %w", err)
+	}
+
+	cfg := serviceConfig{
+		Name:      name,
+		Desc:      desc,
+		ExecStart: execStart,
+	}
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("userservice: marshal config: %w", err)
+	}
+
+	cfgPath := filepath.Join(sd, name+".json")
+	if err := os.WriteFile(cfgPath, data, 0644); err != nil {
+		return fmt.Errorf("userservice: write config: %w", err)
+	}
+	return nil
+}
+
+// removeServiceConfig removes the registry entry for name.
+func removeServiceConfig(name string) error {
+	cfgPath, err := serviceConfigPath(name)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(cfgPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("userservice: remove config: %w", err)
+	}
+	return nil
 }
 
 // staleCheck reports whether the config file at cfgPath is older than the

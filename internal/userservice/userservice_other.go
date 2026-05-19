@@ -18,14 +18,6 @@ func deleteSv(name string) error {
 	return ErrUnsupported
 }
 
-func listSv() ([]string, error) {
-	return nil, ErrUnsupported
-}
-
-func stale(name string) bool {
-	return true
-}
-
-func status(name string) (string, error) {
-	return "unsupported", nil
+func isRunning(name string) bool {
+	return false
 }

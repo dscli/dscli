@@ -80,50 +80,8 @@ func deleteSv(name string) error {
 	return nil
 }
 
-func listSv() ([]string, error) {
-	hd, err := homeDir()
-	if err != nil {
-		return nil, err
-	}
-
-	plistDir := filepath.Join(hd, "Library", "LaunchAgents")
-	entries, err := os.ReadDir(plistDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("userservice: read LaunchAgents dir: %w", err)
-	}
-
-	var names []string
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		if name, ok := strings.CutSuffix(e.Name(), ".plist"); ok && name != "" {
-			names = append(names, name)
-		}
-	}
-	return names, nil
-}
-
-func stale(name string) bool {
-	hd, err := homeDir()
-	if err != nil {
-		return true
-	}
-	plistPath := filepath.Join(hd, "Library", "LaunchAgents", name+".plist")
-	return staleCheck(plistPath)
-}
-
-func status(name string) (string, error) {
-	if stale(name) {
-		return "stale", nil
-	}
-	if isLoaded(name) {
-		return "running", nil
-	}
-	return "stopped", nil
+func isRunning(name string) bool {
+	return isLoaded(name)
 }
 
 // ---- launchctl helpers ----
