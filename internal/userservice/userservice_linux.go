@@ -14,7 +14,7 @@ import (
 
 // ---- platform implementations ----
 
-func create(name, desc, execStart string) error {
+func create(name, desc string, cmd *exec.Cmd) error {
 	if !systemdUserAvailable() {
 		return ErrUnsupported
 	}
@@ -27,7 +27,7 @@ func create(name, desc, execStart string) error {
 	unitDir := filepath.Join(hd, ".config", "systemd", "user")
 	unitPath := filepath.Join(unitDir, name+".service")
 
-	content := formatSystemdUnit(desc, execStart)
+	content := formatSystemdUnit(desc, cmd.String())
 
 	// Idempotent: skip if file exists with identical content.
 	if existing, err := os.ReadFile(unitPath); err == nil && string(existing) == content {

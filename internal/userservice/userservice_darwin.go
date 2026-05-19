@@ -12,7 +12,7 @@ import (
 
 // ---- platform implementations ----
 
-func create(name, desc, execStart string) error {
+func create(name, desc string, cmd *exec.Cmd) error {
 	hd, err := homeDir()
 	if err != nil {
 		return err
@@ -21,7 +21,7 @@ func create(name, desc, execStart string) error {
 	plistDir := filepath.Join(hd, "Library", "LaunchAgents")
 	plistPath := filepath.Join(plistDir, name+".plist")
 
-	content := formatLaunchdPlist(name, execStart)
+	content := formatLaunchdPlist(name, cmd.Args)
 
 	// Idempotent: skip if file exists with identical content.
 	if existing, err := os.ReadFile(plistPath); err == nil && string(existing) == content {
@@ -102,9 +102,8 @@ func isLoaded(label string) bool {
 // ---- plist formatting ----
 
 // formatLaunchdPlist generates a LaunchAgent plist for the given service.
-// execStart is split by whitespace into the ProgramArguments array.
-func formatLaunchdPlist(label, execStart string) string {
-	args := strings.Fields(execStart)
+// args is the full argument list including argv[0] (the resolved binary path).
+func formatLaunchdPlist(label string, args []string) string {
 	var argsXML strings.Builder
 	for _, a := range args {
 		argsXML.WriteString(fmt.Sprintf("        <string>%s</string>\n", escapeXML(a)))

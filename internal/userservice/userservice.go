@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -34,18 +35,48 @@ type serviceConfig struct {
 // content, the file is not rewritten and no reload commands are run.
 // The JSON registry is always refreshed.
 //
+// Create resolves cmd.Path via LookPath so the service file always
+// contains the absolute binary path.  cmd.Args[0] is rewritten to the
+// resolved path; on Linux the command line uses cmd.String(), while on
+// macOS cmd.Args is used as ProgramArguments directly (no fragile
+// whitespace splitting).
+//
 // Parameters:
 //   - name: service name, used as filename stem and service identifier
 //   - desc: human-readable description (systemd Description / Launchd Label)
-//   - execStart: command line to execute, e.g. "/usr/bin/foo serve --host 127.0.0.1 --port 80"
-func Create(name, desc, execStart string) error {
+//   - cmd: command to execute; Path must be non-empty and resolvable
+func Create(name, desc string, cmd *exec.Cmd) error {
 	if name == "" {
 		return fmt.Errorf("userservice: name is required")
 	}
-	if execStart == "" {
-		return fmt.Errorf("userservice: execStart is required")
+	if cmd == nil {
+		return fmt.Errorf("userservice: cmd is required")
 	}
-	if err := create(name, desc, execStart); err != nil {
+	if cmd.Path == "" {
+		return fmt.Errorf("userservice: cmd.Path is required")
+	}
+
+	// Resolve binary path so the service file always carries the absolute
+	// path regardless of the service manager's PATH configuration.
+	resolved, err := exec.LookPath(cmd.Path)
+	if err != nil {
+		return fmt.Errorf("userservice: %s not found in PATH: %w", cmd.Path, err)
+	}
+
+	// Build a clean *exec.Cmd with the resolved path so cmd.String()
+	// (Linux) and cmd.Args (macOS) both use the absolute binary location.
+	resolvedCmd := &exec.Cmd{Path: resolved}
+	if len(cmd.Args) > 0 {
+		resolvedCmd.Args = make([]string, len(cmd.Args))
+		copy(resolvedCmd.Args, cmd.Args)
+		resolvedCmd.Args[0] = resolved
+	} else {
+		resolvedCmd.Args = []string{resolved}
+	}
+
+	execStart := resolvedCmd.String()
+
+	if err := create(name, desc, resolvedCmd); err != nil {
 		return err
 	}
 	return saveServiceConfig(name, desc, execStart)

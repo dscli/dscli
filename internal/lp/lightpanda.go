@@ -180,13 +180,8 @@ func defaultStartLightpanda() error {
 // Returns nil on success. Returns an error if the platform doesn't support
 // user services, or if service creation/start fails.
 func defaultSetupUserService() error {
-	lightpandaPath, err := exec.LookPath("lightpanda")
-	if err != nil {
-		return fmt.Errorf("lightpanda 命令未找到")
-	}
-
 	host, port := localListenAddr()
-	execStart := fmt.Sprintf("%s serve --host %s --port %s", lightpandaPath, host, port)
+	cmd := exec.Command("lightpanda", "serve", "--host", host, "--port", port)
 	desc := "Lightpanda Browser (dscli)"
 
 	st, err := userservice.Status(lightpandaServiceName)
@@ -204,7 +199,8 @@ func defaultSetupUserService() error {
 	needsRestart := isLocalAvailable()
 
 	// Create/update config (idempotent — skips if content unchanged).
-	if err := userservice.Create(lightpandaServiceName, desc, execStart); err != nil {
+	// Create resolves lightpanda via LookPath internally.
+	if err := userservice.Create(lightpandaServiceName, desc, cmd); err != nil {
 		return fmt.Errorf("创建用户服务失败: %w", err)
 	}
 

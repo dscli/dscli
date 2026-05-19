@@ -2,7 +2,9 @@
 
 package userservice
 
-func create(name, desc, execStart string) error {
+import "os/exec"
+
+func create(name, desc string, cmd *exec.Cmd) error {
 	return ErrUnsupported
 }
 
