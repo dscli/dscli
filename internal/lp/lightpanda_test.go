@@ -284,8 +284,6 @@ func TestGetCDPError(t *testing.T) {
 
 // restoreFuncVars saves and restores all function variables used by
 // ensureLocalLightpanda. Use with defer.
-// restoreFuncVars saves and restores all function variables used by
-// ensureLocalLightpanda. Use with defer.
 func restoreFuncVars(avail func() bool, cmdExists func() bool, start func() error, sysd func() error, tried bool) {
 	isLocalAvailable = avail
 	lightpandaCmdExists = cmdExists

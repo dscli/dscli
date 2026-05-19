@@ -491,7 +491,7 @@ func PrintClimeinContent(ctx context.Context, content string) {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		if userName != "" && userEmail != "" && userName != "未知" {
-			Printf("\n👤 %s <%s>\n", userName, userEmail)
+			Printf("\n👤 %s <%s> [%s]\n\n", userName, userEmail, time.Now().Local().Format(time.DateTime))
 			Println("CONTINUE...")
 			Println()
 		} else {
@@ -499,7 +499,7 @@ func PrintClimeinContent(ctx context.Context, content string) {
 		}
 	} else {
 		if userName != "" && userEmail != "" && userName != "未知" {
-			Printf("\n👤 %s <%s>\n\n", userName, userEmail)
+			Printf("\n👤 %s <%s> [%s]\n\n", userName, userEmail, time.Now().Local().Format(time.DateTime))
 			Println(content)
 			Println()
 		} else {
@@ -516,7 +516,7 @@ func PrintUserContent(ctx context.Context, content string) {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		if userName != "" && userEmail != "" && userName != "未知" {
-			Printf("\n👤 %s <%s>\n\n", userName, userEmail)
+			Printf("\n👤 %s <%s> [%s]\n\n", userName, userEmail, time.Now().Local().Format(time.DateTime))
 			Println("CONTINUE...")
 			Println()
 		} else {
@@ -524,7 +524,7 @@ func PrintUserContent(ctx context.Context, content string) {
 		}
 	} else {
 		if userName != "" && userEmail != "" && userName != "未知" {
-			Printf("\n👤 %s <%s>\n\n", userName, userEmail)
+			Printf("\n👤 %s <%s> [%s]\n\n", userName, userEmail, time.Now().Local().Format(time.DateTime))
 			Println(content)
 			Println()
 		} else {
@@ -544,7 +544,7 @@ func PrintContent(ctx context.Context, reasoning, content string) {
 	reasoning = strings.TrimSpace(reasoning)
 	if reasoning != "" {
 		if nameCN != "" && email != "" {
-			Printf("\n✨ %s <%s>\n\n", nameCN, email)
+			Printf("\n✨ %s <%s> [%s]\n\n", nameCN, email, time.Now().Local().Format(time.DateTime))
 			Println(FillParagraph(reasoning, DefaultFillWidth))
 			Println()
 		} else {
@@ -557,7 +557,7 @@ func PrintContent(ctx context.Context, reasoning, content string) {
 		// 在streaming模式下，内容已经在streaming过程中输出，这里不需要再次输出
 		if !stream {
 			if nameCN != "" && email != "" {
-				Printf("🐋 %s <%s>\n\n", nameCN, email)
+				Printf("🐋 %s <%s> [%s]\n\n", nameCN, email, time.Now().Local().Format(time.DateTime))
 				Println(content)
 				Println()
 			} else {

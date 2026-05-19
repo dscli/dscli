@@ -54,7 +54,6 @@ func toolListRunE(cmd *cobra.Command, _ []string) error {
 	}
 
 	// firstLine 取描述的首行（到第一个换行符为止）
-	// firstLine 取描述的首行（到第一个换行符为止）
 	firstLine := func(s string) string {
 		if before, _, found := strings.Cut(s, "\n"); found {
 			return before
