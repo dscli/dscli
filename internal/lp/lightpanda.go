@@ -190,13 +190,16 @@ func defaultTrySystemdService() error {
 	unitDir := filepath.Join(homeDir, ".config", "systemd", "user")
 	unitPath := filepath.Join(unitDir, lightpandaServiceName+".service")
 
-	// If unit file exists and service is active, verify TCP.
+	// If unit file exists and service is active, verify TCP and freshness.
 	if unitFileExists(unitPath) && systemctlIsActive(lightpandaServiceName) {
-		if isLocalAvailable() {
+		if isLocalAvailable() && !unitFileStale(unitPath) {
 			return nil
 		}
-		// Service says active but port not responding — daemon-reload
-		// then restart (unit file may have been modified on disk).
+		// Either port not responding or unit file is stale — rebuild,
+		// then daemon-reload and restart.
+		if err := writeLightpandaUnitFile(unitPath, lightpandaPath, host, port); err != nil {
+			return fmt.Errorf("写入 unit 文件失败: %w", err)
+		}
 		if err := systemctl("daemon-reload"); err != nil {
 			return fmt.Errorf("systemctl daemon-reload 失败: %w", err)
 		}
@@ -263,6 +266,39 @@ func systemctl(args ...string) error {
 func unitFileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// unitFileStale reports whether the unit file at unitPath is older than
+// either the dscli binary or the config file (~/.dscli/config.dscli).
+// A stale unit file should be rebuilt to reflect updated binary or config.
+func unitFileStale(unitPath string) bool {
+	unitInfo, err := os.Stat(unitPath)
+	if err != nil {
+		return true // can't stat → treat as stale
+	}
+	unitModTime := unitInfo.ModTime()
+
+	// Check against dscli binary.
+	if exePath, err := os.Executable(); err == nil {
+		if exeInfo, err := os.Stat(exePath); err == nil {
+			if exeInfo.ModTime().After(unitModTime) {
+				return true
+			}
+		}
+	}
+
+	// Check against config file.
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		configPath := filepath.Join(homeDir, ".dscli", "config.dscli")
+		if configInfo, err := os.Stat(configPath); err == nil {
+			if configInfo.ModTime().After(unitModTime) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // writeLightpandaUnitFile writes a systemd user unit file for lightpanda.
@@ -348,8 +384,6 @@ func Get(ctx context.Context, rawURL string) (string, error) {
 	return markdown, nil
 }
 
-// ensureLocalLightpanda ensures local lightpanda is running, starting it if
-// needed. Only one start attempt is made per process lifetime.
 // ensureLocalLightpanda ensures local lightpanda is running, starting it if
 // needed. Only one start attempt is made per process lifetime.
 //
