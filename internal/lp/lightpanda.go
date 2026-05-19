@@ -149,7 +149,7 @@ func defaultStartLightpanda() error {
 	}
 
 	host, port := localListenAddr()
-	cmd := exec.Command(path, "serve", "--obey-robots", "--host", host, "--port", port)
+	cmd := exec.Command(path, "serve", "--host", host, "--port", port)
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
@@ -272,7 +272,7 @@ Description=Lightpanda Browser (dscli)
 
 [Service]
 Type=simple
-ExecStart=%s serve --obey-robots --host %s --port %s
+ExecStart=%s serve --host %s --port %s
 Restart=no
 
 [Install]
@@ -338,7 +338,7 @@ func Get(ctx context.Context, rawURL string) (string, error) {
 			host, port := localListenAddr()
 			return "", fmt.Errorf(
 				"lightpanda 连接失败: %w\n\n请确保 lightpanda 已启动:\n"+
-					"  lightpanda serve --obey-robots --host %s --port %s",
+				"  lightpanda serve --host %s --port %s",
 				err, host, port,
 			)
 		}

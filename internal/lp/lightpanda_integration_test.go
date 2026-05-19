@@ -51,7 +51,6 @@ func TestGet_EndToEnd(t *testing.T) {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, lightpandaPath, "serve",
-		"--obey-robots",
 		"--host", testHost,
 		"--port", testPort,
 	)
