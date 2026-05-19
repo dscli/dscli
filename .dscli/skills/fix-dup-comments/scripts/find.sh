@@ -3,6 +3,8 @@
 # Detects:
 #   1. Single-line: same comment repeated on next line (within a block)
 #   2. Multi-line block: entire adjacent comment blocks repeated
+#   3. Double blank: two consecutive blank lines (often left after removing
+#      a duplicate block — the separating blank line becomes stray)
 # Usage: bash find.sh [dir]
 #   dir — directory to scan (default: .)
 set -euo pipefail
@@ -32,10 +34,12 @@ find "$DIR" -name '*.go' -not -path '*/.git/*' \
     FILENAME != fn {
       flush_block(1)
       fn = FILENAME
+      prev_was_blank = 0
     }
 
     # Comment line
     /^[[:space:]]*\/\// {
+      prev_was_blank = 0
       # Single-line duplicate: same as previous line
       if ($0 == last_line)
         print fn ":" FNR ":" $0
@@ -47,8 +51,18 @@ find "$DIR" -name '*.go' -not -path '*/.git/*' \
     }
 
     # Blank line: flush block, keep prev for multi-block compare
-    /^[[:space:]]*$/ { last_line = $0; flush_block(0); next }
+    /^[[:space:]]*$/ {
+      # Double blank detection: current line is blank AND previous was blank
+      # AND no active comment block (block_len==0 means blank is not between
+      # comment lines — those would be inside a block, which always flushes).
+      if (prev_was_blank && block_len == 0)
+        print fn ":" FNR ":double-blank"
+      last_line = $0
+      flush_block(0)
+      prev_was_blank = 1
+      next
+    }
 
     # Code line: flush and reset
-    { last_line = $0; flush_block(1) }
+    { prev_was_blank = 0; last_line = $0; flush_block(1) }
   ' {} +

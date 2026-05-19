@@ -146,7 +146,6 @@ func writePostSpaceIfCJK(sb *strings.Builder, text string, pos int) {
 	}
 }
 
-
 // convertNonQuoteLine handles code blocks, org blocks, headings, and inline
 // formatting. This is the original convertLineCore logic, extracted so that
 // blockquote-wrapped lines can recursively pass through it.
@@ -232,7 +231,6 @@ func (c *MarkdownToOrgConverter) convertNonQuoteLine(line string) string {
 
 	return result
 }
-
 
 // flushMdTableBuf converts buffered markdown table rows to org table.
 // Returns the converted lines as a single string with \n separators.

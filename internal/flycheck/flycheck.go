@@ -179,7 +179,6 @@ func isNotFoundError(err error) bool {
 	return false
 }
 
-
 // IssueSeverity classifies the severity of a checker issue.
 type IssueSeverity int
 
