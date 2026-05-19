@@ -93,12 +93,31 @@ func defaultGetFromCDP(ctx context.Context, rawURL, cdpURL string) (string, erro
 }
 
 func defaultIsLocalAvailable() bool {
-	conn, err := net.DialTimeout("tcp", "127.2.2.9:9227", 2*time.Second)
+	host, port := localListenAddr()
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), 2*time.Second)
 	if err != nil {
 		return false
 	}
 	conn.Close()
 	return true
+}
+
+// localListenAddr returns host and port parsed from lightpanda-local-url config.
+func localListenAddr() (host, port string) {
+	raw := config.Get("lightpanda-local-url", "ws://127.2.2.9:9227")
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "127.2.2.9", "9227"
+	}
+	host = u.Hostname()
+	port = u.Port()
+	if host == "" {
+		host = "127.2.2.9"
+	}
+	if port == "" {
+		port = "9227"
+	}
+	return
 }
 
 func defaultLightpandaCmdExists() bool {
@@ -121,7 +140,8 @@ func defaultStartLightpanda() error {
 		return fmt.Errorf("lightpanda 命令未找到")
 	}
 
-	cmd := exec.Command(path, "serve", "--obey-robots", "--host", "127.2.2.9", "--port", "9227")
+	host, port := localListenAddr()
+	cmd := exec.Command(path, "serve", "--obey-robots", "--host", host, "--port", port)
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
@@ -177,10 +197,11 @@ func Get(ctx context.Context, rawURL string) (string, error) {
 	markdown, err := getFromCDP(ctx, rawURL, cdpURL)
 	if err != nil {
 		if isLocal {
+			host, port := localListenAddr()
 			return "", fmt.Errorf(
 				"lightpanda 连接失败: %w\n\n请确保 lightpanda 已启动:\n"+
-					"  lightpanda serve --obey-robots --host 127.2.2.9 --port 9227",
-				err,
+					"  lightpanda serve --obey-robots --host %s --port %s",
+				err, host, port,
 			)
 		}
 		return "", fmt.Errorf("lightpanda remote 连接失败: %w", err)
