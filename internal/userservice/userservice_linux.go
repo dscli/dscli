@@ -16,7 +16,9 @@ import (
 
 func create(name, desc string, cmd *exec.Cmd) error {
 	if !systemdUserAvailable() {
-		return ErrUnsupported
+		// Fallback: no systemd available. Config is saved by the public
+		// Create function; daemonization happens at Start time.
+		return nil
 	}
 
 	hd, err := homeDir()
@@ -55,7 +57,8 @@ func create(name, desc string, cmd *exec.Cmd) error {
 
 func start(name string) error {
 	if !systemdUserAvailable() {
-		return ErrUnsupported
+		f := fallback{}
+		return f.start(name)
 	}
 
 	// If already active, no-op.
@@ -68,7 +71,8 @@ func start(name string) error {
 
 func stop(name string) error {
 	if !systemdUserAvailable() {
-		return ErrUnsupported
+		f := fallback{}
+		return f.stop(name)
 	}
 
 	// systemctl stop on an inactive service exits 0, so no pre-check needed.
@@ -77,7 +81,8 @@ func stop(name string) error {
 
 func deleteSv(name string) error {
 	if !systemdUserAvailable() {
-		return ErrUnsupported
+		f := fallback{}
+		return f.delete(name)
 	}
 
 	hd, err := homeDir()
@@ -98,6 +103,10 @@ func deleteSv(name string) error {
 }
 
 func isRunning(name string) bool {
+	if !systemdUserAvailable() {
+		f := fallback{}
+		return f.isRunning(name)
+	}
 	return systemctlIsActive(name)
 }
 

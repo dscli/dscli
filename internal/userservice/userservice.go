@@ -15,12 +15,14 @@ var ErrUnsupported = errors.New("userservice: platform not supported")
 
 // serviceConfig is persisted to ~/.dscli/services/<name>.json as the
 // source-of-truth registry of dscli-managed user services.
+// serviceConfig is persisted to ~/.dscli/services/<name>.json as the
+// source-of-truth registry of dscli-managed user services.
 type serviceConfig struct {
-	Name      string `json:"name"`
-	Desc      string `json:"desc"`
-	ExecStart string `json:"exec_start"`
+	Name      string   `json:"name"`
+	Desc      string   `json:"desc"`
+	ExecStart string   `json:"exec_start"`
+	Args      []string `json:"args,omitempty"`
 }
-
 // Create creates or updates a user service configuration.
 //
 // On Linux: writes a systemd user unit file at
@@ -79,7 +81,7 @@ func Create(name, desc string, cmd *exec.Cmd) error {
 	if err := create(name, desc, resolvedCmd); err != nil {
 		return err
 	}
-	return saveServiceConfig(name, desc, execStart)
+	return saveServiceConfig(name, desc, execStart, resolvedCmd.Args)
 }
 
 // Start starts the user service.
@@ -222,7 +224,7 @@ func serviceConfigPath(name string) (string, error) {
 }
 
 // saveServiceConfig writes the registry entry to disk.
-func saveServiceConfig(name, desc, execStart string) error {
+func saveServiceConfig(name, desc, execStart string, args []string) error {
 	sd, err := serviceDir()
 	if err != nil {
 		return err
@@ -235,6 +237,7 @@ func saveServiceConfig(name, desc, execStart string) error {
 		Name:      name,
 		Desc:      desc,
 		ExecStart: execStart,
+		Args:      args,
 	}
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
@@ -246,6 +249,23 @@ func saveServiceConfig(name, desc, execStart string) error {
 		return fmt.Errorf("userservice: write config: %w", err)
 	}
 	return nil
+}
+
+// loadServiceConfig reads the registry entry for name from disk.
+func loadServiceConfig(name string) (*serviceConfig, error) {
+	cfgPath, err := serviceConfigPath(name)
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return nil, fmt.Errorf("userservice: read config %s: %w", name, err)
+	}
+	var cfg serviceConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("userservice: parse config %s: %w", name, err)
+	}
+	return &cfg, nil
 }
 
 // removeServiceConfig removes the registry entry for name.

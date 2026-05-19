@@ -5,21 +5,26 @@ package userservice
 import "os/exec"
 
 func create(name, desc string, cmd *exec.Cmd) error {
-	return ErrUnsupported
+	// No native service manager. Config is saved by the public Create.
+	return nil
 }
 
 func start(name string) error {
-	return ErrUnsupported
+	f := fallback{}
+	return f.start(name)
 }
 
 func stop(name string) error {
-	return ErrUnsupported
+	f := fallback{}
+	return f.stop(name)
 }
 
 func deleteSv(name string) error {
-	return ErrUnsupported
+	f := fallback{}
+	return f.delete(name)
 }
 
 func isRunning(name string) bool {
-	return false
+	f := fallback{}
+	return f.isRunning(name)
 }
