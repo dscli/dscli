@@ -284,18 +284,26 @@ func TestGetCDPError(t *testing.T) {
 
 // restoreFuncVars saves and restores all function variables used by
 // ensureLocalLightpanda. Use with defer.
-func restoreFuncVars(avail func() bool, cmdExists func() bool, start func() error, tried bool) {
+// restoreFuncVars saves and restores all function variables used by
+// ensureLocalLightpanda. Use with defer.
+func restoreFuncVars(avail func() bool, cmdExists func() bool, start func() error, sysd func() error, tried bool) {
 	isLocalAvailable = avail
 	lightpandaCmdExists = cmdExists
 	startLightpanda = start
+	trySystemdService = sysd
 	startTried = tried
 }
 
+// sysdFail is a trySystemdService stub that always fails, used in tests
+// that exercise the child-process fallback path.
+func sysdFail() error { return fmt.Errorf("systemd not available") }
+
 func TestEnsureLocalLightpanda_CmdNotFound(t *testing.T) {
-	defer restoreFuncVars(isLocalAvailable, lightpandaCmdExists, startLightpanda, startTried)
+	defer restoreFuncVars(isLocalAvailable, lightpandaCmdExists, startLightpanda, trySystemdService, startTried)
 
 	isLocalAvailable = func() bool { return false }
 	lightpandaCmdExists = func() bool { return false }
+	trySystemdService = sysdFail
 	startTried = false
 
 	err := ensureLocalLightpanda()
@@ -308,11 +316,12 @@ func TestEnsureLocalLightpanda_CmdNotFound(t *testing.T) {
 }
 
 func TestEnsureLocalLightpanda_StartSuccess(t *testing.T) {
-	defer restoreFuncVars(isLocalAvailable, lightpandaCmdExists, startLightpanda, startTried)
+	defer restoreFuncVars(isLocalAvailable, lightpandaCmdExists, startLightpanda, trySystemdService, startTried)
 
 	isLocalAvailable = func() bool { return false }
 	lightpandaCmdExists = func() bool { return true }
 	startLightpanda = func() error { return nil }
+	trySystemdService = sysdFail
 	startTried = false
 
 	if err := ensureLocalLightpanda(); err != nil {
@@ -321,11 +330,12 @@ func TestEnsureLocalLightpanda_StartSuccess(t *testing.T) {
 }
 
 func TestEnsureLocalLightpanda_StartFailsOnce(t *testing.T) {
-	defer restoreFuncVars(isLocalAvailable, lightpandaCmdExists, startLightpanda, startTried)
+	defer restoreFuncVars(isLocalAvailable, lightpandaCmdExists, startLightpanda, trySystemdService, startTried)
 
 	isLocalAvailable = func() bool { return false }
 	lightpandaCmdExists = func() bool { return true }
 	startLightpanda = func() error { return fmt.Errorf("启动超时") }
+	trySystemdService = sysdFail
 	startTried = false
 
 	// First call — attempts start, fails.
@@ -345,7 +355,7 @@ func TestEnsureLocalLightpanda_StartFailsOnce(t *testing.T) {
 }
 
 func TestEnsureLocalLightpanda_DoubleCheck(t *testing.T) {
-	defer restoreFuncVars(isLocalAvailable, lightpandaCmdExists, startLightpanda, startTried)
+	defer restoreFuncVars(isLocalAvailable, lightpandaCmdExists, startLightpanda, trySystemdService, startTried)
 
 	callCount := 0
 	isLocalAvailable = func() bool {
@@ -357,9 +367,75 @@ func TestEnsureLocalLightpanda_DoubleCheck(t *testing.T) {
 		t.Error("startLightpanda should not be called when double-check passes")
 		return nil
 	}
+	trySystemdService = sysdFail
 	startTried = false
 
 	if err := ensureLocalLightpanda(); err != nil {
 		t.Fatalf("expected no error (double-check passed), got: %v", err)
+	}
+}
+
+// ---- Systemd service tests ----
+
+func TestEnsureLocalLightpanda_SystemdSuccess(t *testing.T) {
+	defer restoreFuncVars(isLocalAvailable, lightpandaCmdExists, startLightpanda, trySystemdService, startTried)
+
+	isLocalAvailable = func() bool { return false }
+	lightpandaCmdExists = func() bool { return true }
+	trySystemdService = func() error { return nil } // systemd succeeds
+	startLightpanda = func() error {
+		t.Error("startLightpanda should not be called when systemd succeeds")
+		return nil
+	}
+	startTried = false
+
+	if err := ensureLocalLightpanda(); err != nil {
+		t.Fatalf("expected success (systemd path), got: %v", err)
+	}
+}
+
+func TestEnsureLocalLightpanda_SystemdFailsFallback(t *testing.T) {
+	defer restoreFuncVars(isLocalAvailable, lightpandaCmdExists, startLightpanda, trySystemdService, startTried)
+
+	isLocalAvailable = func() bool { return false }
+	lightpandaCmdExists = func() bool { return true }
+	trySystemdService = sysdFail // systemd fails
+	fallbackCalled := false
+	startLightpanda = func() error {
+		fallbackCalled = true
+		return nil
+	}
+	startTried = false
+
+	if err := ensureLocalLightpanda(); err != nil {
+		t.Fatalf("expected success (fallback path), got: %v", err)
+	}
+	if !fallbackCalled {
+		t.Error("expected fallback to startLightpanda after systemd failure")
+	}
+}
+
+func TestEnsureLocalLightpanda_BothFail(t *testing.T) {
+	defer restoreFuncVars(isLocalAvailable, lightpandaCmdExists, startLightpanda, trySystemdService, startTried)
+
+	isLocalAvailable = func() bool { return false }
+	lightpandaCmdExists = func() bool { return true }
+	trySystemdService = sysdFail
+	startLightpanda = func() error { return fmt.Errorf("启动超时") }
+	startTried = false
+
+	// First call — both systemd and child process fail.
+	err := ensureLocalLightpanda()
+	if err == nil {
+		t.Fatal("expected error on first call")
+	}
+
+	// Second call — should not retry.
+	err2 := ensureLocalLightpanda()
+	if err2 == nil {
+		t.Fatal("expected error on second call (already tried)")
+	}
+	if !strings.Contains(err2.Error(), "自动启动失败") {
+		t.Errorf("expected '自动启动失败' error, got: %v", err2)
 	}
 }

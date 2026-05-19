@@ -24,7 +24,18 @@
 // Routing decision: if the target host is in the remoteHosts list
 // (geo-restricted sites), use remote; otherwise use local.
 //
-// # Config keys (~/.dscli/config.dscli)
+// # Auto-start
+//
+// When local lightpanda is not running, Get automatically starts it:
+//
+//  1. Preferred: systemd user service (dscli-lightpanda.service)
+//     - Unit file created at ~/.config/systemd/user/dscli-lightpanda.service
+//     - Lifecycle independent of dscli — survives dscli process exit
+//     - Allows multiple dscli instances to share one lightpanda
+//  2. Fallback: child process (if systemd is unavailable)
+//     - Lifecycle tied to dscli — exits when dscli exits
+//
+// Config keys (~/.dscli/config.dscli):
 //
 //	lightpanda-local-url   = ws://127.2.2.9:9227
 //	lightpanda-remote-url  = wss://euwest.cloud.lightpanda.io/ws
