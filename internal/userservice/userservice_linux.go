@@ -3,6 +3,7 @@
 package userservice
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -110,6 +111,63 @@ func isRunning(name string) bool {
 	return systemctlIsActive(name)
 }
 
+// scan discovers systemd user units managed by dscli and returns the names
+// of those that have no corresponding JSON registry entry (orphaned services).
+func scan() ([]string, error) {
+	if !systemdUserAvailable() {
+		return nil, nil
+	}
+
+	hd, err := homeDir()
+	if err != nil {
+		return nil, err
+	}
+
+	unitDir := filepath.Join(hd, ".config", "systemd", "user")
+	entries, err := os.ReadDir(unitDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("userservice: read systemd user dir: %w", err)
+	}
+
+	marker := []byte("Managed by dscli")
+
+	var orphaned []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name, ok := strings.CutSuffix(e.Name(), ".service")
+		if !ok || name == "" {
+			continue
+		}
+
+		unitPath := filepath.Join(unitDir, e.Name())
+		data, err := os.ReadFile(unitPath)
+		if err != nil {
+			continue // skip unreadable files
+		}
+
+		if !bytes.Contains(data, marker) {
+			continue
+		}
+
+		// Found a dscli-managed unit. Check if JSON registry exists.
+		cfgPath, err := serviceConfigPath(name)
+		if err != nil {
+			orphaned = append(orphaned, name)
+			continue
+		}
+		if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
+			orphaned = append(orphaned, name)
+		}
+	}
+
+	return orphaned, nil
+}
+
 // ---- systemd helpers ----
 
 // systemdUserAvailable reports whether the systemd user instance is reachable.
@@ -145,7 +203,8 @@ func systemctl(args ...string) error {
 
 // formatSystemdUnit generates the content of a systemd user unit file.
 func formatSystemdUnit(desc, execStart string) string {
-	return fmt.Sprintf(`[Unit]
+	return fmt.Sprintf(`# Managed by dscli
+[Unit]
 Description=%s
 
 [Service]

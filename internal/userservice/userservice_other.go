@@ -28,3 +28,8 @@ func isRunning(name string) bool {
 	f := fallback{}
 	return f.isRunning(name)
 }
+
+// scan returns no orphaned services on platforms without a native service manager.
+func scan() ([]string, error) {
+	return nil, nil
+}

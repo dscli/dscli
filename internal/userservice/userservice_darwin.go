@@ -3,6 +3,7 @@
 package userservice
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -84,6 +85,58 @@ func isRunning(name string) bool {
 	return isLoaded(name)
 }
 
+// scan discovers LaunchAgent plists managed by dscli and returns the names
+// of those that have no corresponding JSON registry entry (orphaned services).
+func scan() ([]string, error) {
+	hd, err := homeDir()
+	if err != nil {
+		return nil, err
+	}
+
+	plistDir := filepath.Join(hd, "Library", "LaunchAgents")
+	entries, err := os.ReadDir(plistDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("userservice: read LaunchAgents dir: %w", err)
+	}
+
+	marker := []byte("Managed by dscli")
+
+	var orphaned []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name, ok := strings.CutSuffix(e.Name(), ".plist")
+		if !ok || name == "" {
+			continue
+		}
+
+		plistPath := filepath.Join(plistDir, e.Name())
+		data, err := os.ReadFile(plistPath)
+		if err != nil {
+			continue
+		}
+
+		if !bytes.Contains(data, marker) {
+			continue
+		}
+
+		cfgPath, err := serviceConfigPath(name)
+		if err != nil {
+			orphaned = append(orphaned, name)
+			continue
+		}
+		if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
+			orphaned = append(orphaned, name)
+		}
+	}
+
+	return orphaned, nil
+}
+
 // ---- launchctl helpers ----
 
 // launchctl runs launchctl with the given arguments.
@@ -109,7 +162,8 @@ func formatLaunchdPlist(label string, args []string) string {
 		argsXML.WriteString(fmt.Sprintf("        <string>%s</string>\n", escapeXML(a)))
 	}
 
-	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+	return fmt.Sprintf(`<!-- Managed by dscli -->
+<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>

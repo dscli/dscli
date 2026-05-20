@@ -10,6 +10,8 @@
 //	│  Start(name) error       Delete(name) error             │
 //	│  Stop(name) error        List() ([]string, error)       │
 //	│  Status(name) (string, error)                           │
+//	│  Scan() ([]string, error)                               │
+//	│  ScanStatus(name) (string, error)                       │
 //	│                                                         │
 //	│  ┌────────────┐  ┌──────────────┐  ┌──────────────────┐ │
 //	│  │ linux      │  │ darwin       │  │ other            │ │
@@ -21,6 +23,7 @@
 //	│  └────────────┘  └──────────────┘  └──────────────────┘ │
 //	│                                                         │
 //	│  Registry: ~/.dscli/services/<name>.json                │
+//	│  Marker:   "# Managed by dscli" / "<!-- Managed by dscli -->" │
 //	└─────────────────────────────────────────────────────────┘
 //
 // # Backends
@@ -66,6 +69,18 @@
 // The Args field (stored verbatim from *exec.Cmd.Args) enables type-safe
 // command reconstruction without fragile whitespace splitting.
 //
+// # DScli Marker
+//
+// Service unit files include a dscli marker for identification:
+//
+//	systemd:  # Managed by dscli     (first line of unit file)
+//	launchd:  <!-- Managed by dscli --> (first line of plist)
+//
+// The Scan function uses this marker to discover orphaned services
+// (OS-level units without a corresponding JSON registry entry).
+// Services created before the marker was introduced can be re-registered
+// by running Create again (it is idempotent).
+//
 // # API
 //
 // Create writes the platform-specific service configuration (systemd unit
@@ -102,6 +117,16 @@
 //
 // "stale" indicates the service was created by an older dscli version or
 // before a config change; it should be re-created to pick up updates.
+//
+// Scan returns the names of services that exist at the OS level (systemd/
+// launchd units with the dscli marker) but lack a JSON registry entry.
+// These "orphaned" services were likely created before the JSON registry
+// was introduced, or their registry files were deleted.
+//
+// ScanStatus is like Status but works even when the JSON registry entry
+// is missing.  It checks the OS-level service manager directly.  Unlike
+// Status, ScanStatus never returns "stale" (stale detection requires a
+// registry entry).
 //
 // # Design Decisions
 //

@@ -15,14 +15,13 @@ var ErrUnsupported = errors.New("userservice: platform not supported")
 
 // serviceConfig is persisted to ~/.dscli/services/<name>.json as the
 // source-of-truth registry of dscli-managed user services.
-// serviceConfig is persisted to ~/.dscli/services/<name>.json as the
-// source-of-truth registry of dscli-managed user services.
 type serviceConfig struct {
 	Name      string   `json:"name"`
 	Desc      string   `json:"desc"`
 	ExecStart string   `json:"exec_start"`
 	Args      []string `json:"args,omitempty"`
 }
+
 // Create creates or updates a user service configuration.
 //
 // On Linux: writes a systemd user unit file at
@@ -192,6 +191,75 @@ func Status(name string) (string, error) {
 		return "running", nil
 	}
 	return "stopped", nil
+}
+
+// Scan returns the names of dscli-managed services that exist at the OS
+// level (systemd/launchd) but have no corresponding JSON registry entry.
+// These "orphaned" services were likely created before the JSON registry
+// was introduced, or their registry files were deleted.
+//
+// Use the --scan flag on "dscli service list" or "dscli service status"
+// to include orphaned services.  Orphaned services can be re-registered
+// by running "dscli service create" again (it is idempotent).
+func Scan() ([]string, error) {
+	return scan()
+}
+
+// ScanStatus is like Status but works even when the JSON registry
+// entry is missing.  It checks the OS-level service manager directly.
+//
+// Returns:
+//   - "running"       — service is active at the OS level
+//   - "stopped"       — service unit exists but is not running
+//   - "not_found"     — no service found at the OS level either
+//   - "stale"         — (never returned by ScanStatus — stale requires a registry entry)
+func ScanStatus(name string) (string, error) {
+	if name == "" {
+		return "not_found", nil
+	}
+
+	// First try the standard Status (handles registered services).
+	s, err := Status(name)
+	if err != nil {
+		return "", err
+	}
+	if s != "not_found" {
+		return s, nil
+	}
+
+	// No JSON registry — check OS directly.
+	if isRunning(name) {
+		return "running", nil
+	}
+
+	// Check if the OS-level unit exists (even if not running).
+	if unitExists(name) {
+		return "stopped", nil
+	}
+
+	return "not_found", nil
+}
+
+// unitExists reports whether the OS-level service unit exists for name.
+func unitExists(name string) bool {
+	hd, err := homeDir()
+	if err != nil {
+		return false
+	}
+
+	// Check systemd unit file.
+	unitPath := filepath.Join(hd, ".config", "systemd", "user", name+".service")
+	if _, err := os.Stat(unitPath); err == nil {
+		return true
+	}
+
+	// Check LaunchAgent plist.
+	plistPath := filepath.Join(hd, "Library", "LaunchAgents", name+".plist")
+	if _, err := os.Stat(plistPath); err == nil {
+		return true
+	}
+
+	return false
 }
 
 // ---- internal helpers ----
