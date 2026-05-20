@@ -89,13 +89,14 @@ func initDatabase(db *DB) error {
 		return fmt.Errorf("创建 db_metadata 表失败: %w", err)
 	}
 
-	// 检查是否已初始化过，若否则记录时间戳
-	var initializedAt string
-	err := db.QueryRow(`SELECT value FROM db_metadata WHERE key = 'initialized_at'`).Scan(&initializedAt)
-	if err == sql.ErrNoRows {
-		if _, err := db.Exec(`INSERT INTO db_metadata (key, value) VALUES ('initialized_at', CURRENT_TIMESTAMP)`); err != nil {
-			return fmt.Errorf("记录初始化时间失败: %w", err)
-		}
+	// 读取上次成功初始化的版本
+	var storedVersion string
+	readErr := db.QueryRow(`SELECT value FROM db_metadata WHERE key = 'version'`).Scan(&storedVersion)
+	currentVersion := config.BuildTime
+
+	// 版本比对：同版本跳过，否则跑全量初始化（所有 DDL 均为 IF NOT EXISTS）
+	if readErr == nil && currentVersion != "" && storedVersion == currentVersion {
+		return nil
 	}
 
 	// 1. 创建表
@@ -123,6 +124,13 @@ func initDatabase(db *DB) error {
 	for _, hook := range postInitHooks {
 		if err := hook(db); err != nil {
 			outfmt.Debug("后初始化钩子失败: %v\n", err)
+		}
+	}
+
+	// 全部完成后记录当前版本（仅当 BuildTime 已注入）
+	if currentVersion != "" {
+		if _, err := db.Exec(`INSERT OR REPLACE INTO db_metadata (key, value) VALUES ('version', ?)`, currentVersion); err != nil {
+			outfmt.Debug("记录版本失败: %v\n", err)
 		}
 	}
 

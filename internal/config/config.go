@@ -10,8 +10,11 @@ import (
 var (
 	globalConfig     *Config
 	globalConfigOnce sync.Once
-)
 
+	// BuildTime is set via ldflags at build time, e.g.
+	//   -X gitcode.com/dscli/dscli/internal/config.BuildTime=2026-05-20T08:00:00Z
+	BuildTime string
+)
 // Get 获取配置值（向后兼容接口）
 // 使用全局配置实例，支持懒加载
 func Get(name, defaultValue string, alias ...string) string {

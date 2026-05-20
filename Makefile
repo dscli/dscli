@@ -21,7 +21,7 @@ else ifeq ($(VERSION),unknown)
 	VERSION = dev
 endif
 
-LDFLAGS = -ldflags "-X main.Version=$(VERSION) -X main.Build=$(BUILD_DATE)-$(GIT_COMMIT)"
+LDFLAGS = -ldflags "-X main.Version=$(VERSION) -X main.Build=$(BUILD_DATE)-$(GIT_COMMIT) -X gitcode.com/dscli/dscli/internal/config.BuildTime=$(BUILD_DATE)"
 GOFLAGS = -trimpath -tags netgo
 SOURCE_DIR = .
 BUILD_DIR = build
