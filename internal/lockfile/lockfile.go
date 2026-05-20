@@ -92,6 +92,44 @@ func TryLockGlobal() (*Lock, bool, error) {
 	return tryLock(config.ConfigDir)
 }
 
+// LockDB 获取数据库排他锁（阻塞等待）。
+//
+// 锁文件位于 ~/.dscli/locks/sqlite.db.lock，与 chat 进程锁
+// (dscli.lock) 独立。调用方负责 Close 释放；进程退出时
+// 内核自动释放。
+//
+// 用于消除多进程并发访问 sqlite.db 时的 SQLITE_BUSY 错误。
+// LockDB 获取指定数据库文件名的文件锁（阻塞排他锁）。
+//
+// dbName 如 "sqlite.db" 或 "wechat.db"，
+// 锁文件路径为 ~/.dscli/locks/<dbName>.lock。
+func LockDB(dbName string) (*Lock, error) {
+	dir := filepath.Join(config.ConfigDir, "locks")
+	path := filepath.Join(dir, dbName+".lock")
+
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, fmt.Errorf("lockfile: mkdir %s: %w", dir, err)
+	}
+
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("lockfile: open %s: %w", path, err)
+	}
+
+	// 阻塞排他锁 — 等待直到获取成功
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("lockfile: flock %s: %w", path, err)
+	}
+
+	// 写入 PID 方便排查
+	f.Truncate(0)
+	f.Seek(0, 0)
+	fmt.Fprintf(f, "%d\n", os.Getpid())
+
+	return &Lock{file: f, path: path}, nil
+}
+
 // Close 释放锁并关闭文件。
 func (l *Lock) Close() error {
 	if l.file == nil {

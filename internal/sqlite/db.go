@@ -9,6 +9,7 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/config"
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/lockfile"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 )
 
@@ -32,12 +33,35 @@ var (
 	tableSchemas   = []string{}
 	indexSchemas   = []string{}
 	upgradeSchemas = []string{}
-	postInitHooks  = []func(*sql.DB) error{}
+	postInitHooks  = []func(*DB) error{}
 
 	// 数据库连接
 	dbOnce sync.Once
 	dbErr  error
 )
+
+// DB 包装 *sql.DB，在 Close 时释放文件锁。
+//
+// 嵌入 *sql.DB 使得所有 database/sql 方法自动提升，
+// 现有调用方无需改动即可继续使用 db.Exec / db.Query 等。
+type DB struct {
+	*sql.DB
+	lk *lockfile.Lock
+}
+
+// Close 关闭数据库连接并释放文件锁（如有）。
+func (db *DB) Close() error {
+	var err error
+	if db.DB != nil {
+		err = db.DB.Close()
+	}
+	if db.lk != nil {
+		if lkErr := db.lk.Close(); lkErr != nil && err == nil {
+			err = lkErr
+		}
+	}
+	return err
+}
 
 func RegisterTableSchema(ss ...string) {
 	tableSchemas = append(tableSchemas, ss...)
@@ -51,12 +75,12 @@ func RegisterUpgradeSchema(ss ...string) {
 	upgradeSchemas = append(upgradeSchemas, ss...)
 }
 
-func RegisterPostInitHook(hook func(*sql.DB) error) {
+func RegisterPostInitHook(hook func(*DB) error) {
 	postInitHooks = append(postInitHooks, hook)
 }
 
 // 初始化数据库（延迟执行，确保所有init()已完成）
-func initDatabase(db *sql.DB) error {
+func initDatabase(db *DB) error {
 	// 0. 确保 db_metadata 表存在（用于检测 DB 重建）
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS db_metadata (
 		key TEXT PRIMARY KEY,
@@ -105,26 +129,63 @@ func initDatabase(db *sql.DB) error {
 	return nil
 }
 
-// OpenDB 打开数据库连接（确保数据库已初始化）
-func OpenDB(elem ...string) (*sql.DB, error) {
-	var err error
-	db, err := Open(dbPath)
+// OpenDB 打开数据库连接（确保数据库已初始化）。
+//
+// 对于默认生产数据库（~/.dscli/sqlite.db），自动获取文件锁以防止
+// 多进程并发导致的 SQLITE_BUSY。测试环境和自定义路径不获取锁。
+func OpenDB(elem ...string) (*DB, error) {
+	// 自定义数据库路径（elem 指定）— 不获取锁
+	if len(elem) > 0 {
+		rawDB, err := Open(filepath.Join(elem...))
+		if err != nil {
+			return nil, err
+		}
+		return &DB{DB: rawDB}, nil
+	}
+
+	// 仅在默认生产路径获取文件锁
+	defaultPath := filepath.Join(config.ConfigDir, "sqlite.db")
+	if dbPath == defaultPath {
+		lk, err := lockfile.LockDB("sqlite.db")
+		if err != nil {
+			return nil, fmt.Errorf("获取数据库锁失败: %w", err)
+		}
+
+		rawDB, err := Open(dbPath)
+		if err != nil {
+			lk.Close()
+			return nil, fmt.Errorf("打开数据库失败: %w", err)
+		}
+
+		db := &DB{DB: rawDB, lk: lk}
+
+		dbOnce.Do(func() {
+			dbErr = initDatabase(db)
+		})
+
+		if dbErr != nil {
+			db.Close()
+			return nil, dbErr
+		}
+
+		return db, nil
+	}
+
+	// 非默认路径（测试环境 / SetDBPath 自定义）— 不获取锁
+	rawDB, err := Open(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
+
+	db := &DB{DB: rawDB}
 
 	dbOnce.Do(func() {
 		dbErr = initDatabase(db)
 	})
 
 	if dbErr != nil {
+		db.Close()
 		return nil, dbErr
-	}
-
-	// 如果指定了其他数据库路径
-	if len(elem) > 0 {
-		dbPath := filepath.Join(elem...)
-		return Open(dbPath)
 	}
 
 	return db, nil

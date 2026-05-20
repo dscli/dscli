@@ -12,7 +12,7 @@
 //	sqlite.RegisterTableSchema(...)     — CREATE TABLE / CREATE VIRTUAL TABLE
 //	sqlite.RegisterIndexSchema(...)     — CREATE INDEX
 //	sqlite.RegisterUpgradeSchema(...)   — ALTER TABLE ADD COLUMN / migration SQL
-//	sqlite.RegisterPostInitHook(...)    — func(*sql.DB) error callbacks
+//	sqlite.RegisterPostInitHook(...)    — func(*DB) error callbacks
 //
 // Execution order inside initDatabase():
 //
@@ -106,28 +106,23 @@
 //
 // Open() appends pragmas to the DSN:
 //
-//	_journal=WAL     — write-ahead logging, better concurrent reads
-//	_timeout=5000    — 5-second busy timeout before SQLITE_BUSY
-//	_fk=1            — enforce foreign key constraints
+//	_journal=WAL        — write-ahead logging, better concurrent reads
+//	_timeout=5000       — 5-second busy timeout before SQLITE_BUSY
+//	_fk=1               — enforce foreign key constraints
+//	_txlock=immediate   — acquire write lock at BEGIN, avoid mid-transaction BUSY
 //
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Consumer Example
+// File-Lock Serialization (SQLITE_BUSY Prevention)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //
-// A typical consumer package:
+// OpenDB() 返回 *DB（包装 *sql.DB + 文件锁）。对于默认生产数据库
+// (~/.dscli/sqlite.db)，OpenDB() 在打开连接前通过 flock(2) 获取排他锁，
+// Close() 时释放。这从根源上消除多进程并发导致的 SQLITE_BUSY。
 //
-//	func init() {
-//	    sqlite.RegisterTableSchema(`CREATE TABLE IF NOT EXISTS foo (...)`)
-//	    sqlite.RegisterIndexSchema(`CREATE INDEX IF NOT EXISTS idx_foo_bar ON foo(bar)`)
-//	    sqlite.RegisterUpgradeSchema(`ALTER TABLE foo ADD COLUMN baz TEXT`)
-//	}
+//   - 测试环境（IsTesting()==true）：使用临时 DB，不获取锁
+//   - 自定义路径（--db / SetDBPath）：不获取锁，由调用方负责并发控制
+//   - elem 参数指定路径：不获取锁
 //
-//	func doWork() error {
-//	    db, err := sqlite.OpenDB()
-//	    if err != nil {
-//	        return err
-//	    }
-//	    defer db.Close()
-//	    // ... use db ...
-//	}
+// *DB 嵌入 *sql.DB，所有 database/sql 方法自动提升，现有调用方无需
+// 改动即可继续使用 db.Exec / db.Query / db.QueryRow 等。
 package sqlite

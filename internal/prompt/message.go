@@ -168,7 +168,7 @@ func SaveMessages(ctx context.Context, msgs ...Message) error {
 
 // populateMessagesFTS 是升级迁移钩子：当 messages 表有数据但 messages_fts 为空时，
 // 为所有已有消息重建 FTS5 全文索引（仅执行一次）。
-func populateMessagesFTS(db *sql.DB) error {
+func populateMessagesFTS(db *sqlite.DB) error {
 	// 检查 FTS 表是否已有数据（已迁移过则跳过）
 	var ftsCount int
 	if err := db.QueryRow("SELECT COUNT(*) FROM messages_fts").Scan(&ftsCount); err != nil {

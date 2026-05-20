@@ -56,7 +56,7 @@ func init() {
 // ─── Shared Helpers ───────────────────────────────────────────────────────────
 
 // openDB opens the shared dscli database.
-func openDB() (*sql.DB, error) {
+func openDB() (*sqlite.DB, error) {
 	return sqlite.OpenDB()
 }
 
@@ -88,7 +88,7 @@ type searchRow struct {
 // ─── FTS Sync Helpers ─────────────────────────────────────────────────────────
 
 // insertFTS inserts a row into the FTS index with Chinese tokenization.
-func insertFTS(db *sql.DB, id int64, title, content, typ string) error {
+func insertFTS(db *sqlite.DB, id int64, title, content, typ string) error {
 	_, err := db.Exec(
 		`INSERT INTO memories_fts(rowid, title, content, type) VALUES (?, ?, ?, ?)`,
 		id, tokenizer.Tokenize(title), tokenizer.Tokenize(content), typ,
@@ -97,7 +97,7 @@ func insertFTS(db *sql.DB, id int64, title, content, typ string) error {
 }
 
 // deleteFTS removes a row from the FTS index by rowid.
-func deleteFTS(db *sql.DB, id int64) error {
+func deleteFTS(db *sqlite.DB, id int64) error {
 	_, err := db.Exec(`DELETE FROM memories_fts WHERE rowid = ?`, id)
 	return err
 }
@@ -205,8 +205,8 @@ func HandleMemUpdate(ctx context.Context, id int64, title, body, typ string) (re
 	sets = append(sets, "updated_at = datetime('now')")
 	vals = append(vals, id, sessionID)
 
-	sql := fmt.Sprintf("UPDATE memories SET %s WHERE id = ? AND session_id = ?", strings.Join(sets, ", "))
-	_, err = db.Exec(sql, vals...)
+	sqlQ := fmt.Sprintf("UPDATE memories SET %s WHERE id = ? AND session_id = ?", strings.Join(sets, ", "))
+	_, err = db.Exec(sqlQ, vals...)
 	if err != nil {
 		err = fmt.Errorf("更新记忆失败: %w", err)
 		return result, warning, err

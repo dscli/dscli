@@ -107,7 +107,7 @@ func Reset(ctx context.Context) error {
 
 // getContent 内部函数：从指定 db 连接获取 content。
 // 未找到时返回 sql.ErrNoRows。
-func getContent(ctx context.Context, db *sql.DB, sessionID int64) (string, error) {
+func getContent(ctx context.Context, db *sqlite.DB, sessionID int64) (string, error) {
 	var content string
 	err := db.QueryRowContext(ctx,
 		`SELECT content FROM chimeins WHERE session_id = ?`,

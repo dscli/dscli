@@ -97,9 +97,11 @@ func RootPersistentPreRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	// 初始化数据库（确保所有init()函数已执行）
-	if _, err := sqlite.OpenDB(); err != nil {
+	db, err := sqlite.OpenDB()
+	if err != nil {
 		return fmt.Errorf("数据库初始化失败: %w", err)
 	}
+	db.Close() // 初始化完成后释放连接与锁，后续命令按需重新获取
 
 	key := config.Get("deepseek-api-key", "")
 	if key == "" && cmd.Name() != "flycheck" && cmd.Name() != "version" {

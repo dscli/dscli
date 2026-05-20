@@ -67,13 +67,13 @@ func init() {
 		`UPDATE ai_names SET email = LOWER(name_en) || '@dscli.io' WHERE email = '' OR email IS NULL`,
 	)
 
-	sqlite.RegisterPostInitHook(func(db *sql.DB) error {
+	sqlite.RegisterPostInitHook(func(db *sqlite.DB) error {
 		return seedNames(db)
 	})
 }
 
 // seedNames inserts the 32 names into ai_names using INSERT OR IGNORE.
-func seedNames(db *sql.DB) error {
+func seedNames(db *sqlite.DB) error {
 	for _, n := range namesData {
 		email := n.Email
 		if email == "" {
