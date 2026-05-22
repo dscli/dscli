@@ -29,15 +29,31 @@ func TestIsRemoteURL(t *testing.T) {
 		rawURL string
 		want   bool
 	}{
+		// google.com — exact + subdomain suffix
 		{"https://google.com/search?q=golang", true},
 		{"https://www.google.com/", true},
 		{"http://google.com", true},
 		{"https://GOOGLE.COM", true},
 
+		// gitlab.com
+		{"https://gitlab.com", true},
+		{"https://gitlab.com/explore", true},
+
+		// github.com
+		{"https://github.com", true},
+
+		// googlesource.com — subdomain suffix
+		{"https://go-review.googlesource.com/c/go/+/123", true},
+
+		// duckduckgo.com — exact + subdomain suffix
+		{"https://duckduckgo.com", true},
+		{"https://lite.duckduckgo.com", true},
+
+		// negative cases
 		{"https://example.com", false},
 		{"https://go.dev", false},
-		{"https://github.com", false},
 		{"https://www.google.cn", false},
+		{"https://notgooglesource.com", false},
 
 		{"", false},
 		{"invalid-url", false},
@@ -83,6 +99,7 @@ func TestLocalListenAddr(t *testing.T) {
 
 func TestCdpEndpoint(t *testing.T) {
 	t.Run("local", func(t *testing.T) {
+		withConfig(t, "lightpanda-remote-url", "")
 		tests := []struct {
 			name      string
 			rawURL    string

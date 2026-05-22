@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -17,11 +16,15 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// remoteHosts lists hosts that must be accessed via remote lightpanda
-// (geo-restricted sites inaccessible from local network).
+// remoteHosts lists domain suffixes whose subdomains must be accessed
+// via remote lightpanda (geo-restricted sites inaccessible from local network).
+// isRemoteURL uses suffix matching: "google.com" also matches "www.google.com".
 var remoteHosts = []string{
 	"google.com",
-	"www.google.com",
+	"gitlab.com",
+	"github.com",
+	"googlesource.com",
+	"duckduckgo.com",
 }
 
 // isRemoteURL reports whether rawURL should be fetched via remote lightpanda.
@@ -30,7 +33,13 @@ func isRemoteURL(rawURL string) bool {
 	if err != nil {
 		return false
 	}
-	return slices.Contains(remoteHosts, strings.ToLower(u.Host))
+	host := strings.ToLower(u.Hostname())
+	for _, h := range remoteHosts {
+		if host == h || strings.HasSuffix(host, "."+h) {
+			return true
+		}
+	}
+	return false
 }
 
 // ---- Function variables for test injection ----
