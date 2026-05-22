@@ -82,13 +82,16 @@ func defaultGetFromCDP(ctx context.Context, rawURL, cdpURL string) (string, erro
 	tabCtx, tabCancel := chromedp.NewContext(allocatorCtx)
 	defer tabCancel()
 
-	tabCtx, timeoutCancel := context.WithTimeout(tabCtx, 60*time.Second)
-	defer timeoutCancel()
+	// Timeout is controlled by the caller via context deadline;
+	// no additional timeout is set here to avoid truncating the
+	// caller's configured timeout (e.g., AI-specified timeout
+	// parameter in web_reader tool).
 
 	var markdownContent string
 
 	err := chromedp.Run(tabCtx,
 		chromedp.Navigate(rawURL),
+		chromedp.WaitReady("body"),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			target := chromedp.FromContext(ctx).Target
 			if target == nil {

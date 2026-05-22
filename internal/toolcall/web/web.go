@@ -262,14 +262,14 @@ func init() {
 				},
 				"timeout": map[string]any{
 					"type":        "integer",
-					"description": "Timeout in seconds (default 60). Set longer (e.g. 120) for slow websites.",
+					"description": "Timeout in seconds (default 120). Set longer (e.g. 300) for slow websites.",
 				},
 			},
 			"required":             []string{"url"},
 			"additionalProperties": false,
 		},
 		Category: "web",
-		Timeout:  60 * time.Second, // 60秒超时
+		Timeout:  120 * time.Second,
 		Handler:  handleWebReader,
 	})
 }
