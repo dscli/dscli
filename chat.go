@@ -203,6 +203,10 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 			// Execute tool calls
 			history = append(history, toolInputs...)
 
+			// Inject pending chime-in before next ChatRound.
+			// Chime-ins may have accumulated while the process was not running.
+			history, _ = injectChimein(ctx, history)
+
 			inputs := []prompt.Message{}
 			if content != "" {
 				inputs = append(inputs, prompt.Message{
@@ -384,7 +388,29 @@ func PrintSessionStats(ctx context.Context) {
 	}
 }
 
+// injectChimein checks for pending chime-in messages and injects them into history.
+// Returns the updated history and true if a chime-in was found and injected.
+func injectChimein(ctx context.Context, history []prompt.Message) ([]prompt.Message, bool) {
+	content, err := chimein.Get(ctx)
+	if err != nil || content == "" {
+		return history, false
+	}
+	msg := prompt.Message{Role: "user", Content: content}
+	history = append(history, msg)
+	outfmt.PrintClimeinContent(ctx, content)
+	if saveErr := prompt.SaveMessages(ctx, msg); saveErr != nil {
+		outfmt.Debug("failed to save chimein message: %v", saveErr)
+	}
+	chimein.Reset(ctx)
+	return history, true
+}
+
 func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ...prompt.Message) (err error) {
+	// 0. Inject any pending chime-in before calling LLM.
+	//    This catches leftover chime-ins from previous sessions that ended
+	//    with a text-only response (no tool calls to trigger the check below).
+	history, _ = injectChimein(ctx, history)
+
 	// 1. Construct messages slice (prompts → history → inputs)
 	messages := make([]prompt.Message, 0, len(prompts)+len(history)+len(inputs))
 	messages = append(messages, prompts...)
@@ -445,6 +471,13 @@ func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ..
 	}
 
 	if len(tcs) == 0 {
+		// No tool calls — check for chime-in before ending the session.
+		// If a chime-in arrived during LLM thinking, restart ChatRound
+		// so it gets processed immediately instead of being carried over
+		// to the next dscli chat invocation.
+		if updatedHistory, injected := injectChimein(ctx, history); injected {
+			return ChatRound(ctx, prompts, updatedHistory)
+		}
 		// Conversation ended, print stats
 		PrintSessionStats(ctx)
 		return err
@@ -456,15 +489,7 @@ func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ..
 		history = append(history, toolInputs...)
 
 		// Check for chime-in: user may have inserted a message during tool execution
-		if content, getErr := chimein.Get(ctx); getErr == nil && content != "" {
-			msg := prompt.Message{Role: "user", Content: content}
-			history = append(history, msg)
-			outfmt.PrintClimeinContent(ctx, content)
-			if saveErr := prompt.SaveMessages(ctx, msg); saveErr != nil {
-				outfmt.Debug("failed to save chimein message: %v", saveErr)
-			}
-			chimein.Reset(ctx)
-		}
+		history, _ = injectChimein(ctx, history)
 
 		return ChatRound(ctx, prompts, history)
 	}

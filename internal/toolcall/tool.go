@@ -462,7 +462,6 @@ func GetToolByName(name string) (*ToolDesc, error) {
 	return &tool, nil
 }
 
-// ListTools 列出所有工具（可按分类过滤）
 // ListTools 列出所有工具（可按分类过滤）。
 // 以运行时注册表为权威来源，合并 DB 中的使用统计。
 func ListTools(category string) ([]ToolDesc, error) {
