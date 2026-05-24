@@ -18,7 +18,8 @@
 // Handlers:
 //
 //	HandleSendMail     — Send a mail to another maintainer by name/email
-//	HandleReadMail     — Read mails (list or single) for the current maintainer
+//	HandleReadMail     — Read a single mail by ID for the current maintainer
+//	HandleListMail     — List recent mails with subject only (no body)
 //	HandleMailSearch   — FTS5 search across mails
 //	HandleReplyMail    — Reply to an existing mail
 //	HandleDeleteMail   — Delete a mail (recipient only)

@@ -21,9 +21,9 @@ func init() {
 	sendCmd := &cobra.Command{
 		Use:   "send <recipient>",
 		Short: "发送邮件给指定维护者",
-		Long: `向指定维护者发送邮件。接收者可以是名字（如 "Newton"）或邮箱（如 "newton@dscli.io"），不区分大小写。`,
-		Args: cobra.ExactArgs(1),
-		RunE: mailSendRunE,
+		Long:  `向指定维护者发送邮件。接收者可以是名字（如 "Newton"）或邮箱（如 "newton@dscli.io"），不区分大小写。`,
+		Args:  cobra.ExactArgs(1),
+		RunE:  mailSendRunE,
 	}
 	sendCmd.Flags().StringP("subject", "s", "", "邮件主题")
 	sendCmd.Flags().StringP("body", "b", "", "邮件正文")
@@ -31,15 +31,25 @@ func init() {
 
 	// == read ==============================================================
 	readCmd := &cobra.Command{
-		Use:   "read [id]",
-		Short: "阅读邮件",
-		Long: `阅读收件箱中的邮件。不提供 ID 时列表显示最近邮件，提供 ID 时查看具体邮件内容。`,
-		Args: cobra.MaximumNArgs(1),
-		RunE: mailReadRunE,
+		Use:   "read <mail-id>",
+		Short: "阅读单封邮件",
+		Long:  `阅读指定 ID 的邮件全文，同时标记为已读。`,
+		Args:  cobra.ExactArgs(1),
+		RunE:  mailReadRunE,
 	}
-	readCmd.Flags().BoolP("unread", "u", false, "只显示未读邮件")
-	readCmd.Flags().IntP("limit", "n", 20, "列表模式下的最大显示数")
 	mailCmd.AddCommand(readCmd)
+
+	// == list ==============================================================
+	listCmd := &cobra.Command{
+		Use:   "list",
+		Short: "列出邮件列表",
+		Long:  `列出收件箱中的邮件（仅显示主题，不展开正文）。`,
+		Args:  cobra.NoArgs,
+		RunE:  mailListRunE,
+	}
+	listCmd.Flags().BoolP("unread", "u", false, "只显示未读邮件")
+	listCmd.Flags().IntP("limit", "n", 20, "最大显示数")
+	mailCmd.AddCommand(listCmd)
 
 	// == search ============================================================
 	searchCmd := &cobra.Command{
@@ -99,19 +109,24 @@ func mailSendRunE(cmd *cobra.Command, args []string) error {
 }
 
 func mailReadRunE(cmd *cobra.Command, args []string) error {
-	var mid int64
-	if len(args) > 0 {
-		var err error
-		mid, err = strconv.ParseInt(args[0], 10, 64)
-		if err != nil {
-			return fmt.Errorf("无效的邮件 ID: %w", err)
-		}
+	mid, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("无效的邮件 ID: %w", err)
 	}
 
+	result, _, err := mail.HandleReadMail(context.Background(), mid)
+	if err != nil {
+		return err
+	}
+	outfmt.Print(result)
+	return nil
+}
+
+func mailListRunE(cmd *cobra.Command, _ []string) error {
 	unreadOnly, _ := cmd.Flags().GetBool("unread")
 	limit, _ := cmd.Flags().GetInt("limit")
 
-	result, _, err := mail.HandleReadMail(context.Background(), mid, unreadOnly, limit)
+	result, _, err := mail.HandleListMail(context.Background(), unreadOnly, limit)
 	if err != nil {
 		return err
 	}

@@ -1,10 +1,7 @@
 # readmail
 
-Read mail messages for the current maintainer.
+Read a single mail by ID for the current maintainer.
 
-Read a single mail by ID or list recent mails in the current
-maintainer's inbox. Optionally filter to unread only.
+Read a specific mail by ID. Also marks the mail as read.
 
-Parameters: id (optional integer) — read a specific mail by ID;
-unread_only (optional boolean, default false) — show only unread
-mails; limit (optional integer, default 20, max 100).
+Parameters: id (required integer) — mail ID to read.

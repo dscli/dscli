@@ -26,6 +26,7 @@ import (
 	"fmt"
 
 	mailcore "gitcode.com/dscli/dscli/internal/mail"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
@@ -43,6 +44,9 @@ var replymail_md string
 
 //go:embed deletemail.md
 var deletemail_md string
+
+//go:embed listmail.md
+var listmail_md string
 
 //go:embed contacts.md
 var contacts_md string
@@ -86,13 +90,28 @@ func init() {
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"id":          map[string]any{"type": "integer", "description": "Mail ID to read (optional, omit to list)"},
-				"unread_only": map[string]any{"type": "boolean", "description": "Show only unread mails (default false)"},
-				"limit":       map[string]any{"type": "integer", "description": "Max results for list view (default 20, max 100)"},
+				"id": map[string]any{"type": "integer", "description": "Mail ID to read (required)"},
 			},
+			"required":             []string{"id"},
 			"additionalProperties": false,
 		},
 		Handler: handleReadMail,
+	})
+
+	RegisterTool(ToolDef{
+		Name:        "listmail",
+		Description: listmail_md,
+		Category:    "mail",
+		Strict:      true,
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"unread_only": map[string]any{"type": "boolean", "description": "Show only unread mails (default false)"},
+				"limit":       map[string]any{"type": "integer", "description": "Max results (default 20, max 100)"},
+			},
+			"additionalProperties": false,
+		},
+		Handler: handleListMail,
 	})
 
 	RegisterTool(ToolDef{
@@ -182,10 +201,26 @@ func handleSendMail(ctx context.Context, args ToolArgs) (result, warning string,
 
 func handleReadMail(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	mid := ToolArgsValue(args, "id", int64(0))
+	if mid <= 0 {
+		err = fmt.Errorf("id is required")
+		return
+	}
+
+	result, warning, err = mailcore.HandleReadMail(ctx, mid)
+	if result != "" {
+		outfmt.Println(result)
+	}
+	return
+}
+
+func handleListMail(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	unreadOnly := ToolArgsValue(args, "unread_only", false)
 	limit := ToolArgsValue(args, "limit", 20)
 
-	result, warning, err = mailcore.HandleReadMail(ctx, mid, unreadOnly, limit)
+	result, warning, err = mailcore.HandleListMail(ctx, unreadOnly, limit)
+	if result != "" {
+		outfmt.Println(result)
+	}
 	return
 }
 

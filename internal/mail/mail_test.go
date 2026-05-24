@@ -110,14 +110,14 @@ func TestHandleSendMail(t *testing.T) {
 	})
 }
 
-// === HandleReadMail ===========================================================
+// === HandleReadMail & HandleListMail ==========================================
 
 func TestHandleReadMail(t *testing.T) {
 	newTestDB(t)
 	me := currentName()
 
 	t.Run("empty inbox", func(t *testing.T) {
-		result, _, err := HandleReadMail(context.Background(), 0, false, 20)
+		result, _, err := HandleListMail(context.Background(), false, 20)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -130,7 +130,7 @@ func TestHandleReadMail(t *testing.T) {
 		HandleSendMail(context.Background(), me, "列表测试", "正文内容")
 		HandleSendMail(context.Background(), me, "第二封", "更多内容")
 
-		result, _, err := HandleReadMail(context.Background(), 0, false, 20)
+		result, _, err := HandleListMail(context.Background(), false, 20)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -140,17 +140,18 @@ func TestHandleReadMail(t *testing.T) {
 		if !strings.Contains(result, "第二封") {
 			t.Errorf("expected '第二封', got: %s", result)
 		}
+		// Body should NOT appear in list view
+		if strings.Contains(result, "正文内容") {
+			t.Errorf("list should not show body, got: %s", result)
+		}
 	})
 
 	t.Run("unread filter", func(t *testing.T) {
-		result, _, err := HandleReadMail(context.Background(), 0, true, 20)
+		result, _, err := HandleListMail(context.Background(), true, 20)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		// After previous read (which marks all as read), there may be none unread.
-		// But list_mails_after_send didn't mark them as read (HandleReadMail with id=0
-		// does NOT mark as read — only single-mail read does). So they should still
-		// be unread.
+		// HandleListMail does NOT mark as read — only HandleReadMail does.
 		if !strings.Contains(result, "列表测试") && !strings.Contains(result, "没有未读邮件") {
 			t.Errorf("expected unread mails or empty unread, got: %s", result)
 		}
@@ -164,7 +165,7 @@ func TestHandleReadMail(t *testing.T) {
 		var mid int64
 		fmt.Sscanf(sendResult, "✅ 邮件已发送 (#%d)", &mid)
 
-		result, _, err := HandleReadMail(context.Background(), mid, false, 10)
+		result, _, err := HandleReadMail(context.Background(), mid)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -177,9 +178,16 @@ func TestHandleReadMail(t *testing.T) {
 	})
 
 	t.Run("non existent mail", func(t *testing.T) {
-		_, _, err := HandleReadMail(context.Background(), 99999, false, 10)
+		_, _, err := HandleReadMail(context.Background(), 99999)
 		if err == nil {
 			t.Error("expected error for non-existent mail")
+		}
+	})
+
+	t.Run("read requires valid id", func(t *testing.T) {
+		_, _, err := HandleReadMail(context.Background(), 0)
+		if err == nil {
+			t.Error("expected error for invalid id")
 		}
 	})
 
@@ -187,7 +195,7 @@ func TestHandleReadMail(t *testing.T) {
 		for i := 0; i < 5; i++ {
 			HandleSendMail(context.Background(), me, fmt.Sprintf("限制测试 %d", i), "正文")
 		}
-		result, _, err := HandleReadMail(context.Background(), 0, false, 2)
+		result, _, err := HandleListMail(context.Background(), false, 2)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -303,7 +311,7 @@ func TestMailLifecycle(t *testing.T) {
 	}
 
 	// 2. Read the specific mail (marks as read)
-	result, _, err := HandleReadMail(context.Background(), mid, false, 10)
+	result, _, err := HandleReadMail(context.Background(), mid)
 	if err != nil {
 		t.Fatalf("read single failed: %v", err)
 	}
@@ -321,7 +329,7 @@ func TestMailLifecycle(t *testing.T) {
 	}
 
 	// 4. After reading, unread should be empty
-	result, _, err = HandleReadMail(context.Background(), 0, true, 10)
+	result, _, err = HandleListMail(context.Background(), true, 10)
 	if err != nil {
 		t.Fatalf("read unread after marking failed: %v", err)
 	}
@@ -425,7 +433,7 @@ func TestHandleDeleteMail(t *testing.T) {
 		}
 
 		// Verify it's gone
-		_, _, err = HandleReadMail(context.Background(), mid, false, 10)
+		_, _, err = HandleReadMail(context.Background(), mid)
 		if err == nil {
 			t.Error("expected error for deleted mail")
 		}
@@ -472,7 +480,7 @@ func TestMailReplyAndDeleteLifecycle(t *testing.T) {
 	fmt.Sscanf(replyResult, "✅ 回复已发送 (#%d)", &replyID)
 
 	// 3. Read inbox — should have both mails
-	result, _, err := HandleReadMail(context.Background(), 0, false, 20)
+	result, _, err := HandleListMail(context.Background(), false, 20)
 	if err != nil {
 		t.Fatalf("read failed: %v", err)
 	}
@@ -496,7 +504,7 @@ func TestMailReplyAndDeleteLifecycle(t *testing.T) {
 	}
 
 	// 6. Inbox should be empty
-	result, _, err = HandleReadMail(context.Background(), 0, false, 20)
+	result, _, err = HandleListMail(context.Background(), false, 20)
 	if err != nil {
 		t.Fatalf("read after delete failed: %v", err)
 	}

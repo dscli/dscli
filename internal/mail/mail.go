@@ -38,7 +38,6 @@ import (
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/ainame"
-	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/sqlite"
 	"gitcode.com/dscli/dscli/internal/tokenizer"
 )
@@ -80,15 +79,15 @@ func init() {
 
 // MailRow represents a single mail message.
 type MailRow struct {
-	ID              int64  `json:"id"`
-	SenderName      string `json:"sender_name"`
-	SenderEmail     string `json:"sender_email"`
-	RecipientName   string `json:"recipient_name"`
-	RecipientEmail  string `json:"recipient_email"`
-	Subject         string `json:"subject"`
-	Body            string `json:"body"`
-	IsRead          bool   `json:"is_read"`
-	CreatedAt       string `json:"created_at"`
+	ID             int64  `json:"id"`
+	SenderName     string `json:"sender_name"`
+	SenderEmail    string `json:"sender_email"`
+	RecipientName  string `json:"recipient_name"`
+	RecipientEmail string `json:"recipient_email"`
+	Subject        string `json:"subject"`
+	Body           string `json:"body"`
+	IsRead         bool   `json:"is_read"`
+	CreatedAt      string `json:"created_at"`
 }
 
 // MaintainerRow represents a maintainer from ai_names.
@@ -195,9 +194,50 @@ func HandleSendMail(ctx context.Context, recipient, subject, body string) (resul
 	return result, warning, nil
 }
 
-// HandleReadMail reads mail for the current maintainer.
-// mailID > 0: read specific mail; mailID == 0: list mails (with optional unreadOnly filter).
-func HandleReadMail(ctx context.Context, mailID int64, unreadOnly bool, limit int) (result, warning string, err error) {
+// HandleReadMail reads a single mail by ID for the current maintainer.
+// Also marks the mail as read.
+func HandleReadMail(ctx context.Context, mailID int64) (result, warning string, err error) {
+	if mailID <= 0 {
+		return "", "", fmt.Errorf("mail ID is required")
+	}
+
+	nameID := ainame.GetCurrentNameID(ctx)
+
+	db, err := sqlite.OpenDB()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to open database: %w", err)
+	}
+	defer db.Close()
+
+	var row MailRow
+	var isRead int
+	err = db.QueryRow(
+		`SELECT m.id, s.name_en, s.email, r.name_en, r.email, m.subject, m.body, m.is_read, m.created_at
+		 FROM mail m
+		 JOIN ai_names s ON s.id = m.sender_name_id
+		 JOIN ai_names r ON r.id = m.recipient_name_id
+		 WHERE m.id = ? AND m.recipient_name_id = ?`,
+		mailID, nameID,
+	).Scan(&row.ID, &row.SenderName, &row.SenderEmail,
+		&row.RecipientName, &row.RecipientEmail,
+		&row.Subject, &row.Body, &isRead, &row.CreatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", "", fmt.Errorf("邮件 #%d 不存在或不属于你", mailID)
+		}
+		return "", "", fmt.Errorf("读取邮件失败: %w", err)
+	}
+	row.IsRead = isRead != 0
+	// Mark as read (no FTS update needed — subject/body unchanged)
+	_, _ = db.Exec("UPDATE mail SET is_read = 1 WHERE id = ?", mailID)
+
+	result = formatMailRow(row)
+	return result, warning, nil
+}
+
+// HandleListMail lists recent mails for the current maintainer, showing
+// subject only (no body). Optional unreadOnly filter.
+func HandleListMail(ctx context.Context, unreadOnly bool, limit int) (result, warning string, err error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -213,39 +253,6 @@ func HandleReadMail(ctx context.Context, mailID int64, unreadOnly bool, limit in
 	}
 	defer db.Close()
 
-	// Read a single mail by ID
-	if mailID > 0 {
-		var row MailRow
-		var isRead int
-		err = db.QueryRow(
-			`SELECT m.id, s.name_en, s.email, r.name_en, r.email, m.subject, m.body, m.is_read, m.created_at
-			 FROM mail m
-			 JOIN ai_names s ON s.id = m.sender_name_id
-			 JOIN ai_names r ON r.id = m.recipient_name_id
-			 WHERE m.id = ? AND m.recipient_name_id = ?`,
-			mailID, nameID,
-		).Scan(&row.ID, &row.SenderName, &row.SenderEmail,
-			&row.RecipientName, &row.RecipientEmail,
-			&row.Subject, &row.Body, &isRead, &row.CreatedAt)
-		if err != nil {
-			if err == sql.ErrNoRows {
-				return "", "", fmt.Errorf("邮件 #%d 不存在或不属于你", mailID)
-			}
-			return "", "", fmt.Errorf("读取邮件失败: %w", err)
-		}
-		row.IsRead = isRead != 0
-		// Mark as read (no FTS update needed — subject/body unchanged)
-		_, _ = db.Exec("UPDATE mail SET is_read = 1 WHERE id = ?", mailID)
-
-		result = outfmt.PrintMail(row.ID,
-			row.SenderName, row.SenderEmail,
-			row.RecipientName, row.RecipientEmail,
-			row.Subject, row.Body, row.IsRead,
-			localTime(row.CreatedAt))
-		return result, warning, nil
-	}
-
-	// List mails
 	query := `SELECT m.id, s.name_en, s.email, r.name_en, r.email, m.subject, m.body, m.is_read, m.created_at
 		 FROM mail m
 		 JOIN ai_names s ON s.id = m.sender_name_id
@@ -299,24 +306,14 @@ func HandleReadMail(ctx context.Context, mailID int64, unreadOnly bool, limit in
 		if !m.IsRead {
 			readMark = "●"
 		}
-		shortSubject := m.Subject
-		if len(shortSubject) > 60 {
-			shortSubject = shortSubject[:60] + "..."
-		}
-		if shortSubject == "" {
-			shortSubject = "(无主题)"
-		}
-		shortBody := m.Body
-		if len(shortBody) > 120 {
-			shortBody = shortBody[:120] + "..."
+		subject := m.Subject
+		if subject == "" {
+			subject = "(无主题)"
 		}
 
 		fmt.Fprintf(&sb, "%s **#%d** | %s → %s | %s\n",
 			readMark, m.ID, m.SenderName, m.RecipientName, localTime(m.CreatedAt))
-		fmt.Fprintf(&sb, "  主题: %s\n", shortSubject)
-		if shortBody != "" {
-			fmt.Fprintf(&sb, "  内容: %s\n", shortBody)
-		}
+		fmt.Fprintf(&sb, "  主题: %s\n", subject)
 		sb.WriteString("\n")
 	}
 
@@ -639,7 +636,6 @@ func localTime(utcStr string) string {
 	return t.Local().Format("2006-01-02 15:04:05")
 }
 
-
 // UnreadMailCount returns the number of unread mails for the current maintainer.
 // Returns 0 on any error (missing session, DB error, etc.) — errors are silently
 // swallowed because this is a prompt hint; it must never block or error out.
@@ -753,4 +749,26 @@ func FormatUnreadMailNotification(summaries []UnreadMailSummary) string {
 	}
 
 	return sb.String()
+}
+
+func formatMailRow(row MailRow) string {
+	readStatus := "已读"
+	if !row.IsRead {
+		readStatus = "未读"
+	}
+
+	return fmt.Sprintf(`📧 **邮件 #%d** [%s]
+发件人: %s <%s>
+收件人: %s <%s>
+时间: %s
+主题: %s
+
+%s`,
+		row.ID, readStatus,
+		row.SenderName, row.SenderEmail,
+		row.RecipientName, row.RecipientEmail,
+		localTime(row.CreatedAt),
+		row.Subject,
+		row.Body,
+	)
 }
