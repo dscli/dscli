@@ -52,7 +52,7 @@ func init() {
 			subject           TEXT NOT NULL DEFAULT '',
 			body              TEXT NOT NULL DEFAULT '',
 			is_read           INTEGER NOT NULL DEFAULT 0,
-			created_at        DATETIME DEFAULT (datetime('now','localtime')),
+			created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (sender_name_id)    REFERENCES ai_names(id),
 			FOREIGN KEY (recipient_name_id) REFERENCES ai_names(id)
 		)`,
@@ -162,8 +162,8 @@ func HandleSendMail(ctx context.Context, recipient, subject, body string) (resul
 	}
 
 	result2, err := db.Exec(
-		`INSERT INTO mail (sender_name_id, recipient_name_id, subject, body, created_at) VALUES (?, ?, ?, ?, ?)`,
-		senderNameID, recipientNameID, subject, body, time.Now().Format("2006-01-02 15:04:05"),
+		`INSERT INTO mail (sender_name_id, recipient_name_id, subject, body) VALUES (?, ?, ?, ?)`,
+		senderNameID, recipientNameID, subject, body,
 	)
 	if err != nil {
 		return "", "", fmt.Errorf("发送邮件失败: %w", err)
@@ -303,7 +303,7 @@ func HandleReadMail(ctx context.Context, mailID int64, unreadOnly bool, limit in
 		}
 
 		fmt.Fprintf(&sb, "%s **#%d** | %s → %s | %s\n",
-			readMark, m.ID, m.SenderName, m.RecipientName, m.CreatedAt)
+			readMark, m.ID, m.SenderName, m.RecipientName, localTime(m.CreatedAt))
 		fmt.Fprintf(&sb, "  主题: %s\n", shortSubject)
 		if shortBody != "" {
 			fmt.Fprintf(&sb, "  内容: %s\n", shortBody)
@@ -399,7 +399,7 @@ func HandleMailSearch(ctx context.Context, query string, limit int) (result, war
 			shortBody = shortBody[:100] + "..."
 		}
 
-		fmt.Fprintf(&sb, "**#%d** | %s → %s | %s\n", m.ID, m.SenderName, m.RecipientName, m.CreatedAt)
+		fmt.Fprintf(&sb, "**#%d** | %s → %s | %s\n", m.ID, m.SenderName, m.RecipientName, localTime(m.CreatedAt))
 		fmt.Fprintf(&sb, "  主题: %s\n", shortSubject)
 		if shortBody != "" {
 			fmt.Fprintf(&sb, "  内容: %s\n", shortBody)
@@ -552,8 +552,8 @@ func HandleReplyMail(ctx context.Context, replyToID int64, subject, body string)
 	_ = db.QueryRow("SELECT name_en, email FROM ai_names WHERE id = ?", origSenderNameID).Scan(&recipientNameEN, &recipientEmail)
 
 	result2, err := db.Exec(
-		`INSERT INTO mail (sender_name_id, recipient_name_id, subject, body, created_at) VALUES (?, ?, ?, ?, ?)`,
-		senderNameID, origSenderNameID, subject, body, time.Now().Format("2006-01-02 15:04:05"),
+		`INSERT INTO mail (sender_name_id, recipient_name_id, subject, body) VALUES (?, ?, ?, ?)`,
+		senderNameID, origSenderNameID, subject, body,
 	)
 	if err != nil {
 		return "", "", fmt.Errorf("回复失败: %w", err)
@@ -624,6 +624,16 @@ func HandleDeleteMail(ctx context.Context, mailID int64) (result, warning string
 
 // === Helpers ===================================================================
 
+// localTime converts a UTC datetime string ("2006-01-02 15:04:05") to local time.
+// If parsing fails, the original string is returned as-is.
+func localTime(utcStr string) string {
+	t, err := time.Parse("2006-01-02 15:04:05", utcStr)
+	if err != nil {
+		return utcStr
+	}
+	return t.Local().Format("2006-01-02 15:04:05")
+}
+
 func formatMailRow(row MailRow) string {
 	readStatus := "已读"
 	if !row.IsRead {
@@ -640,7 +650,7 @@ func formatMailRow(row MailRow) string {
 		row.ID, readStatus,
 		row.SenderName, row.SenderEmail,
 		row.RecipientName, row.RecipientEmail,
-		row.CreatedAt,
+		localTime(row.CreatedAt),
 		row.Subject,
 		row.Body,
 	)
