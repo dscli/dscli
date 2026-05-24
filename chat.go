@@ -410,6 +410,19 @@ func injectChimein(ctx context.Context, history []prompt.Message) ([]prompt.Mess
 	if err != nil || content == "" {
 		return history, false
 	}
+
+	// Inject unread mail notification alongside chimein, same logic as user input.
+	// The AI must see and act on unread mail — chimein is just another user message.
+	if summaries := mail.UnreadMailList(ctx); len(summaries) > 0 {
+		if notif := mail.FormatUnreadMailNotification(summaries); notif != "" {
+			if content != "" {
+				content = notif + "\n\n---\n\n" + content
+			} else {
+				content = notif
+			}
+		}
+	}
+
 	msg := prompt.Message{Role: "user", Content: content}
 	history = append(history, msg)
 	outfmt.PrintClimeinContent(ctx, content)
