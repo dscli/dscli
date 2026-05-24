@@ -15,6 +15,7 @@ import (
 	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/dsc"
 	"gitcode.com/dscli/dscli/internal/lockfile"
+	"gitcode.com/dscli/dscli/internal/mail"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/prompt"
 	"gitcode.com/dscli/dscli/internal/session"
@@ -172,6 +173,18 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	outfmt.PrintUserContent(ctx, content)
+
+	// Inject unread mail notification into the user message so the AI
+	// can't miss it. Unlike system prompt notifications, user messages
+	// demand a response — the AI must acknowledge and act on them.
+	if content != "" {
+		if summaries := mail.UnreadMailList(ctx); len(summaries) > 0 {
+			if notif := mail.FormatUnreadMailNotification(summaries); notif != "" {
+				content = notif + "\n\n---\n\n" + content
+			}
+		}
+	}
+
 	ctx = context.WithValue(ctx, context.StartTimeKey, time.Now())
 
 	// Fetch starting balance (only when user-balance is enabled)

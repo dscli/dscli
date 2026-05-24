@@ -673,3 +673,86 @@ func UnreadMailCount(ctx context.Context) int {
 	}
 	return count
 }
+
+// UnreadMailSummary is a lightweight view of an unread mail for notification.
+type UnreadMailSummary struct {
+	ID         int64
+	SenderName string
+	Subject    string
+}
+
+// UnreadMailList returns unread mail summaries for the current maintainer.
+// Returns nil on any error — errors are silently swallowed because this is
+// a prompt hint; it must never block or error out.
+func UnreadMailList(ctx context.Context) []UnreadMailSummary {
+	nameID := ainame.GetCurrentNameID(ctx)
+	if nameID == 0 {
+		return nil
+	}
+
+	db, err := sqlite.OpenDB()
+	if err != nil {
+		return nil
+	}
+	defer db.Close()
+
+	rows, err := db.Query(
+		`SELECT m.id, s.name_en, m.subject
+		 FROM mail m
+		 JOIN ai_names s ON s.id = m.sender_name_id
+		 WHERE m.recipient_name_id = ? AND m.is_read = 0
+		 ORDER BY m.created_at DESC
+		 LIMIT 10`,
+		nameID,
+	)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var summaries []UnreadMailSummary
+	for rows.Next() {
+		var s UnreadMailSummary
+		if err := rows.Scan(&s.ID, &s.SenderName, &s.Subject); err != nil {
+			continue
+		}
+		summaries = append(summaries, s)
+	}
+	return summaries
+}
+
+// FormatUnreadMailNotification formats unread mail summaries into a
+// user-message notification. Returns empty string when there are no
+// summaries — caller should skip injection in that case.
+func FormatUnreadMailNotification(summaries []UnreadMailSummary) string {
+	if len(summaries) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	word := "messages"
+	if len(summaries) == 1 {
+		word = "message"
+	}
+
+	sb.WriteString("## ⚠️ UNREAD MAIL — Action Required\n\n")
+	fmt.Fprintf(&sb, "You have **%d unread %s**. ", len(summaries), word)
+	sb.WriteString("Call `readmail` **before responding** — ")
+	sb.WriteString("these may contain decisions or questions that affect your task.\n\n")
+	sb.WriteString("| ID | From | Subject |\n")
+	sb.WriteString("|----|------|--------|\n")
+
+	for _, s := range summaries {
+		subject := s.Subject
+		if subject == "" {
+			subject = "(no subject)"
+		}
+		// Keep subject concise for the table
+		if len(subject) > 60 {
+			subject = subject[:60] + "..."
+		}
+		fmt.Fprintf(&sb, "| %d | %s | %s |\n", s.ID, s.SenderName, subject)
+	}
+
+	return sb.String()
+}
