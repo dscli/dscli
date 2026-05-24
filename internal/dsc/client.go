@@ -60,7 +60,14 @@ func isRetryableError(err error) bool {
 		strings.Contains(errStr, "502") ||
 		strings.Contains(errStr, "503") ||
 		strings.Contains(errStr, "504") ||
+		strings.Contains(errStr, "524") || // Cloudflare/网关超时（DeepSeek 常见）
 		strings.Contains(errStr, "429") { // 429 Too Many Requests 也可重试
+		return true
+	}
+
+	// 响应无 choices（可重试）—— 服务端返回了响应但 choices
+	// 数组为空，属于服务端内部瞬时异常，重试通常能恢复。
+	if strings.Contains(errStr, "no choices in response") {
 		return true
 	}
 
