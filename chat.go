@@ -407,30 +407,44 @@ func PrintSessionStats(ctx context.Context) {
 // Returns the updated history and true if a chime-in was found and injected.
 func injectChimein(ctx context.Context, history []prompt.Message) ([]prompt.Message, bool) {
 	content, err := chimein.Get(ctx)
-	if err != nil || content == "" {
+	hasChimein := err == nil && content != ""
+
+	// Check unread mail regardless of chimein presence — the AI
+	// must not miss mail just because no chimein arrived.
+	var notif string
+	if summaries := mail.UnreadMailList(ctx); len(summaries) > 0 {
+		notif = mail.FormatUnreadMailNotification(summaries)
+	}
+
+	// Nothing to inject.
+	if !hasChimein && notif == "" {
 		return history, false
 	}
 
-	// Inject unread mail notification alongside chimein, same logic as user input.
-	// The AI must see and act on unread mail — chimein is just another user message.
-	if summaries := mail.UnreadMailList(ctx); len(summaries) > 0 {
-		if notif := mail.FormatUnreadMailNotification(summaries); notif != "" {
-			if content != "" {
-				content = notif + "\n\n---\n\n" + content
-			} else {
-				content = notif
-			}
-		}
+	// Build the combined message content.
+	var msgContent string
+	switch {
+	case hasChimein && notif != "":
+		msgContent = notif + "\n\n---\n\n" + content
+	case hasChimein:
+		msgContent = content
+	default: // only notif
+		msgContent = notif
 	}
 
-	msg := prompt.Message{Role: "user", Content: content}
+	msg := prompt.Message{Role: "user", Content: msgContent}
 	history = append(history, msg)
-	outfmt.PrintClimeinContent(ctx, content)
+	outfmt.PrintClimeinContent(ctx, msgContent)
 	if saveErr := prompt.SaveMessages(ctx, msg); saveErr != nil {
 		outfmt.Debug("failed to save chimein message: %v", saveErr)
 	}
-	chimein.Reset(ctx)
-	return history, true
+	if hasChimein {
+		chimein.Reset(ctx)
+	}
+	// Only signal "restart needed" for actual chimeins, not for
+	// unread-mail-only notifications. Without this guard, a persistent
+	// unread mail would cause infinite ChatRound restarts at line 506.
+	return history, hasChimein
 }
 
 func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ...prompt.Message) (err error) {
