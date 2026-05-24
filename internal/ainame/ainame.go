@@ -94,6 +94,39 @@ func seedNames(db *sqlite.DB) error {
 	return nil
 }
 
+// GetNameID returns the name_id for a session, assigning one via
+// LoadOrAssign if no assignment exists yet.
+//
+// sessionID == 0 → returns 0 (nobody / unclaimed).
+// DB errors → returns 0.
+func GetNameID(sessionID int64) int64 {
+	if sessionID == 0 {
+		return 0
+	}
+
+	db, err := sqlite.OpenDB()
+	if err != nil {
+		return 0
+	}
+	defer db.Close()
+
+	var nameID int64
+	err = db.QueryRow("SELECT name_id FROM session_names WHERE session_id = ?", sessionID).Scan(&nameID)
+	if err == nil {
+		return nameID
+	}
+
+	// Not assigned yet — trigger LoadOrAssign (opens its own DB connection).
+	LoadOrAssign(sessionID)
+
+	// Re-read the now-existing assignment.
+	err = db.QueryRow("SELECT name_id FROM session_names WHERE session_id = ?", sessionID).Scan(&nameID)
+	if err != nil {
+		return 0
+	}
+	return nameID
+}
+
 // LoadOrAssign returns the AI name for a session.
 //
 // sessionID == 0 → returns nobody (no session initialized).

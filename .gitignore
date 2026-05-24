@@ -81,3 +81,4 @@ __pycache__
 !test_*.go
 .dscli/locks
 .dscli/skills/skills.yaml
+.dscli/dscli.md

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"gitcode.com/dscli/dscli/internal/ainame"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/session"
 	"gitcode.com/dscli/dscli/internal/sqlite"
@@ -27,6 +28,7 @@ func init() {
 		`CREATE TABLE IF NOT EXISTS memories (
 			id         INTEGER PRIMARY KEY AUTOINCREMENT,
 			session_id INTEGER NOT NULL,
+			name_id    INTEGER NOT NULL DEFAULT 0,
 			title      TEXT    NOT NULL,
 			content    TEXT    NOT NULL,
 			type       TEXT    NOT NULL DEFAULT 'manual',
@@ -46,10 +48,16 @@ func init() {
 		`CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_memories_updated ON memories(updated_at DESC)`,
 	)
-	// 升级脚本：为旧数据库添加 session_id 列（RegisterUpgradeSchema 静默忽略重复错误）
+	// 升级脚本
 	sqlite.RegisterUpgradeSchema(
 		`ALTER TABLE memories ADD COLUMN session_id INTEGER NOT NULL DEFAULT 0`,
 		`CREATE INDEX IF NOT EXISTS idx_memories_session_id ON memories(session_id)`,
+		`ALTER TABLE memories ADD COLUMN name_id INTEGER NOT NULL DEFAULT 0`,
+		`CREATE INDEX IF NOT EXISTS idx_memories_name_id ON memories(name_id)`,
+		`UPDATE memories SET name_id = (
+			SELECT COALESCE(sn.name_id, 0) FROM session_names sn
+			WHERE sn.session_id = memories.session_id
+		) WHERE name_id = 0`,
 	)
 }
 
@@ -119,6 +127,7 @@ func HandleMemSave(ctx context.Context, title, body, typ string) (result, warnin
 	defer db.Close()
 
 	sessionID := session.GetCurrentSessionID(ctx)
+	nameID := ainame.GetNameID(sessionID)
 
 	// Truncate content if too long (>50000 chars)
 	if len(body) > 50000 {
@@ -126,8 +135,8 @@ func HandleMemSave(ctx context.Context, title, body, typ string) (result, warnin
 	}
 
 	res, err := db.Exec(
-		`INSERT INTO memories (session_id, title, content, type) VALUES (?, ?, ?, ?)`,
-		sessionID, title, body, typ,
+		`INSERT INTO memories (session_id, name_id, title, content, type) VALUES (?, ?, ?, ?, ?)`,
+		sessionID, nameID, title, body, typ,
 	)
 	if err != nil {
 		err = fmt.Errorf("保存记忆失败: %w", err)
@@ -159,16 +168,17 @@ func HandleMemUpdate(ctx context.Context, id int64, title, body, typ string) (re
 	defer db.Close()
 
 	sessionID := session.GetCurrentSessionID(ctx)
+	nameID := ainame.GetNameID(sessionID)
 
-	// Verify the memory exists and belongs to current project
+	// Verify the memory exists and belongs to current maintainer
 	var existing memoryRow
 	err = db.QueryRow(
 		`SELECT id, title, content, type, created_at, updated_at FROM memories
-		 WHERE id = ? AND session_id = ?`, id, sessionID,
+		 WHERE id = ? AND name_id = ?`, id, nameID,
 	).Scan(&existing.ID, &existing.Title, &existing.Content, &existing.Type,
 		&existing.CreatedAt, &existing.UpdatedAt)
 	if err == sql.ErrNoRows {
-		err = fmt.Errorf("记忆 #%d 不存在或不属于当前项目", id)
+		err = fmt.Errorf("记忆 #%d 不存在或不属于当前维护者", id)
 		return result, warning, err
 	}
 	if err != nil {
@@ -203,9 +213,9 @@ func HandleMemUpdate(ctx context.Context, id int64, title, body, typ string) (re
 	}
 
 	sets = append(sets, "updated_at = datetime('now')")
-	vals = append(vals, id, sessionID)
+	vals = append(vals, id, nameID)
 
-	sqlQ := fmt.Sprintf("UPDATE memories SET %s WHERE id = ? AND session_id = ?", strings.Join(sets, ", "))
+	sqlQ := fmt.Sprintf("UPDATE memories SET %s WHERE id = ? AND name_id = ?", strings.Join(sets, ", "))
 	_, err = db.Exec(sqlQ, vals...)
 	if err != nil {
 		err = fmt.Errorf("更新记忆失败: %w", err)
@@ -237,6 +247,7 @@ func HandleMemSearch(ctx context.Context, query, typ string, limit int) (result,
 	defer db.Close()
 
 	sessionID := session.GetCurrentSessionID(ctx)
+	nameID := ainame.GetNameID(sessionID)
 
 	ftsQuery := tokenizer.SanitizeFTS(query)
 
@@ -245,9 +256,9 @@ func HandleMemSearch(ctx context.Context, query, typ string, limit int) (result,
 		FROM memories_fts fts
 		JOIN memories m ON m.id = fts.rowid
 		WHERE memories_fts MATCH ?
-		  AND m.session_id = ?
+		  AND m.name_id = ?
 	`
-	vals := []any{ftsQuery, sessionID}
+	vals := []any{ftsQuery, nameID}
 
 	if typ != "" {
 		sqlQ += " AND m.type = ?"
@@ -321,12 +332,13 @@ func HandleMemDelete(ctx context.Context, id int64) (result, warning string, err
 	defer db.Close()
 
 	sessionID := session.GetCurrentSessionID(ctx)
+	nameID := ainame.GetNameID(sessionID)
 
 	// Verify existence and ownership first for a meaningful error message
 	var title string
-	err = db.QueryRow(`SELECT title FROM memories WHERE id = ? AND session_id = ?`, id, sessionID).Scan(&title)
+	err = db.QueryRow(`SELECT title FROM memories WHERE id = ? AND name_id = ?`, id, nameID).Scan(&title)
 	if err == sql.ErrNoRows {
-		err = fmt.Errorf("记忆 #%d 不存在或不属于当前项目", id)
+		err = fmt.Errorf("记忆 #%d 不存在或不属于当前维护者", id)
 		return result, warning, err
 	}
 	if err != nil {
@@ -334,7 +346,7 @@ func HandleMemDelete(ctx context.Context, id int64) (result, warning string, err
 		return result, warning, err
 	}
 
-	res, err := db.Exec(`DELETE FROM memories WHERE id = ? AND session_id = ?`, id, sessionID)
+	res, err := db.Exec(`DELETE FROM memories WHERE id = ? AND name_id = ?`, id, nameID)
 	if err != nil {
 		err = fmt.Errorf("删除记忆失败: %w", err)
 		return result, warning, err
@@ -342,7 +354,7 @@ func HandleMemDelete(ctx context.Context, id int64) (result, warning string, err
 
 	rows, _ := res.RowsAffected()
 	if rows == 0 {
-		err = fmt.Errorf("记忆 #%d 不存在或不属于当前项目", id)
+		err = fmt.Errorf("记忆 #%d 不存在或不属于当前维护者", id)
 		return result, warning, err
 	}
 
@@ -368,13 +380,14 @@ func HandleMemGetObservation(ctx context.Context, id int64) (result, warning str
 	defer db.Close()
 
 	sessionID := session.GetCurrentSessionID(ctx)
+	nameID := ainame.GetNameID(sessionID)
 
 	var m memoryRow
 	err = db.QueryRow(
-		`SELECT id, title, content, type, created_at, updated_at FROM memories WHERE id = ? AND session_id = ?`, id, sessionID,
+		`SELECT id, title, content, type, created_at, updated_at FROM memories WHERE id = ? AND name_id = ?`, id, nameID,
 	).Scan(&m.ID, &m.Title, &m.Content, &m.Type, &m.CreatedAt, &m.UpdatedAt)
 	if err == sql.ErrNoRows {
-		err = fmt.Errorf("记忆 #%d 不存在或不属于当前项目", id)
+		err = fmt.Errorf("记忆 #%d 不存在或不属于当前维护者", id)
 		return result, warning, err
 	}
 	if err != nil {
@@ -397,9 +410,10 @@ func HandleMemStats(ctx context.Context) (result, warning string, err error) {
 	defer db.Close()
 
 	sessionID := session.GetCurrentSessionID(ctx)
+	nameID := ainame.GetNameID(sessionID)
 
 	var total int64
-	err = db.QueryRow(`SELECT COUNT(*) FROM memories WHERE session_id = ?`, sessionID).Scan(&total)
+	err = db.QueryRow(`SELECT COUNT(*) FROM memories WHERE name_id = ?`, nameID).Scan(&total)
 	if err != nil {
 		err = fmt.Errorf("统计失败: %w", err)
 		return result, warning, err
@@ -411,7 +425,7 @@ func HandleMemStats(ctx context.Context) (result, warning string, err error) {
 	}
 
 	// Type distribution
-	rows, err := db.Query(`SELECT type, COUNT(*) FROM memories WHERE session_id = ? GROUP BY type ORDER BY COUNT(*) DESC`, sessionID)
+	rows, err := db.Query(`SELECT type, COUNT(*) FROM memories WHERE name_id = ? GROUP BY type ORDER BY COUNT(*) DESC`, nameID)
 	if err != nil {
 		err = fmt.Errorf("类型统计失败: %w", err)
 		return result, warning, err
@@ -435,7 +449,7 @@ func HandleMemStats(ctx context.Context) (result, warning string, err error) {
 	// Latest entry
 	var latest memoryRow
 	err = db.QueryRow(
-		`SELECT id, title, type, created_at FROM memories WHERE session_id = ? ORDER BY created_at DESC LIMIT 1`, sessionID,
+		`SELECT id, title, type, created_at FROM memories WHERE name_id = ? ORDER BY created_at DESC LIMIT 1`, nameID,
 	).Scan(&latest.ID, &latest.Title, &latest.Type, &latest.CreatedAt)
 	if err == nil {
 		fmt.Fprintf(&b, "\n最新记忆: #%d [%s] %q (%s)", latest.ID, latest.Type, latest.Title, latest.CreatedAt)
@@ -465,10 +479,11 @@ func HandleMemList(ctx context.Context) ([]ListRow, error) {
 	defer db.Close()
 
 	sessionID := session.GetCurrentSessionID(ctx)
+	nameID := ainame.GetNameID(sessionID)
 
 	rows, err := db.Query(
 		`SELECT id, title, created_at, updated_at FROM memories
-		 WHERE session_id = ? ORDER BY created_at DESC`, sessionID)
+		 WHERE name_id = ? ORDER BY created_at DESC`, nameID)
 	if err != nil {
 		return nil, fmt.Errorf("查询记忆列表失败: %w", err)
 	}
