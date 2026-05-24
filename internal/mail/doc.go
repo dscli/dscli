@@ -20,5 +20,7 @@
 //	HandleSendMail     — Send a mail to another maintainer by name/email
 //	HandleReadMail     — Read mails (list or single) for the current maintainer
 //	HandleMailSearch   — FTS5 search across mails
+//	HandleReplyMail    — Reply to an existing mail
+//	HandleDeleteMail   — Delete a mail (recipient only)
 //	HandleContacts     — List all known contacts from ai_names
 package mail

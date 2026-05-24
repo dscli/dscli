@@ -328,3 +328,178 @@ func TestMailLifecycle(t *testing.T) {
 		t.Errorf("expected no unread mail, got: %s", result)
 	}
 }
+
+// === HandleReplyMail ===========================================================
+
+func TestHandleReplyMail(t *testing.T) {
+	newTestDB(t)
+	me := currentName()
+
+	// First send a mail to ourselves (simulating someone else sent to us)
+	sendResult, _, err := HandleSendMail(context.Background(), me, "原始邮件", "这是原始邮件内容")
+	if err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
+	var mid int64
+	fmt.Sscanf(sendResult, "✅ 邮件已发送 (#%d)", &mid)
+
+	t.Run("reply with subject", func(t *testing.T) {
+		result, _, err := HandleReplyMail(context.Background(), mid, "我的回复", "回复正文内容")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(result, "回复已发送") {
+			t.Errorf("expected '回复已发送', got: %s", result)
+		}
+		if !strings.Contains(result, "我的回复") {
+			t.Errorf("expected custom subject, got: %s", result)
+		}
+	})
+
+	t.Run("reply with auto Re: prefix", func(t *testing.T) {
+		result, _, err := HandleReplyMail(context.Background(), mid, "", "自动主题回复")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(result, "Re: 原始邮件") {
+			t.Errorf("expected 'Re: 原始邮件' auto-subject, got: %s", result)
+		}
+	})
+
+	t.Run("reply without doubling Re:", func(t *testing.T) {
+		// Reply again to the first reply (which has "Re: 原始邮件" subject)
+		// Find the reply mail ID first
+		result, _, err := HandleReplyMail(context.Background(), mid, "", "再次回复")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// Subject should be "Re: 原始邮件" (not "Re: Re: 原始邮件")
+		if strings.Contains(result, "Re: Re:") {
+			t.Errorf("should not double 'Re:' prefix, got: %s", result)
+		}
+	})
+
+	t.Run("reply to non-existent mail", func(t *testing.T) {
+		_, _, err := HandleReplyMail(context.Background(), 99999, "主题", "正文")
+		if err == nil {
+			t.Error("expected error for non-existent mail")
+		}
+	})
+
+	t.Run("reply with empty body and subject", func(t *testing.T) {
+		_, _, err := HandleReplyMail(context.Background(), mid, "", "")
+		if err == nil {
+			t.Error("expected error for empty subject and body")
+		}
+	})
+
+	t.Run("reply with invalid id", func(t *testing.T) {
+		_, _, err := HandleReplyMail(context.Background(), 0, "主题", "正文")
+		if err == nil {
+			t.Error("expected error for invalid id")
+		}
+	})
+}
+
+// === HandleDeleteMail ==========================================================
+
+func TestHandleDeleteMail(t *testing.T) {
+	newTestDB(t)
+	me := currentName()
+
+	t.Run("delete success", func(t *testing.T) {
+		sendResult, _, err := HandleSendMail(context.Background(), me, "待删除邮件", "这条邮件将被删除")
+		if err != nil {
+			t.Fatalf("send failed: %v", err)
+		}
+		var mid int64
+		fmt.Sscanf(sendResult, "✅ 邮件已发送 (#%d)", &mid)
+
+		result, _, err := HandleDeleteMail(context.Background(), mid)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(result, "已删除") {
+			t.Errorf("expected '已删除', got: %s", result)
+		}
+
+		// Verify it's gone
+		_, _, err = HandleReadMail(context.Background(), mid, false, 10)
+		if err == nil {
+			t.Error("expected error for deleted mail")
+		}
+	})
+
+	t.Run("delete non-existent", func(t *testing.T) {
+		_, _, err := HandleDeleteMail(context.Background(), 99999)
+		if err == nil {
+			t.Error("expected error for non-existent mail")
+		}
+	})
+
+	t.Run("delete invalid id", func(t *testing.T) {
+		_, _, err := HandleDeleteMail(context.Background(), 0)
+		if err == nil {
+			t.Error("expected error for invalid id")
+		}
+	})
+}
+
+// === Integration: Reply + Delete Lifecycle =====================================
+
+func TestMailReplyAndDeleteLifecycle(t *testing.T) {
+	newTestDB(t)
+	me := currentName()
+
+	// 1. Send original mail
+	sendResult, _, err := HandleSendMail(context.Background(), me, "讨论主题", "讨论的原始内容")
+	if err != nil {
+		t.Fatalf("send failed: %v", err)
+	}
+	var mid int64
+	fmt.Sscanf(sendResult, "✅ 邮件已发送 (#%d)", &mid)
+
+	// 2. Reply to it
+	replyResult, _, err := HandleReplyMail(context.Background(), mid, "", "这是我的回复")
+	if err != nil {
+		t.Fatalf("reply failed: %v", err)
+	}
+	if !strings.Contains(replyResult, "Re: 讨论主题") {
+		t.Errorf("expected auto Re: subject: %s", replyResult)
+	}
+	var replyID int64
+	fmt.Sscanf(replyResult, "✅ 回复已发送 (#%d)", &replyID)
+
+	// 3. Read inbox — should have both mails
+	result, _, err := HandleReadMail(context.Background(), 0, false, 20)
+	if err != nil {
+		t.Fatalf("read failed: %v", err)
+	}
+	if !strings.Contains(result, "讨论主题") {
+		t.Errorf("expected original mail in inbox: %s", result)
+	}
+	if !strings.Contains(result, "Re: 讨论主题") {
+		t.Errorf("expected reply in inbox: %s", result)
+	}
+
+	// 4. Delete the reply
+	_, _, err = HandleDeleteMail(context.Background(), replyID)
+	if err != nil {
+		t.Fatalf("delete reply failed: %v", err)
+	}
+
+	// 5. Delete the original
+	_, _, err = HandleDeleteMail(context.Background(), mid)
+	if err != nil {
+		t.Fatalf("delete original failed: %v", err)
+	}
+
+	// 6. Inbox should be empty
+	result, _, err = HandleReadMail(context.Background(), 0, false, 20)
+	if err != nil {
+		t.Fatalf("read after delete failed: %v", err)
+	}
+	if !strings.Contains(result, "为空") {
+		t.Errorf("expected empty inbox, got: %s", result)
+	}
+}

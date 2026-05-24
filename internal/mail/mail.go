@@ -500,6 +500,127 @@ func HandleContacts(ctx context.Context) (result, warning string, err error) {
 	return sb.String(), "", nil
 }
 
+// HandleReplyMail replies to an existing mail.
+// The recipient is automatically set to the original mail's sender.
+// If subject is empty, "Re: <original subject>" is used.
+func HandleReplyMail(ctx context.Context, replyToID int64, subject, body string) (result, warning string, err error) {
+	if replyToID <= 0 {
+		err = fmt.Errorf("replyToID is required")
+		return
+	}
+	if subject == "" && body == "" {
+		err = fmt.Errorf("subject or body is required")
+		return
+	}
+
+	sessionID := session.GetCurrentSessionID(ctx)
+	senderNameID := ainame.GetNameID(sessionID)
+
+	db, err := sqlite.OpenDB()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to open database: %w", err)
+	}
+	defer db.Close()
+
+	// Look up original mail — must be addressed to current user
+	var origSenderNameID int64
+	var origSubject, origBody string
+	err = db.QueryRow(
+		`SELECT sender_name_id, subject, body FROM mail
+		 WHERE id = ? AND recipient_name_id = ?`,
+		replyToID, senderNameID,
+	).Scan(&origSenderNameID, &origSubject, &origBody)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", "", fmt.Errorf("邮件 #%d 不存在或不属于你", replyToID)
+		}
+		return "", "", fmt.Errorf("查询原邮件失败: %w", err)
+	}
+
+	// Default subject: Re: <original>
+	if subject == "" {
+		if strings.HasPrefix(origSubject, "Re: ") {
+			subject = origSubject
+		} else {
+			subject = "Re: " + origSubject
+		}
+	}
+
+	// Look up original sender's name/email
+	var recipientNameEN, recipientEmail string
+	_ = db.QueryRow("SELECT name_en, email FROM ai_names WHERE id = ?", origSenderNameID).Scan(&recipientNameEN, &recipientEmail)
+
+	result2, err := db.Exec(
+		`INSERT INTO mail (sender_name_id, recipient_name_id, subject, body) VALUES (?, ?, ?, ?)`,
+		senderNameID, origSenderNameID, subject, body,
+	)
+	if err != nil {
+		return "", "", fmt.Errorf("回复失败: %w", err)
+	}
+
+	mailID, _ := result2.LastInsertId()
+
+	if ftsErr := insertMailFTS(db, mailID, subject, body); ftsErr != nil {
+		warning = fmt.Sprintf("⚠️ FTS 索引失败: %v", ftsErr)
+	}
+
+	var senderNameEN string
+	_ = db.QueryRow("SELECT name_en FROM ai_names WHERE id = ?", senderNameID).Scan(&senderNameEN)
+
+	result = fmt.Sprintf("✅ 回复已发送 (#%d)\n发件人: %s\n收件人: %s <%s>\n回复: #%d\n主题: %s",
+		mailID, senderNameEN, recipientNameEN, recipientEmail, replyToID, subject)
+	return result, warning, nil
+}
+
+// HandleDeleteMail deletes a mail by ID. Only the recipient (current user)
+// can delete their own mails.
+func HandleDeleteMail(ctx context.Context, mailID int64) (result, warning string, err error) {
+	if mailID <= 0 {
+		err = fmt.Errorf("mail ID is required")
+		return
+	}
+
+	sessionID := session.GetCurrentSessionID(ctx)
+	nameID := ainame.GetNameID(sessionID)
+
+	db, err := sqlite.OpenDB()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to open database: %w", err)
+	}
+	defer db.Close()
+
+	// Verify ownership: only the recipient can delete
+	var subject string
+	err = db.QueryRow(
+		`SELECT subject FROM mail WHERE id = ? AND recipient_name_id = ?`,
+		mailID, nameID,
+	).Scan(&subject)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", "", fmt.Errorf("邮件 #%d 不存在或不属于你", mailID)
+		}
+		return "", "", fmt.Errorf("查询邮件失败: %w", err)
+	}
+
+	res, err := db.Exec(`DELETE FROM mail WHERE id = ? AND recipient_name_id = ?`, mailID, nameID)
+	if err != nil {
+		return "", "", fmt.Errorf("删除邮件失败: %w", err)
+	}
+
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return "", "", fmt.Errorf("邮件 #%d 不存在或不属于你", mailID)
+	}
+
+	// Remove from FTS index
+	if ftsErr := deleteMailFTS(db, mailID); ftsErr != nil {
+		warning = fmt.Sprintf("⚠️ FTS 清理失败: %v", ftsErr)
+	}
+
+	result = fmt.Sprintf("✅ 邮件已删除: #%d %q", mailID, subject)
+	return result, warning, nil
+}
+
 // === Helpers ===================================================================
 
 func formatMailRow(row MailRow) string {

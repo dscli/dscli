@@ -15,6 +15,8 @@
 //	= sendmail     — Send mail to another maintainer by name/email
 //	= readmail     — Read mails (list or single) for current maintainer
 //	= mail_search  — FTS5 search across mails
+//	= replymail    — Reply to an existing mail
+//	= deletemail   — Delete a mail (recipient only)
 //	= contacts     — List all known contacts
 package mail
 
@@ -35,6 +37,12 @@ var readmail_md string
 
 //go:embed mail_search.md
 var mail_search_md string
+
+//go:embed replymail.md
+var replymail_md string
+
+//go:embed deletemail.md
+var deletemail_md string
 
 //go:embed contacts.md
 var contacts_md string
@@ -116,6 +124,40 @@ func init() {
 		},
 		Handler: handleContacts,
 	})
+
+	RegisterTool(ToolDef{
+		Name:        "replymail",
+		Description: replymail_md,
+		Category:    "mail",
+		Strict:      true,
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"id":      map[string]any{"type": "integer", "description": "Mail ID to reply to (required)"},
+				"subject": map[string]any{"type": "string", "description": "Reply subject (optional, defaults to Re: <original>)"},
+				"body":    map[string]any{"type": "string", "description": "Reply body (optional, but subject or body required)"},
+			},
+			"required":             []string{"id"},
+			"additionalProperties": false,
+		},
+		Handler: handleReplyMail,
+	})
+
+	RegisterTool(ToolDef{
+		Name:        "deletemail",
+		Description: deletemail_md,
+		Category:    "mail",
+		Strict:      true,
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"id": map[string]any{"type": "integer", "description": "Mail ID to delete (required)"},
+			},
+			"required":             []string{"id"},
+			"additionalProperties": false,
+		},
+		Handler: handleDeleteMail,
+	})
 }
 
 // === Handlers =================================================================
@@ -166,5 +208,34 @@ func handleMailSearch(ctx context.Context, args ToolArgs) (result, warning strin
 
 func handleContacts(ctx context.Context, _ ToolArgs) (result, warning string, err error) {
 	result, warning, err = mailcore.HandleContacts(ctx)
+	return
+}
+
+func handleReplyMail(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	mid := ToolArgsValue(args, "id", int64(0))
+	subject := ToolArgsValue(args, "subject", "")
+	body := ToolArgsValue(args, "body", "")
+
+	if mid <= 0 {
+		err = fmt.Errorf("id is required")
+		return
+	}
+	if subject == "" && body == "" {
+		err = fmt.Errorf("subject or body is required")
+		return
+	}
+
+	result, warning, err = mailcore.HandleReplyMail(ctx, mid, subject, body)
+	return
+}
+
+func handleDeleteMail(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	mid := ToolArgsValue(args, "id", int64(0))
+	if mid <= 0 {
+		err = fmt.Errorf("id is required")
+		return
+	}
+
+	result, warning, err = mailcore.HandleDeleteMail(ctx, mid)
 	return
 }

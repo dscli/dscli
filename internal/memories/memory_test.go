@@ -583,3 +583,107 @@ func TestDBIsolation(t *testing.T) {
 		t.Errorf("test DB should NOT use production name, got: %s", dbPath)
 	}
 }
+
+// === Cross-Project Memory Sharing ==============================================
+
+func TestCrossProjectMemorySharing(t *testing.T) {
+	newTestDB(t)
+
+	db, err := openDB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	// Simulate: same AI (Bohr, name_id=42) working on two projects
+	//   session 1: project "dscli"
+	//   session 2: project "dscli.el"
+	nameID := int64(42)
+
+	// Set up two sessions with the same name_id
+	db.Exec(`INSERT OR IGNORE INTO sessions (id, project_path) VALUES (1, '/proj/dscli')`)
+	db.Exec(`INSERT OR IGNORE INTO sessions (id, project_path) VALUES (2, '/proj/dscli.el')`)
+	db.Exec(`INSERT OR IGNORE INTO session_names (session_id, name_id) VALUES (1, ?)`, nameID)
+	db.Exec(`INSERT OR IGNORE INTO session_names (session_id, name_id) VALUES (2, ?)`, nameID)
+
+	// Save a memory under session A (project dscli)
+	db.Exec(`INSERT INTO memories (session_id, name_id, title, content, type)
+		VALUES (1, ?, 'dscli架构决策', '使用Go语言开发CLI工具，SQLite存储', 'decision')`, nameID)
+	insertFTS(db, 1, "dscli架构决策", "使用Go语言开发CLI工具，SQLite存储", "decision")
+
+	// Save a memory under session B (project dscli.el)
+	db.Exec(`INSERT INTO memories (session_id, name_id, title, content, type)
+		VALUES (2, ?, 'Emacs配置技巧', '使用use-package管理包，lazy-load优化启动', 'pattern')`, nameID)
+	insertFTS(db, 2, "Emacs配置技巧", "使用use-package管理包，lazy-load优化启动", "pattern")
+
+	// Verify: session_id is preserved correctly
+	var sid1, sid2 int64
+	db.QueryRow(`SELECT session_id FROM memories WHERE title = 'dscli架构决策'`).Scan(&sid1)
+	db.QueryRow(`SELECT session_id FROM memories WHERE title = 'Emacs配置技巧'`).Scan(&sid2)
+	if sid1 != 1 {
+		t.Errorf("expected session_id=1 for dscli memory, got %d", sid1)
+	}
+	if sid2 != 2 {
+		t.Errorf("expected session_id=2 for dscli.el memory, got %d", sid2)
+	}
+
+	// Cross-project search: searching by name_id should find BOTH memories
+	// regardless of which session they were created in
+	rows, err := db.Query(`
+		SELECT m.title FROM memories_fts fts
+		JOIN memories m ON m.id = fts.rowid
+		WHERE memories_fts MATCH 'Go' AND m.name_id = ?`, nameID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+
+	foundDScli := false
+	foundEmacs := false
+	for rows.Next() {
+		var title string
+		rows.Scan(&title)
+		if title == "dscli架构决策" {
+			foundDScli = true
+		}
+		if title == "Emacs配置技巧" {
+			foundEmacs = true
+		}
+	}
+
+	if !foundDScli {
+		t.Error("cross-project search: memory from session A (dscli) not found via name_id")
+	}
+	if foundEmacs {
+		t.Error("cross-project search: memory from session B (dscli.el) should NOT match 'Go'")
+	}
+
+	// Search matching both projects: "配置" should find the dscli.el memory
+	rows2, err := db.Query(`
+		SELECT m.title FROM memories_fts fts
+		JOIN memories m ON m.id = fts.rowid
+		WHERE memories_fts MATCH '配置' AND m.name_id = ?`, nameID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows2.Close()
+
+	found := false
+	for rows2.Next() {
+		var title string
+		rows2.Scan(&title)
+		if title == "Emacs配置技巧" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("cross-project search: memory from session B (dscli.el) not found via name_id")
+	}
+
+	// Verify count: both memories belong to same name_id
+	var count int
+	db.QueryRow(`SELECT COUNT(*) FROM memories WHERE name_id = ?`, nameID).Scan(&count)
+	if count != 2 {
+		t.Errorf("expected 2 memories for name_id=%d, got %d", nameID, count)
+	}
+}

@@ -61,6 +61,28 @@ func init() {
 		RunE:  contactsRunE,
 	}
 	mailCmd.AddCommand(contactsCmd)
+
+	// == reply ==============================================================
+	replyCmd := &cobra.Command{
+		Use:   "reply <mail-id>",
+		Short: "回复邮件",
+		Long:  "回复指定 ID 的邮件。收件人自动设置为原邮件发件人，主题默认加 Re: 前缀。",
+		Args:  cobra.ExactArgs(1),
+		RunE:  mailReplyRunE,
+	}
+	replyCmd.Flags().StringP("subject", "s", "", "回复主题（默认 Re: <原标题>）")
+	replyCmd.Flags().StringP("body", "b", "", "回复正文")
+	mailCmd.AddCommand(replyCmd)
+
+	// == delete =============================================================
+	deleteCmd := &cobra.Command{
+		Use:   "delete <mail-id>",
+		Short: "删除邮件",
+		Long:  "删除指定 ID 的邮件。只有收件人可以删除自己的邮件。",
+		Args:  cobra.ExactArgs(1),
+		RunE:  mailDeleteRunE,
+	}
+	mailCmd.AddCommand(deleteCmd)
 }
 
 func mailSendRunE(cmd *cobra.Command, args []string) error {
@@ -115,5 +137,35 @@ func contactsRunE(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	outfmt.Print(result)
+	return nil
+}
+
+func mailReplyRunE(cmd *cobra.Command, args []string) error {
+	mid, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("无效的邮件 ID: %w", err)
+	}
+	subject, _ := cmd.Flags().GetString("subject")
+	body, _ := cmd.Flags().GetString("body")
+
+	result, _, err := mail.HandleReplyMail(context.Background(), mid, subject, body)
+	if err != nil {
+		return err
+	}
+	outfmt.Println(result)
+	return nil
+}
+
+func mailDeleteRunE(cmd *cobra.Command, args []string) error {
+	mid, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("无效的邮件 ID: %w", err)
+	}
+
+	result, _, err := mail.HandleDeleteMail(context.Background(), mid)
+	if err != nil {
+		return err
+	}
+	outfmt.Println(result)
 	return nil
 }
