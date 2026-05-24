@@ -112,3 +112,32 @@ Memory is not the same as history.
 
 **Always `mem_search` first** — you may have already recorded it. Use
 `mem_update` to update existing memories rather than creating duplicates.
+## 5. Long-Running Tasks
+
+When a task spans multiple phases — potentially across multiple sessions —
+use `.dscli/dscli.md` as a persistent plan tracker.
+
+### The workflow
+
+1. **Plan**: Write the full plan with checkable phases into `.dscli/dscli.md`.
+   Use `- [ ]` / `- [x]` task lists for progress tracking.
+2. **Execute**: Work through phases one at a time. After each phase, update
+   the checklist in `dscli.md` — mark completed items, add decisions, record
+   discoveries.
+3. **Complete**: When all phases are done, delete `.dscli/dscli.md`.
+
+### Why this works
+
+- **Survives sessions**: The file persists on disk. A new session can pick
+  up exactly where the last left off.
+- **Visible state**: A glance at `dscli.md` shows exactly what's done and
+  what remains.
+- **Clean finish**: Deleting the file signals completion — no stale plans
+  left behind.
+
+### What belongs in dscli.md
+
+- Phase checklist with `[x]`/`[ ]` markers
+- Design decisions table
+- Change summary (files modified, key additions)
+- Any context a future session would need to continue
