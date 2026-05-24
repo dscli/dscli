@@ -36,10 +36,10 @@ var (
 	AINameCNKey           = ContextKeyType[string]{"AINameCN"}
 	AINameENKey           = ContextKeyType[string]{"AINameEN"}
 	AINameEmailKey        = ContextKeyType[string]{"AINameEmail"}
+	AINameBirdFrogKey     = ContextKeyType[string]{"AINameBirdFrog"}
 	GitUserNameKey        = ContextKeyType[string]{"GitUserName"}
 	GitUserEmailKey       = ContextKeyType[string]{"GitUserEmail"}
 )
-
 var (
 	WithTimeout      = context.WithTimeout
 	WithValue        = context.WithValue

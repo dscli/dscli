@@ -151,6 +151,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx = context.WithValue(ctx, context.AINameCNKey, cfg.NameCN)
 	ctx = context.WithValue(ctx, context.AINameENKey, cfg.NameEN)
 	ctx = context.WithValue(ctx, context.AINameEmailKey, cfg.Email)
+	ctx = context.WithValue(ctx, context.AINameBirdFrogKey, cfg.BirdFrog)
 
 	// Set Git user info in context for output formatting
 	ctx = context.WithValue(ctx, context.GitUserNameKey, context.GitUserName())

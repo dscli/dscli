@@ -542,7 +542,17 @@ func PrintContent(ctx context.Context, reasoning, content string) {
 	// AI name for header
 	nameCN := context.ContextValue(ctx, context.AINameCNKey, "")
 	email := context.ContextValue(ctx, context.AINameEmailKey, "")
+	birdFrog := context.ContextValue(ctx, context.AINameBirdFrogKey, "")
 	now := time.Now().Local().Format(time.TimeOnly)
+
+	// 根据 bird/frog 类型选择图标
+	icon := "🐋" // 默认保持鲸鱼
+	switch birdFrog {
+	case "bird":
+		icon = "🐦"
+	case "frog":
+		icon = "🐸"
+	}
 
 	reasoning = strings.TrimSpace(reasoning)
 	if reasoning != "" {
@@ -560,11 +570,11 @@ func PrintContent(ctx context.Context, reasoning, content string) {
 		// 在streaming模式下，内容已经在streaming过程中输出，这里不需要再次输出
 		if !stream {
 			if nameCN != "" && email != "" {
-				Printf("\n🕐%s  🐋 %s <%s>\n\n", now, nameCN, email)
+				Printf("\n🕐%s  %s %s <%s>\n\n", now, icon, nameCN, email)
 				Println(content)
 				Println()
 			} else {
-				Printf("\n🕐%s  🐋 %s\n\n", now, content)
+				Printf("\n🕐%s  %s %s\n\n", now, icon, content)
 			}
 		}
 	}
