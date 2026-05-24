@@ -35,6 +35,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gitcode.com/dscli/dscli/internal/ainame"
 	"gitcode.com/dscli/dscli/internal/session"
@@ -51,7 +52,7 @@ func init() {
 			subject           TEXT NOT NULL DEFAULT '',
 			body              TEXT NOT NULL DEFAULT '',
 			is_read           INTEGER NOT NULL DEFAULT 0,
-			created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+			created_at        DATETIME DEFAULT (datetime('now','localtime')),
 			FOREIGN KEY (sender_name_id)    REFERENCES ai_names(id),
 			FOREIGN KEY (recipient_name_id) REFERENCES ai_names(id)
 		)`,
@@ -161,8 +162,8 @@ func HandleSendMail(ctx context.Context, recipient, subject, body string) (resul
 	}
 
 	result2, err := db.Exec(
-		`INSERT INTO mail (sender_name_id, recipient_name_id, subject, body) VALUES (?, ?, ?, ?)`,
-		senderNameID, recipientNameID, subject, body,
+		`INSERT INTO mail (sender_name_id, recipient_name_id, subject, body, created_at) VALUES (?, ?, ?, ?, ?)`,
+		senderNameID, recipientNameID, subject, body, time.Now().Format("2006-01-02 15:04:05"),
 	)
 	if err != nil {
 		return "", "", fmt.Errorf("发送邮件失败: %w", err)
@@ -551,8 +552,8 @@ func HandleReplyMail(ctx context.Context, replyToID int64, subject, body string)
 	_ = db.QueryRow("SELECT name_en, email FROM ai_names WHERE id = ?", origSenderNameID).Scan(&recipientNameEN, &recipientEmail)
 
 	result2, err := db.Exec(
-		`INSERT INTO mail (sender_name_id, recipient_name_id, subject, body) VALUES (?, ?, ?, ?)`,
-		senderNameID, origSenderNameID, subject, body,
+		`INSERT INTO mail (sender_name_id, recipient_name_id, subject, body, created_at) VALUES (?, ?, ?, ?, ?)`,
+		senderNameID, origSenderNameID, subject, body, time.Now().Format("2006-01-02 15:04:05"),
 	)
 	if err != nil {
 		return "", "", fmt.Errorf("回复失败: %w", err)
