@@ -579,3 +579,27 @@ func PrintContent(ctx context.Context, reasoning, content string) {
 		}
 	}
 }
+
+// PrintMail formats a single mail for terminal display.
+// Unlike the list view, no truncation is applied — mails are typically short.
+// createdAt should be pre-formatted (e.g. via mail.LocalTime or similar).
+func PrintMail(id int64, senderName, senderEmail, recipientName, recipientEmail,
+	subject, body string, isRead bool, createdAt string) string {
+
+	readStatus := "已读"
+	if !isRead {
+		readStatus = "未读"
+	}
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "📧 **邮件 #%d** [%s]\n", id, readStatus)
+	fmt.Fprintf(&sb, "发件人: %s <%s>\n", senderName, senderEmail)
+	fmt.Fprintf(&sb, "收件人: %s <%s>\n", recipientName, recipientEmail)
+	fmt.Fprintf(&sb, "时间:   %s\n", createdAt)
+	fmt.Fprintf(&sb, "主题:   %s\n", subject)
+	sb.WriteString(strings.Repeat("─", 50))
+	sb.WriteString("\n\n")
+	sb.WriteString(body)
+
+	return sb.String()
+}

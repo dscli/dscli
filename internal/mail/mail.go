@@ -38,6 +38,7 @@ import (
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/ainame"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/sqlite"
 	"gitcode.com/dscli/dscli/internal/tokenizer"
 )
@@ -225,11 +226,14 @@ func HandleReadMail(ctx context.Context, mailID int64, unreadOnly bool, limit in
 			return "", "", fmt.Errorf("读取邮件失败: %w", err)
 		}
 		row.IsRead = isRead != 0
-
 		// Mark as read (no FTS update needed — subject/body unchanged)
 		_, _ = db.Exec("UPDATE mail SET is_read = 1 WHERE id = ?", mailID)
 
-		result = formatMailRow(row)
+		result = outfmt.PrintMail(row.ID,
+			row.SenderName, row.SenderEmail,
+			row.RecipientName, row.RecipientEmail,
+			row.Subject, row.Body, row.IsRead,
+			localTime(row.CreatedAt))
 		return result, warning, nil
 	}
 
@@ -627,27 +631,6 @@ func localTime(utcStr string) string {
 	return t.Local().Format("2006-01-02 15:04:05")
 }
 
-func formatMailRow(row MailRow) string {
-	readStatus := "已读"
-	if !row.IsRead {
-		readStatus = "未读"
-	}
-
-	return fmt.Sprintf(`📧 **邮件 #%d** [%s]
-发件人: %s <%s>
-收件人: %s <%s>
-时间: %s
-主题: %s
-
-%s`,
-		row.ID, readStatus,
-		row.SenderName, row.SenderEmail,
-		row.RecipientName, row.RecipientEmail,
-		localTime(row.CreatedAt),
-		row.Subject,
-		row.Body,
-	)
-}
 
 // UnreadMailCount returns the number of unread mails for the current maintainer.
 // Returns 0 on any error (missing session, DB error, etc.) — errors are silently
