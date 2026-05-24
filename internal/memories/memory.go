@@ -20,7 +20,7 @@ import (
 	"gitcode.com/dscli/dscli/internal/tokenizer"
 )
 
-// ─── SQLite Schema (registered via init) ──────────────────────────────────────
+// --- SQLite Schema (registered via init) ---
 
 func init() {
 	sqlite.RegisterTableSchema(
@@ -53,7 +53,7 @@ func init() {
 	)
 }
 
-// ─── Shared Helpers ───────────────────────────────────────────────────────────
+// --- Shared Helpers ---
 
 // openDB opens the shared dscli database.
 func openDB() (*sqlite.DB, error) {
@@ -85,7 +85,7 @@ type searchRow struct {
 	Rank float64 `json:"rank"`
 }
 
-// ─── FTS Sync Helpers ─────────────────────────────────────────────────────────
+// --- FTS Sync Helpers ---
 
 // insertFTS inserts a row into the FTS index with Chinese tokenization.
 func insertFTS(db *sqlite.DB, id int64, title, content, typ string) error {
@@ -102,7 +102,7 @@ func deleteFTS(db *sqlite.DB, id int64) error {
 	return err
 }
 
-// ─── Handlers ─────────────────────────────────────────────────────────────────
+// --- Handlers ---
 
 // HandleMemSave saves a new memory observation.
 func HandleMemSave(ctx context.Context, title, body, typ string) (result, warning string, err error) {
@@ -445,7 +445,7 @@ func HandleMemStats(ctx context.Context) (result, warning string, err error) {
 	return result, warning, err
 }
 
-// ─── HandleMemList ─────────────────────────────────────────────────────────
+// --- HandleMemList ---
 
 // ListRow is a single memory row for list display.
 type ListRow struct {
