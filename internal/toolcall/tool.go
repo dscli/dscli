@@ -613,6 +613,7 @@ func GetProjectToolUsage(ctx context.Context, days int) ([]ToolUsageStat, error,
 		SELECT 
 			t.name,
 			COUNT(tu.id) as usage_count,
+			COALESCE(SUM(CASE WHEN tu.success THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 100) as success_rate,
 			MAX(tu.used_at) as last_used
 		FROM tools t
 		JOIN tool_usage tu ON t.id = tu.tool_id
@@ -636,7 +637,7 @@ func GetProjectToolUsage(ctx context.Context, days int) ([]ToolUsageStat, error,
 	for rows.Next() {
 		var stat ToolUsageStat
 		var lastUsedStr sql.NullString
-		if err := rows.Scan(&stat.Name, &stat.UsageCount, &lastUsedStr); err != nil {
+		if err := rows.Scan(&stat.Name, &stat.UsageCount, &stat.SuccessRate, &lastUsedStr); err != nil {
 			return nil, fmt.Errorf("扫描项目工具使用失败: %w", err)
 		}
 		if lastUsedStr.Valid && lastUsedStr.String != "" {
