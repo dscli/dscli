@@ -655,3 +655,29 @@ func formatMailRow(row MailRow) string {
 		row.Body,
 	)
 }
+
+// UnreadMailCount returns the number of unread mails for the current maintainer.
+// Returns 0 on any error (missing session, DB error, etc.) — errors are silently
+// swallowed because this is a prompt hint; it must never block or error out.
+func UnreadMailCount(ctx context.Context) int {
+	sessionID := session.GetCurrentSessionID(ctx)
+	nameID := ainame.GetNameID(sessionID)
+	if nameID == 0 {
+		return 0
+	}
+
+	db, err := sqlite.OpenDB()
+	if err != nil {
+		return 0
+	}
+	defer db.Close()
+
+	var count int
+	if err := db.QueryRow(
+		"SELECT COUNT(*) FROM mail WHERE recipient_name_id = ? AND is_read = 0",
+		nameID,
+	).Scan(&count); err != nil {
+		return 0
+	}
+	return count
+}

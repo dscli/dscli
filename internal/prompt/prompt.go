@@ -14,6 +14,7 @@ import (
 	"gitcode.com/dscli/dscli/internal/ainame"
 	"gitcode.com/dscli/dscli/internal/config"
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/mail"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/roles"
 	"gitcode.com/dscli/dscli/internal/session"
@@ -560,6 +561,17 @@ func LoadPrompts(ctx context.Context) ([]Message, error) {
 	if notePrompt != "" {
 		content += "\n\n"
 		content += notePrompt
+	}
+
+	// 未读邮件提醒 — 注入到系统 prompt 中，确保 AI 在会话开始时检查邮箱。
+	if n := mail.UnreadMailCount(ctx); n > 0 {
+		word := "messages"
+		if n == 1 {
+			word = "message"
+		}
+		content += fmt.Sprintf(
+			"\n\nYou have %d unread mail %s. Use `readmail` to check your inbox.",
+			n, word)
 	}
 
 	return []Message{{
