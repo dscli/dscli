@@ -64,7 +64,7 @@ func Append(ctx context.Context, newContent string) error {
 	return nil
 }
 
-// Get 获取当前 session 的 chimein 内容。
+// Get 获取当前 session 的 chimein 内容，读取后自动清空。
 // 如果不存在，返回空字符串和 nil error。
 func Get(ctx context.Context) (string, error) {
 	sessionID := session.GetCurrentSessionID(ctx)
@@ -81,29 +81,17 @@ func Get(ctx context.Context) (string, error) {
 		}
 		return "", err
 	}
+
+	// 读到即为消费，自动清空。
+	if content != "" {
+		db.ExecContext(ctx,
+			`UPDATE chimeins SET content = '' WHERE session_id = ?`,
+			sessionID)
+	}
+
 	return content, nil
 }
 
-// Reset 清空当前 session 的 chimein 内容（将 content 设为空字符串）。
-// 如果不存在对应行，不执行任何操作。
-func Reset(ctx context.Context) error {
-	sessionID := session.GetCurrentSessionID(ctx)
-	db, err := sqlite.OpenDB()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	res, err := db.ExecContext(ctx,
-		`UPDATE chimeins SET content = '' WHERE session_id = ?`,
-		sessionID)
-	if err != nil {
-		return err
-	}
-	// 没有行被更新不算错误，可能是首次使用
-	_, err = res.RowsAffected()
-	return err
-}
 
 // getContent 内部函数：从指定 db 连接获取 content。
 // 未找到时返回 sql.ErrNoRows。

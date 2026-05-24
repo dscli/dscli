@@ -438,9 +438,6 @@ func injectChimein(ctx context.Context, history []prompt.Message) ([]prompt.Mess
 	if saveErr := prompt.SaveMessages(ctx, msg); saveErr != nil {
 		outfmt.Debug("failed to save chimein message: %v", saveErr)
 	}
-	if hasChimein {
-		chimein.Reset(ctx)
-	}
 	// Only signal "restart needed" for actual chimeins, not for
 	// unread-mail-only notifications. Without this guard, a persistent
 	// unread mail would cause infinite ChatRound restarts at line 506.
