@@ -1,3 +1,5 @@
+# code_search_definition
+
 Find code definitions by name with type filter.
 
 Searches code files for definitions by name with optional

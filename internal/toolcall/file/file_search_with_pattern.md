@@ -1,3 +1,5 @@
+# search_file_with_pattern
+
 Search file by pattern with context lines.
 
 Search for lines matching a pattern in a file, showing

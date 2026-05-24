@@ -36,10 +36,6 @@ func init() {
 					"type":        "integer",
 					"description": "End line, optional, default end of file",
 				},
-				"tags": map[string]any{
-					"type":        "boolean",
-					"description": "Include 4-char checksum tags per line for CAS (check-and-set) safety. Default true.",
-				},
 			},
 			"required":             []string{"path"},
 			"additionalProperties": false,
@@ -50,8 +46,8 @@ func init() {
 }
 
 // handleReadFileWithLineRange 读取文件指定行范围的内容
-// 输出格式与 awk 'NR>=start && NR<=end {print NR": "$0}' 完全一致
-// 当 tags=true 时，输出格式为 NR:TAG content，其中 TAG 是 4 字符校验和标签
+// 输出格式为 NR:TAG content，其中 TAG 是 4 字符校验和(CAS)标签。
+// TAG 可传递给 write_file_with_line_range 的 line_tag/line_tags 参数防止竞态写入。
 func handleReadFileWithLineRange(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
@@ -66,9 +62,6 @@ func handleReadFileWithLineRange(ctx context.Context, args ToolArgs) (result, wa
 		err = fmt.Errorf("failed to parse line range: %w", err)
 		return result, warning, err
 	}
-
-	// tags 参数，默认 true（启用 CAS 标签）
-	tags := toolcall.ToolArgsValue(args, "tags", true)
 
 	// 打开文件
 	file, err := os.Open(fullPath)
@@ -90,12 +83,8 @@ func handleReadFileWithLineRange(ctx context.Context, args ToolArgs) (result, wa
 
 		// 检查是否在指定范围内
 		if lineNum >= startLine && (endLine == -1 || lineNum <= endLine) {
-			if tags {
-				tag := computeLineTag(line)
-				fmt.Fprintf(&resultBuilder, "%d:%s %s\n", lineNum, tag, line)
-			} else {
-				fmt.Fprintf(&resultBuilder, "%d: %s\n", lineNum, line)
-			}
+			tag := computeLineTag(line)
+			fmt.Fprintf(&resultBuilder, "%d:%s %s\n", lineNum, tag, line)
 			linesRead++
 		}
 

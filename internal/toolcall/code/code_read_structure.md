@@ -1,3 +1,5 @@
+# code_read_structure
+
 Read code file structure (functions/classes).
 
 Returns a human-readable summary and complete JSON structure

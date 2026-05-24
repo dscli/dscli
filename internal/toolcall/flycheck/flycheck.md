@@ -1,3 +1,5 @@
+# flycheck
+
 Static analysis check.
 
 Run static checks on files, directories, or packages.

@@ -1,3 +1,5 @@
+# web
+
 Fetch web page as Markdown.
 
 Fetch web page content and intelligently convert to Markdown

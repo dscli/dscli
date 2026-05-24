@@ -22,10 +22,6 @@ func init() {
 					"type":        "string",
 					"description": "File path, e.g. main.go",
 				},
-				"tags": map[string]any{
-					"type":        "boolean",
-					"description": "Include 4-char checksum tags per line for CAS (check-and-set) safety. Default true.",
-				},
 			},
 			"required":             []string{"path"},
 			"additionalProperties": false,
