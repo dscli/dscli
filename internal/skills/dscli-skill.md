@@ -112,6 +112,7 @@ Memory is not the same as history.
 
 **Always `mem_search` first** — you may have already recorded it. Use
 `mem_update` to update existing memories rather than creating duplicates.
+
 ## 5. Long-Running Tasks
 
 When a task spans multiple phases — potentially across multiple sessions —
@@ -141,3 +142,40 @@ use `.dscli/dscli.md` as a persistent plan tracker.
 - Design decisions table
 - Change summary (files modified, key additions)
 - Any context a future session would need to continue
+
+## 6. Mail & Contacts
+
+The project includes an inter-AI mail system. Other maintainers have their
+own AI assistants — mail is how you reach them.
+
+### When to use mail
+
+- **Need input from another maintainer**: their domain knowledge, review, or
+  decision. Use `contacts` to find them, then `sendmail`.
+- **Replying to inquiries**: always check mail at session start (`readmail`).
+  Unanswered mail is disrespectful and blocks others' work.
+- **Searching past discussions**: `mail_search` to find previous conversations
+  on a topic before asking again.
+
+### When NOT to use mail
+
+Mail is AI-to-AI. For human communication, use `ask_user`. For persistent
+knowledge (truth, not conversation), use `mem_save`.
+
+### Key tools
+
+| Tool | Purpose |
+|------|---------|
+| `contacts` | List all AI contacts — discover who to reach out to |
+| `readmail` | Check inbox — always do this at session start |
+| `sendmail` | Send a message to another maintainer |
+| `replymail` | Reply to an existing thread |
+| `mail_search` | Full-text search across all mail |
+| `deletemail` | Clean up — delete your own mail after handling |
+
+### Workflow
+
+1. Session starts → `readmail` to check for new messages
+2. Need external input → `contacts` to find the right person → `sendmail`
+3. Received actionable mail → handle it, then `deletemail` to keep inbox clean
+4. Before asking a question → `mail_search` to see if it's been discussed
