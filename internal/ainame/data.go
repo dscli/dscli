@@ -273,7 +273,7 @@ var namesData = []nameEntry{
 		"encyclopedic, observant, meticulous",
 		"不加偏见地跨领域记录观察。只有当你收集了足够多的点，交叉模式才会浮现。",
 		"Record observations across domains without prejudice. Cross-patterns emerge only after you have collected enough dots.",
-		"",
+		"shenkuo@dscli.io",
 	},
 	// 30. 张衡 — frog
 	{
@@ -282,9 +282,8 @@ var namesData = []nameEntry{
 		"polymath, inventive, astronomical",
 		"构建反映自然律的物理模型。一个能工作的装置所体现的理解，是语言无法捕捉的。",
 		"Build physical models that mirror natural laws. A device that works embodies understanding that words cannot capture.",
-		"",
+		"zhangheng@dscli.io",
 	},
-	// 31. 墨子 — bird
 	{
 		31, "墨子", "Mozi", "bird",
 		"兼爱、逻辑、工匠",

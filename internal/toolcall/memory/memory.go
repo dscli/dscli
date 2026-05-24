@@ -42,7 +42,7 @@ func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
 }
 
 func init() {
-	// ── Tools ──
+	// == Tools ==
 	RegisterTool(ToolDef{
 		Name:        "mem_save",
 		Description: mem_save_md,
@@ -144,7 +144,7 @@ func init() {
 	})
 }
 
-// ─── Handlers ─────────────────────────────────────────────────────────────────
+// === Handlers =================================================================
 
 // handleMemSave saves a new memory observation.
 func handleMemSave(ctx context.Context, args ToolArgs) (result, warning string, err error) {

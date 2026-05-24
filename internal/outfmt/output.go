@@ -294,7 +294,7 @@ func PrintHeader(title string) {
 func PrintSection(title string) {
 	Println()
 	Println(Colorize(ColorBoldBlue, "▶ "+title))
-	Println(Colorize(ColorGray, strings.Repeat("─", len(title)+2)))
+	Println(Colorize(ColorGray, strings.Repeat("=", len(title)+2)))
 }
 
 // PrintSubSection 输出子章节标题

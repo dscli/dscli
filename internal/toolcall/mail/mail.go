@@ -1,9 +1,7 @@
-// Package mail registers mail tools (sendmail/readmail/mail_search/maintainers)
+// Package mail registers mail tools (sendmail/readmail/mail_search/contacts)
 // with the toolcall framework and parses LLM-issued tool arguments.
 //
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Layering
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Layering:
 //
 // This package is a thin adapter between LLM tool calls and the core mail
 // logic in internal/mail. It owns:
@@ -12,14 +10,12 @@
 //   - Argument extraction from map[string]any with defaults and validation
 //   - Delegation to mail.Handle* functions
 //
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Tools
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Tools:
 //
-//	─ sendmail     — Send mail to another maintainer by name/email
-//	─ readmail     — Read mails (list or single) for current maintainer
-//	─ mail_search  — FTS5 search across mails
-//	─ maintainers  — List all known maintainers
+//	= sendmail     — Send mail to another maintainer by name/email
+//	= readmail     — Read mails (list or single) for current maintainer
+//	= mail_search  — FTS5 search across mails
+//	= contacts     — List all known contacts
 package mail
 
 import (
@@ -40,8 +36,8 @@ var readmail_md string
 //go:embed mail_search.md
 var mail_search_md string
 
-//go:embed maintainers.md
-var maintainers_md string
+//go:embed contacts.md
+var contacts_md string
 
 var RegisterTool = toolcall.RegisterTool
 
@@ -109,8 +105,8 @@ func init() {
 	})
 
 	RegisterTool(ToolDef{
-		Name:        "maintainers",
-		Description: maintainers_md,
+		Name:        "contacts",
+		Description: contacts_md,
 		Category:    "mail",
 		Strict:      true,
 		Parameters: map[string]any{
@@ -118,11 +114,11 @@ func init() {
 			"properties":           map[string]any{},
 			"additionalProperties": false,
 		},
-		Handler: handleMaintainers,
+		Handler: handleContacts,
 	})
 }
 
-// ─── Handlers ─────────────────────────────────────────────────────────────────
+// === Handlers =================================================================
 
 func handleSendMail(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	recipient := ToolArgsValue(args, "recipient", "")
@@ -168,7 +164,7 @@ func handleMailSearch(ctx context.Context, args ToolArgs) (result, warning strin
 	return
 }
 
-func handleMaintainers(ctx context.Context, _ ToolArgs) (result, warning string, err error) {
-	result, warning, err = mailcore.HandleMaintainers(ctx)
+func handleContacts(ctx context.Context, _ ToolArgs) (result, warning string, err error) {
+	result, warning, err = mailcore.HandleContacts(ctx)
 	return
 }

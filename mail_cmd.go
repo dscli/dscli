@@ -13,11 +13,11 @@ import (
 func init() {
 	mailCmd := AddRootCommand(&cobra.Command{
 		Use:   "mail",
-		Short: "邮件系统 - 发送、阅读、搜索邮件和维护者列表",
+		Short: "邮件系统 - 发送、阅读、搜索邮件和通讯录",
 		Long:  `mail 命令用于 AI 维护者之间的显式通信。`,
 	})
 
-	// ── send ──────────────────────────────────────────────────────────────
+	// == send ==============================================================
 	sendCmd := &cobra.Command{
 		Use:   "send <recipient>",
 		Short: "发送邮件给指定维护者",
@@ -29,7 +29,7 @@ func init() {
 	sendCmd.Flags().StringP("body", "b", "", "邮件正文")
 	mailCmd.AddCommand(sendCmd)
 
-	// ── read ──────────────────────────────────────────────────────────────
+	// == read ==============================================================
 	readCmd := &cobra.Command{
 		Use:   "read [id]",
 		Short: "阅读邮件",
@@ -41,7 +41,7 @@ func init() {
 	readCmd.Flags().IntP("limit", "n", 20, "列表模式下的最大显示数")
 	mailCmd.AddCommand(readCmd)
 
-	// ── search ────────────────────────────────────────────────────────────
+	// == search ============================================================
 	searchCmd := &cobra.Command{
 		Use:   "search <query>",
 		Short: "搜索邮件",
@@ -52,15 +52,15 @@ func init() {
 	searchCmd.Flags().IntP("limit", "n", 10, "最大结果数")
 	mailCmd.AddCommand(searchCmd)
 
-	// ── maintainers ───────────────────────────────────────────────────────
-	maintainersCmd := &cobra.Command{
-		Use:   "maintainers",
-		Short: "列出所有维护者",
-		Long:  "列出所有已注册的 AI 维护者及其属性。当前维护者标记为 →。",
+	// == contacts ===========================================================
+	contactsCmd := &cobra.Command{
+		Use:   "contacts",
+		Short: "列出有项目分配的联系人",
+		Long:  "列出所有已分配项目的 AI 联系人及其工作项目列表。当前联系人标记为 →。",
 		Args:  cobra.NoArgs,
-		RunE:  maintainersRunE,
+		RunE:  contactsRunE,
 	}
-	mailCmd.AddCommand(maintainersCmd)
+	mailCmd.AddCommand(contactsCmd)
 }
 
 func mailSendRunE(cmd *cobra.Command, args []string) error {
@@ -109,8 +109,8 @@ func mailSearchRunE(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func maintainersRunE(cmd *cobra.Command, _ []string) error {
-	result, _, err := mail.HandleMaintainers(context.Background())
+func contactsRunE(cmd *cobra.Command, _ []string) error {
+	result, _, err := mail.HandleContacts(context.Background())
 	if err != nil {
 		return err
 	}

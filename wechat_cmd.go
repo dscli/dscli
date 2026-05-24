@@ -203,7 +203,7 @@ func wechatStatusRunE(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println("📱 微信状态")
-	fmt.Println("─────────────────────────────")
+	fmt.Println("=============================")
 	if loggedIn, ok := status["logged_in"].(bool); ok && loggedIn {
 		fmt.Printf("状态:         已登录\n")
 		if user, ok := status["user"].(string); ok {
@@ -221,7 +221,7 @@ func wechatStatusRunE(cmd *cobra.Command, args []string) error {
 	if mode, ok := status["mode"].(string); ok {
 		fmt.Printf("模式:         %s\n", mode)
 	}
-	fmt.Println("─────────────────────────────")
+	fmt.Println("=============================")
 
 	return nil
 }
@@ -396,7 +396,7 @@ func wechatFriendsRunE(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println("👥 好友列表")
-	fmt.Println("─────────────────────────────")
+	fmt.Println("=============================")
 	for i, f := range friends {
 		nickname := f["nickname"]
 		remark := f["remark"]
@@ -406,7 +406,7 @@ func wechatFriendsRunE(cmd *cobra.Command, args []string) error {
 			fmt.Printf("%3d. %s\n", i+1, nickname)
 		}
 	}
-	fmt.Println("─────────────────────────────")
+	fmt.Println("=============================")
 	fmt.Printf("共 %d 位好友\n", len(friends))
 
 	return nil
@@ -431,7 +431,7 @@ func wechatGroupsRunE(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println("👥 群组列表")
-	fmt.Println("─────────────────────────────")
+	fmt.Println("=============================")
 	for i, g := range groups {
 		nickname := g["nickname"]
 		remark := g["remark"]
@@ -441,7 +441,7 @@ func wechatGroupsRunE(cmd *cobra.Command, args []string) error {
 			fmt.Printf("%3d. %s\n", i+1, nickname)
 		}
 	}
-	fmt.Println("─────────────────────────────")
+	fmt.Println("=============================")
 	fmt.Printf("共 %d 个群组\n", len(groups))
 
 	return nil
@@ -468,7 +468,7 @@ func wechatConfigRunE(cmd *cobra.Command, args []string) error {
 		}
 
 		fmt.Println("⚙️  当前配置")
-		fmt.Println("─────────────────────────────")
+		fmt.Println("=============================")
 		fmt.Printf("配置文件:     %s\n", configPath)
 		fmt.Printf("账号:         %s\n", config.Account)
 		fmt.Printf("模式:         %s\n", config.Mode)
@@ -479,7 +479,7 @@ func wechatConfigRunE(cmd *cobra.Command, args []string) error {
 		fmt.Printf("最大消息长度: %d\n", config.MaxMsgLength)
 		fmt.Printf("白名单好友:   %d人\n", len(config.AllowedFriends))
 		fmt.Printf("黑名单用户:   %d人\n", len(config.BlockedUsers))
-		fmt.Println("─────────────────────────────")
+		fmt.Println("=============================")
 	}
 
 	return nil

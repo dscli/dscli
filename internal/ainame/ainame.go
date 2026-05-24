@@ -65,6 +65,7 @@ func init() {
 	sqlite.RegisterUpgradeSchema(
 		`ALTER TABLE ai_names ADD COLUMN email TEXT NOT NULL DEFAULT ''`,
 		`UPDATE ai_names SET email = LOWER(name_en) || '@dscli.io' WHERE email = '' OR email IS NULL`,
+		`UPDATE ai_names SET email = REPLACE(LOWER(name_en), ' ', '') || '@dscli.io' WHERE email LIKE '% %'`,
 	)
 
 	sqlite.RegisterPostInitHook(func(db *sqlite.DB) error {

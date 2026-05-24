@@ -37,6 +37,14 @@ func GetCurrentSessionID(ctx context.Context) (sessionID int64) {
 	return currentSessionID.Load()
 }
 
+// ResetSessionID clears the cached session ID so the next call to
+// GetCurrentSessionID will re-resolve against the current database.
+// Intended for tests that switch database paths.
+func ResetSessionID() {
+	sessionOnce = sync.Once{}
+	currentSessionID.Store(0)
+}
+
 // CreateOrGetSessionID 获取或创建会话ID
 func CreateOrGetSessionID(ctx context.Context) (sessionID int64, err error) {
 	projectRoot := context.ProjectRoot

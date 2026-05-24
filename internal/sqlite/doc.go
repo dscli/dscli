@@ -1,9 +1,7 @@
 // Package sqlite provides a declarative, lazy-initialized SQLite connection with
 // built-in test isolation and schema migration support.
 //
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Architecture
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Architecture:
 //
 // Packages register schemas via init() using four collectors.  All registrations
 // happen before OpenDB() is called; a sync.Once gate ensures the database is
@@ -25,9 +23,7 @@
 // any index on that column MUST be registered in RegisterUpgradeSchema after the
 // ALTER TABLE — never in RegisterIndexSchema.
 //
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Database Path Selection (Test Isolation)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //
 // choosing from two strategies in priority order:
 //
@@ -42,9 +38,7 @@
 // Per-test customization: tests that need fully independent databases can call
 // allowing re-initialization with the new path.
 //
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Upgrade Schema: Adding & Removing Columns
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Upgrade Schema: Adding & Removing Columns:
 //
 // SQLite's ALTER TABLE is limited.  This package embraces a "best-effort
 // upgrade" pattern:
@@ -76,9 +70,7 @@
 // RegisterIndexSchema runs first — if the column doesn't exist yet, the index
 // creation fails fatally and initDatabase returns an error.
 //
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// FTS5 Full-Text Search
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// FTS5 Full-Text Search:
 //
 // FTS5 virtual tables are created via RegisterTableSchema, same as regular
 // tables.  The memories package demonstrates the canonical pattern:
@@ -100,9 +92,7 @@
 // independent tokens.  This is handled at the application layer — the sqlite
 // package is unaware of tokenization.
 //
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Connection Parameters
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Connection Parameters:
 //
 // Open() appends pragmas to the DSN:
 //
@@ -111,9 +101,7 @@
 //	_fk=1               — enforce foreign key constraints
 //	_txlock=immediate   — acquire write lock at BEGIN, avoid mid-transaction BUSY
 //
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // File-Lock Serialization (SQLITE_BUSY Prevention)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //
 // OpenDB() 返回 *DB（包装 *sql.DB + 文件锁）。对于默认生产数据库
 // (~/.dscli/sqlite.db)，OpenDB() 在打开连接前通过 flock(2) 获取排他锁，

@@ -1,8 +1,6 @@
 // Package mail implements an inter-AI messaging system backed by SQLite.
 //
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Architecture
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Architecture:
 //
 // The mail system is split into two layers:
 //
@@ -14,9 +12,7 @@
 // current session via ainame.GetNameID(). Recipients are looked up by
 // case-insensitive name or email.
 //
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Schema
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Schema:
 //
 //	mail       — id, sender_name_id, recipient_name_id, subject, body, is_read, created_at
 //	mail_fts   — FTS5 external content table over mail(subject, body)
@@ -25,20 +21,19 @@
 // Chinese content is tokenized with gse before insertion — ensuring the
 // same tokenization on both index and query sides.
 //
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Handlers
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Handlers:
 //
 //	HandleSendMail     — Send a mail to another maintainer by name
 //	HandleReadMail     — Read mails for the current maintainer
 //	HandleMailSearch   — FTS5 search across mails
-//	HandleMaintainers  — List all known maintainer names
+//	HandleContacts     — List contacts with assigned projects
 package mail
 
 import (
 	"context"
 	"database/sql"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/ainame"
@@ -72,7 +67,7 @@ func init() {
 	)
 }
 
-// ─── Types ─────────────────────────────────────────────────────────────────────
+// === Types =====================================================================
 
 // MailRow represents a single mail message.
 type MailRow struct {
@@ -96,7 +91,7 @@ type MaintainerRow struct {
 	Email    string `json:"email"`
 }
 
-// ─── FTS Sync ──────────────────────────────────────────────────────────────────
+// === FTS Sync ==================================================================
 
 // insertMailFTS tokenizes subject+body and inserts into mail_fts.
 func insertMailFTS(db *sqlite.DB, id int64, subject, body string) error {
@@ -123,7 +118,7 @@ func updateMailFTS(db *sqlite.DB, id int64, subject, body string) error {
 	return insertMailFTS(db, id, subject, body)
 }
 
-// ─── Handlers ──────────────────────────────────────────────────────────────────
+// === Handlers ==================================================================
 
 // HandleSendMail sends a mail to a recipient identified by name or email.
 func HandleSendMail(ctx context.Context, recipient, subject, body string) (result, warning string, err error) {
@@ -156,7 +151,7 @@ func HandleSendMail(ctx context.Context, recipient, subject, body string) (resul
 	).Scan(&recipientNameID, &recipientNameEN, &recipientEmail)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return "", "", fmt.Errorf("未知的接收者: %s（请使用 maintainers 查看可用名字）", recipient)
+			return "", "", fmt.Errorf("未知的接收者: %s（请使用 contacts 查看可用名字）", recipient)
 		}
 		return "", "", fmt.Errorf("查询接收者失败: %w", err)
 	}
@@ -287,7 +282,7 @@ func HandleReadMail(ctx context.Context, mailID int64, unreadOnly bool, limit in
 	if unreadOnly {
 		status = "未读邮件"
 	}
-	sb.WriteString(fmt.Sprintf("📬 **%s** (%d 封)\n\n", status, len(mails)))
+	fmt.Fprintf(&sb, "📬 **%s** (%d 封)\n\n", status, len(mails))
 
 	for _, m := range mails {
 		readMark := " "
@@ -306,11 +301,11 @@ func HandleReadMail(ctx context.Context, mailID int64, unreadOnly bool, limit in
 			shortBody = shortBody[:120] + "..."
 		}
 
-		sb.WriteString(fmt.Sprintf("%s **#%d** | %s → %s | %s\n",
-			readMark, m.ID, m.SenderName, m.RecipientName, m.CreatedAt))
-		sb.WriteString(fmt.Sprintf("  主题: %s\n", shortSubject))
+		fmt.Fprintf(&sb, "%s **#%d** | %s → %s | %s\n",
+			readMark, m.ID, m.SenderName, m.RecipientName, m.CreatedAt)
+		fmt.Fprintf(&sb, "  主题: %s\n", shortSubject)
 		if shortBody != "" {
-			sb.WriteString(fmt.Sprintf("  内容: %s\n", shortBody))
+			fmt.Fprintf(&sb, "  内容: %s\n", shortBody)
 		}
 		sb.WriteString("\n")
 	}
@@ -330,6 +325,9 @@ func HandleMailSearch(ctx context.Context, query string, limit int) (result, war
 	if limit > 50 {
 		limit = 50
 	}
+
+	sessionID := session.GetCurrentSessionID(ctx)
+	nameID := ainame.GetNameID(sessionID)
 
 	db, err := sqlite.OpenDB()
 	if err != nil {
@@ -377,15 +375,13 @@ func HandleMailSearch(ctx context.Context, query string, limit int) (result, war
 	}
 
 	// Get total unread count for the current maintainer
-	sessionID := session.GetCurrentSessionID(ctx)
-	nameID := ainame.GetNameID(sessionID)
 	var unreadCount int
 	_ = db.QueryRow("SELECT COUNT(*) FROM mail WHERE recipient_name_id = ? AND is_read = 0", nameID).Scan(&unreadCount)
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("🔍 **搜索结果**: \"%s\" (%d 封)", query, len(mails)))
+	fmt.Fprintf(&sb, "🔍 **搜索结果**: \"%s\" (%d 封)", query, len(mails))
 	if unreadCount > 0 {
-		sb.WriteString(fmt.Sprintf(" | 📬 未读: %d", unreadCount))
+		fmt.Fprintf(&sb, " | 📬 未读: %d", unreadCount)
 	}
 	sb.WriteString("\n\n")
 
@@ -402,10 +398,10 @@ func HandleMailSearch(ctx context.Context, query string, limit int) (result, war
 			shortBody = shortBody[:100] + "..."
 		}
 
-		sb.WriteString(fmt.Sprintf("**#%d** | %s → %s | %s\n", m.ID, m.SenderName, m.RecipientName, m.CreatedAt))
-		sb.WriteString(fmt.Sprintf("  主题: %s\n", shortSubject))
+		fmt.Fprintf(&sb, "**#%d** | %s → %s | %s\n", m.ID, m.SenderName, m.RecipientName, m.CreatedAt)
+		fmt.Fprintf(&sb, "  主题: %s\n", shortSubject)
 		if shortBody != "" {
-			sb.WriteString(fmt.Sprintf("  内容: %s\n", shortBody))
+			fmt.Fprintf(&sb, "  内容: %s\n", shortBody)
 		}
 		sb.WriteString("\n")
 	}
@@ -413,8 +409,12 @@ func HandleMailSearch(ctx context.Context, query string, limit int) (result, war
 	return sb.String(), "", nil
 }
 
-// HandleMaintainers lists all maintainers from ai_names.
-func HandleMaintainers(ctx context.Context) (result, warning string, err error) {
+// HandleContacts lists contacts that have been assigned to at least one project,
+// along with their project assignments.
+func HandleContacts(ctx context.Context) (result, warning string, err error) {
+	sessionID := session.GetCurrentSessionID(ctx)
+	currentNameID := ainame.GetNameID(sessionID)
+
 	db, err := sqlite.OpenDB()
 	if err != nil {
 		return "", "", fmt.Errorf("failed to open database: %w", err)
@@ -422,56 +422,85 @@ func HandleMaintainers(ctx context.Context) (result, warning string, err error) 
 	defer db.Close()
 
 	rows, err := db.Query(
-		`SELECT id, name_cn, name_en, bird_frog, email FROM ai_names ORDER BY id`,
+		`SELECT an.id, an.name_cn, an.name_en, an.bird_frog, an.email,
+		        s.id, s.project_path
+		 FROM ai_names an
+		 JOIN session_names sn ON sn.name_id = an.id
+		 JOIN sessions s ON s.id = sn.session_id
+		 ORDER BY an.id, s.id`,
 	)
 	if err != nil {
-		return "", "", fmt.Errorf("查询维护者失败: %w", err)
+		return "", "", fmt.Errorf("查询联系人失败: %w", err)
 	}
 	defer rows.Close()
 
-	sessionID := session.GetCurrentSessionID(ctx)
-	currentNameID := ainame.GetNameID(sessionID)
+	// Group by ai_name to collect project assignments.
+	type projInfo struct {
+		id   int64
+		name string
+	}
+	type contactInfo struct {
+		row      MaintainerRow
+		projects []projInfo
+	}
+	contactMap := make(map[int64]*contactInfo)
+	var contactOrder []int64
 
-	var maintainers []MaintainerRow
 	for rows.Next() {
 		var m MaintainerRow
-		if err := rows.Scan(&m.ID, &m.NameCN, &m.NameEN, &m.BirdFrog, &m.Email); err != nil {
+		var sID int64
+		var projPath string
+		if err := rows.Scan(&m.ID, &m.NameCN, &m.NameEN, &m.BirdFrog, &m.Email, &sID, &projPath); err != nil {
 			continue
 		}
-		maintainers = append(maintainers, m)
+		c, ok := contactMap[m.ID]
+		if !ok {
+			c = &contactInfo{row: m}
+			contactMap[m.ID] = c
+			contactOrder = append(contactOrder, m.ID)
+		}
+		projName := filepath.Base(projPath)
+		c.projects = append(c.projects, projInfo{id: sID, name: projName})
 	}
 
-	if len(maintainers) == 0 {
-		return "没有找到维护者。", "", nil
+	if len(contactOrder) == 0 {
+		return "没有找到有项目的联系人。", "", nil
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("👥 **维护者列表** (%d 人)\n\n", len(maintainers)))
+	fmt.Fprintf(&sb, "👥 **通讯录** (%d 人)\n\n", len(contactOrder))
 
 	var unreadCount int
 	_ = db.QueryRow("SELECT COUNT(*) FROM mail WHERE recipient_name_id = ? AND is_read = 0", currentNameID).Scan(&unreadCount)
 
-	for _, m := range maintainers {
+	for _, id := range contactOrder {
+		c := contactMap[id]
 		marker := " "
-		if m.ID == currentNameID {
+		if c.row.ID == currentNameID {
 			marker = "→"
 		}
 		birdFrog := "🐸"
-		if m.BirdFrog == "bird" {
+		if c.row.BirdFrog == "bird" {
 			birdFrog = "🐦"
 		}
-		sb.WriteString(fmt.Sprintf("%s %s **%s** (%s) <%s>\n",
-			marker, birdFrog, m.NameEN, m.NameCN, m.Email))
+		var projParts []string
+		for _, p := range c.projects {
+			projParts = append(projParts, fmt.Sprintf("%s(%d)", p.name, p.id))
+		}
+		projStr := strings.Join(projParts, ", ")
+
+		fmt.Fprintf(&sb, "%s %s **%s** (%s) <%s>\n    working on %s\n",
+			marker, birdFrog, c.row.NameEN, c.row.NameCN, c.row.Email, projStr)
 	}
 
 	if unreadCount > 0 {
-		sb.WriteString(fmt.Sprintf("\n📬 你有 %d 封未读邮件，使用 readmail 查看。\n", unreadCount))
+		fmt.Fprintf(&sb, "\n📬 你有 %d 封未读邮件，使用 readmail 查看。\n", unreadCount)
 	}
 
 	return sb.String(), "", nil
 }
 
-// ─── Helpers ───────────────────────────────────────────────────────────────────
+// === Helpers ===================================================================
 
 func formatMailRow(row MailRow) string {
 	readStatus := "已读"

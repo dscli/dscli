@@ -16,6 +16,7 @@ func newTestDB(t *testing.T) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "mail-test.db")
 	sqlite.SetDBPath(dbPath)
+	session.ResetSessionID()
 }
 
 // currentName returns the name_en of the current session's assigned name,
@@ -29,7 +30,7 @@ func currentName() string {
 	return "Newton"
 }
 
-// ─── HandleSendMail ───────────────────────────────────────────────────────────
+// === HandleSendMail ===========================================================
 
 func TestHandleSendMail(t *testing.T) {
 	newTestDB(t)
@@ -108,7 +109,7 @@ func TestHandleSendMail(t *testing.T) {
 	})
 }
 
-// ─── HandleReadMail ───────────────────────────────────────────────────────────
+// === HandleReadMail ===========================================================
 
 func TestHandleReadMail(t *testing.T) {
 	newTestDB(t)
@@ -195,7 +196,7 @@ func TestHandleReadMail(t *testing.T) {
 	})
 }
 
-// ─── HandleMailSearch ─────────────────────────────────────────────────────────
+// === HandleMailSearch =========================================================
 
 func TestHandleMailSearch(t *testing.T) {
 	newTestDB(t)
@@ -254,29 +255,36 @@ func TestHandleMailSearch(t *testing.T) {
 	})
 }
 
-// ─── HandleMaintainers ────────────────────────────────────────────────────────
+// === HandleContacts ============================================================
 
-func TestHandleMaintainers(t *testing.T) {
+func TestHandleContacts(t *testing.T) {
 	newTestDB(t)
 
-	t.Run("list maintainers", func(t *testing.T) {
-		result, _, err := HandleMaintainers(context.Background())
+	t.Run("list contacts", func(t *testing.T) {
+		result, _, err := HandleContacts(context.Background())
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if !strings.Contains(result, "维护者列表") {
-			t.Errorf("expected '维护者列表', got: %s", result)
+		if !strings.Contains(result, "通讯录") {
+			t.Errorf("expected '通讯录', got: %s", result)
 		}
-		if !strings.Contains(result, "Newton") {
-			t.Errorf("expected 'Newton' in maintainers, got: %s", result)
+		// Only contacts with assigned projects are listed.
+		// The current session should show up with its project.
+		if !strings.Contains(result, "working on") {
+			t.Errorf("expected 'working on', got: %s", result)
 		}
-		if !strings.Contains(result, "Bohr") {
-			t.Errorf("expected 'Bohr' in maintainers, got: %s", result)
+		// Current user marker.
+		if !strings.Contains(result, "→") {
+			t.Errorf("expected '→' marker for current user, got: %s", result)
+		}
+		// Nobody (name_id=0) should NOT appear — it has no sessions.
+		if strings.Contains(result, "nobody") {
+			t.Errorf("nobody should not appear (no project assigned), got: %s", result)
 		}
 	})
 }
 
-// ─── Integration: Full Mail Lifecycle ─────────────────────────────────────────
+// === Integration: Full Mail Lifecycle =========================================
 
 func TestMailLifecycle(t *testing.T) {
 	newTestDB(t)

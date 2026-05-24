@@ -3,28 +3,25 @@
 //
 // # Architecture
 //
-//	┌─────────────────────────────────────────────────────────┐
-//	│                 userservice package                     │
-//	│                                                         │
-//	│  Create(name, desc, cmd) error                          │
-//	│  Start(name) error       Delete(name) error             │
-//	│  Stop(name) error        List() ([]string, error)       │
-//	│  Status(name) (string, error)                           │
-//	│  Scan() ([]string, error)                               │
-//	│  ScanStatus(name) (string, error)                       │
-//	│                                                         │
-//	│  ┌────────────┐  ┌──────────────┐  ┌──────────────────┐ │
-//	│  │ linux      │  │ darwin       │  │ other            │ │
-//	│  │ (systemd)  │  │ (launchctl)  │  │ (fallback)       │ │
-//	│  │  ┌───────┐ │  │              │  │                  │ │
-//	│  │  │systemd│ │  │              │  │ pidfile +        │ │
-//	│  │  │unavail│─┼──┼── fallback ──┼──┼── direct process │ │
-//	│  │  └───────┘ │  │              │  │                  │ │
-//	│  └────────────┘  └──────────────┘  └──────────────────┘ │
-//	│                                                         │
-//	│  Registry: ~/.dscli/services/<name>.json                │
-//	│  Marker:   "# Managed by dscli" / "<!-- Managed by dscli -->" │
-//	└─────────────────────────────────────────────────────────┘
+// The userservice package provides a unified API across all platforms:
+//
+//	Create(name, desc, cmd) error
+//	Start(name) error
+//	Stop(name) error
+//	Status(name) (string, error)
+//	List() ([]string, error)
+//	Delete(name) error
+//	Scan() ([]string, error)
+//	ScanStatus(name) (string, error)
+//
+// Platform backends:
+//
+//	Linux      systemd --user   → pidfile fallback if systemd unavailable
+//	macOS      launchctl        → no fallback needed
+//	Other      none             → pidfile + direct process daemon
+//
+// Registry: ~/.dscli/services/<name>.json
+// Marker:   "# Managed by dscli" / "<!-- Managed by dscli -->"
 //
 // # Backends
 //

@@ -1,8 +1,6 @@
 // Package memories implements persistent memory tools backed by SQLite FTS5.
 //
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Architecture
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Architecture:
 //
 // The memory system is split into two layers:
 //
@@ -14,9 +12,7 @@
 // then delegates to the handler functions exported by this package. Each handler
 // returns (result, suggest, error) — LLM-visible response, improvement suggestion, and error.
 //
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Schema Management
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Schema Management:
 //
 // SQLite schemas are registered via init() using the sqlite package's
 // declarative registration API:
@@ -27,9 +23,7 @@
 // This pattern ensures all schema registrations are collected before
 // sqlite.OpenDB() lazily initializes the database once via sync.Once.
 //
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Chinese Tokenization (internal/tokenizer, github.com/go-ego/gse)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //
 // memories_fts is a standalone FTS5 virtual table (no content= option).
 // FTS5 sync is managed explicitly in Go:
@@ -53,9 +47,7 @@
 // The gse Segmenter is initialized once (sync.Once) inside the tokenizer package.
 // Dictionary loading happens lazily on first Tokenize() / SanitizeFTS() call.
 //
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Data Model
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Data Model:
 //
 //	memoryRow     — a single memory record (id, title, content, type, timestamps)
 //	searchRow     — memoryRow + FTS rank score
@@ -63,9 +55,7 @@
 // Types supported: decision, architecture, bugfix, pattern, config, discovery,
 // learning, manual (default).
 //
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Handlers
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Handlers:
 //
 //	HandleMemSave            — Insert a new memory with title, content, type
 //	HandleMemUpdate          — Update fields of an existing memory by ID
@@ -74,9 +64,7 @@
 //	HandleMemGetObservation  — Retrieve full content by ID (vs. search's 300-char preview)
 //	HandleMemStats           — Aggregate stats: total count + type distribution + latest entry
 //
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Testing
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Testing:
 //
 // In test mode (context.IsTesting() returning true), sqlite uses a temporary
 // database in os.TempDir(), isolated from production data. Tests use

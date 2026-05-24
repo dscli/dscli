@@ -18,7 +18,7 @@ func init() {
 		Long:  `memory 命令用于管理持久化记忆。`,
 	})
 
-	// ── list ────────────────────────────────────────────────────────────
+	// == list ============================================================
 	listCmd := &cobra.Command{
 		Use:   "list",
 		Short: "列出当前项目的所有记忆",
@@ -28,7 +28,7 @@ func init() {
 	}
 	memCmd.AddCommand(listCmd)
 
-	// ── search ──────────────────────────────────────────────────────────
+	// == search ==========================================================
 	searchCmd := &cobra.Command{
 		Use:   "search <query>",
 		Short: "搜索记忆",
@@ -42,7 +42,7 @@ func init() {
 	searchCmd.Flags().Int("limit", 10, "最大结果数")
 	memCmd.AddCommand(searchCmd)
 
-	// ── show ────────────────────────────────────────────────────────────
+	// == show ============================================================
 	showCmd := &cobra.Command{
 		Use:   "show <id>",
 		Short: "查看记忆完整内容",
@@ -52,7 +52,7 @@ func init() {
 	}
 	memCmd.AddCommand(showCmd)
 
-	// ── stats ───────────────────────────────────────────────────────────
+	// == stats ===========================================================
 	statsCmd := &cobra.Command{
 		Use:   "stats",
 		Short: "显示记忆系统统计",
@@ -63,7 +63,7 @@ func init() {
 	memCmd.AddCommand(statsCmd)
 }
 
-// ─── RunE helpers ──────────────────────────────────────────────────────────
+// === RunE helpers ==========================================================
 
 func memListRunE(_ *cobra.Command, _ []string) error {
 	rows, err := memories.HandleMemList(context.Background())

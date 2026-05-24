@@ -92,7 +92,7 @@ func (f *MessageFormatter) FormatMessageDetail(msg *Message) string {
 
 	default: // FormatTable
 		builder.WriteString("📱 消息详情\n")
-		builder.WriteString("─────────────────────────────\n")
+		builder.WriteString("=============================\n")
 		fmt.Fprintf(&builder, "ID:           %s\n", msg.ID)
 		fmt.Fprintf(&builder, "微信消息ID:   %s\n", msg.WxMsgID)
 		fmt.Fprintf(&builder, "方向:         %s\n", msg.Direction)
@@ -104,7 +104,7 @@ func (f *MessageFormatter) FormatMessageDetail(msg *Message) string {
 		if !msg.RepliedAt.IsZero() {
 			fmt.Fprintf(&builder, "回复时间:     %s\n", msg.RepliedAt.Format("2006-01-02 15:04:05"))
 		}
-		builder.WriteString("─────────────────────────────\n")
+		builder.WriteString("=============================\n")
 		builder.WriteString("内容:\n")
 		fmt.Fprintf(&builder, "%s\n", msg.Content)
 	}
@@ -133,9 +133,9 @@ func (f *MessageFormatter) formatTable(messages []Message) string {
 	var builder strings.Builder
 
 	builder.WriteString("📱 消息列表\n")
-	builder.WriteString("─────────────────────────────────────────────────────────────────────\n")
+	builder.WriteString("=====================================================================\n")
 	builder.WriteString("ID    时间    发送者           接收者           内容               状态\n")
-	builder.WriteString("─────────────────────────────────────────────────────────────────────\n")
+	builder.WriteString("=====================================================================\n")
 
 	for _, msg := range messages {
 		fmt.Fprintf(&builder, "%-6s %-7s %-15s %-15s %-20s %-10s\n",

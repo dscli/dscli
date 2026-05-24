@@ -41,7 +41,7 @@ func TestTruncate(t *testing.T) {
 	}
 }
 
-// ─── FTS Sync Helpers ─────────────────────────────────────────────────────────
+// === FTS Sync Helpers =========================================================
 
 func TestInsertAndDeleteFTS(t *testing.T) {
 	newTestDB(t)
@@ -74,7 +74,7 @@ func TestInsertAndDeleteFTS(t *testing.T) {
 	}
 }
 
-// ─── DB-Integrated Tests ──────────────────────────────────────────────────────
+// === DB-Integrated Tests ======================================================
 
 func newTestDB(t *testing.T) {
 	t.Helper()
@@ -101,7 +101,7 @@ func saveMem(t *testing.T, title, body, typ string) int64 {
 	return id
 }
 
-// ─── HandleMemSave ────────────────────────────────────────────────────────────
+// === HandleMemSave ============================================================
 
 func TestHandleMemSave(t *testing.T) {
 	newTestDB(t)
@@ -149,7 +149,7 @@ func TestHandleMemSave(t *testing.T) {
 	})
 }
 
-// ─── HandleMemUpdate ──────────────────────────────────────────────────────────
+// === HandleMemUpdate ==========================================================
 
 func TestHandleMemUpdate(t *testing.T) {
 	newTestDB(t)
@@ -192,7 +192,7 @@ func TestHandleMemUpdate(t *testing.T) {
 	})
 }
 
-// ─── HandleMemSearch ──────────────────────────────────────────────────────────
+// === HandleMemSearch ==========================================================
 
 func TestHandleMemSearch(t *testing.T) {
 	newTestDB(t)
@@ -327,7 +327,7 @@ func TestHandleMemSearch(t *testing.T) {
 	})
 }
 
-// ─── HandleMemDelete ──────────────────────────────────────────────────────────
+// === HandleMemDelete ==========================================================
 
 func TestHandleMemDelete(t *testing.T) {
 	newTestDB(t)
@@ -356,7 +356,7 @@ func TestHandleMemDelete(t *testing.T) {
 	})
 }
 
-// ─── HandleMemGetObservation ──────────────────────────────────────────────────
+// === HandleMemGetObservation ==================================================
 
 func TestHandleMemGetObservation(t *testing.T) {
 	newTestDB(t)
@@ -383,7 +383,7 @@ func TestHandleMemGetObservation(t *testing.T) {
 	})
 }
 
-// ─── HandleMemStats ───────────────────────────────────────────────────────────
+// === HandleMemStats ===========================================================
 
 func TestHandleMemStats(t *testing.T) {
 	newTestDB(t)
@@ -416,7 +416,7 @@ func TestHandleMemStats(t *testing.T) {
 	})
 }
 
-// ─── Integration: Full Memory Lifecycle ────────────────────────────────────────
+// === Integration: Full Memory Lifecycle ========================================
 
 func TestMemoryLifecycle(t *testing.T) {
 	newTestDB(t)
@@ -482,7 +482,7 @@ func TestMemoryLifecycle(t *testing.T) {
 	}
 }
 
-// ─── CJK Tokenization Detail ──────────────────────────────────────────────────
+// === CJK Tokenization Detail ==================================================
 
 func TestFTSChineseTokenization(t *testing.T) {
 	newTestDB(t)
@@ -545,7 +545,7 @@ func TestFTSChineseTokenization(t *testing.T) {
 	})
 }
 
-// ─── Infrastructure ────────────────────────────────────────────────────────────
+// === Infrastructure ============================================================
 
 func TestOpenDBIdempotent(t *testing.T) {
 	newTestDB(t)
