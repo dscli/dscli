@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"gitcode.com/dscli/dscli/internal/ainame"
+	"gitcode.com/dscli/dscli/internal/session"
 	"gitcode.com/dscli/dscli/internal/sqlite"
 )
 
@@ -80,6 +82,8 @@ func newTestDB(t *testing.T) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "memories-test.db")
 	sqlite.SetDBPath(dbPath)
+	session.ResetSessionID()
+	ainame.ResetCurrentNameID()
 }
 
 // found reports whether the search result indicates matches were found.

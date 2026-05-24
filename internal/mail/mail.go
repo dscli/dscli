@@ -38,7 +38,6 @@ import (
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/ainame"
-	"gitcode.com/dscli/dscli/internal/session"
 	"gitcode.com/dscli/dscli/internal/sqlite"
 	"gitcode.com/dscli/dscli/internal/tokenizer"
 )
@@ -132,8 +131,7 @@ func HandleSendMail(ctx context.Context, recipient, subject, body string) (resul
 		return
 	}
 
-	sessionID := session.GetCurrentSessionID(ctx)
-	senderNameID := ainame.GetNameID(sessionID)
+	senderNameID := ainame.GetCurrentNameID(ctx)
 
 	db, err := sqlite.OpenDB()
 	if err != nil {
@@ -198,8 +196,7 @@ func HandleReadMail(ctx context.Context, mailID int64, unreadOnly bool, limit in
 		limit = 100
 	}
 
-	sessionID := session.GetCurrentSessionID(ctx)
-	nameID := ainame.GetNameID(sessionID)
+	nameID := ainame.GetCurrentNameID(ctx)
 
 	db, err := sqlite.OpenDB()
 	if err != nil {
@@ -327,8 +324,7 @@ func HandleMailSearch(ctx context.Context, query string, limit int) (result, war
 		limit = 50
 	}
 
-	sessionID := session.GetCurrentSessionID(ctx)
-	nameID := ainame.GetNameID(sessionID)
+	nameID := ainame.GetCurrentNameID(ctx)
 
 	db, err := sqlite.OpenDB()
 	if err != nil {
@@ -413,8 +409,7 @@ func HandleMailSearch(ctx context.Context, query string, limit int) (result, war
 // HandleContacts lists contacts that have been assigned to at least one project,
 // along with their project assignments.
 func HandleContacts(ctx context.Context) (result, warning string, err error) {
-	sessionID := session.GetCurrentSessionID(ctx)
-	currentNameID := ainame.GetNameID(sessionID)
+	currentNameID := ainame.GetCurrentNameID(ctx)
 
 	db, err := sqlite.OpenDB()
 	if err != nil {
@@ -514,8 +509,7 @@ func HandleReplyMail(ctx context.Context, replyToID int64, subject, body string)
 		return
 	}
 
-	sessionID := session.GetCurrentSessionID(ctx)
-	senderNameID := ainame.GetNameID(sessionID)
+	senderNameID := ainame.GetCurrentNameID(ctx)
 
 	db, err := sqlite.OpenDB()
 	if err != nil {
@@ -581,8 +575,7 @@ func HandleDeleteMail(ctx context.Context, mailID int64) (result, warning string
 		return
 	}
 
-	sessionID := session.GetCurrentSessionID(ctx)
-	nameID := ainame.GetNameID(sessionID)
+	nameID := ainame.GetCurrentNameID(ctx)
 
 	db, err := sqlite.OpenDB()
 	if err != nil {
@@ -660,8 +653,7 @@ func formatMailRow(row MailRow) string {
 // Returns 0 on any error (missing session, DB error, etc.) — errors are silently
 // swallowed because this is a prompt hint; it must never block or error out.
 func UnreadMailCount(ctx context.Context) int {
-	sessionID := session.GetCurrentSessionID(ctx)
-	nameID := ainame.GetNameID(sessionID)
+	nameID := ainame.GetCurrentNameID(ctx)
 	if nameID == 0 {
 		return 0
 	}

@@ -17,6 +17,7 @@ func newTestDB(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "mail-test.db")
 	sqlite.SetDBPath(dbPath)
 	session.ResetSessionID()
+	ainame.ResetCurrentNameID()
 }
 
 // currentName returns the name_en of the current session's assigned name,

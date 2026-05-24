@@ -9,11 +9,15 @@
 package ainame
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"math/rand/v2"
 	"strings"
+	"sync"
+	"sync/atomic"
 
+	"gitcode.com/dscli/dscli/internal/session"
 	"gitcode.com/dscli/dscli/internal/sqlite"
 )
 
@@ -93,6 +97,32 @@ func seedNames(db *sqlite.DB) error {
 		}
 	}
 	return nil
+}
+
+var (
+	currentNameIDOnce sync.Once
+	currentNameID     atomic.Int64
+)
+
+// GetCurrentNameID returns the current session's name_id (thread-safe, once).
+// The assignment is computed on first call and cached thereafter — subsequent
+// calls are a single atomic load, eliminating repeated DB queries.
+//
+// session not initialized → returns 0 (nobody).
+func GetCurrentNameID(ctx context.Context) int64 {
+	currentNameIDOnce.Do(func() {
+		sessionID := session.GetCurrentSessionID(ctx)
+		currentNameID.Store(GetNameID(sessionID))
+	})
+	return currentNameID.Load()
+}
+
+// ResetCurrentNameID clears the cached name ID so the next call to
+// GetCurrentNameID will re-resolve. Intended for tests that switch
+// database paths.
+func ResetCurrentNameID() {
+	currentNameIDOnce = sync.Once{}
+	currentNameID.Store(0)
 }
 
 // GetNameID returns the name_id for a session, assigning one via

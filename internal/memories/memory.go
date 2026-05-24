@@ -119,7 +119,7 @@ func HandleMemSave(ctx context.Context, title, body, typ string) (result, warnin
 		return result, warning, err
 	}
 	sessionID := session.GetCurrentSessionID(ctx)
-	nameID := ainame.GetNameID(sessionID)
+	nameID := ainame.GetCurrentNameID(ctx)
 
 	db, err := openDB()
 	if err != nil {
@@ -160,7 +160,7 @@ func HandleMemSave(ctx context.Context, title, body, typ string) (result, warnin
 // HandleMemUpdate updates an existing memory by ID.
 func HandleMemUpdate(ctx context.Context, id int64, title, body, typ string) (result, warning string, err error) {
 	sessionID := session.GetCurrentSessionID(ctx)
-	nameID := ainame.GetNameID(sessionID)
+	nameID := ainame.GetCurrentNameID(ctx)
 
 	db, err := openDB()
 	if err != nil {
@@ -239,7 +239,7 @@ func HandleMemUpdate(ctx context.Context, id int64, title, body, typ string) (re
 // HandleMemSearch searches memories using FTS5 full-text search.
 func HandleMemSearch(ctx context.Context, query, typ string, limit int) (result, warning string, err error) {
 	sessionID := session.GetCurrentSessionID(ctx)
-	nameID := ainame.GetNameID(sessionID)
+	nameID := ainame.GetCurrentNameID(ctx)
 
 	db, err := openDB()
 	if err != nil {
@@ -324,7 +324,7 @@ func HandleMemSearch(ctx context.Context, query, typ string, limit int) (result,
 // HandleMemDelete deletes a memory by ID.
 func HandleMemDelete(ctx context.Context, id int64) (result, warning string, err error) {
 	sessionID := session.GetCurrentSessionID(ctx)
-	nameID := ainame.GetNameID(sessionID)
+	nameID := ainame.GetCurrentNameID(ctx)
 
 	db, err := openDB()
 	if err != nil {
@@ -372,7 +372,7 @@ func HandleMemDelete(ctx context.Context, id int64) (result, warning string, err
 // Unlike mem_search which returns truncated previews, this returns the complete content.
 func HandleMemGetObservation(ctx context.Context, id int64) (result, warning string, err error) {
 	sessionID := session.GetCurrentSessionID(ctx)
-	nameID := ainame.GetNameID(sessionID)
+	nameID := ainame.GetCurrentNameID(ctx)
 
 	db, err := openDB()
 	if err != nil {
@@ -402,7 +402,7 @@ func HandleMemGetObservation(ctx context.Context, id int64) (result, warning str
 // HandleMemStats returns memory system statistics.
 func HandleMemStats(ctx context.Context) (result, warning string, err error) {
 	sessionID := session.GetCurrentSessionID(ctx)
-	nameID := ainame.GetNameID(sessionID)
+	nameID := ainame.GetCurrentNameID(ctx)
 
 	db, err := openDB()
 	if err != nil {
@@ -472,7 +472,7 @@ type ListRow struct {
 // most recently created first.
 func HandleMemList(ctx context.Context) ([]ListRow, error) {
 	sessionID := session.GetCurrentSessionID(ctx)
-	nameID := ainame.GetNameID(sessionID)
+	nameID := ainame.GetCurrentNameID(ctx)
 
 	db, err := openDB()
 	if err != nil {
