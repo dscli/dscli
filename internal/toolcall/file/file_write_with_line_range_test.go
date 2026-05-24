@@ -480,3 +480,136 @@ Line 10: Inserted at line 10` {
 		t.Fatal("[" + actual + "]")
 	}
 }
+
+// TestHandleWriteFileWithLineRange_CAS tests the tag-based CAS verification.
+func TestHandleWriteFileWithLineRange_CAS(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "cas_test.txt")
+	initial := "int count = 10;\nif (count > limit) {\n    count = limit;\n}\n"
+	os.WriteFile(filePath, []byte(initial), 0o644)
+
+	// Compute correct tags for lines
+	tag1 := computeLineTag("int count = 10;")
+	tag2 := computeLineTag("if (count > limit) {")
+	tag3 := computeLineTag("    count = limit;")
+
+	ctx := t.Context()
+
+	// Test 1: Single-line edit with correct tag — should succeed
+	t.Run("correct single tag", func(t *testing.T) {
+		// Restore file
+		os.WriteFile(filePath, []byte(initial), 0o644)
+		args := toolcall.ToolArgs{
+			"path":       filePath,
+			"start_line": int64(1),
+			"end_line":   int64(1),
+			"content":    "int count = 11;",
+			"line_tag":   tag1,
+		}
+		_, _, err := handleWriteFileWithLineRange(ctx, args)
+		if err != nil {
+			t.Fatalf("expected success, got: %v", err)
+		}
+	})
+
+	// Test 2: Single-line edit with wrong tag — should fail
+	t.Run("wrong single tag", func(t *testing.T) {
+		os.WriteFile(filePath, []byte(initial), 0o644)
+		args := toolcall.ToolArgs{
+			"path":       filePath,
+			"start_line": int64(1),
+			"end_line":   int64(1),
+			"content":    "int count = 11;",
+			"line_tag":   "AAAA", // deliberately wrong
+		}
+		_, _, err := handleWriteFileWithLineRange(ctx, args)
+		if err == nil {
+			t.Fatal("expected error for wrong tag")
+		}
+	})
+
+	// Test 3: Multi-line edit with correct line_tags — should succeed
+	t.Run("correct multi tags", func(t *testing.T) {
+		os.WriteFile(filePath, []byte(initial), 0o644)
+		lineTags := tag1 + "\n" + tag2 + "\n" + tag3
+		args := toolcall.ToolArgs{
+			"path":       filePath,
+			"start_line": int64(1),
+			"end_line":   int64(3),
+			"content":    "int count = 11;\nif (count > limit)\n    return limit;",
+			"line_tags":  lineTags,
+		}
+		_, _, err := handleWriteFileWithLineRange(ctx, args)
+		if err != nil {
+			t.Fatalf("expected success, got: %v", err)
+		}
+	})
+
+	// Test 4: Multi-line edit with one wrong tag — should fail
+	t.Run("wrong multi tag", func(t *testing.T) {
+		os.WriteFile(filePath, []byte(initial), 0o644)
+		lineTags := tag1 + "\n" + "AAAA" + "\n" + tag3 // middle tag wrong
+		args := toolcall.ToolArgs{
+			"path":       filePath,
+			"start_line": int64(1),
+			"end_line":   int64(3),
+			"content":    "int count = 11;\nif (count > limit)\n    return limit;",
+			"line_tags":  lineTags,
+		}
+		_, _, err := handleWriteFileWithLineRange(ctx, args)
+		if err == nil {
+			t.Fatal("expected error for wrong tag in multi-line")
+		}
+	})
+
+	// Test 5: Both line_tag and line_tags — should fail
+	t.Run("both tag params", func(t *testing.T) {
+		os.WriteFile(filePath, []byte(initial), 0o644)
+		args := toolcall.ToolArgs{
+			"path":       filePath,
+			"start_line": int64(1),
+			"content":    "test",
+			"line_tag":   tag1,
+			"line_tags":  tag1 + "\n" + tag2,
+		}
+		_, _, err := handleWriteFileWithLineRange(ctx, args)
+		if err == nil {
+			t.Fatal("expected error for both line_tag and line_tags")
+		}
+	})
+
+	// Test 6: file changed between read and write — should fail
+	t.Run("stale content", func(t *testing.T) {
+		os.WriteFile(filePath, []byte(initial), 0o644)
+		// Compute tag for original content, then change the file
+		args := toolcall.ToolArgs{
+			"path":       filePath,
+			"start_line": int64(1),
+			"end_line":   int64(1),
+			"content":    "int count = 11;",
+			"line_tag":   tag1, // tag for original line 1
+		}
+		// Modify the file before writing
+		os.WriteFile(filePath, []byte("modified content\nif (count > limit) {\n    count = limit;\n}\n"), 0o644)
+		_, _, err := handleWriteFileWithLineRange(ctx, args)
+		if err == nil {
+			t.Fatal("expected error: file was modified between read and write")
+		}
+	})
+
+	// Test 7: No tags — backward compatible, should succeed
+	t.Run("no tags backward compat", func(t *testing.T) {
+		os.WriteFile(filePath, []byte(initial), 0o644)
+		args := toolcall.ToolArgs{
+			"path":       filePath,
+			"start_line": int64(1),
+			"end_line":   int64(1),
+			"content":    "int count = 11;",
+			// no line_tag or line_tags
+		}
+		_, _, err := handleWriteFileWithLineRange(ctx, args)
+		if err != nil {
+			t.Fatalf("backward compat should not break: %v", err)
+		}
+	})
+}

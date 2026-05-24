@@ -41,6 +41,14 @@ func init() {
 					"type":        "integer",
 					"description": "End line, optional, default end of file",
 				},
+				"line_tag": map[string]any{
+					"type":        "string",
+					"description": "4-char CAS tag for start_line (single-line edit). If provided, verified before write.",
+				},
+				"line_tags": map[string]any{
+					"type":        "string",
+					"description": "Newline-separated 4-char CAS tags, one per line in the range. Verified before write.",
+				},
 			},
 			"required":             []string{"path", "content"},
 			"additionalProperties": false,
@@ -52,6 +60,7 @@ func init() {
 
 // handleWriteFileWithLineRange 写入文件指定行范围的内容
 // 如果 content 为空字符串，则删除指定行范围
+// 支持 CAS tag 校验：line_tag（单行）或 line_tags（多行）用于防竞态写入
 func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	// 检查必需参数
 	path := toolcall.ToolArgsValue(args, "path", "")
@@ -130,6 +139,37 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 	if err = scanner.Err(); err != nil {
 		err = fmt.Errorf("failed to read file: %w", err)
 		return result, warning, err
+	}
+
+	// --- CAS tag verification (antirez-style check-and-set) ---
+	// 如果提供了 line_tag 或 line_tags，写入前校验标签匹配
+	lineTag := toolcall.ToolArgsValue(args, "line_tag", "")
+	lineTags := toolcall.ToolArgsValue(args, "line_tags", "")
+
+	if lineTag != "" || lineTags != "" {
+		var expectedTags []string
+		if lineTag != "" && lineTags != "" {
+			err = fmt.Errorf("cannot specify both line_tag and line_tags; use line_tag for single-line edits, line_tags for multi-line")
+			return result, warning, err
+		}
+		if lineTag != "" {
+			if len(lineTag) != 4 {
+				err = fmt.Errorf("line_tag must be exactly 4 characters, got %q (%d chars)", lineTag, len(lineTag))
+				return result, warning, err
+			}
+			expectedTags = []string{lineTag}
+		} else {
+			expectedTags, err = parseLineTags(lineTags)
+			if err != nil {
+				err = fmt.Errorf("failed to parse line_tags: %w", err)
+				return result, warning, err
+			}
+		}
+
+		// Verify tags against actual file content at startLine
+		if err = verifyLineTags(lines, startLine-1, expectedTags); err != nil {
+			return result, warning, err
+		}
 	}
 
 	// 构建新内容
