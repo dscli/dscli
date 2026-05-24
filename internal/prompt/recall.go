@@ -40,13 +40,13 @@ func SearchMessages(ctx context.Context, keywords []string, days, limit int) ([]
 		return nil, fmt.Errorf("没有有效的搜索关键词")
 	}
 
+	sessionID := GetCurrentSessionID(ctx)
+
 	db, err := sqlite.OpenDB()
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
-
-	sessionID := GetCurrentSessionID(ctx)
 
 	// 构建 FTS5 查询：将关键词用空格拼接后分词，再用 OR 连接（保持旧 LIKE 的 OR 语义）
 	rawQuery := strings.Join(valid, " ")

@@ -105,14 +105,7 @@ func GetNameID(sessionID int64) int64 {
 		return 0
 	}
 
-	db, err := sqlite.OpenDB()
-	if err != nil {
-		return 0
-	}
-	defer db.Close()
-
-	var nameID int64
-	err = db.QueryRow("SELECT name_id FROM session_names WHERE session_id = ?", sessionID).Scan(&nameID)
+	nameID, err := getNameID(sessionID)
 	if err == nil {
 		return nameID
 	}
@@ -121,11 +114,26 @@ func GetNameID(sessionID int64) int64 {
 	LoadOrAssign(sessionID)
 
 	// Re-read the now-existing assignment.
-	err = db.QueryRow("SELECT name_id FROM session_names WHERE session_id = ?", sessionID).Scan(&nameID)
+	nameID, err = getNameID(sessionID)
 	if err != nil {
 		return 0
 	}
 	return nameID
+}
+
+func getNameID(sessionID int64) (int64, error) {
+	db, err := sqlite.OpenDB()
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+
+	var nameID int64
+	err = db.QueryRow("SELECT name_id FROM session_names WHERE session_id = ?", sessionID).Scan(&nameID)
+	if err == nil {
+		return nameID, nil
+	}
+	return 0, err
 }
 
 // LoadOrAssign returns the AI name for a session.
