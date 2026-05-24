@@ -564,14 +564,18 @@ func LoadPrompts(ctx context.Context) ([]Message, error) {
 	}
 
 	// 未读邮件提醒 — 注入到系统 prompt 中，确保 AI 在会话开始时检查邮箱。
+	// 使用命令式 + 视觉突出格式（⚠️ + 标题），而非描述式，避免 AI 忽视。
 	if n := mail.UnreadMailCount(ctx); n > 0 {
 		word := "messages"
 		if n == 1 {
 			word = "message"
 		}
 		content += fmt.Sprintf(
-			"\n\nYou have %d unread mail %s. Use `readmail` to check your inbox.",
-			n, word)
+			"\n\n---\n\n## ⚠️ UNREAD MAIL (%d)\n\n"+
+				"You have **%d unread %s**. "+
+				"Call `readmail` **before responding** — "+
+				"unread mail may contain decisions that affect your task.",
+			n, n, word)
 	}
 
 	return []Message{{
