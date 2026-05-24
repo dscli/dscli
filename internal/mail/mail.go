@@ -53,6 +53,7 @@ func init() {
 			body              TEXT NOT NULL DEFAULT '',
 			is_read           INTEGER NOT NULL DEFAULT 0,
 			created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+			notified_at       DATETIME,
 			FOREIGN KEY (sender_name_id)    REFERENCES ai_names(id),
 			FOREIGN KEY (recipient_name_id) REFERENCES ai_names(id)
 		)`,
@@ -65,6 +66,13 @@ func init() {
 	sqlite.RegisterIndexSchema(
 		`CREATE INDEX IF NOT EXISTS idx_mail_recipient ON mail(recipient_name_id, is_read, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_mail_sender    ON mail(sender_name_id, created_at DESC)`,
+	)
+
+	// Add notified_at column for existing databases.
+	// Errors (e.g. column already exists on fresh install) are ignored —
+	// the upgrade loop treats errors as non-fatal.
+	sqlite.RegisterUpgradeSchema(
+		`ALTER TABLE mail ADD COLUMN notified_at DATETIME`,
 	)
 }
 
@@ -649,7 +657,7 @@ func UnreadMailCount(ctx context.Context) int {
 
 	var count int
 	if err := db.QueryRow(
-		"SELECT COUNT(*) FROM mail WHERE recipient_name_id = ? AND is_read = 0",
+		"SELECT COUNT(*) FROM mail WHERE recipient_name_id = ? AND is_read = 0 AND notified_at IS NULL",
 		nameID,
 	).Scan(&count); err != nil {
 		return 0
@@ -683,7 +691,7 @@ func UnreadMailList(ctx context.Context) []UnreadMailSummary {
 		`SELECT m.id, s.name_en, m.subject
 		 FROM mail m
 		 JOIN ai_names s ON s.id = m.sender_name_id
-		 WHERE m.recipient_name_id = ? AND m.is_read = 0
+		 WHERE m.recipient_name_id = ? AND m.is_read = 0 AND m.notified_at IS NULL
 		 ORDER BY m.created_at DESC
 		 LIMIT 10`,
 		nameID,
@@ -701,6 +709,13 @@ func UnreadMailList(ctx context.Context) []UnreadMailSummary {
 		}
 		summaries = append(summaries, s)
 	}
+
+	// Mark returned mails as notified so they won't appear again in future
+	// notifications. Errors are silently ignored — notification is best-effort.
+	for _, s := range summaries {
+		_, _ = db.Exec(`UPDATE mail SET notified_at = CURRENT_TIMESTAMP WHERE id = ?`, s.ID)
+	}
+
 	return summaries
 }
 

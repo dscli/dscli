@@ -552,6 +552,22 @@ func TestUnreadMailList(t *testing.T) {
 		// This is implicitly tested by the fact that empty initially
 		// returned empty slice, not nil — but nil is also acceptable.
 	})
+
+	t.Run("dedup: no repeat after notification", func(t *testing.T) {
+		HandleSendMail(context.Background(), me, "Dedup test", "Body")
+
+		// First call returns the mail and marks it notified.
+		s := UnreadMailList(context.Background())
+		if len(s) != 1 {
+			t.Fatalf("first call: expected 1 unread, got %d", len(s))
+		}
+
+		// Second call should return nothing — already notified.
+		s = UnreadMailList(context.Background())
+		if len(s) != 0 {
+			t.Errorf("second call: expected 0 (already notified), got %d", len(s))
+		}
+	})
 }
 
 func TestFormatUnreadMailNotification(t *testing.T) {
