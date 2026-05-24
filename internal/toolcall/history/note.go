@@ -25,7 +25,7 @@ func init() {
 			"properties": map[string]any{
 				"content": map[string]any{
 					"type":        "string",
-					"description": "Summary content, max 40 chars, with key events and keywords",
+				"description": "Summary content, max 80 chars, with key events and keywords",
 				},
 			},
 			"required":             []string{"content"},

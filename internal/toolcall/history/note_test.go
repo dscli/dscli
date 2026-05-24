@@ -38,7 +38,7 @@ func TestHandleNote_Empty(t *testing.T) {
 // TestHandleNote_LongContent 验证超长内容给出建议
 func TestHandleNote_LongContent(t *testing.T) {
 	ctx := context.Background()
-	longContent := strings.Repeat("测试超长笔记内容", 10) // 80 字，超过 40
+	longContent := strings.Repeat("测试超长笔记内容", 11) // 88 字，超过 80
 	args := toolcall.ToolArgs{"content": longContent}
 	_, suggestion, err := handleNote(ctx, args)
 	if err != nil {

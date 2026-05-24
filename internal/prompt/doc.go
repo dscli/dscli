@@ -51,7 +51,7 @@
 //
 // # 对话笔记 (note.go)
 //
-// SaveNote / LoadNotes：基于 notes 表存储/加载简短摘要（≤40字），
+// SaveNote / LoadNotes：基于 notes 表存储/加载简短摘要（≤80字），
 // 记录跨对话的关键信息。
 //
 // HandleNote：工具处理函数，在 SaveNote 基础上增加超长截断警告提示。
