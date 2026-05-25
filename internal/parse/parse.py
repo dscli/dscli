@@ -500,7 +500,25 @@ class FileStructureParser:
             for i, line in enumerate(lines):
                 func_match = re.search(func_pattern, line)
                 if func_match:
-                    # 查找函数体的结束
+                    # Skip C keywords falsely matched as function names
+                    c_keywords = {'if', 'for', 'while', 'switch', 'return', 'sizeof', 'goto',
+                                  'break', 'continue', 'do', 'else', 'case', 'default'}
+                    if func_match.group(1) in c_keywords:
+                        continue
+                    # Skip matches inside string literals: if the prefix
+                    # contains an odd number of " chars, we're inside
+                    # an unclosed string literal (e.g. "... MiB (..."
+                    # inside fprintf format strings).
+                    prefix = line[:func_match.start(1)]
+                    if prefix.count('"') % 2 != 0:
+                        continue
+                    # Skip function calls: require a return type (at least one
+                    # [a-zA-Z_] char before the function name). Without this,
+                    # indented calls like "    free(ptr)" match because the
+                    # regex backtracks [\w\s\*]+ to pure whitespace, treating
+                    # indentation as the "return type".
+                    if not re.search(r'[a-zA-Z_]', prefix):
+                        continue
                     brace_count = line.count('{') - line.count('}')
                     if brace_count > 0:
                         # 函数体在同一行开始
