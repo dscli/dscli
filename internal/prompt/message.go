@@ -143,15 +143,18 @@ func SaveMessages(ctx context.Context, msgs ...Message) error {
 			return fmt.Errorf("获取消息ID失败: %w", err)
 		}
 
-		// 同步 FTS5 全文索引（中文分词后写入）
-		_, err = tx.Exec(
-			`INSERT INTO messages_fts(rowid, content, reasoning_content) VALUES (?, ?, ?)`,
-			id,
-			tokenizer.Tokenize(m.Content),
-			tokenizer.Tokenize(m.ReasoningContent),
-		)
-		if err != nil {
-			return fmt.Errorf("创建全文索引失败: %w", err)
+		// 仅对 user 消息和无工具调用的 assistant 消息建立全文索引。
+		// role=tool 和含 tool_calls 的 assistant 消息偏临时性质，不值得索引。
+		if m.Role == "user" || (m.Role == "assistant" && len(m.ToolCalls) == 0) {
+			_, err = tx.Exec(
+				`INSERT INTO messages_fts(rowid, content, reasoning_content) VALUES (?, ?, ?)`,
+				id,
+				tokenizer.Tokenize(m.Content),
+				tokenizer.Tokenize(m.ReasoningContent),
+			)
+			if err != nil {
+				return fmt.Errorf("创建全文索引失败: %w", err)
+			}
 		}
 	}
 
