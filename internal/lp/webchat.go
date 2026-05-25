@@ -1,0 +1,160 @@
+package lp
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/chromedp/chromedp"
+)
+
+const (
+	deepseekChatURL = "https://chat.deepseek.com"
+
+	// Polling configuration for response detection.
+	webChatPollInterval = 2 * time.Second // interval between polls
+	webChatStablePolls  = 3               // text unchanged for this many polls = done
+	webChatMaxPolls     = 60              // max polls before timeout (120s total)
+
+	// JS snippet to set a textarea's value via the native setter (triggers
+	// React/Vue change detection). The %s placeholder receives the JS-quoted
+	// message string.
+	jsSetTextareaFmt = `(() => {
+	const ta = document.querySelector('textarea');
+	if (!ta || ta.offsetParent === null) {
+		return {error: 'no visible textarea — please login first: dscli webchat --setup'};
+	}
+	const setter = Object.getOwnPropertyDescriptor(
+		HTMLTextAreaElement.prototype, 'value'
+	).set;
+	setter.call(ta, %s);
+	ta.dispatchEvent(new Event('input', {bubbles: true}));
+	return {success: true};
+})()`
+)
+
+// WebChat sends a message to chat.deepseek.com via CDP and returns the
+// assistant's text response.
+//
+// It requires the user to have completed the one-time login setup:
+//
+//	dscli webchat --setup
+//
+// This saves cookies that Lightpanda loads at startup (via --cookie flag),
+// allowing automated interactions with the authenticated chat session.
+func WebChat(ctx context.Context, message string) (string, error) {
+	cdpURL, isLocal := cdpEndpoint(deepseekChatURL)
+	if isLocal {
+		if err := ensureLocalLightpanda(); err != nil {
+			return "", err
+		}
+	}
+
+	allocatorCtx, allocatorCancel := chromedp.NewRemoteAllocator(ctx, cdpURL)
+	defer allocatorCancel()
+
+	tabCtx, tabCancel := chromedp.NewContext(allocatorCtx)
+	defer tabCancel()
+
+	var baseline, response string
+
+	err := chromedp.Run(tabCtx,
+		// Navigate and wait for the SPA to hydrate.
+		chromedp.Navigate(deepseekChatURL),
+		chromedp.WaitReady("body"),
+		chromedp.Sleep(3*time.Second),
+
+		// Record baseline text before sending.
+		chromedp.Evaluate("document.body ? document.body.innerText : ''", &baseline),
+
+		// Set the textarea value (JS needed for React-controlled inputs).
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			return webchatSetValue(ctx, message)
+		}),
+
+		// Brief delay then press Enter to send.
+		chromedp.Sleep(500 * time.Millisecond),
+		chromedp.KeyEvent("\r"),
+
+		// Wait for and extract the assistant response.
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			var err error
+			response, err = webchatWait(ctx, baseline)
+			return err
+		}),
+	)
+	if err != nil {
+		return "", fmt.Errorf("webchat: %w", err)
+	}
+
+	return response, nil
+}
+
+// webchatSetValue sets the chat textarea value via JS (triggers React onChange).
+func webchatSetValue(ctx context.Context, message string) error {
+	// Quote the message for safe embedding as a JS string literal.
+	quoted := quoteJS(message)
+
+	var result map[string]any
+	js := fmt.Sprintf(jsSetTextareaFmt, quoted)
+
+	if err := chromedp.Evaluate(js, &result).Do(ctx); err != nil {
+		return fmt.Errorf("set value: %w", err)
+	}
+	if errMsg, ok := result["error"].(string); ok {
+		return fmt.Errorf("%s", errMsg)
+	}
+	return nil
+}
+
+// webchatWait polls the page text until the assistant response stabilizes.
+func webchatWait(ctx context.Context, baseline string) (string, error) {
+	var lastText string
+	stableCount := 0
+
+	for range webChatMaxPolls {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(webChatPollInterval):
+		}
+
+		var current string
+		if err := chromedp.Evaluate(
+			"document.body ? document.body.innerText : ''", &current,
+		).Do(ctx); err != nil {
+			continue // tolerate transient errors
+		}
+
+		if current == lastText && lastText != "" {
+			stableCount++
+			if stableCount >= webChatStablePolls {
+				return extractResponse(baseline, current), nil
+			}
+		} else {
+			stableCount = 0
+		}
+		lastText = current
+	}
+
+	return "", fmt.Errorf("response timeout after %d polls", webChatMaxPolls)
+}
+
+// extractResponse computes the text added after baseline.
+func extractResponse(baseline, current string) string {
+	if len(current) > len(baseline) {
+		return strings.TrimSpace(current[len(baseline):])
+	}
+	return ""
+}
+
+// quoteJS wraps s in a JS string literal (double quotes) with proper escaping.
+func quoteJS(s string) string {
+	escaped := strings.ReplaceAll(s, "\\", "\\\\")
+	escaped = strings.ReplaceAll(escaped, "\"", "\\\"")
+	escaped = strings.ReplaceAll(escaped, "\n", "\\n")
+	escaped = strings.ReplaceAll(escaped, "\r", "\\r")
+	escaped = strings.ReplaceAll(escaped, "\t", "\\t")
+	return "\"" + escaped + "\""
+}

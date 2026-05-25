@@ -144,6 +144,26 @@ func localListenAddr() (host, port string) {
 	return
 }
 
+// lightpandaServeExtraArgs returns additional CLI args for "lightpanda serve"
+// based on config: --cookie, --storage-engine, --storage-sqlite-path.
+// Returns nil when no extra args are configured (backward compatible).
+func lightpandaServeExtraArgs() []string {
+	var args []string
+	if cookieFile := config.Get("lightpanda-cookie-file", ""); cookieFile != "" {
+		args = append(args, "--cookie", cookieFile)
+	}
+	if engine := config.Get("lightpanda-storage-engine", ""); engine != "" {
+		args = append(args, "--storage-engine", engine)
+		if engine == "sqlite" {
+			dbPath := config.Get("lightpanda-storage-sqlite-path", "")
+			if dbPath != "" {
+				args = append(args, "--storage-sqlite-path", dbPath)
+			}
+		}
+	}
+	return args
+}
+
 func defaultLightpandaCmdExists() bool {
 	path, err := exec.LookPath("lightpanda")
 	if err != nil {
@@ -164,7 +184,9 @@ func defaultStartLightpanda() error {
 	}
 
 	host, port := localListenAddr()
-	cmd := exec.Command(path, "serve", "--host", host, "--port", port)
+	args := append([]string{"serve", "--host", host, "--port", port},
+		lightpandaServeExtraArgs()...)
+	cmd := exec.Command(path, args...)
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
@@ -193,7 +215,9 @@ func defaultStartLightpanda() error {
 // user services, or if service creation/start fails.
 func defaultSetupUserService() error {
 	host, port := localListenAddr()
-	cmd := exec.Command("lightpanda", "serve", "--host", host, "--port", port)
+	args := append([]string{"serve", "--host", host, "--port", port},
+		lightpandaServeExtraArgs()...)
+	cmd := exec.Command("lightpanda", args...)
 	desc := "Lightpanda Browser (dscli)"
 
 	st, err := userservice.Status(lightpandaServiceName)
