@@ -500,6 +500,11 @@ class FileStructureParser:
             for i, line in enumerate(lines):
                 func_match = re.search(func_pattern, line)
                 if func_match:
+                    # Skip preprocessor directives (#define, #include, etc.)
+                    # Regex matches "#define MACRO(...)" by treating
+                    # "define" as return-type and "MACRO" as function name.
+                    if line.lstrip().startswith('#'):
+                        continue
                     # Skip C keywords falsely matched as function names
                     c_keywords = {'if', 'for', 'while', 'switch', 'return', 'sizeof', 'goto',
                                   'break', 'continue', 'do', 'else', 'case', 'default'}
