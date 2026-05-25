@@ -21,6 +21,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/sqlite"
@@ -37,6 +38,11 @@ type RoleConfig struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
+
+var (
+	roleCache   map[string]*RoleConfig // role name → config, nil until loaded
+	roleCacheMu sync.RWMutex
+)
 
 func init() {
 	sqlite.RegisterTableSchema(
@@ -55,7 +61,41 @@ func init() {
 }
 
 // GetRoleConfig retrieves the role config for a given role and session.
+// Uses an in-memory cache loaded once per process lifetime;
+// falls back to direct DB query when cache loading fails.
 func GetRoleConfig(role string, sessionID int64) (*RoleConfig, error) {
+	// Fast path: read from cache (RLock only).
+	roleCacheMu.RLock()
+	if roleCache != nil {
+		cfg := roleCache[role]
+		roleCacheMu.RUnlock()
+		return cfg, nil
+	}
+	roleCacheMu.RUnlock()
+
+	// Slow path: load cache (one-time, requires write lock).
+	roleCacheMu.Lock()
+	if roleCache != nil {
+		// Another goroutine loaded the cache while we waited.
+		cfg := roleCache[role]
+		roleCacheMu.Unlock()
+		return cfg, nil
+	}
+
+	configs, err := ListRoleConfigs(sessionID)
+	if err == nil {
+		m := make(map[string]*RoleConfig, len(configs))
+		for i := range configs {
+			m[configs[i].Role] = &configs[i]
+		}
+		roleCache = m
+		cfg := m[role]
+		roleCacheMu.Unlock()
+		return cfg, nil
+	}
+	roleCacheMu.Unlock()
+
+	// Fallback: direct DB query.
 	db, err := sqlite.OpenDB()
 	if err != nil {
 		return nil, err
@@ -108,6 +148,15 @@ func ListRoleConfigs(sessionID int64) ([]RoleConfig, error) {
 	return configs, nil
 }
 
+// invalidateRoleCache clears the in-memory role config cache.
+// Call after any write to role_configs to ensure subsequent reads
+// see the latest data.
+func invalidateRoleCache() {
+	roleCacheMu.Lock()
+	roleCache = nil
+	roleCacheMu.Unlock()
+}
+
 // UpsertRoleConfig inserts or updates a role config.
 func UpsertRoleConfig(role string, sessionID int64, skills, tools, prompt string) error {
 	db, err := sqlite.OpenDB()
@@ -131,6 +180,7 @@ func UpsertRoleConfig(role string, sessionID int64, skills, tools, prompt string
 		if err != nil {
 			return fmt.Errorf("插入角色配置失败: %w", err)
 		}
+		invalidateRoleCache()
 		return nil
 	}
 	if err != nil {
@@ -152,6 +202,7 @@ func UpsertRoleConfig(role string, sessionID int64, skills, tools, prompt string
 	if err != nil {
 		return fmt.Errorf("更新角色配置失败: %w", err)
 	}
+	invalidateRoleCache()
 	return nil
 }
 
@@ -170,6 +221,7 @@ func DeleteRoleConfig(role string, sessionID int64) error {
 	if err != nil {
 		return fmt.Errorf("删除角色配置失败: %w", err)
 	}
+	invalidateRoleCache()
 	return nil
 }
 
