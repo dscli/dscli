@@ -527,9 +527,6 @@ func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ..
 		// Tool call inputs saved in db, move them to history
 		history = append(history, toolInputs...)
 
-		// Check for chime-in: user may have inserted a message during tool execution
-		history, _ = injectChimein(ctx, history)
-
 		return ChatRound(ctx, prompts, history)
 	}
 	return err

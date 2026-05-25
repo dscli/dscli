@@ -284,6 +284,7 @@ var namesData = []nameEntry{
 		"Build physical models that mirror natural laws. A device that works embodies understanding that words cannot capture.",
 		"zhangheng@dscli.io",
 	},
+	// 31. 墨子 — bird
 	{
 		31, "墨子", "Mozi", "bird",
 		"兼爱、逻辑、工匠",
