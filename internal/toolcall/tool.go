@@ -214,14 +214,16 @@ func GetAllTools(ctx context.Context) []Tool {
 // HandleToolCalls 处理工具调用（带统计）
 func HandleToolCalls(ctx context.Context, tcs []prompt.ToolCall) (inputs []prompt.Message) {
 	// 处理每个工具调用
-	for _, tc := range tcs {
+	for i, tc := range tcs {
 		id := tc.ID
 		// 使用新的工具调用处理器
 		result, user, err := HandleToolCall(ctx, tc.Function.Name, tc.Function.Arguments)
 		toolContent := ToolContent{
-			Result:  result,
-			Error:   Error(err),
-			Warning: user,
+			Index:    i + 1,
+			ToolName: tc.Function.Name,
+			Result:   result,
+			Error:    Error(err),
+			Warning:  user,
 		}
 
 		input := prompt.Message{

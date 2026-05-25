@@ -387,26 +387,32 @@ func TestToolArgsValue(t *testing.T) {
 func TestToolContent(t *testing.T) {
 	tcs := []struct {
 		name    string
+		index   int
+		tool    string
 		result  string
 		err     error
 		warning string
 		want    string
 	}{
-		{"all empty", "", nil, "", ``},
-		{"with warning", "done", nil, "ok", "### Result\ndone\n\n### Warning\nok\n"},
-		{"only error", "", fmt.Errorf("all wrong!"), "", "### Error\nall wrong!\n"},
+		{"all empty", 0, "", "", nil, "", ``},
+		{"with warning", 0, "", "done", nil, "ok", "### Result\ndone\n\n### Warning\nok\n"},
+		{"only error", 0, "", "", fmt.Errorf("all wrong!"), "", "### Error\nall wrong!\n"},
+		{"with index", 1, "read_file", "done", nil, "", "Tool result 1 (read_file):\n### Result\ndone\n"},
+		{"with index and warning", 2, "shell", "", nil, "warning msg", "Tool result 2 (shell):\n### Warning\nwarning msg\n"},
 	}
 
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
 			toolContent := ToolContent{
-				Result:  tc.result,
-				Warning: tc.warning,
-				Error:   Error(tc.err),
+				Index:    tc.index,
+				ToolName: tc.tool,
+				Result:   tc.result,
+				Warning:  tc.warning,
+				Error:    Error(tc.err),
 			}
 			actual := toolContent.String()
 			if actual != tc.want {
-				t.Fatal(actual, tc.want)
+				t.Fatalf("got %q, want %q", actual, tc.want)
 			}
 		})
 	}

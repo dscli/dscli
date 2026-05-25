@@ -53,28 +53,44 @@ func Error(err error) string {
 }
 
 type ToolContent struct {
-	Result  string `json:"result,omitzero"`
-	Error   string `json:"error,omitzero"`
-	Warning string `json:"warning,omitzero"`
+	// Index and ToolName are not serialized to JSON — output is via String().
+	Index    int    `json:"-"`
+	ToolName string `json:"-"`
+	Result   string `json:"result,omitzero"`
+	Error    string `json:"error,omitzero"`
+	Warning  string `json:"warning,omitzero"`
 }
 
 func (tc *ToolContent) String() (content string) {
 	var b strings.Builder
+	if tc.Index > 0 {
+		name := tc.ToolName
+		if name == "" {
+			name = "unknown"
+		}
+		fmt.Fprintf(&b, "Tool result %d (%s):\n", tc.Index, name)
+	}
+	// hasSection tracks whether a ###-headed block has been written,
+	// so we only insert \n separators between ### blocks, not after
+	// the index line.
+	hasSection := false
 	if tc.Result != "" {
 		b.WriteString("### Result\n")
 		b.WriteString(tc.Result)
 		b.WriteString("\n")
+		hasSection = true
 	}
 	if tc.Error != "" {
-		if b.Len() > 0 {
+		if hasSection {
 			b.WriteString("\n")
 		}
 		b.WriteString("### Error\n")
 		b.WriteString(tc.Error)
 		b.WriteString("\n")
+		hasSection = true
 	}
 	if tc.Warning != "" {
-		if b.Len() > 0 {
+		if hasSection {
 			b.WriteString("\n")
 		}
 		b.WriteString("### Warning\n")
