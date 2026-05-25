@@ -496,7 +496,7 @@ class FileStructureParser:
                     })
 
             # Parse functions
-            func_pattern = r'(?:[\w\s\*]+)\s+([\w]+)\s*\([^)]*\)\s*(?:\{[^}]*\})?'
+            func_pattern = r'(?:[\w\s]+)\s+\*?\s*([\w]+)\s*\([^)]*\)\s*(?:\{[^}]*\})?'
             for i, line in enumerate(lines):
                 func_match = re.search(func_pattern, line)
                 if func_match:
@@ -523,6 +523,13 @@ class FileStructureParser:
                     # regex backtracks [\w\s\*]+ to pure whitespace, treating
                     # indentation as the "return type".
                     if not re.search(r'[a-zA-Z_]', prefix):
+                        continue
+                    # Skip declarations and function calls: if the remainder
+                    # of the line after the regex match starts with ';', this
+                    # is a declaration/prototype or a call like
+                    # "return foo(...)", not a function definition with a
+                    # brace-delimited body.
+                    if line[func_match.end():].lstrip().startswith(';'):
                         continue
                     brace_count = line.count('{') - line.count('}')
                     if brace_count > 0:
