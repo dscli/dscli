@@ -14,7 +14,9 @@ import (
 	_ "gitcode.com/dscli/dscli/internal/toolcall/shell"
 	_ "gitcode.com/dscli/dscli/internal/toolcall/skill"
 	_ "gitcode.com/dscli/dscli/internal/toolcall/sql"
+	_ "gitcode.com/dscli/dscli/internal/toolcall/cwd"
 	_ "gitcode.com/dscli/dscli/internal/toolcall/web"
+
 )
 
 var GetAllTools = toolcall.GetAllTools

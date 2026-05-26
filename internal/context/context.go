@@ -46,6 +46,7 @@ var (
 	WithCancel       = context.WithCancel
 	DeadlineExceeded = context.DeadlineExceeded
 	Background       = context.Background
+	TODO             = context.TODO
 )
 
 var (
