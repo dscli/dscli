@@ -36,6 +36,11 @@ func init() {
 		Args:  cobra.ExactArgs(1),
 		RunE:  historyUpdateRunE,
 	})
+	recentCmd := AddCommand(historyCmd, &cobra.Command{
+		Use:   "recent",
+		Short: "列出当前会话的最近消息（表格形式）",
+		RunE:  historyRecentRunE,
+	})
 	_ = AddCommand(historyCmd, &cobra.Command{
 		Use:   "show",
 		Short: "显示指定消息的完整信息",
@@ -77,6 +82,8 @@ func init() {
 
 	recallCmd.Flags().Int("days", 30, "搜索最近N天的消息")
 	recallCmd.Flags().Int("limit", 5, "返回结果数量上限")
+
+	recentCmd.Flags().Int("limit", 20, "返回最近N条消息（默认20，最大100）")
 
 	notesCmd.Flags().Int("days", 30, "加载最近N天的笔记")
 
@@ -168,6 +175,43 @@ func historyUpdateRunE(cmd *cobra.Command, args []string) (err error) {
 		return err
 	}
 	return prompt.UpdateHistory(ctx, int64(id))
+}
+func historyRecentRunE(cmd *cobra.Command, args []string) (err error) {
+	ctx := cmd.Context()
+
+	limit, err := cmd.Flags().GetInt("limit")
+	if err != nil {
+		return err
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+
+	msgs, err := prompt.RecentMessages(ctx, limit)
+	if err != nil {
+		return err
+	}
+
+	if len(msgs) == 0 {
+		outfmt.Println("当前会话没有历史消息。")
+		return nil
+	}
+
+	wrt := outfmt.NewTabwrt()
+	defer wrt.Flush()
+	for _, m := range msgs {
+		role := "用户"
+		if m.Role == "assistant" {
+			role = "助手"
+		}
+		wrt.Println(
+			fmt.Sprint(m.ID),
+			prompt.FormatTime(m.CreatedAt),
+			role,
+			prompt.Truncate(m.Content, 80),
+		)
+	}
+	return nil
 }
 
 func historyPreRunE(cmd *cobra.Command, args []string) (err error) {
