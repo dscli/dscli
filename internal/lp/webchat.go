@@ -46,15 +46,26 @@ const (
 	return {success: true};
 })()`
 
-	// jsEnableDeepThink clicks the expert-mode toggle on the DeepSeek chat
-	// page (labeled "深度思考 (R1)" or "V4 Pro" depending on UI version).
-	// It searches for the toggle by text content and clicks it if found.
-	// Non-fatal: if the toggle isn't found, the conversation proceeds in
-	// standard mode.
+	// jsEnableDeepThink switches the model selector to expert/deepthink mode.
+	// DeepSeek renders radio buttons with data-model-type attributes:
+	//   data-model-type="default" → 快速模式 (quick)
+	//   data-model-type="<other>"  → 专家模式 / V4 Pro (expert)
 	//
-	// The t.length < 40 guard avoids matching large container elements
-	// whose subtree happens to include the text somewhere deep inside.
+	// Primary strategy: find the radio with data-model-type != "default" and
+	// click it. This is stable across UI changes because the attribute is
+	// structural, not textual.
+	//
+	// Fallback: if no data-model-type radios are found (older UI), search for
+	// the thinking/deepthink toggle by text content.
 	jsEnableDeepThink = `(() => {
+	// Strategy 1: data-model-type radio buttons (current UI).
+	for (const el of document.querySelectorAll('[data-model-type]')) {
+		if (el.getAttribute('data-model-type') !== 'default') {
+			el.click();
+			return {success: true, modelType: el.getAttribute('data-model-type'), method: 'data-model-type'};
+		}
+	}
+	// Strategy 2: text-based toggle (older UI).
 	const patterns = ['深度思考','DeepThink','Deep Think',
 		'V4 Pro','V4Pro','v4 pro','v4pro',
 		'R1','V4','专家','深度'];
@@ -64,7 +75,7 @@ const (
 		for (const p of patterns) {
 			if (t.includes(p)) {
 				el.click();
-				return {success: true, clicked: t};
+				return {success: true, clicked: t, method: 'text'};
 			}
 		}
 	}
@@ -199,14 +210,20 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, retry 
 				return nil // non-fatal
 			}
 			if ok, _ := result["success"].(bool); ok {
-				fmt.Fprintln(os.Stderr, "🔬 已启用专家模式 (V4 Pro)")
+				method, _ := result["method"].(string)
+				switch method {
+				case "data-model-type":
+					mt, _ := result["modelType"].(string)
+					fmt.Fprintf(os.Stderr, "🔬 已启用专家模式 (model=%s)\n", mt)
+				default:
+					fmt.Fprintln(os.Stderr, "🔬 已启用专家模式 (V4 Pro)")
+				}
 			}
 			return nil
 		}))
 		// Pause for the toggle to take effect before textarea interaction.
 		actions = append(actions, chromedp.Sleep(1*time.Second))
 	}
-
 	actions = append(actions,
 		// Record baseline text before sending.
 		chromedp.Evaluate("document.body ? document.body.innerText : ''", &baseline),
