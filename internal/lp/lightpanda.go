@@ -293,6 +293,19 @@ func waitForTCP(host, port string, timeout time.Duration) error {
 //   - lightpanda-local-url   (default: ws://127.2.2.9:9227)
 //   - lightpanda-remote-url  (default: "")
 //   - lightpanda-remote-token (default: "")
+// Get fetches a web page via lightpanda CDP and returns its markdown content.
+//
+// It automatically routes to remote lightpanda for geo-restricted hosts
+// (listed in remoteHosts), and uses local lightpanda for all other URLs.
+// If remote is not configured, even remoteHosts fall back to local.
+//
+// If local lightpanda is not running but the lightpanda command is available,
+// Get will auto-start lightpanda serve in the background before fetching.
+//
+// Config keys used (from ~/.dscli/config.dscli):
+//   - lightpanda-local-url   (default: ws://127.2.2.9:9227)
+//   - lightpanda-remote-url  (default: "")
+//   - lightpanda-remote-token (default: "")
 func Get(ctx context.Context, rawURL string) (string, error) {
 	cdpURL, isLocal := cdpEndpoint(rawURL)
 
@@ -308,10 +321,33 @@ func Get(ctx context.Context, rawURL string) (string, error) {
 			host, port := localListenAddr()
 			return "", fmt.Errorf(
 				"lightpanda 连接失败: %w\n\n请确保 lightpanda 已启动:\n"+
-				"  lightpanda serve --host %s --port %s",
+					"  lightpanda serve --host %s --port %s",
 				err, host, port,
 			)
 		}
+		return "", fmt.Errorf("lightpanda remote 连接失败: %w", err)
+	}
+
+	return markdown, nil
+}
+
+// GetRemote fetches a web page via remote lightpanda CDP regardless of the
+// target host. Returns an error if remote is not configured.
+//
+// Unlike Get, GetRemote skips the host-based routing and local lightpanda
+// auto-start — it always uses the configured remote endpoint.
+//
+// Config keys used:
+//   - lightpanda-remote-url  (required)
+//   - lightpanda-remote-token (optional)
+func GetRemote(ctx context.Context, rawURL string) (string, error) {
+	cdpURL, err := remoteCDPEndpoint()
+	if err != nil {
+		return "", err
+	}
+
+	markdown, err := getFromCDP(ctx, rawURL, cdpURL)
+	if err != nil {
 		return "", fmt.Errorf("lightpanda remote 连接失败: %w", err)
 	}
 
@@ -360,6 +396,10 @@ func ensureLocalLightpanda() error {
 //
 // For hosts in remoteHosts: returns remote URL if configured, otherwise
 // falls back to local. For all other hosts: returns local URL.
+// cdpEndpoint returns the WebSocket URL and whether it's a local endpoint.
+//
+// For hosts in remoteHosts: returns remote URL if configured, otherwise
+// falls back to local. For all other hosts: returns local URL.
 func cdpEndpoint(rawURL string) (cdpURL string, isLocal bool) {
 	if isRemoteURL(rawURL) {
 		remoteURL := config.Get("lightpanda-remote-url", "")
@@ -376,4 +416,21 @@ func cdpEndpoint(rawURL string) (cdpURL string, isLocal bool) {
 		// Remote not configured — fallback to local.
 	}
 	return config.Get("lightpanda-local-url", "ws://127.2.2.9:9227"), true
+}
+
+// remoteCDPEndpoint returns the remote lightpanda WebSocket URL regardless
+// of the target host. Returns an error if remote is not configured.
+func remoteCDPEndpoint() (string, error) {
+	remoteURL := config.Get("lightpanda-remote-url", "")
+	if remoteURL == "" {
+		return "", fmt.Errorf("lightpanda remote 未配置，请设置 lightpanda-remote-url")
+	}
+	remoteToken := config.Get("lightpanda-remote-token", "")
+	if remoteToken != "" {
+		if strings.Contains(remoteURL, "?") {
+			return remoteURL + "&token=" + remoteToken, nil
+		}
+		return remoteURL + "?token=" + remoteToken, nil
+	}
+	return remoteURL, nil
 }

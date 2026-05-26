@@ -454,3 +454,116 @@ func TestEnsureLocalLightpanda_BothFail(t *testing.T) {
 		t.Errorf("expected '自动启动失败' error, got: %v", err2)
 	}
 }
+
+func TestRemoteCDPEndpoint(t *testing.T) {
+	t.Run("not configured", func(t *testing.T) {
+		withConfig(t, "lightpanda-remote-url", "")
+		_, err := remoteCDPEndpoint()
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "未配置") {
+			t.Errorf("expected '未配置' error, got: %v", err)
+		}
+	})
+
+	t.Run("with token", func(t *testing.T) {
+		withConfig(t, "lightpanda-remote-url", "wss://remote.example.com/ws")
+		withConfig(t, "lightpanda-remote-token", "secret123")
+		got, err := remoteCDPEndpoint()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := "wss://remote.example.com/ws?token=secret123"
+		if got != want {
+			t.Errorf("remoteCDPEndpoint() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("without token", func(t *testing.T) {
+		withConfig(t, "lightpanda-remote-url", "wss://remote.example.com/ws")
+		withConfig(t, "lightpanda-remote-token", "")
+		got, err := remoteCDPEndpoint()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := "wss://remote.example.com/ws"
+		if got != want {
+			t.Errorf("remoteCDPEndpoint() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("with token and existing query", func(t *testing.T) {
+		withConfig(t, "lightpanda-remote-url", "wss://example.com/ws?key=val")
+		withConfig(t, "lightpanda-remote-token", "tok")
+		got, err := remoteCDPEndpoint()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := "wss://example.com/ws?key=val&token=tok"
+		if got != want {
+			t.Errorf("remoteCDPEndpoint() = %q, want %q", got, want)
+		}
+	})
+}
+
+func TestGetRemote(t *testing.T) {
+	var capturedCDPURL string
+	var capturedRawURL string
+	oldFn := getFromCDP
+	getFromCDP = func(ctx context.Context, rawURL, cdpURL string) (string, error) {
+		capturedCDPURL = cdpURL
+		capturedRawURL = rawURL
+		return "# Remote content", nil
+	}
+	defer func() { getFromCDP = oldFn }()
+
+	t.Run("uses remote endpoint for any URL", func(t *testing.T) {
+		withConfig(t, "lightpanda-remote-url", "wss://remote.example.com/ws")
+		withConfig(t, "lightpanda-remote-token", "tok")
+
+		// Even a local-only URL should go through remote.
+		got, err := GetRemote(context.Background(), "https://go.dev")
+		if err != nil {
+			t.Fatalf("GetRemote failed: %v", err)
+		}
+		if capturedRawURL != "https://go.dev" {
+			t.Errorf("rawURL = %q, want https://go.dev", capturedRawURL)
+		}
+		if capturedCDPURL != "wss://remote.example.com/ws?token=tok" {
+			t.Errorf("cdpURL = %q, want wss://remote.example.com/ws?token=tok", capturedCDPURL)
+		}
+		if !strings.Contains(got, "Remote content") {
+			t.Errorf("expected markdown content, got: %s", got)
+		}
+	})
+
+	t.Run("error when remote not configured", func(t *testing.T) {
+		withConfig(t, "lightpanda-remote-url", "")
+		_, err := GetRemote(context.Background(), "https://go.dev")
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "未配置") {
+			t.Errorf("expected '未配置' error, got: %v", err)
+		}
+	})
+
+	t.Run("CDP error wrapped", func(t *testing.T) {
+		withConfig(t, "lightpanda-remote-url", "wss://remote.example.com/ws")
+		getFromCDP = func(ctx context.Context, rawURL, cdpURL string) (string, error) {
+			return "", errors.New("CDP timeout")
+		}
+
+		_, err := GetRemote(context.Background(), "https://example.com")
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "lightpanda remote 连接失败") {
+			t.Errorf("expected wrapped error, got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "CDP timeout") {
+			t.Errorf("expected original error in chain, got: %v", err)
+		}
+	})
+}

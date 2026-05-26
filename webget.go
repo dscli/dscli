@@ -24,11 +24,13 @@ func init() {
 		RunE: webReaderRunE,
 	})
 	webgetCmd.Flags().Int("timeout", 60, "超时时间（秒）")
+	webgetCmd.Flags().Bool("force-remote", false, "强制使用远端 lightpanda 抓取网页")
 }
 
 func webReaderRunE(cmd *cobra.Command, args []string) error {
 	url := args[0]
 	timeout, _ := cmd.Flags().GetInt("timeout")
+	forceRemote, _ := cmd.Flags().GetBool("force-remote")
 
 	startTime := time.Now()
 
@@ -39,7 +41,15 @@ func webReaderRunE(cmd *cobra.Command, args []string) error {
 		defer cancel()
 	}
 
-	markdown, err := lp.Get(ctx, url)
+	var (
+		markdown string
+		err      error
+	)
+	if forceRemote {
+		markdown, err = lp.GetRemote(ctx, url)
+	} else {
+		markdown, err = lp.Get(ctx, url)
+	}
 	if err != nil {
 		return fmt.Errorf("读取网页失败: %w", err)
 	}
