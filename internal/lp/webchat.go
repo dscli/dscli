@@ -23,7 +23,7 @@ const (
 	jsSetTextareaFmt = `(() => {
 	const ta = document.querySelector('textarea');
 	if (!ta || ta.offsetParent === null) {
-		return {error: 'no visible textarea — please login first: dscli webchat --setup'};
+		return {error: 'no visible textarea — please login first: dscli webchat --login'};
 	}
 	const setter = Object.getOwnPropertyDescriptor(
 		HTMLTextAreaElement.prototype, 'value'
@@ -34,32 +34,49 @@ const (
 })()`
 )
 
-// WebChat sends a message to chat.deepseek.com via CDP and returns the
-// assistant's text response.
+// WebChat sends a message to chat.deepseek.com via a local Chrome browser
+// and returns the assistant's text response.
 //
-// It requires the user to have completed the one-time login setup:
+// It uses the same Chrome user data directory as DeepSeekLoginChromeOpts
+// (--login), so cookies from a prior login are automatically available.
 //
-//	dscli webchat --setup
+// One-time setup:
 //
-// This saves cookies that Lightpanda loads at startup (via --cookie flag),
-// allowing automated interactions with the authenticated chat session.
+//	dscli webchat --login
+//
+// Then send messages:
+//
+//	dscli webchat "hello"
 func WebChat(ctx context.Context, message string) (string, error) {
-	cdpURL, isLocal := cdpEndpoint(deepseekChatURL)
-	if isLocal {
-		if err := ensureLocalLightpanda(); err != nil {
-			return "", err
-		}
+	chromePath, err := findChrome()
+	if err != nil {
+		return "", err
 	}
 
-	allocatorCtx, allocatorCancel := chromedp.NewRemoteAllocator(ctx, cdpURL)
-	defer allocatorCancel()
+	userDataDir, err := chromeUserDataDir()
+	if err != nil {
+		return "", err
+	}
 
-	tabCtx, tabCancel := chromedp.NewContext(allocatorCtx)
+	opts := []chromedp.ExecAllocatorOption{
+		chromedp.ExecPath(chromePath),
+		chromedp.UserDataDir(userDataDir),
+		chromedp.Flag("headless", "new"),
+		chromedp.Flag("disable-blink-features", "AutomationControlled"),
+		chromedp.Flag("no-first-run", true),
+		chromedp.Flag("no-default-browser-check", true),
+		chromedp.NoSandbox,
+	}
+
+	allocCtx, allocCancel := chromedp.NewExecAllocator(ctx, opts...)
+	defer allocCancel()
+
+	tabCtx, tabCancel := chromedp.NewContext(allocCtx)
 	defer tabCancel()
 
 	var baseline, response string
 
-	err := chromedp.Run(tabCtx,
+	err = chromedp.Run(tabCtx,
 		// Navigate and wait for the SPA to hydrate.
 		chromedp.Navigate(deepseekChatURL),
 		chromedp.WaitReady("body"),
@@ -74,7 +91,7 @@ func WebChat(ctx context.Context, message string) (string, error) {
 		}),
 
 		// Brief delay then press Enter to send.
-		chromedp.Sleep(500 * time.Millisecond),
+		chromedp.Sleep(500*time.Millisecond),
 		chromedp.KeyEvent("\r"),
 
 		// Wait for and extract the assistant response.

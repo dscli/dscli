@@ -100,17 +100,23 @@ func webchatLogin(cmd *cobra.Command) error {
 	visible, _ := cmd.Flags().GetBool("login-visible")
 
 	fmt.Fprintln(os.Stderr, "╔══════════════════════════════════════════════════════════════╗")
-	fmt.Fprintln(os.Stderr, "║        DeepSeek Web 自动登录                               ║")
+	fmt.Fprintln(os.Stderr, "║        DeepSeek Web 登录                                   ║")
 	fmt.Fprintln(os.Stderr, "╚══════════════════════════════════════════════════════════════╝")
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintf(os.Stderr, "📱 手机号: %s\n", phone)
+	if !visible {
+		fmt.Fprintf(os.Stderr, "📱 手机号: %s\n", phone)
+	}
 	fmt.Fprintf(os.Stderr, "🌐 浏览器: %s", browser)
 	if visible {
-		fmt.Fprintf(os.Stderr, " (可见窗口)")
+		fmt.Fprintf(os.Stderr, " (可见窗口 — 手动登录)")
 	}
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "流程：自动打开登录页 → 输入手机号 → 发送验证码 → 输入验证码 → 登录")
+	if visible {
+		fmt.Fprintln(os.Stderr, "流程：弹出浏览器窗口 → 你手动完成登录 → 自动保存 cookie")
+	} else {
+		fmt.Fprintln(os.Stderr, "流程：自动打开登录页 → 输入手机号 → 发送验证码 → 输入验证码 → 登录")
+	}
 	fmt.Fprintln(os.Stderr)
 
 	ctx := cmd.Context()
@@ -134,7 +140,7 @@ func webchatLogin(cmd *cobra.Command) error {
 	// Auto-configure the required settings for subsequent webchat calls.
 	cookiePath := lp.DefaultCookiePath()
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "⚙️  正在配置 Lightpanda 以使用已保存的 cookies...")
+	fmt.Fprintln(os.Stderr, "⚙️  正在保存配置...")
 
 	config.Set("lightpanda-cookie-file", cookiePath)
 	config.Set("lightpanda-storage-engine", "sqlite")
@@ -143,7 +149,6 @@ func webchatLogin(cmd *cobra.Command) error {
 	dbPath := homeDir + "/.dscli/lightpanda.db"
 	config.Set("lightpanda-storage-sqlite-path", dbPath)
 
-	fmt.Fprintf(os.Stderr, "✅ 配置完成。现在可以使用 dscli webchat 发送消息了！\n")
-
+	fmt.Fprintf(os.Stderr, "✅ 登录完成。现在可以使用 dscli webchat 发送消息了！\n")
 	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/chromedp/chromedp"
@@ -24,6 +25,20 @@ func findChrome() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("未找到 Chrome/Chromium，请安装后重试")
+}
+
+// chromeUserDataDir returns the persistent Chrome user data directory
+// shared by login and webchat so cookies survive across sessions.
+func chromeUserDataDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("无法获取用户目录: %w", err)
+	}
+	dir := filepath.Join(home, ".dscli", "chrome-profile")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("无法创建 Chrome profile 目录: %w", err)
+	}
+	return dir, nil
 }
 
 // DeepSeekLoginChrome performs login to chat.deepseek.com using a local
@@ -47,11 +62,19 @@ func DeepSeekLoginChromeOpts(ctx context.Context, phone string, codeReader func(
 	}
 	fmt.Fprintf(os.Stderr, "🌐 使用 Chrome (%s, %s) 登录 DeepSeek...\n", chromePath, mode)
 
+	userDataDir, err := chromeUserDataDir()
+	if err != nil {
+		return err
+	}
+
 	// Build allocator options. We use --headless=new (the newer headless
 	// mode that is harder for sites to detect as automation) and disable
 	// the "Chrome is being controlled by automated software" infobar.
+	// UserDataDir ensures cookies persist across sessions — webchat reuses
+	// the same profile so it picks up the login session automatically.
 	opts := []chromedp.ExecAllocatorOption{
 		chromedp.ExecPath(chromePath),
+		chromedp.UserDataDir(userDataDir),
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
 		chromedp.Flag("no-first-run", true),
 		chromedp.Flag("no-default-browser-check", true),
@@ -72,5 +95,5 @@ func DeepSeekLoginChromeOpts(ctx context.Context, phone string, codeReader func(
 	tabCtx, tabCancel := chromedp.NewContext(allocCtx)
 	defer tabCancel()
 
-	return deepseekLogin(tabCtx, phone, codeReader)
+	return deepseekLogin(tabCtx, phone, codeReader, visible)
 }
