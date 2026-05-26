@@ -39,7 +39,7 @@ const (
 })()`
 )
 
-// WebChat sends a message to chat.deepseek.com via a local Chrome browser
+// WebChat sends a message to chat.deepseek.com via a visible Chrome browser
 // and returns the assistant's text response.
 //
 // It uses the same Chrome user data directory as DeepSeekLoginChromeOpts,
@@ -68,7 +68,6 @@ func WebChat(ctx context.Context, message string) (string, error) {
 	opts := []chromedp.ExecAllocatorOption{
 		chromedp.ExecPath(chromePath),
 		chromedp.UserDataDir(userDataDir),
-		chromedp.Flag("headless", "new"),
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
 		chromedp.Flag("no-first-run", true),
 		chromedp.Flag("no-default-browser-check", true),
