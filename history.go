@@ -27,7 +27,7 @@ func init() {
 	})
 	_ = AddCommand(historyCmd, &cobra.Command{
 		Use:   "load",
-		Short: "加载并校验历史消息中助手回复与工具调用的匹配关系",
+		Short: "加载并校验历史消息",
 		RunE:  historyLoadRunE,
 	})
 	_ = AddCommand(historyCmd, &cobra.Command{
@@ -52,7 +52,7 @@ func init() {
 
 	recallCmd := AddCommand(historyCmd, &cobra.Command{
 		Use:   "recall [keywords...]",
-		Short: "搜索消息内容（空格分隔多关键词，OR逻辑，匹配任一即返回）",
+		Short: "搜索消息内容",
 		Long: `搜索历史消息，只匹配 user 消息和助手总结（无工具调用的 assistant 消息）。
 
 示例：
@@ -62,8 +62,23 @@ func init() {
 		RunE: recallSearchRunE,
 	})
 
+	notesCmd := AddCommand(historyCmd, &cobra.Command{
+		Use:   "notes",
+		Short: "列出当前项目的对话笔记",
+		Long: `列出当前项目最近保存的对话笔记。
+
+笔记是跨对话的记忆线索，可通过 note 工具在对话中保存。
+
+示例：
+  dscli history notes
+  dscli history notes --days 7`,
+		RunE: historyNotesRunE,
+	})
+
 	recallCmd.Flags().Int("days", 30, "搜索最近N天的消息")
 	recallCmd.Flags().Int("limit", 5, "返回结果数量上限")
+
+	notesCmd.Flags().Int("days", 30, "加载最近N天的笔记")
 
 	historyCmd.PersistentFlags().Int("histsize", 32, "history size")
 	historyCmd.PersistentFlags().String("role", "dev", "role: dev, expert, review")
@@ -346,5 +361,27 @@ func recallSearchRunE(cmd *cobra.Command, args []string) (err error) {
 		)
 	}
 
+	return nil
+}
+
+func historyNotesRunE(cmd *cobra.Command, args []string) (err error) {
+	ctx := cmd.Context()
+	days, err := cmd.Flags().GetInt("days")
+	if err != nil {
+		return err
+	}
+	notes, err := prompt.LoadNotes(ctx, days)
+	if err != nil {
+		return err
+	}
+	if len(notes) == 0 {
+		outfmt.Println("暂无笔记。")
+		return nil
+	}
+	wrt := outfmt.NewTabwrt()
+	defer wrt.Flush()
+	for _, n := range notes {
+		wrt.Println(prompt.FormatTime(n.CreatedAt), n.Content)
+	}
 	return nil
 }
