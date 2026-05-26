@@ -12,6 +12,7 @@ import (
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/parse"
 	"gitcode.com/dscli/dscli/internal/toolcall"
+	"gitcode.com/dscli/dscli/internal/toolcall/file"
 )
 
 //go:embed code_write_section.md
@@ -262,6 +263,10 @@ func init() {
 					"type":        "string",
 					"description": "New content to write, max 4096 chars recommended",
 				},
+				"context": map[string]any{
+					"type":        "boolean",
+					"description": "After editing, return a context window around the edit. Default true. Set false to suppress.",
+				},
 			},
 			"required":             []string{"path", "selector", "new_content"},
 			"additionalProperties": false,
@@ -289,13 +294,27 @@ func handleWriteCodeSection(ctx context.Context, args toolcall.ToolArgs) (result
 		err = fmt.Errorf("参数 'new_content' 缺失")
 		return result, warning, err
 	}
+	showContext := toolcall.ToolArgsValue(args, "context", true)
 
 	PrintWriteSection(path, selector)
+
+	// 编辑前解析行范围，用于上下文偏移计算
+	var oldStart, oldEnd int
+	if showContext {
+		oldStart, oldEnd, _ = getSectionRange(ctx, path, selector)
+	}
 
 	result, err = writeCodeSection(ctx, path, selector, newContent)
 	if err != nil {
 		return result, warning, err
 	}
+	// 编辑后上下文窗口
+	if showContext && oldStart > 0 {
+		if ctxStr := codeEditContext(path, oldStart, oldEnd, newContent); ctxStr != "" {
+			result += ctxStr
+		}
+	}
+
 
 	// Run flycheck on the written file and append issues as suggestion
 	if flyResult, _, flyErr := flycheck.Flycheck(ctx, path); flyErr == nil && flyResult != "" {
@@ -311,4 +330,38 @@ func handleWriteCodeSection(ctx context.Context, args toolcall.ToolArgs) (result
 func PrintWriteSection(path, selector string) {
 	run := ""
 	outfmt.Printf("修改文件%s代码片段%s%s\n", path, selector, run)
+}
+
+// getSectionRange 在编辑前解析 selector 对应的行范围（1-based 包含）。
+func getSectionRange(ctx context.Context, path, selector string) (int, int, error) {
+	structure, err := parse.ParseFileStructure(ctx, path)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	lines := strings.Split(string(content), "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+
+	return locateSectionRange(structure, lines, selector)
+}
+
+// codeEditContext 为 write_code_section 生成编辑后上下文窗口。
+// oldStart/oldEnd 是编辑前的行范围（1-based 包含）。
+// codeEditContext 为 write_code_section 生成编辑后上下文窗口。
+// oldStart/oldEnd 是编辑前的行范围（1-based 包含）。
+func codeEditContext(path string, oldStart, oldEnd int, newContent string) string {
+	oldReplaced := oldEnd - oldStart + 1
+	newLineCount := strings.Count(newContent, "\n") + 1
+	if newContent == "" || strings.HasSuffix(newContent, "\n") {
+		newLineCount = strings.Count(newContent, "\n")
+	}
+
+	return file.AppendEditContext(path, oldStart, oldEnd, oldReplaced, newLineCount)
 }

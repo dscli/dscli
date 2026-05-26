@@ -43,6 +43,10 @@ func init() {
 					"type":        "string",
 					"description": "Content to write",
 				},
+				"context": map[string]any{
+					"type":        "boolean",
+					"description": "After writing, return a context window around the edit. Default true. Set false to suppress.",
+				},
 			},
 			"required":             []string{"path", "content"},
 			"additionalProperties": false,
@@ -53,10 +57,12 @@ func init() {
 }
 
 // handleWriteFile 写入文件
+// handleWriteFile 写入文件
 func handleWriteFile(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	truncated := context.ContextValue(ctx, context.FinishReasonLengthKey, false)
 	path := toolcall.ToolArgsValue(args, "path", "")
 	content := toolcall.ToolArgsValue(args, "content", "")
+	showContext := toolcall.ToolArgsValue(args, "context", true)
 	lastlines := ""
 	if truncated {
 		runes := []rune(content)
@@ -72,7 +78,7 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result, warning string
 		return result, warning, err
 	}
 
-	append := toolcall.ToolArgsValue(args, "append", false)
+	append_ := toolcall.ToolArgsValue(args, "append", false)
 
 	fullPath := ResolvePath(ctx, path)
 	dirPath := filepath.Dir(fullPath)
@@ -93,7 +99,7 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result, warning string
 	}
 
 	var file *os.File
-	if append {
+	if append_ {
 		file, err = os.OpenFile(fullPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	} else {
 		file, err = os.OpenFile(fullPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
@@ -133,7 +139,7 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result, warning string
 	if content == "" || strings.HasSuffix(content, "\n") {
 		lines = strings.Count(content, "\n")
 	}
-	if append {
+	if append_ {
 		outfmt.Notice("追加内容到文件 \"%s\"，添加 %d 行", path, lines)
 		result = fmt.Sprintf("成功追加内容到文件 \"%s\"，添加 %d 行。", path, lines)
 	} else {
@@ -147,6 +153,22 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result, warning string
 ---
 %s---
 如果觉得信息不足以继续生成，可以停下来询问。`, path, path, path, lastlines)
+	}
+
+	// 编辑后上下文窗口
+	if showContext && !truncated {
+		if append_ {
+			// 追加模式：展示文件尾部上下文
+			ctxStr := AppendEditContext(path, lines+1, lines+1, 0, 0)
+			if ctxStr != "" {
+				result += ctxStr
+			}
+		} else {
+			ctxStr := AppendWriteFileContext(path)
+			if ctxStr != "" {
+				result += ctxStr
+			}
+		}
 	}
 
 	// Run flycheck on the written file and append issues to suggestion

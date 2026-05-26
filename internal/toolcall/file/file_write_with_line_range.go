@@ -49,6 +49,10 @@ func init() {
 					"type":        "string",
 					"description": "Newline-separated 4-char CAS tags, one per line in the range. Verified before write.",
 				},
+				"context": map[string]any{
+					"type":        "boolean",
+					"description": "After editing, return a context window around the edit. Default true. Set false to suppress.",
+				},
 			},
 			"required":             []string{"path", "content"},
 			"additionalProperties": false,
@@ -61,6 +65,9 @@ func init() {
 // handleWriteFileWithLineRange 写入文件指定行范围的内容
 // 如果 content 为空字符串，则删除指定行范围
 // 支持 CAS tag 校验：line_tag（单行）或 line_tags（多行）用于防竞态写入
+// handleWriteFileWithLineRange 写入文件指定行范围的内容
+// 如果 content 为空字符串，则删除指定行范围
+// 支持 CAS tag 校验：line_tag（单行）或 line_tags（多行）用于防竞态写入
 func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	// 检查必需参数
 	path := toolcall.ToolArgsValue(args, "path", "")
@@ -70,6 +77,7 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 	}
 
 	content := toolcall.ToolArgsValue(args, "content", "")
+	showContext := toolcall.ToolArgsValue(args, "context", true)
 
 	// content 可以为空字符串，表示删除
 
@@ -80,6 +88,12 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 	if err != nil {
 		err = fmt.Errorf("failed to parse line range: %w", err)
 		return result, warning, err
+	}
+
+	// 计算新内容的行数
+	contentLineCount := strings.Count(content, "\n") + 1
+	if content == "" || strings.HasSuffix(content, "\n") {
+		contentLineCount = strings.Count(content, "\n")
 	}
 
 	// 读取原文件所有行
@@ -115,13 +129,16 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 				return result, warning, err
 			}
 
-			lines := strings.Count(content, "\n") + 1
-			if content == "" || strings.HasSuffix(content, "\n") {
-				lines = strings.Count(content, "\n")
-			}
+			outfmt.Notice("创建文件 \"%s\" 并写入 %d 行内容", path, contentLineCount)
+			result = fmt.Sprintf("成功创建文件并写入 %d 行内容", contentLineCount)
 
-			outfmt.Notice("创建文件 \"%s\" 并写入 %d 行内容", path, lines)
-			result = fmt.Sprintf("成功创建文件并写入 %d 行内容", lines)
+			// 上下文窗口（新文件）
+			if showContext {
+				ctxStr := AppendWriteFileContext(path)
+				if ctxStr != "" {
+					result += ctxStr
+				}
+			}
 			return result, warning, err
 		}
 		err = fmt.Errorf("failed to open file: %w", err)
@@ -140,6 +157,8 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 		err = fmt.Errorf("failed to read file: %w", err)
 		return result, warning, err
 	}
+
+	oldTotalLines := len(lines)
 
 	// --- CAS tag verification (antirez-style check-and-set) ---
 	// 如果提供了 line_tag 或 line_tags，写入前校验标签匹配
@@ -231,22 +250,15 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 		rangeDesc = fmt.Sprintf("第%d行 - 末尾", startLine)
 	}
 
-	linesChanged := 0
-	if content == "" {
-		// 删除的行数
-		linesToDelete := 0
-		if endLine == -1 {
-			linesToDelete = max(0, len(lines)-startLine+1)
-		} else {
-			linesToDelete = max(0, min(endLine, len(lines))-startLine+1)
-		}
-		linesChanged = linesToDelete
+	// 计算被替换的原始行数
+	oldReplaced := 0
+	if endLine == -1 {
+		oldReplaced = max(0, oldTotalLines-startLine+1)
 	} else {
-		// 替换/插入的行数
-		contentLineCount := strings.Count(content, "\n") + 1
-		if content == "" || strings.HasSuffix(content, "\n") {
-			contentLineCount = strings.Count(content, "\n")
-		}
+		oldReplaced = max(0, min(endLine, oldTotalLines)-startLine+1)
+	}
+	linesChanged := oldReplaced
+	if content != "" {
 		linesChanged = contentLineCount
 	}
 
@@ -254,6 +266,21 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 
 	// 构建最终结果
 	result = fmt.Sprintf("成功%s文件 \"%s\" 行范围 %s", operation, path, rangeDesc)
+
+	// 编辑后上下文窗口
+	if showContext {
+		effectiveEndLine := endLine
+		if effectiveEndLine == -1 {
+			effectiveEndLine = oldTotalLines
+		}
+		if effectiveEndLine > oldTotalLines {
+			effectiveEndLine = oldTotalLines
+		}
+		ctxStr := AppendEditContext(path, startLine, effectiveEndLine, oldReplaced, contentLineCount)
+		if ctxStr != "" {
+			result += ctxStr
+		}
+	}
 
 	// Run flycheck on the written file and append issues as suggestion
 	if flyResult, _, flyErr := flycheck.Flycheck(ctx, path); flyErr == nil && flyResult != "" {

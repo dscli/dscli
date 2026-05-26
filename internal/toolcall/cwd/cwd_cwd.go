@@ -24,6 +24,7 @@ func init() {
 		Name:        "cwd_get",
 		Description: cwd_get_md,
 		Category:    "system",
+		Strict:      true,
 		Parameters: map[string]any{
 			"type":                 "object",
 			"properties":           map[string]any{},
@@ -57,6 +58,7 @@ func init() {
 		Name:        "cwd_pop",
 		Description: cwd_pop_md,
 		Category:    "system",
+		Strict:      true,
 		Parameters: map[string]any{
 			"type":                 "object",
 			"properties":           map[string]any{},
