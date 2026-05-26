@@ -9,7 +9,7 @@ import (
 )
 
 // RecentMessages 返回当前 session 中最近的用户/助手消息（过滤 tool/tool_calls），
-// 按 created_at 升序排列（最新在底部）。
+// 按 created_at 降序排列（最新在顶部）。
 func RecentMessages(ctx context.Context, limit int) ([]Message, error) {
 	sessionID := GetCurrentSessionID(ctx)
 
@@ -24,7 +24,7 @@ func RecentMessages(ctx context.Context, limit int) ([]Message, error) {
 		FROM messages
 		WHERE session_id = ?
 		  AND (role = 'user' OR (role = 'assistant' AND (tool_calls IS NULL OR tool_calls = '' OR tool_calls = '[]')))
-		ORDER BY created_at ASC
+		ORDER BY created_at DESC
 		LIMIT ?`, sessionID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("查询最近消息失败: %w", err)
@@ -65,7 +65,7 @@ func HandleRecent(ctx context.Context, limit int) (result, warning string, err e
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "最近 **%d** 条消息（按时间升序，最新在底部）：\n\n", len(msgs))
+	fmt.Fprintf(&b, "最近 **%d** 条消息（按时间降序，最新在顶部）：\n\n", len(msgs))
 	fmt.Fprintf(&b, "| ID | 时间 | 角色 | 关键词 |\n")
 	fmt.Fprintf(&b, "|----|------|------|--------|\n")
 	for _, m := range msgs {

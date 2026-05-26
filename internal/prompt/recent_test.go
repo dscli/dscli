@@ -16,15 +16,14 @@ func TestRecentMessages_Smoke(t *testing.T) {
 	if len(msgs) > 5 {
 		t.Errorf("预期最多 5 条，实际 %d", len(msgs))
 	}
-	// 验证按时间升序（i < j 则 created_at[i] <= created_at[j]）
+	// 验证按时间降序（i < j 则 created_at[i] >= created_at[j]）
 	for i := 1; i < len(msgs); i++ {
-		if msgs[i].CreatedAt.Before(msgs[i-1].CreatedAt) {
-			t.Errorf("消息未按升序排列: msgs[%d]=%v < msgs[%d]=%v",
+		if msgs[i].CreatedAt.After(msgs[i-1].CreatedAt) {
+			t.Errorf("消息未按降序排列: msgs[%d]=%v > msgs[%d]=%v",
 				i, msgs[i].CreatedAt, i-1, msgs[i-1].CreatedAt)
 		}
 	}
 }
-
 func TestHandleRecent_Smoke(t *testing.T) {
 	ctx := context.Background()
 	result, _, err := HandleRecent(ctx, 20)
