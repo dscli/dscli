@@ -70,10 +70,14 @@ func toolListRunE(cmd *cobra.Command, _ []string) error {
 		Desc     string
 	}
 
-	// firstLine 取描述的首行（到第一个换行符为止）
+	// firstLine 取描述的首行正文（跳过 Markdown 标题行和空行）
 	firstLine := func(s string) string {
-		if before, _, found := strings.Cut(s, "\n"); found {
-			return before
+		for _, line := range strings.Split(s, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			return line
 		}
 		return s
 	}
