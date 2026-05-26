@@ -69,7 +69,7 @@ func TestSaveNoteAndBuildNotePrompt(t *testing.T) {
 	}
 }
 
-// TestSaveNote_Truncation 验证超过80字自动截断
+// TestSaveNote_Truncation 验证超过80字返回错误（不再静默截断）
 func TestSaveNote_Truncation(t *testing.T) {
 	ctx := context.Background()
 
@@ -79,25 +79,12 @@ func TestSaveNote_Truncation(t *testing.T) {
 		t.Fatalf("测试数据错误: longContent 只有 %d 字，需要 >80", len([]rune(longContent)))
 	}
 
-	if err := SaveNote(ctx, longContent); err != nil {
-		t.Fatal("SaveNote 失败:", err)
+	err := SaveNote(ctx, longContent)
+	if err == nil {
+		t.Error("期望超长内容返回错误，但返回 nil")
 	}
-
-	// 验证截断后的内容长度
-	result := BuildNotePrompt(ctx)
-	if result == "" {
-		t.Fatal("BuildNotePrompt 返回空")
-	}
-	// 截断后的前80个rune应出现
-	expectedTruncated := string([]rune(longContent)[:80])
-	if !strings.Contains(result, expectedTruncated) {
-		t.Errorf("BuildNotePrompt 中未找到截断后的内容")
-		t.Logf("期望包含: %q", expectedTruncated)
-		t.Logf("实际内容: %s", result)
-	}
-	// 原始超长内容不应完整出现（已被截断）
-	if strings.Contains(result, longContent) {
-		t.Error("BuildNotePrompt 中出现了未截断的超长内容")
+	if err != nil && !strings.Contains(err.Error(), "超过") {
+		t.Errorf("错误信息应包含'超过': %v", err)
 	}
 }
 

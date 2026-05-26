@@ -37,16 +37,15 @@ func init() {
 	)
 }
 
-// SaveNote 保存一条对话笔记（限制 MaxNoteContentLen 字以内）
+// SaveNote 保存一条对话笔记（限制 MaxNoteContentLen 字以内，超限报错）
 func SaveNote(ctx context.Context, content string) error {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return fmt.Errorf("笔记内容不能为空")
 	}
-	// 按 rune 截断
 	runes := []rune(content)
 	if len(runes) > MaxNoteContentLen {
-		content = string(runes[:MaxNoteContentLen])
+		return fmt.Errorf("笔记内容超过%d字限制（实际%d字），请精简", MaxNoteContentLen, len(runes))
 	}
 
 	sessionID := session.GetCurrentSessionID(ctx)
@@ -126,10 +125,11 @@ func BuildNotePrompt(ctx context.Context) string {
 }
 
 func HandleNote(ctx context.Context, content string) (result, warning string, err error) {
-	// 警告超过限制（实际 SaveNote 也会截断）
+	// 超过限制：拒绝保存（硬错误），提示使用 mem_save 记录详细信息
 	if len([]rune(content)) > MaxNoteContentLen {
-		warning = fmt.Sprintf("笔记超过%d字已自动截断。下次请控制在%d字以内。",
+		err = fmt.Errorf("笔记超过%d字限制，请精简到%d字以内。如需记录更多信息，请使用 mem_save。",
 			MaxNoteContentLen, MaxNoteContentLen)
+		return result, warning, err
 	}
 
 	if saveErr := SaveNote(ctx, content); saveErr != nil {

@@ -35,16 +35,16 @@ func TestHandleNote_Empty(t *testing.T) {
 	}
 }
 
-// TestHandleNote_LongContent 验证超长内容给出建议
+// TestHandleNote_LongContent 验证超长内容返回错误（不再静默截断）
 func TestHandleNote_LongContent(t *testing.T) {
 	ctx := context.Background()
 	longContent := strings.Repeat("测试超长笔记内容", 11) // 88 字，超过 80
 	args := toolcall.ToolArgs{"content": longContent}
-	_, suggestion, err := handleNote(ctx, args)
-	if err != nil {
-		t.Fatal("handleNote 失败:", err)
+	_, _, err := handleNote(ctx, args)
+	if err == nil {
+		t.Error("超长内容应返回错误")
 	}
-	if !strings.Contains(suggestion, "截断") {
-		t.Errorf("超长内容应有截断建议: %s", suggestion)
+	if err != nil && !strings.Contains(err.Error(), "超过") {
+		t.Errorf("错误信息应提示超限: %v", err)
 	}
 }
