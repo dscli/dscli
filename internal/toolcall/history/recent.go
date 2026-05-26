@@ -35,6 +35,6 @@ func init() {
 
 func handleRecent(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
 	limit := toolcall.ToolArgsValue(args, "limit", 20)
-	result, warning, err = prompt.HandleRecent(ctx, limit)
+	result, warning, err = prompt.HandleRecent(ctx, limit, 0)
 	return result, warning, err
 }

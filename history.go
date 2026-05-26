@@ -41,6 +41,8 @@ func init() {
 		Short: "列出当前会话的最近消息（表格形式）",
 		RunE:  historyRecentRunE,
 	})
+	recentCmd.Flags().Int("limit", 20, "返回最近N条消息（默认20，最大100）")
+	recentCmd.Flags().Int64("start", 0, "从指定消息ID开始往前翻页（0=最新）")
 	_ = AddCommand(historyCmd, &cobra.Command{
 		Use:   "show",
 		Short: "显示指定消息的完整信息",
@@ -82,8 +84,6 @@ func init() {
 
 	recallCmd.Flags().Int("days", 30, "搜索最近N天的消息")
 	recallCmd.Flags().Int("limit", 5, "返回结果数量上限")
-
-	recentCmd.Flags().Int("limit", 20, "返回最近N条消息（默认20，最大100）")
 
 	notesCmd.Flags().Int("days", 30, "加载最近N天的笔记")
 
@@ -187,13 +187,22 @@ func historyRecentRunE(cmd *cobra.Command, args []string) (err error) {
 		limit = 20
 	}
 
-	msgs, err := prompt.RecentMessages(ctx, limit)
+	startID, err := cmd.Flags().GetInt64("start")
+	if err != nil {
+		return err
+	}
+
+	msgs, err := prompt.RecentMessages(ctx, limit, startID)
 	if err != nil {
 		return err
 	}
 
 	if len(msgs) == 0 {
-		outfmt.Println("当前会话没有历史消息。")
+		if startID > 0 {
+			outfmt.Printf("从 #%d 往前没有更多消息了。\n", startID)
+		} else {
+			outfmt.Println("当前会话没有历史消息。")
+		}
 		return nil
 	}
 

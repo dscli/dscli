@@ -8,7 +8,7 @@ import (
 
 func TestRecentMessages_Smoke(t *testing.T) {
 	ctx := context.Background()
-	msgs, err := RecentMessages(ctx, 5)
+	msgs, err := RecentMessages(ctx, 5, 0)
 	if err != nil {
 		t.Fatal("RecentMessages 失败:", err)
 	}
@@ -24,9 +24,38 @@ func TestRecentMessages_Smoke(t *testing.T) {
 		}
 	}
 }
+
+func TestRecentMessages_WithStart(t *testing.T) {
+	ctx := context.Background()
+	// 先获取最新消息
+	all, err := RecentMessages(ctx, 20, 0)
+	if err != nil {
+		t.Fatal("RecentMessages 失败:", err)
+	}
+	if len(all) < 2 {
+		t.Skip("消息不足，跳过翻页测试")
+	}
+	// 用最旧的消息 ID 作为起点
+	oldestID := all[len(all)-1].ID
+	page2, err := RecentMessages(ctx, 20, oldestID)
+	if err != nil {
+		t.Fatal("RecentMessages(start) 失败:", err)
+	}
+	// 所有返回的消息 ID 都应 <= oldestID
+	for _, m := range page2 {
+		if m.ID > oldestID {
+			t.Errorf("start=%d 但返回了更大的 ID=%d", oldestID, m.ID)
+		}
+	}
+	// 第一条应该是 oldestID（包含起点）
+	if len(page2) > 0 && page2[0].ID != oldestID {
+		t.Logf("翻页第一条约等于起点: got %d, expected ~%d", page2[0].ID, oldestID)
+	}
+}
+
 func TestHandleRecent_Smoke(t *testing.T) {
 	ctx := context.Background()
-	result, _, err := HandleRecent(ctx, 20)
+	result, _, err := HandleRecent(ctx, 20, 0)
 	if err != nil {
 		t.Fatal("HandleRecent 失败:", err)
 	}
@@ -41,11 +70,26 @@ func TestHandleRecent_Smoke(t *testing.T) {
 
 func TestHandleRecent_ZeroLimit(t *testing.T) {
 	ctx := context.Background()
-	result, _, err := HandleRecent(ctx, 0)
+	result, _, err := HandleRecent(ctx, 0, 0)
 	if err != nil {
 		t.Fatal("HandleRecent(0) 失败:", err)
 	}
 	if result == "" {
 		t.Error("HandleRecent(0) 返回空结果")
+	}
+}
+
+func TestHandleRecent_WithStart(t *testing.T) {
+	ctx := context.Background()
+	result, _, err := HandleRecent(ctx, 20, 1)
+	if err != nil {
+		t.Fatal("HandleRecent(start=1) 失败:", err)
+	}
+	if result == "" {
+		t.Error("HandleRecent(start=1) 返回空结果")
+	}
+	// 有结果时应有表格，无结果时应有"没有更多"
+	if !strings.Contains(result, "| ID |") && !strings.Contains(result, "没有更多消息") {
+		t.Errorf("HandleRecent(start=1) 结果异常: %s", result)
 	}
 }

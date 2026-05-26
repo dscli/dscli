@@ -3,6 +3,7 @@ package prompt
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 
 	"gitcode.com/dscli/dscli/internal/sqlite"
@@ -10,7 +11,12 @@ import (
 
 // RecentMessages 返回当前 session 中最近的用户/助手消息（过滤 tool/tool_calls），
 // 按 created_at 降序排列（最新在顶部）。
-func RecentMessages(ctx context.Context, limit int) ([]Message, error) {
+// startID 默认为 math.MaxInt64（无穷大 = 从最新开始）；传具体 ID 实现向前翻页。
+func RecentMessages(ctx context.Context, limit int, startID int64) ([]Message, error) {
+	if startID <= 0 {
+		startID = math.MaxInt64
+	}
+
 	sessionID := GetCurrentSessionID(ctx)
 
 	db, err := sqlite.OpenDB()
@@ -22,10 +28,10 @@ func RecentMessages(ctx context.Context, limit int) ([]Message, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, role, content, created_at
 		FROM messages
-		WHERE session_id = ?
+		WHERE session_id = ? AND id <= ?
 		  AND (role = 'user' OR (role = 'assistant' AND (tool_calls IS NULL OR tool_calls = '' OR tool_calls = '[]')))
 		ORDER BY created_at DESC
-		LIMIT ?`, sessionID, limit)
+		LIMIT ?`, sessionID, startID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("查询最近消息失败: %w", err)
 	}
@@ -47,25 +53,34 @@ func RecentMessages(ctx context.Context, limit int) ([]Message, error) {
 }
 
 // HandleRecent 格式化最近消息为表格，供 LLM 工具调用。
-func HandleRecent(ctx context.Context, limit int) (result, warning string, err error) {
+func HandleRecent(ctx context.Context, limit int, startID int64) (result, warning string, err error) {
 	const maxRecentResults = 20
 
 	if limit <= 0 || limit > maxRecentResults {
 		limit = maxRecentResults
 	}
 
-	msgs, err := RecentMessages(ctx, limit)
+	hasStart := startID > 0 && startID != math.MaxInt64
+	msgs, err := RecentMessages(ctx, limit, startID)
 	if err != nil {
 		return result, warning, err
 	}
 
 	if len(msgs) == 0 {
-		result = "当前会话没有历史消息。"
+		if hasStart {
+			result = fmt.Sprintf("从 ID %d 往前没有更多消息了。", startID)
+		} else {
+			result = "当前会话没有历史消息。"
+		}
 		return result, warning, err
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "最近 **%d** 条消息（按时间降序，最新在顶部）：\n\n", len(msgs))
+	if hasStart {
+		fmt.Fprintf(&b, "从 #%d 往前最近 **%d** 条消息（按时间降序）：\n\n", startID, len(msgs))
+	} else {
+		fmt.Fprintf(&b, "最近 **%d** 条消息（按时间降序，最新在顶部）：\n\n", len(msgs))
+	}
 	fmt.Fprintf(&b, "| ID | 时间 | 角色 | 关键词 |\n")
 	fmt.Fprintf(&b, "|----|------|------|--------|\n")
 	for _, m := range msgs {

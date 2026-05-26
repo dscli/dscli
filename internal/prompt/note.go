@@ -99,6 +99,7 @@ func LoadNotes(ctx context.Context, days int) ([]Note, error) {
 
 // FormatTime 格式化时间为简短形式
 func FormatTime(t time.Time) string {
+	t = t.Local()
 	now := time.Now()
 	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
 		return t.Format("15:04")

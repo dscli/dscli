@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"gitcode.com/dscli/dscli/internal/sqlite"
 	"gitcode.com/dscli/dscli/internal/tokenizer"
@@ -115,7 +116,8 @@ func SearchMessages(ctx context.Context, keywords []string, days, limit int) ([]
 	return results, nil
 }
 
-// Truncate 截断内容用于预览
+// Truncate 截断内容用于预览。
+// 短文本直接返回全文；长文本先清洗非语义词（Unicode 符号、装饰标点），再截断。
 func Truncate(content string, maxLen int) string {
 	// 去掉前导空白
 	content = strings.TrimSpace(content)
@@ -130,7 +132,51 @@ func Truncate(content string, maxLen int) string {
 	if len(runes) <= maxLen {
 		return content
 	}
+	// 长文本：先清洗符号/装饰字符，再截断
+	cleaned := cleanSemantic(content)
+	runes = []rune(cleaned)
+	if len(runes) <= maxLen {
+		return cleaned
+	}
 	return string(runes[:maxLen]) + "..."
+}
+
+// cleanSemantic 使用 Unicode 类别过滤：保留字母、数字、空格及少量语义标点，
+// 去除符号（含 emoji）、标记、格式化字符等非表义内容。
+func cleanSemantic(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if isSemantic(r) {
+			b.WriteRune(r)
+		}
+	}
+	// 去符号后重新归一化空白
+	result := strings.TrimSpace(b.String())
+	parts := strings.Fields(result)
+	return strings.Join(parts, " ")
+}
+
+// isSemantic 判断 rune 是否有语义价值（自然语言组成部分）。
+// 保留: Unicode 字母(L*)、数字(N*)、空格(Zs)、及通用句级标点。
+// 丢弃: 符号(S*)、标记(M*)、格式化字符(Cf)、装饰性标点等。
+func isSemantic(r rune) bool {
+	if unicode.IsLetter(r) || unicode.IsNumber(r) {
+		return true
+	}
+	if unicode.IsSpace(r) {
+		return true
+	}
+	// 通用语义标点（中英文句级标点 + 引号括号书名号）
+	switch r {
+	case '.', ',', ';', ':', '!', '?',
+		'。', '，', '；', '：', '！', '？',
+		'(', ')', '（', '）',
+		'\u201C', '\u201D', '\u2018', '\u2019',
+		'「', '」', '『', '』', '【', '】', '《', '》':
+		return true
+	}
+	return false
 }
 
 func HandleRecall(ctx context.Context, keywordsStr string, days, limit int) (result, warning string, err error) {
