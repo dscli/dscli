@@ -222,9 +222,9 @@ func UpdateIssue(ctx context.Context, opts UpdateIssueOptions) (*Issue, error) {
 		return nil, fmt.Errorf("必须提供至少一个更新字段（Title, Body 或 State）")
 	}
 
-	// 验证状态参数
-	if opts.State != "" && opts.State != "reopen" && opts.State != "close" {
-		return nil, fmt.Errorf("状态必须是 'reopen' 或 'close'，收到: %s", opts.State)
+	// 验证状态参数（API 接受 close/reopen 动作值）
+	if opts.State != "" && opts.State != "open" && opts.State != "closed" && opts.State != "close" && opts.State != "reopen" {
+		return nil, fmt.Errorf("状态必须是 'open'、'closed'、'close' 或 'reopen'，收到: %s", opts.State)
 	}
 
 	config, err := GetIssueConfig(ctx)
@@ -244,7 +244,7 @@ func UpdateIssue(ctx context.Context, opts UpdateIssueOptions) (*Issue, error) {
 	}
 
 	if opts.Body != "" {
-		requestData["description"] = opts.Body
+		requestData["body"] = opts.Body
 	}
 
 	if opts.State != "" {
