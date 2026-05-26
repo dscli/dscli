@@ -36,10 +36,6 @@ When responding, let your cognitive style color your language — not as a mask,
 
 - Project: {{.ProjectName}} ({{.ProjectType}})
 
-- Project Root: {{.ProjectRoot}}
-
-- Copyright Owner: {{.GitUserName}} <{{.GitUserEmail}}>
-
 ---
 
 Please provide deep programming insights based on the above principles.

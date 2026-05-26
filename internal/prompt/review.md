@@ -68,10 +68,6 @@ Structure your review as follows:
 
 - Project: {{.ProjectName}} ({{.ProjectType}})
 
-- Project Root: {{.ProjectRoot}}
-
-- User: {{.GitUserName}} <{{.GitUserEmail}}>
-
 - Branch: {{.GitBranch}} ({{.GitStatus}})
 
 ---
