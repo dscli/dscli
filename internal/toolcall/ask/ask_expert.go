@@ -76,15 +76,9 @@ func init() {
 
 // handleAskExpert handles the ask_expert tool call.
 func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
-	// Backward compatibility: support old parameter names
 	summary := toolcall.ToolArgsValue(args, "summary", "")
 	content := toolcall.ToolArgsValue(args, "content", "")
 	attachments := toolcall.ToolArgsValue(args, "attachments", []string{})
-
-	// If content is empty, try the old parameter name
-	if content == "" {
-		content = toolcall.ToolArgsValue(args, "question", "")
-	}
 
 	if content == "" {
 		err = fmt.Errorf("content cannot be empty")

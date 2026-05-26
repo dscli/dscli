@@ -4,12 +4,12 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/shell"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
@@ -68,7 +68,7 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result, warn
 	fmt.Println("🔍 检查是否有未提交的更改...")
 	// 只检查已修改但未提交的变更，忽略未跟踪文件
 	statusScript := `git status --porcelain | grep -E '^(M|A|D|R|C)'`
-	status, shellErr := shell.SimpleExecute(ctx, statusScript)
+	status, shellErr := runCmd(ctx, statusScript)
 	if shellErr != nil {
 		// grep返回非零退出码表示没有匹配，这是正常情况
 		status = ""
@@ -87,7 +87,7 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result, warn
 	if testCommand != "" {
 		outfmt.Println("🔍 运行单元测试:", testCommand)
 		testOutput := ""
-		testOutput, err = shell.SimpleExecute(ctx, testCommand)
+		testOutput, err = runCmd(ctx, testCommand)
 		if err != nil {
 			outfmt.Println("❌ 单元测试未通过")
 			errorMsg := fmt.Sprintf("单元测试未通过，请修复测试后再审查。\n测试命令：%s\n", testCommand)
@@ -112,7 +112,7 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result, warn
 	}
 	// 获取最新的提交信息
 	logScript := `git log --oneline -` + strconv.Itoa(reviewCommitCount)
-	log, err := shell.SimpleExecute(ctx, logScript)
+	log, err := runCmd(ctx, logScript)
 	if err != nil {
 		outfmt.Println("❌ 获取提交历史失败")
 		err = fmt.Errorf("获取提交历史失败: %w", err)
@@ -130,14 +130,14 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result, warn
 
 	// 获取完整的提交信息用于构建请求
 	fullLogScript := `git log --format="%B" -` + strconv.Itoa(reviewCommitCount)
-	fullLog, err := shell.SimpleExecute(ctx, fullLogScript)
+	fullLog, err := runCmd(ctx, fullLogScript)
 	if err != nil {
 		fullLog = log // 如果失败，使用简短的log
 	}
 
 	// 生成patch
 	patchScript := `git --no-pager format-patch --stdout -` + strconv.Itoa(reviewCommitCount)
-	patch, err := shell.SimpleExecute(ctx, patchScript)
+	patch, err := runCmd(ctx, patchScript)
 	if err != nil {
 		fmt.Println("❌ 生成patch失败")
 		err = fmt.Errorf("生成patch失败: %w", err)
@@ -165,4 +165,18 @@ func buildCodeReviewRequest(summary, commitLog, patch string) string {
 
 ## Code Changes
 ` + patch
+}
+// runCmd executes a bash command via os/exec and returns trimmed stdout.
+// If the command fails, the error includes stderr output.
+func runCmd(ctx context.Context, script string) (string, error) {
+	cmd := exec.CommandContext(ctx, "bash", "-c", script)
+	out, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return strings.TrimSpace(string(out)),
+				fmt.Errorf("%s: %s", err, strings.TrimSpace(string(exitErr.Stderr)))
+		}
+		return strings.TrimSpace(string(out)), err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
