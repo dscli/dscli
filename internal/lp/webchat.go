@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -62,6 +63,17 @@ const (
 		}
 	}
 	return {success: false};
+})()`
+
+	// jsGetLastAssistantText extracts the text of the last assistant
+	// message via the .ds-markdown class used by DeepSeek for rendered
+	// markdown content. Returns "" when no assistant message exists.
+	// This is preferred over body.innerText diff because it naturally
+	// excludes UI chrome (search info, toggle labels, footer text).
+	jsGetLastAssistantText = `(() => {
+	const els = document.querySelectorAll('.ds-markdown');
+	if (els.length === 0) return '';
+	return els[els.length - 1].innerText || '';
 })()`
 )
 
@@ -229,7 +241,8 @@ func webchatSetValue(ctx context.Context, message string) error {
 	return nil
 }
 
-// webchatWait polls the page text until the assistant response stabilizes.
+// webchatWait polls until the assistant response stabilizes, then extracts
+// it via the .ds-markdown element (preferred) or body-text diff (fallback).
 func webchatWait(ctx context.Context, baseline string) (string, error) {
 	var lastText string
 	stableCount := 0
@@ -251,7 +264,15 @@ func webchatWait(ctx context.Context, baseline string) (string, error) {
 		if current == lastText && lastText != "" {
 			stableCount++
 			if stableCount >= webChatStablePolls {
-				return extractResponse(baseline, current), nil
+				// Preferred: extract from the last .ds-markdown element.
+				// This naturally excludes UI chrome (search info,
+				// toggle labels, footer text).
+				if resp := getLastAssistantText(ctx); resp != "" {
+					return resp, nil
+				}
+				// Fallback: diff body text against baseline, then
+				// clean up known artifact patterns.
+				return cleanBodyResponse(extractResponse(baseline, current)), nil
 			}
 		} else {
 			stableCount = 0
@@ -260,6 +281,55 @@ func webchatWait(ctx context.Context, baseline string) (string, error) {
 	}
 
 	return "", fmt.Errorf("response timeout after %d polls", webChatMaxPolls)
+}
+
+// getLastAssistantText returns the text of the last .ds-markdown element,
+// or "" if the selector doesn't match (e.g. DeepSeek changed their DOM).
+func getLastAssistantText(ctx context.Context) string {
+	var text string
+	if err := chromedp.Evaluate(jsGetLastAssistantText, &text).Do(ctx); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(text)
+}
+
+// cleanBodyResponse removes DeepSeek UI chrome artifacts from
+// body-text-diff output. These artifacts appear when the .ds-markdown
+// selector fails and we fall back to body.innerText diff.
+func cleanBodyResponse(raw string) string {
+	lines := strings.Split(raw, "\n")
+	filtered := lines[:0]
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Standalone citation references like "- 2", "- 10".
+		if matchCitationLine(trimmed) {
+			continue
+		}
+
+		// DeepSeek UI labels that appear at page bottom.
+		switch trimmed {
+		case "深度思考", "Deep Think", "智能搜索", "联网搜索",
+			"内容由 AI 生成，请仔细甄别",
+			"内容由AI生成，请仔细甄别":
+			continue
+		}
+
+		// "已阅读 N 个网页" / "N 个网页" — search summary line.
+		if strings.HasSuffix(trimmed, "个网页") {
+			continue
+		}
+
+		filtered = append(filtered, line)
+	}
+	return strings.TrimSpace(strings.Join(filtered, "\n"))
+}
+// matchCitationLine reports whether s is a standalone citation
+// reference like "- 2" or "-10" or "— 10".
+var citationLineRE = regexp.MustCompile(`^[-–—]\s*\d+$`)
+
+func matchCitationLine(s string) bool {
+	return citationLineRE.MatchString(s)
 }
 
 // extractResponse computes the text added after baseline.
