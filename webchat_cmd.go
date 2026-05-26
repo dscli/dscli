@@ -1,14 +1,13 @@
 package main
 
 import (
-	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/config"
 	"gitcode.com/dscli/dscli/internal/lp"
 	"github.com/spf13/cobra"
 )
@@ -16,13 +15,12 @@ import (
 func init() {
 	webchatCmd := AddRootCommand(&cobra.Command{
 		Use:   "webchat [message]",
-		Short: "通过浏览器与 DeepSeek Web 聊天（免费，不支持 tool use）",
-		Long: `通过 lightpanda 浏览器与 https://chat.deepseek.com 交互。
+		Short: "通过 Chrome 浏览器与 DeepSeek Web 聊天（免费，不支持 tool use）",
+		Long: `通过 Chrome 浏览器与 https://chat.deepseek.com 交互。
 
-使用前需先登录一次：
-  dscli webchat --login
+首次使用会自动打开浏览器窗口要求登录（登录状态持久保存）。
 
-然后可以发送消息：
+发送消息：
   dscli webchat "什么是闭包？"
   echo "review 这段代码" | dscli webchat --input -
 
@@ -32,58 +30,32 @@ func init() {
 		RunE: webchatRunE,
 	})
 
-	webchatCmd.Flags().Bool("input", false, "从 stdin 读取消息（使用 - 作为占位参数）")
-	webchatCmd.Flags().Int("timeout", 120, "超时时间（秒）")
-	webchatCmd.Flags().Bool("login", false, "登录 DeepSeek（使用 Chrome 自动登录，手机号+验证码）")
-	webchatCmd.Flags().String("phone", "13910969806", "登录手机号")
-	webchatCmd.Flags().String("login-browser", "chrome", "登录使用的浏览器: chrome (默认) 或 lightpanda")
-	webchatCmd.Flags().Bool("login-visible", false, "登录时显示浏览器窗口（用于手动完成验证码）")
-	webchatCmd.Flags().Bool("setup", false, "（已废弃）请使用 --login 替代")
+	webchatCmd.Flags().String("input", "", "从文件读取消息（使用 - 表示从 stdin 读取）")
 }
 
 func webchatRunE(cmd *cobra.Command, args []string) error {
-	login, _ := cmd.Flags().GetBool("login")
-	if login {
-		return webchatLogin(cmd)
-	}
-
-	setup, _ := cmd.Flags().GetBool("setup")
-	if setup {
-		fmt.Fprintln(os.Stderr, "⚠️  --setup 已废弃，请使用 dscli webchat --login")
-		return webchatLogin(cmd)
-	}
-
-	useStdin, _ := cmd.Flags().GetBool("input")
-	timeout, _ := cmd.Flags().GetInt("timeout")
-
-	var message string
-	switch {
-	case useStdin:
-		data, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return fmt.Errorf("读取 stdin 失败: %w", err)
-		}
-		message = strings.TrimSpace(string(data))
-		if message == "" {
-			return fmt.Errorf("stdin 为空")
-		}
-	case len(args) == 1:
-		message = args[0]
-	default:
-		return fmt.Errorf("请提供消息，或使用 --input 从 stdin 读取")
+	message, err := gatherWebchatInput(cmd, args)
+	if err != nil {
+		return err
 	}
 
 	ctx := cmd.Context()
-	if timeout > 0 {
-		var cancel func()
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-		defer cancel()
-	}
 
 	fmt.Fprintf(os.Stderr, "📤 发送到 DeepSeek Web...\n")
 	startTime := time.Now()
 
 	response, err := lp.WebChat(ctx, message)
+	if errors.Is(err, lp.ErrLoginRequired) {
+		fmt.Fprintln(os.Stderr, "🔐 未登录，自动打开浏览器登录窗口...")
+		fmt.Fprintln(os.Stderr, "   请在弹出的浏览器窗口中完成登录。")
+		if loginErr := lp.WebChatLogin(ctx); loginErr != nil {
+			return fmt.Errorf("登录失败: %w", loginErr)
+		}
+		// Retry after login.
+		fmt.Fprintf(os.Stderr, "📤 重新发送到 DeepSeek Web...\n")
+		startTime = time.Now()
+		response, err = lp.WebChat(ctx, message)
+	}
 	if err != nil {
 		return fmt.Errorf("webchat 失败: %w", err)
 	}
@@ -94,61 +66,34 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 
 	return nil
 }
-func webchatLogin(cmd *cobra.Command) error {
-	phone, _ := cmd.Flags().GetString("phone")
-	browser, _ := cmd.Flags().GetString("login-browser")
-	visible, _ := cmd.Flags().GetBool("login-visible")
 
-	fmt.Fprintln(os.Stderr, "╔══════════════════════════════════════════════════════════════╗")
-	fmt.Fprintln(os.Stderr, "║        DeepSeek Web 登录                                   ║")
-	fmt.Fprintln(os.Stderr, "╚══════════════════════════════════════════════════════════════╝")
-	fmt.Fprintln(os.Stderr)
-	if !visible {
-		fmt.Fprintf(os.Stderr, "📱 手机号: %s\n", phone)
+// gatherWebchatInput collects the message from args or --input flag.
+// Priority: positional args > --input flag (file path or "-" for stdin).
+func gatherWebchatInput(cmd *cobra.Command, args []string) (string, error) {
+	if len(args) > 0 {
+		return args[0], nil
 	}
-	fmt.Fprintf(os.Stderr, "🌐 浏览器: %s", browser)
-	if visible {
-		fmt.Fprintf(os.Stderr, " (可见窗口 — 手动登录)")
-	}
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr)
-	if visible {
-		fmt.Fprintln(os.Stderr, "流程：弹出浏览器窗口 → 你手动完成登录 → 自动保存 cookie")
-	} else {
-		fmt.Fprintln(os.Stderr, "流程：自动打开登录页 → 输入手机号 → 发送验证码 → 输入验证码 → 登录")
-	}
-	fmt.Fprintln(os.Stderr)
 
-	ctx := cmd.Context()
+	input, _ := cmd.Flags().GetString("input")
+	if input == "" {
+		return "", fmt.Errorf("请提供消息，或使用 --input 从文件/stdin 读取")
+	}
 
-	var err error
-	switch browser {
-	case "chrome", "chromium":
-		err = lp.DeepSeekLoginChromeOpts(ctx, phone, lp.ReadCodeFromStdin, visible)
-	case "lightpanda", "lp":
-		if visible {
-			fmt.Fprintln(os.Stderr, "⚠️  --login-visible 仅对 Chrome 有效，Lightpanda 始终为 headless 模式")
+	if input == "-" {
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return "", fmt.Errorf("读取 stdin 失败: %w", err)
 		}
-		err = lp.DeepSeekLogin(ctx, phone, lp.ReadCodeFromStdin)
-	default:
-		return fmt.Errorf("不支持的浏览器: %s (可选: chrome, lightpanda)", browser)
+		message := strings.TrimSpace(string(data))
+		if message == "" {
+			return "", fmt.Errorf("stdin 为空")
+		}
+		return message, nil
 	}
+
+	data, err := os.ReadFile(input)
 	if err != nil {
-		return fmt.Errorf("登录失败: %w", err)
+		return "", fmt.Errorf("读取输入文件 %s 失败: %w", input, err)
 	}
-
-	// Auto-configure the required settings for subsequent webchat calls.
-	cookiePath := lp.DefaultCookiePath()
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "⚙️  正在保存配置...")
-
-	config.Set("lightpanda-cookie-file", cookiePath)
-	config.Set("lightpanda-storage-engine", "sqlite")
-
-	homeDir, _ := os.UserHomeDir()
-	dbPath := homeDir + "/.dscli/lightpanda.db"
-	config.Set("lightpanda-storage-sqlite-path", dbPath)
-
-	fmt.Fprintf(os.Stderr, "✅ 登录完成。现在可以使用 dscli webchat 发送消息了！\n")
-	return nil
+	return strings.TrimSpace(string(data)), nil
 }

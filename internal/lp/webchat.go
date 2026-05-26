@@ -2,12 +2,17 @@ package lp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/chromedp/chromedp"
 )
+
+// ErrLoginRequired is returned when the browser is not logged in to DeepSeek.
+// Callers should trigger a visible login flow and retry.
+var ErrLoginRequired = errors.New("login required — open visible browser to complete login")
 
 const (
 	deepseekChatURL = "https://chat.deepseek.com"
@@ -23,7 +28,7 @@ const (
 	jsSetTextareaFmt = `(() => {
 	const ta = document.querySelector('textarea');
 	if (!ta || ta.offsetParent === null) {
-		return {error: 'no visible textarea — please login first: dscli webchat --login'};
+		return {error: 'no visible textarea — login required'};
 	}
 	const setter = Object.getOwnPropertyDescriptor(
 		HTMLTextAreaElement.prototype, 'value'
@@ -37,16 +42,18 @@ const (
 // WebChat sends a message to chat.deepseek.com via a local Chrome browser
 // and returns the assistant's text response.
 //
-// It uses the same Chrome user data directory as DeepSeekLoginChromeOpts
-// (--login), so cookies from a prior login are automatically available.
+// It uses the same Chrome user data directory as DeepSeekLoginChromeOpts,
+// so cookies from a prior login are automatically available. If not logged
+// in, ErrLoginRequired is returned — the caller should trigger a visible
+// login flow (WebChatLogin) and retry.
 //
-// One-time setup:
+// Usage:
 //
-//	dscli webchat --login
-//
-// Then send messages:
-//
-//	dscli webchat "hello"
+//	response, err := lp.WebChat(ctx, "hello")
+//	if errors.Is(err, lp.ErrLoginRequired) {
+//	    lp.WebChatLogin(ctx)  // opens visible browser for manual login
+//	    response, err = lp.WebChat(ctx, "hello")  // retry
+//	}
 func WebChat(ctx context.Context, message string) (string, error) {
 	chromePath, err := findChrome()
 	if err != nil {
@@ -110,9 +117,7 @@ func WebChat(ctx context.Context, message string) (string, error) {
 
 // webchatSetValue sets the chat textarea value via JS (triggers React onChange).
 func webchatSetValue(ctx context.Context, message string) error {
-	// Quote the message for safe embedding as a JS string literal.
 	quoted := quoteJS(message)
-
 	var result map[string]any
 	js := fmt.Sprintf(jsSetTextareaFmt, quoted)
 
@@ -120,7 +125,7 @@ func webchatSetValue(ctx context.Context, message string) error {
 		return fmt.Errorf("set value: %w", err)
 	}
 	if errMsg, ok := result["error"].(string); ok {
-		return fmt.Errorf("%s", errMsg)
+		return fmt.Errorf("%s: %w", errMsg, ErrLoginRequired)
 	}
 	return nil
 }
@@ -174,4 +179,11 @@ func quoteJS(s string) string {
 	escaped = strings.ReplaceAll(escaped, "\r", "\\r")
 	escaped = strings.ReplaceAll(escaped, "\t", "\\t")
 	return "\"" + escaped + "\""
+}
+
+// WebChatLogin opens a visible Chrome browser for manual DeepSeek login.
+// The user completes captcha/SMS in the browser window; cookies are saved
+// to the shared Chrome profile for subsequent WebChat calls.
+func WebChatLogin(ctx context.Context) error {
+	return DeepSeekLoginChromeOpts(ctx, "", nil, true)
 }
