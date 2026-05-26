@@ -29,25 +29,6 @@ func DefaultCookiePath() string {
 	return filepath.Join(dir, ".dscli", "deepseek-cookies.json")
 }
 
-// DeepSeekLogin performs automated login via Lightpanda CDP.
-// Prefer DeepSeekLoginChrome — Chrome correctly renders the Shumei captcha.
-// Use this only as a Lightpanda fallback.
-func DeepSeekLogin(ctx context.Context, phone string, codeReader func() (string, error)) error {
-	cdpURL, isLocal := cdpEndpoint(deepseekSignInURL)
-	if isLocal {
-		if err := ensureLocalLightpanda(); err != nil {
-			return err
-		}
-	}
-
-	allocCtx, allocCancel := chromedp.NewRemoteAllocator(ctx, cdpURL)
-	defer allocCancel()
-
-	tabCtx, tabCancel := chromedp.NewContext(allocCtx)
-	defer tabCancel()
-
-	return deepseekLogin(tabCtx, phone, codeReader, false)
-}
 
 // deepseekLogin performs the shared DeepSeek login flow on an already
 // established browser tab context (works with any CDP-based browser:

@@ -145,40 +145,36 @@ func (c *Deepseek) doRequestSingle(method, path string, body, result any) (err e
 // doRequest 请求方法（自动重试）
 func (c *Deepseek) doRequest(method, path string, body, result any) (err error) {
 	defer outfmt.StartWaiting(time.Second * 3)()
+	return c.retryWithBackoff("网络异常", func() error {
+		return c.doRequestSingle(method, path, body, result)
+	})
+}
+
+// retryWithBackoff executes fn repeatedly with exponential backoff on retryable errors.
+// noticePrefix is used in the retry notification (e.g. "网络异常" or "流中断").
+func (c *Deepseek) retryWithBackoff(noticePrefix string, fn func() error) error {
 	var lastErr error
-	attempt := 0
-	for attempt = 0; attempt <= c.maxRetries; attempt++ {
+	for attempt := 0; attempt <= c.maxRetries; attempt++ {
 		if attempt > 0 {
-			// 计算重试延迟（指数退避）
-			delay := min(time.Duration(1<<(attempt-1))*c.retryDelay,
-				300*time.Second)
-			// 简洁通知用户（不超过20字）
+			delay := min(time.Duration(1<<(attempt-1))*c.retryDelay, 300*time.Second)
 			if delay.Seconds() < 1 {
-				outfmt.Notice("网络异常，立即重试...")
+				outfmt.Notice("%s，立即重试...", noticePrefix)
 			} else {
-				outfmt.Notice("网络异常，%d秒后重试...", int(delay.Seconds()))
+				outfmt.Notice("%s，%d秒后重试...", noticePrefix, int(delay.Seconds()))
 			}
 			time.Sleep(delay)
 		}
 
-		err = c.doRequestSingle(method, path, body, result)
-		lastErr = err
-
+		lastErr = fn()
 		if lastErr == nil {
-			// 成功，返回
 			if attempt > 0 {
 				outfmt.Notice("重试成功")
 			}
 			return nil
 		}
-
-		// 检查错误是否可重试
 		if !isRetryableError(lastErr) {
-			// 不可重试的错误，直接返回
 			return lastErr
 		}
 	}
-
-	// 超过最大重试次数
 	return fmt.Errorf("经过%d次重试后仍然失败: %w", c.maxRetries, lastErr)
 }

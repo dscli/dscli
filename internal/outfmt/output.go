@@ -500,6 +500,13 @@ func formatChatHeader(icon, nameCN, email, now string) string {
 	leftW := runewidth.StringWidth(left)
 	rightW := runewidth.StringWidth(right)
 
+	// 当左侧身份信息过长时截断，确保整行不超过 headerLineWidth。
+	maxLeftW := headerLineWidth - rightW - 4 // 4 = " ·· " at minimum
+	if leftW > maxLeftW && maxLeftW >= 5 {
+		left = runewidth.Truncate(left, maxLeftW, "…")
+		leftW = runewidth.StringWidth(left)
+	}
+
 	padding := headerLineWidth - leftW - rightW
 	if padding < 2 {
 		padding = 2
