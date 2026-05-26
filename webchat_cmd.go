@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"gitcode.com/dscli/dscli/internal/config"
 	"gitcode.com/dscli/dscli/internal/lp"
 	"github.com/spf13/cobra"
 )
@@ -19,12 +20,11 @@ func init() {
 		Long: `通过 lightpanda 浏览器与 https://chat.deepseek.com 交互。
 
 使用前需先登录一次：
-  dscli webchat --setup
+  dscli webchat --login
 
 然后可以发送消息：
   dscli webchat "什么是闭包？"
   echo "review 这段代码" | dscli webchat --input -
-  cat question.txt | dscli webchat --input -
 
 注意：Web 版不支持函数调用（tool use），仅适用于问专家、code review 等
 无需工具的简单场景。`,
@@ -34,13 +34,22 @@ func init() {
 
 	webchatCmd.Flags().Bool("input", false, "从 stdin 读取消息（使用 - 作为占位参数）")
 	webchatCmd.Flags().Int("timeout", 120, "超时时间（秒）")
-	webchatCmd.Flags().Bool("setup", false, "设置 DeepSeek Web 登录 cookies（一次性操作）")
+	webchatCmd.Flags().Bool("login", false, "登录 DeepSeek（使用 Chrome 自动登录，手机号+验证码）")
+	webchatCmd.Flags().String("phone", "13910969806", "登录手机号")
+	webchatCmd.Flags().String("login-browser", "chrome", "登录使用的浏览器: chrome (默认) 或 lightpanda")
+	webchatCmd.Flags().Bool("setup", false, "（已废弃）请使用 --login 替代")
 }
 
 func webchatRunE(cmd *cobra.Command, args []string) error {
+	login, _ := cmd.Flags().GetBool("login")
+	if login {
+		return webchatLogin(cmd)
+	}
+
 	setup, _ := cmd.Flags().GetBool("setup")
 	if setup {
-		return webchatSetup()
+		fmt.Fprintln(os.Stderr, "⚠️  --setup 已废弃，请使用 dscli webchat --login")
+		return webchatLogin(cmd)
 	}
 
 	useStdin, _ := cmd.Flags().GetBool("input")
@@ -85,53 +94,49 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// webchatSetup guides the user through one-time cookie export from their
-// browser and saves the configuration for subsequent webchat calls.
-func webchatSetup() error {
-	fmt.Println("╔══════════════════════════════════════════════════════════════╗")
-	fmt.Println("║           DeepSeek Web 登录设置（一次性操作）               ║")
-	fmt.Println("╚══════════════════════════════════════════════════════════════╝")
-	fmt.Println()
-	fmt.Println("步骤 1：在浏览器中打开 https://chat.deepseek.com 并登录")
-	fmt.Println("  支持 Chrome、Firefox、Edge 等浏览器。")
-	fmt.Println()
-	fmt.Println("步骤 2：登录后，打开开发者工具的 Console（控制台）：")
-	fmt.Println("  - Chrome/Edge：按 F12，点击 \"Console\" 标签页")
-	fmt.Println("  - Firefox：按 Ctrl+Shift+K，或 F12 后点击 \"控制台\" 标签页")
-	fmt.Println()
-	fmt.Println("步骤 3：粘贴以下 JS 代码并回车运行，cookies 将自动复制到剪贴板：")
-	fmt.Println()
-	fmt.Println("  ────────────────────────────────────────────────────────")
-	fmt.Println("  // Copy cookies to clipboard in Lightpanda JSON format")
-	fmt.Println("  copy(JSON.stringify(")
-	fmt.Println("    document.cookie.split('; ').filter(Boolean).map(c => {")
-	fmt.Println("      const eq = c.indexOf('=');")
-	fmt.Println("      return {")
-	fmt.Println("        name:   c.slice(0, eq),")
-	fmt.Println("        value:  c.slice(eq + 1),")
-	fmt.Println("        domain: '.deepseek.com',")
-	fmt.Println("        path:   '/'")
-	fmt.Println("      };")
-	fmt.Println("    })")
-	fmt.Println("  ));")
-	fmt.Println("  ────────────────────────────────────────────────────────")
-	fmt.Println()
-	fmt.Println("  ⚠️  document.cookie 无法获取 HttpOnly 的 cookie。如果不成功，")
-	fmt.Println("  改用浏览器扩展导出（推荐 Cookie-Editor，Chrome/Firefox 均有）：")
-	fmt.Println("  安装 → 访问 chat.deepseek.com → 点击扩展图标 → Export → JSON →")
-	fmt.Println("  保存到步骤 4 的路径。扩展导出的是所有 cookie（含 HttpOnly）。")
-	fmt.Println()
-	fmt.Println("步骤 4：将剪贴板中的 JSON 保存到文件：")
-	fmt.Println()
-	fmt.Printf("  ~/.dscli/deepseek-cookies.json\n")
-	fmt.Println()
-	fmt.Println("步骤 5：运行以下命令启用配置：")
-	fmt.Println()
-	fmt.Println("  dscli config set lightpanda-cookie-file ~/.dscli/deepseek-cookies.json")
-	fmt.Println("  dscli config set lightpanda-storage-engine sqlite")
-	fmt.Println("  dscli config set lightpanda-storage-sqlite-path ~/.dscli/lightpanda.db")
-	fmt.Println()
-	fmt.Println("完成后即可使用 dscli webchat 发送消息！")
+// webchatLogin implements the DeepSeek login flow.
+func webchatLogin(cmd *cobra.Command) error {
+	phone, _ := cmd.Flags().GetString("phone")
+	browser, _ := cmd.Flags().GetString("login-browser")
+
+	fmt.Fprintln(os.Stderr, "╔══════════════════════════════════════════════════════════════╗")
+	fmt.Fprintln(os.Stderr, "║        DeepSeek Web 自动登录                               ║")
+	fmt.Fprintln(os.Stderr, "╚══════════════════════════════════════════════════════════════╝")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintf(os.Stderr, "📱 手机号: %s\n", phone)
+	fmt.Fprintf(os.Stderr, "🌐 浏览器: %s\n", browser)
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "流程：自动打开登录页 → 输入手机号 → 发送验证码 → 输入验证码 → 登录")
+	fmt.Fprintln(os.Stderr)
+
+	ctx := cmd.Context()
+
+	var err error
+	switch browser {
+	case "chrome", "chromium":
+		err = lp.DeepSeekLoginChrome(ctx, phone, lp.ReadCodeFromStdin)
+	case "lightpanda", "lp":
+		err = lp.DeepSeekLogin(ctx, phone, lp.ReadCodeFromStdin)
+	default:
+		return fmt.Errorf("不支持的浏览器: %s (可选: chrome, lightpanda)", browser)
+	}
+	if err != nil {
+		return fmt.Errorf("登录失败: %w", err)
+	}
+
+	// Auto-configure the required settings for subsequent webchat calls.
+	cookiePath := lp.DefaultCookiePath()
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "⚙️  正在配置 Lightpanda 以使用已保存的 cookies...")
+
+	config.Set("lightpanda-cookie-file", cookiePath)
+	config.Set("lightpanda-storage-engine", "sqlite")
+
+	homeDir, _ := os.UserHomeDir()
+	dbPath := homeDir + "/.dscli/lightpanda.db"
+	config.Set("lightpanda-storage-sqlite-path", dbPath)
+
+	fmt.Fprintf(os.Stderr, "✅ 配置完成。现在可以使用 dscli webchat 发送消息了！\n")
 
 	return nil
 }
