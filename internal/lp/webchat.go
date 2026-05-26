@@ -2,9 +2,11 @@ package lp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -14,6 +16,10 @@ import (
 // ErrLoginRequired is returned when the browser is not logged in to DeepSeek.
 // Callers should trigger a visible login flow and retry.
 var ErrLoginRequired = errors.New("login required — open visible browser to complete login")
+
+// ErrNoConversation is returned by WebChatContinue when no previous
+// conversation exists to continue.
+var ErrNoConversation = errors.New("no previous conversation — start a new one first")
 
 const (
 	deepseekChatURL = "https://chat.deepseek.com"
@@ -38,20 +44,62 @@ const (
 	ta.dispatchEvent(new Event('input', {bubbles: true}));
 	return {success: true};
 })()`
+
+	// jsEnableDeepThink clicks the "深度思考 (R1)" / "Deep Think" toggle
+	// on the DeepSeek chat page. It searches for the toggle by text content
+	// and clicks it if found. Non-fatal: if the toggle isn't found, the
+	// conversation simply proceeds in standard mode.
+	//
+	// The t.length < 40 guard avoids matching large container elements
+	// whose subtree happens to include the text somewhere deep inside.
+	jsEnableDeepThink = `(() => {
+	for (const el of document.querySelectorAll('div,button,span,label')) {
+		const t = (el.textContent || '').trim();
+		if (t.length > 0 && t.length < 40 &&
+			(t.includes('深度思考') || t.includes('DeepThink') || t.includes('R1'))) {
+			el.click();
+			return {success: true, clicked: t};
+		}
+	}
+	return {success: false};
+})()`
 )
 
 // WebChat sends a message to chat.deepseek.com via a visible Chrome browser
-// and returns the assistant's text response.
+// and returns the assistant's text response. Each call starts a **new**
+// conversation; the conversation state is saved so it can be continued later
+// via WebChatContinue.
 //
 // It uses the same Chrome user data directory as DeepSeekLoginChromeOpts,
 // so cookies from a prior login are automatically available. If not logged
 // in, a visible login flow is triggered automatically in the same browser
 // session — no separate WebChatLogin call needed.
 //
+// New conversations automatically enable Deep Think (R1) expert mode.
+//
 // Usage:
 //
 //	response, err := lp.WebChat(ctx, "hello")
 func WebChat(ctx context.Context, message string) (string, error) {
+	return webChatWithURL(ctx, "", message)
+}
+
+// WebChatContinue sends a message continuing the last conversation saved
+// by a previous WebChat call. The conversation state is loaded from the
+// shared Chrome profile directory.
+//
+// Returns ErrNoConversation if no previous conversation exists.
+func WebChatContinue(ctx context.Context, message string) (string, error) {
+	convURL := loadConversationURL()
+	if convURL == "" {
+		return "", ErrNoConversation
+	}
+	return webChatWithURL(ctx, convURL, message)
+}
+
+// webChatWithURL is the common implementation shared by WebChat
+// (new conv, empty url) and WebChatContinue (saved url).
+func webChatWithURL(ctx context.Context, conversationURL, message string) (string, error) {
 	chromePath, err := findChrome()
 	if err != nil {
 		return "", err
@@ -77,20 +125,55 @@ func WebChat(ctx context.Context, message string) (string, error) {
 	tabCtx, tabCancel := chromedp.NewContext(allocCtx)
 	defer tabCancel()
 
-	return webchatSend(tabCtx, message, 0)
+	response, finalURL, err := webchatSend(tabCtx, conversationURL, message, 0)
+	if err != nil {
+		return "", fmt.Errorf("webchat: %w", err)
+	}
+
+	// Persist the conversation URL so it can be continued.
+	if finalURL != "" {
+		_ = saveConversationState(finalURL)
+	}
+
+	return response, nil
 }
 
-// webchatSend sends a message and returns the response. If login is needed,
+// webchatSend sends a message and returns the response plus the final page URL
+// (which contains the conversation ID for continuation). If login is needed,
 // it triggers a manual login flow in the same Chrome session and retries once.
-func webchatSend(tabCtx context.Context, message string, retry int) (string, error) {
-	var baseline, response string
+func webchatSend(tabCtx context.Context, conversationURL, message string, retry int) (string, string, error) {
+	navURL := conversationURL
+	if navURL == "" {
+		navURL = deepseekChatURL
+	}
+	isNewConv := (conversationURL == "")
 
-	err := chromedp.Run(tabCtx,
-		// Navigate and wait for the SPA to hydrate.
-		chromedp.Navigate(deepseekChatURL),
+	var baseline, response, finalURL string
+
+	// Build the action sequence. For new conversations we insert
+	// a Deep Think (R1) toggle click after page hydration.
+	actions := []chromedp.Action{
+		chromedp.Navigate(navURL),
 		chromedp.WaitReady("body"),
-		chromedp.Sleep(3*time.Second),
+		chromedp.Sleep(3 * time.Second),
+	}
 
+	if isNewConv {
+		actions = append(actions, chromedp.ActionFunc(func(ctx context.Context) error {
+			var result map[string]any
+			if err := chromedp.Evaluate(jsEnableDeepThink, &result).Do(ctx); err != nil {
+				return nil // non-fatal
+			}
+			if ok, _ := result["success"].(bool); ok {
+				fmt.Fprintln(os.Stderr, "🔬 已启用专家模式 (Deep Think R1)")
+			}
+			return nil
+		}))
+		// Brief pause for the toggle to take effect in the SPA.
+		actions = append(actions, chromedp.Sleep(500*time.Millisecond))
+	}
+
+	actions = append(actions,
 		// Record baseline text before sending.
 		chromedp.Evaluate("document.body ? document.body.innerText : ''", &baseline),
 
@@ -109,21 +192,26 @@ func webchatSend(tabCtx context.Context, message string, retry int) (string, err
 			response, err = webchatWait(ctx, baseline)
 			return err
 		}),
+
+		// Capture the final URL (contains conversation ID).
+		chromedp.Location(&finalURL),
 	)
+
+	err := chromedp.Run(tabCtx, actions...)
 	if err != nil {
 		// If login is needed and we haven't retried yet, perform login
 		// in the same Chrome session and retry once.
 		if errors.Is(err, ErrLoginRequired) && retry == 0 {
 			fmt.Fprintln(os.Stderr, "🔐 未登录，在浏览器窗口中完成登录...")
 			if loginErr := deepseekLogin(tabCtx, "", nil, true); loginErr != nil {
-				return "", fmt.Errorf("webchat login: %w", loginErr)
+				return "", "", fmt.Errorf("webchat login: %w", loginErr)
 			}
-			return webchatSend(tabCtx, message, retry+1)
+			return webchatSend(tabCtx, conversationURL, message, retry+1)
 		}
-		return "", fmt.Errorf("webchat: %w", err)
+		return "", "", fmt.Errorf("webchat: %w", err)
 	}
 
-	return response, nil
+	return response, finalURL, nil
 }
 
 // webchatSetValue sets the chat textarea value via JS (triggers React onChange).
@@ -190,6 +278,58 @@ func quoteJS(s string) string {
 	escaped = strings.ReplaceAll(escaped, "\r", "\\r")
 	escaped = strings.ReplaceAll(escaped, "\t", "\\t")
 	return "\"" + escaped + "\""
+}
+
+// --- conversation state persistence ------------------------------------------
+
+// conversationState stores the last conversation info for continuation.
+type conversationState struct {
+	URL       string `json:"url"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+// conversationStatePath returns the path to the session state file,
+// located alongside the Chrome profile directory.
+func conversationStatePath() (string, error) {
+	dir, err := chromeUserDataDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "webchat_session.json"), nil
+}
+
+// saveConversationState persists the conversation URL for later continuation.
+func saveConversationState(convURL string) error {
+	path, err := conversationStatePath()
+	if err != nil {
+		return err
+	}
+	state := conversationState{
+		URL:       convURL,
+		UpdatedAt: time.Now().Format(time.RFC3339),
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
+}
+
+// loadConversationURL loads the last saved conversation URL, or "" if none.
+func loadConversationURL() string {
+	path, err := conversationStatePath()
+	if err != nil {
+		return ""
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var state conversationState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return ""
+	}
+	return state.URL
 }
 
 // WebChatLogin opens a visible Chrome browser for manual DeepSeek login.

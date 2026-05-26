@@ -23,6 +23,11 @@ func init() {
   dscli webchat "什么是闭包？"
   echo "review 这段代码" | dscli webchat --input -
 
+继续上次对话：
+  dscli webchat -c "继续说说..."
+
+新对话默认启用专家模式（Deep Think R1），继续对话保留原模式。
+
 注意：Web 版不支持函数调用（tool use），仅适用于问专家、code review 等
 无需工具的简单场景。`,
 		Args: cobra.MaximumNArgs(1),
@@ -30,6 +35,7 @@ func init() {
 	})
 
 	webchatCmd.Flags().String("input", "", "从文件读取消息（使用 - 表示从 stdin 读取）")
+	webchatCmd.Flags().BoolP("continue", "c", false, "继续上次对话")
 }
 
 func webchatRunE(cmd *cobra.Command, args []string) error {
@@ -40,11 +46,21 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 
 	ctx := cmd.Context()
 
-	fmt.Fprintf(os.Stderr, "📤 发送到 DeepSeek Web...\n")
+	continueConv, _ := cmd.Flags().GetBool("continue")
+
+	if continueConv {
+		fmt.Fprintf(os.Stderr, "📤 继续上次对话，发送到 DeepSeek Web...\n")
+	} else {
+		fmt.Fprintf(os.Stderr, "📤 发送到 DeepSeek Web...\n")
+	}
 	startTime := time.Now()
 
-	// WebChat handles login automatically in the same Chrome session.
-	response, err := lp.WebChat(ctx, message)
+	var response string
+	if continueConv {
+		response, err = lp.WebChatContinue(ctx, message)
+	} else {
+		response, err = lp.WebChat(ctx, message)
+	}
 	if err != nil {
 		return fmt.Errorf("webchat 失败: %w", err)
 	}
