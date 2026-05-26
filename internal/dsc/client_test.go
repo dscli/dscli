@@ -182,6 +182,17 @@ func Test_isRetryableError(t *testing.T) {
 			fmt.Errorf("dial tcp 1.2.3.4:443: i/o timeout"),
 			true,
 		},
+		{
+			"INTERNAL_ERROR 流错误（chatStream 包装）",
+			fmt.Errorf("网络请求失败: %w",
+				fmt.Errorf(`Post "https://api.deepseek.com/chat/completions": stream error: stream ID 5; INTERNAL_ERROR; received from peer`)),
+			true,
+		},
+		{
+			"stream error 流错误（直接值）",
+			fmt.Errorf(`Post "https://api.deepseek.com/chat/completions": stream error: stream ID 5; INTERNAL_ERROR; received from peer`),
+			true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

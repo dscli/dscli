@@ -494,7 +494,7 @@ const headerLineWidth = 80
 //
 // Example: "   🐦 玻尔 <bohr@dscli.io> ········· 🕐17:12:21"
 func formatChatHeader(icon, nameCN, email, now string) string {
-	left := fmt.Sprintf("   %s %s <%s>", icon, nameCN, email)
+	left := fmt.Sprintf("%s %s <%s>", icon, nameCN, email)
 	right := "🕐" + now
 
 	leftW := runewidth.StringWidth(left)

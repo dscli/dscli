@@ -71,6 +71,14 @@ func isRetryableError(err error) bool {
 		return true
 	}
 
+	// 服务端流错误（可重试）—— DeepSeek 流式传输中常见的瞬时错误
+	// "stream error: stream ID N; INTERNAL_ERROR; received from peer"
+	// 这些错误发生在 HTTP/2 传输层，重试通常能恢复
+	if strings.Contains(errStr, "INTERNAL_ERROR") ||
+		strings.Contains(errStr, "stream error") {
+		return true
+	}
+
 	return false
 }
 

@@ -2,8 +2,10 @@ package dsc
 
 import (
 	"fmt"
+	"time"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/prompt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
@@ -36,9 +38,34 @@ func (c *Deepseek) Chat(ctx context.Context, messages []prompt.Message, tools []
 		return req
 	}
 
-	// 如果是streaming请求，使用streaming处理
+	// 如果是streaming请求，使用streaming处理（带重试）
 	if stream {
-		return c.chatStream(ctx, buildReq(true))
+		var resp *ChatResponse
+		var lastErr error
+		streamReq := buildReq(true)
+		for attempt := 0; attempt <= c.maxRetries; attempt++ {
+			if attempt > 0 {
+				delay := min(time.Duration(1<<(attempt-1))*c.retryDelay,
+					300*time.Second)
+				if delay.Seconds() < 1 {
+					outfmt.Notice("流中断，立即重试...")
+				} else {
+					outfmt.Notice("流中断，%d秒后重试...", int(delay.Seconds()))
+				}
+				time.Sleep(delay)
+			}
+			resp, lastErr = c.chatStream(ctx, streamReq)
+			if lastErr == nil {
+				if attempt > 0 {
+					outfmt.Notice("重试成功")
+				}
+				return resp, nil
+			}
+			if !isRetryableError(lastErr) {
+				return nil, lastErr
+			}
+		}
+		return nil, fmt.Errorf("经过%d次重试后仍然失败: %w", c.maxRetries, lastErr)
 	}
 
 	// 非streaming请求
