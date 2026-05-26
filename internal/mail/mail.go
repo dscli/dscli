@@ -56,10 +56,12 @@ func init() {
 			FOREIGN KEY (sender_name_id)    REFERENCES ai_names(id),
 			FOREIGN KEY (recipient_name_id) REFERENCES ai_names(id)
 		)`,
-		// External content FTS5 — sync managed manually in Go.
-		`CREATE VIRTUAL TABLE IF NOT EXISTS mail_fts USING fts5(
-			content, content='mail', content_rowid='id'
-		)`,
+		// Standalone FTS5 — content is tokenized and inserted manually in Go.
+		// Do NOT use content='mail' (external content) because mail has no
+		// single "content" column; it has subject and body. The external
+		// content reference would cause "no such column: T.content" on rebuild
+		// and SQLITE_CORRUPT_VTAB (267) on MATCH queries.
+		`CREATE VIRTUAL TABLE IF NOT EXISTS mail_fts USING fts5(content)`,
 	)
 
 	sqlite.RegisterIndexSchema(
@@ -73,6 +75,65 @@ func init() {
 	sqlite.RegisterUpgradeSchema(
 		`ALTER TABLE mail ADD COLUMN notified_at DATETIME`,
 	)
+
+	// Fix FTS5 table for existing databases that have the buggy external
+	// content reference (content='mail' → non-existent mail.content column).
+	// This hook runs once per binary version change.
+	sqlite.RegisterPostInitHook(fixMailFTS)
+}
+
+// fixMailFTS drops and recreates the mail_fts table if it has the buggy
+// external content reference (content='mail'). The bug: mail has subject
+// and body columns, not a single "content" column. This caused
+// SQLITE_CORRUPT_VTAB (267) on MATCH queries.
+func fixMailFTS(db *sqlite.DB) error {
+	var tableSQL string
+	err := db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='mail_fts'").Scan(&tableSQL)
+	if err != nil {
+		return nil // table doesn't exist yet (clean install) — nothing to fix
+	}
+	if !strings.Contains(tableSQL, "content='mail'") {
+		return nil // already fixed or new install
+	}
+
+	// Drop old FTS table (may be corrupted) and recreate without external content reference.
+	if _, err := db.Exec("DROP TABLE IF EXISTS mail_fts"); err != nil {
+		return fmt.Errorf("drop old mail_fts: %w", err)
+	}
+	if _, err := db.Exec("CREATE VIRTUAL TABLE IF NOT EXISTS mail_fts USING fts5(content)"); err != nil {
+		return fmt.Errorf("create new mail_fts: %w", err)
+	}
+
+	// Reindex all existing mails (best effort — errors are non-fatal).
+	// Collect rows first, then insert — inserting while iterating a query
+	// on the same connection causes SQLITE_BUSY.
+	rows, err := db.Query("SELECT id, subject, body FROM mail")
+	if err != nil {
+		return nil // no mails to reindex
+	}
+
+	type mailRec struct {
+		id      int64
+		subject string
+		body    string
+	}
+	var mails []mailRec
+	for rows.Next() {
+		var m mailRec
+		if err := rows.Scan(&m.id, &m.subject, &m.body); err != nil {
+			continue
+		}
+		mails = append(mails, m)
+	}
+	rows.Close()
+
+	for _, m := range mails {
+		// Best-effort reindex; individual failures are non-fatal.
+		if ftsErr := insertMailFTS(db, m.id, m.subject, m.body); ftsErr != nil {
+			_ = ftsErr
+		}
+	}
+	return nil
 }
 
 // === Types =====================================================================

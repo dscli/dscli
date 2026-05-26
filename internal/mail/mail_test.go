@@ -666,3 +666,63 @@ func TestFormatUnreadMailNotification(t *testing.T) {
 		}
 	})
 }
+
+// === fixMailFTS ================================================================
+
+func TestFixMailFTS(t *testing.T) {
+	newTestDB(t)
+	me := currentName()
+
+	db, err := sqlite.OpenDB()
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	// 1. Simulate old buggy schema: drop current mail_fts, create with content='mail'
+	db.Exec("DROP TABLE IF EXISTS mail_fts")
+	_, err = db.Exec(`CREATE VIRTUAL TABLE mail_fts USING fts5(content, content='mail', content_rowid='id')`)
+	if err != nil {
+		t.Fatalf("create old schema: %v", err)
+	}
+
+	// 2. Insert test mails via HandleSendMail (which also populates FTS via insertMailFTS)
+	HandleSendMail(context.Background(), me, "迁移测试1", "这是第一封测试邮件的内容")
+	HandleSendMail(context.Background(), me, "迁移测试2", "第二封邮件，包含不同的关键词")
+
+	// Verify old schema is detected
+	var oldSQL string
+	db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='mail_fts'").Scan(&oldSQL)
+	if !strings.Contains(oldSQL, "content='mail'") {
+		t.Fatal("expected old schema with content='mail'")
+	}
+
+	// 3. Run the fix
+	if err := fixMailFTS(db); err != nil {
+		t.Fatalf("fixMailFTS failed: %v", err)
+	}
+
+	// 4. Verify new schema
+	var newSQL string
+	db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='mail_fts'").Scan(&newSQL)
+	if strings.Contains(newSQL, "content='mail'") {
+		t.Errorf("old schema not cleaned up, got: %s", newSQL)
+	}
+	if !strings.Contains(newSQL, "fts5(content)") {
+		t.Errorf("expected fts5(content), got: %s", newSQL)
+	}
+
+	// 5. Verify mail_search works after fix
+	result, _, err := HandleMailSearch(context.Background(), "迁移测试", 10)
+	if err != nil {
+		t.Fatalf("search after fix failed: %v", err)
+	}
+	if !strings.Contains(result, "迁移测试1") {
+		t.Errorf("expected '迁移测试1' in search results, got: %s", result)
+	}
+
+	// 6. Idempotency: running fixMailFTS again should be a no-op
+	if err := fixMailFTS(db); err != nil {
+		t.Fatalf("second fixMailFTS failed: %v", err)
+	}
+}
