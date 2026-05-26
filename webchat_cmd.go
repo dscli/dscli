@@ -24,12 +24,9 @@ func init() {
   dscli webchat "什么是闭包？"
   echo "review 这段代码" | dscli webchat --input -
 
-默认继续上次对话（--keep=true），无需额外参数：
-  dscli webchat "第一个问题"
-  dscli webchat "继续讨论..."
-
-强制开启新对话：
-  dscli webchat --keep=false "全新话题"
+继续上次对话：
+  dscli webchat --keep "第一个问题"
+  dscli webchat --keep "继续讨论..."
 
 新对话默认启用专家模式（V4 Pro），继续对话保留原模式。
 
@@ -40,7 +37,7 @@ func init() {
 	})
 
 	webchatCmd.Flags().String("input", "", "从文件读取消息（使用 - 表示从 stdin 读取）")
-	webchatCmd.Flags().Bool("keep", true, "继续上次对话（默认 true；--keep=false 开新对话）")
+	webchatCmd.Flags().Bool("keep", false, "继续上次对话（--keep 保持；默认关闭，开新对话）")
 }
 
 func webchatRunE(cmd *cobra.Command, args []string) error {
