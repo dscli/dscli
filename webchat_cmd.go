@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -44,18 +43,8 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(os.Stderr, "📤 发送到 DeepSeek Web...\n")
 	startTime := time.Now()
 
+	// WebChat handles login automatically in the same Chrome session.
 	response, err := lp.WebChat(ctx, message)
-	if errors.Is(err, lp.ErrLoginRequired) {
-		fmt.Fprintln(os.Stderr, "🔐 未登录，自动打开浏览器登录窗口...")
-		fmt.Fprintln(os.Stderr, "   请在弹出的浏览器窗口中完成登录。")
-		if loginErr := lp.WebChatLogin(ctx); loginErr != nil {
-			return fmt.Errorf("登录失败: %w", loginErr)
-		}
-		// Retry after login.
-		fmt.Fprintf(os.Stderr, "📤 重新发送到 DeepSeek Web...\n")
-		startTime = time.Now()
-		response, err = lp.WebChat(ctx, message)
-	}
 	if err != nil {
 		return fmt.Errorf("webchat 失败: %w", err)
 	}

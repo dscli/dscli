@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -44,16 +45,12 @@ const (
 //
 // It uses the same Chrome user data directory as DeepSeekLoginChromeOpts,
 // so cookies from a prior login are automatically available. If not logged
-// in, ErrLoginRequired is returned — the caller should trigger a visible
-// login flow (WebChatLogin) and retry.
+// in, a visible login flow is triggered automatically in the same browser
+// session — no separate WebChatLogin call needed.
 //
 // Usage:
 //
 //	response, err := lp.WebChat(ctx, "hello")
-//	if errors.Is(err, lp.ErrLoginRequired) {
-//	    lp.WebChatLogin(ctx)  // opens visible browser for manual login
-//	    response, err = lp.WebChat(ctx, "hello")  // retry
-//	}
 func WebChat(ctx context.Context, message string) (string, error) {
 	chromePath, err := findChrome()
 	if err != nil {
@@ -80,9 +77,15 @@ func WebChat(ctx context.Context, message string) (string, error) {
 	tabCtx, tabCancel := chromedp.NewContext(allocCtx)
 	defer tabCancel()
 
+	return webchatSend(tabCtx, message, 0)
+}
+
+// webchatSend sends a message and returns the response. If login is needed,
+// it triggers a manual login flow in the same Chrome session and retries once.
+func webchatSend(tabCtx context.Context, message string, retry int) (string, error) {
 	var baseline, response string
 
-	err = chromedp.Run(tabCtx,
+	err := chromedp.Run(tabCtx,
 		// Navigate and wait for the SPA to hydrate.
 		chromedp.Navigate(deepseekChatURL),
 		chromedp.WaitReady("body"),
@@ -108,6 +111,15 @@ func WebChat(ctx context.Context, message string) (string, error) {
 		}),
 	)
 	if err != nil {
+		// If login is needed and we haven't retried yet, perform login
+		// in the same Chrome session and retry once.
+		if errors.Is(err, ErrLoginRequired) && retry == 0 {
+			fmt.Fprintln(os.Stderr, "🔐 未登录，在浏览器窗口中完成登录...")
+			if loginErr := deepseekLogin(tabCtx, "", nil, true); loginErr != nil {
+				return "", fmt.Errorf("webchat login: %w", loginErr)
+			}
+			return webchatSend(tabCtx, message, retry+1)
+		}
 		return "", fmt.Errorf("webchat: %w", err)
 	}
 
