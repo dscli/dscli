@@ -70,24 +70,13 @@ func toolListRunE(cmd *cobra.Command, _ []string) error {
 		Desc     string
 	}
 
-	// firstLine 取描述的首行正文（跳过 Markdown 标题行和空行）
-	firstLine := func(s string) string {
-		for _, line := range strings.Split(s, "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
-			return line
-		}
-		return s
-	}
 	var rows []row
 	for _, t := range tools {
 		cat := t.Category
 		if cat == "" {
 			cat = "-"
 		}
-		desc := strings.TrimSuffix(firstLine(t.Description), ".")
+		desc := strings.TrimSuffix(firstContentLine(t.Description), ".")
 		if len([]rune(desc)) > 48 {
 			desc = toolcall.TruncateHead(desc, 48)
 		}
@@ -161,4 +150,18 @@ func toolStatsRunE(cmd *cobra.Command, _ []string) error {
 	}
 
 	return FormatOutput(rows, "table", headers, rowFunc)
+}
+
+// firstContentLine 取描述的首行正文（跳过 Markdown 标题行和空行）。
+// 如果所有行都是标题或空行，则返回空字符串。
+func firstContentLine(s string) string {
+	for _, line := range strings.Split(s, "\n") {
+		trimmed := strings.TrimSpace(line)
+		// 跳过空行和 markdown 标题（包括 "#tag" 这类不太可能是有效描述的行）
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		return trimmed
+	}
+	return ""
 }
