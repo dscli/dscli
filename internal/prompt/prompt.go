@@ -394,6 +394,17 @@ func GetSystemPrompt(ctx context.Context) string {
 	return config.GeneratePromptWithTemplate()
 }
 
+// RenderPromptForRole renders the system prompt for a specific role
+// (expert/review/dev) without requiring the role to be set in the context.
+// This is useful for tool call handlers that need a one-shot prompt for
+// a given role, such as ask_expert (role="expert") and code_review
+// (role="review").
+func RenderPromptForRole(ctx context.Context, role string) string {
+	config := newPromptConfig(ctx)
+	config.Role = role
+	return config.GeneratePromptWithTemplate()
+}
+
 // newPromptConfig 创建系统提示词配置
 func newPromptConfig(ctx context.Context) *promptConfig {
 	projectRoot := context.ProjectRoot

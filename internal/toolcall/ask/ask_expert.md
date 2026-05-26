@@ -3,6 +3,8 @@
 Ask expert for help.
 
 Ask an expert to review plans or answer difficult questions.
+Uses DeepSeek Web (free V4 Pro) via Chrome browser — no API key needed,
+so feel free to consult the expert whenever you need deep analysis.
 
 Parameters:
 

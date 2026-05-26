@@ -1,6 +1,7 @@
 package ask
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
 	"os"
@@ -8,9 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/context"
+	ictx "gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/lp"
 	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/shell"
+	"gitcode.com/dscli/dscli/internal/prompt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
 
@@ -55,20 +57,20 @@ var askExpertTool = toolcall.ToolDef{
 	Handler:  handleAskExpert,
 }
 
-// dscliCmd is the command string to invoke dscli.
-// In test environments it is automatically replaced with echo to avoid
-// triggering ~60s AI reasoning model calls on every test.
-var dscliCmd = "dscli"
+// askExpertWithRoleFunc is the function used to call the expert.
+// It is a package-level variable so tests can replace it with a mock.
+var askExpertWithRoleFunc = askExpertWebChat
 
 func init() {
-	if context.ReasonerModelOK() {
-		toolcall.RegisterTool(askExpertTool)
-	}
+	// WebChat is always available (free DeepSeek V4 Pro) — no API key needed.
+	// The only prerequisite is Chrome installed and logged in once.
+	toolcall.RegisterTool(askExpertTool)
 
-	// Test optimization: use echo instead of dscli to skip expensive AI inference.
-	// context.IsTesting() checks whether os.Args[0] ends with ".test".
-	if context.IsTesting() {
-		dscliCmd = "echo '[MOCK]'"
+	// Test optimization: use mock to skip browser automation.
+	if ictx.IsTesting() {
+		askExpertWithRoleFunc = func(_ context.Context, _, _ string) (string, error) {
+			return "[MOCK]", nil
+		}
 	}
 }
 
@@ -94,7 +96,7 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 	if summaryDisplay == "" {
 		summaryDisplay = truncateForDisplay(content, 120)
 	}
-	outfmt.Println("📞 Consulting expert...")
+	outfmt.Println("📞 Consulting expert via DeepSeek Web (free V4 Pro)...")
 	outfmt.Println("  Question:", summaryDisplay)
 
 	// Build structured request (does not ask expert to generate summary)
@@ -108,7 +110,7 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 		}
 	}
 
-	result, err = AskExpert(ctx, structuredRequest)
+	result, err = askExpertWithRoleFunc(ctx, structuredRequest, "expert")
 	if err != nil {
 		outfmt.Println("❌ Expert consultation failed")
 		return result, warning, err
@@ -130,93 +132,61 @@ func truncateForDisplay(s string, maxLen int) string {
 	return string(runes[:maxLen-3]) + "..."
 }
 
-// AskExpert calls the AI expert model for consultation and returns the reply.
+// AskExpert calls the AI expert model via DeepSeek Web (free V4 Pro).
 //
-// This function executes the dscli chat command via internal/shell, writes
-// the input content to a temporary file, and passes it to dscli via the
-// --input flag, avoiding command-line length limits and stdin issues.
+// It renders the "expert" system prompt, prepends it to the input, and
+// sends the combined message to chat.deepseek.com via Chrome/CDP.
+// Each call starts a new conversation.
 //
 // Parameters:
 //
 //	ctx: context object for passing execution environment configuration
 //	input: input text to send to the AI model, can be any length
-//	       (limited by system memory)
 //
 // Returns:
 //
-//	reply: the AI model's response text. Returns empty string if execution
-//	       fails without obtaining a reply.
-//	err: error during execution. Returns nil on success. Common errors include:
-//	     - dscli command execution failure
-//	     - temporary file creation/write failure
-//
-// Details:
-//
-//	The function invokes the AI model by executing the following command:
-//	     dscli chat --no-color --no-timestamp --histsize 0 --model <model_name> --input <temp_file>
-//	where the model name is specified by ModelDeepseekReasoner.
-//
-// Notes:
-//   - Ensure the dscli CLI tool is properly installed and configured.
-//   - Input content is passed via a temporary file that is automatically
-//     cleaned up after execution.
-//
-// Example:
-//
-//	ctx := context.Background()
-//	reply, err := AskExpert(ctx, "Please analyze the quality of this code")
-//	if err != nil {
-//	    log.Printf("Consultation failed: %v", err)
-//	} else {
-//	    fmt.Println(reply)
-//	}
-//
-// See also:
-//   - shell.SimpleExecute: function for executing shell commands
-//   - handleAskExpert: tool handler function that uses this function
+//	reply: the AI model's response text
+//	err: error during execution
 func AskExpert(ctx context.Context, input string) (reply string, err error) {
-	return AskExpertWithRole(ctx, input, "expert")
+	return askExpertWithRoleFunc(ctx, input, "expert")
 }
 
 // AskExpertWithRole calls the AI model for consultation with a specified
-// role (dev/expert/review).
+// role (expert/review/dev) via DeepSeek Web (free V4 Pro).
 //
-// This function executes the dscli chat command via internal/shell, writes
-// the input content to a temporary file, and passes it to dscli via the
-// --input and --role flags.
+// It renders the role-specific system prompt (e.g. expert.md, review.md),
+// prepends it to the input, and sends the combined message to
+// chat.deepseek.com. Each call starts a new conversation.
 //
 // Parameters:
 //
 //	ctx: context object
 //	input: input text to send to the AI model
-//	role: role (dev/expert/review)
+//	role: role (expert/review/dev)
 //
 // Returns:
 //
 //	reply: the AI model's response text
 //	err: error during execution
 func AskExpertWithRole(ctx context.Context, input, role string) (reply string, err error) {
-	// Write input content to a temporary file to avoid shell command
-	// length limits and stdin passing issues.
-	tmpFile, err := os.CreateTemp("", "dscli-ask-*.md")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp file: %w", err)
-	}
-	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath)
+	return askExpertWithRoleFunc(ctx, input, role)
+}
 
-	if _, err := tmpFile.WriteString(input); err != nil {
-		tmpFile.Close()
-		return "", fmt.Errorf("failed to write temp file: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		return "", fmt.Errorf("failed to close temp file: %w", err)
-	}
+// askExpertWebChat is the real implementation: renders the role prompt and
+// sends the combined message via lp.WebChat.
+func askExpertWebChat(ctx context.Context, input, role string) (reply string, err error) {
+	// Render the role-specific system prompt (expert.md / review.md / dev.md).
+	// This replaces the API's system message — WebChat has no system prompt
+	// concept, so we prepend it to the user message.
+	systemPrompt := prompt.RenderPromptForRole(ctx, role)
 
-	script := fmt.Sprintf(`%s chat --no-color --no-timestamp --histsize 0 --model %s --role %s --input %s`, dscliCmd,
-		context.ModelDeepseekReasoner, role, tmpPath)
-	reply, err = shell.SimpleExecute(ctx, script)
-	return reply, err
+	// Build the full message: system prompt + separator + user request.
+	// The separator helps the web model distinguish the persona instructions
+	// from the actual task.
+	fullMessage := systemPrompt + "\n\n---\n\n## User Request\n\n" + input
+
+	// Start a new WebChat conversation (free DeepSeek V4 Pro).
+	return lp.WebChat(ctx, fullMessage)
 }
 
 // maxAttachmentSize is the maximum allowed size for a single attachment (1MB).

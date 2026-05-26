@@ -1,13 +1,13 @@
 package ask
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/outfmt"
 	"gitcode.com/dscli/dscli/internal/shell"
 	"gitcode.com/dscli/dscli/internal/toolcall"
@@ -46,9 +46,8 @@ var codeReviewTool = toolcall.ToolDef{
 }
 
 func init() {
-	if context.ReasonerModelOK() {
-		toolcall.RegisterTool(codeReviewTool)
-	}
+	// WebChat is always available (free DeepSeek V4 Pro) — no API key needed.
+	toolcall.RegisterTool(codeReviewTool)
 }
 
 // handleCodeReview 处理代码审查工具调用
@@ -144,10 +143,9 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result, warn
 		err = fmt.Errorf("生成patch失败: %w", err)
 		return result, warning, err
 	}
-
 	// 构建审查请求
 	structuredRequest := buildCodeReviewRequest(summary, fullLog, patch)
-	outfmt.Printf("📤 发送代码审查请求...\n%s\n", structuredRequest)
+	outfmt.Printf("📤 发送代码审查请求到 DeepSeek Web（免费 V4 Pro）...\n%s\n", structuredRequest)
 	result, err = AskExpertWithRole(ctx, structuredRequest, "review")
 	if err != nil {
 		err = fmt.Errorf("代码提交失败: %w", err)
