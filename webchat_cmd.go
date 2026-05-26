@@ -37,6 +37,7 @@ func init() {
 	webchatCmd.Flags().Bool("login", false, "登录 DeepSeek（使用 Chrome 自动登录，手机号+验证码）")
 	webchatCmd.Flags().String("phone", "13910969806", "登录手机号")
 	webchatCmd.Flags().String("login-browser", "chrome", "登录使用的浏览器: chrome (默认) 或 lightpanda")
+	webchatCmd.Flags().Bool("login-visible", false, "登录时显示浏览器窗口（用于手动完成验证码）")
 	webchatCmd.Flags().Bool("setup", false, "（已废弃）请使用 --login 替代")
 }
 
@@ -93,18 +94,21 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 
 	return nil
 }
-
-// webchatLogin implements the DeepSeek login flow.
 func webchatLogin(cmd *cobra.Command) error {
 	phone, _ := cmd.Flags().GetString("phone")
 	browser, _ := cmd.Flags().GetString("login-browser")
+	visible, _ := cmd.Flags().GetBool("login-visible")
 
 	fmt.Fprintln(os.Stderr, "╔══════════════════════════════════════════════════════════════╗")
 	fmt.Fprintln(os.Stderr, "║        DeepSeek Web 自动登录                               ║")
 	fmt.Fprintln(os.Stderr, "╚══════════════════════════════════════════════════════════════╝")
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintf(os.Stderr, "📱 手机号: %s\n", phone)
-	fmt.Fprintf(os.Stderr, "🌐 浏览器: %s\n", browser)
+	fmt.Fprintf(os.Stderr, "🌐 浏览器: %s", browser)
+	if visible {
+		fmt.Fprintf(os.Stderr, " (可见窗口)")
+	}
+	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "流程：自动打开登录页 → 输入手机号 → 发送验证码 → 输入验证码 → 登录")
 	fmt.Fprintln(os.Stderr)
@@ -114,8 +118,11 @@ func webchatLogin(cmd *cobra.Command) error {
 	var err error
 	switch browser {
 	case "chrome", "chromium":
-		err = lp.DeepSeekLoginChrome(ctx, phone, lp.ReadCodeFromStdin)
+		err = lp.DeepSeekLoginChromeOpts(ctx, phone, lp.ReadCodeFromStdin, visible)
 	case "lightpanda", "lp":
+		if visible {
+			fmt.Fprintln(os.Stderr, "⚠️  --login-visible 仅对 Chrome 有效，Lightpanda 始终为 headless 模式")
+		}
 		err = lp.DeepSeekLogin(ctx, phone, lp.ReadCodeFromStdin)
 	default:
 		return fmt.Errorf("不支持的浏览器: %s (可选: chrome, lightpanda)", browser)

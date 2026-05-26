@@ -30,23 +30,35 @@ func findChrome() (string, error) {
 // Chrome/Chromium browser. This is preferred over the Lightpanda-native
 // login because Chrome properly renders the Shumei captcha widget.
 func DeepSeekLoginChrome(ctx context.Context, phone string, codeReader func() (string, error)) error {
+	return DeepSeekLoginChromeOpts(ctx, phone, codeReader, false)
+}
+
+// DeepSeekLoginChromeOpts is like DeepSeekLoginChrome but allows disabling
+// headless mode via the visible parameter (useful for manual captcha solving).
+func DeepSeekLoginChromeOpts(ctx context.Context, phone string, codeReader func() (string, error), visible bool) error {
 	chromePath, err := findChrome()
 	if err != nil {
 		return err
 	}
 
-	fmt.Fprintf(os.Stderr, "🌐 使用 Chrome (%s) 登录 DeepSeek...\n", chromePath)
+	mode := "headless"
+	if visible {
+		mode = "visible"
+	}
+	fmt.Fprintf(os.Stderr, "🌐 使用 Chrome (%s, %s) 登录 DeepSeek...\n", chromePath, mode)
 
 	// Build allocator options. We use --headless=new (the newer headless
 	// mode that is harder for sites to detect as automation) and disable
 	// the "Chrome is being controlled by automated software" infobar.
 	opts := []chromedp.ExecAllocatorOption{
 		chromedp.ExecPath(chromePath),
-		chromedp.Flag("headless", "new"),
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
 		chromedp.Flag("no-first-run", true),
 		chromedp.Flag("no-default-browser-check", true),
 		chromedp.NoSandbox,
+	}
+	if !visible {
+		opts = append(opts, chromedp.Flag("headless", "new"))
 	}
 
 	// Create a context with timeout for the whole login process.

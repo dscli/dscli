@@ -84,9 +84,9 @@ func deepseekLogin(tabCtx context.Context, phone string, codeReader func() (stri
 	}
 	chromedp.Run(loginCtx, chromedp.Sleep(500*time.Millisecond))
 
-	// Step 2: Click "Send code".
+	// Step 2: Click "Send code" / "发送验证码".
 	fmt.Fprintf(os.Stderr, "📤 正在发送验证码...\n")
-	if err := clickButtonByText(loginCtx, "Send code"); err != nil {
+	if err := clickButtonByText(loginCtx, "发送验证码", "Send code"); err != nil {
 		return fmt.Errorf("发送验证码失败: %w", err)
 	}
 
@@ -107,9 +107,9 @@ func deepseekLogin(tabCtx context.Context, phone string, codeReader func() (stri
 	}
 	chromedp.Run(loginCtx, chromedp.Sleep(500*time.Millisecond))
 
-	// Step 5: Click "Log in".
+	// Step 5: Click "Log in" / "登录".
 	fmt.Fprintf(os.Stderr, "🔑 正在登录...\n")
-	if err := clickButtonByText(loginCtx, "Log in"); err != nil {
+	if err := clickButtonByText(loginCtx, "登录", "Log in"); err != nil {
 		return fmt.Errorf("点击登录按钮失败: %w", err)
 	}
 
@@ -240,7 +240,7 @@ func setInputValue(ctx context.Context, selector string, index int, value string
 })()`, quoteJS(selector), index, index, index, quoteJS(value), index, index)
 
 	var result map[string]any
-	if err := chromedp.Evaluate(js, &result).Do(ctx); err != nil {
+	if err := chromedp.Run(ctx, chromedp.Evaluate(js, &result)); err != nil {
 		return fmt.Errorf("js evaluate: %w", err)
 	}
 	if errMsg, ok := result["error"].(string); ok {
@@ -249,28 +249,44 @@ func setInputValue(ctx context.Context, selector string, index int, value string
 	return nil
 }
 
-// clickButtonByText clicks a visible button whose text content matches exactly.
-func clickButtonByText(ctx context.Context, text string) error {
+// clickButtonByText clicks a visible button whose text content matches one of
+// the candidate texts. Tries exact match first, then partial match.
+func clickButtonByText(ctx context.Context, texts ...string) error {
+	if len(texts) == 0 {
+		return fmt.Errorf("no button texts provided")
+	}
+
+	// Build a JS array of candidate texts.
+	quotedTexts := make([]string, len(texts))
+	for i, t := range texts {
+		quotedTexts[i] = quoteJS(t)
+	}
+	textsJSON := "[" + strings.Join(quotedTexts, ", ") + "]"
+
 	js := fmt.Sprintf(`(() => {
+	const candidates = %s;
 	const buttons = document.querySelectorAll('button');
+	// Try exact match first.
 	for (const btn of buttons) {
-		if (btn.offsetParent !== null && btn.textContent.trim() === %s) {
-			btn.click();
-			return {success: true};
+		if (btn.offsetParent === null) continue;
+		const txt = btn.textContent.trim();
+		for (const c of candidates) {
+			if (txt === c) { btn.click(); return {success: true, matched: c}; }
 		}
 	}
-	// Fallback: try partial match.
+	// Fallback: try partial match (includes).
 	for (const btn of buttons) {
-		if (btn.offsetParent !== null && btn.textContent.trim().includes(%s)) {
-			btn.click();
-			return {success: true, partial: true};
+		if (btn.offsetParent === null) continue;
+		const txt = btn.textContent.trim();
+		for (const c of candidates) {
+			if (txt.includes(c)) { btn.click(); return {success: true, matched: c, partial: true}; }
 		}
 	}
-	return {error: 'button "' + %s + '" not found'};
-})()`, quoteJS(text), quoteJS(text), quoteJS(text))
+	return {error: 'none of ' + JSON.stringify(candidates) + ' matched any button'};
+})()`, textsJSON)
 
 	var result map[string]any
-	if err := chromedp.Evaluate(js, &result).Do(ctx); err != nil {
+	if err := chromedp.Run(ctx, chromedp.Evaluate(js, &result)); err != nil {
 		return fmt.Errorf("js evaluate: %w", err)
 	}
 	if errMsg, ok := result["error"].(string); ok {
