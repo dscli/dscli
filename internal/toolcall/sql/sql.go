@@ -13,7 +13,7 @@ import (
 )
 
 //go:embed sql_sql.md
-var sql_sql_md string
+var toolDescription string
 
 // dotCommand maps sqlite3 CLI dot-commands to SQL queries.
 type dotCommand struct {
@@ -27,22 +27,27 @@ var dotCommands = map[string]dotCommand{
 }
 
 // readOnlyPragmas lists PRAGMA commands that are safe for read-only access.
+// Some PRAGMAs become write operations when given arguments (e.g. cache_size).
+// Those are listed in readOnlyPragmasNoArgs — allowed without args, rejected with args.
 var readOnlyPragmas = map[string]bool{
+	// Always read-only (even with arguments in parentheses)
 	"table_info":         true,
 	"index_list":         true,
 	"index_info":         true,
 	"foreign_key_list":   true,
 	"table_xinfo":        true,
 	"index_xinfo":        true,
+	"quick_check":        true,
+	"integrity_check":    true,
+	"foreign_key_check":  true,
+
+	// Read-only without arguments (rejected if args present)
 	"compile_options":    true,
 	"database_list":      true,
 	"collation_list":     true,
 	"function_list":      true,
 	"module_list":        true,
 	"pragma_list":        true,
-	"quick_check":        true,
-	"integrity_check":    true,
-	"foreign_key_check":  true,
 	"stats":              true,
 	"page_count":         true,
 	"page_size":          true,
@@ -70,10 +75,23 @@ var readOnlyPragmas = map[string]bool{
 	"data_version":       true,
 }
 
+// pragmasWithArgs lists PRAGMAs that remain read-only even with arguments.
+var pragmasWithArgs = map[string]bool{
+	"table_info":        true,
+	"index_list":        true,
+	"index_info":        true,
+	"foreign_key_list":  true,
+	"table_xinfo":       true,
+	"index_xinfo":       true,
+	"quick_check":       true,
+	"integrity_check":   true,
+	"foreign_key_check": true,
+}
+
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "sql",
-		Description: sql_sql_md,
+		Description: toolDescription,
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
@@ -149,6 +167,7 @@ func handleSQL(ctx context.Context, args toolcall.ToolArgs) (result, warning str
 }
 
 // translateQuery translates sqlite3 dot-commands to SQL.
+// translateQuery translates sqlite3 dot-commands to SQL.
 func translateQuery(query string) (string, string, error) {
 	q := strings.TrimSpace(query)
 
@@ -163,8 +182,8 @@ func translateQuery(query string) (string, string, error) {
 		// .schema <name> — special case with argument.
 		if cmd == ".schema" && arg != "" {
 			return fmt.Sprintf(
-				"SELECT sql FROM sqlite_master WHERE type='table' AND name='%s'",
-				sanitizeIdent(arg)), "", nil
+				"SELECT sql FROM sqlite_master WHERE type='table' AND name=%s",
+				quoteString(arg)), "", nil
 		}
 
 		// .indices <table>
@@ -173,8 +192,8 @@ func translateQuery(query string) (string, string, error) {
 				return "", "", fmt.Errorf(".indices requires a table name")
 			}
 			return fmt.Sprintf(
-				"SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='%s' ORDER BY name",
-				sanitizeIdent(arg)), "", nil
+				"SELECT name FROM sqlite_master WHERE type='index' AND tbl_name=%s ORDER BY name",
+				quoteString(arg)), "", nil
 		}
 
 		dc, ok := dotCommands[cmd]
@@ -193,20 +212,24 @@ func translateQuery(query string) (string, string, error) {
 }
 
 // checkReadOnly validates that the SQL is read-only.
-func checkReadOnly(sql string) error {
-	normalized := strings.TrimSpace(sql)
+// checkReadOnly validates that the SQL is read-only.
+func checkReadOnly(sqlStr string) error {
+	normalized := strings.TrimSpace(sqlStr)
 	if normalized == "" {
 		return fmt.Errorf("empty query")
 	}
 
-	// Reject multi-statement (semicolons).
-	if idx := strings.IndexByte(normalized, ';'); idx >= 0 && idx < len(normalized)-1 {
-		if strings.TrimSpace(normalized[idx+1:]) != "" {
-			return fmt.Errorf("multi-statement queries are not allowed")
-		}
+	// Strip trailing semicolons first, then check for remaining
+	// semicolons (multi-statement injection). Note: this may
+	// falsely reject semicolons inside string literals (e.g.
+	// SELECT 'hello;world'), but such queries are rare and the
+	// LLM can retry with a corrected query.
+	for strings.HasSuffix(normalized, ";") {
+		normalized = strings.TrimSpace(strings.TrimSuffix(normalized, ";"))
 	}
-	normalized = strings.TrimRight(normalized, ";")
-	normalized = strings.TrimSpace(normalized)
+	if strings.Contains(normalized, ";") {
+		return fmt.Errorf("multi-statement queries are not allowed")
+	}
 
 	upper := strings.ToUpper(normalized)
 
@@ -223,19 +246,38 @@ func checkReadOnly(sql string) error {
 	// Allow read-only PRAGMA.
 	if strings.HasPrefix(upper, "PRAGMA") {
 		rest := strings.TrimSpace(normalized[6:])
+		// Strip optional schema prefix: PRAGMA schema.table_info → table_info
 		if idx := strings.IndexByte(rest, '.'); idx >= 0 {
 			rest = rest[idx+1:]
 		}
+
+		// Reject any PRAGMA with assignment (=) — always a write.
+		if strings.Contains(rest, "=") {
+			return fmt.Errorf("PRAGMA with assignment is not allowed")
+		}
+
+		// Extract pragma name (strip arguments if present).
+		hasArgs := strings.Contains(rest, "(")
 		pragmaName := rest
 		if idx := strings.IndexByte(pragmaName, '('); idx >= 0 {
 			pragmaName = pragmaName[:idx]
 		}
 		pragmaName = strings.TrimSpace(strings.ToLower(pragmaName))
-		if readOnlyPragmas[pragmaName] {
-			return nil
+
+		if !readOnlyPragmas[pragmaName] {
+			return fmt.Errorf("PRAGMA %q is not allowed (read-only PRAGMAs only)", pragmaName)
 		}
-		return fmt.Errorf("PRAGMA %q is not allowed (read-only PRAGMAs only)", pragmaName)
+
+		// PRAGMAs that become writes when given arguments (e.g. cache_size(2000))
+		// are rejected unless explicitly listed as safe with args.
+		if hasArgs && !pragmasWithArgs[pragmaName] {
+			return fmt.Errorf("PRAGMA %q with arguments is not allowed (would be a write)", pragmaName)
+		}
+
+		return nil
 	}
+
+
 
 	// Reject dangerous statements.
 	dangerous := []string{
@@ -253,6 +295,7 @@ func checkReadOnly(sql string) error {
 	return fmt.Errorf("unrecognized query type: only SELECT, EXPLAIN, and read-only PRAGMA are supported")
 }
 
+// formatTable renders query rows as a psql-style aligned table.
 // formatTable renders query rows as a psql-style aligned table.
 func formatTable(rows *sql.Rows) (string, int, error) {
 	columns, err := rows.Columns()
@@ -325,6 +368,10 @@ func formatTable(rows *sql.Rows) (string, int, error) {
 		}
 	}
 
+	if err := rows.Err(); err != nil {
+		return "", 0, fmt.Errorf("rows iteration error: %w", err)
+	}
+
 	var sb strings.Builder
 
 	// Header row.
@@ -357,7 +404,11 @@ func formatTable(rows *sql.Rows) (string, int, error) {
 	}
 
 	if truncated {
-		sb.WriteString(fmt.Sprintf("… (truncated: %d more rows", truncatedRows))
+		if truncatedRows > 0 {
+			sb.WriteString(fmt.Sprintf("… (truncated: %d more rows", truncatedRows))
+		} else {
+			sb.WriteString("… (truncated")
+		}
 		sb.WriteString(")\n")
 	}
 
@@ -394,13 +445,10 @@ func padRight(s string, width int) string {
 	return s + strings.Repeat(" ", width-len(s))
 }
 
-func sanitizeIdent(s string) string {
-	return strings.Map(func(r rune) rune {
-		if r == '\'' || r == '"' || r == ';' || r == '\\' {
-			return -1
-		}
-		return r
-	}, s)
+// quoteString returns an SQLite string literal for safe use in queries.
+// Single quotes are escaped by doubling (SQLite standard).
+func quoteString(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
 
 func mergeWarning(a, b string) string {

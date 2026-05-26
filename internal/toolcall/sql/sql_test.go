@@ -106,7 +106,10 @@ func TestCheckReadOnly(t *testing.T) {
 		{"ATTACH rejected", "ATTACH 'other.db' AS other", true},
 		{"VACUUM rejected", "VACUUM", true},
 		{"read-only PRAGMA stats", "PRAGMA stats", false},
-		{"write PRAGMA cache_size (schema change)", "PRAGMA cache_size = -2000", true},
+		{"write PRAGMA cache_size (equals)", "PRAGMA cache_size = -2000", true},
+		{"write PRAGMA cache_size (parens)", "PRAGMA cache_size(2000)", true},
+		{"write PRAGMA busy_timeout (parens)", "PRAGMA busy_timeout(5000)", true},
+		{"read-only PRAGMA integrity_check with arg", "PRAGMA integrity_check('main')", false},
 		{"empty query", "", true},
 	}
 
@@ -149,25 +152,25 @@ func TestFormatValue(t *testing.T) {
 	}
 }
 
-func TestSanitizeIdent(t *testing.T) {
+func TestQuoteString(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
 		want  string
 	}{
-		{"plain", "memories", "memories"},
-		{"with single quote", "foo'bar", "foobar"},
-		{"with double quote", `foo"bar`, "foobar"},
-		{"with semicolon", "foo;bar", "foobar"},
-		{"with backslash", `foo\bar`, "foobar"},
-		{"mixed", `a'b"c\;d`, "abcd"},
+		{"plain", "memories", "'memories'"},
+		{"with single quote", "foo'bar", "'foo''bar'"},
+		{"empty", "", "''"},
+		{"with double quote", `foo"bar`, `'foo"bar'`},
+		{"with semicolon", "foo;bar", "'foo;bar'"},
+		{"with backslash", `foo\bar`, `'foo\bar'`},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := sanitizeIdent(tt.input)
+			got := quoteString(tt.input)
 			if got != tt.want {
-				t.Errorf("sanitizeIdent(%q) = %q, want %q", tt.input, got, tt.want)
+				t.Errorf("quoteString(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}
