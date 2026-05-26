@@ -46,20 +46,26 @@ const (
 	return {success: true};
 })()`
 
-	// jsEnableDeepThink clicks the "深度思考 (R1)" / "Deep Think" toggle
-	// on the DeepSeek chat page. It searches for the toggle by text content
-	// and clicks it if found. Non-fatal: if the toggle isn't found, the
-	// conversation simply proceeds in standard mode.
+	// jsEnableDeepThink clicks the expert-mode toggle on the DeepSeek chat
+	// page (labeled "深度思考 (R1)" or "V4 Pro" depending on UI version).
+	// It searches for the toggle by text content and clicks it if found.
+	// Non-fatal: if the toggle isn't found, the conversation proceeds in
+	// standard mode.
 	//
 	// The t.length < 40 guard avoids matching large container elements
 	// whose subtree happens to include the text somewhere deep inside.
 	jsEnableDeepThink = `(() => {
+	const patterns = ['深度思考','DeepThink','Deep Think',
+		'V4 Pro','V4Pro','v4 pro','v4pro',
+		'R1','V4','专家','深度'];
 	for (const el of document.querySelectorAll('div,button,span,label')) {
 		const t = (el.textContent || '').trim();
-		if (t.length > 0 && t.length < 40 &&
-			(t.includes('深度思考') || t.includes('DeepThink') || t.includes('R1'))) {
-			el.click();
-			return {success: true, clicked: t};
+		if (t.length === 0 || t.length >= 40) continue;
+		for (const p of patterns) {
+			if (t.includes(p)) {
+				el.click();
+				return {success: true, clicked: t};
+			}
 		}
 	}
 	return {success: false};
@@ -87,7 +93,7 @@ const (
 // in, a visible login flow is triggered automatically in the same browser
 // session — no separate WebChatLogin call needed.
 //
-// New conversations automatically enable Deep Think (R1) expert mode.
+// New conversations automatically enable expert mode (V4 Pro).
 //
 // Usage:
 //
@@ -142,7 +148,6 @@ func webChatWithURL(ctx context.Context, conversationURL, message string) (strin
 		return "", fmt.Errorf("webchat: %w", err)
 	}
 
-	// Persist the conversation URL so it can be continued.
 	if finalURL != "" {
 		_ = saveConversationState(finalURL)
 	}
@@ -160,16 +165,33 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, retry 
 	}
 	isNewConv := (conversationURL == "")
 
+	if !isNewConv {
+		fmt.Fprintf(os.Stderr, "📋 继续会话: %s\n", conversationURL)
+	}
+
 	var baseline, response, finalURL string
 
-	// Build the action sequence. For new conversations we insert
-	// a Deep Think (R1) toggle click after page hydration.
+	// Base navigation and page hydration.
 	actions := []chromedp.Action{
 		chromedp.Navigate(navURL),
 		chromedp.WaitReady("body"),
-		chromedp.Sleep(3 * time.Second),
 	}
 
+	// For continuing conversations: wait longer for chat history to load.
+	if !isNewConv {
+		actions = append(actions,
+			chromedp.Sleep(2*time.Second),
+			// Wait for at least one .ds-markdown element (conversation loaded).
+			chromedp.WaitVisible(".ds-markdown", chromedp.ByQuery),
+			chromedp.Sleep(1*time.Second),
+		)
+	} else {
+		actions = append(actions,
+			chromedp.Sleep(3*time.Second),
+		)
+	}
+
+	// For new conversations: enable expert mode (V4 Pro).
 	if isNewConv {
 		actions = append(actions, chromedp.ActionFunc(func(ctx context.Context) error {
 			var result map[string]any
@@ -177,12 +199,12 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, retry 
 				return nil // non-fatal
 			}
 			if ok, _ := result["success"].(bool); ok {
-				fmt.Fprintln(os.Stderr, "🔬 已启用专家模式 (Deep Think R1)")
+				fmt.Fprintln(os.Stderr, "🔬 已启用专家模式 (V4 Pro)")
 			}
 			return nil
 		}))
-		// Brief pause for the toggle to take effect in the SPA.
-		actions = append(actions, chromedp.Sleep(500*time.Millisecond))
+		// Pause for the toggle to take effect before textarea interaction.
+		actions = append(actions, chromedp.Sleep(1*time.Second))
 	}
 
 	actions = append(actions,
@@ -221,6 +243,10 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, retry 
 			return webchatSend(tabCtx, conversationURL, message, retry+1)
 		}
 		return "", "", fmt.Errorf("webchat: %w", err)
+	}
+
+	if finalURL != "" {
+		fmt.Fprintf(os.Stderr, "💾 会话 URL: %s\n", finalURL)
 	}
 
 	return response, finalURL, nil

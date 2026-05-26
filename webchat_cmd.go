@@ -26,7 +26,7 @@ func init() {
 继续上次对话：
   dscli webchat -c "继续说说..."
 
-新对话默认启用专家模式（Deep Think R1），继续对话保留原模式。
+新对话默认启用专家模式（V4 Pro），继续对话保留原模式。
 
 注意：Web 版不支持函数调用（tool use），仅适用于问专家、code review 等
 无需工具的简单场景。`,
