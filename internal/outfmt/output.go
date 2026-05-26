@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mattn/go-runewidth"
+
 	"gitcode.com/dscli/dscli/internal/context"
 )
 
@@ -484,6 +486,28 @@ func IsVerbose() bool {
 	return outputVerbose
 }
 
+// headerLineWidth is the target terminal width for chat header lines.
+const headerLineWidth = 80
+
+// formatChatHeader builds a chat header with left-aligned identity
+// and right-aligned timestamp, using middle dots as filler.
+//
+// Example: "   🐦 玻尔 <bohr@dscli.io> ········· 🕐17:12:21"
+func formatChatHeader(icon, nameCN, email, now string) string {
+	left := fmt.Sprintf("   %s %s <%s>", icon, nameCN, email)
+	right := "🕐" + now
+
+	leftW := runewidth.StringWidth(left)
+	rightW := runewidth.StringWidth(right)
+
+	padding := headerLineWidth - leftW - rightW
+	if padding < 2 {
+		padding = 2
+	}
+
+	return left + " " + strings.Repeat("·", padding-2) + " " + right
+}
+
 func PrintClimeinContent(ctx context.Context, content string) {
 	userName := context.ContextValue(ctx, context.GitUserNameKey, "")
 	userEmail := context.ContextValue(ctx, context.GitUserEmailKey, "")
@@ -492,7 +516,7 @@ func PrintClimeinContent(ctx context.Context, content string) {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		if userName != "" && userEmail != "" && userName != "未知" {
-			Printf("\n🕐%s  🔔 %s <%s>\n\n", now, userName, userEmail)
+			Printf("\n%s\n\n", formatChatHeader("🔔", userName, userEmail, now))
 			Println("CONTINUE...")
 			Println()
 		} else {
@@ -500,7 +524,7 @@ func PrintClimeinContent(ctx context.Context, content string) {
 		}
 	} else {
 		if userName != "" && userEmail != "" && userName != "未知" {
-			Printf("\n🕐%s  🔔 %s <%s>\n\n", now, userName, userEmail)
+			Printf("\n%s\n\n", formatChatHeader("🔔", userName, userEmail, now))
 			Println(content)
 			Println()
 		} else {
@@ -518,7 +542,7 @@ func PrintUserContent(ctx context.Context, content string) {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		if userName != "" && userEmail != "" && userName != "未知" {
-			Printf("\n🕐%s  👤 %s <%s>\n\n", now, userName, userEmail)
+			Printf("\n%s\n\n", formatChatHeader("👤", userName, userEmail, now))
 			Println("CONTINUE...")
 			Println()
 		} else {
@@ -526,7 +550,7 @@ func PrintUserContent(ctx context.Context, content string) {
 		}
 	} else {
 		if userName != "" && userEmail != "" && userName != "未知" {
-			Printf("\n🕐%s  👤 %s <%s>\n\n", now, userName, userEmail)
+			Printf("\n%s\n\n", formatChatHeader("👤", userName, userEmail, now))
 			Println(content)
 			Println()
 		} else {
@@ -557,7 +581,7 @@ func PrintContent(ctx context.Context, reasoning, content string) {
 	reasoning = strings.TrimSpace(reasoning)
 	if reasoning != "" {
 		if nameCN != "" && email != "" {
-			Printf("\n🕐%s  💭 %s <%s>\n\n", now, nameCN, email)
+			Printf("\n%s\n\n", formatChatHeader("💭", nameCN, email, now))
 			Println(FillParagraph(reasoning, DefaultFillWidth))
 			Println()
 		} else {
@@ -570,7 +594,7 @@ func PrintContent(ctx context.Context, reasoning, content string) {
 		// 在streaming模式下，内容已经在streaming过程中输出，这里不需要再次输出
 		if !stream {
 			if nameCN != "" && email != "" {
-				Printf("\n🕐%s  %s %s <%s>\n\n", now, icon, nameCN, email)
+				Printf("\n%s\n\n", formatChatHeader(icon, nameCN, email, now))
 				Println(content)
 				Println()
 			} else {
@@ -579,4 +603,3 @@ func PrintContent(ctx context.Context, reasoning, content string) {
 		}
 	}
 }
-
