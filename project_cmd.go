@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"gitcode.com/dscli/dscli/internal/context"
 	"gitcode.com/dscli/dscli/internal/session"
 	"github.com/spf13/cobra"
 )
@@ -69,6 +70,7 @@ func projectListRunE(_ *cobra.Command, _ []string) error {
 
 	var rows []row
 	home := os.Getenv("HOME")
+	currentRoot := context.ProjectRoot
 	for _, p := range projects {
 		projectPath := p.ProjectPath
 		if home != "" {
@@ -78,8 +80,12 @@ func projectListRunE(_ *cobra.Command, _ []string) error {
 		if p.MaintainerID > 0 {
 			maintainer = fmt.Sprintf("%s(%s, %d)", p.MaintainerCN, p.MaintainerEN, p.MaintainerID)
 		}
+		idStr := strconv.FormatInt(p.ID, 10)
+		if p.ProjectPath == currentRoot {
+			idStr = "→ " + idStr
+		}
 		rows = append(rows, row{
-			ID:         strconv.FormatInt(p.ID, 10),
+			ID:         idStr,
 			Project:    projectPath,
 			Maintainer: maintainer,
 			CreatedAt:  formatTime(p.CreatedAt),
