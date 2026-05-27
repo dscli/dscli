@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"gitcode.com/dscli/dscli/internal/session"
@@ -55,11 +57,20 @@ func projectListRunE(_ *cobra.Command, _ []string) error {
 	}
 
 	var rows []row
+	home := os.Getenv("HOME")
 	for _, p := range projects {
+		projectPath := p.ProjectPath
+		if home != "" {
+			projectPath = strings.Replace(projectPath, home, "~", 1)
+		}
+		maintainer := ""
+		if p.MaintainerID > 0 {
+			maintainer = fmt.Sprintf("%s(%s, %d)", p.MaintainerCN, p.MaintainerEN, p.MaintainerID)
+		}
 		rows = append(rows, row{
 			ID:         strconv.FormatInt(p.ID, 10),
-			Project:    p.ProjectPath,
-			Maintainer: p.Maintainer,
+			Project:    projectPath,
+			Maintainer: maintainer,
 			CreatedAt:  formatTime(p.CreatedAt),
 		})
 	}

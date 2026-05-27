@@ -85,10 +85,12 @@ func CreateOrGetSessionID(ctx context.Context) (sessionID int64, err error) {
 
 // ProjectRow represents a row from the sessions table.
 type ProjectRow struct {
-	ID          int64
-	ProjectPath string
-	CreatedAt   string
-	Maintainer  string // e.g. "牛顿(Newton)" or empty
+	ID           int64
+	ProjectPath  string
+	CreatedAt    string
+	MaintainerCN string // e.g. "玻尔" or empty
+	MaintainerEN string // e.g. "Bohr" or empty
+	MaintainerID int64  // ai_names.id, 0 if none
 }
 
 // ListProjects returns all sessions with their maintainer, ordered by ID.
@@ -98,10 +100,11 @@ func ListProjects() ([]ProjectRow, error) {
 		return nil, err
 	}
 	defer db.Close()
-
 	rows, err := db.Query(`
 		SELECT s.id, s.project_path, s.created_at,
-		       COALESCE(a.name_cn || '(' || a.name_en || ')', '')
+		       COALESCE(a.name_cn, ''),
+		       COALESCE(a.name_en, ''),
+		       COALESCE(a.id, 0)
 		FROM sessions s
 		LEFT JOIN session_names sn ON s.id = sn.session_id
 		LEFT JOIN ai_names a ON sn.name_id = a.id
@@ -114,7 +117,7 @@ func ListProjects() ([]ProjectRow, error) {
 	var result []ProjectRow
 	for rows.Next() {
 		var r ProjectRow
-		if err := rows.Scan(&r.ID, &r.ProjectPath, &r.CreatedAt, &r.Maintainer); err != nil {
+		if err := rows.Scan(&r.ID, &r.ProjectPath, &r.CreatedAt, &r.MaintainerCN, &r.MaintainerEN, &r.MaintainerID); err != nil {
 			return nil, err
 		}
 		result = append(result, r)
