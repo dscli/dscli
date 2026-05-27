@@ -39,7 +39,10 @@ func init() {
 	})
 }
 
-func projectListRunE(_ *cobra.Command, _ []string) error {
+func projectListRunE(cmd *cobra.Command, _ []string) error {
+	// 确保当前项目已分配 session，这样即使首次访问也能列出来并标记箭头。
+	session.GetCurrentSessionID(cmd.Context())
+
 	projects, err := session.ListProjects()
 	if err != nil {
 		return fmt.Errorf("列出项目失败: %w", err)
@@ -82,7 +85,7 @@ func projectListRunE(_ *cobra.Command, _ []string) error {
 		}
 		idStr := strconv.FormatInt(p.ID, 10)
 		if p.ProjectPath == currentRoot {
-			idStr = "→ " + idStr
+			idStr = idStr + " →"
 		}
 		rows = append(rows, row{
 			ID:         idStr,
