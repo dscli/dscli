@@ -96,7 +96,6 @@ func ToolCallsID(tcs []ToolCall) string {
 	return tcs[0].ID
 }
 
-// SaveMessages 保存消息（事务）
 // SaveMessages 保存消息（事务），同时同步 FTS5 全文索引。
 func SaveMessages(ctx context.Context, msgs ...Message) error {
 	sessionID := session.GetCurrentSessionID(ctx)
@@ -156,11 +155,6 @@ func SaveMessages(ctx context.Context, msgs ...Message) error {
 				return fmt.Errorf("创建全文索引失败: %w", err)
 			}
 		}
-	}
-
-	// 更新会话的更新时间
-	if _, err := tx.Exec("UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", sessionID); err != nil {
-		return fmt.Errorf("更新会话时间失败: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
