@@ -3,6 +3,7 @@ package parse
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -35,19 +36,20 @@ int main(void) {
     return 0;
 }
 `
-	err := os.WriteFile("test_c.c", []byte(content), 0o644)
-	if err != nil {
+	testFile := filepath.Join(t.TempDir(), "test_c.c")
+	if err := os.WriteFile(testFile, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove("test_c.c")
 
-	fs, err := ParseFileStructure(t.Context(), "test_c.c")
+	fs, err := ParseFileStructure(t.Context(), testFile)
 	if err != nil {
 		t.Fatalf("ParseFileStructure failed: %v", err)
 	}
 
-	b, _ := json.MarshalIndent(fs, "", "  ")
-	t.Logf("Result:\n%s", string(b))
+	if testing.Verbose() {
+		b, _ := json.MarshalIndent(fs, "", "  ")
+		t.Logf("Result:\n%s", string(b))
+	}
 
 	// Verify language
 	if fs.Language != "c" {

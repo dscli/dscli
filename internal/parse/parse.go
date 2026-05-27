@@ -488,11 +488,10 @@ func parseCStructure(filePath string) (*FileStructure, error) {
 	if treesitter.Xts_parser_set_language(tls, parser, lang) == 0 {
 		return nil, fmt.Errorf("tree-sitter: failed to set C language")
 	}
-
-	srcStr := string(content)
-	srcPtr := uintptr(unsafe.Pointer(unsafe.StringData(srcStr)))
-
-	tree := treesitter.Xts_parser_parse_string(tls, parser, 0, srcPtr, uint32(len(srcStr)))
+	// content must remain valid for the duration of parse + traversal;
+	// tree-sitter returns byte offsets that tsNodeText slices from content.
+	srcPtr := uintptr(unsafe.Pointer(unsafe.SliceData(content)))
+	tree := treesitter.Xts_parser_parse_string(tls, parser, 0, srcPtr, uint32(len(content)))
 	defer treesitter.Xts_tree_delete(tls, tree)
 
 	root := treesitter.Xts_tree_root_node(tls, tree)
@@ -560,6 +559,8 @@ func collectCSymbols(tls *libc.TLS, node treesitter.TTSNode, content []byte, fs 
 		return // don't recurse — avoids duplicate struct/enum inside typedef
 
 	case "preproc_include":
+		// Fall through to recursion: includes can be nested inside
+		// preproc_if blocks, so we must continue traversing children.
 		if path := findIncludePath(tls, node, content); path != "" {
 			fs.Imports = append(fs.Imports, path)
 		}
@@ -580,6 +581,8 @@ func collectCSymbols(tls *libc.TLS, node treesitter.TTSNode, content []byte, fs 
 }
 
 // tsMakeSymbol creates a Symbol from a tree-sitter node.
+// Tree-sitter uses 0-based rows and columns; we convert to 1-based
+// to match editor/LSP conventions.
 func tsMakeSymbol(tls *libc.TLS, node treesitter.TTSNode, name, kind string) *Symbol {
 	start := treesitter.Xts_node_start_point(tls, node)
 	end := treesitter.Xts_node_end_point(tls, node)
