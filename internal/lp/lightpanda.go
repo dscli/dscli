@@ -328,7 +328,7 @@ func Get(ctx context.Context, rawURL string) (string, error) {
 		return "", fmt.Errorf("lightpanda remote 连接失败: %w", err)
 	}
 
-	return markdown, nil
+	return prettyJSONInMarkdown(markdown), nil
 }
 
 // GetRemote fetches a web page via remote lightpanda CDP regardless of the
@@ -351,7 +351,7 @@ func GetRemote(ctx context.Context, rawURL string) (string, error) {
 		return "", fmt.Errorf("lightpanda remote 连接失败: %w", err)
 	}
 
-	return markdown, nil
+	return prettyJSONInMarkdown(markdown), nil
 }
 
 // ensureLocalLightpanda ensures local lightpanda is running, starting it if

@@ -32,8 +32,6 @@ func webReaderRunE(cmd *cobra.Command, args []string) error {
 	timeout, _ := cmd.Flags().GetInt("timeout")
 	forceRemote, _ := cmd.Flags().GetBool("force-remote")
 
-	startTime := time.Now()
-
 	ctx := cmd.Context()
 	if timeout > 0 {
 		var cancel context.CancelFunc
@@ -54,10 +52,6 @@ func webReaderRunE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("读取网页失败: %w", err)
 	}
 
-	elapsed := time.Since(startTime)
-	fmt.Printf("📝 %s\n\n", url)
-	fmt.Println(markdown)
-	fmt.Printf("\n---\n⏱ 耗时: %v\n", elapsed)
-
+	fmt.Print(markdown)
 	return nil
 }
