@@ -4,6 +4,8 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 	"gitcode.com/dscli/dscli/internal/shell"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
+
 //go:embed code_review.md
 var code_review_md string
 
@@ -29,6 +32,10 @@ var codeReviewTool = toolcall.ToolDef{
 			"test_command": map[string]any{
 				"type":        "string",
 				"description": "Optional test command, default empty skips tests, 1-128 chars",
+			},
+			"since": map[string]any{
+				"type":        "string",
+				"description": "Number of commits to review, e.g. '-1' (last), '-2' (last 2), default '-1'",
 			},
 			"timeout": map[string]any{
 				"type":        "integer",
@@ -52,10 +59,18 @@ func init() {
 func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
 	summary := toolcall.ToolArgsValue(args, "summary", "")
 	testCommand := toolcall.ToolArgsValue(args, "test_command", "")
+	since := toolcall.ToolArgsValue(args, "since", "-1")
 
 	if summary == "" {
 		outfmt.Println("❌ 必须提供提交摘要")
 		err = fmt.Errorf("必须提供提交摘要")
+		return result, warning, err
+	}
+
+	// 校验 since 格式并提取 N
+	n, err := parseSince(since)
+	if err != nil {
+		outfmt.Printf("❌ since 参数格式错误: %v\n", err)
 		return result, warning, err
 	}
 
@@ -104,8 +119,9 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result, warn
 		}
 		outfmt.Println("✅ 单元测试通过")
 	}
+
 	// 获取最新的提交信息
-	logScript := `git log --oneline -1`
+	logScript := fmt.Sprintf(`git log --oneline %s`, since)
 	log, err := shell.SimpleExecute(ctx, logScript)
 	if err != nil {
 		outfmt.Println("❌ 获取提交历史失败")
@@ -123,22 +139,26 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result, warn
 	outfmt.Println(log)
 
 	// 获取完整的提交信息用于构建请求
-	fullLogScript := `git log --format="%B" -1`
+	fullLogScript := fmt.Sprintf(`git log --format="%%B" %s`, since)
 	fullLog, err := shell.SimpleExecute(ctx, fullLogScript)
 	if err != nil {
 		fullLog = log // 如果失败，使用简短的log
 	}
 
 	// 生成patch
-	patchScript := `git --no-pager format-patch --stdout -1`
+	patchScript := fmt.Sprintf(`git --no-pager format-patch --stdout %s`, since)
 	patch, err := shell.SimpleExecute(ctx, patchScript)
 	if err != nil {
 		fmt.Println("❌ 生成patch失败")
 		err = fmt.Errorf("生成patch失败: %w", err)
 		return result, warning, err
 	}
+
+	// 获取修改文件的全文
+	filesContent := collectFileContents(ctx, n)
+
 	// 构建审查请求
-	structuredRequest := buildCodeReviewRequest(summary, fullLog, patch)
+	structuredRequest := buildCodeReviewRequest(summary, fullLog, patch, filesContent)
 	outfmt.Printf("📤 发送代码审查请求到 DeepSeek Web（免费 V4 Pro）...\n%s\n", structuredRequest)
 	result, err = AskExpertWithRole(ctx, structuredRequest, "review")
 	if err != nil {
@@ -150,8 +170,45 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result, warn
 	return result, warning, err
 }
 
-func buildCodeReviewRequest(summary, commitLog, patch string) string {
-	return `## Commit Background
+// parseSince 解析 since 参数，返回提交数 N。
+// since 必须为 "-N" 格式（如 "-1", "-2", "-3"）。
+func parseSince(since string) (int, error) {
+	if !strings.HasPrefix(since, "-") {
+		return 0, fmt.Errorf("格式必须为 '-N'（如 '-1', '-2', '-3'），当前值: %q", since)
+	}
+	n, err := strconv.Atoi(since[1:])
+	if err != nil || n < 1 {
+		return 0, fmt.Errorf("格式必须为 '-N'（如 '-1', '-2', '-3'），当前值: %q", since)
+	}
+	return n, nil
+}
+
+// collectFileContents 收集最近 n 个提交中修改文件的全文内容。
+func collectFileContents(ctx context.Context, n int) string {
+	filesScript := fmt.Sprintf(`git diff --name-only HEAD~%d HEAD`, n)
+	output, err := shell.SimpleExecute(ctx, filesScript)
+	if err != nil || strings.TrimSpace(output) == "" {
+		return ""
+	}
+
+	files := strings.Split(strings.TrimSpace(output), "\n")
+	var sb strings.Builder
+	for _, file := range files {
+		if file == "" {
+			continue
+		}
+		content, err := os.ReadFile(file)
+		if err != nil {
+			fmt.Fprintf(&sb, "\n## File: %s\n[无法读取文件: %v]\n", file, err)
+		} else {
+			fmt.Fprintf(&sb, "\n## File: %s\n```\n%s\n```\n", file, string(content))
+		}
+	}
+	return sb.String()
+}
+
+func buildCodeReviewRequest(summary, commitLog, patch, fileContents string) string {
+	req := `## Commit Background
 ` + summary + `
 
 ## Commit Message
@@ -159,4 +216,13 @@ func buildCodeReviewRequest(summary, commitLog, patch string) string {
 
 ## Code Changes
 ` + patch
+
+	if fileContents != "" {
+		req += `
+
+## Full File Contents
+` + fileContents
+	}
+
+	return req
 }

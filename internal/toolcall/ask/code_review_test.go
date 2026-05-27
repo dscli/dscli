@@ -71,7 +71,7 @@ func TestBuildCodeReviewRequest(t *testing.T) {
 	commitLog := "commit message body"
 	patch := "diff --git a/file.go b/file.go"
 
-	result := buildCodeReviewRequest(summary, commitLog, patch)
+	result := buildCodeReviewRequest(summary, commitLog, patch, "")
 
 	sections := []string{
 		"## Commit Background",
@@ -93,6 +93,29 @@ func TestBuildCodeReviewRequest(t *testing.T) {
 	}
 	if !strings.Contains(result, patch) {
 		t.Errorf("Expected patch %q in result", patch)
+	}
+}
+
+// TestBuildCodeReviewRequestWithFileContents tests the file contents section.
+func TestBuildCodeReviewRequestWithFileContents(t *testing.T) {
+	summary := "fix: test"
+	commitLog := "msg"
+	patch := "diff"
+	fileContents := "## File: main.go\n```\npackage main\n```\n"
+
+	result := buildCodeReviewRequest(summary, commitLog, patch, fileContents)
+
+	if !strings.Contains(result, "## Full File Contents") {
+		t.Errorf("Expected '## Full File Contents' section when fileContents is non-empty")
+	}
+	if !strings.Contains(result, "## File: main.go") {
+		t.Errorf("Expected file content in result")
+	}
+
+	// When empty, should NOT include the section
+	result2 := buildCodeReviewRequest(summary, commitLog, patch, "")
+	if strings.Contains(result2, "## Full File Contents") {
+		t.Errorf("Should NOT include '## Full File Contents' when fileContents is empty")
 	}
 }
 
