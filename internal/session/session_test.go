@@ -2,7 +2,36 @@ package session
 
 import (
 	"testing"
+
+	"gitcode.com/dscli/dscli/internal/sqlite"
 )
+
+func init() {
+	// Register tables normally owned by ainame — session cannot import
+	// ainame due to circular dependency, so we register them here for tests.
+	sqlite.RegisterTableSchema(
+		`CREATE TABLE IF NOT EXISTS ai_names (
+			id              INTEGER PRIMARY KEY,
+			name_cn         TEXT NOT NULL,
+			name_en         TEXT NOT NULL,
+			bird_frog       TEXT NOT NULL DEFAULT 'frog',
+			personality_cn  TEXT NOT NULL,
+			personality_en  TEXT NOT NULL,
+			desc_cn         TEXT NOT NULL,
+			desc_en         TEXT NOT NULL,
+			email           TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE TABLE IF NOT EXISTS session_names (
+			id          INTEGER PRIMARY KEY,
+			session_id  INTEGER NOT NULL,
+			name_id     INTEGER NOT NULL DEFAULT 0,
+			assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (session_id) REFERENCES sessions(id),
+			FOREIGN KEY (name_id) REFERENCES ai_names(id),
+			UNIQUE(session_id)
+		)`,
+	)
+}
 
 func TestGetSessionID(t *testing.T) {
 	ctx := t.Context()
@@ -39,6 +68,8 @@ func TestListProjects(t *testing.T) {
 			if p.CreatedAt == "" {
 				t.Error("created_at should not be empty")
 			}
+			// Maintainer may be empty for sessions without an assigned name;
+			// that's valid — we just verify the field exists in the row.
 			break
 		}
 	}

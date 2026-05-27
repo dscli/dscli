@@ -88,9 +88,10 @@ type ProjectRow struct {
 	ID          int64
 	ProjectPath string
 	CreatedAt   string
+	Maintainer  string // e.g. "牛顿(Newton)" or empty
 }
 
-// ListProjects returns all sessions ordered by ID.
+// ListProjects returns all sessions with their maintainer, ordered by ID.
 func ListProjects() ([]ProjectRow, error) {
 	db, err := sqlite.OpenDB()
 	if err != nil {
@@ -98,7 +99,13 @@ func ListProjects() ([]ProjectRow, error) {
 	}
 	defer db.Close()
 
-	rows, err := db.Query(`SELECT id, project_path, created_at FROM sessions ORDER BY id`)
+	rows, err := db.Query(`
+		SELECT s.id, s.project_path, s.created_at,
+		       COALESCE(a.name_cn || '(' || a.name_en || ')', '')
+		FROM sessions s
+		LEFT JOIN session_names sn ON s.id = sn.session_id
+		LEFT JOIN ai_names a ON sn.name_id = a.id
+		ORDER BY s.id`)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +114,7 @@ func ListProjects() ([]ProjectRow, error) {
 	var result []ProjectRow
 	for rows.Next() {
 		var r ProjectRow
-		if err := rows.Scan(&r.ID, &r.ProjectPath, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.ProjectPath, &r.CreatedAt, &r.Maintainer); err != nil {
 			return nil, err
 		}
 		result = append(result, r)

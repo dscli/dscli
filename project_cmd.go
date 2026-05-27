@@ -37,9 +37,10 @@ func projectListRunE(_ *cobra.Command, _ []string) error {
 	}
 
 	type row struct {
-		ID        string
-		Project   string
-		CreatedAt string
+		ID         string
+		Project    string
+		Maintainer string
+		CreatedAt  string
 	}
 
 	formatTime := func(raw string) string {
@@ -56,16 +57,17 @@ func projectListRunE(_ *cobra.Command, _ []string) error {
 	var rows []row
 	for _, p := range projects {
 		rows = append(rows, row{
-			ID:        strconv.FormatInt(p.ID, 10),
-			Project:   p.ProjectPath,
-			CreatedAt: formatTime(p.CreatedAt),
+			ID:         strconv.FormatInt(p.ID, 10),
+			Project:    p.ProjectPath,
+			Maintainer: p.Maintainer,
+			CreatedAt:  formatTime(p.CreatedAt),
 		})
 	}
 
-	headers := []string{"ID", "Project", "Created At"}
+	headers := []string{"ID", "Project", "Maintainer", "Created At"}
 	rowFunc := func(data any) []string {
 		if r, ok := data.(row); ok {
-			return []string{r.ID, r.Project, r.CreatedAt}
+			return []string{r.ID, r.Project, r.Maintainer, r.CreatedAt}
 		}
 		return nil
 	}
