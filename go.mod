@@ -1,19 +1,16 @@
 module gitcode.com/dscli/dscli
 
-go 1.26
+go 1.26.3
 
 require (
-	github.com/PuerkitoBio/goquery v1.11.0
 	github.com/chromedp/chromedp v0.15.1
 	github.com/eatmoreapple/openwechat v1.4.0
 	github.com/go-ego/gse v1.0.2
 	github.com/goccy/go-yaml v1.19.2
 	github.com/mattn/go-runewidth v0.0.19
 	github.com/spf13/cobra v1.8.0
-	golang.org/x/net v0.52.0
 	golang.org/x/term v0.41.0
 	golang.org/x/text v0.35.0
-	jaytaylor.com/html2text v0.0.0-20260303211410-1a4bdc82ecec
 	modernc.org/sqlite v1.50.1
 	mvdan.cc/sh/v3 v3.13.1
 )
@@ -21,33 +18,26 @@ require (
 ignore ./docs
 
 require (
-	github.com/andybalholm/cascadia v1.3.3 // indirect
-	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/chromedp/cdproto v0.0.0-20260321001828-e3e3800016bc // indirect
+	gitcode.com/dscli/treesitter v0.0.0
+	github.com/chromedp/cdproto v0.0.0-20260321001828-e3e3800016bc
 	github.com/chromedp/sysutil v1.1.0 // indirect
-	github.com/clipperhouse/displaywidth v0.10.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.6.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/fatih/color v1.18.0 // indirect
 	github.com/go-json-experiment/json v0.0.0-20260214004413-d219187c3433 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
-	github.com/olekukonko/cat v0.0.0-20250911104152-50322a0618f6 // indirect
-	github.com/olekukonko/errors v1.2.0 // indirect
-	github.com/olekukonko/ll v0.1.6 // indirect
-	github.com/olekukonko/tablewriter v1.1.4 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/ssor/bom v0.0.0-20170718123548-6386211fdfcf // indirect
 	github.com/vcaesar/cedar v0.30.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
-	modernc.org/libc v1.72.3 // indirect
+	modernc.org/libc v1.72.5
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
+
+replace gitcode.com/dscli/treesitter v0.0.0 => /home/nanjj/src/gitcode.com/dscli/treesitter

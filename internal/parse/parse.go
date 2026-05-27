@@ -14,9 +14,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"unsafe"
 
 	"gitcode.com/dscli/dscli/internal/config"
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/treesitter"
+	"gitcode.com/dscli/treesitter/clang"
+	"modernc.org/libc"
 )
 
 //go:embed parse.py
@@ -107,6 +111,11 @@ func ParseFileStructure0(ctx context.Context, filePath, lang string, usePython b
 	// 如果是Go语言且不强制使用Python，使用Go内置解析器
 	if lang == "go" && !usePython {
 		return parseGoStructure(filePath)
+	}
+
+	// 如果是C语言且不强制使用Python，使用tree-sitter原生解析器
+	if lang == "c" && !usePython {
+		return parseCStructure(filePath)
 	}
 
 	// 其他语言使用Python解析器
@@ -454,5 +463,207 @@ func ParseFileStructure(ctx context.Context, filePath string) (*FileStructure, e
 		return parseGoStructure(filePath)
 	}
 
+	// 如果是C语言，使用tree-sitter原生解析器
+	if lang == "c" {
+		return parseCStructure(filePath)
+	}
+
 	return parseWithPython(ctx, filePath, lang)
+}
+
+// parseCStructure uses tree-sitter to parse C file structure natively in Go.
+func parseCStructure(filePath string) (*FileStructure, error) {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("read file: %w", err)
+	}
+
+	tls := libc.NewTLS()
+	defer tls.Close()
+
+	parser := treesitter.Xts_parser_new(tls)
+	defer treesitter.Xts_parser_delete(tls, parser)
+
+	lang := clang.Xtree_sitter_c(tls)
+	if treesitter.Xts_parser_set_language(tls, parser, lang) == 0 {
+		return nil, fmt.Errorf("tree-sitter: failed to set C language")
+	}
+
+	srcStr := string(content)
+	srcPtr := uintptr(unsafe.Pointer(unsafe.StringData(srcStr)))
+
+	tree := treesitter.Xts_parser_parse_string(tls, parser, 0, srcPtr, uint32(len(srcStr)))
+	defer treesitter.Xts_tree_delete(tls, tree)
+
+	root := treesitter.Xts_tree_root_node(tls, tree)
+
+	fs := &FileStructure{
+		Language: "c",
+		FilePath: filePath,
+	}
+
+	// Walk top-level named children of the translation_unit
+	count := treesitter.Xts_node_named_child_count(tls, root)
+	for i := uint32(0); i < count; i++ {
+		child := treesitter.Xts_node_named_child(tls, root, i)
+		collectCSymbols(tls, child, content, fs)
+	}
+
+	return fs, nil
+}
+
+// tsNodeType returns the node type name as a Go string.
+func tsNodeType(tls *libc.TLS, node treesitter.TTSNode) string {
+	p := treesitter.Xts_node_type(tls, node)
+	return libc.GoString(p)
+}
+
+
+// collectCSymbols recursively walks a tree-sitter node and collects symbols.
+func collectCSymbols(tls *libc.TLS, node treesitter.TTSNode, content []byte, fs *FileStructure) {
+	typeName := tsNodeType(tls, node)
+
+	switch typeName {
+	case "function_definition":
+		if name := findCName(tls, node, content); name != "" {
+			s := tsMakeSymbol(tls, node, name, "function")
+			fs.Functions = append(fs.Functions, s)
+		}
+		return // don't recurse into function bodies
+
+	case "struct_specifier":
+		if name := findCName(tls, node, content); name != "" {
+			s := tsMakeSymbol(tls, node, name, "struct")
+			fs.Classes = append(fs.Classes, s)
+		}
+		return // don't recurse into struct body
+
+	case "union_specifier":
+		if name := findCName(tls, node, content); name != "" {
+			s := tsMakeSymbol(tls, node, name, "union")
+			fs.Classes = append(fs.Classes, s)
+		}
+		return
+
+	case "enum_specifier":
+		if name := findCName(tls, node, content); name != "" {
+			s := tsMakeSymbol(tls, node, name, "enum")
+			fs.Classes = append(fs.Classes, s)
+		}
+		return
+
+	case "type_definition":
+		if name := findCName(tls, node, content); name != "" {
+			s := tsMakeSymbol(tls, node, name, "typedef")
+			fs.Classes = append(fs.Classes, s)
+		}
+		return // don't recurse — avoids duplicate struct/enum inside typedef
+
+	case "preproc_include":
+		if path := findIncludePath(tls, node, content); path != "" {
+			fs.Imports = append(fs.Imports, path)
+		}
+
+	case "preproc_def":
+		if name := findCDefineName(tls, node, content); name != "" {
+			s := tsMakeSymbol(tls, node, name, "macro")
+			fs.Classes = append(fs.Classes, s)
+		}
+	}
+
+	// Recurse into children for nested constructs (e.g. preproc_if → preproc_include)
+	childCount := treesitter.Xts_node_named_child_count(tls, node)
+	for i := uint32(0); i < childCount; i++ {
+		child := treesitter.Xts_node_named_child(tls, node, i)
+		collectCSymbols(tls, child, content, fs)
+	}
+}
+
+// tsMakeSymbol creates a Symbol from a tree-sitter node.
+func tsMakeSymbol(tls *libc.TLS, node treesitter.TTSNode, name, kind string) *Symbol {
+	start := treesitter.Xts_node_start_point(tls, node)
+	end := treesitter.Xts_node_end_point(tls, node)
+	return &Symbol{
+		Name:      name,
+		Type:      kind,
+		Line:      int(start.Frow) + 1,
+		Column:    int(start.Fcolumn) + 1,
+		EndLine:   int(end.Frow) + 1,
+		EndColumn: int(end.Fcolumn) + 1,
+	}
+}
+
+// findCName finds the last meaningful identifier name within a tree-sitter node.
+// It avoids descending into compound_statements and field_declaration_lists.
+// Uses the last identifier (not first) so that type_definition correctly
+// returns the alias name rather than a nested struct/enum tag.
+func findCName(tls *libc.TLS, node treesitter.TTSNode, content []byte) string {
+	typeName := tsNodeType(tls, node)
+
+	// Terminal identifier nodes: return their text.
+	switch typeName {
+	case "identifier", "field_identifier", "type_identifier", "statement_identifier":
+		return tsNodeText(tls, node, content)
+	}
+
+	// Don't descend into bodies.
+	switch typeName {
+	case "compound_statement", "field_declaration_list", "enumerator_list",
+		"parameter_list", "argument_list", "initializer_list":
+		return ""
+	}
+
+	// Recurse into children; take the LAST identifier found.
+	// For most nodes (function, struct, enum) there is only one meaningful
+	// identifier. For type_definition, the alias name is always the last
+	// type_identifier — earlier ones may be struct/enum tags that we must skip.
+	var lastName string
+	childCount := treesitter.Xts_node_named_child_count(tls, node)
+	for i := uint32(0); i < childCount; i++ {
+		child := treesitter.Xts_node_named_child(tls, node, i)
+		if n := findCName(tls, child, content); n != "" {
+			lastName = n
+		}
+	}
+	return lastName
+}
+
+// findIncludePath extracts the include path from a preproc_include node.
+func findIncludePath(tls *libc.TLS, node treesitter.TTSNode, content []byte) string {
+	childCount := treesitter.Xts_node_named_child_count(tls, node)
+	for i := uint32(0); i < childCount; i++ {
+		child := treesitter.Xts_node_named_child(tls, node, i)
+		typeName := tsNodeType(tls, child)
+		switch typeName {
+		case "system_lib_string":
+			return tsNodeText(tls, child, content)
+		case "string_content":
+			text := tsNodeText(tls, child, content)
+			return `"` + text + `"`
+		}
+	}
+	return ""
+}
+
+// findCDefineName extracts the macro name from a preproc_def node.
+func findCDefineName(tls *libc.TLS, node treesitter.TTSNode, content []byte) string {
+	childCount := treesitter.Xts_node_named_child_count(tls, node)
+	for i := uint32(0); i < childCount; i++ {
+		child := treesitter.Xts_node_named_child(tls, node, i)
+		typeName := tsNodeType(tls, child)
+		if typeName == "identifier" {
+			return tsNodeText(tls, child, content)
+		}
+	}
+	return ""
+}
+
+// tsNodeText extracts the source text for a tree-sitter node.
+func tsNodeText(tls *libc.TLS, node treesitter.TTSNode, content []byte) string {
+	start := treesitter.Xts_node_start_byte(tls, node)
+	end := treesitter.Xts_node_end_byte(tls, node)
+	if int(start) < len(content) && int(end) <= len(content) {
+		return string(content[start:end])
+	}
+	return ""
 }
