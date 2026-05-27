@@ -96,57 +96,42 @@ func ToolCallsID(tcs []ToolCall) string {
 	return tcs[0].ID
 }
 
-// SaveMessages 保存消息（事务），同时同步 FTS5 全文索引。
-// 分词在 OpenDB 之前完成，避免占用 DB 锁。
+// SaveMessages 保存消息，同时同步 FTS5 全文索引。
 func SaveMessages(ctx context.Context, msgs ...Message) error {
 	sessionID := session.GetCurrentSessionID(ctx)
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 
-	// 预处理：分词在 DB 事务之外完成，减少锁持有时间。
-	type item struct {
-		msg    Message
-		tokens string // 预分词结果，空表示不需要 FTS 索引
-	}
-	items := make([]item, len(msgs))
-	for i, m := range msgs {
-		items[i].msg = m
-		if m.Role == "user" || (m.Role == "assistant" && len(m.ToolCalls) == 0) {
-			items[i].tokens = tokenizer.Tokenize(m.Content)
-		}
-	}
-
-	db, err := sqlite.OpenDB()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("开始事务失败: %w", err)
-	}
-	defer tx.Rollback()
-
-	for _, it := range items {
-		id, err := saveMessage(tx, sessionID, modelID, it.msg)
-		if err != nil {
+	for _, m := range msgs {
+		if err := saveMessage(sessionID, modelID, m); err != nil {
 			return err
 		}
-		if it.tokens != "" {
-			if err := saveMessageFTS(tx, id, it.tokens); err != nil {
-				return err
-			}
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("提交事务失败: %w", err)
 	}
 	return nil
 }
 
-// saveMessage 插入一条消息到 messages 表，返回自动生成的 ID。
-func saveMessage(tx *sql.Tx, sessionID, modelID int64, m Message) (int64, error) {
+// saveMessage 保存单条消息及其 FTS 索引。
+// 分词在 DB 操作之前完成，避免占用 DB 锁。
+func saveMessage(sessionID, modelID int64, m Message) error {
+	// 分词在 DB 事务之外完成
+	var tokens string
+	if m.Role == "user" || (m.Role == "assistant" && len(m.ToolCalls) == 0) {
+		tokens = tokenizer.Tokenize(m.Content)
+	}
+
+	id, err := insertMessage(sessionID, modelID, m)
+	if err != nil {
+		return err
+	}
+	if tokens != "" {
+		if err := insertMessageFTS(id, tokens); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// insertMessage 插入一条消息到 messages 表（独立事务），返回自动生成的 ID。
+func insertMessage(sessionID, modelID int64, m Message) (int64, error) {
 	var toolCallID, toolCalls sql.NullString
 	if m.ToolCallID != "" {
 		toolCallID.String = m.ToolCallID
@@ -161,6 +146,18 @@ func saveMessage(tx *sql.Tx, sessionID, modelID int64, m Message) (int64, error)
 		toolCalls.Valid = true
 	}
 
+	db, err := sqlite.OpenDB()
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("开始事务失败: %w", err)
+	}
+	defer tx.Rollback()
+
 	res, err := tx.Exec(
 		`INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, model_id, reasoning_content)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -174,18 +171,38 @@ func saveMessage(tx *sql.Tx, sessionID, modelID int64, m Message) (int64, error)
 	if err != nil {
 		return 0, fmt.Errorf("获取消息ID失败: %w", err)
 	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("提交事务失败: %w", err)
+	}
 	return id, nil
 }
 
-// saveMessageFTS 为指定消息建立 FTS5 全文索引（仅 content，不含 reasoning_content）。
+// insertMessageFTS 为指定消息建立 FTS5 全文索引（独立事务，仅 content，不含 reasoning_content）。
 // tokens 应为预分词结果（由 tokenizer.Tokenize 生成）。
-func saveMessageFTS(tx *sql.Tx, id int64, tokens string) error {
-	_, err := tx.Exec(
+func insertMessageFTS(id int64, tokens string) error {
+	db, err := sqlite.OpenDB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("开始事务失败: %w", err)
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec(
 		`INSERT INTO messages_fts(rowid, content) VALUES (?, ?)`,
 		id, tokens,
 	)
 	if err != nil {
 		return fmt.Errorf("创建全文索引失败: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("提交事务失败: %w", err)
 	}
 	return nil
 }
