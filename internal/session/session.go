@@ -82,3 +82,35 @@ func CreateOrGetSessionID(ctx context.Context) (sessionID int64, err error) {
 	sessionID = id
 	return sessionID, err
 }
+
+// ProjectRow represents a row from the sessions table.
+type ProjectRow struct {
+	ID          int64
+	ProjectPath string
+	CreatedAt   string
+}
+
+// ListProjects returns all sessions ordered by ID.
+func ListProjects() ([]ProjectRow, error) {
+	db, err := sqlite.OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	rows, err := db.Query(`SELECT id, project_path, created_at FROM sessions ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []ProjectRow
+	for rows.Next() {
+		var r ProjectRow
+		if err := rows.Scan(&r.ID, &r.ProjectPath, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		result = append(result, r)
+	}
+	return result, rows.Err()
+}
