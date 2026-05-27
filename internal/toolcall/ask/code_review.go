@@ -4,7 +4,6 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -185,6 +184,8 @@ func parseSince(since string) (int, error) {
 
 // collectFileContents 收集最近 n 个提交中修改文件的全文内容。
 func collectFileContents(ctx context.Context, n int) string {
+	const maxFileSize = 500 * 1024 // 500KB per file
+
 	filesScript := fmt.Sprintf(`git diff --name-only HEAD~%d HEAD`, n)
 	output, err := shell.SimpleExecute(ctx, filesScript)
 	if err != nil || strings.TrimSpace(output) == "" {
@@ -197,11 +198,15 @@ func collectFileContents(ctx context.Context, n int) string {
 		if file == "" {
 			continue
 		}
-		content, err := os.ReadFile(file)
+		// 使用 git show 从 object store 读取，不依赖 CWD，
+		// 且始终读取 HEAD 版本（避免工作区未保存更改的干扰）。
+		content, err := shell.SimpleExecute(ctx, fmt.Sprintf("git show HEAD:%s", file))
 		if err != nil {
 			fmt.Fprintf(&sb, "\n## File: %s\n[无法读取文件: %v]\n", file, err)
+		} else if len(content) > maxFileSize {
+			fmt.Fprintf(&sb, "\n## File: %s\n[文件过大 (%d bytes)，已跳过]\n", file, len(content))
 		} else {
-			fmt.Fprintf(&sb, "\n## File: %s\n```\n%s\n```\n", file, string(content))
+			fmt.Fprintf(&sb, "\n## File: %s\n```\n%s\n```\n", file, content)
 		}
 	}
 	return sb.String()
