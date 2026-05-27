@@ -55,11 +55,13 @@ func init() {
 			email           TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE TABLE IF NOT EXISTS session_names (
-			session_id  INTEGER PRIMARY KEY,
+			id          INTEGER PRIMARY KEY,
+			session_id  INTEGER NOT NULL,
 			name_id     INTEGER NOT NULL DEFAULT 0,
 			assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (session_id) REFERENCES sessions(id),
-			FOREIGN KEY (name_id) REFERENCES ai_names(id)
+			FOREIGN KEY (name_id) REFERENCES ai_names(id),
+			UNIQUE(session_id)
 		)`,
 	)
 
@@ -71,6 +73,12 @@ func init() {
 		`UPDATE ai_names SET email = LOWER(name_en) || '@dscli.io' WHERE email = '' OR email IS NULL`,
 		`UPDATE ai_names SET email = REPLACE(LOWER(name_en), ' ', '') || '@dscli.io' WHERE email LIKE '% %'`,
 	)
+
+	// migrateSessionNamesTable: upgrade session_names from session_id PK to id PK.
+	// See RegisterPostInitHook below — must run before seedNames.
+	sqlite.RegisterPostInitHook(func(db *sqlite.DB) error {
+		return migrateSessionNamesTable(db)
+	})
 
 	sqlite.RegisterPostInitHook(func(db *sqlite.DB) error {
 		return seedNames(db)
@@ -95,6 +103,50 @@ func seedNames(db *sqlite.DB) error {
 		if err != nil {
 			return fmt.Errorf("seed ai_names id=%d: %w", n.ID, err)
 		}
+	}
+	return nil
+}
+
+// migrateSessionNamesTable upgrades session_names from session_id PK to id PK.
+// On fresh DBs the new CREATE TABLE IF NOT EXISTS already creates the correct
+// schema — pragma_table_info will show an 'id' column and this is a no-op.
+// On legacy DBs without the 'id' column, the table is recreated preserving all
+// data.  UNIQUE(session_id) maintains the one-row-per-session invariant.
+func migrateSessionNamesTable(db *sqlite.DB) error {
+	var count int
+	err := db.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info('session_names') WHERE name='id'`,
+	).Scan(&count)
+	if err != nil {
+		// Table doesn't exist (fresh DB with new schema, or no sessions yet)
+		// — nothing to migrate, and the new CREATE TABLE is already correct.
+		return nil
+	}
+	if count > 0 {
+		return nil // Already migrated.
+	}
+
+	// Recreate table with id as surrogate PK.
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS session_names_new (
+		id          INTEGER PRIMARY KEY,
+		session_id  INTEGER NOT NULL,
+		name_id     INTEGER NOT NULL DEFAULT 0,
+		assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (session_id) REFERENCES sessions(id),
+		FOREIGN KEY (name_id) REFERENCES ai_names(id),
+		UNIQUE(session_id)
+	)`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`INSERT INTO session_names_new (session_id, name_id, assigned_at)
+		SELECT session_id, name_id, assigned_at FROM session_names`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`DROP TABLE session_names`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`ALTER TABLE session_names_new RENAME TO session_names`); err != nil {
+		return err
 	}
 	return nil
 }
