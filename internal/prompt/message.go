@@ -130,7 +130,7 @@ func saveMessage(sessionID, modelID int64, m Message) error {
 	return nil
 }
 
-// insertMessage 插入一条消息到 messages 表（独立事务），返回自动生成的 ID。
+// insertMessage 插入一条消息到 messages 表，返回自动生成的 ID。
 func insertMessage(sessionID, modelID int64, m Message) (int64, error) {
 	var toolCallID, toolCalls sql.NullString
 	if m.ToolCallID != "" {
@@ -152,13 +152,7 @@ func insertMessage(sessionID, modelID int64, m Message) (int64, error) {
 	}
 	defer db.Close()
 
-	tx, err := db.Begin()
-	if err != nil {
-		return 0, fmt.Errorf("开始事务失败: %w", err)
-	}
-	defer tx.Rollback()
-
-	res, err := tx.Exec(
+	res, err := db.Exec(
 		`INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, model_id, reasoning_content)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		sessionID, m.Role, m.Content, toolCallID, toolCalls, modelID, m.ReasoningContent,
@@ -171,14 +165,10 @@ func insertMessage(sessionID, modelID int64, m Message) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("获取消息ID失败: %w", err)
 	}
-
-	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("提交事务失败: %w", err)
-	}
 	return id, nil
 }
 
-// insertMessageFTS 为指定消息建立 FTS5 全文索引（独立事务，仅 content，不含 reasoning_content）。
+// insertMessageFTS 为指定消息建立 FTS5 全文索引（仅 content，不含 reasoning_content）。
 // tokens 应为预分词结果（由 tokenizer.Tokenize 生成）。
 func insertMessageFTS(id int64, tokens string) error {
 	db, err := sqlite.OpenDB()
@@ -187,22 +177,12 @@ func insertMessageFTS(id int64, tokens string) error {
 	}
 	defer db.Close()
 
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("开始事务失败: %w", err)
-	}
-	defer tx.Rollback()
-
-	_, err = tx.Exec(
+	_, err = db.Exec(
 		`INSERT INTO messages_fts(rowid, content) VALUES (?, ?)`,
 		id, tokens,
 	)
 	if err != nil {
 		return fmt.Errorf("创建全文索引失败: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("提交事务失败: %w", err)
 	}
 	return nil
 }
