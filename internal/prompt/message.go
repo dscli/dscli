@@ -112,9 +112,9 @@ func SaveMessages(ctx context.Context, msgs ...Message) error {
 // saveMessage 保存单条消息及其 FTS 索引。
 // 分词在 DB 操作之前完成，避免占用 DB 锁。
 func saveMessage(sessionID, modelID int64, m Message) error {
-	// 分词在 DB 事务之外完成
+	// 只对用户消息分词建索引（recall 检索目标就是用户消息）
 	var tokens string
-	if m.Role == "user" || (m.Role == "assistant" && len(m.ToolCalls) == 0) {
+	if m.Role == "user" {
 		tokens = tokenizer.Tokenize(m.Content)
 	}
 
@@ -187,8 +187,8 @@ func insertMessageFTS(id int64, tokens string) error {
 	return nil
 }
 
-// populateMessagesFTS 是升级迁移钩子：当 messages 表有数据但 messages_fts 为空时，
-// 为所有已有消息重建 FTS5 全文索引（仅执行一次，仅索引 content，不含 reasoning_content）。
+// populateMessagesFTS 是升级迁移钩子：当 messages 表有用户消息但 messages_fts 为空时，
+// 为已有的用户消息重建 FTS5 全文索引（仅执行一次，仅索引 content，不含 reasoning_content）。
 func populateMessagesFTS(db *sqlite.DB) error {
 	// 检查 FTS 表是否已有数据（已迁移过则跳过）
 	var ftsCount int
@@ -199,27 +199,12 @@ func populateMessagesFTS(db *sqlite.DB) error {
 		return nil // 已迁移，跳过
 	}
 
-	// 检查 messages 表是否有数据
-	var msgCount int
-	if err := db.QueryRow("SELECT COUNT(*) FROM messages").Scan(&msgCount); err != nil {
-		return fmt.Errorf("populateMessagesFTS: 检查 messages 表失败: %w", err)
-	}
-	if msgCount == 0 {
-		return nil // 无消息，无需迁移
-	}
-
-	// 逐条迁移：读取 id, content，分词后写入 FTS
-	rows, err := db.Query("SELECT id, content FROM messages")
+	// 只迁移用户消息（recall 只检索用户消息，assistant/tool 无需索引）
+	rows, err := db.Query("SELECT id, content FROM messages WHERE role = 'user'")
 	if err != nil {
 		return fmt.Errorf("populateMessagesFTS: 查询消息失败: %w", err)
 	}
 	defer rows.Close()
-
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("populateMessagesFTS: 开始事务失败: %w", err)
-	}
-	defer tx.Rollback()
 
 	count := 0
 	for rows.Next() {
@@ -228,7 +213,7 @@ func populateMessagesFTS(db *sqlite.DB) error {
 		if err := rows.Scan(&id, &content); err != nil {
 			return fmt.Errorf("populateMessagesFTS: 扫描消息失败: %w", err)
 		}
-		if _, err := tx.Exec(
+		if _, err := db.Exec(
 			`INSERT INTO messages_fts(rowid, content) VALUES (?, ?)`,
 			id, tokenizer.Tokenize(content),
 		); err != nil {
@@ -240,10 +225,8 @@ func populateMessagesFTS(db *sqlite.DB) error {
 		return fmt.Errorf("populateMessagesFTS: 遍历消息失败: %w", err)
 	}
 
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("populateMessagesFTS: 提交事务失败: %w", err)
+	if count > 0 {
+		outfmt.Debug("populateMessagesFTS: 已为 %d 条已有消息重建 FTS 索引\n", count)
 	}
-
-	outfmt.Debug("populateMessagesFTS: 已为 %d 条已有消息重建 FTS 索引\n", count)
 	return nil
 }
