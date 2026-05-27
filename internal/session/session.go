@@ -2,6 +2,7 @@ package session
 
 import (
 	"database/sql"
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -123,4 +124,41 @@ func ListProjects() ([]ProjectRow, error) {
 		result = append(result, r)
 	}
 	return result, rows.Err()
+}
+
+// AssignMaintainer assigns a maintainer (ai_names.id) to a session (sessions.id).
+// Uses UPSERT — replaces any existing assignment for that session.
+func AssignMaintainer(sessionID, nameID int64) error {
+	db, err := sqlite.OpenDB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	// Verify session exists.
+	var sid int64
+	if err := db.QueryRow("SELECT id FROM sessions WHERE id = ?", sessionID).Scan(&sid); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("project %d: 不存在", sessionID)
+		}
+		return err
+	}
+
+	// Verify name exists.
+	var nid int64
+	if err := db.QueryRow("SELECT id FROM ai_names WHERE id = ?", nameID).Scan(&nid); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("maintainer %d: 不存在", nameID)
+		}
+		return err
+	}
+
+	_, err = db.Exec(`
+		INSERT INTO session_names (session_id, name_id)
+		VALUES (?, ?)
+		ON CONFLICT(session_id) DO UPDATE SET
+			name_id = excluded.name_id,
+			assigned_at = CURRENT_TIMESTAMP`,
+		sessionID, nameID)
+	return err
 }

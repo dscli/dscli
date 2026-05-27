@@ -25,6 +25,17 @@ func init() {
 		Args:  cobra.NoArgs,
 		RunE:  projectListRunE,
 	})
+
+	projectCmd.AddCommand(&cobra.Command{
+		Use:   "assign [project_id] [maintainer_id]",
+		Short: "指定项目的维护者",
+		Long: `将指定项目（session）指派给一个 AI 维护者。
+
+示例:
+  dscli project assign 7 30    # 将项目 7 指派给张衡(id=30)`,
+		Args: cobra.ExactArgs(2),
+		RunE: projectAssignRunE,
+	})
 }
 
 func projectListRunE(_ *cobra.Command, _ []string) error {
@@ -84,4 +95,23 @@ func projectListRunE(_ *cobra.Command, _ []string) error {
 	}
 
 	return FormatOutput(rows, "table", headers, rowFunc)
+}
+
+// projectAssignRunE handles "dscli project assign <project_id> <maintainer_id>".
+func projectAssignRunE(_ *cobra.Command, args []string) error {
+	projectID, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil || projectID <= 0 {
+		return fmt.Errorf("无效的 project_id: %s（需要正整数）", args[0])
+	}
+	maintainerID, err := strconv.ParseInt(args[1], 10, 64)
+	if err != nil || maintainerID <= 0 {
+		return fmt.Errorf("无效的 maintainer_id: %s（需要正整数）", args[1])
+	}
+
+	if err := session.AssignMaintainer(projectID, maintainerID); err != nil {
+		return err
+	}
+
+	fmt.Printf("已将项目 %d 指派给 maintainer %d。\n", projectID, maintainerID)
+	return nil
 }
