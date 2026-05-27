@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"unsafe"
 
@@ -493,7 +494,7 @@ func parseCStructure(filePath string) (*FileStructure, error) {
 	srcPtr := uintptr(unsafe.Pointer(unsafe.SliceData(content)))
 	tree := treesitter.Xts_parser_parse_string(tls, parser, 0, srcPtr, uint32(len(content)))
 	defer treesitter.Xts_tree_delete(tls, tree)
-
+	defer runtime.KeepAlive(content) // prevent GC of content backing array until tree is freed
 	root := treesitter.Xts_tree_root_node(tls, tree)
 
 	fs := &FileStructure{
@@ -514,6 +515,9 @@ func parseCStructure(filePath string) (*FileStructure, error) {
 // tsNodeType returns the node type name as a Go string.
 func tsNodeType(tls *libc.TLS, node treesitter.TTSNode) string {
 	p := treesitter.Xts_node_type(tls, node)
+	if p == 0 { // NULL pointer from tree-sitter (defensive)
+		return ""
+	}
 	return libc.GoString(p)
 }
 
@@ -665,8 +669,9 @@ func findCDefineName(tls *libc.TLS, node treesitter.TTSNode, content []byte) str
 func tsNodeText(tls *libc.TLS, node treesitter.TTSNode, content []byte) string {
 	start := treesitter.Xts_node_start_byte(tls, node)
 	end := treesitter.Xts_node_end_byte(tls, node)
-	if int(start) < len(content) && int(end) <= len(content) {
-		return string(content[start:end])
+	startI, endI := int(start), int(end)
+	if startI >= 0 && startI <= endI && endI <= len(content) {
+		return string(content[startI:endI])
 	}
 	return ""
 }
