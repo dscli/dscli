@@ -22,6 +22,8 @@ else ifeq ($(VERSION),unknown)
 endif
 
 LDFLAGS = -ldflags "-X main.Version=$(VERSION) -X main.Build=$(BUILD_DATE)-$(GIT_COMMIT) -X gitcode.com/dscli/dscli/internal/config.BuildTime=$(BUILD_DATE)"
+# Release：-s 剥符号表 -w 剥 DWARF，binary 预计从 58M → 35~40M
+LDFLAGS_RELEASE = -ldflags "-s -w -X main.Version=$(VERSION) -X main.Build=$(BUILD_DATE)-$(GIT_COMMIT) -X gitcode.com/dscli/dscli/internal/config.BuildTime=$(BUILD_DATE)"
 GOFLAGS = -trimpath -tags netgo
 SOURCE_DIR = .
 BUILD_DIR = build
@@ -156,15 +158,15 @@ release: clean
 	@echo ""
 	# 构建Linux版本
 	@echo "=== 构建Linux版本 ==="
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 $(SOURCE_DIR)
-	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 $(SOURCE_DIR)
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS_RELEASE) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 $(SOURCE_DIR)
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS_RELEASE) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 $(SOURCE_DIR)
 	# 构建macOS版本
 	@echo "=== 构建macOS版本 ==="
-	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 $(SOURCE_DIR)
-	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 $(SOURCE_DIR)
+	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS_RELEASE) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 $(SOURCE_DIR)
+	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS_RELEASE) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 $(SOURCE_DIR)
 	# 构建Windows版本
 	@echo "=== 构建Windows版本 ==="
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe $(SOURCE_DIR)
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS_RELEASE) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe $(SOURCE_DIR)
 	@echo ""
 	@echo "✅ 发布版本构建完成！"
 	@echo "输出目录: $(BUILD_DIR)/"
