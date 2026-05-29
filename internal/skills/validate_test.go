@@ -170,6 +170,20 @@ func TestValidateAllowedToolsAccepted(t *testing.T) {
 	}
 }
 
+func TestValidateAuthorAccepted(t *testing.T) {
+	dir := t.TempDir()
+	skillDir := filepath.Join(dir, "my-skill")
+	mustMkdir(t, skillDir)
+	writeSKILLMD(t, skillDir, "---\nname: my-skill\ndescription: A test skill\nauthor: Someone <someone@example.com>\n---\nBody\n")
+
+	errors := ValidateSkillDir(skillDir)
+	if len(errors) != 0 {
+		t.Errorf("expected no errors for author field, got: %v", errors)
+	}
+}
+
+
+
 func TestValidateChineseName(t *testing.T) {
 	dir := t.TempDir()
 	skillDir := filepath.Join(dir, "技能")

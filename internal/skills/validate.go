@@ -26,7 +26,7 @@ import (
 //   - Directory name matches skill name (NFKC normalized)
 //   - Description: non-empty, max 1024 chars
 //   - Compatibility: if present, must be string, max 500 chars
-//   - No unexpected fields (spec allows 6 fields + dscli extensions: keywords, auto_inject)
+//   - No unexpected fields (spec allows 6 fields + dscli extensions: keywords, auto_inject, author)
 func ValidateSkillDir(dir string) []string {
 	var errors []string
 
@@ -102,11 +102,11 @@ func ValidateSkillDir(dir string) []string {
 
 		// 10. Unexpected fields check
 		//    spec fields: name, description, license, allowed-tools, metadata, compatibility
-		//    dscli extensions: keywords, auto_inject
+		//    dscli extensions: keywords, auto_inject, author
 		allowedFields := map[string]bool{
 			"name": true, "description": true, "license": true,
 			"allowed-tools": true, "metadata": true, "compatibility": true,
-			"keywords": true, "auto_inject": true,
+			"keywords": true, "auto_inject": true, "author": true,
 		}
 		var unexpected []string
 		for key := range fm {
