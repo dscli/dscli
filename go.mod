@@ -15,10 +15,11 @@ require (
 	mvdan.cc/sh/v3 v3.13.1
 )
 
+require gitcode.com/dscli/treesitter v0.0.0-20260528120947-70b4390dbaba // indirect
+
 ignore ./docs
 
 require (
-	gitcode.com/dscli/treesitter v0.0.0
 	github.com/chromedp/cdproto v0.0.0-20260321001828-e3e3800016bc
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.6.0 // indirect
@@ -39,5 +40,3 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
-
-replace gitcode.com/dscli/treesitter v0.0.0 => /home/nanjj/src/gitcode.com/dscli/treesitter
