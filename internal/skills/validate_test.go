@@ -182,8 +182,6 @@ func TestValidateAuthorAccepted(t *testing.T) {
 	}
 }
 
-
-
 func TestValidateChineseName(t *testing.T) {
 	dir := t.TempDir()
 	skillDir := filepath.Join(dir, "技能")

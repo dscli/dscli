@@ -34,9 +34,9 @@ func TestTranslateQuery(t *testing.T) {
 			wantPrefix: "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='memories'",
 		},
 		{
-			name:       ".indices without arg",
-			query:      ".indices",
-			wantErr:    true,
+			name:    ".indices without arg",
+			query:   ".indices",
+			wantErr: true,
 		},
 		{
 			name:       "plain SELECT passes through",
@@ -44,9 +44,9 @@ func TestTranslateQuery(t *testing.T) {
 			wantPrefix: "SELECT 1",
 		},
 		{
-			name:       "unknown dot-command",
-			query:      ".foobar",
-			wantErr:    true,
+			name:    "unknown dot-command",
+			query:   ".foobar",
+			wantErr: true,
 		},
 		{
 			name:       "trailing semicolon stripped in check (passes through)",
@@ -54,9 +54,9 @@ func TestTranslateQuery(t *testing.T) {
 			wantPrefix: "SELECT 1;",
 		},
 		{
-			name:       ".tables with extraneous arg",
-			query:      ".tables foo",
-			wantErr:    true,
+			name:    ".tables with extraneous arg",
+			query:   ".tables foo",
+			wantErr: true,
 		},
 	}
 

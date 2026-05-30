@@ -297,7 +297,7 @@ func saveServiceConfig(name, desc, execStart string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(sd, 0755); err != nil {
+	if err := os.MkdirAll(sd, 0o755); err != nil {
 		return fmt.Errorf("userservice: create services dir: %w", err)
 	}
 
@@ -313,7 +313,7 @@ func saveServiceConfig(name, desc, execStart string, args []string) error {
 	}
 
 	cfgPath := filepath.Join(sd, name+".json")
-	if err := os.WriteFile(cfgPath, data, 0644); err != nil {
+	if err := os.WriteFile(cfgPath, data, 0o644); err != nil {
 		return fmt.Errorf("userservice: write config: %w", err)
 	}
 	return nil

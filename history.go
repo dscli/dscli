@@ -176,6 +176,7 @@ func historyUpdateRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 	return prompt.UpdateHistory(ctx, int64(id))
 }
+
 func historyRecentRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
 

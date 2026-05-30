@@ -566,6 +566,7 @@ func PrintUserContent(ctx context.Context, content string) {
 	}
 	Println("------")
 }
+
 func PrintContent(ctx context.Context, reasoning, content string) {
 	// 检查是否是streaming模式
 	stream := context.ContextValue(ctx, context.StreamKey, false)

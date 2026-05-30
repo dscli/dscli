@@ -20,6 +20,7 @@ import (
 	"gitcode.com/dscli/dscli/internal/session"
 	"gitcode.com/dscli/dscli/internal/skills"
 )
+
 //go:embed dev.md
 var devTemplate string
 

@@ -334,6 +334,7 @@ func (c *MarkdownToOrgConverter) flushMdTableBuf() string {
 
 	return result.String()
 }
+
 // passThroughMdTableBuf passes buffered table lines through convertNonQuoteLine
 // individually, used when the buffer doesn't contain a valid table.
 func (c *MarkdownToOrgConverter) passThroughMdTableBuf() string {

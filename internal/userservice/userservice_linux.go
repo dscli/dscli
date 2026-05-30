@@ -37,10 +37,10 @@ func create(name, desc string, cmd *exec.Cmd) error {
 		return nil
 	}
 
-	if err := os.MkdirAll(unitDir, 0755); err != nil {
+	if err := os.MkdirAll(unitDir, 0o755); err != nil {
 		return fmt.Errorf("userservice: create unit dir: %w", err)
 	}
-	if err := os.WriteFile(unitPath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(unitPath, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("userservice: write unit file: %w", err)
 	}
 

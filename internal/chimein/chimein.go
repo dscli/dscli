@@ -92,7 +92,6 @@ func Get(ctx context.Context) (string, error) {
 	return content, nil
 }
 
-
 // getContent 内部函数：从指定 db 连接获取 content。
 // 未找到时返回 sql.ErrNoRows。
 func getContent(ctx context.Context, db *sqlite.DB, sessionID int64) (string, error) {

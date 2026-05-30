@@ -46,11 +46,11 @@ func tryLock(configDir string) (*Lock, bool, error) {
 	path := filepath.Join(configDir, "locks", "dscli.lock")
 	// 确保锁文件目录存在
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, false, fmt.Errorf("lockfile: mkdir %s: %w", dir, err)
 	}
 
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return nil, false, fmt.Errorf("lockfile: open %s: %w", path, err)
 	}
@@ -107,11 +107,11 @@ func LockDB(dbName string) (*Lock, error) {
 	dir := filepath.Join(config.ConfigDir, "locks")
 	path := filepath.Join(dir, dbName+".lock")
 
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("lockfile: mkdir %s: %w", dir, err)
 	}
 
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("lockfile: open %s: %w", path, err)
 	}

@@ -521,7 +521,6 @@ func tsNodeType(tls *libc.TLS, node treesitter.TTSNode) string {
 	return libc.GoString(p)
 }
 
-
 // collectCSymbols recursively walks a tree-sitter node and collects symbols.
 func collectCSymbols(tls *libc.TLS, node treesitter.TTSNode, content []byte, fs *FileStructure) {
 	typeName := tsNodeType(tls, node)

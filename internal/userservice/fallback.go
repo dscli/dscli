@@ -142,10 +142,10 @@ func writePid(name string, pid int) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(sd, 0755); err != nil {
+	if err := os.MkdirAll(sd, 0o755); err != nil {
 		return fmt.Errorf("userservice: create services dir: %w", err)
 	}
-	return os.WriteFile(pp, []byte(strconv.Itoa(pid)), 0644)
+	return os.WriteFile(pp, []byte(strconv.Itoa(pid)), 0o644)
 }
 
 // removePidFile removes the pidfile for name.

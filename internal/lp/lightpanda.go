@@ -200,6 +200,7 @@ func defaultStartLightpanda() error {
 	}
 	return nil
 }
+
 // ---- User service management ----
 
 // defaultSetupUserService creates and starts lightpanda as a user service
@@ -293,6 +294,7 @@ func waitForTCP(host, port string, timeout time.Duration) error {
 //   - lightpanda-local-url   (default: ws://127.2.2.9:9227)
 //   - lightpanda-remote-url  (default: "")
 //   - lightpanda-remote-token (default: "")
+//
 // Get fetches a web page via lightpanda CDP and returns its markdown content.
 //
 // It automatically routes to remote lightpanda for geo-restricted hosts

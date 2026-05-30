@@ -315,7 +315,6 @@ func handleWriteCodeSection(ctx context.Context, args toolcall.ToolArgs) (result
 		}
 	}
 
-
 	// Run flycheck on the written file and append issues as suggestion
 	if flyResult, _, flyErr := flycheck.Flycheck(ctx, path); flyErr == nil && flyResult != "" {
 		if warning != "" {

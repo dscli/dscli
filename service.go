@@ -159,10 +159,10 @@ func serviceCreateRunE(cmd *cobra.Command, args []string) error {
 
 	// 检测标准输入是否为终端，避免无 heredoc/管道时卡住
 	if term.IsTerminal(int(os.Stdin.Fd())) {
-		return fmt.Errorf("请通过 heredoc 或管道提供描述和命令，例如：\n\n" +
-			"  dscli service create %s <<EOF\n" +
-			"  服务描述\n" +
-			"  /path/to/binary --flag1 --flag2\n" +
+		return fmt.Errorf("请通过 heredoc 或管道提供描述和命令，例如：\n\n"+
+			"  dscli service create %s <<EOF\n"+
+			"  服务描述\n"+
+			"  /path/to/binary --flag1 --flag2\n"+
 			"  EOF", name)
 	}
 

@@ -29,10 +29,10 @@ func create(name, desc string, cmd *exec.Cmd) error {
 		return nil
 	}
 
-	if err := os.MkdirAll(plistDir, 0700); err != nil {
+	if err := os.MkdirAll(plistDir, 0o700); err != nil {
 		return fmt.Errorf("userservice: create LaunchAgents dir: %w", err)
 	}
-	if err := os.WriteFile(plistPath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(plistPath, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("userservice: write plist: %w", err)
 	}
 

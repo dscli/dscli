@@ -143,7 +143,7 @@ func TestCWDPushFileNotDir(t *testing.T) {
 	t.Cleanup(func() { restoreState(origCWD, origPR, origStack) })
 
 	tmpFile := filepath.Join(t.TempDir(), "test.txt")
-	if err := os.WriteFile(tmpFile, []byte("test"), 0644); err != nil {
+	if err := os.WriteFile(tmpFile, []byte("test"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

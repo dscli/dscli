@@ -35,7 +35,7 @@ func chromeUserDataDir() (string, error) {
 		return "", fmt.Errorf("无法获取用户目录: %w", err)
 	}
 	dir := filepath.Join(home, ".dscli", "chrome-profile")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("无法创建 Chrome profile 目录: %w", err)
 	}
 	return dir, nil

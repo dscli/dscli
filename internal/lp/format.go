@@ -57,8 +57,8 @@ func prettyJSONInMarkdown(md string) string {
 			break
 		}
 
-		langTag := rest[:nl]        // e.g. "", "json", "go"
-		afterLang := rest[nl+1:]    // code content + closing fence
+		langTag := rest[:nl]     // e.g. "", "json", "go"
+		afterLang := rest[nl+1:] // code content + closing fence
 
 		// Find closing fence in the code content.
 		end := strings.Index(afterLang, fence)

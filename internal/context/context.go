@@ -40,6 +40,7 @@ var (
 	GitUserNameKey        = ContextKeyType[string]{"GitUserName"}
 	GitUserEmailKey       = ContextKeyType[string]{"GitUserEmail"}
 )
+
 var (
 	WithTimeout      = context.WithTimeout
 	WithValue        = context.WithValue

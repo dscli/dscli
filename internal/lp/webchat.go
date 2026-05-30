@@ -367,6 +367,7 @@ func cleanBodyResponse(raw string) string {
 	}
 	return strings.TrimSpace(strings.Join(filtered, "\n"))
 }
+
 // matchCitationLine reports whether s is a standalone citation
 // reference like "- 2" or "-10" or "— 10".
 var citationLineRE = regexp.MustCompile(`^[-–—]\s*\d+$`)
@@ -425,7 +426,7 @@ func saveConversationState(convURL string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0o644)
 }
 
 // loadConversationURL loads the last saved conversation URL, or "" if none.

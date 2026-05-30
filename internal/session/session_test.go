@@ -77,6 +77,7 @@ func TestListProjects(t *testing.T) {
 		t.Errorf("session %d not found in project list", id)
 	}
 }
+
 func TestAssignMaintainer(t *testing.T) {
 	ctx := t.Context()
 	sessionID, err := CreateOrGetSessionID(ctx)

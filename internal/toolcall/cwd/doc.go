@@ -15,19 +15,19 @@
 //
 // Stack Model:
 //
-//	   PUSH ./sub-project
-//	   │  save (CWD=A, ProjectRoot=X)  ──►  stack: [(A, X)]
-//	   │  os.Chdir(./sub-project)
-//	   │  recompute ProjectRoot (maybe Y)
-//	   │
-//	   ▼  现在所有文件/Shell 工具都以 sub-project 为基准
-//	   ...
-//	   POP
-//	   │  restore entry: (A, X)
-//	   │  os.Chdir(A)
-//	   │  context.ProjectRoot = X   ← 恢复 push 前的精确值
-//	   ▼
-//	   回到原始上下文
+//	PUSH ./sub-project
+//	│  save (CWD=A, ProjectRoot=X)  ──►  stack: [(A, X)]
+//	│  os.Chdir(./sub-project)
+//	│  recompute ProjectRoot (maybe Y)
+//	│
+//	▼  现在所有文件/Shell 工具都以 sub-project 为基准
+//	...
+//	POP
+//	│  restore entry: (A, X)
+//	│  os.Chdir(A)
+//	│  context.ProjectRoot = X   ← 恢复 push 前的精确值
+//	▼
+//	回到原始上下文
 //
 // Why push+pop Together:
 //

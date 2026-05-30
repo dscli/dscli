@@ -29,7 +29,6 @@ func DefaultCookiePath() string {
 	return filepath.Join(dir, ".dscli", "deepseek-cookies.json")
 }
 
-
 // deepseekLogin performs the shared DeepSeek login flow on an already
 // established browser tab context (works with any CDP-based browser:
 // Lightpanda, Chrome, etc.).
@@ -154,7 +153,7 @@ func saveDeepSeekCookies(ctx context.Context) error {
 	}
 
 	// Ensure directory exists.
-	if err := os.MkdirAll(filepath.Dir(cookiePath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cookiePath), 0o755); err != nil {
 		return fmt.Errorf("创建 cookie 目录失败: %w", err)
 	}
 
@@ -163,7 +162,7 @@ func saveDeepSeekCookies(ctx context.Context) error {
 		return fmt.Errorf("序列化 cookies 失败: %w", err)
 	}
 
-	if err := os.WriteFile(cookiePath, data, 0600); err != nil {
+	if err := os.WriteFile(cookiePath, data, 0o600); err != nil {
 		return fmt.Errorf("写入 cookie 文件失败: %w", err)
 	}
 
@@ -172,6 +171,7 @@ func saveDeepSeekCookies(ctx context.Context) error {
 
 	return nil
 }
+
 // deepseekLoginManual waits for the user to complete login in the visible
 // browser window. It polls the page URL until we leave the sign_in page,
 // then saves cookies.
@@ -324,7 +324,6 @@ func setInputValue(ctx context.Context, selector string, index int, value string
 	}
 	return nil
 }
-
 
 // setCodeInput sets the verification code input value. Unlike phone input
 // (which uses type=tel), the code input may use various selectors. This
