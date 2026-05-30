@@ -5,14 +5,19 @@ This is **dscli**, an AI-enhanced CLI tool for developers - DeepSeek API chat cl
 ## Build, Test, and Lint
 
 ```bash
-make build                   # Build - outputs build/dscli
-make install                 # Install to $GOPATH/bin
-go test ./...                # All unit tests
-go test -v -run TestX ./...  # Single test
-make dev-test                # Fast test (skip formatting)
-make gofmt                   # Format with goimports + gofumpt
-make fmt-check               # Check formatting without modifying
+make build                        # Build - outputs build/dscli
+make install                      # Install to $GOPATH/bin
+go test ./...                     # All unit tests
+go test -v -run '^TestX$' ./...   # Single test (anchor with ^ and $ to avoid partial matches)
+make dev-test                     # Fast test - skips formatting, use during development
+make gofmt                        # Format with goimports + gofumpt
+make fmt-check                    # Check formatting without modifying
 ```
+
+**Which test command to use:**
+- `make dev-test` — during development: runs `go test -v ./...`, skips formatting
+- `go test ./...` — before committing: CI-equivalent, no verbose output
+- `go test -v -run '^TestX$' ./...` — single test: use `^` and `$` to avoid matching `TestXyz`
 
 **Before committing, ensure tests pass:**
 ```bash
@@ -26,6 +31,8 @@ Entry point: `main.go` → `RootExecute()` → `root.go` (Cobra root command wit
 
 Top-level `*_cmd.go` files are CLI command implementations registered via `AddRootCommand()` in their `init()` functions.
 
+Packages use `init()` + `sqlite.Register*Schema` for declarative dependency wiring — `sqlite.OpenDB()` executes all registered DDL on first open.
+
 ### Key Internal Packages
 
 | Package | Purpose |
@@ -36,11 +43,11 @@ Top-level `*_cmd.go` files are CLI command implementations registered via `AddRo
 | `internal/config/` | Config file parsing (`~/.dscli/config.dscli`) |
 | `internal/session/` | Session management with per-project SQLite isolation |
 | `internal/skills/` | Skill lifecycle: search, load, validate, auto-inject |
-| `internal/context/` | Context key-value store, project root detection |
+| `internal/context/` | Context key-value store and project root detection; also the parameter bus between AI tools and business logic (e.g. `CurrentRoleKey`, `CurrentModelIDKey` consumed by `LoadPrompts`) |
 | `internal/dsc/` | DeepSeek API client (chat, balance, models) |
 | `internal/flycheck/` | Static analysis (Go, Python, Emacs) |
 | `internal/outfmt/` | Output formatting (markdown/org), color, timestamp |
-| `internal/sqlite/` | SQLite database access with FTS5 |
+| `internal/sqlite/` | SQLite connection management (WAL mode, lockfile protection) with schema migration framework (`RegisterTableSchema`, `RegisterIndexSchema`, etc.) |
 | `internal/mail/` | Inter-AI mail system |
 | `internal/ainame/` | 32 scientist personality assignment |
 | `internal/roles/` | Role configuration (tools, skills, prompt overrides) |
@@ -48,7 +55,7 @@ Top-level `*_cmd.go` files are CLI command implementations registered via `AddRo
 | `internal/lockfile/` | Per-project process lock for chat sessions |
 | `internal/editor/` | External editor integration |
 | `internal/lp/` | Language parser (C, Python, JSON) |
-| `internal/memories/` | Persistent cross-session memory store |
+| `internal/memories/` | Persistent cross-session memory store with FTS5; CJK-aware tokenization via space-separated character preprocessing |
 | `internal/tokenizer/` | Token counting for context window management |
 | `internal/userservice/` | User identity service |
 | `internal/wechat/` | WeChat integration |
@@ -150,9 +157,8 @@ Key skills for development:
 - `fix-dup-comments` - Remove duplicate comment lines
 - `pkgsite-api` - Query pkg.go.dev API
 
-## AI Assistant Tools
+## AI Assistant Context
 
-AI assistants working on this project have access to standard file operations
-(`read_file`, `write_file`, `search_content`), shell execution, code analysis,
-and git management. See `internal/prompt/` for the full system prompt templates
-that define the AI's tool set and behavior contract.
+AI assistants: your tool set and behavior contract are defined in `internal/prompt/` templates
+(dev/expert/review). This AGENTS.md is the **project-specific supplement** — read it before
+writing code to understand build commands, architecture, and conventions unique to dscli.
