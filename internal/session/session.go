@@ -162,3 +162,30 @@ func AssignMaintainer(sessionID, nameID int64) error {
 		sessionID, nameID)
 	return err
 }
+
+// UpdateProjectPath updates the project_path for a given session.
+// Returns an error if the session does not exist or the path is empty.
+func UpdateProjectPath(sessionID int64, newPath string) error {
+	if newPath == "" {
+		return fmt.Errorf("project path 不能为空")
+	}
+
+	db, err := sqlite.OpenDB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	// Verify session exists.
+	var sid int64
+	if err := db.QueryRow("SELECT id FROM sessions WHERE id = ?", sessionID).Scan(&sid); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("project %d: 不存在", sessionID)
+		}
+		return err
+	}
+
+	_, err = db.Exec(`UPDATE sessions SET project_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		newPath, sessionID)
+	return err
+}

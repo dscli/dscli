@@ -37,6 +37,17 @@ func init() {
 		Args: cobra.ExactArgs(2),
 		RunE: projectAssignRunE,
 	})
+
+	projectCmd.AddCommand(&cobra.Command{
+		Use:   "update [project_id] [project]",
+		Short: "更新项目的路径",
+		Long: `更新指定项目（session）的 project_path。
+
+示例:
+  dscli project update 2 /new/path/to/project`,
+		Args: cobra.ExactArgs(2),
+		RunE: projectUpdateRunE,
+	})
 }
 
 func projectListRunE(cmd *cobra.Command, _ []string) error {
@@ -122,5 +133,24 @@ func projectAssignRunE(_ *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("已将项目 %d 指派给 maintainer %d。\n", projectID, maintainerID)
+	return nil
+}
+
+// projectUpdateRunE handles "dscli project update <project_id> <project>".
+func projectUpdateRunE(_ *cobra.Command, args []string) error {
+	projectID, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil || projectID <= 0 {
+		return fmt.Errorf("无效的 project_id: %s（需要正整数）", args[0])
+	}
+	newPath := args[1]
+	if newPath == "" {
+		return fmt.Errorf("project path 不能为空")
+	}
+
+	if err := session.UpdateProjectPath(projectID, newPath); err != nil {
+		return err
+	}
+
+	fmt.Printf("已将项目 %d 的路径更新为 %s。\n", projectID, newPath)
 	return nil
 }

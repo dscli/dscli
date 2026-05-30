@@ -77,7 +77,6 @@ func TestListProjects(t *testing.T) {
 		t.Errorf("session %d not found in project list", id)
 	}
 }
-
 func TestAssignMaintainer(t *testing.T) {
 	ctx := t.Context()
 	sessionID, err := CreateOrGetSessionID(ctx)
@@ -142,5 +141,48 @@ func TestAssignMaintainer(t *testing.T) {
 	// Error: non-existent name.
 	if err := AssignMaintainer(sessionID, 99999); err == nil {
 		t.Error("expected error for non-existent name")
+	}
+}
+
+func TestUpdateProjectPath(t *testing.T) {
+	ctx := t.Context()
+	sessionID, err := CreateOrGetSessionID(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Happy path: update to a valid path.
+	newPath := "/tmp/test-updated-project"
+	if err := UpdateProjectPath(sessionID, newPath); err != nil {
+		t.Fatalf("UpdateProjectPath: %v", err)
+	}
+
+	// Verify via ListProjects.
+	projects, err := ListProjects()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, p := range projects {
+		if p.ID == sessionID {
+			found = true
+			if p.ProjectPath != newPath {
+				t.Errorf("ProjectPath = %q, want %q", p.ProjectPath, newPath)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Errorf("session %d not found", sessionID)
+	}
+
+	// Error: non-existent session.
+	if err := UpdateProjectPath(99999, "/tmp/foo"); err == nil {
+		t.Error("expected error for non-existent session")
+	}
+
+	// Error: empty path.
+	if err := UpdateProjectPath(sessionID, ""); err == nil {
+		t.Error("expected error for empty path")
 	}
 }
