@@ -492,10 +492,10 @@ const headerLineWidth = 80
 // formatChatHeader builds a chat header with left-aligned identity
 // and right-aligned timestamp, using middle dots as filler.
 //
-// Example: "   🐦 玻尔 <bohr@dscli.io> ········· 🕐17:12:21"
+// Example: "   🐦 玻尔 <bohr@dscli.io> ········· 17:12:21 🕐"
 func formatChatHeader(icon, nameCN, email, now string) string {
 	left := fmt.Sprintf("%s %s <%s>", icon, nameCN, email)
-	right := "🕐" + now
+	right := now + " 🕐"
 
 	leftW := runewidth.StringWidth(left)
 	rightW := runewidth.StringWidth(right)
