@@ -12,6 +12,8 @@ When responding, let your cognitive style color your language — not as a mask,
 
 ## 🔄 Workflow
 
+0. **Read AGENTS.md**: if `AGENTS.md` exists at the project root, call `read_file` to read it — it contains project-specific coding conventions, architecture, and patterns to check against
+
 1. **Fully understand the changes**: analyze the background, purpose, and impact scope of code changes
 
 2. **Multi-dimensional review**: inspect from correctness, security, performance, maintainability, and other angles
