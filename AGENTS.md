@@ -1,11 +1,11 @@
 # AGENTS.md
 
-This is **dscli**, an AI-enhanced CLI tool for developers — DeepSeek API chat client with tool calling, project management, and a pluggable skills system. Module path: `gitcode.com/dscli/dscli`.
+This is **dscli**, an AI-enhanced CLI tool for developers - DeepSeek API chat client with tool calling, project management, and a pluggable skills system. Module path: `gitcode.com/dscli/dscli`.
 
 ## Build, Test, and Lint
 
 ```bash
-make build                   # Build — outputs build/dscli
+make build                   # Build - outputs build/dscli
 make install                 # Install to $GOPATH/bin
 go test ./...                # All unit tests
 go test -v -run TestX ./...  # Single test
@@ -75,16 +75,16 @@ func init() {
 | `arg` or `<arg>` | **Required** argument |
 | `[arg]` | **Optional** argument |
 
-**Key rule**: match the `Use` field with your `Args` validator (`cobra.ExactArgs`, `MinimumNArgs`, etc.). Don't blindly copy patterns from existing commands — they may be wrong.
+**Key rule**: match the `Use` field with your `Args` validator (`cobra.ExactArgs`, `MinimumNArgs`, etc.). Don't blindly copy patterns from existing commands - they may be wrong.
 
 ### The Chat Command
 
 The `chat` command (`chat.go`) is the core of dscli. Its flow:
 
-1. `ChatPreRunE` — validate model, load role, set context values
-2. `ChatRunE` — acquire project lock; if primary, start chat loop; if secondary, inject as chimein
-3. `ChatRound` — assemble messages (prompts → history → inputs), call DeepSeek API, handle tool calls recursively
-4. `injectChimein` — check for pending chimein/unread mail between rounds
+1. `ChatPreRunE` - validate model, load role, set context values
+2. `ChatRunE` - acquire project lock; if primary, start chat loop; if secondary, inject as chimein
+3. `ChatRound` - assemble messages (prompts → history → inputs), call DeepSeek API, handle tool calls recursively
+4. `injectChimein` - check for pending chimein/unread mail between rounds
 
 ### System Prompt Pipeline
 
@@ -119,10 +119,10 @@ Tests live alongside their code:
 
 - **Godoc comments** on all exported functions, types, and constants
 - **gofumpt -extra** before commit (`make gofmt`)
-- **Prefer simplicity** — avoid unnecessary abstraction
-- **Modern Go** — use features from Go 1.22+ (see `use-modern-go` skill)
-- **No em dashes** — use regular dashes in code and comments
-- **Comment the *why***, not the *what* — don't restate obvious code
+- **Prefer simplicity** - avoid unnecessary abstraction
+- **Modern Go** - use features from Go 1.22+ (see `use-modern-go` skill)
+- **No em dashes** - use regular dashes in code and comments
+- **Comment the *why***, not the *what* - don't restate obvious code
 
 ## Error Handling
 
@@ -139,22 +139,20 @@ Skills are reusable recipes in `.dscli/skills/<name>/SKILL.md`. They are:
 - Auto-injectable per-role via `skill_set_auto_inject`
 
 Key skills for development:
-- `cobra-use-convention` — Cobra Use field conventions
-- `use-modern-go` — Modern Go syntax (1.22–1.26)
-- `go-test` — Go testing best practices + scripts
-- `gofumpt` — Strict Go formatter rules
-- `go-fix` — Go code modernization (analyzer-based)
-- `go-doc-comments` — Go doc comment conventions
-- `version-bump` — Version bump + git tag automation
-- `fix-context-import` — Fix dual context import issues
-- `fix-dup-comments` — Remove duplicate comment lines
-- `pkgsite-api` — Query pkg.go.dev API
+- `cobra-use-convention` - Cobra Use field conventions
+- `use-modern-go` - Modern Go syntax (1.22–1.26)
+- `go-test` - Go testing best practices + scripts
+- `gofumpt` - Strict Go formatter rules
+- `go-fix` - Go code modernization (analyzer-based)
+- `go-doc-comments` - Go doc comment conventions
+- `version-bump` - Version bump + git tag automation
+- `fix-context-import` - Fix dual context import issues
+- `fix-dup-comments` - Remove duplicate comment lines
+- `pkgsite-api` - Query pkg.go.dev API
 
-## Release
+## AI Assistant Tools
 
-```bash
-make release                 # Build for 5 platforms (linux/macos/windows, amd64/arm64)
-make release-info            # Show release metadata
-```
-
-Release builds use `LDFLAGS_RELEASE` (with `-s -w` to strip symbols). Development builds keep debug info.
+AI assistants working on this project have access to standard file operations
+(`read_file`, `write_file`, `search_content`), shell execution, code analysis,
+and git management. See `internal/prompt/` for the full system prompt templates
+that define the AI's tool set and behavior contract.
