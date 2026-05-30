@@ -28,7 +28,7 @@ func init() {
 	})
 
 	projectCmd.AddCommand(&cobra.Command{
-		Use:   "assign [project_id] [maintainer_id]",
+		Use:   "assign <project_id> <maintainer_id>",
 		Short: "指定项目的维护者",
 		Long: `将指定项目（session）指派给一个 AI 维护者。
 
@@ -39,7 +39,7 @@ func init() {
 	})
 
 	projectCmd.AddCommand(&cobra.Command{
-		Use:   "update [project_id] [project]",
+		Use:   "update <project_id> <project>",
 		Short: "更新项目的路径",
 		Long: `更新指定项目（session）的 project_path。
 
