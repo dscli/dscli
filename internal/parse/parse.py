@@ -1,1499 +1,1073 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
-dscli-get-file-structure - Python implementation for file structure parsing
+dscli parse.py - File structure parsing using tree-sitter.
 
-This script is embedded in the Go binary and executed via stdin.
-It provides advanced file structure parsing capabilities for various languages.
+Replaces regex-based parsing with proper AST parsing via tree-sitter
+grammars for supported languages.  Falls back to regex for others.
+
+Input (stdin):  JSON with "content" and "language" fields.
+Output (stdout): JSON with structure info (functions, classes, imports, …).
 """
 
-import sys
+from __future__ import annotations
+
 import json
-import ast
 import re
-from typing import Dict, List, Any
+import sys
 import traceback
-import importlib.util
+from typing import Any, Callable
 
-class FileStructureParser:
-    """Main parser class for analyzing file structure"""
+from tree_sitter import Language, Parser
 
-    def __init__(self):
-        self.language_parsers = {
-            'go': self.parse_go,
-            'python': self.parse_python,
-            'javascript': self.parse_javascript,
-            'typescript': self.parse_typescript,
-            'java': self.parse_java,
-            'c': self.parse_c,
-            'cpp': self.parse_cpp,
-            'markdown': self.parse_markdown,
-            'org': self.parse_org,
-            'elisp': self.parse_elisp,
-            'makefile': self.parse_makefile,
-            'cmake': self.parse_cmake,
-            'vimscript': self.parse_vimscript,
-            'vim': self.parse_vimscript,  # alias for .vim files
-        }
-        # Check dependencies
-        self.deps_ok = self._check_dependencies()
-        self.enhanced_capabilities = self._get_enhanced_capabilities()
+# ═══════════════════════════════════════════════════════════════════════════════
+# Language loading
+# ═══════════════════════════════════════════════════════════════════════════════
 
-    def parse(self, content: str, language: str) -> Dict[str, Any]:
-        """Parse content with specified language"""
-        if language not in self.language_parsers:
-            return {
-                'error': f"Unsupported language: {language}",
-                'supported_languages': list(self.language_parsers.keys()),
-                'errors': []
-            }
+_LANGUAGES: dict[str, Language] = {}
 
-        try:
-            return self.language_parsers[language](content)
-        except Exception as e:
-            return {
-                'error': f"Parsing error: {str(e)}",
-                'errors': [f"Parsing error: {str(e)}"]
-            }
-    def parse_go(self, content: str) -> Dict[str, Any]:
-        """Parse Go file structure using regex (Go AST parsing is done in Go)"""
-        result = {
-            'functions': [],
-            'imports': [],
-            'structs': [],
-            'interfaces': [],
-            'errors': []
-        }
 
-        try:
-            lines = content.split('\n')
-
-            # Parse imports
-            for i, line in enumerate(lines):
-                # 检查单行导入
-                single_import_match = re.match(r'^\s*import\s+"([^"]+)"', line)
-                if single_import_match:
-                    result['imports'].append({
-                        'name': single_import_match.group(1),
-                        'type': 'import',
-                        'lineno': i + 1
-                    })
-
-                # 检查多行导入开始
-                multi_import_match = re.match(r'^\s*import\s*\(', line)
-                if multi_import_match:
-                    # 查找多行导入的结束
-                    for j in range(i + 1, len(lines)):
-                        if lines[j].strip() == ')':
-                            # 处理多行导入中的每一行
-                            for k in range(i + 1, j):
-                                import_line = lines[k].strip()
-                                if import_line and not import_line.startswith('//'):
-                                    if import_line.startswith('"'):
-                                        result['imports'].append({
-                                            'name': import_line.strip('"'),
-                                            'type': 'import',
-                                            'lineno': k + 1
-                                        })
-                            break
-
-            # Parse functions
-            func_pattern = r'func\s+(?:\([^)]+\)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\([^)]*\)\s*(?:\([^)]*\))?\s*(?:\{[^}]*\})?'
-            for i, line in enumerate(lines):
-                # 查找函数定义
-                func_match = re.search(func_pattern, line)
-                if func_match:
-                    # 查找函数体的结束
-                    brace_count = line.count('{') - line.count('}')
-                    if brace_count > 0:
-                        # 函数体在同一行开始
-                        for j in range(i + 1, len(lines)):
-                            brace_count += lines[j].count('{') - lines[j].count('}')
-                            if brace_count <= 0:
-                                result['functions'].append({
-                                    'name': func_match.group(1),
-                                    'type': 'function',
-                                    'lineno': i + 1,
-                                    'end_lineno': j + 1
-                                })
-                                break
-                    else:
-                        # 函数体可能在后几行开始
-                        for j in range(i + 1, min(i + 10, len(lines))):
-                            if '{' in lines[j]:
-                                # 找到函数体开始
-                                brace_count = 1
-                                for k in range(j + 1, len(lines)):
-                                    brace_count += lines[k].count('{') - lines[k].count('}')
-                                    if brace_count <= 0:
-                                        result['functions'].append({
-                                            'name': func_match.group(1),
-                                            'type': 'function',
-                                            'lineno': i + 1,
-                                            'end_lineno': k + 1
-                                        })
-                                        break
-                                break
-                        else:
-                            # 没有找到函数体，可能只有声明
-                            result['functions'].append({
-                                'name': func_match.group(1),
-                                'type': 'function',
-                                'lineno': i + 1
-                            })
-
-            # Parse structs
-            struct_pattern = r'type\s+([A-Za-z_][A-Za-z0-9_]*)\s+struct\s*\{'
-            for i, line in enumerate(lines):
-                struct_match = re.search(struct_pattern, line)
-                if struct_match:
-                    # 查找结构体的结束
-                    brace_count = line.count('{') - line.count('}')
-                    if brace_count > 0:
-                        # 结构体在同一行开始
-                        for j in range(i + 1, len(lines)):
-                            brace_count += lines[j].count('{') - lines[j].count('}')
-                            if brace_count <= 0:
-                                result['structs'].append({
-                                    'name': struct_match.group(1),
-                                    'type': 'struct',
-                                    'lineno': i + 1,
-                                    'end_lineno': j + 1
-                                })
-                                break
-                    else:
-                        # 结构体可能在后几行开始
-                        for j in range(i + 1, min(i + 10, len(lines))):
-                            if '{' in lines[j]:
-                                # 找到结构体开始
-                                brace_count = 1
-                                for k in range(j + 1, len(lines)):
-                                    brace_count += lines[k].count('{') - lines[k].count('}')
-                                    if brace_count <= 0:
-                                        result['structs'].append({
-                                            'name': struct_match.group(1),
-                                            'type': 'struct',
-                                            'lineno': i + 1,
-                                            'end_lineno': k + 1
-                                        })
-                                        break
-                                break
-                        else:
-                            # 没有找到结构体定义
-                            result['structs'].append({
-                                'name': struct_match.group(1),
-                                'type': 'struct',
-                                'lineno': i + 1
-                            })
-
-            # Parse interfaces
-            interface_pattern = r'type\s+([A-Za-z_][A-Za-z0-9_]*)\s+interface\s*\{'
-            for i, line in enumerate(lines):
-                interface_match = re.search(interface_pattern, line)
-                if interface_match:
-                    # 查找接口的结束
-                    brace_count = line.count('{') - line.count('}')
-                    if brace_count > 0:
-                        # 接口在同一行开始
-                        for j in range(i + 1, len(lines)):
-                            brace_count += lines[j].count('{') - lines[j].count('}')
-                            if brace_count <= 0:
-                                result['interfaces'].append({
-                                    'name': interface_match.group(1),
-                                    'type': 'interface',
-                                    'lineno': i + 1,
-                                    'end_lineno': j + 1
-                                })
-                                break
-                    else:
-                        # 接口可能在后几行开始
-                        for j in range(i + 1, min(i + 10, len(lines))):
-                            if '{' in lines[j]:
-                                # 找到接口开始
-                                brace_count = 1
-                                for k in range(j + 1, len(lines)):
-                                    brace_count += lines[k].count('{') - lines[k].count('}')
-                                    if brace_count <= 0:
-                                        result['interfaces'].append({
-                                            'name': interface_match.group(1),
-                                            'type': 'interface',
-                                            'lineno': i + 1,
-                                            'end_lineno': k + 1
-                                        })
-                                        break
-                                break
-                        else:
-                            # 没有找到接口定义
-                            result['interfaces'].append({
-                                'name': interface_match.group(1),
-                                'type': 'interface',
-                                'lineno': i + 1
-                            })
-
-        except Exception as e:
-            result['errors'].append(f"Go parsing error: {str(e)}")
-
-        return result
-
-    def parse_python(self, content: str) -> Dict[str, Any]:
-        """Parse Python file structure using AST"""
-        result = {
-            'functions': [],
-            'classes': [],
-            'imports': [],
-            'errors': []
-        }
-
-        try:
-            tree = ast.parse(content)
-
-            # Parse imports
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Import):
-                    for alias in node.names:
-                        result['imports'].append(alias.name)
-                elif isinstance(node, ast.ImportFrom):
-                    module = node.module or ''
-                    for alias in node.names:
-                        result['imports'].append(f"{module}.{alias.name}" if module else alias.name)
-
-            # Parse functions and classes
-            for node in ast.iter_child_nodes(tree):
-                if isinstance(node, ast.FunctionDef):
-                    # 获取函数结束行号
-                    end_lineno = getattr(node, 'end_lineno', None)
-                    if end_lineno is None:
-                        # 如果没有end_lineno属性，尝试计算
-                        end_lineno = node.lineno
-                        # 遍历函数体找到最后一行
-                        for child in ast.walk(node):
-                            if hasattr(child, 'lineno'):
-                                end_lineno = max(end_lineno, child.lineno)
-
-                    result['functions'].append({
-                        'name': node.name,
-                        'type': 'function',
-                        'lineno': node.lineno,
-                        'end_lineno': end_lineno,
-                        'col_offset': node.col_offset
-                    })
-                elif isinstance(node, ast.AsyncFunctionDef):
-                    # 获取异步函数结束行号
-                    end_lineno = getattr(node, 'end_lineno', None)
-                    if end_lineno is None:
-                        end_lineno = node.lineno
-                        for child in ast.walk(node):
-                            if hasattr(child, 'lineno'):
-                                end_lineno = max(end_lineno, child.lineno)
-
-                    result['functions'].append({
-                        'name': node.name,
-                        'type': 'async_function',
-                        'lineno': node.lineno,
-                        'end_lineno': end_lineno,
-                        'col_offset': node.col_offset
-                    })
-                elif isinstance(node, ast.ClassDef):
-                    # 获取类结束行号
-                    end_lineno = getattr(node, 'end_lineno', None)
-                    if end_lineno is None:
-                        end_lineno = node.lineno
-                        for child in ast.walk(node):
-                            if hasattr(child, 'lineno'):
-                                end_lineno = max(end_lineno, child.lineno)
-
-                    result['classes'].append({
-                        'name': node.name,
-                        'type': 'class',
-                        'lineno': node.lineno,
-                        'end_lineno': end_lineno,
-                        'col_offset': node.col_offset,
-                        'methods': [method.name for method in node.body if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef))]
-                    })
-        except SyntaxError as e:
-            result['errors'].append(f"Python syntax error: {str(e)}")
-        except Exception as e:
-            result['errors'].append(f"Python parsing error: {str(e)}")
-            result['errors'].append(traceback.format_exc())
-
-        return result
-
-    def parse_javascript(self, content: str) -> Dict[str, Any]:
-        """Parse JavaScript file structure using regex"""
-        result = {
-            'functions': [],
-            'classes': [],
-            'imports': [],
-            'errors': []
-        }
-
-        try:
-            # Parse imports (ES6 modules)
-            import_patterns = [
-                r'import\s+(?:\*\s+as\s+)?([A-Za-z_$][A-Za-z0-9_$]*)\s+from\s+["\']([^"\']+)["\']',
-                r'import\s+{([^}]+)}\s+from\s+["\']([^"\']+)["\']',
-                r'import\s+["\']([^"\']+)["\']'
-            ]
-
-            for pattern in import_patterns:
-                matches = re.findall(pattern, content)
-                for match in matches:
-                    if isinstance(match, tuple):
-                        if len(match) == 2:
-                            # import {x, y} from 'module' or import x from 'module'
-                            if ',' in match[0]:
-                                # Multiple imports: import {x, y} from 'module'
-                                imports = match[0].split(',')
-                                for imp in imports:
-                                    imp = imp.strip()
-                                    if imp:
-                                        result['imports'].append(f"{imp} from {match[1]}")
-                            else:
-                                # Single import: import x from 'module'
-                                result['imports'].append(f"{match[0]} from {match[1]}")
-                        else:
-                            # import 'module'
-                            result['imports'].append(match[0])
-                    else:
-                        # import x from 'module' (non-tuple match)
-                        result['imports'].append(f"{match}")
-
-            # Parse functions
-            func_patterns = [
-                r'(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:<[^>]*>)?\s*\([^)]*\)',
-                r'(?:export\s+)?(?:async\s+)?const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?::\s*[^=]+)?\s*=\s*(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][A-Za-z0-9_$]*)\s*=>',
-                r'(?:export\s+)?(?:async\s+)?let\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?::\s*[^=]+)?\s*=\s*(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][A-Za-z0-9_$]*)\s*=>',
-                r'(?:export\s+)?(?:async\s+)?var\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?::\s*[^=]+)?\s*=\s*(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][A-Za-z0-9_$]*)\s*=>',
-                r'(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*<[^>]*>\s*\([^)]*\)'  # Generic functions
-            ]
-
-            for pattern in func_patterns:
-                matches = re.findall(pattern, content)
-                for func_name in matches:
-                    result['functions'].append({
-                        'name': func_name,
-                        'type': 'function'
-                    })
-
-            # Parse classes
-            class_pattern = r'(?:export\s+)?class\s+([A-Za-z_$][A-Za-z0-9_$]*)'
-            classes = re.findall(class_pattern, content)
-            for class_name in classes:
-                result['classes'].append({
-                    'name': class_name,
-                    'type': 'class'
-                })
-
-        except Exception as e:
-            result['errors'].append(f"JavaScript parsing error: {str(e)}")
-
-        return result
-
-    def parse_typescript(self, content: str) -> Dict[str, Any]:
-        """Parse TypeScript file structure (extends JavaScript parsing)"""
-        result = self.parse_javascript(content)
-        result['language'] = 'typescript'
-
-        try:
-            # Additional TypeScript-specific parsing
-            # Parse interfaces
-            interface_pattern = r'(?:export\s+)?interface\s+([A-Za-z_$][A-Za-z0-9_$]+)(?:\s*<[^>]*>)?\s*{'
-            interfaces = re.findall(interface_pattern, content)
-            if 'interfaces' not in result:
-                result['interfaces'] = []
-            for interface_name in interfaces:
-                result['interfaces'].append({
-                    'name': interface_name,
-                    'type': 'interface'
-                })
-
-            # Parse types
-            type_pattern = r'(?:export\s+)?type\s+([A-Za-z_$][A-Za-z0-9_$]+)(?:\s*<[^>]*>)?\s*='
-            types = re.findall(type_pattern, content)
-            if 'types' not in result:
-                result['types'] = []
-            for type_name in types:
-                result['types'].append({
-                    'name': type_name,
-                    'type': 'type_alias'
-                })
-
-            # Parse enums
-            enum_pattern = r'(?:export\s+)?enum\s+([A-Za-z_$][A-Za-z0-9_$]+)\s*{'
-            enums = re.findall(enum_pattern, content)
-            if 'enums' not in result:
-                result['enums'] = []
-            for enum_name in enums:
-                result['enums'].append({
-                    'name': enum_name,
-                    'type': 'enum'
-                })
-
-        except Exception as e:
-            result['errors'].append(f"TypeScript parsing error: {str(e)}")
-
-        return result
-
-    def parse_java(self, content: str) -> Dict[str, Any]:
-        """Parse Java file structure"""
-        result = {
-            'classes': [],
-            'methods': [],
-            'imports': [],
-            'errors': []
-        }
-
-        try:
-            # Parse imports
-            import_pattern = r'import\s+([\w.]+(?:\.[\w*]+)?)\s*;'
-            imports = re.findall(import_pattern, content)
-            result['imports'] = imports
-
-            # Parse classes and interfaces
-            class_pattern = r'(?:public\s+|private\s+|protected\s+|abstract\s+|final\s+)*(?:class|interface|enum)\s+([A-Za-z_$][A-Za-z0-9_$]*)'
-            classes = re.findall(class_pattern, content)
-            for class_name in classes:
-                result['classes'].append({
-                    'name': class_name,
-                    'type': 'class'
-                })
-
-            # Parse methods
-            method_pattern = r'(?:public\s+|private\s+|protected\s+|static\s+|final\s+|abstract\s+|synchronized\s+)*([A-Za-z_$<>\[\]\s]+)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\([^)]*\)'
-            methods = re.findall(method_pattern, content)
-            for return_type, method_name in methods:
-                result['methods'].append({
-                    'name': method_name.strip(),
-                    'type': 'method',
-                    'return_type': return_type.strip()
-                })
-
-        except Exception as e:
-            result['errors'].append(f"Java parsing error: {str(e)}")
-
-        return result
-
-    def parse_c(self, content: str) -> Dict[str, Any]:
-        """Parse C file structure"""
-        result = {
-            'functions': [],
-            'includes': [],
-            'structs': [],
-            'errors': []
-        }
-
-        try:
-            lines = content.split('\n')
-
-            # Parse includes
-            include_pattern = r'#include\s+[<"]([^>"]+)[>"]'
-            for i, line in enumerate(lines):
-                include_match = re.search(include_pattern, line)
-                if include_match:
-                    result['includes'].append({
-                        'name': include_match.group(1),
-                        'type': 'include',
-                        'lineno': i + 1
-                    })
-
-            # Parse functions
-            func_pattern = r'(?:[\w\s]+)\s+\*?\s*([\w]+)\s*\([^)]*\)\s*(?:\{[^}]*\})?'
-            for i, line in enumerate(lines):
-                func_match = re.search(func_pattern, line)
-                if func_match:
-                    # Skip preprocessor directives (#define, #include, etc.)
-                    # Regex matches "#define MACRO(...)" by treating
-                    # "define" as return-type and "MACRO" as function name.
-                    if line.lstrip().startswith('#'):
-                        continue
-                    # Skip C keywords falsely matched as function names
-                    c_keywords = {'if', 'for', 'while', 'switch', 'return', 'sizeof', 'goto',
-                                  'break', 'continue', 'do', 'else', 'case', 'default'}
-                    if func_match.group(1) in c_keywords:
-                        continue
-                    # Skip matches inside string literals: if the prefix
-                    # contains an odd number of " chars, we're inside
-                    # an unclosed string literal (e.g. "... MiB (..."
-                    # inside fprintf format strings).
-                    prefix = line[:func_match.start(1)]
-                    if prefix.count('"') % 2 != 0:
-                        continue
-                    # Skip function calls: require a return type (at least one
-                    # [a-zA-Z_] char before the function name). Without this,
-                    # indented calls like "    free(ptr)" match because the
-                    # regex backtracks [\w\s\*]+ to pure whitespace, treating
-                    # indentation as the "return type".
-                    if not re.search(r'[a-zA-Z_]', prefix):
-                        continue
-                    # Skip declarations and function calls: if the remainder
-                    # of the line after the regex match starts with ';', this
-                    # is a declaration/prototype or a call like
-                    # "return foo(...)", not a function definition with a
-                    # brace-delimited body.
-                    if line[func_match.end():].lstrip().startswith(';'):
-                        continue
-                    brace_count = line.count('{') - line.count('}')
-                    if brace_count > 0:
-                        # 函数体在同一行开始
-                        for j in range(i + 1, len(lines)):
-                            brace_count += lines[j].count('{') - lines[j].count('}')
-                            if brace_count <= 0:
-                                result['functions'].append({
-                                    'name': func_match.group(1),
-                                    'type': 'function',
-                                    'lineno': i + 1,
-                                    'end_lineno': j + 1
-                                })
-                                break
-                    else:
-                        # 函数体可能在后几行开始
-                        for j in range(i + 1, min(i + 10, len(lines))):
-                            if '{' in lines[j]:
-                                # 找到函数体开始
-                                brace_count = 1
-                                for k in range(j + 1, len(lines)):
-                                    brace_count += lines[k].count('{') - lines[k].count('}')
-                                    if brace_count <= 0:
-                                        result['functions'].append({
-                                            'name': func_match.group(1),
-                                            'type': 'function',
-                                            'lineno': i + 1,
-                                            'end_lineno': k + 1
-                                        })
-                                        break
-                                break
-                        else:
-                            # 没有找到函数体，可能只有声明
-                            result['functions'].append({
-                                'name': func_match.group(1),
-                                'type': 'function',
-                                'lineno': i + 1
-                            })
-
-            # Parse structs
-            struct_pattern = r'struct\s+([\w]+)\s*\{'
-            for i, line in enumerate(lines):
-                struct_match = re.search(struct_pattern, line)
-                if struct_match:
-                    # 查找结构体的结束
-                    brace_count = line.count('{') - line.count('}')
-                    if brace_count > 0:
-                        # 结构体在同一行开始
-                        for j in range(i + 1, len(lines)):
-                            brace_count += lines[j].count('{') - lines[j].count('}')
-                            if brace_count <= 0:
-                                result['structs'].append({
-                                    'name': struct_match.group(1),
-                                    'type': 'struct',
-                                    'lineno': i + 1,
-                                    'end_lineno': j + 1
-                                })
-                                break
-                    else:
-                        # 结构体可能在后几行开始
-                        for j in range(i + 1, min(i + 10, len(lines))):
-                            if '{' in lines[j]:
-                                # 找到结构体开始
-                                brace_count = 1
-                                for k in range(j + 1, len(lines)):
-                                    brace_count += lines[k].count('{') - lines[k].count('}')
-                                    if brace_count <= 0:
-                                        result['structs'].append({
-                                            'name': struct_match.group(1),
-                                            'type': 'struct',
-                                            'lineno': i + 1,
-                                            'end_lineno': k + 1
-                                        })
-                                        break
-                                break
-                        else:
-                            # 没有找到结构体定义
-                            result['structs'].append({
-                                'name': struct_match.group(1),
-                                'type': 'struct',
-                                'lineno': i + 1
-                            })
-
-        except Exception as e:
-            result['errors'].append(f"C parsing error: {str(e)}")
-
-        return result
-
-    def parse_cpp(self, content: str) -> Dict[str, Any]:
-        """Parse C++ file structure (extends C parsing)"""
-        result = self.parse_c(content)
-        result['language'] = 'cpp'
-
-        try:
-            lines = content.split('\n')
-
-            # Parse classes
-            class_pattern = r'class\s+([\w]+)'
-            for i, line in enumerate(lines):
-                class_match = re.search(class_pattern, line)
-                if class_match:
-                    # 查找类的结束
-                    brace_count = line.count('{') - line.count('}')
-                    if brace_count > 0:
-                        # 类在同一行开始
-                        for j in range(i + 1, len(lines)):
-                            brace_count += lines[j].count('{') - lines[j].count('}')
-                            if brace_count <= 0:
-                                result.setdefault('classes', []).append({
-                                    'name': class_match.group(1),
-                                    'type': 'class',
-                                    'lineno': i + 1,
-                                    'end_lineno': j + 1
-                                })
-                                break
-                    else:
-                        # 类可能在后几行开始
-                        for j in range(i + 1, min(i + 10, len(lines))):
-                            if '{' in lines[j]:
-                                # 找到类开始
-                                brace_count = 1
-                                for k in range(j + 1, len(lines)):
-                                    brace_count += lines[k].count('{') - lines[k].count('}')
-                                    if brace_count <= 0:
-                                        result.setdefault('classes', []).append({
-                                            'name': class_match.group(1),
-                                            'type': 'class',
-                                            'lineno': i + 1,
-                                            'end_lineno': k + 1
-                                        })
-                                        break
-                                break
-                        else:
-                            # 没有找到类定义
-                            result.setdefault('classes', []).append({
-                                'name': class_match.group(1),
-                                'type': 'class',
-                                'lineno': i + 1
-                            })
-
-            # Parse namespaces
-            namespace_pattern = r'namespace\s+([\w]+)'
-            for i, line in enumerate(lines):
-                namespace_match = re.search(namespace_pattern, line)
-                if namespace_match:
-                    # 查找命名空间的结束
-                    brace_count = line.count('{') - line.count('}')
-                    if brace_count > 0:
-                        # 命名空间在同一行开始
-                        for j in range(i + 1, len(lines)):
-                            brace_count += lines[j].count('{') - lines[j].count('}')
-                            if brace_count <= 0:
-                                result.setdefault('namespaces', []).append({
-                                    'name': namespace_match.group(1),
-                                    'type': 'namespace',
-                                    'lineno': i + 1,
-                                    'end_lineno': j + 1
-                                })
-                                break
-                    else:
-                        # 命名空间可能在后几行开始
-                        for j in range(i + 1, min(i + 10, len(lines))):
-                            if '{' in lines[j]:
-                                # 找到命名空间开始
-                                brace_count = 1
-                                for k in range(j + 1, len(lines)):
-                                    brace_count += lines[k].count('{') - lines[k].count('}')
-                                    if brace_count <= 0:
-                                        result.setdefault('namespaces', []).append({
-                                            'name': namespace_match.group(1),
-                                            'type': 'namespace',
-                                            'lineno': i + 1,
-                                            'end_lineno': k + 1
-                                        })
-                                        break
-                                break
-                        else:
-                            # 没有找到命名空间定义
-                            result.setdefault('namespaces', []).append({
-                                'name': namespace_match.group(1),
-                                'type': 'namespace',
-                                'lineno': i + 1
-                            })
-
-        except Exception as e:
-            result['errors'].append(f"C++ parsing error: {str(e)}")
-        return result
-
-    def parse_markdown(self, content: str) -> Dict[str, Any]:
-        """Parse Markdown file structure"""
-        result = {
-            'sections': [],
-            'headings': [],
-            'code_blocks': [],
-            'lists': [],
-            'links': [],
-            'errors': []
-        }
-
-        try:
-            lines = content.split('\n')
-            in_code_block = False
-            code_block_start = 0
-            current_code_block_language = ''
-
-            for i, line in enumerate(lines):
-                # 解析标题
-                heading_match = re.match(r'^(#{1,6})\s+(.+)$', line)
-                if heading_match:
-                    level = len(heading_match.group(1))
-                    text = heading_match.group(2).strip()
-                    result['headings'].append({
-                        'name': text,
-                        'type': f'heading_{level}',
-                        'lineno': i + 1
-                    })
-
-                # 解析代码块
-                if line.strip().startswith('```'):
-                    if not in_code_block:
-                        # 代码块开始
-                        in_code_block = True
-                        code_block_start = i + 1
-                        current_code_block_language = line.strip()[3:] if len(line.strip()) > 3 else ''
-                    else:
-                        # 代码块结束
-                        in_code_block = False
-                        result['code_blocks'].append({
-                            'name': f'code_block_{code_block_start}',
-                            'type': 'code_block',
-                            'lineno': code_block_start,
-                            'end_lineno': i + 1,
-                            'language': current_code_block_language
-                        })
-
-                # 解析列表项
-                list_match = re.match(r'^(\s*)[-*+]\s+(.+)$', line)
-                if list_match:
-                    indent = len(list_match.group(1))
-                    text = list_match.group(2).strip()
-                    result['lists'].append({
-                        'name': text,
-                        'type': 'list_item',
-                        'lineno': i + 1,
-                        'indent': indent
-                    })
-
-                # 解析链接
-                link_pattern = r'\[([^\]]+)\]\(([^)]+)\)'
-                for link_match in re.finditer(link_pattern, line):
-                    result['links'].append({
-                        'name': link_match.group(1),
-                        'type': 'link',
-                        'lineno': i + 1,
-                        'url': link_match.group(2)
-                    })
-
-            # 如果文件以未关闭的代码块结束
-            if in_code_block:
-                result['code_blocks'].append({
-                    'name': f'code_block_{code_block_start}',
-                    'type': 'code_block',
-                    'lineno': code_block_start,
-                    'end_lineno': len(lines),
-                    'language': current_code_block_language
-                })
-
-        except Exception as e:
-            result['errors'].append(f"Markdown parsing error: {str(e)}")
-
-        return result
-
-    def parse_org(self, content: str) -> Dict[str, Any]:
-        """Parse Org-mode file structure"""
-        result = {
-            'headings': [],
-            'code_blocks': [],
-            'tables': [],
-            'lists': [],
-            'errors': []
-        }
-
-        try:
-            lines = content.split('\n')
-            in_code_block = False
-            code_block_start = 0
-
-            for i, line in enumerate(lines):
-                # 解析标题
-                heading_match = re.match(r'^(\*+)\s+(.+)$', line)
-                if heading_match:
-                    level = len(heading_match.group(1))
-                    text = heading_match.group(2).strip()
-                    result['headings'].append({
-                        'name': text,
-                        'type': f'heading_{level}',
-                        'lineno': i + 1
-                    })
-
-                # 解析代码块
-                if line.strip().startswith('#+BEGIN_SRC'):
-                    in_code_block = True
-                    code_block_start = i + 1
-                elif line.strip().startswith('#+END_SRC'):
-                    in_code_block = False
-                    result['code_blocks'].append({
-                        'name': f'code_block_{code_block_start}',
-                        'type': 'code_block',
-                        'lineno': code_block_start,
-                        'end_lineno': i + 1
-                    })
-
-                # 解析表格
-                if line.strip().startswith('|'):
-                    result['tables'].append({
-                        'name': f'table_{i+1}',
-                        'type': 'table',
-                        'lineno': i + 1
-                    })
-
-                # 解析列表项
-                list_match = re.match(r'^(\s*)[-+]\s+(.+)$', line)
-                if list_match:
-                    indent = len(list_match.group(1))
-                    text = list_match.group(2).strip()
-                    result['lists'].append({
-                        'name': text,
-                        'type': 'list_item',
-                        'lineno': i + 1,
-                        'indent': indent
-                    })
-
-            # 如果文件以未关闭的代码块结束
-            if in_code_block:
-                result['code_blocks'].append({
-                    'name': f'code_block_{code_block_start}',
-                    'type': 'code_block',
-                    'lineno': code_block_start,
-                    'end_lineno': len(lines)
-                })
-
-        except Exception as e:
-            result['errors'].append(f"Org-mode parsing error: {str(e)}")
-
-        return result
-        return result
-
-    def parse_elisp(self, content: str) -> Dict[str, Any]:
-        """Parse Emacs Lisp file structure"""
-        result = {
-            'functions': [],
-            'variables': [],
-            'macros': [],
-            'custom_variables': [],
-            'provides': [],
-            'errors': []
-        }
-
-        try:
-            lines = content.split('\n')
-
-            for i, line in enumerate(lines):
-                line_num = i + 1
-                stripped_line = line.strip()
-
-                # 解析函数定义 (defun)
-                defun_match = re.match(r'\(defun\s+([^\s\(]+)', stripped_line)
-                if defun_match:
-                    func_name = defun_match.group(1)
-                    # 查找函数结束
-                    paren_count = stripped_line.count('(') - stripped_line.count(')')
-                    end_line = line_num
-
-                    if paren_count > 0:
-                        # 函数定义跨越多行
-                        for j in range(i + 1, len(lines)):
-                            paren_count += lines[j].count('(') - lines[j].count(')')
-                            if paren_count <= 0:
-                                end_line = j + 1
-                                break
-
-                    result['functions'].append({
-                        'name': func_name,
-                        'type': 'function',
-                        'lineno': line_num,
-                        'end_lineno': end_line
-                    })
-
-                # 解析变量定义 (defvar)
-                defvar_match = re.match(r'\(defvar\s+([^\s\(]+)', stripped_line)
-                if defvar_match:
-                    var_name = defvar_match.group(1)
-                    result['variables'].append({
-                        'name': var_name,
-                        'type': 'variable',
-                        'lineno': line_num
-                    })
-
-                # 解析自定义变量 (defcustom)
-                defcustom_match = re.match(r'\(defcustom\s+([^\s\(]+)', stripped_line)
-                if defcustom_match:
-                    var_name = defcustom_match.group(1)
-                    result['custom_variables'].append({
-                        'name': var_name,
-                        'type': 'custom_variable',
-                        'lineno': line_num
-                    })
-
-                # 解析宏定义 (defmacro)
-                defmacro_match = re.match(r'\(defmacro\s+([^\s\(]+)', stripped_line)
-                if defmacro_match:
-                    macro_name = defmacro_match.group(1)
-                    result['macros'].append({
-                        'name': macro_name,
-                        'type': 'macro',
-                        'lineno': line_num
-                    })
-
-                # 解析提供模块 (provide)
-                provide_match = re.match(r'\(provide\s+\'([^\s\)]+)', stripped_line)
-                if provide_match:
-                    module_name = provide_match.group(1)
-                    result['provides'].append({
-                        'name': module_name,
-                        'type': 'provide',
-                        'lineno': line_num
-                    })
-
-                # 解析注释
-                if stripped_line.startswith(';;;'):
-                    # 文件头注释
-                    result.setdefault('comments', []).append({
-                        'name': stripped_line[3:].strip(),
-                        'type': 'file_header_comment',
-                        'lineno': line_num
-                    })
-                elif stripped_line.startswith(';;'):
-                    # 节注释
-                    result.setdefault('comments', []).append({
-                        'name': stripped_line[2:].strip(),
-                        'type': 'section_comment',
-                        'lineno': line_num
-                    })
-                elif stripped_line.startswith(';'):
-                    # 行内注释
-                    result.setdefault('comments', []).append({
-                        'name': stripped_line[1:].strip(),
-                        'type': 'inline_comment',
-                        'lineno': line_num
-                    })
-
-        except Exception as e:
-            result['errors'].append(f"Emacs Lisp parsing error: {str(e)}")
-
-        return result
-
-    def parse_makefile(self, content: str) -> Dict[str, Any]:
-        """Parse Makefile structure"""
-        result = {
-            'targets': [],
-            'variables': [],
-            'phony_targets': [],
-            'functions': [],
-            'conditionals': [],
-            'errors': []
-        }
-
-        try:
-            lines = content.split('\n')
-
-            for i, line in enumerate(lines):
-                line_num = i + 1
-                stripped_line = line.strip()
-
-                # 跳过空行和注释
-                if not stripped_line or stripped_line.startswith('#'):
-                    continue
-
-                # 解析变量定义 (VAR = value)
-                var_match = re.match(r'^([A-Za-z_][A-Za-z0-9_]*)\s*[:?+]?=\s*(.+)$', stripped_line)
-                if var_match:
-                    var_name = var_match.group(1)
-                    var_value = var_match.group(2).strip()
-                    result['variables'].append({
-                        'name': var_name,
-                        'type': 'variable',
-                        'value': var_value,
-                        'lineno': line_num
-                    })
-                    continue
-
-                # 解析目标定义 (target: dependencies)
-                target_match = re.match(r'^([^:#=\s]+)\s*:(.*)$', stripped_line)
-                if target_match:
-                    target_name = target_match.group(1).strip()
-                    dependencies = target_match.group(2).strip()
-
-                    # 检查是否是伪目标
-                    if target_name == '.PHONY':
-                        # 解析伪目标列表
-                        phony_targets = [t.strip() for t in dependencies.split() if t.strip()]
-                        for phony_target in phony_targets:
-                            result['phony_targets'].append({
-                                'name': phony_target,
-                                'type': 'phony_target',
-                                'lineno': line_num
-                            })
-                    else:
-                        result['targets'].append({
-                            'name': target_name,
-                            'type': 'target',
-                            'dependencies': dependencies,
-                            'lineno': line_num
-                        })
-                    continue
-
-                # 解析函数调用 ($(shell command) 或 $(function args))
-                function_match = re.search(r'\$\(([^)]+)\)', stripped_line)
-                if function_match:
-                    func_call = function_match.group(1)
-                    # 检查是否是shell函数
-                    if func_call.startswith('shell '):
-                        result['functions'].append({
-                            'name': 'shell',
-                            'type': 'shell_function',
-                            'args': func_call[6:].strip(),
-                            'lineno': line_num
-                        })
-                    else:
-                        # 其他函数
-                        result['functions'].append({
-                            'name': func_call.split()[0] if ' ' in func_call else func_call,
-                            'type': 'make_function',
-                            'args': func_call,
-                            'lineno': line_num
-                        })
-
-                # 解析条件语句 (ifeq, ifneq, ifdef, ifndef)
-                conditional_patterns = [
-                    (r'^ifeq\s+\((.+)\)', 'ifeq'),
-                    (r'^ifneq\s+\((.+)\)', 'ifneq'),
-                    (r'^ifdef\s+([^\s]+)', 'ifdef'),
-                    (r'^ifndef\s+([^\s]+)', 'ifndef'),
-                    (r'^else', 'else'),
-                    (r'^endif', 'endif')
-                ]
-
-                for pattern, cond_type in conditional_patterns:
-                    cond_match = re.match(pattern, stripped_line)
-                    if cond_match:
-                        condition = cond_match.group(1) if cond_match.groups() else ''
-                        result['conditionals'].append({
-                            'name': cond_type,
-                            'type': 'conditional',
-                            'condition': condition,
-                            'lineno': line_num
-                        })
-                        break
-
-                # 解析包含 (include)
-                include_match = re.match(r'^include\s+(.+)$', stripped_line)
-                if include_match:
-                    included_file = include_match.group(1).strip()
-                    result.setdefault('includes', []).append({
-                        'name': included_file,
-                        'type': 'include',
-                        'lineno': line_num
-                    })
-
-        except Exception as e:
-            result['errors'].append(f"Makefile parsing error: {str(e)}")
-
-        return result
-
-    def parse_cmake(self, content: str) -> Dict[str, Any]:
-        """Parse CMake file structure"""
-        result = {
-            'commands': [],
-            'variables': [],
-            'targets': [],
-            'tests': [],
-            'installs': [],
-            'errors': []
-        }
-
-        try:
-            lines = content.split('\n')
-
-            for i, line in enumerate(lines):
-                line_num = i + 1
-                stripped_line = line.strip()
-
-                # 跳过空行和注释
-                if not stripped_line or stripped_line.startswith('#'):
-                    continue
-
-                # 解析CMake命令 (command(arg1 arg2 ...))
-                # 匹配命令名和参数
-                cmd_match = re.match(r'^([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)', stripped_line)
-                if cmd_match:
-                    cmd_name = cmd_match.group(1)
-                    cmd_args = cmd_match.group(2).strip()
-
-                    # 根据命令类型分类
-                    cmd_info = {
-                        'name': cmd_name,
-                        'type': 'command',
-                        'args': cmd_args,
-                        'lineno': line_num
-                    }
-
-                    # 特殊处理一些常见命令
-                    if cmd_name == 'cmake_minimum_required':
-                        cmd_info['type'] = 'minimum_version'
-                    elif cmd_name == 'project':
-                        cmd_info['type'] = 'project_declaration'
-                    elif cmd_name == 'set':
-                        # 解析变量设置
-                        var_match = re.match(r'([A-Za-z_][A-Za-z0-9_]*)\s+(.+)', cmd_args)
-                        if var_match:
-                            var_name = var_match.group(1)
-                            var_value = var_match.group(2).strip()
-                            result['variables'].append({
-                                'name': var_name,
-                                'type': 'variable',
-                                'value': var_value,
-                                'lineno': line_num
-                            })
-                    elif cmd_name == 'add_executable':
-                        # 解析可执行文件目标
-                        target_match = re.match(r'([A-Za-z_][A-Za-z0-9_]*)\s+(.+)', cmd_args)
-                        if target_match:
-                            target_name = target_match.group(1)
-                            sources = target_match.group(2).strip()
-                            result['targets'].append({
-                                'name': target_name,
-                                'type': 'executable',
-                                'sources': sources,
-                                'lineno': line_num
-                            })
-                    elif cmd_name == 'add_library':
-                        # 解析库目标
-                        lib_match = re.match(r'([A-Za-z_][A-Za-z0-9_]*)\s+(STATIC|SHARED|MODULE)?\s*(.+)', cmd_args)
-                        if lib_match:
-                            lib_name = lib_match.group(1)
-                            lib_type = lib_match.group(2) or 'STATIC'
-                            sources = lib_match.group(3).strip()
-                            result['targets'].append({
-                                'name': lib_name,
-                                'type': 'library',
-                                'library_type': lib_type,
-                                'sources': sources,
-                                'lineno': line_num
-                            })
-                    elif cmd_name == 'target_link_libraries':
-                        # 解析库链接
-                        link_match = re.match(r'([A-Za-z_][A-Za-z0-9_]*)\s+(.+)', cmd_args)
-                        if link_match:
-                            target_name = link_match.group(1)
-                            libraries = link_match.group(2).strip()
-                            cmd_info['target'] = target_name
-                            cmd_info['libraries'] = libraries
-                    elif cmd_name == 'add_test':
-                        # 解析测试
-                        test_match = re.match(r'NAME\s+([A-Za-z_][A-Za-z0-9_]*)\s+COMMAND\s+(.+)', cmd_args)
-                        if test_match:
-                            test_name = test_match.group(1)
-                            test_command = test_match.group(2).strip()
-                            result['tests'].append({
-                                'name': test_name,
-                                'type': 'test',
-                                'command': test_command,
-                                'lineno': line_num
-                            })
-                    elif cmd_name == 'install':
-                        # 解析安装命令
-                        install_match = re.match(r'TARGETS\s+([A-Za-z_][A-Za-z0-9_]+(?:\s+[A-Za-z_][A-Za-z0-9_]+)*)', cmd_args)
-                        if install_match:
-                            targets = install_match.group(1).strip()
-                            result['installs'].append({
-                                'name': 'install_targets',
-                                'type': 'install',
-                                'targets': targets,
-                                'lineno': line_num
-                            })
-                    elif cmd_name == 'include_directories':
-                        cmd_info['type'] = 'include_directories'
-                    elif cmd_name == 'enable_testing':
-                        cmd_info['type'] = 'enable_testing'
-                    elif cmd_name == 'add_custom_command':
-                        cmd_info['type'] = 'custom_command'
-
-                    result['commands'].append(cmd_info)
-
-                # 解析变量引用 (${VAR})
-                var_ref_match = re.search(r'\$\{([^}]+)\}', stripped_line)
-                if var_ref_match:
-                    var_name = var_ref_match.group(1)
-                    result.setdefault('variable_references', []).append({
-                        'name': var_name,
-                        'type': 'variable_reference',
-                        'lineno': line_num
-                    })
-
-        except Exception as e:
-            result['errors'].append(f"CMake parsing error: {str(e)}")
-
-        return result
-
-    def parse_vimscript(self, content: str) -> Dict[str, Any]:
-        """Parse Vimscript file structure"""
-        result = {
-            'functions': [],
-            'commands': [],
-            'variables': [],
-            'mappings': [],
-            'autocommands': [],
-            'augroups': [],
-            'errors': []
-        }
-
-        try:
-            lines = content.split('\n')
-            in_function = False
-            current_function = None
-            function_start_line = 0
-
-            for i, line in enumerate(lines):
-                line_num = i + 1
-                stripped_line = line.strip()
-
-                # Skip empty lines and comments
-                if not stripped_line or stripped_line.startswith('"'):
-                    continue
-
-                # Parse function definitions
-                # Match: function! FunctionName() or function FunctionName()
-                func_match = re.match(r'^\s*(?:function!?|def)\s+([A-Za-z_][A-Za-z0-9_:]*)\s*\(', stripped_line)
-                if func_match and not in_function:
-                    func_name = func_match.group(1)
-                    # Check if it's a script-local function
-                    func_type = 'script_function' if func_name.startswith('s:') else 'function'
-
-                    # Vimscript functions end with 'endfunction'
-                    in_function = True
-                    current_function = func_name
-                    current_function_type = func_type
-                    function_start_line = line_num
-
-                # Check for endfunction
-                if in_function and stripped_line == 'endfunction':
-                    result['functions'].append({
-                        'name': current_function,
-                        'type': current_function_type,
-                        'lineno': function_start_line,
-                        'end_lineno': line_num
-                    })
-                    in_function = False
-                    current_function = None
-                    current_function_type = None
-
-                # Parse command definitions
-                # Match: command! CommandName
-                cmd_match = re.match(r'^\s*command!\s+([A-Za-z_][A-Za-z0-9_]*)', stripped_line)
-                if cmd_match:
-                    cmd_name = cmd_match.group(1)
-                    result['commands'].append({
-                        'name': cmd_name,
-                        'type': 'command',
-                        'lineno': line_num
-                    })
-
-                # Parse variable definitions
-                # Match: let var = value or let g:var = value
-                var_match = re.match(r'^\s*let\s+([gs]:)?([A-Za-z_][A-Za-z0-9_]*)\s*=', stripped_line)
-                if var_match:
-                    scope = var_match.group(1) or ''
-                    var_name = var_match.group(2)
-                    var_type = 'variable'
-                    if scope == 'g:':
-                        var_type = 'global_variable'
-                    elif scope == 's:':
-                        var_type = 'script_variable'
-
-                    result['variables'].append({
-                        'name': var_name,
-                        'type': var_type,
-                        'lineno': line_num
-                    })
-
-                # Parse mappings
-                # Match: nnoremap, inoremap, vnoremap, etc.
-                map_patterns = [
-                    (r'^\s*(nnoremap|inoremap|vnoremap|xnoremap|snoremap|onoremap|tnoremap|noremap|imap|vmap|xmap|smap|omap|tmap|map)\s+', 'mapping'),
-                    (r'^\s*(nunmap|iunmap|vunmap|xunmap|sunmap|ounmap|tunmap|unmap)\s+', 'unmap')
-                ]
-
-                for pattern, map_type in map_patterns:
-                    map_match = re.match(pattern, stripped_line)
-                    if map_match:
-                        map_cmd = map_match.group(1)
-                        # Extract the mapping (skip the command part)
-                        mapping_part = stripped_line[len(map_cmd):].strip()
-                        # Split into lhs and rhs if possible
-                        parts = mapping_part.split(None, 1)
-                        if len(parts) >= 1:
-                            lhs = parts[0]
-                            rhs = parts[1] if len(parts) > 1 else ''
-                            result['mappings'].append({
-                                'name': f'{map_cmd} {lhs}',
-                                'type': map_type,
-                                'command': map_cmd,
-                                'lhs': lhs,
-                                'rhs': rhs,
-                                'lineno': line_num
-                            })
-                        break
-
-                # Parse autocommand groups
-                augroup_match = re.match(r'^\s*augroup\s+([A-Za-z_][A-Za-z0-9_]*)', stripped_line)
-                if augroup_match:
-                    augroup_name = augroup_match.group(1)
-                    result['augroups'].append({
-                        'name': augroup_name,
-                        'type': 'augroup',
-                        'lineno': line_num
-                    })
-
-                # Parse autocommands
-                autocmd_match = re.match(r'^\s*autocmd!\s*', stripped_line)
-                if autocmd_match:
-                    # autocmd! (clear autocommands)
-                    result['autocommands'].append({
-                        'name': 'autocmd_clear',
-                        'type': 'autocmd_clear',
-                        'lineno': line_num
-                    })
-                else:
-                    autocmd_match = re.match(r'^\s*autocmd\s+', stripped_line)
-                    if autocmd_match:
-                        # Parse autocmd with event and pattern
-                        autocmd_parts = stripped_line[7:].strip().split(None, 2)
-                        if len(autocmd_parts) >= 2:
-                            event = autocmd_parts[0]
-                            pattern = autocmd_parts[1]
-                            command = autocmd_parts[2] if len(autocmd_parts) > 2 else ''
-                            result['autocommands'].append({
-                                'name': f'autocmd {event} {pattern}',
-                                'type': 'autocmd',
-                                'event': event,
-                                'pattern': pattern,
-                                'command': command,
-                                'lineno': line_num
-                            })
-
-            # Handle function that ends at EOF (missing endfunction)
-            if in_function and current_function:
-                result['functions'].append({
-                    'name': current_function,
-                    'type': 'function',
-                    'lineno': function_start_line,
-                    'end_lineno': len(lines)
-                })
-
-        except Exception as e:
-            result['errors'].append(f"Vimscript parsing error: {str(e)}")
-
-        return result
-
-    def _check_dependencies(self) -> bool:
-        """Check required standard library dependencies using find_spec."""
-        required_deps = ['json', 're', 'ast', 'typing', 'traceback']
-        for dep in required_deps:
-            if importlib.util.find_spec(dep) is None:
-                return False
-        return True
-
-
-    def _get_enhanced_capabilities(self) -> List[str]:
-        """Get enhanced parsing capabilities based on available optional dependencies."""
-        capabilities = []
-
-        if importlib.util.find_spec('astroid') is not None:
-            capabilities.append('python_enhanced')
-
-        if importlib.util.find_spec('javalang') is not None:
-            capabilities.append('java_enhanced')
-
-        if importlib.util.find_spec('pycparser') is not None:
-            capabilities.append('c_enhanced')
-            capabilities.append('cpp_enhanced')
-
-        return capabilities
-
-    def get_dependency_info(self) -> Dict[str, Any]:
-        """Get information about dependencies and capabilities"""
-        return {
-            'dependencies_ok': self.deps_ok,
-            'enhanced_capabilities': self.enhanced_capabilities,
-            'python_version': sys.version,
-            'supported_languages': list(self.language_parsers.keys())
-        }
-
-
-def main():
-    """Main entry point for the script"""
+def _load(name: str, module_name: str) -> None:
     try:
-        # Read input from stdin
-        input_data = sys.stdin.read().strip()
+        mod = __import__(module_name)
+        _LANGUAGES[name] = Language(mod.language())
+    except Exception:
+        pass
 
-        if not input_data:
-            print(json.dumps({
-                'error': 'No input provided',
-                'usage': 'echo \'{"content": "code", "language": "python"}\' | python3 parse.py'
-            }, indent=2))
+
+_load("python",     "tree_sitter_python")
+_load("c",          "tree_sitter_c")
+_load("cpp",        "tree_sitter_cpp")
+_load("go",         "tree_sitter_go")
+_load("markdown",   "tree_sitter_markdown")
+_load("javascript", "tree_sitter_javascript")
+_load("rust",       "tree_sitter_rust")
+_load("zig",        "tree_sitter_zig")
+_load("java",       "tree_sitter_java")
+
+# Try tree_sitter_typescript if installed
+try:
+    import tree_sitter_typescript as _tst
+    _LANGUAGES["typescript"] = Language(_tst.language_typescript())
+    _LANGUAGES["tsx"] = Language(_tst.language_tsx())
+except Exception:
+    pass
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Helpers
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _text(node, source: bytes) -> str:
+    """Extract source text for a node."""
+    try:
+        return source[node.start_byte:node.end_byte].decode("utf-8")
+    except (UnicodeDecodeError, IndexError):
+        return ""
+
+
+def _pos(node) -> tuple[int, int, int, int]:
+    """Return (start_line, start_col, end_line, end_col) — all 1‑based."""
+    return (
+        node.start_point[0] + 1,
+        node.start_point[1] + 1,
+        node.end_point[0] + 1,
+        node.end_point[1] + 1,
+    )
+
+
+def _sym(name: str, kind: str, node) -> dict[str, Any]:
+    """Build a symbol dict from a tree-sitter node."""
+    sl, sc, el, ec = _pos(node)
+    return {
+        "name": name,
+        "type": kind,
+        "lineno": sl,
+        "col_offset": sc,
+        "end_lineno": el,
+        "end_col_offset": ec,
+    }
+
+
+def _find_child(node, *types: str):
+    """Return the first *named* child whose type is in *types*."""
+    for ch in node.children:
+        if ch.is_named and ch.type in types:
+            return ch
+    return None
+
+
+def _name(node, source: bytes) -> str:
+    """Best-effort name extraction: first identifier‑like child."""
+    ident = _find_child(
+        node,
+        "identifier",
+        "field_identifier",
+        "type_identifier",
+        "namespace_identifier",
+        "statement_identifier",
+    )
+    return _text(ident, source) if ident else ""
+
+
+def _walk(root, source: bytes, handlers: dict[str, Callable], skip: set[str]):
+    """Walk *root* (and recursively its named children).
+
+    *handlers* maps node type → callable(node, source) — called once,
+    then children are **not** recursed into.
+
+    *skip* lists node types whose children should also be skipped (e.g.
+    function bodies, block statements).
+    """
+
+    def _go(node):
+        tp = node.type
+        if tp in handlers:
+            handlers[tp](node, source)
+            return
+        if tp in skip:
+            return
+        for ch in node.children:
+            if ch.is_named:
+                _go(ch)
+
+    for ch in root.children:
+        if ch.is_named:
+            _go(ch)
+
+
+def _walk_all(root, source: bytes, handlers: dict[str, Callable]):
+    """Like _walk but recurses into matched nodes' children too."""
+
+    def _go(node):
+        tp = node.type
+        if tp in handlers:
+            handlers[tp](node, source)
+        for ch in node.children:
+            if ch.is_named:
+                _go(ch)
+
+    for ch in root.children:
+        if ch.is_named:
+            _go(ch)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Per‑language tree-sitter parsers
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _ts_python(root, source: bytes, r: dict):
+    skip = {
+        "block", "parameters", "argument_list", "lambda", "dictionary",
+        "set", "list", "tuple", "parenthesized_expression", "pattern_list",
+        "string", "interpolation",
+    }
+
+    def handle_func(node, _src):
+        n = _name(node, _src)
+        if n:
+            r["functions"].append(_sym(n, "function", node))
+
+    def handle_class(node, _src):
+        n = _name(node, _src)
+        if n:
+            r["classes"].append(_sym(n, "class", node))
+
+    def handle_import(node, _src):
+        for ch in node.children:
+            if ch.type == "dotted_name":
+                r["imports"].append(_text(ch, _src))
+
+    def handle_import_from(node, _src):
+        parts = []
+        for ch in node.children:
+            if ch.type == "dotted_name":
+                parts.append(_text(ch, _src))
+        if parts:
+            r["imports"].append(".".join(parts))
+
+    handlers = {
+        "function_definition":      handle_func,
+        "class_definition":         handle_class,
+        "import_statement":         handle_import,
+        "import_from_statement":    handle_import_from,
+        "future_import_statement":  handle_import_from,
+    }
+    _walk(root, source, handlers, skip)
+
+
+def _ts_c(root, source: bytes, r: dict):
+    skip = {
+        "compound_statement", "field_declaration_list", "enumerator_list",
+        "parameter_list", "argument_list", "initializer_list",
+    }
+
+    def handle_func(node, _src):
+        decl = _find_child(node, "function_declarator")
+        name = _name(decl, _src) if decl else _name(node, _src)
+        if name:
+            r["functions"].append(_sym(name, "function", node))
+
+    def handle_struct(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["classes"].append(_sym(name, "struct", node))
+
+    def handle_union(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["classes"].append(_sym(name, "union", node))
+
+    def handle_enum(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["classes"].append(_sym(name, "enum", node))
+
+    def handle_typedef(node, _src):
+        # type_definition: alias is the LAST type_identifier
+        last = ""
+        for ch in node.children:
+            if ch.type == "type_identifier":
+                last = _text(ch, _src)
+        if last:
+            r["classes"].append(_sym(last, "typedef", node))
+
+    def handle_include(node, _src):
+        for ch in node.children:
+            if ch.type == "system_lib_string":
+                r["imports"].append(_text(ch, _src))
+                return
+            elif ch.type == "string_content":
+                r["imports"].append('"' + _text(ch, _src) + '"')
+                return
+
+    def handle_define(node, _src):
+        ident = _find_child(node, "identifier")
+        if ident:
+            r["classes"].append(_sym(_text(ident, _src), "macro", node))
+
+    handlers = {
+        "function_definition": handle_func,
+        "struct_specifier":    handle_struct,
+        "union_specifier":     handle_union,
+        "enum_specifier":      handle_enum,
+        "type_definition":     handle_typedef,
+        "preproc_include":     handle_include,
+        "preproc_def":         handle_define,
+    }
+    _walk(root, source, handlers, skip)
+
+
+def _ts_cpp(root, source: bytes, r: dict):
+    skip = {
+        "compound_statement", "field_declaration_list", "enumerator_list",
+        "parameter_list", "argument_list", "initializer_list",
+    }
+
+    def handle_func(node, _src):
+        decl = _find_child(node, "function_declarator")
+        name = _name(decl, _src) if decl else _name(node, _src)
+        if name:
+            r["functions"].append(_sym(name, "function", node))
+
+    def handle_struct(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["classes"].append(_sym(name, "struct", node))
+
+    def handle_class(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["classes"].append(_sym(name, "class", node))
+
+    def handle_union(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["classes"].append(_sym(name, "union", node))
+
+    def handle_enum(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["classes"].append(_sym(name, "enum", node))
+
+    def handle_namespace(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["classes"].append(_sym(name, "namespace", node))
+
+    def handle_typedef(node, _src):
+        last = ""
+        for ch in node.children:
+            if ch.type == "type_identifier":
+                last = _text(ch, _src)
+        if last:
+            r["classes"].append(_sym(last, "typedef", node))
+
+    def handle_include(node, _src):
+        for ch in node.children:
+            if ch.type == "system_lib_string":
+                r["imports"].append(_text(ch, _src))
+                return
+            elif ch.type == "string_content":
+                r["imports"].append('"' + _text(ch, _src) + '"')
+                return
+
+    def handle_define(node, _src):
+        ident = _find_child(node, "identifier")
+        if ident:
+            r["classes"].append(_sym(_text(ident, _src), "macro", node))
+
+    handlers = {
+        "function_definition":   handle_func,
+        "struct_specifier":      handle_struct,
+        "class_specifier":       handle_class,
+        "union_specifier":       handle_union,
+        "enum_specifier":        handle_enum,
+        "namespace_definition":  handle_namespace,
+        "type_definition":       handle_typedef,
+        "preproc_include":       handle_include,
+        "preproc_def":           handle_define,
+    }
+    _walk(root, source, handlers, skip)
+
+
+def _ts_go(root, source: bytes, r: dict):
+    skip = {
+        "block", "parameter_list", "argument_list", "literal_value",
+        "interpreted_string_literal", "raw_string_literal",
+    }
+
+    def handle_func(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["functions"].append(_sym(name, "function", node))
+
+    def handle_method(node, _src):
+        name = _name(node, _src)
+        if name:
+            recv_type = ""
+            recv = _find_child(node, "parameter_list")
+            if recv:
+                tid = _find_child(recv, "type_identifier")
+                if tid:
+                    recv_type = _text(tid, _src)
+            sym = _sym(name, "method", node)
+            if recv_type:
+                sym["receiver"] = recv_type
+            r["functions"].append(sym)
+
+    def handle_type(node, _src):
+        spec = _find_child(node, "type_spec")
+        if not spec:
+            return
+        name = _name(spec, _src)
+        if not name:
+            return
+        if _find_child(spec, "struct_type"):
+            kind = "struct"
+        elif _find_child(spec, "interface_type"):
+            kind = "interface"
+        else:
+            kind = "type"
+        r["classes"].append(_sym(name, kind, spec))
+
+    def handle_import(node, _src):
+        for ch in node.children:
+            if ch.type == "import_spec":
+                lit = _find_child(ch, "interpreted_string_literal")
+                if lit:
+                    txt = _text(lit, _src).strip('"')
+                    if txt:
+                        r["imports"].append(txt)
+
+    handlers = {
+        "function_declaration": handle_func,
+        "method_declaration":   handle_method,
+        "type_declaration":     handle_type,
+        "import_declaration":   handle_import,
+    }
+    _walk(root, source, handlers, skip)
+
+
+def _ts_javascript(root, source: bytes, r: dict):
+    skip = {
+        "statement_block", "formal_parameters", "class_body",
+        "object", "array", "string", "template_string",
+        "parenthesized_expression",
+    }
+
+    def handle_func(node, _src):
+        name = _name(node, _src)
+        if not name:
+            return
+        kind = "function"
+        if _find_child(node, "async"):
+            kind = "async_function"
+        r["functions"].append(_sym(name, kind, node))
+
+    def handle_class(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["classes"].append(_sym(name, "class", node))
+
+    def handle_import(node, _src):
+        for ch in node.children:
+            if ch.type == "string":
+                path = _text(ch, _src).strip("'\"")
+                if path:
+                    r["imports"].append(path)
+                    return
+
+    def handle_lexical(node, _src):
+        for ch in node.children:
+            if ch.type == "variable_declarator":
+                name = _name(ch, _src)
+                if not name:
+                    continue
+                arrow = _find_child(ch, "arrow_function")
+                if arrow:
+                    r["functions"].append(_sym(name, "function", ch))
+
+    handlers = {
+        "function_declaration":             handle_func,
+        "generator_function_declaration":   handle_func,
+        "class_declaration":                handle_class,
+        "import_statement":                 handle_import,
+        "lexical_declaration":              handle_lexical,
+        "variable_declaration":             handle_lexical,
+    }
+    _walk(root, source, handlers, skip)
+
+
+def _ts_typescript(root, source: bytes, r: dict):
+    # TypeScript grammar extends JavaScript — reuse JS walker and add TS extras.
+    _ts_javascript(root, source, r)
+
+    skip = {
+        "statement_block", "formal_parameters", "class_body",
+        "object_type", "object", "array", "string", "template_string",
+        "parenthesized_expression",
+    }
+
+    def handle_interface(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["classes"].append(_sym(name, "interface", node))
+
+    def handle_type_alias(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["classes"].append(_sym(name, "type_alias", node))
+
+    def handle_enum(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["classes"].append(_sym(name, "enum", node))
+
+    handlers = {
+        "interface_declaration": handle_interface,
+        "type_alias_declaration": handle_type_alias,
+        "enum_declaration": handle_enum,
+    }
+    _walk(root, source, handlers, skip)
+
+
+def _ts_markdown(root, source: bytes, r: dict):
+    # tree-sitter-markdown uses flat inline text with anonymous bracket/paren
+    # tokens for links — no named inline_link node.  We fall back to regex on
+    # the inline text content to extract links.
+    _LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+
+    skip: set[str] = set()
+
+    def handle_heading(node, _src):
+        level = 1
+        for ch in node.children:
+            if ch.type.startswith("atx_h") and ch.type.endswith("_marker"):
+                try:
+                    level = int(ch.type[5])
+                except ValueError:
+                    pass
+                break
+        inline = _find_child(node, "inline")
+        text = _text(inline, _src) if inline else _text(node, _src)
+        r.setdefault("headings", []).append({
+            "name": text.strip(),
+            "type": f"heading_{level}",
+            "lineno": node.start_point[0] + 1,
+        })
+
+    def handle_code_block(node, _src):
+        lang = ""
+        info = _find_child(node, "info_string")
+        if info:
+            lang = _text(info, _src).strip()
+        sl, _sc, el, _ec = _pos(node)
+        r.setdefault("code_blocks", []).append({
+            "name": f"code_block_{sl}",
+            "type": "code_block",
+            "lineno": sl,
+            "end_lineno": el,
+            "language": lang,
+        })
+
+    def handle_list_item(node, _src):
+        para = _find_child(node, "paragraph")
+        text = _text(para, _src) if para else _text(node, _src)
+        sl = node.start_point[0] + 1
+        r.setdefault("lists", []).append({
+            "name": text.strip()[:80],
+            "type": "list_item",
+            "lineno": sl,
+        })
+
+    def handle_link_ref(node, _src):
+        label = _find_child(node, "link_label")
+        dest = _find_child(node, "link_destination")
+        if label and dest:
+            r.setdefault("links", []).append({
+                "name": _text(label, _src).strip("[]"),
+                "type": "link",
+                "lineno": node.start_point[0] + 1,
+                "url": _text(dest, _src).strip(),
+            })
+
+    def handle_inline(node, _src):
+        # Scan inline text for [text](url) patterns
+        text = _text(node, _src)
+        for m in _LINK_RE.finditer(text):
+            sl = node.start_point[0] + 1
+            r.setdefault("links", []).append({
+                "name": m.group(1).strip(),
+                "type": "link",
+                "lineno": sl,
+                "url": m.group(2).strip(),
+            })
+
+    handlers = {
+        "atx_heading":              handle_heading,
+        "setext_heading":           handle_heading,
+        "fenced_code_block":        handle_code_block,
+        "indented_code_block":      handle_code_block,
+        "list_item":                handle_list_item,
+        "link_reference_definition": handle_link_ref,
+        "inline":                   handle_inline,
+    }
+    _walk(root, source, handlers, skip)
+
+
+def _ts_rust(root, source: bytes, r: dict):
+    skip = {"block", "parameters", "field_declaration_list", "declaration_list",
+            "token_tree", "string_literal", "raw_string_literal"}
+
+    def handle_func(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["functions"].append(_sym(name, "function", node))
+
+    def handle_struct(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["classes"].append(_sym(name, "struct", node))
+
+    def handle_enum(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["classes"].append(_sym(name, "enum", node))
+
+    def handle_trait(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["classes"].append(_sym(name, "trait", node))
+
+    def handle_impl(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["classes"].append(_sym(name, "impl", node))
+
+    def handle_use(node, _src):
+        # Extract the full path from scoped_identifier or identifier
+        path = ""
+        for ch in node.children:
+            if ch.type in ("scoped_identifier", "identifier", "scoped_use_list"):
+                path = _text(ch, _src)
+                break
+        if path:
+            r["imports"].append(path)
+
+    def handle_mod(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["imports"].append(name)
+
+    handlers = {
+        "function_item":        handle_func,
+        "struct_item":          handle_struct,
+        "enum_item":            handle_enum,
+        "trait_item":           handle_trait,
+        "impl_item":            handle_impl,
+        "use_declaration":      handle_use,
+        "mod_item":             handle_mod,
+    }
+    _walk(root, source, handlers, skip)
+
+
+def _ts_zig(root, source: bytes, r: dict):
+    skip = {"block", "parameters", "block_body", "struct_body", "payload",
+            "string_literal", "multiline_string_literal"}
+
+    def handle_func(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["functions"].append(_sym(name, "function", node))
+
+    def handle_var(node, _src):
+        # Variable declarations may be imports (@import) or structs
+        ident = _find_child(node, "identifier")
+        if not ident:
+            return
+        name_val = _text(ident, _src)
+        # Check if it's a struct definition
+        if _find_child(node, "struct_declaration"):
+            r["classes"].append(_sym(name_val, "struct", node))
+            return
+        # Check if it's an @import
+        bf = _find_child(node, "builtin_function")
+        if bf and "@import" in _text(bf, _src):
+            r["imports"].append(name_val)
+            return
+        # Regular variable
+        r["classes"].append(_sym(name_val, "variable", node))
+
+    handlers = {
+        "function_declaration":  handle_func,
+        "variable_declaration":  handle_var,
+        "test_declaration":      handle_func,
+    }
+    _walk(root, source, handlers, skip)
+
+
+def _ts_java(root, source: bytes, r: dict):
+    # Use _walk_all so we recurse into class_body to find methods.
+    # Method bodies (block) are harmless — they contain no class/interface decls.
+
+    def handle_class(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["classes"].append(_sym(name, "class", node))
+
+    def handle_interface(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["classes"].append(_sym(name, "interface", node))
+
+    def handle_enum(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["classes"].append(_sym(name, "enum", node))
+
+    def handle_method(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["functions"].append(_sym(name, "method", node))
+
+    def handle_constructor(node, _src):
+        name = _name(node, _src)
+        if name:
+            r["functions"].append(_sym(name, "constructor", node))
+
+    def handle_import(node, _src):
+        si = _find_child(node, "scoped_identifier")
+        if si:
+            r["imports"].append(_text(si, _src))
+        else:
+            ident = _find_child(node, "identifier")
+            if ident:
+                r["imports"].append(_text(ident, _src))
+
+    def handle_package(node, _src):
+        si = _find_child(node, "scoped_identifier")
+        if si:
+            r["imports"].append(f"package {_text(si, _src)}")
+
+    handlers = {
+        "class_declaration":       handle_class,
+        "interface_declaration":   handle_interface,
+        "enum_declaration":        handle_enum,
+        "method_declaration":      handle_method,
+        "constructor_declaration": handle_constructor,
+        "import_declaration":      handle_import,
+        "package_declaration":     handle_package,
+    }
+    _walk_all(root, source, handlers)
+
+
+# ── Registry ────────────────────────────────────────────────────────────────
+
+_TREE_SITTER_PARSERS: dict[str, Callable] = {
+    "python":     _ts_python,
+    "c":          _ts_c,
+    "cpp":        _ts_cpp,
+    "go":         _ts_go,
+    "javascript": _ts_javascript,
+    "typescript": _ts_typescript,
+    "tsx":        _ts_typescript,
+    "markdown":   _ts_markdown,
+    "rust":       _ts_rust,
+    "zig":        _ts_zig,
+    "java":       _ts_java,
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Regex fallback parsers (for languages without tree-sitter grammars)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _rx_java(content: str, r: dict):
+    """Regex-based Java parser (fallback when tree-sitter unavailable)."""
+    for m in re.finditer(r"import\s+([\w.]+(?:\.[\w*]+)?)\s*;", content):
+        r["imports"].append(m.group(1))
+    for m in re.finditer(
+        r"(?:public\s+|private\s+|protected\s+|abstract\s+|final\s+)*"
+        r"(class|interface|enum)\s+([A-Za-z_$][A-Za-z0-9_$]*)",
+        content,
+    ):
+        r["classes"].append({"name": m.group(2), "type": m.group(1)})
+    for m in re.finditer(
+        r"(?:public\s+|private\s+|protected\s+|static\s+|final\s+|"
+        r"abstract\s+|synchronized\s+)*"
+        r"([A-Za-z_$<>\[\]\s]+)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\([^)]*\)",
+        content,
+    ):
+        r["functions"].append({
+            "name": m.group(2).strip(),
+            "type": "method",
+            "return_type": m.group(1).strip(),
+        })
+
+
+def _rx_org(content: str, r: dict):
+    """Regex-based Org-mode parser."""
+    lines = content.split("\n")
+    in_code = False
+    code_start = 0
+    for i, line in enumerate(lines):
+        m = re.match(r"^(\*+)\s+(.+)$", line)
+        if m:
+            r.setdefault("headings", []).append({
+                "name": m.group(2).strip(),
+                "type": f"heading_{len(m.group(1))}",
+                "lineno": i + 1,
+            })
+        if line.strip().startswith("#+BEGIN_SRC"):
+            in_code = True
+            code_start = i + 1
+        elif line.strip().startswith("#+END_SRC"):
+            if in_code:
+                in_code = False
+                r.setdefault("code_blocks", []).append({
+                    "name": f"code_block_{code_start}",
+                    "type": "code_block",
+                    "lineno": code_start,
+                    "end_lineno": i + 1,
+                })
+        list_m = re.match(r"^(\s*)[-+]\s+(.+)$", line)
+        if list_m:
+            r.setdefault("lists", []).append({
+                "name": list_m.group(2).strip(),
+                "type": "list_item",
+                "lineno": i + 1,
+            })
+
+
+def _rx_elisp(content: str, r: dict):
+    """Regex-based Emacs Lisp parser."""
+    lines = content.split("\n")
+    for i, line in enumerate(lines):
+        ln = i + 1
+        s = line.strip()
+        m = re.match(r"\(defun\s+([^\s\(]+)", s)
+        if m:
+            r["functions"].append({"name": m.group(1), "type": "function", "lineno": ln})
+            continue
+        m = re.match(r"\(defmacro\s+([^\s\(]+)", s)
+        if m:
+            r.setdefault("macros", []).append({"name": m.group(1), "type": "macro", "lineno": ln})
+            continue
+        m = re.match(r"\(defvar\s+([^\s\(]+)", s)
+        if m:
+            r.setdefault("variables", []).append({"name": m.group(1), "type": "variable", "lineno": ln})
+            continue
+        m = re.match(r"\(defcustom\s+([^\s\(]+)", s)
+        if m:
+            r.setdefault("custom_variables", []).append({"name": m.group(1), "type": "custom_variable", "lineno": ln})
+            continue
+        m = re.match(r"\(provide\s+'([^\s\)]+)", s)
+        if m:
+            r.setdefault("provides", []).append({"name": m.group(1), "type": "provide", "lineno": ln})
+
+
+def _rx_vimscript(content: str, r: dict):
+    """Regex-based Vimscript parser."""
+    lines = content.split("\n")
+    in_func = False
+    func_name = ""
+    func_start = 0
+    for i, line in enumerate(lines):
+        ln = i + 1
+        s = line.strip()
+        if not s or s.startswith('"'):
+            continue
+        m = re.match(r"^\s*(?:function!?|def)\s+([A-Za-z_][A-Za-z0-9_:]*)\s*\(", s)
+        if m and not in_func:
+            func_name = m.group(1)
+            in_func = True
+            func_start = ln
+            continue
+        if in_func and s == "endfunction":
+            r["functions"].append({
+                "name": func_name, "type": "function",
+                "lineno": func_start, "end_lineno": ln,
+            })
+            in_func = False
+            continue
+        m = re.match(r"^\s*command!\s+([A-Za-z_][A-Za-z0-9_]*)", s)
+        if m:
+            r.setdefault("commands", []).append({"name": m.group(1), "type": "command", "lineno": ln})
+            continue
+        m = re.match(r"^\s*let\s+([gs]:)?([A-Za-z_][A-Za-z0-9_]*)\s*=", s)
+        if m:
+            scope = m.group(1) or ""
+            var_type = "global_variable" if scope == "g:" else ("script_variable" if scope == "s:" else "variable")
+            r.setdefault("variables", []).append({"name": m.group(2), "type": var_type, "lineno": ln})
+            continue
+        mm = re.match(
+            r"^\s*(n?noremap|i?noremap|v?noremap|x?noremap|s?noremap|o?noremap|t?noremap|"
+            r"n?map|i?map|v?map|x?map|s?map|o?map|t?map|map)\s+", s)
+        if mm:
+            rest = s[mm.end():].strip().split(None, 1)
+            lhs, rhs = rest[0] if rest else "", rest[1] if len(rest) > 1 else ""
+            r.setdefault("mappings", []).append({
+                "name": f"{mm.group(1)} {lhs}", "type": "mapping",
+                "lineno": ln, "lhs": lhs, "rhs": rhs,
+            })
+            continue
+        m = re.match(r"^\s*augroup\s+([A-Za-z_][A-Za-z0-9_]*)", s)
+        if m:
+            r.setdefault("augroups", []).append({"name": m.group(1), "type": "augroup", "lineno": ln})
+    if in_func:
+        r["functions"].append({
+            "name": func_name, "type": "function",
+            "lineno": func_start, "end_lineno": len(lines),
+        })
+
+
+def _rx_makefile(content: str, r: dict):
+    """Regex-based Makefile parser."""
+    for i, line in enumerate(content.split("\n"), 1):
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        m = re.match(r"^([^:#=\s]+)\s*:(.*)$", s)
+        if m:
+            if m.group(1) == ".PHONY":
+                for t in m.group(2).split():
+                    r.setdefault("phony_targets", []).append({"name": t, "type": "phony_target", "lineno": i})
+            else:
+                r.setdefault("targets", []).append({
+                    "name": m.group(1), "type": "target",
+                    "dependencies": m.group(2).strip(), "lineno": i,
+                })
+            continue
+        m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*[:?+]?=\s*(.+)$", s)
+        if m:
+            r.setdefault("variables", []).append({
+                "name": m.group(1), "type": "variable",
+                "value": m.group(2).strip(), "lineno": i,
+            })
+
+
+def _rx_cmake(content: str, r: dict):
+    """Regex-based CMake parser."""
+    for i, line in enumerate(content.split("\n"), 1):
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)", s)
+        if not m:
+            continue
+        cmd_name, cmd_args = m.group(1), m.group(2).strip()
+        if cmd_name in ("set", "option"):
+            vm = re.match(r"([A-Za-z_][A-Za-z0-9_]*)\s+(.+)", cmd_args)
+            if vm:
+                r.setdefault("variables", []).append({
+                    "name": vm.group(1), "type": "variable",
+                    "value": vm.group(2).strip(), "lineno": i,
+                })
+                continue
+        r.setdefault("commands", []).append({
+            "name": cmd_name, "type": "command", "args": cmd_args, "lineno": i,
+        })
+
+
+def _rx_shell(content: str, r: dict):
+    """Regex-based Shell script parser."""
+    for i, line in enumerate(content.split("\n"), 1):
+        m = re.match(r"^\s*(?:function\s+)?([A-Za-z_][A-Za-z0-9_-]*)\s*\(\s*\)", line)
+        if m:
+            r["functions"].append({"name": m.group(1), "type": "function", "lineno": i})
+            continue
+        m = re.match(r"^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)", line)
+        if m:
+            r.setdefault("variables", []).append({
+                "name": m.group(1), "type": "variable",
+                "value": m.group(2).strip(), "lineno": i,
+            })
+
+
+# ── Fallback registry ──────────────────────────────────────────────────────
+
+_REGEX_PARSERS: dict[str, Callable] = {
+    "java":      _rx_java,      # fallback when tree-sitter java unavailable
+    "org":       _rx_org,
+    "elisp":     _rx_elisp,
+    "vimscript": _rx_vimscript,
+    "vim":       _rx_vimscript,
+    "makefile":  _rx_makefile,
+    "cmake":     _rx_cmake,
+    "shell":     _rx_shell,
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Main
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def parse_with_treesitter(lang_name: str, content: str) -> dict | None:
+    """Parse *content* with tree-sitter grammar for *lang_name*.
+
+    Returns a result dict on success, or None if the grammar is not
+    available or parsing fails.
+    """
+    if lang_name not in _LANGUAGES or lang_name not in _TREE_SITTER_PARSERS:
+        return None
+
+    try:
+        lang = _LANGUAGES[lang_name]
+        parser = Parser(lang)
+        source = content.encode("utf-8")
+        tree = parser.parse(source)
+    except Exception as exc:
+        return {
+            "success": False,
+            "error": f"Tree-sitter parse error: {exc}",
+            "functions": [], "classes": [], "imports": [], "errors": [
+                f"Tree-sitter parse error: {exc}",
+            ],
+        }
+
+    result: dict[str, Any] = {
+        "success": True,
+        "functions": [],
+        "classes": [],
+        "imports": [],
+        "errors": [],
+    }
+
+    try:
+        _TREE_SITTER_PARSERS[lang_name](tree.root_node, source, result)
+    except Exception as exc:
+        result["success"] = False
+        result["error"] = f"Tree-sitter walk error: {exc}"
+        result["errors"].append(
+            f"Tree-sitter walk error: {exc}\n{traceback.format_exc()}"
+        )
+
+    return result
+
+
+def parse_with_regex(lang_name: str, content: str) -> dict | None:
+    """Parse *content* with a regex-based parser for *lang_name*.
+
+    Returns a result dict on success, or None if no regex parser exists.
+    """
+    if lang_name not in _REGEX_PARSERS:
+        return None
+
+    result: dict[str, Any] = {
+        "success": True,
+        "functions": [],
+        "classes": [],
+        "imports": [],
+        "errors": [],
+    }
+
+    try:
+        _REGEX_PARSERS[lang_name](content, result)
+    except Exception as exc:
+        result["success"] = False
+        result["error"] = f"Regex parse error: {exc}"
+        result["errors"].append(f"Regex parse error: {exc}")
+
+    return result
+
+
+def parse(lang_name: str, content: str) -> dict:
+    """Parse *content* as *lang_name*, preferring tree-sitter, then regex."""
+    # 1. Try tree-sitter
+    ts_result = parse_with_treesitter(lang_name, content)
+    if ts_result is not None:
+        return ts_result
+
+    # 2. Try regex fallback
+    rx_result = parse_with_regex(lang_name, content)
+    if rx_result is not None:
+        return rx_result
+
+    # 3. Unsupported language
+    return {
+        "success": False,
+        "error": f"Unsupported language: {lang_name}",
+        "supported": sorted(set(_TREE_SITTER_PARSERS) | set(_REGEX_PARSERS)),
+    }
+
+
+def main() -> None:
+    """Entry point: read JSON from stdin, parse, write JSON to stdout."""
+    try:
+        raw = sys.stdin.read().strip()
+        if not raw:
+            print(json.dumps({"error": "No input"}, indent=2))
             sys.exit(1)
 
-        # Parse input JSON
         try:
-            data = json.loads(input_data)
-        except json.JSONDecodeError as e:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            print(json.dumps({"error": f"Invalid JSON: {exc}"}, indent=2))
+            sys.exit(1)
+
+        if "content" not in data or "language" not in data:
             print(json.dumps({
-                'error': f'Invalid JSON input: {str(e)}',
-                'input': input_data[:100] + '...' if len(input_data) > 100 else input_data
+                "error": "Missing required fields: content, language",
             }, indent=2))
             sys.exit(1)
 
-        # Check for dependency check request
-        if data.get('action') == 'check_deps':
-            parser = FileStructureParser()
-            result = parser.get_dependency_info()
-            print(json.dumps(result, indent=2))
-            sys.exit(0)
+        result = parse(data["language"], data["content"])
 
-        # Validate input for parsing
-        if 'content' not in data:
-            print(json.dumps({
-                'error': 'Missing required field: content'
-            }, indent=2))
-            sys.exit(1)
+        # Add dependency info for backward compatibility
+        result.setdefault("dependency_info", {
+            "dependencies_ok": True,
+            "python_version": sys.version,
+            "tree_sitter_languages": sorted(_LANGUAGES.keys()),
+        })
 
-        if 'language' not in data:
-            print(json.dumps({
-                'error': 'Missing required field: language'
-            }, indent=2))
-            sys.exit(1)
-
-        # Create parser and check dependencies
-        parser = FileStructureParser()
-
-        # Add dependency info to result
-        result = parser.parse(data['content'], data['language'])
-        result['dependency_info'] = parser.get_dependency_info()
-
-        # Output result as JSON
         print(json.dumps(result, indent=2))
 
-    except Exception as e:
+    except Exception as exc:
         print(json.dumps({
-            'error': f'Unexpected error: {str(e)}',
-            'traceback': traceback.format_exc()
+            "success": False,
+            "error": f"Unexpected error: {exc}",
+            "traceback": traceback.format_exc(),
         }, indent=2))
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
