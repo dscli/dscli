@@ -43,6 +43,22 @@ _load("javascript", "tree_sitter_javascript")
 _load("rust",       "tree_sitter_rust")
 _load("zig",        "tree_sitter_zig")
 _load("java",       "tree_sitter_java")
+_load("lua",        "tree_sitter_lua")
+_load("ruby",       "tree_sitter_ruby")
+_load("bash",       "tree_sitter_bash")
+_load("yaml",       "tree_sitter_yaml")
+_load("objc",       "tree_sitter_objc")
+_load("sql",        "tree_sitter_sql")
+_load("json",       "tree_sitter_json")
+_load("swift",      "tree_sitter_swift")
+_load("make",       "tree_sitter_make")
+
+# PHP uses language_php() instead of language()
+try:
+    import tree_sitter_php as _tsp
+    _LANGUAGES["php"] = Language(_tsp.language_php())
+except Exception:
+    pass
 
 # Try tree_sitter_typescript if installed
 try:
@@ -105,6 +121,9 @@ def _name(node, source: bytes) -> str:
         "type_identifier",
         "namespace_identifier",
         "statement_identifier",
+        "simple_identifier",
+        "word",
+        "constant",
     )
     return _text(ident, source) if ident else ""
 
@@ -700,7 +719,443 @@ def _ts_java(root, source: bytes, r: dict):
     }
     _walk_all(root, source, handlers)
 
+def _ts_lua(root, source: bytes, r: dict):
+    skip = {"block", "parameters", "arguments", "string", "table_constructor",
+            "binary_expression", "expression_list"}
 
+    def handle_func(node, _src):
+        # Check for method: `function MyTable:method()`
+        if _find_child(node, "method_index_expression"):
+            n = _name(node, _src)
+            if n:
+                r["functions"].append(_sym(n, "method", node))
+        else:
+            n = _name(node, _src)
+            if n:
+                r["functions"].append(_sym(n, "function", node))
+
+    def handle_local_func(node, _src):
+        # `local function name()` — function_declaration with "local" modifier
+        for ch in node.children:
+            if ch.type == "identifier":
+                r["functions"].append(_sym(_text(ch, _src), "function", node))
+                return
+
+    def handle_var(node, _src):
+        # variable_declaration → assignment_statement → variable_list → identifier
+        ident = None
+        assign = _find_child(node, "assignment_statement")
+        if assign:
+            vlist = _find_child(assign, "variable_list")
+            if vlist:
+                ident = _find_child(vlist, "identifier")
+        if not ident:
+            return
+        name_val = _text(ident, _src)
+        # Look for require() call — traverse assignment_statement → expression_list
+        fc = None
+        elist = _find_child(assign, "expression_list")
+        if elist:
+            fc = _find_child(elist, "function_call")
+        if fc:
+            call_name = _find_child(fc, "identifier")
+            if call_name and _text(call_name, _src) == "require":
+                args = _find_child(fc, "arguments")
+                if args:
+                    arg_str = _text(args, _src).strip("()'\" \n")
+                    if arg_str:
+                        r["imports"].append(arg_str)
+                        return
+        # Regular local variable
+        r.setdefault("variables", []).append(_sym(name_val, "variable", node))
+
+    handlers = {
+        "function_declaration": handle_func,
+        "variable_declaration": handle_var,
+    }
+    _walk(root, source, handlers, skip)
+
+
+def _ts_ruby(root, source: bytes, r: dict):
+    skip = {"body_statement", "method_parameters", "argument_list",
+            "string", "integer", "array", "hash", "binary"}
+
+    def handle_class(node, _src):
+        n = _name(node, _src)
+        if n:
+            r["classes"].append(_sym(n, "class", node))
+
+    def handle_module(node, _src):
+        n = _name(node, _src)
+        if n:
+            r["classes"].append(_sym(n, "module", node))
+
+    def handle_method(node, _src):
+        n = _name(node, _src)
+        if n:
+            r["functions"].append(_sym(n, "method", node))
+
+    def handle_singleton(node, _src):
+        n = _name(node, _src)
+        if n:
+            r["functions"].append(_sym(n, "class_method", node))
+
+    def handle_call(node, _src):
+        ident = _find_child(node, "identifier")
+        if ident and _text(ident, _src) == "require":
+            al = _find_child(node, "argument_list")
+            if al:
+                arg = _text(al, _src).strip("()'\" \n")
+                if arg:
+                    r["imports"].append(arg)
+
+    handlers = {
+        "class":              handle_class,
+        "module":             handle_module,
+        "method":             handle_method,
+        "singleton_method":   handle_singleton,
+        "call":               handle_call,
+    }
+    _walk_all(root, source, handlers)
+
+
+def _ts_bash(root, source: bytes, r: dict):
+    skip = {"compound_statement", "string", "command", "command_name",
+            "variable_name"}
+
+    def handle_func(node, _src):
+        n = _name(node, _src)
+        if n:
+            r["functions"].append(_sym(n, "function", node))
+
+    def handle_var(node, _src):
+        name_node = _find_child(node, "variable_name")
+        if name_node:
+            name = _text(name_node, _src)
+            r.setdefault("variables", []).append(_sym(name, "variable", node))
+
+    def handle_source(node, _src):
+        cmd = _find_child(node, "command_name")
+        if cmd:
+            cmd_text = _text(cmd, _src)
+            if cmd_text in ("source", "."):
+                # The file argument is the next word
+                for ch in node.children:
+                    if ch.type == "word" and ch is not cmd:
+                        file_arg = _text(ch, _src)
+                        if file_arg:
+                            r["imports"].append(file_arg)
+                        break
+
+    handlers = {
+        "function_definition": handle_func,
+        "variable_assignment": handle_var,
+        "command":             handle_source,
+    }
+    _walk(root, source, handlers, skip)
+
+
+def _ts_yaml(root, source: bytes, r: dict):
+    """Extract top-level mapping keys from YAML documents."""
+
+    def collect(block_map, _src):
+        for pair in block_map.children:
+            if pair.type != "block_mapping_pair":
+                continue
+            key_node = _find_child(pair, "flow_node")
+            if not key_node:
+                continue
+            # The key is a plain_scalar → string_scalar
+            ps = _find_child(key_node, "plain_scalar")
+            if ps:
+                ss = _find_child(ps, "string_scalar")
+                if ss:
+                    name = _text(ss, _src).strip()
+                    if name:
+                        r.setdefault("keys", []).append(_sym(name, "key", pair))
+
+    def handle_doc(node, _src):
+        bn = _find_child(node, "block_node")
+        if bn:
+            bm = _find_child(bn, "block_mapping")
+            if bm:
+                collect(bm, _src)
+
+    handlers = {"document": handle_doc}
+    skip: set[str] = set()
+    _walk(root, source, handlers, skip)
+
+
+def _ts_objc(root, source: bytes, r: dict):
+    skip = {"compound_statement", "method_type", "argument_list",
+            "string_literal", "expression_statement"}
+
+    def _add_methods(container, _src):
+        """Scan container's children for method_declaration/definition."""
+        for ch in container.children:
+            if not ch.is_named:
+                continue
+            if ch.type in ("method_declaration", "method_definition"):
+                n = _name(ch, _src)
+                if n:
+                    r["functions"].append(_sym(n, "method", ch))
+            elif ch.type in skip:
+                continue
+            else:
+                _add_methods(ch, _src)
+
+    def handle_interface(node, _src):
+        n = _name(node, _src)
+        if n:
+            r["classes"].append(_sym(n, "interface", node))
+        _add_methods(node, _src)
+
+    def handle_implementation(node, _src):
+        n = _name(node, _src)
+        if n:
+            r["classes"].append(_sym(n, "implementation", node))
+        _add_methods(node, _src)
+
+    def handle_include(node, _src):
+        ss = _find_child(node, "system_lib_string")
+        if ss:
+            r["imports"].append(_text(ss, _src))
+        else:
+            sc = _find_child(node, "string_content")
+            if sc:
+                r["imports"].append('"' + _text(sc, _src) + '"')
+
+    handlers = {
+        "class_interface":       handle_interface,
+        "class_implementation":  handle_implementation,
+        "preproc_include":       handle_include,
+    }
+    _walk(root, source, handlers, skip)
+
+
+def _ts_sql(root, source: bytes, r: dict):
+    skip = {"column_definitions", "function_arguments", "function_body",
+            "select", "from", "where", "binary_expression", "literal"}
+
+    def name_from_ref(node, _src):
+        ref = _find_child(node, "object_reference")
+        if ref:
+            ident = _find_child(ref, "identifier")
+            if ident:
+                return _text(ident, _src).strip("`\"")
+        return _name(node, _src)
+
+    def handle_table(node, _src):
+        n = name_from_ref(node, _src)
+        if n:
+            r["classes"].append(_sym(n, "table", node))
+
+    def handle_view(node, _src):
+        n = name_from_ref(node, _src)
+        if n:
+            r["classes"].append(_sym(n, "view", node))
+
+    def handle_function(node, _src):
+        n = name_from_ref(node, _src)
+        if n:
+            r["functions"].append(_sym(n, "function", node))
+
+    handlers = {
+        "create_table":    handle_table,
+        "create_view":     handle_view,
+        "create_function": handle_function,
+    }
+    _walk(root, source, handlers, skip)
+
+
+def _ts_json(root, source: bytes, r: dict):
+    """Extract top-level keys from JSON objects."""
+
+    def handle_obj(node, _src):
+        for pair in node.children:
+            if pair.type != "pair":
+                continue
+            # First named child is the key string
+            key_node = _find_child(pair, "string")
+            if key_node:
+                sc = _find_child(key_node, "string_content")
+                if sc:
+                    name = _text(sc, _src).strip('"')
+                    if name:
+                        r.setdefault("keys", []).append(_sym(name, "key", pair))
+
+    def handle_pair(node, _src):
+        # Value side: check for nested objects/arrays
+        for ch in node.children:
+            if ch.type == "object":
+                handle_obj(ch, _src)
+            elif ch.type == "array":
+                r.setdefault("arrays", []).append(_sym(
+                    _text(_find_child(node, "string") or node, _src).strip('"')[:40],
+                    "array", ch))
+
+    handlers = {"object": handle_obj, "pair": handle_pair}
+    skip: set[str] = set()
+    _walk(root, source, handlers, skip)
+
+
+def _ts_swift(root, source: bytes, r: dict):
+    skip = {"function_body", "class_body", "protocol_body", "enum_class_body",
+            "statements", "string_literal", "line_string_literal",
+            "type_annotation"}
+
+    def handle_import(node, _src):
+        ident = _find_child(node, "identifier")
+        if ident:
+            r["imports"].append(_text(ident, _src))
+
+    def classify_type(node, _src) -> str:
+        """Check source to differentiate class/struct/enum."""
+        txt = _text(node, _src).lstrip()
+        if txt.startswith("struct"):
+            return "struct"
+        elif txt.startswith("enum"):
+            return "enum"
+        elif txt.startswith("class"):
+            return "class"
+        return "type"
+
+    def handle_type(node, _src):
+        n = _name(node, _src)
+        if n:
+            kind = classify_type(node, _src)
+            r["classes"].append(_sym(n, kind, node))
+
+    def handle_protocol(node, _src):
+        n = _name(node, _src)
+        if n:
+            r["classes"].append(_sym(n, "protocol", node))
+
+    def handle_func(node, _src):
+        n = _name(node, _src)
+        if n:
+            r["functions"].append(_sym(n, "function", node))
+
+    handlers = {
+        "import_declaration":      handle_import,
+        "class_declaration":       handle_type,
+        "protocol_declaration":    handle_protocol,
+        "function_declaration":    handle_func,
+    }
+    _walk_all(root, source, handlers)
+
+
+def _ts_php(root, source: bytes, r: dict):
+    skip = {"block", "formal_parameters", "argument_list", "string",
+            "integer", "binary_expression"}
+
+    def php_name(node, _src):
+        # PHP uses a 'name' node for class/interface/trait names
+        n_node = _find_child(node, "name")
+        if n_node:
+            return _text(n_node, _src).lstrip("$")
+        return _name(node, _src)
+
+    def handle_class(node, _src):
+        n = php_name(node, _src)
+        if n:
+            r["classes"].append(_sym(n, "class", node))
+
+    def handle_interface(node, _src):
+        n = php_name(node, _src)
+        if n:
+            r["classes"].append(_sym(n, "interface", node))
+
+    def handle_trait(node, _src):
+        n = php_name(node, _src)
+        if n:
+            r["classes"].append(_sym(n, "trait", node))
+
+    def handle_method(node, _src):
+        n = php_name(node, _src)
+        if n:
+            r["functions"].append(_sym(n, "method", node))
+
+    def handle_func(node, _src):
+        n = php_name(node, _src)
+        if n:
+            r["functions"].append(_sym(n, "function", node))
+
+    def handle_use(node, _src):
+        # PHP AST: namespace_use_declaration → namespace_use_clause → qualified_name
+        clause = _find_child(node, "namespace_use_clause")
+        target = clause if clause else node
+        si = _find_child(target, "scoped_identifier")
+        if si:
+            r["imports"].append(_text(si, _src))
+            return
+        qn = _find_child(target, "qualified_name")
+        if qn:
+            # Collect all name parts recursively (handles namespace_name → name nesting)
+            def _collect_names(n):
+                parts = []
+                for ch in n.children:
+                    if ch.type == "name" and ch.is_named:
+                        parts.append(_text(ch, _src))
+                    elif ch.type == "namespace_name" and ch.is_named:
+                        parts.extend(_collect_names(ch))
+                return parts
+            parts = _collect_names(qn)
+            if parts:
+                r["imports"].append("\\".join(parts))
+            return
+        # Fallback: single name node
+        n_node = _find_child(target, "name")
+        if n_node:
+            r["imports"].append(_text(n_node, _src))
+
+    def handle_namespace(node, _src):
+        n = php_name(node, _src)
+        if n:
+            r.setdefault("namespaces", []).append(_sym(n, "namespace", node))
+
+    handlers = {
+        "class_declaration":     handle_class,
+        "interface_declaration": handle_interface,
+        "trait_declaration":     handle_trait,
+        "method_declaration":    handle_method,
+        "function_definition":   handle_func,
+        "namespace_use_declaration": handle_use,
+        "namespace_definition":  handle_namespace,
+    }
+    _walk_all(root, source, handlers)
+
+
+def _ts_make(root, source: bytes, r: dict):
+    skip: set[str] = set()
+
+    def handle_rule(node, _src):
+        targets_node = _find_child(node, "targets")
+        if targets_node:
+            for ch in targets_node.children:
+                if ch.type == "word":
+                    name = _text(ch, _src)
+                    if name:
+                        r.setdefault("targets", []).append(_sym(name, "target", node))
+
+    def handle_var(node, _src):
+        n = _name(node, _src)
+        if n:
+            r.setdefault("variables", []).append(_sym(n, "variable", node))
+
+    def handle_include(node, _src):
+        list_node = _find_child(node, "list")
+        if list_node:
+            for ch in list_node.children:
+                if ch.type == "word":
+                    r["imports"].append(_text(ch, _src))
+
+    handlers = {
+        "rule":                handle_rule,
+        "variable_assignment": handle_var,
+        "include_directive":   handle_include,
+    }
+    _walk(root, source, handlers, skip)
 # ── Registry ────────────────────────────────────────────────────────────────
 
 _TREE_SITTER_PARSERS: dict[str, Callable] = {
@@ -715,6 +1170,16 @@ _TREE_SITTER_PARSERS: dict[str, Callable] = {
     "rust":       _ts_rust,
     "zig":        _ts_zig,
     "java":       _ts_java,
+    "lua":        _ts_lua,
+    "ruby":       _ts_ruby,
+    "bash":       _ts_bash,
+    "yaml":       _ts_yaml,
+    "objc":       _ts_objc,
+    "sql":        _ts_sql,
+    "json":       _ts_json,
+    "swift":      _ts_swift,
+    "php":        _ts_php,
+    "make":       _ts_make,
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -931,7 +1396,6 @@ _REGEX_PARSERS: dict[str, Callable] = {
     "elisp":     _rx_elisp,
     "vimscript": _rx_vimscript,
     "vim":       _rx_vimscript,
-    "makefile":  _rx_makefile,
     "cmake":     _rx_cmake,
     "shell":     _rx_shell,
 }
