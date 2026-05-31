@@ -15,8 +15,6 @@ require (
 	mvdan.cc/sh/v3 v3.13.1
 )
 
-require gitcode.com/dscli/treesitter v0.0.0-20260528120947-70b4390dbaba // indirect
-
 ignore ./docs
 
 require (
@@ -36,7 +34,7 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/vcaesar/cedar v0.30.0 // indirect
 	golang.org/x/sys v0.44.0 // indirect
-	modernc.org/libc v1.72.5
+	modernc.org/libc v1.72.5 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
