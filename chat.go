@@ -367,9 +367,9 @@ func PrintSessionStats(ctx context.Context) {
 		var cacheRatio string
 		if total := u.PromptCacheHitTokens + u.PromptCacheMissTokens; total > 0 {
 			ratio := float64(u.PromptCacheHitTokens) / float64(total) * 100
-			cacheRatio = fmt.Sprintf(" %.0f%%", ratio)
+			cacheRatio = fmt.Sprintf("%.0f%%", ratio)
 		}
-		stats = append(stats, fmt.Sprintf("🪙 %d %d%s",
+		stats = append(stats, fmt.Sprintf("🪙 %d(%d,%s)",
 			u.TotalTokens, u.CompletionTokens, cacheRatio))
 	}
 
