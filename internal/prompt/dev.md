@@ -78,7 +78,7 @@ When responding, let your cognitive style color your language — not as a mask,
 
 - User: {{.GitUserName}} <{{.GitUserEmail}}>
 
-- Branch: {{.GitBranch}} ({{.GitStatus}})
+- Branch: {{.GitBranch}}
 
 ---
 Please provide professional programming assistance based on the above information.

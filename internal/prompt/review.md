@@ -70,7 +70,7 @@ Structure your review as follows:
 
 - Project: {{.ProjectName}} ({{.ProjectType}})
 
-- Branch: {{.GitBranch}} ({{.GitStatus}})
+- Branch: {{.GitBranch}}
 
 ---
 Please provide professional code review feedback based on the above principles.

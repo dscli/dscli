@@ -49,7 +49,6 @@ type promptConfig struct {
 	GitUserName  string
 	GitUserEmail string
 	GitBranch    string
-	GitStatus    string
 
 	// 项目信息
 	ProjectName string
@@ -412,7 +411,8 @@ func newPromptConfig(ctx context.Context) *promptConfig {
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, int64(0))
 	role := context.ContextValue(ctx, context.CurrentRoleKey, "dev")
 	config := &promptConfig{
-		CurrentDate:      time.Now().Format("2006年01月02日"),
+		CurrentDate:      time.Now().Format("2006年01月"),
+
 		ProjectRoot:      projectRoot,
 		ConfigDir:        config.ConfigDir,
 		WorkingDirectory: getWorkingDirectory(),
@@ -472,17 +472,6 @@ func (c *promptConfig) loadGitInfo() {
 		c.GitBranch = "非Git仓库"
 	}
 
-	// 获取Git状态（简化版）
-	if output, err := exec.Command("git", "status", "--porcelain").Output(); err == nil {
-		lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-		if len(lines) > 0 && lines[0] != "" {
-			c.GitStatus = fmt.Sprintf("有%d个文件变更", len(lines))
-		} else {
-			c.GitStatus = "工作区干净"
-		}
-	} else {
-		c.GitStatus = "无法获取状态"
-	}
 }
 
 // detectProjectType 检测项目类型
