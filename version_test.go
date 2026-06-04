@@ -42,7 +42,6 @@ func TestVersionCommandOutput(t *testing.T) {
 	originalColorEnabled := outfmt.GetColorEnabled()
 	originalShowTimestamp := outfmt.GetShowTimestamp()
 	originalModelChat := context.ModelDeepseekChat
-	originalModelReasoner := context.ModelDeepseekReasoner
 
 	// 设置测试环境
 	defer func() {
@@ -55,7 +54,6 @@ func TestVersionCommandOutput(t *testing.T) {
 		outfmt.SetColorEnabled(originalColorEnabled)
 		outfmt.SetShowTimestamp(originalShowTimestamp)
 		context.ModelDeepseekChat = originalModelChat
-		context.ModelDeepseekReasoner = originalModelReasoner
 	}()
 
 	// 设置测试值
@@ -65,9 +63,7 @@ func TestVersionCommandOutput(t *testing.T) {
 	outfmt.SetOutputMode("markdown")
 	outfmt.SetVerbose(true)
 	outfmt.SetColorEnabled(true)
-	outfmt.SetShowTimestamp(false)
 	context.ModelDeepseekChat = "deepseek-chat-test"
-	context.ModelDeepseekReasoner = "deepseek-reasoner-test"
 
 	// 设置测试输出缓冲区
 	var buf bytes.Buffer
@@ -102,7 +98,6 @@ func TestVersionCommandOutput(t *testing.T) {
 		{"时间戳显示", "时间戳显示"},
 		{"模型配置章节", "模型配置"},
 		{"聊天模型", "聊天模型"},
-		{"推理模型", "推理模型"},
 	}
 
 	for _, tc := range testCases {
@@ -118,10 +113,6 @@ func TestVersionCommandOutput(t *testing.T) {
 
 	if !strings.Contains(output, "deepseek-chat-test") {
 		t.Error("version命令输出缺少测试聊天模型")
-	}
-
-	if !strings.Contains(output, "deepseek-reasoner-test") {
-		t.Error("version命令输出缺少测试推理模型")
 	}
 }
 

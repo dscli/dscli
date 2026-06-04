@@ -26,8 +26,7 @@ import (
 )
 
 const (
-	DeepseekChat     = int64(0)
-	DeepseekReasoner = int64(1)
+	DeepseekChat = int64(0)
 )
 
 func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
@@ -40,8 +39,6 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 	switch model {
 	case context.ModelDeepseekChat:
 		modelID = DeepseekChat
-	case context.ModelDeepseekReasoner:
-		modelID = DeepseekReasoner
 	default:
 		err = fmt.Errorf("do not support %s", model)
 		if verbose, _ := cmd.Flags().GetBool("verbose"); verbose {

@@ -51,14 +51,12 @@ var (
 )
 
 var (
-	ProjectRoot           = GetProjectRoot()
-	ModelDeepseekChat     = config.Get("model-deepseek-chat", "deepseek-v4-pro")
-	ModelDeepseekReasoner = config.Get("model-deepseek-reasoner", "deepseek-v4-flash")
+	ProjectRoot       = GetProjectRoot()
+	ModelDeepseekChat = config.Get("model-deepseek-chat", "deepseek-v4-flash")
 )
 
 const (
-	DeepseekChat     = int64(0)
-	DeepseekReasoner = int64(1)
+	DeepseekChat = int64(0)
 )
 
 // Role constants for --role flag
@@ -126,13 +124,6 @@ func findGitRoot(dir string) (string, error) {
 
 func IsTesting() bool {
 	return strings.HasSuffix(os.Args[0], ".test")
-}
-
-func ReasonerModelOK() bool {
-	// 只要推理模型与聊天模型不同，即认为推理模型可用
-	// V4: deepseek-v4-pro vs deepseek-v4-flash
-	// V3: deepseek-chat vs deepseek-reasoner
-	return ModelDeepseekReasoner != ModelDeepseekChat
 }
 
 // GitUserName returns git config user.name, or "未知" on error.

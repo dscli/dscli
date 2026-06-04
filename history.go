@@ -234,8 +234,6 @@ func historyPreRunE(cmd *cobra.Command, args []string) (err error) {
 	switch model {
 	case context.ModelDeepseekChat:
 		modelID = DeepseekChat
-	case context.ModelDeepseekReasoner:
-		modelID = DeepseekReasoner
 	default:
 		err = fmt.Errorf("do not support %s", model)
 		if verbose, _ := cmd.Flags().GetBool("verbose"); verbose {

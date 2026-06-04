@@ -6,7 +6,6 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/context"
 )
-
 func TestGetEnhancedSystemPrompt(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -22,18 +21,11 @@ func TestGetEnhancedSystemPrompt(t *testing.T) {
 			"Professional Programming Assistant",
 			"system_prompt",
 		},
-		{
-			"deepseek-reasoner",
-			context.DeepseekReasoner,
-			"expert",
-			"Programming Domain Expert",
-			"system_prompt",
-		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
-			ctx = context.WithValue(ctx, context.CurrentModelIDKey, tt.modelID)
 			ctx = context.WithValue(ctx, context.CurrentRoleKey, tt.role)
 			content := GetSystemPrompt(ctx)
 			if !strings.Contains(content, tt.contains) {

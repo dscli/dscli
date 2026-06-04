@@ -161,10 +161,6 @@ func KnownToolNames() []string {
 // dev gets all, others get none.
 func GetAllTools(ctx context.Context) []Tool {
 	role := context.ContextValue(ctx, context.CurrentRoleKey, "dev")
-	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
-	if modelID == context.DeepseekReasoner {
-		return nil
-	}
 	// Determine which tools to include
 	var allowSet map[string]bool // nil = all, non-nil = filter
 
