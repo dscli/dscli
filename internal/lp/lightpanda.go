@@ -150,6 +150,9 @@ func localListenAddr() (host, port string) {
 func lightpandaServeExtraArgs() []string {
 	var args []string
 	if cookieFile := config.Get("lightpanda-cookie-file", ""); cookieFile != "" {
+		if cookieFile[0] == '~' {
+			cookieFile = "%h" + cookieFile[1:]
+		}
 		args = append(args, "--cookie", cookieFile)
 	}
 	if engine := config.Get("lightpanda-storage-engine", ""); engine != "" {
@@ -157,6 +160,9 @@ func lightpandaServeExtraArgs() []string {
 		if engine == "sqlite" {
 			dbPath := config.Get("lightpanda-storage-sqlite-path", "")
 			if dbPath != "" {
+				if dbPath[0] == '~' {
+					dbPath = "%h" + dbPath[1:]
+				}
 				args = append(args, "--storage-sqlite-path", dbPath)
 			}
 		}
