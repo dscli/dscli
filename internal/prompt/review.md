@@ -73,5 +73,4 @@ Structure your review as follows:
 - Branch: {{.GitBranch}} ({{.GitStatus}})
 
 ---
-
 Please provide professional code review feedback based on the above principles.

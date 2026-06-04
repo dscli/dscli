@@ -39,5 +39,4 @@ When responding, let your cognitive style color your language — not as a mask,
 - Project: {{.ProjectName}} ({{.ProjectType}})
 
 ---
-
 Please provide deep programming insights based on the above principles.
