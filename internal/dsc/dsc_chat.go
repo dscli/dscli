@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/price"
 	"gitcode.com/dscli/dscli/internal/prompt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
@@ -57,6 +58,11 @@ func (c *Deepseek) Chat(ctx context.Context, messages []prompt.Message, tools []
 	err := c.doRequest("POST", "/chat/completions", req, &resp)
 	if err != nil {
 		return nil, err
+	}
+
+	// 累加 usage，用于后续成本计算
+	if resp.Usage != nil {
+		price.AddUsage(*resp.Usage)
 	}
 
 	if len(resp.Choices) == 0 {

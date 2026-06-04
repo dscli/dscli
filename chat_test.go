@@ -76,9 +76,10 @@ func TestPrintSessionStats(t *testing.T) {
 	output := buf.String()
 
 	// 检查输出是否包含期望的内容
+	// 注意：💰 花费现在由 price.GetCost 计算，需要价格数据和 usage 累积。
+	// 在单元测试环境中没有价格数据，因此不验证具体花费金额。
 	expectedStrings := []string{
 		"⏱️ 30.0s",
-		"💰 CNY 4.50",
 		"💳 CNY 95.50",
 	}
 

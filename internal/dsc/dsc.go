@@ -6,6 +6,7 @@ import (
 
 	"gitcode.com/dscli/dscli/internal/config"
 	"gitcode.com/dscli/dscli/internal/context"
+	"gitcode.com/dscli/dscli/internal/price"
 	"gitcode.com/dscli/dscli/internal/prompt"
 	"gitcode.com/dscli/dscli/internal/toolcall"
 )
@@ -49,8 +50,9 @@ type BalanceResponse struct {
 
 // ChatResponse 响应
 type ChatResponse struct {
-	ID      string   `json:"id"`
-	Choices []Choice `json:"choices"`
+	ID      string       `json:"id"`
+	Choices []Choice     `json:"choices"`
+	Usage   *price.Usage `json:"usage"`
 }
 
 type Choice struct {

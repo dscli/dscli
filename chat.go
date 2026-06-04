@@ -17,6 +17,7 @@ import (
 	"gitcode.com/dscli/dscli/internal/lockfile"
 	"gitcode.com/dscli/dscli/internal/mail"
 	"gitcode.com/dscli/dscli/internal/outfmt"
+	"gitcode.com/dscli/dscli/internal/price"
 	"gitcode.com/dscli/dscli/internal/prompt"
 	"gitcode.com/dscli/dscli/internal/session"
 	"gitcode.com/dscli/dscli/internal/toolcall"
@@ -361,13 +362,30 @@ func PrintSessionStats(ctx context.Context) {
 		stats = append(stats, fmt.Sprintf("⏱️ %s", durationStr))
 	}
 
+	// token 用量
+	if u := price.GetUsage(); u.TotalTokens > 0 {
+		var cacheRatio string
+		if total := u.PromptCacheHitTokens + u.PromptCacheMissTokens; total > 0 {
+			ratio := float64(u.PromptCacheHitTokens) / float64(total) * 100
+			cacheRatio = fmt.Sprintf(" %.0f%%", ratio)
+		}
+		stats = append(stats, fmt.Sprintf("🪙 %d %d%s",
+			u.TotalTokens, u.CompletionTokens, cacheRatio))
+	}
+
 	// 花费和余额 (only when user-balance is enabled)
 	if config.GetBool("user-balance", true) && startBalance["currency"] != "" {
 		if resp, err := DeepseekClient.Balance(); err == nil && len(resp.BalanceInfos) > 0 {
 			for _, balance := range resp.BalanceInfos {
 				if balance["currency"] == startBalance["currency"] {
-					// 计算花费
-					cost := calculateCost(startBalance, balance)
+					// 使用 token 用量计算花费（替代旧的余额差值算法）
+					model := context.ContextValue(ctx, context.CurrentModelNameKey, "")
+					cost := ""
+					if model != "" {
+						if c := price.GetCost(model); c > 0 {
+							cost = fmt.Sprintf("%s %.2f", startBalance["currency"], c)
+						}
+					}
 
 					// 解析当前余额
 					currentBalance, err := parseBalance(balance["total_balance"])
@@ -384,7 +402,7 @@ func PrintSessionStats(ctx context.Context) {
 					stats = append(stats, fmt.Sprintf("💳 %s %s", balance["currency"], balance["total_balance"]))
 
 					// 如果余额较低，显示提醒
-					if currentBalance < 10.0 { // 余额低于10元时提醒
+					if currentBalance < 10.0 {
 						stats = append(stats, "⚠️ 余额较低，请及时充值！")
 					}
 
@@ -399,7 +417,6 @@ func PrintSessionStats(ctx context.Context) {
 		outfmt.Println(strings.Join(stats, "  "))
 	}
 }
-
 // injectChimein checks for pending chime-in messages and injects them into history.
 // Returns the updated history and true if a chime-in was found and injected.
 func injectChimein(ctx context.Context, history []prompt.Message) ([]prompt.Message, bool) {
@@ -440,6 +457,7 @@ func injectChimein(ctx context.Context, history []prompt.Message) ([]prompt.Mess
 	// unread mail would cause infinite ChatRound restarts at line 506.
 	return history, hasChimein
 }
+
 
 func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ...prompt.Message) (err error) {
 	// 0. Inject any pending chime-in before calling LLM.
