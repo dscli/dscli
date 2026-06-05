@@ -188,6 +188,19 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		}
 	}
 
+	// Inject pending chime-in content as part of the user message prefix.
+	// This avoids adding chimeins as separate history entries, preserving
+	// cache stability — only the user message content varies, not the
+	// history structure.
+	if chimeinContent, err := chimein.Get(ctx); err == nil && chimeinContent != "" {
+		if content != "" {
+			content = chimeinContent + "\n" + content
+		} else {
+			content = chimeinContent
+		}
+		outfmt.PrintClimeinContent(ctx, chimeinContent)
+	}
+
 	ctx = context.WithValue(ctx, context.StartTimeKey, time.Now())
 
 	// Fetch starting balance (only when user-balance is enabled)
@@ -218,10 +231,6 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 			toolInputs := toolcall.HandleToolCalls(ctx, tcs)
 			// Execute tool calls
 			history = append(history, toolInputs...)
-
-			// Inject pending chime-in before next ChatRound.
-			// Chime-ins may have accumulated while the process was not running.
-			history, _ = injectChimein(ctx, history)
 
 			inputs := []prompt.Message{}
 			if content != "" {
@@ -428,53 +437,7 @@ func PrintSessionStats(ctx context.Context) {
 	}
 }
 
-// injectChimein checks for pending chime-in messages and injects them into history.
-// Returns the updated history and true if a chime-in was found and injected.
-func injectChimein(ctx context.Context, history []prompt.Message) ([]prompt.Message, bool) {
-	content, err := chimein.Get(ctx)
-	hasChimein := err == nil && content != ""
-
-	// Inject unread mail notification as a single line at the top of
-	// the chimein/tool message. This replaces the old system-prompt
-	// injection that caused cache misses.
-	var notif string
-	if summaries := mail.UnreadMailList(ctx); len(summaries) > 0 {
-		notif = mail.FormatUnreadMailLine(summaries)
-	}
-
-	// Nothing to inject.
-	if !hasChimein && notif == "" {
-		return history, false
-	}
-
-	// Build the combined message content.
-	var msgContent string
-	switch {
-	case hasChimein && notif != "":
-		msgContent = notif + "\n" + content
-	case hasChimein:
-		msgContent = content
-	default: // only notif
-		msgContent = notif
-	}
-
-	msg := prompt.Message{Role: "user", Content: msgContent}
-	history = append(history, msg)
-	outfmt.PrintClimeinContent(ctx, msgContent)
-	if saveErr := prompt.SaveMessages(ctx, msg); saveErr != nil {
-		outfmt.Debug("failed to save chimein message: %v", saveErr)
-	}
-	// Only signal "restart needed" for actual chimeins, not for
-	// unread-mail-only notifications. Without this guard, a persistent
-	// unread mail would cause infinite ChatRound restarts at line 506.
-	return history, hasChimein
-}
-
 func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ...prompt.Message) (err error) {
-	// 0. Inject any pending chime-in before calling LLM.
-	//    This catches leftover chime-ins from previous sessions that ended
-	//    with a text-only response (no tool calls to trigger the check below).
-	history, _ = injectChimein(ctx, history)
 
 	// 1. Construct messages slice (prompts → history → inputs)
 	messages := make([]prompt.Message, 0, len(prompts)+len(history)+len(inputs))
@@ -561,13 +524,6 @@ func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ..
 	}
 
 	if len(tcs) == 0 {
-		// No tool calls — check for chime-in before ending the session.
-		// If a chime-in arrived during LLM thinking, restart ChatRound
-		// so it gets processed immediately instead of being carried over
-		// to the next dscli chat invocation.
-		if updatedHistory, injected := injectChimein(ctx, history); injected {
-			return ChatRound(ctx, prompts, updatedHistory)
-		}
 		// Conversation ended, print stats
 		outfmt.Println()
 		PrintSessionStats(ctx)
