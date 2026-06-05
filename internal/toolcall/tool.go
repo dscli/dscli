@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -189,8 +191,14 @@ func GetAllTools(ctx context.Context) []Tool {
 	toolRegistryRWMutex.RLock()
 	defer toolRegistryRWMutex.RUnlock()
 
+	names := slices.Collect(maps.Keys(toolRegistry))
+	slices.Sort(names)
 	var tools []Tool
-	for name, def := range toolRegistry {
+	for _, name := range names {
+		def, ok := toolRegistry[name]
+		if !ok {
+			continue
+		}
 		if allowSet != nil && !allowSet[name] {
 			continue
 		}

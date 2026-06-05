@@ -214,7 +214,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		tcs := lastHist.ToolCalls
 		if len(tcs) > 0 {
 			// Print reasoning content or content
-			outfmt.PrintContent(ctx, lastHist.ReasoningContent, lastHist.Content)
+			outfmt.PrintContent(ctx, lastHist.ReasoningContent, lastHist.Content, 0, 0)
 			toolInputs := toolcall.HandleToolCalls(ctx, tcs)
 			// Execute tool calls
 			history = append(history, toolInputs...)
@@ -367,8 +367,8 @@ func PrintSessionStats(ctx context.Context) {
 			ratio := float64(u.PromptCacheHitTokens) / float64(total) * 100
 			cacheRatio = fmt.Sprintf("%.0f%%", ratio)
 		}
-		stats = append(stats, fmt.Sprintf("🪙 %d(%d,%s)",
-			u.TotalTokens, u.CompletionTokens, cacheRatio))
+		stats = append(stats, fmt.Sprintf("🪙 %d, %d, %d(%s)",
+			u.TotalTokens, u.CompletionTokens, u.PromptTokens, cacheRatio))
 	}
 
 	// 花费和余额 (only when user-balance is enabled)
@@ -517,7 +517,28 @@ func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ..
 		}
 	}
 
-	outfmt.PrintContent(ctx, story.ReasoningContent, story.Content)
+	var thinkingTokens, contentTokens int
+	if resp.Usage != nil {
+		story.SetTokens(resp.Usage.CompletionTokens)
+		if resp.Usage.CompletionTokensDetails != nil {
+			thinkingTokens = resp.Usage.CompletionTokensDetails.ReasoningTokens
+		}
+		contentTokens = resp.Usage.CompletionTokens - thinkingTokens
+	}
+
+	outfmt.PrintContent(ctx, story.ReasoningContent, story.Content, thinkingTokens, contentTokens)
+	// Print usage/cache stats for this round
+	if resp.Usage != nil {
+		u := resp.Usage
+		cacheTotal := u.PromptCacheHitTokens + u.PromptCacheMissTokens
+		var cacheRatio string
+		if cacheTotal > 0 {
+			ratio := float64(u.PromptCacheHitTokens) / float64(cacheTotal) * 100
+			cacheRatio = fmt.Sprintf("%.0f%%", ratio)
+		}
+		outfmt.Println(fmt.Sprintf("🪙 %d, %d, %d(%s)",
+			u.TotalTokens, u.CompletionTokens, u.PromptTokens, cacheRatio))
+	}
 	stories = append(stories, story)
 	tcs := story.ToolCalls
 
@@ -540,6 +561,7 @@ func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ..
 			return ChatRound(ctx, prompts, updatedHistory)
 		}
 		// Conversation ended, print stats
+		outfmt.Println()
 		PrintSessionStats(ctx)
 		return err
 	}

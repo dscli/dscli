@@ -18,11 +18,11 @@ type Message struct {
 	ID               int64      `json:"-"`
 	SessionID        int64      `json:"-"`
 	ModelID          int64      `json:"-"`
+	Content          string     `json:"content"` // 始终输出，即使为空字符串
 	Role             string     `json:"role"`
-	ReasoningContent string     `json:"reasoning_content"`
-	Content          string     `json:"content"`                // 始终输出，即使为空字符串
-	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`   // 仅当有工具调用时输出
-	ToolCallID       string     `json:"tool_call_id,omitempty"` // 仅当 role="tool" 时输出
+	ReasoningContent string     `json:"reasoning_content,omitzero"`
+	ToolCalls        []ToolCall `json:"tool_calls,omitzero"`   // 仅当有工具调用时输出
+	ToolCallID       string     `json:"tool_call_id,omitzero"` // 仅当 role="tool" 时输出
 	CreatedAt        time.Time  `json:"-"`
 	tokens           int        `json:"-"`
 	OK               bool       `json:"-"`
@@ -52,6 +52,10 @@ func (m *Message) GetTokens() int {
 	return m.tokens
 }
 
+func (m *Message) SetTokens(tokens int) {
+	m.tokens = tokens
+}
+
 func init() {
 	sqlite.RegisterTableSchema(
 		// 消息表
@@ -63,8 +67,9 @@ func init() {
 			tool_call_id TEXT,
 			tool_calls TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            model_id INTEGER NOT NULL DEFAULT 0,
-    		reasoning_content TEXT,
+			model_id INTEGER NOT NULL DEFAULT 0,
+			reasoning_content TEXT,
+			tokens INTEGER NOT NULL DEFAULT 0,
 			FOREIGN KEY (session_id) REFERENCES sessions(id)
 		)`,
 		// FTS5 全文搜索虚拟表（独立维护，与 memories_fts 模式一致）
@@ -83,6 +88,8 @@ func init() {
 		`ALTER TABLE messages ADD COLUMN model_id INTEGER NOT NULL DEFAULT 0`,
 		// 增加 reasoning content
 		`ALTER TABLE messages ADD COLUMN reasoning_content TEXT`,
+		// 增加 tokens
+		`ALTER TABLE messages ADD COLUMN tokens INTEGER NOT NULL DEFAULT 0`,
 	)
 
 	// 升级迁移：为已有消息重建 FTS 索引（仅当 FTS 表为空且有消息时执行一次）
@@ -153,9 +160,9 @@ func insertMessage(sessionID, modelID int64, m Message) (int64, error) {
 	defer db.Close()
 
 	res, err := db.Exec(
-		`INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, model_id, reasoning_content)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		sessionID, m.Role, m.Content, toolCallID, toolCalls, modelID, m.ReasoningContent,
+		`INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, model_id, reasoning_content, tokens)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		sessionID, m.Role, m.Content, toolCallID, toolCalls, modelID, m.ReasoningContent, m.tokens,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("插入消息失败: %w", err)

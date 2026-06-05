@@ -102,15 +102,18 @@ func ShowMessage(ctx context.Context, id int64) (message *Message, err error) {
 	defer db.Close()
 	var toolCalls sql.NullString
 	var toolCallID sql.NullString
+	var tokens int
 	message = &Message{}
 	err = db.QueryRowContext(ctx, `SELECT id, session_id, role, content, tool_call_id, `+
-		`tool_calls, created_at, model_id, reasoning_content FROM messages WHERE `+
+		`tool_calls, created_at, model_id, reasoning_content, tokens FROM messages WHERE `+
 		`id = ?`, id).Scan(&message.ID,
 		&message.SessionID, &message.Role, &message.Content, &toolCallID,
-		&toolCalls, &message.CreatedAt, &message.ModelID, &message.ReasoningContent)
+		&toolCalls, &message.CreatedAt, &message.ModelID, &message.ReasoningContent,
+		&tokens)
 	if err != nil {
 		return message, err
 	}
+	message.SetTokens(tokens)
 	if toolCalls.Valid {
 		err = json.Unmarshal([]byte(toolCalls.String), &message.ToolCalls)
 		if err != nil {
@@ -133,7 +136,7 @@ func ListHistory(ctx context.Context) ([]*Message, error) {
 		return nil, err
 	}
 	defer db.Close()
-	rows, err := db.QueryContext(ctx, `SELECT id, role, content, tool_call_id, tool_calls, created_at,reasoning_content
+	rows, err := db.QueryContext(ctx, `SELECT id, role, content, tool_call_id, tool_calls, created_at, reasoning_content, tokens
 		FROM messages
 		WHERE session_id = ? AND model_id = ?
 		ORDER BY id DESC
@@ -152,9 +155,11 @@ func ListHistory(ctx context.Context) ([]*Message, error) {
 	for rows.Next() {
 		m := &Message{}
 		var toolCallID, toolCalls sql.NullString
-		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt, &m.ReasoningContent); err != nil {
+		var tokens int
+		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt, &m.ReasoningContent, &tokens); err != nil {
 			return nil, fmt.Errorf("扫描消息失败: %w", err)
 		}
+		m.SetTokens(tokens)
 		if toolCallID.Valid {
 			m.ToolCallID = toolCallID.String
 		}
@@ -191,7 +196,7 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 	}
 	defer db.Close()
 	rows, err := db.Query(`
-		SELECT id, role, content, tool_call_id, tool_calls, created_at, reasoning_content
+		SELECT id, role, content, tool_call_id, tool_calls, created_at, reasoning_content, tokens
 		FROM messages
 		WHERE session_id = ? AND model_id = ?
 		ORDER BY id DESC
@@ -209,9 +214,11 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 	for rows.Next() {
 		var m Message
 		var toolCallID, toolCalls sql.NullString
-		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt, &m.ReasoningContent); err != nil {
+		var tokens int
+		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt, &m.ReasoningContent, &tokens); err != nil {
 			return nil, fmt.Errorf("扫描消息失败: %w", err)
 		}
+		m.SetTokens(tokens)
 		if toolCallID.Valid {
 			m.ToolCallID = toolCallID.String
 		}
@@ -221,7 +228,9 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 				m.ToolCalls = toolCallsData
 			}
 		}
-		tokens := m.GetTokens()
+		if m.tokens == 0 {
+			tokens = m.GetTokens()
+		}
 		leftTokens -= tokens
 		if leftTokens <= tokens*2 { // 我们还要给后面的user消息留下些tokens。
 			break
