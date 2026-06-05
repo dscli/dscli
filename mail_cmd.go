@@ -47,14 +47,14 @@ func init() {
 		Args:  cobra.NoArgs,
 		RunE:  mailListRunE,
 	}
-	listCmd.Flags().BoolP("unread", "u", false, "只显示未读邮件")
+	listCmd.Flags().BoolP("unread", "u", false, "Show only unread mail")
 	listCmd.Flags().IntP("limit", "n", 20, "最大显示数")
 	mailCmd.AddCommand(listCmd)
 
 	// == search ============================================================
 	searchCmd := &cobra.Command{
 		Use:   "search <query>",
-		Short: "搜索邮件",
+		Short: "Search mail",
 		Long:  "使用 FTS5 全文搜索邮件主题和正文。",
 		Args:  cobra.ExactArgs(1),
 		RunE:  mailSearchRunE,
@@ -75,7 +75,7 @@ func init() {
 	// == reply ==============================================================
 	replyCmd := &cobra.Command{
 		Use:   "reply <mail-id>",
-		Short: "回复邮件",
+		Short: "Reply to mail",
 		Long:  "回复指定 ID 的邮件。收件人自动设置为原邮件发件人，主题默认加 Re: 前缀。",
 		Args:  cobra.ExactArgs(1),
 		RunE:  mailReplyRunE,
@@ -87,7 +87,7 @@ func init() {
 	// == delete =============================================================
 	deleteCmd := &cobra.Command{
 		Use:   "delete <mail-id>",
-		Short: "删除邮件",
+		Short: "Delete mail",
 		Long:  "删除指定 ID 的邮件。只有收件人可以删除自己的邮件。",
 		Args:  cobra.ExactArgs(1),
 		RunE:  mailDeleteRunE,

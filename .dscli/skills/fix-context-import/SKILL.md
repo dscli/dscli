@@ -40,7 +40,7 @@ python3 ~/.dscli/skills/fix-context-import/scripts/fix_context_import.py interna
 
 1. Scans Go files for those importing BOTH `"context"` (stdlib) and `internal/context` (aliased)
 2. Removes the stdlib `"context"` import line
-3. Removes the alias from `internal/context` (e.g. `dsctx "gitcode.com/..."`)
+3. Removes the alias from `internal/context` (e.g. `dsctx "github.com/dscli/dscli"`)
 4. Replaces all `alias.XXX` calls with `context.XXX`
 5. Runs `gofumpt -w` on modified files
 

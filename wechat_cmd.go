@@ -25,7 +25,7 @@ func init() {
 	// 添加子命令
 	_ = AddCommand(wechatCmd, &cobra.Command{
 		Use:   "login",
-		Short: "登录微信",
+		Short: "Login to WeChat",
 		Long: `智能登录微信，自动尝试最优登录方式：
 1. 优先尝试免扫码登录（PushLogin）
 2. 失败则尝试热登录（HotLogin）
@@ -62,7 +62,7 @@ func init() {
 	})
 	wechatSendCmd := AddCommand(wechatCmd, &cobra.Command{
 		Use:   "send <微信号/昵称>",
-		Short: "发送消息",
+		Short: "Send message",
 		Long: `发送消息给指定的微信号或昵称。
 支持从命令行参数或标准输入读取消息内容。`,
 		Args: cobra.ExactArgs(1),
@@ -112,7 +112,7 @@ func init() {
 	wechatMessagesCmd.Flags().Int("limit", 50, "显示消息数量限制")
 
 	// send/reply命令标志
-	wechatSendCmd.Flags().String("text", "t", "消息内容")
+	wechatSendCmd.Flags().String("text", "t", "Message content")
 	wechatSendCmd.Flags().Bool("stdin", false, "从标准输入读取消息内容")
 	wechatReplyCmd.Flags().String("text", "t", "回复内容")
 	wechatReplyCmd.Flags().Bool("stdin", false, "从标准输入读取回复内容")

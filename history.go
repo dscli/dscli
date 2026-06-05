@@ -22,70 +22,70 @@ func init() {
 	})
 	_ = AddCommand(historyCmd, &cobra.Command{
 		Use:   "list",
-		Short: "列出历史消息",
+		Short: "List history messages",
 		RunE:  historyListRunE,
 	})
 	_ = AddCommand(historyCmd, &cobra.Command{
 		Use:   "load",
-		Short: "加载并校验历史消息",
+		Short: "Load and validate history messages",
 		RunE:  historyLoadRunE,
 	})
 	_ = AddCommand(historyCmd, &cobra.Command{
 		Use:   "update",
-		Short: "将指定消息标记为历史（更新其 ok 状态）",
+		Short: "Mark message as history (update its ok status)",
 		Args:  cobra.ExactArgs(1),
 		RunE:  historyUpdateRunE,
 	})
 	recentCmd := AddCommand(historyCmd, &cobra.Command{
 		Use:   "recent",
-		Short: "列出当前会话的最近消息（表格形式）",
+		Short: "List recent messages in current session (table format)",
 		RunE:  historyRecentRunE,
 	})
-	recentCmd.Flags().Int("limit", 20, "返回最近N条消息（默认20，最大100）")
-	recentCmd.Flags().Int64("start", 0, "从指定消息ID开始往前翻页（0=最新）")
+	recentCmd.Flags().Int("limit", 20, "Return last N messages (default 20, max 100)")
+	recentCmd.Flags().Int64("start", 0, "Start from specified message ID going backward (0=latest)")
 	_ = AddCommand(historyCmd, &cobra.Command{
 		Use:   "show",
-		Short: "显示指定消息的完整信息",
+		Short: "Show full message details",
 		Args:  cobra.ExactArgs(1),
 		RunE:  historyShowRunE,
 	})
 
 	editCmd := AddCommand(historyCmd, &cobra.Command{
 		Use:   "edit",
-		Short: "编辑指定消息的 content 或 tool_calls 字段",
+		Short: "Edit content or tool_calls of a message",
 		Args:  cobra.ExactArgs(1),
 		RunE:  historyEditRunE,
 	})
 
 	recallCmd := AddCommand(historyCmd, &cobra.Command{
 		Use:   "recall [keywords...]",
-		Short: "搜索消息内容",
-		Long: `搜索历史消息，只匹配 user 消息和助手总结（无工具调用的 assistant 消息）。
+		Short: "Search message content",
+		Long: `Search history messages, matching user messages and assistant summaries (non-tool-call assistant messages).
 
-示例：
-  dscli recall search "Go 错误处理"
-  dscli recall search goroutine channel`,
+Examples:
+  dscli history recall "Go error handling"
+  dscli history recall goroutine channel`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: recallSearchRunE,
 	})
 
 	notesCmd := AddCommand(historyCmd, &cobra.Command{
 		Use:   "notes",
-		Short: "列出当前项目的对话笔记",
-		Long: `列出当前项目最近保存的对话笔记。
+		Short: "List conversation notes for current project",
+		Long: `List recently saved conversation notes for the current project.
 
-笔记是跨对话的记忆线索，可通过 note 工具在对话中保存。
+Notes are cross-session memory clues that can be saved via the note tool.
 
-示例：
+Examples:
   dscli history notes
   dscli history notes --days 7`,
 		RunE: historyNotesRunE,
 	})
 
-	recallCmd.Flags().Int("days", 30, "搜索最近N天的消息")
-	recallCmd.Flags().Int("limit", 5, "返回结果数量上限")
+	recallCmd.Flags().Int("days", 30, "Search messages from last N days")
+	recallCmd.Flags().Int("limit", 5, "Max number of results")
 
-	notesCmd.Flags().Int("days", 30, "加载最近N天的笔记")
+	notesCmd.Flags().Int("days", 30, "Load notes from last N days")
 
 	historyCmd.PersistentFlags().Int("histsize", 32, "history size")
 	historyCmd.PersistentFlags().String("role", "dev", "role: dev, expert, review")

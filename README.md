@@ -1,4 +1,4 @@
-# dscli - AI增强的开发者工具箱
+# dscli — AI-Powered Developer Toolbox
 
 ```text
      o
@@ -9,302 +9,302 @@
 dscli    +---------------+
 ```
 
-## 🎯 什么是 dscli？
+## 🎯 What is dscli?
 
-**dscli** 是一个基于 DeepSeek API 的智能命令行工具，集 AI 编程助手、代码检查、项目管理于一体。
+**dscli** is an intelligent CLI tool powered by the DeepSeek API, combining an AI coding assistant, code analysis, and project management in one.
 
-1. **AI 编程助手** — 深度集成 DeepSeek，支持工具调用的多轮对话
-2. **开发工具箱** — 文件操作、代码搜索、Git 管理、静态检查、Shell 执行
-3. **会话记忆** — 项目级对话历史、笔记系统、跨对话回忆
-4. **可定制化** — 自定义系统提示词、技能系统、多格式输出
+1. **AI Coding Assistant** — Deep integration with DeepSeek, supporting tool-calling multi-turn conversations
+2. **Developer Toolbox** — File operations, code search, Git management, static analysis, Shell execution
+3. **Session Memory** — Project-level conversation history, note system, cross-session recall
+4. **Customizable** — Custom system prompts, skill system, multi-format output
 
-简单说：**dscli = AI 助手 + 开发工具 + 会话记忆 + 命令行效率**
+Simply put: **dscli = AI assistant + dev tools + session memory + CLI efficiency**
 
-## 📦 版本信息
+## 📦 Version Information
 
-### 版本历史
+### Version History
 
-- v0.8.0 (2026-05-17) — AI 人物系统（32 位科学家）、技能 author 字段自动填充、输出格式统一、`git author` 风格用户展示
-- v0.7.6 (2026-05-03) — P0 nil panic 修复、类型别名清理、recall 限制、11 个新测试
-- v0.7.5 (2026-05-03) — toolcall 结果截断阈值提升至 1M 上下文适配
-- v0.7.4 (2026-04-29) — 重组包结构，整合 prompt / note / session
-- v0.7.3 (2026-04-15) — recall 工具支持关键词搜索历史消息
-- v0.7.2 (2026-04-10) — note 工具支持跨对话记忆
-- v0.7.1 (2026-03-16) — 重构测试，性能从 27 秒提升到 6 秒（4.2 倍）
-- v0.7.0 (2026-03-16) — 集成自动代码格式修正工具链，重构 shell 命令判断逻辑，添加超时控制
-- v0.6.0 (2026-03-13) — 合并 vimscript 分支，添加 vimscript 语言支持，优化 web reader
-- v0.5.5 (2026-03-12) — 修复 modernize 工具引入的问题，优化代码结构
-- v0.5.4 (2026-03-09) — 添加 AskExpert 函数，改进 AI 助手交互体验
-- v0.5.2 (2026-03-08) — 重构代码结构，分离关注点，提高可维护性
-- v0.5.0 (2026-02-28) — 功能完备版本，包含 43 个迭代
-- v0.4.0 — 格式化系统重构，支持多种输出模式
-- v0.3.0 — 添加 Git issue 管理功能
-- v0.2.0 — 增强 AI 工具调用能力
-- v0.1.0 — 初始版本发布
+- v0.8.0 (2026-05-17) — AI personality system (32 scientists), skill author auto-fill, unified output format, `git author` style user display
+- v0.7.6 (2026-05-03) — P0 nil panic fix, type alias cleanup, recall limits, 11 new tests
+- v0.7.5 (2026-05-03) — Toolcall result truncation threshold raised to 1M context
+- v0.7.4 (2026-04-29) — Package restructuring, integrated prompt/note/session
+- v0.7.3 (2026-04-15) — Recall tool supports keyword search in history
+- v0.7.2 (2026-04-10) — Note tool supports cross-session memory
+- v0.7.1 (2026-03-16) — Test refactoring, performance improved from 27s to 6s (4.2x)
+- v0.7.0 (2026-03-16) — Integrated auto code formatting toolchain, refactored shell command logic, added timeout control
+- v0.6.0 (2026-03-13) — Merged vimscript branch, added vimscript language support, optimized web reader
+- v0.5.5 (2026-03-12) — Fixed issues from modernize tool, code structure optimization
+- v0.5.4 (2026-03-09) — Added AskExpert function, improved AI assistant interaction
+- v0.5.2 (2026-03-08) — Code restructuring, separation of concerns
+- v0.5.0 (2026-02-28) — Feature-complete release, 43 iterations
+- v0.4.0 — Format system refactoring, multiple output modes
+- v0.3.0 — Git issue management
+- v0.2.0 — Enhanced AI tool calling
+- v0.1.0 — Initial release
 
-## ✨ 核心功能
+## ✨ Core Features
 
-### 🤖 AI 对话
+### 🤖 AI Chat
 
-- **`dscli chat`** — 与 DeepSeek AI 多轮对话，支持工具调用（文件读写、代码搜索、Git 操作等）
-- **`dscli fim`** — 代码补全（Fill-in-the-Middle），提升编码效率
-- **`dscli models`** — 查看可用的 AI 模型列表
-- **`dscli balance`** — 查询 API 余额和使用情况
+- **`dscli chat`** — Multi-turn conversation with DeepSeek AI, supports tool calls (file I/O, code search, Git operations, etc.)
+- **`dscli fim`** — Code completion (Fill-in-the-Middle), boost coding efficiency
+- **`dscli models`** — List available AI models
+- **`dscli balance`** — Check API balance and usage
 
-### 📝 会话管理
+### 📝 Session Management
 
-- **`dscli history`** — 对话历史管理（list / load / show / edit / update）
-- **`dscli history recall <关键词>`** — 搜索历史消息，回忆过往讨论
+- **`dscli history`** — Conversation history management (list / load / show / edit / update)
+- **`dscli history recall <keywords>`** — Search conversation history, recall past discussions
 
-### 🛠️ 开发工具
+### 🛠️ Developer Tools
 
-- **`dscli flycheck <路径>`** — 静态代码检查（Go 用 staticcheck，Python 用 ruff）
-- **`dscli skill`** — 技能管理（list / show / add / remove / query / validate / set-auto-inject / save；含 YAML frontmatter author 自动填充）
-- **`dscli prompt`** — 系统提示词管理（show / edit，支持项目级和全局）
-- **`dscli completion`** — 生成 Shell 自动补全脚本（bash / zsh / fish / powershell）
-- **`dscli config edit`** — 编辑配置文件
+- **`dscli flycheck <path>`** — Static code analysis (Go with staticcheck, Python with ruff)
+- **`dscli skill`** — Skill management (list / show / add / remove / query / validate / set-auto-inject / save; with YAML frontmatter author auto-fill)
+- **`dscli prompt`** — System prompt management (show / edit, supports project-level and global)
+- **`dscli completion`** — Generate shell completion scripts (bash / zsh / fish / powershell)
+- **`dscli config edit`** — Edit configuration file
 
-### 💬 微信集成
+### 💬 WeChat Integration
 
-- **`dscli wechat`** — 微信 AI 工具接口（登录、收发消息、好友/群组管理）
+- **`dscli wechat`** — WeChat AI tool interface (login, message send/receive, contact/group management)
 
-### 🎨 通用特性
+### 🎨 General Features
 
-- **多格式输出** — 支持 `--mode markdown`（默认）和 `--mode org` 输出格式
-- **数据库支持** — SQLite 存储对话历史、配置、笔记等
-- **项目感知** — 自动识别 Git 仓库根目录，按项目隔离对话历史
-- **会话统计** — 每次对话后显示耗时、花费、余额
-- **`dscli version`** — 查看版本和运行时信息
+- **Multi-format output** — Supports `--mode markdown` (default) and `--mode org`
+- **Database support** — SQLite for conversation history, configuration, notes, etc.
+- **Project awareness** — Automatically detects Git repository root, isolates conversation history per project
+- **Session statistics** — Shows elapsed time, cost, and balance after each conversation
+- **`dscli version`** — Display version and runtime information
 
-### 🎭 AI 人物
+### 🎭 AI Personas
 
-32 位科学家人格随机分配，附带性格与邮箱。
+32 scientist personalities assigned randomly, each with unique character traits and email.
 
-- **随机分配** — 首次使用随机抽取，持久绑定
-- **人格注入** — 性格描述自动注入系统提示词
+- **Random assignment** — Randomly drawn on first use, persistently bound
+- **Persona injection** — Character descriptions automatically injected into system prompts
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-### 安装
+### Installation
 
 ```bash
-# 方式1：使用 go install（推荐）
+# Option 1: go install (recommended)
 go install github.com/dscli/dscli@latest
 
-# 方式2：从源码构建
+# Option 2: Build from source
 git clone https://github.com/dscli/dscli.git
 cd dscli
 git checkout v0.8.0
-make install    # 安装到 $GOPATH/bin
+make install    # installs to $GOPATH/bin
 
-# 方式3：下载预编译二进制
-# 查看 Releases 页面获取最新版本
+# Option 3: Download pre-built binary
+# Check the Releases page for the latest version
 ```
 
-### 配置
+### Configuration
 
-1. 获取 DeepSeek API 密钥：[DeepSeek 平台](https://platform.deepseek.com/)
-2. 设置环境变量：
+1. Get a DeepSeek API key: [DeepSeek Platform](https://platform.deepseek.com/)
+2. Set the environment variable:
 
 ```bash
 export DEEPSEEK_API_KEY="your-api-key-here"
 ```
 
-## 📖 使用示例
+## 📖 Usage Examples
 
-### 1. AI 编程助手
+### 1. AI Coding Assistant
 
 ```bash
-# 基本对话（Markdown 格式输出）
-echo "如何用 Go 实现 HTTP 服务器？" | dscli chat
+# Basic conversation (Markdown output)
+echo "How to implement an HTTP server in Go?" | dscli chat
 
-# Org 模式输出
-echo "解释这个算法的时间复杂度" | dscli chat --mode org
+# Org mode output
+echo "Explain the time complexity of this algorithm" | dscli chat --mode org
 
-# 代码补全
+# Code completion
 echo "def fibonacci(n):" | dscli fim
 ```
 
-### 2. 会话管理
+### 2. Session Management
 
 ```bash
-# 查看对话历史列表
+# List conversation history
 dscli history list
 
-# 搜索历史消息
-dscli history recall "Go 错误处理"
+# Search history messages
+dscli history recall "Go error handling"
 
-# 查看指定消息详情
+# View message details
 dscli history show 42
 
-# 编辑消息内容
+# Edit message content
 dscli history edit 42
 ```
 
-### 3. 技能管理
+### 3. Skill Management
 
 ```bash
-# 列出所有技能
+# List all skills
 dscli skill list
 
-# 搜索技能
+# Search skills
 dscli skill query "go fix"
 
-# 查看技能详情
+# View skill details
 dscli skill show go-fix
 
-# 校验技能
+# Validate a skill
 dscli skill validate go-fix
 
-# 安装技能
+# Install skills
 dscli skill add ~/src/agent-skills/skills/go-fix
 dscli skill add ~/src/agent-skills/skills/go-fix --target=global
 
-# 移除技能
+# Remove a skill
 dscli skill remove go-fix
 
-# 设置自动注入
+# Set auto-inject
 dscli skill set-auto-inject go-fix true
 
-# 创建/更新技能（author 自动从 git config 填充）
-dscli skill save --name my-skill --content "..." --desc "说明"
+# Create/update a skill (author auto-filled from git config)
+dscli skill save --name my-skill --content "..." --desc "description"
 ```
 
-### 4. 记忆管理
+### 4. Memory Management
 
 ```bash
-# 列出当前项目的所有记忆
+# List memories for the current project
 dscli memory list
 
-# 搜索记忆
-dscli memory search "flycheck 超时"
+# Search memories
+dscli memory search "flycheck timeout"
 
-# 查看记忆完整内容
+# View full memory content
 dscli memory show 1
 
-# 记忆统计
+# Memory statistics
 dscli memory stats
 ```
 
-### 5. 角色定制
+### 5. Role Customization
 
-dscli 内置三个 AI 角色：**dev**（开发助手，全工具/全技能）、
-**expert**（领域专家，无工具/无技能）、**review**（代码审查，
-shell+file_read/无技能）。每个角色可独立配置系统提示词、可用工具
-和技能列表。
+dscli has three built-in AI roles: **dev** (development assistant, full tools/skills),
+**expert** (domain expert, no tools/skills), **review** (code review,
+shell+file_read/no skills). Each role has independently configurable system prompts,
+available tools, and skill lists.
 
-**浏览工具：**
+**Browse tools:**
 
 ```bash
-# 列出所有可用工具（按分类展示）
+# List all available tools (categorized)
 dscli tool list
 
-# 按分类筛选
+# Filter by category
 dscli tool list --category file
 ```
 
-**管理提示词：**
+**Manage prompts:**
 
 ```bash
-# 列出所有提示词
+# List all prompts
 dscli prompt list
 
-# 查看提示词内容
+# View prompt content
 dscli prompt show review
 
-# 基于 review 添加新的提示词 editor
+# Add a new prompt based on review
 dscli prompt show review | dscli prompt add editor
 
-# 编辑提示词
+# Edit a prompt
 dscli prompt edit editor
 ```
 
-**配置角色：**
+**Configure roles:**
 
 ```bash
-# 查看当前角色配置
+# View current role configuration
 dscli role list
 dscli role show dev
 
 dscli role update review --skills "go-fix,gofumpt" \
     --tools "shell,file_read" --prompt editor
 
-# 恢复默认配置
+# Reset to defaults
 dscli role reset review
 ```
 
-### 6. 开发工具
+### 6. Developer Tools
 
 ```bash
-# 静态代码检查
+# Static code analysis
 dscli flycheck internal/...
 
-# Emacs flycheck（支持 119+ 语言）
+# Emacs flycheck (supports 119+ languages)
 dscli flycheck --emacs internal/
 
-# 解析文件结构（供 LLM 编辑）
+# Parse file structure (for LLM editing)
 dscli parse main.go
 dscli parse main.go -l python
 ```
 
-### 7. 查看模型和余额
+### 7. View Models and Balance
 
 ```bash
-# 查看可用模型
+# List available models
 dscli models
 
-# 查看账户余额
+# Check account balance
 dscli balance
 
-# JSON 格式输出
+# JSON format output
 dscli models --format json
 dscli balance --format json
 ```
 
-### 8. 配置文件
+### 8. Configuration File
 
-配置文件默认为 `~/.dscli/config.dscli`，首次运行时通过环境变量自动生成：
+The configuration file defaults to `~/.dscli/config.dscli`, auto-generated on first run via environment variables:
 
 ```bash
-# 行首注释
-deepseek-api-key = sk-xxx          # 行末注释
+# Line-start comment
+deepseek-api-key = sk-xxx          # Line-end comment
 deepseek-base-url = https://api.deepseek.com
 ```
 
-格式规则：
+Format rules:
 
-- 每行一个 `key = value` 配置项
-- `#` 支持行首和行末注释
+- One `key = value` per line
+- `#` supports both line-start and line-end comments
 
-常用配置项：
+Common configuration options:
 
-| 配置项 | 默认值 | 说明 |
-|--------|--------|------|
-| `deepseek-api-key` | | API 密钥 |
-| `context-window` | `1000000` | 上下文窗口大小（token） |
-| `max-tokens` | `393216` | 单次最大输出 token |
-| `user-balance` | `true` | 对话结束后显示余额消耗 |
-| `deepseek-v4` | `true` | 启用 V4 模型 |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `deepseek-api-key` | | API key |
+| `context-window` | `1000000` | Context window size (tokens) |
+| `max-tokens` | `393216` | Max output tokens per request |
+| `user-balance` | `true` | Show balance consumption after chat |
+| `deepseek-v4` | `true` | Enable V4 model |
 
-## 🔄 工作流程
+## 🔄 Workflow
 
-1. **项目感知** — 自动识别 Git 仓库根目录，确定项目上下文
-2. **系统提示词** — 加载项目/全局/默认三级提示词，注入技能和笔记
-3. **上下文隔离** — 每个项目有独立的会话和对话历史
-4. **工具集成** — AI 可直接操作文件、搜索代码、执行 Git/Shell 命令、管理 Issue
-5. **会话统计** — 对话结束后显示耗时和余额消耗
+1. **Project awareness** — Automatically detects Git repository root, establishes project context
+2. **System prompts** — Loads project/global/default three-tier prompts, injects skills and notes
+3. **Context isolation** — Each project has independent sessions and conversation history
+4. **Tool integration** — AI can directly manipulate files, search code, execute Git/Shell commands
+5. **Session statistics** — Displays elapsed time and balance consumption after each conversation
 
-## 🤝 贡献
+## 🤝 Contributing
 
-欢迎贡献代码、报告问题或提出建议！详细规范请参阅 [CONTRIBUTING.md](CONTRIBUTING.md)。
+Contributions, bug reports, and feature requests are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 Apache License 2.0
 
-## 📞 支持
+## 📞 Support
 
-- 项目地址：[github.com/dscli/dscli](https://github.com/dscli/dscli)
-- 问题反馈：[创建 Issue](https://github.com/dscli/dscli/issues)
+- Repository: [github.com/dscli/dscli](https://github.com/dscli/dscli)
+- Issues: [Create an Issue](https://github.com/dscli/dscli/issues)
 
 ---
 
-**dscli** — 让命令行开发更智能、更高效！
+**dscli** — Smarter, more efficient CLI development!

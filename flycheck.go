@@ -17,28 +17,28 @@ var (
 func init() {
 	flycheckCmd = AddRootCommand(&cobra.Command{
 		Use:   "flycheck <path>",
-		Short: "静态检查代码（类似 Emacs flycheck）",
-		Long: `对指定文件/目录/包运行静态检查。
+		Short: "Static code analysis (like Emacs flycheck)",
+		Long: `Run static analysis on files/directories/packages.
 
-参数 <path> 支持三种模式：
-  - 文件：检查该文件（Go 文件检查所属包，Python 文件直接检查）
-  - 目录：检查该目录中的所有 Go 包或 Python 文件（如 internal/toolcall/）
-  - 递归：目录路径后缀 "..." 递归检查所有子包/文件（如 internal/...）
+The <path> argument supports three modes:
+  - File: check single file (Go files check their package, Python files directly)
+  - Directory: check all Go packages or Python files in directory (e.g. internal/toolcall/)
+  - Recursive: append "..." to path for recursive checking (e.g. internal/...)
 
-支持语言：
-  Go     — staticcheck（自动发现包，包级检查）
-  Python — ruff（快速 linter，支持单文件和目录检查）
+Supported languages:
+  Go     — staticcheck (auto-discovers packages, package-level check)
+  Python — ruff (fast linter, supports single file and directory check)
 
-选项：
-  --emacs  使用 Emacs 内置 flycheck 实现（支持 119+ 语言），
-           而非 dscli 内置的 Go/Python 检查器
+Options:
+  --emacs  Use Emacs built-in flycheck (supports 119+ languages)
+           instead of dscli native Go/Python checker
 
-输出按严重程度分级：
-  ❌ 编译错误（必须立即修复）
-  ⚠️ 警告
-  💡 改进建议
+Output severity levels:
+  ❌ Compile error (must fix immediately)
+  ⚠️ Warning
+  💡 Improvement suggestion
 
-示例：
+Examples:
   dscli flycheck internal/flycheck/flycheck.go
   dscli flycheck my_script.py
   dscli flycheck internal/
@@ -49,7 +49,7 @@ func init() {
 	})
 
 	flycheckCmd.Flags().BoolVar(&flycheckEmacs, "emacs", false,
-		"使用 Emacs 内置 flycheck（支持 119+ 语言）")
+		"Use Emacs built-in flycheck (supports 119+ languages)")
 }
 
 func flycheckRunE(cmd *cobra.Command, args []string) error {

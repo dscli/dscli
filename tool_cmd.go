@@ -24,7 +24,7 @@ func init() {
 
 	listCmd := &cobra.Command{
 		Use:   "list",
-		Short: "列出所有可用工具",
+		Short: "List all available tools",
 		Long:  `列出系统中所有可用的工具，包括名称、分类和描述。`,
 		Args:  cobra.NoArgs,
 		RunE:  toolListRunE,

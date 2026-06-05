@@ -26,7 +26,7 @@ func boolToString(b bool) string {
 func init() {
 	_ = AddRootCommand(&cobra.Command{
 		Use:   "version",
-		Short: "显示版本信息",
+		Short: "Show version information",
 		Long:  `显示 dscli 的版本信息、构建信息和运行时信息。`,
 		RunE:  VersionRunE,
 	})

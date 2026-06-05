@@ -31,7 +31,7 @@ func init() {
 	// == search ==========================================================
 	searchCmd := &cobra.Command{
 		Use:   "search <query>",
-		Short: "搜索记忆",
+		Short: "Search memories",
 		Long: `使用 FTS5 全文搜索记忆。
 
 支持中文分词和英文通配符。`,

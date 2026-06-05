@@ -569,22 +569,22 @@ func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ..
 func init() {
 	chatCmd := AddRootCommand(&cobra.Command{
 		Use:   "chat",
-		Short: "与 DeepSeek 对话（支持工具调用：文件操作、Git）",
-		Long: `发送一条消息给 DeepSeek 聊天模型并获取回复。
-消息内容通过标准输入提供，自动按项目目录隔离对话历史。
-支持工具调用：文件读写、搜索、Git 操作。
+		Short: "Chat with DeepSeek (supports tool calling: file ops, Git)",
+		Long: `Send a message to the DeepSeek chat model and get a response.
+Input is read from stdin. Conversation history is isolated per project directory.
+Supports tool calling: file I/O, search, Git operations.
 
-示例：
-  echo "帮我创建一个 main.go 文件" | dscli chat
-  echo "把 README.md 添加到 Git 并提交" | dscli chat
+Examples:
+  echo "Create a main.go file" | dscli chat
+  echo "Add README.md to Git and commit" | dscli chat
   cat prompt.txt | dscli chat --model deepseek-chat`,
 		PreRunE: ChatPreRunE,
 		RunE:    ChatRunE,
 	})
-	chatCmd.Flags().String("model", context.ModelDeepseekChat, "使用的模型名称")
-	chatCmd.Flags().String("role", "dev", "角色：dev（开发助手）/ expert（领域专家）/ review（代码审查）")
+	chatCmd.Flags().String("model", context.ModelDeepseekChat, "Model name to use")
+	chatCmd.Flags().String("role", "dev", "Role: dev (developer), expert (domain expert), review (code review)")
 	chatCmd.Flags().Int("histsize", 8, "history size loaded")
 	chatCmd.Flags().String("input", "", "read content from input file or read content from stdin if input file empty")
-	chatCmd.Flags().Bool("stream", false, "启用流式输出（SSE）")
+	chatCmd.Flags().Bool("stream", false, "Enable streaming output (SSE)")
 }
 

@@ -358,7 +358,7 @@ func HandleListMail(ctx context.Context, unreadOnly bool, limit int) (result, wa
 	var sb strings.Builder
 	status := "收件箱"
 	if unreadOnly {
-		status = "未读邮件"
+		status = "Unread mail"
 	}
 	fmt.Fprintf(&sb, "📬 **%s** (%d 封)\n\n", status, len(mails))
 
