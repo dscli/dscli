@@ -28,7 +28,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/go-ego/gse/types"
+	"github.com/dscli/dscli/internal/gse/types"
 )
 
 var (

@@ -14,7 +14,7 @@ package gse
 import (
 	"strings"
 
-	"github.com/go-ego/gse/types"
+	"github.com/dscli/dscli/internal/gse/types"
 )
 
 // NewEmbed return new gse segmenter by embed dictionary

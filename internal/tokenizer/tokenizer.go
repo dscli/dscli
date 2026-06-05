@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/go-ego/gse"
+	"github.com/dscli/dscli/internal/gse"
 )
 
 var (
