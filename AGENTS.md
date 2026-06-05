@@ -25,6 +25,16 @@ go test ./...
 make fmt-check
 ```
 
+**Before pushing, run code review:**
+```bash
+# The user said: "推送之前做一次 code review 并修改 review comments 即可"
+# code_review is token-free — use it before every push
+# Recommended: code_review(summary="<describe the change>")
+```
+- `code_review` before `git push` — fix issues before they reach remote
+- No need to do it during development; only before push
+
+
 ## Architecture
 
 Entry point: `main.go` → `RootExecute()` → `root.go` (Cobra root command with persistent flags).
