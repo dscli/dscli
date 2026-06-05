@@ -43,21 +43,25 @@ Packages use `init()` + `sqlite.Register*Schema` for declarative dependency wiri
 | `internal/config/` | Config file parsing (`~/.dscli/config.dscli`) |
 | `internal/session/` | Session management with per-project SQLite isolation |
 | `internal/skills/` | Skill lifecycle: search, load, validate, auto-inject |
-| `internal/context/` | Context key-value store and project root detection; also the parameter bus between AI tools and business logic (e.g. `CurrentRoleKey`, `CurrentModelIDKey` consumed by `LoadPrompts`) |
+| `internal/context/` | Extends stdlib `context` with typed KV keys, project root, param bus |
 | `internal/dsc/` | DeepSeek API client (chat, balance, models) |
+| `internal/price/` | Token usage tracking & cost calculation |
 | `internal/flycheck/` | Static analysis (Go, Python, Emacs) |
 | `internal/outfmt/` | Output formatting (markdown/org), color, timestamp |
-| `internal/sqlite/` | SQLite connection management (WAL mode, lockfile protection) with schema migration framework (`RegisterTableSchema`, `RegisterIndexSchema`, etc.) |
+| `internal/sqlite/` | SQLite connection, WAL mode, schema migration |
 | `internal/mail/` | Inter-AI mail system |
 | `internal/ainame/` | 32 scientist personality assignment |
 | `internal/roles/` | Role configuration (tools, skills, prompt overrides) |
 | `internal/chimein/` | Concurrent chat message injection |
 | `internal/lockfile/` | Per-project process lock for chat sessions |
 | `internal/editor/` | External editor integration |
+| `internal/shell/` | Safe shell execution via mvdan/sh |
 | `internal/lp/` | Language parser (C, Python, JSON) |
-| `internal/memories/` | Persistent cross-session memory store with FTS5; CJK-aware tokenization via space-separated character preprocessing |
+| `internal/parse/` | Code structure parsing (Go/Python), symbol extraction |
+| `internal/memories/` | Persistent cross-session memory with FTS5 |
+| `internal/gse/` | Chinese text segmentation (Go jieba) |
 | `internal/tokenizer/` | Token counting for context window management |
-| `internal/userservice/` | User identity service |
+| `internal/userservice/` | systemd --user dscli-<name>.service |
 | `internal/wechat/` | WeChat integration |
 
 ## Command Structure
@@ -77,10 +81,10 @@ func init() {
 
 ### Cobra `Use` Convention (see `cobra-use-convention` skill)
 
-| Writing | Meaning |
-|---------|---------|
-| `arg` or `<arg>` | **Required** argument |
-| `[arg]` | **Optional** argument |
+|Writing         |Meaning              |
+|----------------|---------------------|
+|`arg` or `<arg>`|**Required** argument|
+|`[arg]`         |**Optional** argument|
 
 **Key rule**: match the `Use` field with your `Args` validator (`cobra.ExactArgs`, `MinimumNArgs`, etc.). Don't blindly copy patterns from existing commands - they may be wrong.
 
