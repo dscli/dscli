@@ -73,6 +73,27 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 	return err
 }
 
+// readChimein reads pending chimein from the database, acknowledges it,
+// and prints it to the terminal. Returns the chimein content, or ""
+// if none is available. Callers use the return value to decide how to inject
+// the chimein into the next API request.
+//
+// Chimein timing is critical: it MUST be called after any blocking operation
+// (especially HandleToolCalls) so that chimein typed by the user during tool
+// execution is not missed. The three call sites are:
+//
+//   - ChatRunE Scene A/C (tool-call path): after HandleToolCalls
+//   - ChatRunE Scene B (no-tool-call path): before ChatRound (no blocking op)
+//   - ChatRound recursion (multi-round tool chain): after HandleToolCalls
+func readChimein(ctx context.Context) string {
+	c, err := chimein.Get(ctx)
+	if err != nil || c == "" {
+		return ""
+	}
+	outfmt.PrintClimeinContent(ctx, c)
+	return c
+}
+
 func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
 
@@ -175,17 +196,6 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		}
 	}
 
-	// Fetch pending chime-in content; application differs by context:
-	//   - tool-call path: appended to last tool message (Scene A/C)
-	//   - no tool-call   : prepended to user content (Scene B, fallback)
-	var chimeinContent string
-	var hasChimein bool
-	if c, err := chimein.Get(ctx); err == nil && c != "" {
-		chimeinContent = c
-		hasChimein = true
-		outfmt.PrintClimeinContent(ctx, chimeinContent)
-	}
-
 	ctx = context.WithValue(ctx, context.StartTimeKey, time.Now())
 
 	// Fetch starting balance (only when user-balance is enabled)
@@ -214,17 +224,20 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 			// Print reasoning content or content
 			outfmt.PrintContent(ctx, lastHist.ReasoningContent, lastHist.Content, 0, 0)
 			toolInputs := toolcall.HandleToolCalls(ctx, tcs)
-			// Scene A/C: Prepend chimein to user content (like mail notification),
-			// instead of appending to the last tool message, so the chimein is
-			// visible to the user and sent consistently with the user message.
-			if hasChimein {
+
+			// Scene A/C: Execute tools first, THEN read chimein. This ensures
+			// any chimein typed during tool execution (e.g. "stop, wrong file!")
+			// is captured. Chimein is prepended to the user's original content
+			// so it reads as a refinement of the same turn.
+			if c := readChimein(ctx); c != "" {
 				if content != "" {
-					content = chimeinContent + "\n" + content
+					content = c + "\n" + content
 				} else {
-					content = chimeinContent
+					content = c
 				}
 			}
-			// Execute tool calls
+
+			// Append tool results to history
 			history = append(history, toolInputs...)
 
 			inputs := []prompt.Message{}
@@ -238,12 +251,12 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 			return ChatRound(ctx, prompts, history, inputs...)
 		}
 	}
-	// Scene B: No tool calls — prepend chimein to user content
-	if hasChimein {
+	// Scene B: No tool calls — no blocking op, read chimein immediately.
+	if c := readChimein(ctx); c != "" {
 		if content != "" {
-			content = chimeinContent + "\n" + content
+			content = c + "\n" + content
 		} else {
-			content = chimeinContent
+			content = c
 		}
 	}
 
@@ -538,7 +551,15 @@ func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ..
 		// Tool call inputs saved in db, move them to history
 		history = append(history, toolInputs...)
 
-		return ChatRound(ctx, prompts, history)
+		// Read chimein that arrived during tool execution. Unlike ChatRunE
+		// (which prepends to existing user content), here there is no existing
+		// user content — the chimein becomes a new user turn.
+		roundInputs := []prompt.Message{}
+		if c := readChimein(ctx); c != "" {
+			roundInputs = append(roundInputs, prompt.Message{Role: "user", Content: c})
+		}
+
+		return ChatRound(ctx, prompts, history, roundInputs...)
 	}
 	return err
 }
