@@ -23,8 +23,7 @@ Output options:
   --mode          Output mode: markdown (default), org (Org mode)
   --verbose       Enable debug mode with detailed output
   --no-color      Disable colored output
-  --no-timestamp  Disable timestamp display
-  --db            Database file path (default: ~/.dscli/sqlite.db)`,
+  --no-timestamp  Disable timestamp display`,
 		PersistentPreRunE: RootPersistentPreRunE,
 		Version:           Version,
 	}
@@ -35,7 +34,6 @@ func init() {
 	rootCmd.PersistentFlags().Bool("no-color", false, "Disable colored output")
 	rootCmd.PersistentFlags().Bool("no-timestamp", false, "Disable timestamp display")
 	rootCmd.PersistentFlags().Bool("verbose", false, "Enable debug mode (detailed output)")
-	rootCmd.PersistentFlags().String("db", "", "Database file path (default: ~/.dscli/sqlite.db)")
 }
 
 func AddCommand(parent, child *cobra.Command) *cobra.Command {
@@ -87,15 +85,6 @@ func RootPersistentPreRunE(cmd *cobra.Command, args []string) (err error) {
 		err = fmt.Errorf("unsupported output mode: %s", mode)
 		return err
 	}
-	path, err := cmd.Flags().GetString("db")
-	if err != nil {
-		return err
-	}
-	// Set database path (if --db flag provided)
-	if path != "" {
-		sqlite.SetDBPath(path)
-	}
-
 	// Initialize database (ensures all init() functions have executed)
 	db, err := sqlite.OpenDB()
 	if err != nil {

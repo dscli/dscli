@@ -32,26 +32,12 @@ const (
 )
 
 func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
-	model, err := cmd.Flags().GetString("model")
-	if err != nil {
-		return err
-	}
 	ctx := cmd.Context()
-	var modelID int64
-	switch model {
-	case context.ModelDeepseekChat:
-		modelID = DeepseekChat
-	default:
-		err = fmt.Errorf("do not support %s", model)
-		if verbose, _ := cmd.Flags().GetBool("verbose"); verbose {
-			fmt.Printf("[DEBUG] ChatPreRunE: unsupported model error: %v\n", err)
-		}
-		return err
-	}
 
-	ctx = context.WithValue(ctx, context.CurrentModelNameKey, model)
-	ctx = context.WithValue(ctx, context.CurrentModelIDKey, modelID)
-	// 读取 --role 标志并存入 context
+	ctx = context.WithValue(ctx, context.CurrentModelNameKey, context.ModelDeepseekChat)
+	ctx = context.WithValue(ctx, context.CurrentModelIDKey, DeepseekChat)
+
+	// Read --role flag and store in context
 	role, err := cmd.Flags().GetString("role")
 	if err != nil {
 		return err
@@ -63,13 +49,14 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 
 	ctx = context.WithValue(ctx, context.CurrentRoleKey, role)
 
-	// 从配置读取上下文窗口大小（默认 1,000,000，对应 DeepSeek V4 百万 token 上下文）。
-	// 此值用作历史消息 token 预算的上限，实际截断主要由 --histsize 控制。
-	// 配置文件 key: context-window，环境变量: CONTEXT_WINDOW。
+	// Read context-window from config (default 1,000,000, matching DeepSeek V4 million-token context)
+	// This value is used as the upper limit for history message token budget;
+	// actual truncation is mainly controlled by --histsize.
+	// Config key: context-window, env var: CONTEXT_WINDOW.
 	contextWindow := config.GetInt("context-window", 1000000)
 	ctx = context.WithValue(ctx, context.LeftTokensKey, contextWindow)
 
-	// 获取stream标志
+	// Get stream flag
 	stream, err := cmd.Flags().GetBool("stream")
 	if err != nil {
 		return err
@@ -562,11 +549,10 @@ Supports tool calling: file I/O, search, Git operations.
 Examples:
   echo "Create a main.go file" | dscli chat
   echo "Add README.md to Git and commit" | dscli chat
-  cat prompt.txt | dscli chat --model deepseek-chat`,
+  cat prompt.txt | dscli chat`,
 		PreRunE: ChatPreRunE,
 		RunE:    ChatRunE,
 	})
-	chatCmd.Flags().String("model", context.ModelDeepseekChat, "Model name to use")
 	chatCmd.Flags().String("role", "dev", "Role: dev (developer), expert (domain expert), review (code review)")
 	chatCmd.Flags().Int("histsize", 8, "history size loaded")
 	chatCmd.Flags().String("input", "", "read content from input file or read content from stdin if input file empty")

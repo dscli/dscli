@@ -29,7 +29,6 @@ Examples:
 		RunE: FimRunE,
 	})
 	flags := fimCmd.Flags()
-	flags.String("model", context.ModelDeepseekChat, "Model name to use")
 	flags.String("suffix", "", "Completion suffix (optional)")
 	flags.Int("max-tokens", 0, "Max generated tokens (0 uses config default)")
 	flags.Float64("temperature", 0.7, "Sampling temperature")
@@ -44,10 +43,6 @@ func FimRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 	if prompt == "" {
 		err = fmt.Errorf("error: prompt cannot be empty")
-		return err
-	}
-	fimModel, err := cmd.Flags().GetString("model")
-	if err != nil {
 		return err
 	}
 
@@ -79,9 +74,9 @@ func FimRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	ctx := cmd.Context()
-	ctx = context.WithValue(ctx, context.CurrentModelIDKey, fimModel)
+	ctx = context.WithValue(ctx, context.CurrentModelIDKey, DeepseekChat)
 	resp, err := DeepseekClient.FIM(ctx, dsc.FIMRequest{
-		Model:       fimModel,
+		Model:       context.ModelDeepseekChat,
 		Prompt:      prompt,
 		Suffix:      fimSuffix,
 		MaxTokens:   fimMaxTokens,

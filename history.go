@@ -90,7 +90,6 @@ Examples:
 	historyCmd.PersistentFlags().Int("histsize", 32, "history size")
 	historyCmd.PersistentFlags().String("role", "dev", "role: dev, expert, review")
 	historyCmd.PersistentFlags().String("filter", "all", "filter true, false, all")
-	historyCmd.PersistentFlags().String("model", context.ModelDeepseekChat, "model")
 	editCmd.Flags().String("column", "content", "column name to edit, default content, others like tool_calls can be edited too.")
 }
 
@@ -225,26 +224,12 @@ func historyRecentRunE(cmd *cobra.Command, args []string) (err error) {
 }
 
 func historyPreRunE(cmd *cobra.Command, args []string) (err error) {
-	model, err := cmd.Flags().GetString("model")
-	if err != nil {
-		return err
-	}
 	ctx := cmd.Context()
-	var modelID int64
-	switch model {
-	case context.ModelDeepseekChat:
-		modelID = DeepseekChat
-	default:
-		err = fmt.Errorf("do not support %s", model)
-		if verbose, _ := cmd.Flags().GetBool("verbose"); verbose {
-			fmt.Printf("[DEBUG] ChatPreRunE: unsupported model error: %v\n", err)
-		}
-		return err
-	}
 
-	ctx = context.WithValue(ctx, context.CurrentModelNameKey, model)
-	ctx = context.WithValue(ctx, context.CurrentModelIDKey, modelID)
-	// 读取 --role 标志并存入 context
+	ctx = context.WithValue(ctx, context.CurrentModelNameKey, context.ModelDeepseekChat)
+	ctx = context.WithValue(ctx, context.CurrentModelIDKey, DeepseekChat)
+
+	// Read --role flag and store in context
 	role, err := cmd.Flags().GetString("role")
 	if err != nil {
 		return err
@@ -256,9 +241,10 @@ func historyPreRunE(cmd *cobra.Command, args []string) (err error) {
 
 	ctx = context.WithValue(ctx, context.CurrentRoleKey, role)
 
-	// 从配置读取上下文窗口大小（默认 1,000,000，对应 DeepSeek V4 百万 token 上下文）。
-	// 此值用作历史消息 token 预算的上限，实际截断主要由 --histsize 控制。
-	// 配置文件 key: context-window，环境变量: CONTEXT_WINDOW。
+	// Read context-window from config (default 1,000,000, matching DeepSeek V4 million-token context)
+	// This value is used as the upper limit for history message token budget;
+	// actual truncation is mainly controlled by --histsize.
+	// Config key: context-window, env var: CONTEXT_WINDOW.
 	contextWindow := config.GetInt("context-window", 1000000)
 	ctx = context.WithValue(ctx, context.LeftTokensKey, contextWindow)
 
@@ -369,10 +355,8 @@ func recallSearchRunE(cmd *cobra.Command, args []string) (err error) {
 		return err
 	}
 
-	// 从 args 中提取关键词
-	// 注意：引号包裹的短语会被 cobra 作为一个 arg 传递，此处用 Fields 切分
-	// 意味着 "Go 错误处理" 会被拆成 ["Go", "错误处理"] 两个独立关键词
-	// 如需精确短语搜索，未来可添加 --exact 标志
+	// Extract keywords from args
+	// Note: quoted phrases are passed as single args by cobra, split here
 	var keywords []string
 	for _, arg := range args {
 		for kw := range strings.FieldsSeq(arg) {
