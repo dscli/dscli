@@ -40,17 +40,21 @@ func AddUsage(usage Usage) {
 	}
 }
 
+// GetCost returns cumulative cost for all usage so far.
 func GetCost(model string) (cost float64) {
 	usage := GetUsage()
+	return usage.Cost(model)
+}
 
+// Cost computes the cost for this specific usage record at the given model's price.
+func (u Usage) Cost(model string) float64 {
 	prices := GetPrice()
 	p, ok := prices[model]
 	if !ok {
 		return 0
 	}
-
-	cost = (float64(usage.PromptCacheHitTokens) / 1_000_000) * p.PromptCacheHit
-	cost += (float64(usage.PromptCacheMissTokens) / 1_000_000) * p.PromptCacheMiss
-	cost += (float64(usage.CompletionTokens) / 1_000_000) * p.Completion
+	cost := (float64(u.PromptCacheHitTokens) / 1_000_000) * p.PromptCacheHit
+	cost += (float64(u.PromptCacheMissTokens) / 1_000_000) * p.PromptCacheMiss
+	cost += (float64(u.CompletionTokens) / 1_000_000) * p.Completion
 	return cost
 }

@@ -523,8 +523,23 @@ func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ..
 		if u.CompletionTokensDetails != nil {
 			reasoningTokens = u.CompletionTokensDetails.ReasoningTokens
 		}
-		outfmt.Println(fmt.Sprintf("🪙 %d, %d(%d), %d(%s)\n",
-			u.TotalTokens, u.CompletionTokens, reasoningTokens, u.PromptTokens, cacheRatio))
+		// Token line
+		tokenLine := fmt.Sprintf("🪙 %d, %d(%d), %d(%s)",
+			u.TotalTokens, u.CompletionTokens, reasoningTokens, u.PromptTokens, cacheRatio)
+
+		// Cost for this round (only when model and currency are known)
+		model := context.ContextValue(ctx, context.CurrentModelNameKey, "")
+		if model != "" {
+			if cost := u.Cost(model); cost > 0 {
+				currency := "¥"
+				if b := context.ContextValue(ctx, context.StartBalanceKey, map[string]string{}); b["currency"] != "" {
+					currency = b["currency"]
+				}
+				tokenLine += fmt.Sprintf("  💰 %s %.4f", currency, cost)
+			}
+		}
+
+		outfmt.Println(tokenLine + "\n")
 	}
 	stories = append(stories, story)
 	tcs := story.ToolCalls

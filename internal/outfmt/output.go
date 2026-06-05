@@ -588,6 +588,7 @@ func PrintContent(ctx context.Context, reasoning, content string, thinkingTokens
 
 	reasoning = strings.TrimSpace(reasoning)
 	if reasoning != "" {
+		reasoning = strings.ReplaceAll(reasoning, "```", "\n```\n")
 		tStr := ""
 		if nameCN != "" && email != "" {
 			Printf("\n%s\n\n", formatChatHeader("💭", nameCN, email, now, tStr))
