@@ -323,27 +323,6 @@ func isTerminal(f *os.File) bool {
 	return term.IsTerminal(int(f.Fd()))
 }
 
-// calculateCost 计算花费
-func calculateCost(startBalance, endBalance map[string]string) string {
-	// 解析余额字符串为浮点数
-	startTotal, err1 := parseBalance(startBalance["total_balance"])
-	endTotal, err2 := parseBalance(endBalance["total_balance"])
-
-	if err1 != nil || err2 != nil {
-		return "" // 解析失败，不显示花费
-	}
-
-	// 计算花费（开始余额 - 结束余额）
-	cost := startTotal - endTotal
-
-	// 如果花费很小或为负数，不显示
-	if cost <= 0 {
-		return ""
-	}
-
-	// 格式化花费，精确到分
-	return fmt.Sprintf("%s %.2f", startBalance["currency"], cost)
-}
 
 // parseBalance 解析余额字符串
 func parseBalance(balanceStr string) (float64, error) {
@@ -397,19 +376,28 @@ func PrintSessionStats(ctx context.Context) {
 		if resp, err := DeepseekClient.Balance(); err == nil && len(resp.BalanceInfos) > 0 {
 			for _, balance := range resp.BalanceInfos {
 				if balance["currency"] == startBalance["currency"] {
-					// 使用 token 用量计算花费（替代旧的余额差值算法）
+					// 计算花费（基于 token 用量）
 					model := context.ContextValue(ctx, context.CurrentModelNameKey, "")
-					cost := ""
+					var cost string
+					var costVal float64
 					if model != "" {
-						if c := price.GetCost(model); c > 0 {
-							cost = fmt.Sprintf("%s %.2f", startBalance["currency"], c)
+						costVal = price.GetCost(model)
+						if costVal > 0 {
+							cost = fmt.Sprintf("%s %.2f", startBalance["currency"], costVal)
 						}
 					}
 
-					// 解析当前余额
-					currentBalance, err := parseBalance(balance["total_balance"])
-					if err != nil {
-						currentBalance = 0
+					// 计算预估余额（开始余额 - 本次花费）
+					startTotal, err := parseBalance(startBalance["total_balance"])
+					var currentBalance float64
+					var balanceDisplay string
+					if err == nil && costVal > 0 {
+						currentBalance = startTotal - costVal
+						balanceDisplay = fmt.Sprintf("%s %.2f", startBalance["currency"], currentBalance)
+					} else {
+						// Fallback to API-returned balance
+						currentBalance, _ = parseBalance(balance["total_balance"])
+						balanceDisplay = fmt.Sprintf("%s %s", balance["currency"], balance["total_balance"])
 					}
 
 					// 花费
@@ -418,11 +406,11 @@ func PrintSessionStats(ctx context.Context) {
 					}
 
 					// 余额
-					stats = append(stats, fmt.Sprintf("💳 %s %s", balance["currency"], balance["total_balance"]))
+					stats = append(stats, fmt.Sprintf("💳 %s", balanceDisplay))
 
 					// 如果余额较低，显示提醒
 					if currentBalance < 10.0 {
-						stats = append(stats, "⚠️ 余额较低，请及时充值！")
+						stats = append(stats, "⚠️ Low balance, please recharge!")
 					}
 
 					break
@@ -587,4 +575,3 @@ Examples:
 	chatCmd.Flags().String("input", "", "read content from input file or read content from stdin if input file empty")
 	chatCmd.Flags().Bool("stream", false, "Enable streaming output (SSE)")
 }
-
