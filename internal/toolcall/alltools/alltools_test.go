@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 func TestGetAllTools(t *testing.T) {

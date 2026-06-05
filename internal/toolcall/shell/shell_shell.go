@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/context"
-	"gitcode.com/dscli/dscli/internal/outfmt"
-	ishell "gitcode.com/dscli/dscli/internal/shell"
+	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/outfmt"
+	ishell "github.com/dscli/dscli/internal/shell"
 )
 
 //go:embed shell_shell.md

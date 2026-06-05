@@ -3,9 +3,9 @@ package main
 import (
 	"runtime"
 
-	"gitcode.com/dscli/dscli/internal/config"
-	"gitcode.com/dscli/dscli/internal/context"
-	"gitcode.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/config"
+	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/spf13/cobra"
 )
 

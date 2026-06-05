@@ -27,7 +27,7 @@ if grep -q "func withConfig(t \*testing\.T" "$FILE"; then
 fi
 
 # 检查是否 import config 包
-HAS_CONFIG_IMPORT=$(grep -c '"gitcode.com/dscli/dscli/internal/config"' "$FILE" || true)
+HAS_CONFIG_IMPORT=$(grep -c '"github.com/dscli/dscli/internal/config"' "$FILE" || true)
 
 # 生成 withConfig helper 代码
 HELPER=$(cat <<'GOEOF'
@@ -67,7 +67,7 @@ fi
 
 # 添加 import（如不存在）
 if [ "$HAS_CONFIG_IMPORT" -eq 0 ]; then
-    echo "📝 需要手动添加 import: \"gitcode.com/dscli/dscli/internal/config\""
+    echo "📝 需要手动添加 import: \"github.com/dscli/dscli/internal/config\""
     echo "   (import 块编辑较复杂，已跳过自动添加)"
 fi
 

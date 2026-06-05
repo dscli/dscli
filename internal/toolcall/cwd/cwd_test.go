@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"gitcode.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/context"
 )
 
 // saveState captures the current global state for restoration.

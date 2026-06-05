@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/context"
-	"gitcode.com/dscli/dscli/internal/shell"
+	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/shell"
 )
 
 //go:embed dscli-flycheck.sh

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/context"
-	"gitcode.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/outfmt"
 )
 
 // FIM 实现填充中间代码（Fill-In-the-Middle）功能。

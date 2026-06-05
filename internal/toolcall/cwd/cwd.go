@@ -4,7 +4,7 @@ package cwd
 import (
 	"sync"
 
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 var RegisterTool = toolcall.RegisterTool

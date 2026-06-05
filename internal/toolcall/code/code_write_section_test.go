@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitcode.com/dscli/dscli/internal/parse"
+	"github.com/dscli/dscli/internal/parse"
 )
 
 // =============================================================================

@@ -10,12 +10,12 @@ import (
 	"sync"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/context"
-	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/prompt"
-	"gitcode.com/dscli/dscli/internal/roles"
-	"gitcode.com/dscli/dscli/internal/session"
-	"gitcode.com/dscli/dscli/internal/sqlite"
+	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/prompt"
+	"github.com/dscli/dscli/internal/roles"
+	"github.com/dscli/dscli/internal/session"
+	"github.com/dscli/dscli/internal/sqlite"
 )
 
 // ToolDesc 表示一个工具

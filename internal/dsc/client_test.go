@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/context"
 )
 
 // newTestClient 创建测试用的客户端，使用极短的重试延迟

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"gitcode.com/dscli/dscli/internal/context"
-	"gitcode.com/dscli/dscli/internal/dsc"
-	"gitcode.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/dsc"
+	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/spf13/cobra"
 )
 

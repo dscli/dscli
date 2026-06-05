@@ -3,10 +3,10 @@ package dsc
 import (
 	"fmt"
 
-	"gitcode.com/dscli/dscli/internal/context"
-	"gitcode.com/dscli/dscli/internal/price"
-	"gitcode.com/dscli/dscli/internal/prompt"
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/price"
+	"github.com/dscli/dscli/internal/prompt"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 // Chat 发送聊天请求

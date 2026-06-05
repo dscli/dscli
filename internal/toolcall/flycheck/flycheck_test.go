@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitcode.com/dscli/dscli/internal/flycheck"
+	"github.com/dscli/dscli/internal/flycheck"
 )
 
 // TestHandleFlycheckOutputFormatting verifies the output formatting logic

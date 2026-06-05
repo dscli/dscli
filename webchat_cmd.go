@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/lp"
+	"github.com/dscli/dscli/internal/lp"
 	"github.com/spf13/cobra"
 )
 

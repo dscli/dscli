@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gitcode.com/dscli/dscli/internal/context"
-	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/skills"
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/skills"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 //go:embed skill_by_name.md

@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/memories"
-	"gitcode.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/memories"
+	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/spf13/cobra"
 )
 

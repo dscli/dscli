@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"gitcode.com/dscli/dscli/internal/tokenizer"
+	"github.com/dscli/dscli/internal/tokenizer"
 )
 
 // TestMain pre-warms the GSE tokenizer so per-test timings are accurate.

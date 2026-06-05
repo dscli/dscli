@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 
-	"gitcode.com/dscli/dscli/internal/context"
-	"gitcode.com/dscli/dscli/internal/flycheck"
-	"gitcode.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/flycheck"
+	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/spf13/cobra"
 )
 

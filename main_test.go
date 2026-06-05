@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"gitcode.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/context"
 )
 
 func TestMain(t *testing.T) {

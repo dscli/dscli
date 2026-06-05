@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/context"
-	"gitcode.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/outfmt"
 )
 
 // httpClient 单例HTTP客户端，避免创建多个连接池

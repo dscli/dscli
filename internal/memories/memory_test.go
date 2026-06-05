@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"gitcode.com/dscli/dscli/internal/ainame"
-	"gitcode.com/dscli/dscli/internal/session"
-	"gitcode.com/dscli/dscli/internal/sqlite"
+	"github.com/dscli/dscli/internal/ainame"
+	"github.com/dscli/dscli/internal/session"
+	"github.com/dscli/dscli/internal/sqlite"
 )
 
 func TestTruncate(t *testing.T) {

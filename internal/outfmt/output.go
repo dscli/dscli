@@ -10,7 +10,7 @@ import (
 
 	"github.com/mattn/go-runewidth"
 
-	"gitcode.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/context"
 )
 
 // LogLevel 定义日志级别（保留类型但不再使用多级过滤）

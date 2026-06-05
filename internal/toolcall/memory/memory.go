@@ -7,8 +7,8 @@ import (
 	_ "embed"
 	"fmt"
 
-	"gitcode.com/dscli/dscli/internal/memories"
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/memories"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 //go:embed mem_save.md

@@ -9,8 +9,8 @@ import (
 	"os"
 	"strings"
 
-	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/shell"
+	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/shell"
 )
 
 // GetIssueConfig 获取issue配置信息

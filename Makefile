@@ -21,9 +21,9 @@ else ifeq ($(VERSION),unknown)
 	VERSION = dev
 endif
 
-LDFLAGS = -ldflags "-X main.Version=$(VERSION) -X main.Build=$(BUILD_DATE)-$(GIT_COMMIT) -X gitcode.com/dscli/dscli/internal/config.BuildTime=$(BUILD_DATE)"
+LDFLAGS = -ldflags "-X main.Version=$(VERSION) -X main.Build=$(BUILD_DATE)-$(GIT_COMMIT) -X github.com/dscli/dscli/internal/config.BuildTime=$(BUILD_DATE)"
 # Release：-s 剥符号表 -w 剥 DWARF，binary 预计从 58M → 35~40M
-LDFLAGS_RELEASE = -ldflags "-s -w -X main.Version=$(VERSION) -X main.Build=$(BUILD_DATE)-$(GIT_COMMIT) -X gitcode.com/dscli/dscli/internal/config.BuildTime=$(BUILD_DATE)"
+LDFLAGS_RELEASE = -ldflags "-s -w -X main.Version=$(VERSION) -X main.Build=$(BUILD_DATE)-$(GIT_COMMIT) -X github.com/dscli/dscli/internal/config.BuildTime=$(BUILD_DATE)"
 GOFLAGS = -trimpath -tags netgo
 SOURCE_DIR = .
 BUILD_DIR = build
@@ -196,7 +196,7 @@ release-info:
 	@echo "  - Windows (amd64)"
 	@echo ""
 	@echo "构建命令: make release"
-	@echo "安装命令: make install 或 go install gitcode.com/dscli/dscli@v$(VERSION)"
+	@echo "安装命令: make install 或 go install github.com/dscli/dscli@v$(VERSION)"
 
 # version-info: 显示版本信息
 version-info:

@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gitcode.com/dscli/dscli/internal/config"
-	"gitcode.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/config"
+	"github.com/dscli/dscli/internal/outfmt"
 )
 
 //go:embed parse.py

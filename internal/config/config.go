@@ -12,7 +12,7 @@ var (
 	globalConfigOnce sync.Once
 
 	// BuildTime is set via ldflags at build time, e.g.
-	//   -X gitcode.com/dscli/dscli/internal/config.BuildTime=2026-05-20T08:00:00Z
+	//   -X github.com/dscli/dscli/internal/config.BuildTime=2026-05-20T08:00:00Z
 	BuildTime string
 )
 

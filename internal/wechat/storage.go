@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/sqlite"
+	"github.com/dscli/dscli/internal/sqlite"
 )
 
 // SQLiteHotReloadStorage 实现 openwechat.HotReloadStorage 接口

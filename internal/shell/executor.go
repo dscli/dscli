@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/context"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"

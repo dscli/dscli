@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/session"
-	"gitcode.com/dscli/dscli/internal/sqlite"
+	"github.com/dscli/dscli/internal/session"
+	"github.com/dscli/dscli/internal/sqlite"
 )
 
 // MaxNoteContentLen 笔记内容最大长度（rune），供 tool handler 参考

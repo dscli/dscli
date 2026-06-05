@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
-	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/parse"
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/parse"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 //go:embed code_read_section.md

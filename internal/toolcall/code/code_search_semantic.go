@@ -7,10 +7,10 @@ import (
 	"os"
 	"strings"
 
-	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/parse"
-	"gitcode.com/dscli/dscli/internal/toolcall"
-	"gitcode.com/dscli/dscli/internal/toolcall/file"
+	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/parse"
+	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/toolcall/file"
 )
 
 //go:embed code_search_semantic.md

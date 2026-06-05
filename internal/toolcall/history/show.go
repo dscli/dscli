@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/prompt"
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/prompt"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 //go:embed show.md

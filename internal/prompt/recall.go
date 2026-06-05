@@ -8,8 +8,8 @@ import (
 	"time"
 	"unicode"
 
-	"gitcode.com/dscli/dscli/internal/sqlite"
-	"gitcode.com/dscli/dscli/internal/tokenizer"
+	"github.com/dscli/dscli/internal/sqlite"
+	"github.com/dscli/dscli/internal/tokenizer"
 )
 
 // Result 搜索结果

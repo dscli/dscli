@@ -25,9 +25,9 @@ import (
 	_ "embed"
 	"fmt"
 
-	mailcore "gitcode.com/dscli/dscli/internal/mail"
-	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	mailcore "github.com/dscli/dscli/internal/mail"
+	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 //go:embed sendmail.md

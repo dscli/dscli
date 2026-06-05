@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	ictx "gitcode.com/dscli/dscli/internal/context"
-	"gitcode.com/dscli/dscli/internal/lp"
-	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/prompt"
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	ictx "github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/lp"
+	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/prompt"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 //go:embed ask_expert.md

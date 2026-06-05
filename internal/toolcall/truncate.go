@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"gitcode.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/outfmt"
 )
 
 // 默认省略号（可根据需要修改为常量或配置）

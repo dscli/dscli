@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gitcode.com/dscli/dscli/internal/context"
-	"gitcode.com/dscli/dscli/internal/parse"
+	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/parse"
 )
 
 // ---------------------------------------------------------------------------

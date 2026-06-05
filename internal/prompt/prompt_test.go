@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitcode.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/context"
 )
 func TestGetEnhancedSystemPrompt(t *testing.T) {
 	tests := []struct {

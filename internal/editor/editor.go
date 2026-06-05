@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"gitcode.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/outfmt"
 )
 
 func getEditor() (editor string) {

@@ -3,10 +3,10 @@ package main
 import (
 	"fmt"
 
-	"gitcode.com/dscli/dscli/internal/config"
-	"gitcode.com/dscli/dscli/internal/dsc"
-	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/sqlite"
+	"github.com/dscli/dscli/internal/config"
+	"github.com/dscli/dscli/internal/dsc"
+	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/sqlite"
 	"github.com/spf13/cobra"
 )
 

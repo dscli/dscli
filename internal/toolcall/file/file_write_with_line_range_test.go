@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 func TestHandleWriteFileWithLineRange(t *testing.T) {

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 // ==================== Issue 相关类型 ====================

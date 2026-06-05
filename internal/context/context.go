@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/config"
+	"github.com/dscli/dscli/internal/config"
 )
 
 var (

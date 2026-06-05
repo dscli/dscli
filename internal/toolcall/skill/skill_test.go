@@ -5,10 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"gitcode.com/dscli/dscli/internal/skills"
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/skills"
+	"github.com/dscli/dscli/internal/toolcall"
 
-	"gitcode.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/context"
 )
 
 // TestRegistration verifies all skill tools are registered via init().

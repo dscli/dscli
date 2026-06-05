@@ -6,7 +6,7 @@ import (
 	"math"
 	"strings"
 
-	"gitcode.com/dscli/dscli/internal/sqlite"
+	"github.com/dscli/dscli/internal/sqlite"
 )
 
 // RecentMessages 返回当前 session 中最近的用户/助手消息（过滤 tool/tool_calls），

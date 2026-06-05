@@ -6,10 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"gitcode.com/dscli/dscli/internal/context"
-	"gitcode.com/dscli/dscli/internal/editor"
-	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/prompt"
+	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/editor"
+	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/prompt"
 	"github.com/spf13/cobra"
 )
 

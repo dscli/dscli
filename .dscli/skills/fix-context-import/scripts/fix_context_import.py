@@ -18,7 +18,7 @@ from pathlib import Path
 
 PROJECT_ROOT = None  # set by find_project_root()
 
-MODULE_PATH = "gitcode.com/dscli/dscli/internal/context"
+MODULE_PATH = "github.com/dscli/dscli/internal/context"
 
 # Exclude the package itself
 EXCLUDE_FILES = {
@@ -168,8 +168,8 @@ def fix_file(filepath: str, dry_run: bool = False) -> bool:
     # 2. Remove alias from internal/context line
     old_line = new_lines[internal_line_idx]
     if alias:
-        # e.g. 'dsctx "gitcode.com/dscli/dscli/internal/context"'
-        #    -> '"gitcode.com/dscli/dscli/internal/context"'
+        # e.g. 'dsctx "github.com/dscli/dscli/internal/context"'
+        #    -> '"github.com/dscli/dscli/internal/context"'
         new_lines[internal_line_idx] = re.sub(
             rf'^\s*{re.escape(alias)}\s+',
             '',

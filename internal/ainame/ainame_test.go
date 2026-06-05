@@ -3,7 +3,7 @@ package ainame
 import (
 	"testing"
 
-	"gitcode.com/dscli/dscli/internal/session"
+	"github.com/dscli/dscli/internal/session"
 )
 
 func TestLoadOrAssign_Nobody(t *testing.T) {

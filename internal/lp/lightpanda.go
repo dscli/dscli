@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/config"
-	"gitcode.com/dscli/dscli/internal/userservice"
+	"github.com/dscli/dscli/internal/config"
+	"github.com/dscli/dscli/internal/userservice"
 	"github.com/chromedp/chromedp"
 )
 

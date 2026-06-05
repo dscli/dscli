@@ -89,10 +89,10 @@ dscli    +---------------+
 
 ```bash
 # 方式1：使用 go install（推荐）
-go install gitcode.com/dscli/dscli@latest
+go install github.com/dscli/dscli@latest
 
 # 方式2：从源码构建
-git clone https://gitcode.com/dscli/dscli.git
+git clone https://github.com/dscli/dscli.git
 cd dscli
 git checkout v0.8.0
 make install    # 安装到 $GOPATH/bin
@@ -302,8 +302,8 @@ Apache License 2.0
 
 ## 📞 支持
 
-- 项目地址：[gitcode.com/dscli/dscli](https://gitcode.com/dscli/dscli)
-- 问题反馈：[创建 Issue](https://gitcode.com/dscli/dscli/issues)
+- 项目地址：[github.com/dscli/dscli](https://github.com/dscli/dscli)
+- 问题反馈：[创建 Issue](https://github.com/dscli/dscli/issues)
 
 ---
 

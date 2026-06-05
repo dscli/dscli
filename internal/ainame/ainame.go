@@ -17,8 +17,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"gitcode.com/dscli/dscli/internal/session"
-	"gitcode.com/dscli/dscli/internal/sqlite"
+	"github.com/dscli/dscli/internal/session"
+	"github.com/dscli/dscli/internal/sqlite"
 )
 
 // NameConfig holds the AI persona data for prompt injection.

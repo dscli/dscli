@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/context"
-	"gitcode.com/dscli/dscli/internal/flycheck"
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/flycheck"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 //go:embed flycheck.md

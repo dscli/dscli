@@ -24,7 +24,7 @@ import (
 	"sync"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/sqlite"
+	"github.com/dscli/dscli/internal/sqlite"
 )
 
 // RoleConfig maps a role to its skills, tools, and prompt template.

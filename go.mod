@@ -1,4 +1,4 @@
-module gitcode.com/dscli/dscli
+module github.com/dscli/dscli
 
 go 1.26.3
 

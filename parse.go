@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"gitcode.com/dscli/dscli/internal/parse"
+	"github.com/dscli/dscli/internal/parse"
 
 	"github.com/spf13/cobra"
 )

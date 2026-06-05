@@ -8,8 +8,8 @@ import (
 	"os"
 	"strings"
 
-	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 //go:embed file_search_with_pattern.md

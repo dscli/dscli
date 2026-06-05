@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"gitcode.com/dscli/dscli/internal/prompt"
+	"github.com/dscli/dscli/internal/prompt"
 )
 
 // TestRegisterToolAndGetAllTools 测试工具注册和获取

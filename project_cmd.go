@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/context"
-	"gitcode.com/dscli/dscli/internal/session"
+	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/session"
 	"github.com/spf13/cobra"
 )
 

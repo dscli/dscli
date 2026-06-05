@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/context"
-	"gitcode.com/dscli/dscli/internal/parse"
-	"gitcode.com/dscli/dscli/internal/shell"
+	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/parse"
+	"github.com/dscli/dscli/internal/shell"
 )
 
 const (

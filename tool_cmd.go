@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/toolcall"
 	"github.com/spf13/cobra"
 )
 

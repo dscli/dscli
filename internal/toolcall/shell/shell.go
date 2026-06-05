@@ -1,7 +1,7 @@
 // Package shell for shell tools
 package shell
 
-import "gitcode.com/dscli/dscli/internal/toolcall"
+import "github.com/dscli/dscli/internal/toolcall"
 
 var RegisterTool = toolcall.RegisterTool
 

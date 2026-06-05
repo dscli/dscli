@@ -3,7 +3,7 @@ package session
 import (
 	"testing"
 
-	"gitcode.com/dscli/dscli/internal/sqlite"
+	"github.com/dscli/dscli/internal/sqlite"
 )
 
 func init() {

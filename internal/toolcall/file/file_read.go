@@ -4,7 +4,7 @@ import (
 	"context"
 	_ "embed"
 
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 //go:embed file_read.md

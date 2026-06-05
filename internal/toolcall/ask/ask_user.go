@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/editor"
-	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/editor"
+	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 //go:embed ask_user.md

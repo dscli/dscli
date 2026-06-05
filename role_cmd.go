@@ -5,10 +5,10 @@ import (
 	"os"
 	"strings"
 
-	"gitcode.com/dscli/dscli/internal/roles"
-	"gitcode.com/dscli/dscli/internal/session"
-	"gitcode.com/dscli/dscli/internal/skills"
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/roles"
+	"github.com/dscli/dscli/internal/session"
+	"github.com/dscli/dscli/internal/skills"
+	"github.com/dscli/dscli/internal/toolcall"
 	"github.com/spf13/cobra"
 )
 

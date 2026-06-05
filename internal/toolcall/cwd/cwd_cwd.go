@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"gitcode.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/context"
 )
 
 //go:embed cwd_get.md

@@ -4,11 +4,11 @@ package dsc
 import (
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/config"
-	"gitcode.com/dscli/dscli/internal/context"
-	"gitcode.com/dscli/dscli/internal/price"
-	"gitcode.com/dscli/dscli/internal/prompt"
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/config"
+	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/price"
+	"github.com/dscli/dscli/internal/prompt"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 // DefaultMaxTokens 默认 max_tokens，可通过 config max-tokens 覆盖

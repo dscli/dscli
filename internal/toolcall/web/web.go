@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/lp"
-	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/lp"
+	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 //go:embed web.md

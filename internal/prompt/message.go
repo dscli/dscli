@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/context"
-	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/session"
-	"gitcode.com/dscli/dscli/internal/sqlite"
-	"gitcode.com/dscli/dscli/internal/tokenizer"
+	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/session"
+	"github.com/dscli/dscli/internal/sqlite"
+	"github.com/dscli/dscli/internal/tokenizer"
 )
 
 // Message 扩展，支持工具调用（注意：Content 字段不再使用 omitempty）

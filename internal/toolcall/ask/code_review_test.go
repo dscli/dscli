@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 // TestCodeReviewToolStructure tests the basic structure of the code review tool

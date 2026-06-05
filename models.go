@@ -5,8 +5,8 @@ import (
 	"os"
 	"strconv"
 
-	"gitcode.com/dscli/dscli/internal/dsc"
-	"gitcode.com/dscli/dscli/internal/price"
+	"github.com/dscli/dscli/internal/dsc"
+	"github.com/dscli/dscli/internal/price"
 	"github.com/spf13/cobra"
 )
 

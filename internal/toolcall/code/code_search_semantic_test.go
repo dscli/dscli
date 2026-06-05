@@ -3,7 +3,7 @@ package code
 import (
 	"testing"
 
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 func TestHandleSearchCodeSemantic(t *testing.T) {

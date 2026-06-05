@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/prompt"
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/prompt"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 // TestHandleRecall_MissingKeywords 验证缺少关键词报错

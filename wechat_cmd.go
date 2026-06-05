@@ -5,9 +5,9 @@ import (
 	"io"
 	"os"
 
-	"gitcode.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/context"
 
-	"gitcode.com/dscli/dscli/internal/wechat"
+	"github.com/dscli/dscli/internal/wechat"
 	"github.com/spf13/cobra"
 )
 

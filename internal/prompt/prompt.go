@@ -11,14 +11,14 @@ import (
 	"text/template"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/ainame"
-	"gitcode.com/dscli/dscli/internal/config"
-	"gitcode.com/dscli/dscli/internal/context"
-	"gitcode.com/dscli/dscli/internal/mail"
-	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/roles"
-	"gitcode.com/dscli/dscli/internal/session"
-	"gitcode.com/dscli/dscli/internal/skills"
+	"github.com/dscli/dscli/internal/ainame"
+	"github.com/dscli/dscli/internal/config"
+	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/mail"
+	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/roles"
+	"github.com/dscli/dscli/internal/session"
+	"github.com/dscli/dscli/internal/skills"
 )
 
 //go:embed dev.md

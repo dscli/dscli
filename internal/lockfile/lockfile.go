@@ -22,8 +22,8 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"gitcode.com/dscli/dscli/internal/config"
-	"gitcode.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/config"
+	"github.com/dscli/dscli/internal/context"
 )
 
 // Lock 表示一个排他文件锁。

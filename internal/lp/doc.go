@@ -44,7 +44,7 @@
 //
 // # Usage
 //
-//	import "gitcode.com/dscli/dscli/internal/lp"
+//	import "github.com/dscli/dscli/internal/lp"
 //
 //	markdown, err := lp.Get(ctx, "https://example.com")
 //

@@ -14,11 +14,11 @@ import (
 	"strings"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/ainame"
-	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/session"
-	"gitcode.com/dscli/dscli/internal/sqlite"
-	"gitcode.com/dscli/dscli/internal/tokenizer"
+	"github.com/dscli/dscli/internal/ainame"
+	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/session"
+	"github.com/dscli/dscli/internal/sqlite"
+	"github.com/dscli/dscli/internal/tokenizer"
 )
 
 // --- SQLite Schema (registered via init) ---

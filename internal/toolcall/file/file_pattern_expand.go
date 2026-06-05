@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"gitcode.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/outfmt"
 )
 
 // SearchConfig 搜索配置

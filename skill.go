@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gitcode.com/dscli/dscli/internal/context"
-	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/skills"
+	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/skills"
 	"github.com/spf13/cobra"
 )
 
@@ -142,7 +142,7 @@ source 为技能目录路径（包含 SKILL.md 的目录）。
 示例：
   dscli skill add ~/src/agent-skills/skills/ascend-docker --target=global
   dscli skill add ~/src/agent-skills/skills/ascend-docker --target=local
-  dscli skill add ascend-docker --target=~/src/gitcode.com/dscli/dscli`,
+  dscli skill add ascend-docker --target=~/src/github.com/dscli/dscli`,
 		Args: cobra.ExactArgs(1),
 		RunE: runSkillAdd,
 	}

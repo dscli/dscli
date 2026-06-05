@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitcode.com/dscli/dscli/internal/config"
+	"github.com/dscli/dscli/internal/config"
 )
 
 // withConfig sets a config value for the duration of the test (or sub-test).

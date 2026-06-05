@@ -2,19 +2,19 @@
 package alltools
 
 import (
-	"gitcode.com/dscli/dscli/internal/toolcall"
-	_ "gitcode.com/dscli/dscli/internal/toolcall/ask"
-	_ "gitcode.com/dscli/dscli/internal/toolcall/code"
-	_ "gitcode.com/dscli/dscli/internal/toolcall/cwd"
-	_ "gitcode.com/dscli/dscli/internal/toolcall/file"
-	_ "gitcode.com/dscli/dscli/internal/toolcall/flycheck"
-	_ "gitcode.com/dscli/dscli/internal/toolcall/history"
-	_ "gitcode.com/dscli/dscli/internal/toolcall/mail"
-	_ "gitcode.com/dscli/dscli/internal/toolcall/memory"
-	_ "gitcode.com/dscli/dscli/internal/toolcall/shell"
-	_ "gitcode.com/dscli/dscli/internal/toolcall/skill"
-	_ "gitcode.com/dscli/dscli/internal/toolcall/sql"
-	_ "gitcode.com/dscli/dscli/internal/toolcall/web"
+	"github.com/dscli/dscli/internal/toolcall"
+	_ "github.com/dscli/dscli/internal/toolcall/ask"
+	_ "github.com/dscli/dscli/internal/toolcall/code"
+	_ "github.com/dscli/dscli/internal/toolcall/cwd"
+	_ "github.com/dscli/dscli/internal/toolcall/file"
+	_ "github.com/dscli/dscli/internal/toolcall/flycheck"
+	_ "github.com/dscli/dscli/internal/toolcall/history"
+	_ "github.com/dscli/dscli/internal/toolcall/mail"
+	_ "github.com/dscli/dscli/internal/toolcall/memory"
+	_ "github.com/dscli/dscli/internal/toolcall/shell"
+	_ "github.com/dscli/dscli/internal/toolcall/skill"
+	_ "github.com/dscli/dscli/internal/toolcall/sql"
+	_ "github.com/dscli/dscli/internal/toolcall/web"
 )
 
 var GetAllTools = toolcall.GetAllTools

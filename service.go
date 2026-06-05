@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"gitcode.com/dscli/dscli/internal/userservice"
+	"github.com/dscli/dscli/internal/userservice"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )

@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	"gitcode.com/dscli/dscli/internal/config"
-	"gitcode.com/dscli/dscli/internal/editor"
+	"github.com/dscli/dscli/internal/config"
+	"github.com/dscli/dscli/internal/editor"
 	"github.com/spf13/cobra"
 )
 

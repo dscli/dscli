@@ -6,8 +6,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"gitcode.com/dscli/dscli/internal/context"
-	"gitcode.com/dscli/dscli/internal/sqlite"
+	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/sqlite"
 )
 
 func init() {

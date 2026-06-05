@@ -37,9 +37,9 @@ import (
 	"strings"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/ainame"
-	"gitcode.com/dscli/dscli/internal/sqlite"
-	"gitcode.com/dscli/dscli/internal/tokenizer"
+	"github.com/dscli/dscli/internal/ainame"
+	"github.com/dscli/dscli/internal/sqlite"
+	"github.com/dscli/dscli/internal/tokenizer"
 )
 
 func init() {

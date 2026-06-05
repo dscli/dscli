@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gitcode.com/dscli/dscli/internal/parse"
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/parse"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 //go:embed code_read_structure.md

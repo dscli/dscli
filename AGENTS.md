@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This is **dscli**, an AI-enhanced CLI tool for developers - DeepSeek API chat client with tool calling, project management, and a pluggable skills system. Module path: `gitcode.com/dscli/dscli`.
+This is **dscli**, an AI-enhanced CLI tool for developers - DeepSeek API chat client with tool calling, project management, and a pluggable skills system. Module path: `github.com/dscli/dscli`.
 
 ## Build, Test, and Lint
 

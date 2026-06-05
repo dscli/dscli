@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"gitcode.com/dscli/dscli/internal/mail"
-	"gitcode.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/mail"
+	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/spf13/cobra"
 )
 

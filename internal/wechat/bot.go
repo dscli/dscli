@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"gitcode.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/eatmoreapple/openwechat"
 )
 

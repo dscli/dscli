@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"gitcode.com/dscli/dscli/internal/outfmt"
-	"gitcode.com/dscli/dscli/internal/shell"
-	"gitcode.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/shell"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 //go:embed code_review.md
