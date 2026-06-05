@@ -188,16 +188,14 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		}
 	}
 
-	// Inject pending chime-in content as part of the user message prefix.
-	// This avoids adding chimeins as separate history entries, preserving
-	// cache stability — only the user message content varies, not the
-	// history structure.
-	if chimeinContent, err := chimein.Get(ctx); err == nil && chimeinContent != "" {
-		if content != "" {
-			content = chimeinContent + "\n" + content
-		} else {
-			content = chimeinContent
-		}
+	// Fetch pending chime-in content; application differs by context:
+	//   - tool-call path: appended to last tool message (Scene A/C)
+	//   - no tool-call   : prepended to user content (Scene B, fallback)
+	var chimeinContent string
+	var hasChimein bool
+	if cc, err := chimein.Get(ctx); err == nil && cc != "" {
+		chimeinContent = cc
+		hasChimein = true
 		outfmt.PrintClimeinContent(ctx, chimeinContent)
 	}
 
@@ -229,6 +227,10 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 			// Print reasoning content or content
 			outfmt.PrintContent(ctx, lastHist.ReasoningContent, lastHist.Content, 0, 0)
 			toolInputs := toolcall.HandleToolCalls(ctx, tcs)
+			// Scene A/C: Append chimein to last tool message
+			if hasChimein && len(toolInputs) > 0 {
+				toolInputs[len(toolInputs)-1].Content += "\n" + chimeinContent
+			}
 			// Execute tool calls
 			history = append(history, toolInputs...)
 
@@ -243,9 +245,18 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 			return ChatRound(ctx, prompts, history, inputs...)
 		}
 	}
+	// Scene B: No tool calls — prepend chimein to user content
+	if hasChimein {
+		if content != "" {
+			content = chimeinContent + "\n" + content
+		} else {
+			content = chimeinContent
+		}
+	}
 
 	return ChatRound(ctx, prompts, history,
 		prompt.Message{Role: "user", Content: content})
+
 }
 
 // ReadInput reads user input content from CLI args or --input flag.
