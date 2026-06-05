@@ -214,9 +214,15 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 			// Print reasoning content or content
 			outfmt.PrintContent(ctx, lastHist.ReasoningContent, lastHist.Content, 0, 0)
 			toolInputs := toolcall.HandleToolCalls(ctx, tcs)
-			// Scene A/C: Append chimein to last tool message
-			if hasChimein && len(toolInputs) > 0 {
-				toolInputs[len(toolInputs)-1].Content += "\n" + chimeinContent
+			// Scene A/C: Prepend chimein to user content (like mail notification),
+			// instead of appending to the last tool message, so the chimein is
+			// visible to the user and sent consistently with the user message.
+			if hasChimein {
+				if content != "" {
+					content = chimeinContent + "\n" + content
+				} else {
+					content = chimeinContent
+				}
 			}
 			// Execute tool calls
 			history = append(history, toolInputs...)
@@ -243,7 +249,6 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 
 	return ChatRound(ctx, prompts, history,
 		prompt.Message{Role: "user", Content: content})
-
 }
 
 // ReadInput reads user input content from CLI args or --input flag.
