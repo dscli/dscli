@@ -812,6 +812,23 @@ func FormatUnreadMailNotification(summaries []UnreadMailSummary) string {
 	return sb.String()
 }
 
+// FormatUnreadMailLine returns a one-line mail notification string.
+// Returns empty string when there are no summaries — caller should skip injection.
+// Use this instead of FormatUnreadMailNotification for concise in-message injection
+// (e.g. prepended to user or tool content).
+func FormatUnreadMailLine(summaries []UnreadMailSummary) string {
+	if len(summaries) == 0 {
+		return ""
+	}
+	word := "messages"
+	if len(summaries) == 1 {
+		word = "message"
+	}
+	return fmt.Sprintf("📬 %d unread %s. Call `readmail` before responding.", len(summaries), word)
+}
+
+
+
 func formatMailRow(row MailRow) string {
 	readStatus := "已读"
 	if !row.IsRead {

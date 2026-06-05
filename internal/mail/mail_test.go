@@ -667,6 +667,49 @@ func TestFormatUnreadMailNotification(t *testing.T) {
 	})
 }
 
+func TestFormatUnreadMailLine(t *testing.T) {
+	t.Run("empty summaries", func(t *testing.T) {
+		if got := FormatUnreadMailLine(nil); got != "" {
+			t.Errorf("expected empty for nil, got %q", got)
+		}
+		if got := FormatUnreadMailLine([]UnreadMailSummary{}); got != "" {
+			t.Errorf("expected empty for empty slice, got %q", got)
+		}
+	})
+
+	t.Run("single mail", func(t *testing.T) {
+		summaries := []UnreadMailSummary{
+			{ID: 1, SenderName: "Fermi", Subject: "Hello"},
+		}
+		result := FormatUnreadMailLine(summaries)
+		if !strings.Contains(result, "1 unread message") {
+			t.Errorf("expected '1 unread message', got: %s", result)
+		}
+		if !strings.Contains(result, "readmail") {
+			t.Error("expected 'readmail' instruction")
+		}
+		// Single line — no newline inside
+		if strings.Count(result, "\n") > 0 {
+			t.Error("expected single line, got multiline")
+		}
+	})
+
+	t.Run("multiple mails", func(t *testing.T) {
+		summaries := []UnreadMailSummary{
+			{ID: 10, SenderName: "Fermi", Subject: "Re: test"},
+			{ID: 11, SenderName: "Zhang Heng", Subject: "Hello from ZH"},
+		}
+		result := FormatUnreadMailLine(summaries)
+		if !strings.Contains(result, "2 unread messages") {
+			t.Errorf("expected '2 unread messages', got: %s", result)
+		}
+		if strings.Count(result, "\n") > 0 {
+			t.Error("expected single line, got multiline")
+		}
+	})
+}
+
+
 // === fixMailFTS ================================================================
 
 func TestFixMailFTS(t *testing.T) {

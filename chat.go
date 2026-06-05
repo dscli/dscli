@@ -175,13 +175,13 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 
 	outfmt.PrintUserContent(ctx, content)
 
-	// Inject unread mail notification into the user message so the AI
-	// can't miss it. Unlike system prompt notifications, user messages
-	// demand a response — the AI must acknowledge and act on them.
+	// Inject unread mail notification as a single line at the top of
+	// the user message. Unlike system prompt injection, this doesn't
+	// affect cache stability — user content varies per-message anyway.
 	if summaries := mail.UnreadMailList(ctx); len(summaries) > 0 {
-		if notif := mail.FormatUnreadMailNotification(summaries); notif != "" {
+		if notif := mail.FormatUnreadMailLine(summaries); notif != "" {
 			if content != "" {
-				content = notif + "\n\n---\n\n" + content
+				content = notif + "\n" + content
 			} else {
 				content = notif
 			}
@@ -434,11 +434,12 @@ func injectChimein(ctx context.Context, history []prompt.Message) ([]prompt.Mess
 	content, err := chimein.Get(ctx)
 	hasChimein := err == nil && content != ""
 
-	// Check unread mail regardless of chimein presence — the AI
-	// must not miss mail just because no chimein arrived.
+	// Inject unread mail notification as a single line at the top of
+	// the chimein/tool message. This replaces the old system-prompt
+	// injection that caused cache misses.
 	var notif string
 	if summaries := mail.UnreadMailList(ctx); len(summaries) > 0 {
-		notif = mail.FormatUnreadMailNotification(summaries)
+		notif = mail.FormatUnreadMailLine(summaries)
 	}
 
 	// Nothing to inject.
@@ -450,7 +451,7 @@ func injectChimein(ctx context.Context, history []prompt.Message) ([]prompt.Mess
 	var msgContent string
 	switch {
 	case hasChimein && notif != "":
-		msgContent = notif + "\n\n---\n\n" + content
+		msgContent = notif + "\n" + content
 	case hasChimein:
 		msgContent = content
 	default: // only notif
