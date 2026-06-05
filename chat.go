@@ -366,8 +366,12 @@ func PrintSessionStats(ctx context.Context) {
 			ratio := float64(u.PromptCacheHitTokens) / float64(total) * 100
 			cacheRatio = fmt.Sprintf("%.0f%%", ratio)
 		}
+		reasoningTokens := 0
+		if u.CompletionTokensDetails != nil {
+			reasoningTokens = u.CompletionTokensDetails.ReasoningTokens
+		}
 		stats = append(stats, fmt.Sprintf("🪙 %d, %d(%d), %d(%s)",
-			u.TotalTokens, u.CompletionTokens, u.CompletionTokensDetails.ReasoningTokens, u.PromptTokens, cacheRatio))
+			u.TotalTokens, u.CompletionTokens, reasoningTokens, u.PromptTokens, cacheRatio))
 	}
 
 	// 花费和余额 (only when user-balance is enabled)
@@ -535,8 +539,12 @@ func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ..
 			ratio := float64(u.PromptCacheHitTokens) / float64(cacheTotal) * 100
 			cacheRatio = fmt.Sprintf("%.0f%%", ratio)
 		}
-		outfmt.Println(fmt.Sprintf("🪙 %d, %d(%d), %d(%s)",
-			u.TotalTokens, u.CompletionTokens, u.CompletionTokensDetails.ReasoningTokens, u.PromptTokens, cacheRatio))
+		reasoningTokens := 0
+		if u.CompletionTokensDetails != nil {
+			reasoningTokens = u.CompletionTokensDetails.ReasoningTokens
+		}
+		outfmt.Println(fmt.Sprintf("🪙 %d, %d(%d), %d(%s)\n",
+			u.TotalTokens, u.CompletionTokens, reasoningTokens, u.PromptTokens, cacheRatio))
 	}
 	stories = append(stories, story)
 	tcs := story.ToolCalls
