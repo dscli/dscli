@@ -193,8 +193,8 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	//   - no tool-call   : prepended to user content (Scene B, fallback)
 	var chimeinContent string
 	var hasChimein bool
-	if cc, err := chimein.Get(ctx); err == nil && cc != "" {
-		chimeinContent = cc
+	if c, err := chimein.Get(ctx); err == nil && c != "" {
+		chimeinContent = c
 		hasChimein = true
 		outfmt.PrintClimeinContent(ctx, chimeinContent)
 	}
