@@ -3,7 +3,6 @@ package context
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,21 +20,17 @@ var (
 	CurrentModelNameKey   = ContextKeyType[string]{"CurrentModelName"}
 	CurrentDomainIDKey    = ContextKeyType[int64]{"CurrentDomainID"}
 	CurrentRoleKey        = ContextKeyType[string]{"CurrentRole"}
-	ToolCallIDKey         = ContextKeyType[string]{"ToolCallID"}
-	ShellNameKey          = ContextKeyType[string]{"ShellName"}
 	ShellSummaryKey       = ContextKeyType[string]{"ShellSummary"}
 	ShellArgsKey          = ContextKeyType[[]string]{"ShellArgs"}
-	ShellStdinKey         = ContextKeyType[io.Reader]{"ShellStdin"}
 	StreamKey             = ContextKeyType[bool]{"Stream"}
 	LeftTokensKey         = ContextKeyType[int]{"LeftTokens"}
 	WechatFormatKey       = ContextKeyType[string]{"WechatFormat"}
-	ToolDisplayNameKey    = ContextKeyType[string]{"ToolDisplayName"}
 	FinishReasonLengthKey = ContextKeyType[bool]{"FinishReasonLength"}
-	GitWorkingDirKey      = ContextKeyType[string]{"GitWorkingDir"}
 	IsChildProcessKey     = ContextKeyType[bool]{"IsChildProcess"}
 	AINameCNKey           = ContextKeyType[string]{"AINameCN"}
 	AINameENKey           = ContextKeyType[string]{"AINameEN"}
 	AINameEmailKey        = ContextKeyType[string]{"AINameEmail"}
+	UserIDKey             = ContextKeyType[string]{"UserID"}
 	AINameBirdFrogKey     = ContextKeyType[string]{"AINameBirdFrog"}
 	GitUserNameKey        = ContextKeyType[string]{"GitUserName"}
 	GitUserEmailKey       = ContextKeyType[string]{"GitUserEmail"}

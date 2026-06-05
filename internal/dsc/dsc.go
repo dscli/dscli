@@ -21,6 +21,7 @@ var V4Enabled = config.GetBool("deepseek-v4", true)
 type ChatRequest struct {
 	Model           string           `json:"model"`
 	Messages        []prompt.Message `json:"messages"`
+	UserID          string           `json:"user_id,omitzero"`
 	Tools           []toolcall.Tool  `json:"tools,omitzero"`
 	Stream          bool             `json:"stream"`
 	MaxTokens       int              `json:"max_tokens,omitzero"`

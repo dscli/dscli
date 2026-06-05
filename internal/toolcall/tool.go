@@ -348,7 +348,6 @@ which lead to the error:
 		defer cancel()
 	}
 
-	ctx = context.WithValue(ctx, context.ToolDisplayNameKey, tool.DisplayName)
 	toolID, err := GetOrCreateTool(tool.Name, tool.Description, tool.Category)
 	if err != nil {
 		outfmt.Error(err.Error(), "name", tool.Name)

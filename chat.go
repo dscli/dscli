@@ -149,6 +149,9 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	cfg := ainame.LoadOrAssign(sessionID)
 	ctx = context.WithValue(ctx, context.AINameCNKey, cfg.NameCN)
 	ctx = context.WithValue(ctx, context.AINameENKey, cfg.NameEN)
+	ctx = context.WithValue(ctx, context.UserIDKey, fmt.Sprintf("%s-%d",
+		strings.ToLower(strings.Join(strings.Fields(strings.ReplaceAll(
+			cfg.NameEN, "ö", "o")), "")), sessionID))
 	ctx = context.WithValue(ctx, context.AINameEmailKey, cfg.Email)
 	ctx = context.WithValue(ctx, context.AINameBirdFrogKey, cfg.BirdFrog)
 
@@ -417,6 +420,7 @@ func PrintSessionStats(ctx context.Context) {
 		outfmt.Println(strings.Join(stats, "  "))
 	}
 }
+
 // injectChimein checks for pending chime-in messages and injects them into history.
 // Returns the updated history and true if a chime-in was found and injected.
 func injectChimein(ctx context.Context, history []prompt.Message) ([]prompt.Message, bool) {
@@ -457,7 +461,6 @@ func injectChimein(ctx context.Context, history []prompt.Message) ([]prompt.Mess
 	// unread mail would cause infinite ChatRound restarts at line 506.
 	return history, hasChimein
 }
-
 
 func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ...prompt.Message) (err error) {
 	// 0. Inject any pending chime-in before calling LLM.

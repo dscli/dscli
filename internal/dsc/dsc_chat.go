@@ -20,30 +20,27 @@ func (c *Deepseek) Chat(ctx context.Context, messages []prompt.Message, tools []
 	}
 	model := context.ContextValue(ctx, context.CurrentModelNameKey, context.ModelDeepseekChat)
 	stream := context.ContextValue(ctx, context.StreamKey, false)
-
+	userID := context.ContextValue(ctx, context.UserIDKey, "")
 	// 构建请求（stream / non-stream 共用）
-	buildReq := func(stream bool) ChatRequest {
-		req := ChatRequest{
-			Model:     model,
-			Messages:  messages,
-			Tools:     tools,
-			Stream:    stream,
-			MaxTokens: DefaultMaxTokens,
-			Thinking:  Thinking{Type: "enabled"},
-		}
-		if V4Enabled {
-			req.ReasoningEffort = "max"
-		}
-		return req
+	req := ChatRequest{
+		Model:     model,
+		Messages:  messages,
+		UserID:    userID,
+		Tools:     tools,
+		Stream:    stream,
+		MaxTokens: DefaultMaxTokens,
+		Thinking:  Thinking{Type: "enabled"},
+	}
+	if V4Enabled {
+		req.ReasoningEffort = "max"
 	}
 
 	// 如果是streaming请求，使用streaming处理（带重试）
 	if stream {
 		var resp *ChatResponse
-		streamReq := buildReq(true)
 		err := c.retryWithBackoff("流中断", func() error {
 			var err error
-			resp, err = c.chatStream(ctx, streamReq)
+			resp, err = c.chatStream(ctx, req)
 			return err
 		})
 		if err != nil {
@@ -53,7 +50,6 @@ func (c *Deepseek) Chat(ctx context.Context, messages []prompt.Message, tools []
 	}
 
 	// 非streaming请求
-	req := buildReq(false)
 	var resp ChatResponse
 	err := c.doRequest("POST", "/chat/completions", req, &resp)
 	if err != nil {
