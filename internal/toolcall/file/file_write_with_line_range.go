@@ -122,8 +122,12 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 				return result, warning, err
 			}
 
-			// 写入内容到新文件
-			err = os.WriteFile(fullPath, []byte(content), 0o644)
+			// 写入内容到新文件，确保末尾换行
+			writeContent := content
+			if writeContent != "" && !strings.HasSuffix(writeContent, "\n") {
+				writeContent += "\n"
+			}
+			err = os.WriteFile(fullPath, []byte(writeContent), 0o644)
 			if err != nil {
 				err = fmt.Errorf("failed to write to new file: %w", err)
 				return result, warning, err
@@ -224,7 +228,7 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 		}
 	}
 
-	// 将新内容写回文件
+	// 将新内容写回文件，确保末尾有换行符
 	var contentBuilder strings.Builder
 	for i, line := range newLines {
 		contentBuilder.WriteString(line)
@@ -232,8 +236,12 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 			contentBuilder.WriteString("\n")
 		}
 	}
-
-	err = os.WriteFile(fullPath, []byte(contentBuilder.String()), 0o644)
+	// POSIX 约定：文本文件应以换行符结尾
+	writeContent := contentBuilder.String()
+	if writeContent != "" && !strings.HasSuffix(writeContent, "\n") {
+		writeContent += "\n"
+	}
+	err = os.WriteFile(fullPath, []byte(writeContent), 0o644)
 	if err != nil {
 		err = fmt.Errorf("failed to write file: %w", err)
 		return result, warning, err

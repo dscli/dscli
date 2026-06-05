@@ -301,6 +301,7 @@ func gatherInput(cmd *cobra.Command, args []string) (content string, needStdin b
 	}
 	return strings.TrimSpace(string(b)), false, nil
 }
+
 // slugify converts s to a DeepSeek user_id-safe string [a-zA-Z0-9].
 // Uses NFD decomposition so accented Latin chars (ö, é, ü, ñ, etc.)
 // decompose to their base character + combining mark, then the
@@ -586,3 +587,4 @@ func init() {
 	chatCmd.Flags().String("input", "", "read content from input file or read content from stdin if input file empty")
 	chatCmd.Flags().Bool("stream", false, "启用流式输出（SSE）")
 }
+

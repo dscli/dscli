@@ -341,7 +341,8 @@ Line 2`,
 Line 2
 
 
-Appended Line`
+Appended Line
+`
 				if string(content) != expected {
 					t.Errorf("文件内容不正确\n期望:\n%s\n实际:\n%s", expected, string(content))
 				}
@@ -476,7 +477,8 @@ Line 3
 
 
 
-Line 10: Inserted at line 10` {
+Line 10: Inserted at line 10
+` {
 		t.Fatal("[" + actual + "]")
 	}
 }

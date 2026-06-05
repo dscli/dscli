@@ -135,6 +135,15 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result, warning string
 		return result, warning, err
 	}
 
+	// POSIX 约定：文本文件应以换行符结尾
+	// 确保写入的内容末尾有换行符
+	if content != "" && !strings.HasSuffix(content, "\n") {
+		if _, err = file.WriteString("\n"); err != nil {
+			err = fmt.Errorf("写入尾随换行符失败: %w", err)
+			return result, warning, err
+		}
+	}
+
 	lines := strings.Count(content, "\n") + 1
 	if content == "" || strings.HasSuffix(content, "\n") {
 		lines = strings.Count(content, "\n")
