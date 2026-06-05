@@ -241,6 +241,10 @@ func FormatSkillMD(skill *Skill) (string, error) {
 	b.Write(yamlBytes)
 	b.WriteString("---\n\n")
 	b.WriteString(skill.Content)
+	// POSIX 约定：文本文件应以换行符结尾
+	if !strings.HasSuffix(skill.Content, "\n") {
+		b.WriteString("\n")
+	}
 	return b.String(), nil
 }
 
