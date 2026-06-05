@@ -489,15 +489,6 @@ func IsVerbose() bool {
 // headerLineWidth is the target terminal width for chat header lines.
 const headerLineWidth = 80
 
-// formatTokens formats token count as raw number.
-// Returns empty string for n <= 0.
-func formatTokens(n int) string {
-	if n <= 0 {
-		return ""
-	}
-	return fmt.Sprintf("%d", n)
-}
-
 // formatChatHeader builds a chat header with left-aligned identity
 // and right-aligned timestamp, using middle dots as filler.
 //
@@ -519,10 +510,7 @@ func formatChatHeader(icon, nameCN, email, now, suffix string) string {
 		leftW = runewidth.StringWidth(left)
 	}
 
-	padding := headerLineWidth - leftW - rightW
-	if padding < 2 {
-		padding = 2
-	}
+	padding := max(headerLineWidth - leftW - rightW, 2)
 
 	return left + " " + strings.Repeat("·", padding-2) + " " + right
 }
@@ -601,9 +589,6 @@ func PrintContent(ctx context.Context, reasoning, content string, thinkingTokens
 	reasoning = strings.TrimSpace(reasoning)
 	if reasoning != "" {
 		tStr := ""
-		if thinkingTokens > 0 {
-			tStr = "T:" + formatTokens(thinkingTokens)
-		}
 		if nameCN != "" && email != "" {
 			Printf("\n%s\n\n", formatChatHeader("💭", nameCN, email, now, tStr))
 			Println(FillParagraph(reasoning, DefaultFillWidth))
@@ -616,9 +601,6 @@ func PrintContent(ctx context.Context, reasoning, content string, thinkingTokens
 	content = strings.TrimSpace(content)
 	if content != "" {
 		cStr := ""
-		if contentTokens > 0 {
-			cStr = "C:" + formatTokens(contentTokens)
-		}
 		// 在streaming模式下，内容已经在streaming过程中输出，这里不需要再次输出
 		if !stream {
 			if nameCN != "" && email != "" {

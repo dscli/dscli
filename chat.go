@@ -323,7 +323,6 @@ func isTerminal(f *os.File) bool {
 	return term.IsTerminal(int(f.Fd()))
 }
 
-
 // parseBalance 解析余额字符串
 func parseBalance(balanceStr string) (float64, error) {
 	// 移除货币符号和空格
@@ -367,8 +366,8 @@ func PrintSessionStats(ctx context.Context) {
 			ratio := float64(u.PromptCacheHitTokens) / float64(total) * 100
 			cacheRatio = fmt.Sprintf("%.0f%%", ratio)
 		}
-		stats = append(stats, fmt.Sprintf("🪙 %d, %d, %d(%s)",
-			u.TotalTokens, u.CompletionTokens, u.PromptTokens, cacheRatio))
+		stats = append(stats, fmt.Sprintf("🪙 %d, %d(%d), %d(%s)",
+			u.TotalTokens, u.CompletionTokens, u.CompletionTokensDetails.ReasoningTokens, u.PromptTokens, cacheRatio))
 	}
 
 	// 花费和余额 (only when user-balance is enabled)
@@ -536,8 +535,8 @@ func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ..
 			ratio := float64(u.PromptCacheHitTokens) / float64(cacheTotal) * 100
 			cacheRatio = fmt.Sprintf("%.0f%%", ratio)
 		}
-		outfmt.Println(fmt.Sprintf("🪙 %d, %d, %d(%s)",
-			u.TotalTokens, u.CompletionTokens, u.PromptTokens, cacheRatio))
+		outfmt.Println(fmt.Sprintf("🪙 %d, %d(%d), %d(%s)",
+			u.TotalTokens, u.CompletionTokens, u.CompletionTokensDetails.ReasoningTokens, u.PromptTokens, cacheRatio))
 	}
 	stories = append(stories, story)
 	tcs := story.ToolCalls
