@@ -24,6 +24,7 @@ import (
 	"gitcode.com/dscli/dscli/internal/toolcall/alltools"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
+	"golang.org/x/text/unicode/norm"
 )
 
 const (
@@ -150,8 +151,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx = context.WithValue(ctx, context.AINameCNKey, cfg.NameCN)
 	ctx = context.WithValue(ctx, context.AINameENKey, cfg.NameEN)
 	ctx = context.WithValue(ctx, context.UserIDKey, fmt.Sprintf("%s-%d",
-		strings.ToLower(strings.Join(strings.Fields(strings.ReplaceAll(
-			cfg.NameEN, "ö", "o")), "")), sessionID))
+		slugify(cfg.NameEN), sessionID))
 	ctx = context.WithValue(ctx, context.AINameEmailKey, cfg.Email)
 	ctx = context.WithValue(ctx, context.AINameBirdFrogKey, cfg.BirdFrog)
 
@@ -300,6 +300,21 @@ func gatherInput(cmd *cobra.Command, args []string) (content string, needStdin b
 		return "", false, fmt.Errorf("读取输入文件 %s 失败: %w", input, err)
 	}
 	return strings.TrimSpace(string(b)), false, nil
+}
+// slugify converts s to a DeepSeek user_id-safe string [a-zA-Z0-9].
+// Uses NFD decomposition so accented Latin chars (ö, é, ü, ñ, etc.)
+// decompose to their base character + combining mark, then the
+// combining mark is dropped.
+func slugify(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range norm.NFD.String(s) {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+		// Drop everything else (combining marks, spaces, punctuation)
+	}
+	return strings.ToLower(b.String())
 }
 
 // isTerminal reports whether the given file descriptor is a terminal.
