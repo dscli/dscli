@@ -23,16 +23,20 @@ func init() {
   6. 自动上传图片
   7. 自动保存草稿
 
+--debug 模式：
+  浏览器保持打开，不会自动关闭，方便手动检查编辑器状态、探查 DOM 结构、
+  手动保存或排查自动化保存不成功的原因。
+
 示例：
   dscli webwxdraft article.html --title "我的文章" --author "作者名"
   dscli webwxdraft ghostty-memory-leak-fix.html --title "查找并修复 Ghostty 最大的内存泄漏" --author "MitchellH"
-  dscli webwxdraft article.html --title "测试" --debug   # 调试模式：探查编辑器 DOM 结构`,
+  dscli webwxdraft article.html --title "测试" --debug   # 调试模式：探查 DOM 并保持浏览器打开`,
 		Args: cobra.ExactArgs(1),
 		RunE: webwxdraftRunE,
 	})
 	webwxdraftCmd.Flags().String("title", "", "文章标题（必填）")
 	webwxdraftCmd.Flags().String("author", "", "文章作者（可选）")
-	webwxdraftCmd.Flags().Bool("debug", false, "调试模式：探查编辑器页面 DOM 结构")
+	webwxdraftCmd.Flags().Bool("debug", false, "调试模式：探查编辑器 DOM 结构，完成后保持浏览器打开")
 	_ = webwxdraftCmd.MarkFlagRequired("title")
 }
 

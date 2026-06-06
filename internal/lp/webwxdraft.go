@@ -1314,20 +1314,22 @@ func WebWxDraft(ctx context.Context, params WeChatDraftParams) error {
 
 	allocCtx, allocCancel := chromedp.NewExecAllocator(ctx, opts...)
 	tabCtx, tabCancel := chromedp.NewContext(allocCtx)
-
 	// saveFailed controls browser close behavior at the end.
 	// Default false: close Chrome on normal exit or early error.
 	// Set true when automation reaches the end but saves aren't verified.
 	var saveFailed bool
 	defer func() {
 		tabCancel()
-		if saveFailed {
+		switch {
+		case params.Debug:
+			// Debug mode: keep browser open for manual inspection.
+			fmt.Fprintf(os.Stderr, "🔍 调试模式：浏览器保持打开，请手动检查后关闭\n")
+		case saveFailed:
 			fmt.Fprintf(os.Stderr, "🔴 自动保存未确认，请手动保存草稿后关闭浏览器\n")
-		} else {
+		default:
 			allocCancel() // closes the browser process
 		}
 	}()
-
 	// --- Phase 2: Preview the local HTML ---
 	fmt.Fprintf(os.Stderr, "🔍 预览本地 HTML...\n")
 	fileURL := "file://" + params.HTMLPath
