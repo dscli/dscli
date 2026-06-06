@@ -49,7 +49,8 @@ const (
 )
 
 // MdToWx converts a markdown string to WeChat-compatible HTML via the
-// quaily.com markdown-to-wx tool, using a local Chrome/Chromium browser.
+// quaily.com markdown-to-wx tool, using the dscli-chromium service first
+// and falling back to a local Chrome/Chromium browser if unavailable.
 //
 // The returned HTML is a rich-text fragment (not a full document) suitable
 // for pasting into the WeChat Official Account editor or for use as the
@@ -59,45 +60,61 @@ func MdToWx(ctx context.Context, mdContent string) (string, error) {
 		return "", fmt.Errorf("empty markdown content")
 	}
 
-	chromePath, err := findChrome()
-	if err != nil {
-		return "", err
-	}
+	var tabCtx context.Context
 
-	userDataDir, err := chromeUserDataDir()
-	if err != nil {
-		return "", err
-	}
-
-	opts := []chromedp.ExecAllocatorOption{
-		chromedp.ExecPath(chromePath),
-		chromedp.UserDataDir(userDataDir),
-		chromedp.Flag("headless", "new"),
-		chromedp.Flag("disable-blink-features", "AutomationControlled"),
-		chromedp.Flag("no-first-run", true),
-		chromedp.Flag("no-default-browser-check", true),
-		chromedp.Flag("disable-session-crashed-bubble", true),
-		chromedp.NoSandbox,
-	}
-
-	allocCtx, allocCancel := chromedp.NewExecAllocator(ctx, opts...)
-	defer allocCancel()
-
-	tabCtx, tabCancel := chromedp.NewContext(allocCtx)
-	defer tabCancel()
-
-	// Graceful browser shutdown before the defers kill the process.
-	defer func() {
-		if err := chromedp.Run(tabCtx, browser.Close()); err != nil {
-			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-				fmt.Fprintf(os.Stderr, "⚠️ browser.Close() failed: %v\n", err)
-			}
+	// Try remote chromium service first.
+	if IsChromiumAvailable() {
+		ctx2, cancel, err := ConnectChromium(ctx)
+		if err == nil {
+			tabCtx = ctx2
+			defer cancel()
+			fmt.Fprintf(os.Stderr, "🌐 连接到 Chromium 服务 (%s)\n", chromiumAddr())
 		}
-	}()
+	}
+
+	// Fall back to launching local Chrome/Chromium.
+	if tabCtx == nil {
+		chromePath, err := findChrome()
+		if err != nil {
+			return "", err
+		}
+
+		userDataDir, err := chromeUserDataDir()
+		if err != nil {
+			return "", err
+		}
+
+		opts := []chromedp.ExecAllocatorOption{
+			chromedp.ExecPath(chromePath),
+			chromedp.UserDataDir(userDataDir),
+			chromedp.Flag("headless", "new"),
+			chromedp.Flag("disable-blink-features", "AutomationControlled"),
+			chromedp.Flag("no-first-run", true),
+			chromedp.Flag("no-default-browser-check", true),
+			chromedp.Flag("disable-session-crashed-bubble", true),
+			chromedp.NoSandbox,
+		}
+
+		allocCtx, allocCancel := chromedp.NewExecAllocator(ctx, opts...)
+		defer allocCancel()
+
+		var tabCancel func()
+		tabCtx, tabCancel = chromedp.NewContext(allocCtx)
+		defer tabCancel()
+
+		// Graceful browser shutdown before the defers kill the process.
+		defer func() {
+			if err := chromedp.Run(tabCtx, browser.Close()); err != nil {
+				if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+					fmt.Fprintf(os.Stderr, "⚠️ browser.Close() failed: %v\n", err)
+				}
+			}
+		}()
+	}
 
 	var htmlContent string
 
-	err = chromedp.Run(tabCtx,
+	err := chromedp.Run(tabCtx,
 		// Navigate and wait for the page (Vue app + OverType editor) to hydrate.
 		chromedp.Navigate(quailyMdToWxURL),
 		chromedp.WaitReady("body"),

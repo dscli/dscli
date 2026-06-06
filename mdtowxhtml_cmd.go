@@ -16,11 +16,13 @@ func init() {
 	mdtowxhtmlCmd := AddRootCommand(&cobra.Command{
 		Use:   "mdtowxhtml <file.md>",
 		Short: "将 Markdown 转换为微信公众号格式的 HTML",
-		Long: `通过 Chrome 浏览器使用 quaily.com 的 Markdown 转微信公众号格式工具，
+		Long: `通过 Chromium 服务（dscli-chromium）使用 quaily.com 的 Markdown 转微信公众号格式工具，
 将 Markdown 文件转换为 WeChat 兼容的 HTML 富文本。
 
 输出文件为同名的 .html 文件（例如 article.md → article.html），
 内容为可直接粘贴到微信公众号编辑器中的 HTML 片段。
+
+如果 Chromium 服务不可用，则自动回退到本地 Chrome 浏览器。
 
 示例：
   dscli mdtowxhtml article.md
