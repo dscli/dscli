@@ -44,7 +44,7 @@ type serviceConfig struct {
 //
 // Parameters:
 //   - name: service name, used as filename stem and service identifier
-//   - desc: human-readable description (systemd Description / Launchd Label)
+//   - desc: human-readable description (systemd Description / launchd Label)
 //   - cmd: command to execute; Path must be non-empty and resolvable
 func Create(name, desc string, cmd *exec.Cmd) error {
 	if name == "" {
@@ -83,13 +83,37 @@ func Create(name, desc string, cmd *exec.Cmd) error {
 	return saveServiceConfig(name, desc, execStart, resolvedCmd.Args)
 }
 
-// Start starts the user service.
+// Refresh recreates a service from its registry entry (~/.dscli/services/<name>.json).
 //
-// On Linux: runs "systemctl --user start <name>".
-// On macOS: runs "launchctl load <plist-path>" (loads and starts the job).
+// This is useful when the dscli binary or config file has been updated
+// after the service was created, making the OS-level unit file stale.
+// Refresh reads the stored name/desc/args and calls Create with the same
+// parameters, which regenerates the systemd/launchd configuration.
+//
+// Refresh is idempotent: Create skips writing if the file content has not
+// changed.
+func Refresh(name string) error {
+	cfg, err := loadServiceConfig(name)
+	if err != nil {
+		return err
+	}
+	cmd, err := buildCmd(cfg)
+	if err != nil {
+		return fmt.Errorf("userservice: refresh %s: %w", name, err)
+	}
+	return Create(name, cfg.Desc, cmd)
+}
+//
+// Start auto-refreshes the service configuration if it is stale
+// (dscli or config updated since the service was last created), then
+// starts the service.
 func Start(name string) error {
 	if name == "" {
 		return fmt.Errorf("userservice: name is required")
+	}
+	// Auto-refresh if stale — the registry has all the info we need.
+	if s, _ := Status(name); s == "stale" {
+		_ = Refresh(name)
 	}
 	return start(name)
 }
@@ -160,15 +184,16 @@ func List() ([]string, error) {
 
 // Status returns a summary of the service's state:
 //
-//   - "running"   — service is active and config is fresh
-//   - "stale"     — config is out of date (service may or may not be running)
-//   - "stopped"   — config exists and is fresh, but service is not running
+//   - "running"   — service is active
+//   - "stopped"   — service config exists but is not running
 //   - "not_found" — no service config found for this name
+//   - "stale"     — (rare fallback) config is out of date and
+//     auto-refresh failed; service may or may not be running
 //
-// "not_found" is returned when the registry entry
-// (~/.dscli/services/<name>.json) is missing.  "stale" means the
-// registry entry is older than the dscli binary or the dscli config
-// file.
+// "stale" is rarely returned because Status automatically refreshes
+// stale configurations by recreating them from the registry entry.
+// It is only returned when the auto-refresh itself fails AND the
+// service is not running.
 //
 // Status returns an error only when it cannot determine the state
 // (e.g. home directory unavailable).
@@ -184,9 +209,20 @@ func Status(name string) (string, error) {
 	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
 		return "not_found", nil
 	}
+
 	if staleCheck(cfgPath) {
-		return "stale", nil
+		// Auto-refresh: recreate from registry (idempotent).
+		if err := Refresh(name); err != nil {
+			// Refresh failed. If the service is still running, report
+			// it as running — the old config still works.
+			if isRunning(name) {
+				return "running", nil
+			}
+			return "stale", nil
+		}
+		// Successfully refreshed — re-check running state.
 	}
+
 	if isRunning(name) {
 		return "running", nil
 	}
