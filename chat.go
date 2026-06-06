@@ -527,15 +527,11 @@ func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ..
 		tokenLine := fmt.Sprintf("🪙 %d, %d(%d), %d(%s)",
 			u.TotalTokens, u.CompletionTokens, reasoningTokens, u.PromptTokens, cacheRatio)
 
-		// Cost for this round (only when model and currency are known)
+		// Cost for this round — convert yuan to fen (分) for readable small amounts
 		model := context.ContextValue(ctx, context.CurrentModelNameKey, "")
 		if model != "" {
 			if cost := u.Cost(model); cost > 0 {
-				currency := "¥"
-				if b := context.ContextValue(ctx, context.StartBalanceKey, map[string]string{}); b["currency"] != "" {
-					currency = b["currency"]
-				}
-				tokenLine += fmt.Sprintf("  💰 %s %.4f", currency, cost)
+				tokenLine += fmt.Sprintf("  💰 %.2f 分", cost*100)
 			}
 		}
 
