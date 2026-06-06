@@ -884,7 +884,6 @@ func setWxContent(ctx context.Context, contentHTML string) error {
 }
 
 // uploadWxImage uploads a single image to WeChat's media library.
-// uploadWxImage uploads a single image to WeChat's media library.
 func uploadWxImage(ctx context.Context, imagePath string) error {
 	// Step 1: Try clicking the image toolbar button.
 	imageBtnScripts := []string{
@@ -1145,7 +1144,6 @@ func uploadWxImage(ctx context.Context, imagePath string) error {
 	return nil
 }
 
-
 // saveWxDraft attempts to save the current WeChat draft.
 func saveWxDraft(ctx context.Context) error {
 	saveScripts := []string{
@@ -1192,7 +1190,6 @@ func saveWxDraft(ctx context.Context) error {
 
 	return fmt.Errorf("未找到保存按钮")
 }
-
 
 // ---------------------------------------------------------------------------
 // Main entry point
@@ -1377,5 +1374,4 @@ func WebWxDraft(ctx context.Context, params WeChatDraftParams) error {
 
 	fmt.Fprintf(os.Stderr, "✅ 操作完成！请检查草稿内容。\n")
 	return nil
-
 }
