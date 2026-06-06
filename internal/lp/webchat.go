@@ -93,9 +93,9 @@ const (
 	const els = Array.from(all).filter(function(el) {
 		var p = el.parentElement;
 		while (p) {
-			var c = (p.className || '').toLowerCase();
+			var c = (p.className || '');
 			var r = p.getAttribute && p.getAttribute('role') || '';
-			if (c.indexOf('sidebar') !== -1 || c.indexOf('navigation') !== -1 || r === 'navigation') {
+			if (/\b(sidebar|navigation)\b/i.test(c) || r === 'navigation') {
 				return false;
 			}
 			p = p.parentElement;
@@ -119,6 +119,7 @@ const (
 	jsSendEnter = `(() => {
 		const ta = document.querySelector('textarea');
 		if (!ta) return {error: 'no textarea'};
+		if (ta.offsetParent === null) return {error: 'textarea not visible'};
 		// Ensure the textarea has focus before dispatching keyboard events.
 		// This is critical when the page loads with focus on the left sidebar
 		// conversation list instead of the textarea.
@@ -134,10 +135,12 @@ const (
 		ta.dispatchEvent(new KeyboardEvent('keydown', opts));
 		ta.dispatchEvent(new KeyboardEvent('keypress', opts));
 		ta.dispatchEvent(new KeyboardEvent('keyup', opts));
-		// Fallback: click the send button directly to ensure the message
-		// is submitted even if the KeyboardEvent didn't trigger React's handler.
+		// Fallback: if the KeyboardEvent dispatch didn't trigger React's
+		// submit handler the textarea still has content — click the send
+		// button as a backup. Only fire when ta.value is non-empty to
+		// avoid double-submission.
 		var sendBtn = document.querySelector('[role="button"].ds-button--primary');
-		if (sendBtn && sendBtn.offsetParent !== null) {
+		if (sendBtn && sendBtn.offsetParent !== null && ta.value.trim() !== '') {
 			sendBtn.click();
 		}
 		return {success: true};
@@ -303,14 +306,9 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, retry 
 		}
 		return nil
 	}))
-	// Focus the textarea so keyboard input goes to the right place.
-	// Without this, the left sidebar conversation list might retain focus
-	// after page navigation, causing Enter key events to go to the sidebar
-	// instead of the chat textarea.
-	actions = append(actions, chromedp.ActionFunc(func(ctx context.Context) error {
-		return chromedp.Evaluate(`document.querySelector('textarea')?.focus()`, nil).Do(ctx)
-	}))
 	// Pause for the toggle to take effect before textarea interaction.
+	// jsSendEnter handles textarea focus internally (click → focus → select),
+	// so no separate focus action is needed here.
 	actions = append(actions, chromedp.Sleep(1*time.Second))
 	actions = append(actions,
 		// Record baseline text before sending.
