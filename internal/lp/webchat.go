@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chromedp/cdproto/browser"
 	"github.com/chromedp/chromedp"
 )
 
@@ -145,6 +146,7 @@ func webChatWithURL(ctx context.Context, conversationURL, message string) (strin
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
 		chromedp.Flag("no-first-run", true),
 		chromedp.Flag("no-default-browser-check", true),
+		chromedp.Flag("disable-session-crashed-bubble", true),
 		chromedp.NoSandbox,
 	}
 
@@ -153,6 +155,11 @@ func webChatWithURL(ctx context.Context, conversationURL, message string) (strin
 
 	tabCtx, tabCancel := chromedp.NewContext(allocCtx)
 	defer tabCancel()
+
+	// Graceful browser shutdown before the defers kill the process.
+	defer func() {
+		_ = chromedp.Run(tabCtx, browser.Close())
+	}()
 
 	response, finalURL, err := webchatSend(tabCtx, conversationURL, message, 0)
 	if err != nil {
@@ -202,28 +209,28 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, retry 
 		)
 	}
 
-	// For new conversations: enable expert mode (V4 Pro).
-	if isNewConv {
-		actions = append(actions, chromedp.ActionFunc(func(ctx context.Context) error {
-			var result map[string]any
-			if err := chromedp.Evaluate(jsEnableDeepThink, &result).Do(ctx); err != nil {
-				return nil // non-fatal
+	// Enable expert/deepthink mode (V4 Pro) for all conversations.
+	// This improves review quality and response depth.
+	actions = append(actions, chromedp.ActionFunc(func(ctx context.Context) error {
+		var result map[string]any
+		if err := chromedp.Evaluate(jsEnableDeepThink, &result).Do(ctx); err != nil {
+			return nil // non-fatal
+		}
+		if ok, _ := result["success"].(bool); ok {
+			method, _ := result["method"].(string)
+			switch method {
+			case "data-model-type":
+				mt, _ := result["modelType"].(string)
+				fmt.Fprintf(os.Stderr, "🔬 已启用专家模式 (model=%s)\n", mt)
+			default:
+				fmt.Fprintln(os.Stderr, "🔬 已启用专家模式 (V4 Pro)")
 			}
-			if ok, _ := result["success"].(bool); ok {
-				method, _ := result["method"].(string)
-				switch method {
-				case "data-model-type":
-					mt, _ := result["modelType"].(string)
-					fmt.Fprintf(os.Stderr, "🔬 已启用专家模式 (model=%s)\n", mt)
-				default:
-					fmt.Fprintln(os.Stderr, "🔬 已启用专家模式 (V4 Pro)")
-				}
-			}
-			return nil
-		}))
-		// Pause for the toggle to take effect before textarea interaction.
-		actions = append(actions, chromedp.Sleep(1*time.Second))
-	}
+		}
+		return nil
+	}))
+	// Pause for the toggle to take effect before textarea interaction.
+	actions = append(actions, chromedp.Sleep(1*time.Second))
+
 	actions = append(actions,
 		// Record baseline text before sending.
 		chromedp.Evaluate("document.body ? document.body.innerText : ''", &baseline),

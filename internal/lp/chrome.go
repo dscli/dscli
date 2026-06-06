@@ -3,12 +3,12 @@ package lp
 import (
 	"context"
 	"fmt"
+	"github.com/chromedp/cdproto/browser"
+	"github.com/chromedp/chromedp"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
-
-	"github.com/chromedp/chromedp"
 )
 
 // findChrome locates a Chrome/Chromium binary on the system.
@@ -78,6 +78,7 @@ func DeepSeekLoginChromeOpts(ctx context.Context, phone string, codeReader func(
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
 		chromedp.Flag("no-first-run", true),
 		chromedp.Flag("no-default-browser-check", true),
+		chromedp.Flag("disable-session-crashed-bubble", true),
 		chromedp.NoSandbox,
 	}
 	if !visible {
@@ -94,6 +95,11 @@ func DeepSeekLoginChromeOpts(ctx context.Context, phone string, codeReader func(
 
 	tabCtx, tabCancel := chromedp.NewContext(allocCtx)
 	defer tabCancel()
+
+	// Graceful browser shutdown before the defers kill the process.
+	defer func() {
+		_ = chromedp.Run(tabCtx, browser.Close())
+	}()
 
 	return deepseekLogin(tabCtx, phone, codeReader, visible)
 }
