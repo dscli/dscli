@@ -4,12 +4,14 @@ package lp
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/chromedp/chromedp"
+	"github.com/dscli/dscli/internal/outfmt"
 )
 
 // WeChatDraftParams holds parameters for creating a WeChat draft.
@@ -188,7 +190,7 @@ func quoteJSString(s string) string {
 // inspectEditorPage probes the current page and prints useful information
 // about DOM elements found for the key operations (title, content, image).
 func inspectEditorPage(ctx context.Context) {
-	fmt.Fprintf(os.Stderr, "🔍 编辑器页面探查:\n")
+	outfmt.Printf("🔍 编辑器页面探查:\n")
 
 	type probe struct {
 		label string
@@ -296,22 +298,39 @@ func inspectEditorPage(ctx context.Context) {
 					if (t.indexOf('保存') !== -1 || t === '发布' || t === 'Submit') {
 						saves.push('<' + el.tagName + '> "' + t + '"');
 					}
-				}
-			}
 			return saves.length > 0 ? saves.join('\\n') : '(无匹配)';
+		})()`},
+		{"ProseMirror EditorView", `(() => {
+			const el = document.querySelector('.ProseMirror');
+			if (!el) return '没有 .ProseMirror 元素';
+			// Method 1: Scan window for EditorView
+			for (const key of Object.getOwnPropertyNames(window)) {
+				try {
+					const val = window[key];
+					if (val && val.state && val.dispatch && val.dom === el) {
+						return 'window.' + key + ' ✓';
+					}
+				} catch(e) {}
+			}
+			// Method 2: Check for internal references
+			const internalKeys = Object.getOwnPropertyNames(el).filter(k =>
+				k.startsWith('pm') || k.startsWith('__react')
+			);
+			return 'no EditorView on window; element keys: ' +
+				(internalKeys.length > 0 ? internalKeys.slice(0,3).join(', ') : 'none');
 		})()`},
 	}
 
 	for _, p := range probes {
 		var result string
 		if err := chromedp.Run(ctx, chromedp.Evaluate(p.js, &result)); err != nil {
-			fmt.Fprintf(os.Stderr, "  %s: ❌ %v\n", p.label, err)
+			outfmt.Printf("  %s: ❌ %v\n", p.label, err)
 			continue
 		}
-		fmt.Fprintf(os.Stderr, "  %s:\n", p.label)
+		outfmt.Printf("  %s:\n", p.label)
 		for _, line := range strings.Split(result, "\n") {
 			if line != "" {
-				fmt.Fprintf(os.Stderr, "    %s\n", line)
+				outfmt.Printf("    %s\n", line)
 			}
 		}
 	}
@@ -410,7 +429,7 @@ func detectPageState(ctx context.Context) pageState {
 // waitForLogin polls until the user scans the QR code and the dashboard
 // (or editor) appears.
 func waitForLogin(ctx context.Context) error {
-	fmt.Fprintf(os.Stderr, "⏳ 等待扫码登录...\n")
+	outfmt.Printf("⏳ 等待扫码登录...\n")
 
 	pollInterval := 2 * time.Second
 	maxPolls := 150 // 5 minutes
@@ -429,7 +448,7 @@ func waitForLogin(ctx context.Context) error {
 		case stateDashboard, stateDraftList:
 			return nil
 		case stateAccountSelect:
-			fmt.Fprintf(os.Stderr, "  检测到多账户选择页，自动选择第一个账户...\n")
+			outfmt.Printf("  检测到多账户选择页，自动选择第一个账户...\n")
 			trySelectFirstAccount(ctx)
 			chromedp.Run(ctx, chromedp.Sleep(2*time.Second))
 		}
@@ -474,7 +493,7 @@ func navigateToEditorDepth(ctx context.Context, depth int) error {
 			"https://mp.weixin.qq.com/cgi-bin/appmsg?t=media/appmsg_edit_v2&action=edit&lang=zh_CN&token=%s&type=77",
 			token,
 		)
-		fmt.Fprintf(os.Stderr, "  导航到编辑器 URL...\n")
+		outfmt.Printf("  导航到编辑器 URL...\n")
 		if err := chromedp.Run(ctx,
 			chromedp.Navigate(editorURL),
 			chromedp.WaitReady("body"),
@@ -508,7 +527,7 @@ func navigateToEditorDepth(ctx context.Context, depth int) error {
 		for _, s := range createScripts {
 			var ok bool
 			if chromedp.Run(ctx, chromedp.Evaluate(s, &ok)); ok {
-				chromedp.Run(ctx, chromedp.Sleep(2 * time.Second))
+				chromedp.Run(ctx, chromedp.Sleep(2*time.Second))
 				var clicked bool
 				_ = chromedp.Run(ctx, chromedp.Evaluate(
 					`(() => {
@@ -520,7 +539,7 @@ func navigateToEditorDepth(ctx context.Context, depth int) error {
 						}
 						return false;
 					})()`, &clicked))
-				chromedp.Run(ctx, chromedp.Sleep(3 * time.Second))
+				chromedp.Run(ctx, chromedp.Sleep(3*time.Second))
 				if detectPageState(ctx) == stateEditor {
 					return nil
 				}
@@ -559,7 +578,7 @@ func navigateToEditorDepth(ctx context.Context, depth int) error {
 	for _, s := range navScripts {
 		var ok bool
 		if chromedp.Run(ctx, chromedp.Evaluate(s, &ok)); ok {
-			chromedp.Run(ctx, chromedp.Sleep(3 * time.Second))
+			chromedp.Run(ctx, chromedp.Sleep(3*time.Second))
 			chromedp.Run(ctx, chromedp.WaitReady("body"))
 			return navigateToEditorDepth(ctx, depth+1)
 		}
@@ -570,7 +589,7 @@ func navigateToEditorDepth(ctx context.Context, depth int) error {
 
 // waitForEditor polls until the editor page is fully loaded and ready.
 func waitForEditor(ctx context.Context) error {
-	fmt.Fprintf(os.Stderr, "⏳ 等待编辑器加载...\n")
+	outfmt.Printf("⏳ 等待编辑器加载...\n")
 
 	pollInterval := 1 * time.Second
 	maxPolls := 30 // 30 seconds
@@ -660,6 +679,8 @@ func setWxTitle(ctx context.Context, title string) error {
 		fmt.Sprintf(`(() => {
 			const allCE = document.querySelectorAll('[contenteditable="true"]');
 			for (const el of allCE) {
+				// Skip ProseMirror — it's the body editor, not the title
+				if (el.classList.contains('ProseMirror')) continue;
 				const html = el.innerHTML.toLowerCase();
 				if (html.length > 50 && (html.indexOf('<p') !== -1 || html.indexOf('<div') !== -1)) continue;
 				el.textContent = %s;
@@ -750,7 +771,7 @@ func setWxAuthor(ctx context.Context, author string) error {
 			}
 		case string:
 			if v == "clicked" {
-				chromedp.Run(ctx, chromedp.Sleep(1 * time.Second))
+				chromedp.Run(ctx, chromedp.Sleep(1*time.Second))
 				// If the dialog path fails, try remaining scripts instead of aborting.
 				if err := setWxAuthorInput(ctx, author); err == nil {
 					return nil
@@ -784,104 +805,152 @@ func setWxAuthorInput(ctx context.Context, author string) error {
 }
 
 // setWxContent sets the body HTML content in the WeChat editor.
+// Strategy: ProseMirror (WeChat 2025+) needs clipboard paste or execCommand
+// because innerHTML doesn't update ProseMirror's internal state. Generic
+// contenteditable and legacy selectors are tried afterward.
 func setWxContent(ctx context.Context, contentHTML string) error {
 	quoted := quoteJSString(contentHTML)
 
-	scripts := []string{
-		// Pattern 1: UEditor iframe (ueditor_0)
-		fmt.Sprintf(`(() => {
-			const iframe = document.querySelector('iframe#ueditor_0');
-			if (iframe) {
-				const doc = iframe.contentDocument || iframe.contentWindow.document;
-				doc.body.innerHTML = %s;
-				return true;
+	type pattern struct {
+		name string
+		js   string
+	}
+
+	patterns := []pattern{
+		// ── Pattern 1: ProseMirror via transaction dispatch (primary) ──────
+		// The gold standard: discover the EditorView and dispatch a replace
+		// transaction. This updates ProseMirror's internal state correctly,
+		// ensuring WeChat's save function reads the actual content.
+		{"ProseMirror-dispatch", fmt.Sprintf(`(() => {
+			// Find the body ProseMirror (skip title containers).
+			const els = document.querySelectorAll('.ProseMirror');
+			let el = null;
+			for (const e of els) {
+				if (!e.closest('[class*="title"],[id*="title"]')) {
+					el = e;
+					break;
+				}
 			}
-			return false;
-		})()`, quoted),
-		// Pattern 2: Any iframe with contenteditable body
-		fmt.Sprintf(`(() => {
-			const iframes = document.querySelectorAll('iframe');
-			for (const f of iframes) {
+			if (!el) return 'no-ProseMirror';
+			// Discover the EditorView instance on the window object.
+			let view = null;
+			for (const key of Object.getOwnPropertyNames(window)) {
 				try {
-					const doc = f.contentDocument || f.contentWindow.document;
-					if (doc && doc.body && doc.body.contentEditable === 'true') {
-						doc.body.innerHTML = %s;
-						return true;
+					const val = window[key];
+					if (val && val.state && val.dispatch && val.dom === el) {
+						view = val;
+						break;
 					}
 				} catch(e) {}
 			}
-			return false;
-		})()`, quoted),
-		// Pattern 3: Direct contenteditable divs (skip any element inside a title container)
-		fmt.Sprintf(`(() => {
+			// Parse HTML into ProseMirror nodes using the schema's DOMParser.
+			const container = document.createElement('div');
+			container.innerHTML = %s;
+			const parser = view.state.schema.domParser;
+			if (!parser) return 'no-DOMParser';
+			const doc = parser.parse(container, {
+				preserveWhitespace: 'full'
+			});
+			// Replace the entire document content via transaction.
+			const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, doc.content);
+			view.dispatch(tr);
+			// Blur/focus cycle to ensure WeChat plugins recognize the change.
+			view.dom.blur();
+			el.focus();
+			return 'ok';
+		})()`, quoted)},
+
+		// ── Pattern 2: ProseMirror via execCommand ─────────────────────────
+		// execCommand is deprecated but works in Chrome 134+. Does NOT update
+		// ProseMirror's internal state — but content appears in the DOM so
+		// the user can manually interact with the editor.
+		{"ProseMirror-execCommand", fmt.Sprintf(`(() => {
+			// Find the body ProseMirror (skip title containers).
+			const els = document.querySelectorAll('.ProseMirror');
+			let el = null;
+			for (const e of els) {
+				if (!e.closest('[class*="title"],[id*="title"]')) {
+					el = e;
+					break;
+				}
+			}
+			if (!el) return 'no-body-ProseMirror';
+			// Click + focus to ensure the editor accepts keyboard input.
+			el.click();
+			el.focus({preventScroll: true});
+			document.execCommand('selectAll', false, null);
+			document.execCommand('insertHTML', false, %s);
+			el.dispatchEvent(new Event('input', {bubbles: true}));
+			// Verify the content actually went into this element.
+			if (!el.innerHTML || el.innerHTML.length < 50) return 'content-too-short';
+			return 'ok';
+		})()`, quoted)},
+
+		// ── Pattern 3: ProseMirror via innerHTML ───────────────────────────
+		// Last resort for ProseMirror — DOM changes won't update state but
+		// content is at least visible for manual save.
+		{"ProseMirror-innerHTML", fmt.Sprintf(`(() => {
+			// Find the body ProseMirror (skip title containers).
+			const els = document.querySelectorAll('.ProseMirror');
+			let el = null;
+			for (const e of els) {
+				if (!e.closest('[class*="title"],[id*="title"]')) {
+					el = e;
+					break;
+				}
+			}
+			if (!el) return 'no-body-ProseMirror';
+			el.click();
+			el.focus({preventScroll: true});
+			el.innerHTML = %s;
+			el.dispatchEvent(new Event('input', {bubbles: true}));
+			return 'ok';
+		})()`, quoted)},
+
+		// ── Pattern 4: [contenteditable="true"] skipping title containers ──
+		// For non-ProseMirror editors (legacy WeChat, other platforms).
+		{"contenteditable-skip-title", fmt.Sprintf(`(() => {
 			const els = document.querySelectorAll('[contenteditable="true"]');
 			for (const el of els) {
 				if (el.closest('[class*="title"],[id*="title"]')) continue;
 				if (el.tagName === 'INPUT') continue;
+				el.click();
+				el.focus({preventScroll: true});
 				el.innerHTML = %s;
 				el.dispatchEvent(new Event('input', {bubbles: true}));
-				return true;
+				return 'ok';
 			}
-			return false;
-		})()`, quoted),
+			return 'no-match';
+		})()`, quoted)},
 
-		// Pattern 4: rich_media_area
-		fmt.Sprintf(`(() => {
-			const el = document.querySelector('div.rich_media_area, .rich_media_area_primary');
-			if (el) {
-				el.innerHTML = %s;
-				return true;
-			}
-			return false;
-		})()`, quoted),
-		// Pattern 5: window.ue API
-		fmt.Sprintf(`(() => {
-			if (typeof window.ue !== 'undefined') {
-				const editor = window.ue.getEditor();
-				if (editor) {
-					editor.setContent(%s);
-					return true;
-				}
-			}
-			return false;
-		})()`, quoted),
-		// Pattern 6: Common content selectors
-		fmt.Sprintf(`(() => {
-			const selectors = [
-				'div.rich_media', '.rich_media_content',
-				'[data-role="content"]', '.appmsg_content',
-				'#js_content', '.js_rich_media_content',
-			];
-			for (const sel of selectors) {
-				const el = document.querySelector(sel);
-				if (el) {
-					el.innerHTML = %s;
-					return true;
-				}
-			}
-			return false;
-		})()`, quoted),
-		// Pattern 7: ProseMirror / [contenteditable] fallback (skip title containers)
-		fmt.Sprintf(`(() => {
-			const els = document.querySelectorAll('.ProseMirror, .tiptap, [contenteditable]');
+		// ── Pattern 5: [contenteditable] fallback (skip title containers) ──
+		// Broad fallback for any contenteditable element.
+		{"contenteditable-fallback", fmt.Sprintf(`(() => {
+			const els = document.querySelectorAll('.ProseMirror, [contenteditable]');
 			for (const el of els) {
 				if (el.closest('[class*="title"],[id*="title"]')) continue;
+				el.click();
+				el.focus({preventScroll: true});
 				el.innerHTML = %s;
 				el.dispatchEvent(new Event('input', {bubbles: true}));
-				return true;
+				return 'ok';
 			}
-			return false;
-		})()`, quoted),
+			return 'no-match';
+		})()`, quoted)},
 	}
 
-
-	for _, script := range scripts {
-		var ok bool
-		if err := chromedp.Run(ctx, chromedp.Evaluate(script, &ok)); err != nil {
+	for _, p := range patterns {
+		var result string
+		if err := chromedp.Run(ctx, chromedp.Evaluate(p.js, &result)); err != nil {
+			outfmt.Printf("  ⚠️  Pattern %s error: %v\n", p.name, err)
 			continue
 		}
-		if ok {
+		if result == "ok" {
+			outfmt.Printf("  ✅ Pattern %s 成功\n", p.name)
 			return nil
+		}
+		if result != "" {
+			outfmt.Printf("  ⚠️  Pattern %s: %s\n", p.name, result)
 		}
 	}
 
@@ -1056,7 +1125,7 @@ func uploadWxImage(ctx context.Context, imagePath string) error {
 	}
 
 	if !localClicked {
-		fmt.Fprintf(os.Stderr, "   ⚠️  未找到「本地上传」按钮，尝试直接查找文件输入框...\n")
+		outfmt.Printf("   ⚠️  未找到「本地上传」按钮，尝试直接查找文件输入框...\n")
 	}
 	chromedp.Run(ctx, chromedp.Sleep(1*time.Second))
 
@@ -1090,7 +1159,7 @@ func uploadWxImage(ctx context.Context, imagePath string) error {
 	}
 
 	if !fileUploaded {
-		fmt.Fprintf(os.Stderr, "   ⚠️  请手动上传图片: %s\n", imagePath)
+		outfmt.Printf("   ⚠️  请手动上传图片: %s\n", imagePath)
 	}
 
 	// Step 4: Wait for upload completion.
@@ -1143,7 +1212,7 @@ func uploadWxImage(ctx context.Context, imagePath string) error {
 	}
 
 	if !confirmed {
-		fmt.Fprintf(os.Stderr, "   ⚠️  请手动点击「确定」或「插入」完成图片上传\n")
+		outfmt.Printf("   ⚠️  请手动点击「确定」或「插入」完成图片上传\n")
 	}
 
 	return nil
@@ -1205,7 +1274,7 @@ func saveWxDraftWithVerify(ctx context.Context) bool {
 		chromedp.Run(ctx, chromedp.Sleep(2*time.Second))
 
 		if verifySaveSuccess(ctx) {
-			fmt.Fprintf(os.Stderr, "💾 草稿已保存\n")
+			outfmt.Printf("💾 草稿已保存\n")
 			return true
 		}
 		// Clicked something but no confirmation — try the next selector.
@@ -1242,7 +1311,6 @@ func verifySaveSuccess(ctx context.Context) bool {
 	return result != ""
 }
 
-
 // ---------------------------------------------------------------------------
 // Main entry point
 // ---------------------------------------------------------------------------
@@ -1260,7 +1328,7 @@ func verifySaveSuccess(ctx context.Context) bool {
 //  7. Save the draft.
 func WebWxDraft(ctx context.Context, params WeChatDraftParams) error {
 	// --- Phase 0: Read and parse the local HTML ---
-	fmt.Fprintf(os.Stderr, "📄 读取 HTML: %s\n", params.HTMLPath)
+	outfmt.Printf("📄 读取 HTML: %s\n", params.HTMLPath)
 
 	rawHTML, err := os.ReadFile(params.HTMLPath)
 	if err != nil {
@@ -1272,56 +1340,89 @@ func WebWxDraft(ctx context.Context, params WeChatDraftParams) error {
 	// Extract image references.
 	images := extractImages(bodyHTML, htmlBaseDir)
 	if len(images) > 0 {
-		fmt.Fprintf(os.Stderr, "🖼️  发现 %d 张图片:\n", len(images))
+		outfmt.Printf("🖼️  发现 %d 张图片:\n", len(images))
 		for _, img := range images {
-			fmt.Fprintf(os.Stderr, "   - %s\n", img.AbsPath)
+			outfmt.Printf("   - %s\n", img.AbsPath)
 		}
 	}
 
-	// --- Phase 1: Launch Chrome ---
-	chromePath, err := findChrome()
-	if err != nil {
-		return err
-	}
-	userDataDir, err := chromeUserDataDir()
-	if err != nil {
-		return err
-	}
+	// --- Phase 1: Launch Chrome (try chromium service first, fall back to local) ---
+	var tabCtx context.Context
+	var cancelRemote func() // non-nil when using remote chromium service
 
-	fmt.Fprintf(os.Stderr, "🌐 启动 Chrome (%s)...\n", chromePath)
-	fmt.Fprintf(os.Stderr, "📝 请用微信扫描浏览器中的二维码登录（如果尚未登录）\n")
-
-	// Build allocator options — NOT headless so the user can scan the QR code.
-	opts := []chromedp.ExecAllocatorOption{
-		chromedp.ExecPath(chromePath),
-		chromedp.UserDataDir(userDataDir),
-		chromedp.Flag("disable-blink-features", "AutomationControlled"),
-		chromedp.Flag("no-first-run", true),
-		chromedp.Flag("no-default-browser-check", true),
-		chromedp.Flag("disable-session-crashed-bubble", true),
-		chromedp.NoSandbox,
+	if IsChromiumAvailable() {
+		ctx2, cancel, err := ConnectChromium(ctx)
+		if err == nil {
+			tabCtx = ctx2
+			cancelRemote = cancel
+			outfmt.Printf("🌐 已连接到 Chromium 服务 (%s)\n", chromiumAddr())
+			outfmt.Printf("📝 请用微信扫描浏览器中的二维码登录（如果尚未登录）\n")
+		}
 	}
 
-	allocCtx, allocCancel := chromedp.NewExecAllocator(ctx, opts...)
-	tabCtx, tabCancel := chromedp.NewContext(allocCtx)
-	// saveFailed controls browser close behavior at the end.
-	// Default false: close Chrome on normal exit or early error.
-	// Set true when automation reaches the end but saves aren't verified.
+	if tabCtx == nil {
+		chromePath, err := findChrome()
+		if err != nil {
+			return err
+		}
+		userDataDir, err := chromeUserDataDir()
+		if err != nil {
+			return err
+		}
+
+		outfmt.Printf("🌐 启动 Chrome (%s)...\n", chromePath)
+		outfmt.Printf("📝 请用微信扫描浏览器中的二维码登录（如果尚未登录）\n")
+
+		opts := []chromedp.ExecAllocatorOption{
+			chromedp.ExecPath(chromePath),
+			chromedp.UserDataDir(userDataDir),
+			chromedp.Flag("disable-blink-features", "AutomationControlled"),
+			chromedp.Flag("no-first-run", true),
+			chromedp.Flag("no-default-browser-check", true),
+			chromedp.Flag("disable-session-crashed-bubble", true),
+			chromedp.NoSandbox,
+			// Expose a fixed debugging port so external tools can connect.
+			chromedp.Flag("remote-debugging-port", chromiumPort),
+			chromedp.Flag("remote-debugging-address", chromiumHost),
+			// Keep running even after CDP disconnects.
+			chromedp.Flag("keep-alive-for-test", true),
+		}
+
+		allocCtx, _ := chromedp.NewExecAllocator(ctx, opts...)
+		tabCtx, _ = chromedp.NewContext(allocCtx)
+	}
+	// Clean up the remote allocator when done — the browser itself keeps running.
+	if cancelRemote != nil {
+		defer cancelRemote()
+	}
 	var saveFailed bool
 	defer func() {
+		var shouldWait bool
 		switch {
 		case params.Debug:
-			fmt.Fprintf(os.Stderr, "🔍 调试模式：浏览器保持打开，请手动检查后关闭\n")
+			outfmt.Printf("🔍 调试模式：浏览器保持打开，请手动检查后关闭浏览器\n")
+			shouldWait = true
 		case saveFailed:
-			fmt.Fprintf(os.Stderr, "🔴 自动保存未确认，请手动保存草稿后关闭浏览器\n")
+			outfmt.Printf("🔴 自动保存未确认，请手动保存草稿后关闭浏览器\n")
+			shouldWait = true
+		case cancelRemote == nil:
+			outfmt.Printf("✅ 自动化流程已完成\n")
+			outfmt.Printf("检查完毕后按 Ctrl+C 退出程序（浏览器将保持打开）\n")
+			shouldWait = true
 		default:
-			tabCancel()
-			allocCancel()
+			outfmt.Printf("✅ 自动化流程已完成，浏览器保持打开供检查\n")
+		}
+		if shouldWait && cancelRemote == nil {
+			waitForInterrupt()
 		}
 	}()
 	// --- Phase 2: Preview the local HTML ---
-	fmt.Fprintf(os.Stderr, "🔍 预览本地 HTML...\n")
-	fileURL := "file://" + params.HTMLPath
+	outfmt.Printf("🔍 预览本地 HTML...\n")
+	absPath, err := filepath.Abs(params.HTMLPath)
+	if err != nil {
+		return fmt.Errorf("获取绝对路径失败: %w", err)
+	}
+	fileURL := (&url.URL{Scheme: "file", Path: absPath}).String()
 	if err := chromedp.Run(tabCtx,
 		chromedp.Navigate(fileURL),
 		chromedp.WaitReady("body"),
@@ -1342,7 +1443,7 @@ func WebWxDraft(ctx context.Context, params WeChatDraftParams) error {
 	}
 
 	// --- Phase 3: Navigate to mp.weixin.qq.com ---
-	fmt.Fprintf(os.Stderr, "🌐 导航到 mp.weixin.qq.com...\n")
+	outfmt.Printf("🌐 导航到 mp.weixin.qq.com...\n")
 	if err := chromedp.Run(tabCtx,
 		chromedp.Navigate("https://mp.weixin.qq.com"),
 		chromedp.WaitReady("body"),
@@ -1360,7 +1461,7 @@ func WebWxDraft(ctx context.Context, params WeChatDraftParams) error {
 
 	// Navigate to the editor (if not already there).
 	if detectPageState(tabCtx) != stateEditor {
-		fmt.Fprintf(os.Stderr, "🧭 自动导航到草稿编辑器...\n")
+		outfmt.Printf("🧭 自动导航到草稿编辑器...\n")
 		navCtx, navCancel := context.WithTimeout(tabCtx, 60*time.Second)
 		if err := navigateToEditor(navCtx); err != nil {
 			navCancel()
@@ -1374,58 +1475,58 @@ func WebWxDraft(ctx context.Context, params WeChatDraftParams) error {
 		return fmt.Errorf("编辑器加载超时: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "✅ 已检测到草稿编辑器\n")
+	outfmt.Printf("✅ 已检测到草稿编辑器\n")
 
 	// --- Debug: inspect the editor page (if --debug is set) ---
 	if params.Debug {
 		inspectEditorPage(tabCtx)
 	}
 
-	// --- Phase 5: Set title ---
-	if params.Title != "" {
-		fmt.Fprintf(os.Stderr, "📝 设置标题...\n")
-		if err := setWxTitle(tabCtx, params.Title); err != nil {
-			fmt.Fprintf(os.Stderr, "⚠️  设置标题失败: %v (请手动设置)\n", err)
-		}
-	}
-
-	// --- Phase 6: Set author ---
-	if params.Author != "" {
-		fmt.Fprintf(os.Stderr, "✍️  设置作者...\n")
-		if err := setWxAuthor(tabCtx, params.Author); err != nil {
-			fmt.Fprintf(os.Stderr, "⚠️  设置作者失败: %v (请手动设置)\n", err)
-		}
-	}
-
-	// --- Phase 7: Set body content ---
-	fmt.Fprintf(os.Stderr, "📋 粘贴正文内容...\n")
+	// --- Phase 5: Set body content (before title, so title overrides auto-extract) ---
+	outfmt.Printf("📋 粘贴正文内容...\n")
 	if err := setWxContent(tabCtx, renderedBody); err != nil {
-		fmt.Fprintf(os.Stderr, "⚠️  粘贴正文失败: %v (请手动粘贴)\n", err)
+		outfmt.Printf("⚠️  粘贴正文失败: %v (请手动粘贴)\n", err)
+	}
+
+	// --- Phase 6: Set title (after body, overrides WeChat auto-extraction) ---
+	if params.Title != "" {
+		outfmt.Printf("📝 设置标题...\n")
+		if err := setWxTitle(tabCtx, params.Title); err != nil {
+			outfmt.Printf("⚠️  设置标题失败: %v (请手动设置)\n", err)
+		}
+	}
+
+	// --- Phase 7: Set author ---
+	if params.Author != "" {
+		outfmt.Printf("✍️  设置作者...\n")
+		if err := setWxAuthor(tabCtx, params.Author); err != nil {
+			outfmt.Printf("⚠️  设置作者失败: %v (请手动设置)\n", err)
+		}
 	}
 
 	// --- Phase 8: Save draft (first save — content only) ---
-	fmt.Fprintf(os.Stderr, "💾 保存草稿...\n")
+	outfmt.Printf("💾 保存草稿...\n")
 	save1OK := saveWxDraftWithVerify(tabCtx)
 	if !save1OK {
-		fmt.Fprintf(os.Stderr, "⚠️  第一次保存未确认\n")
+		outfmt.Printf("⚠️  第一次保存未确认\n")
 	}
 
 	// --- Phase 9: Upload images ---
 	if len(images) > 0 {
-		fmt.Fprintf(os.Stderr, "📤 上传 %d 张图片...\n", len(images))
+		outfmt.Printf("📤 上传 %d 张图片...\n", len(images))
 		for i, img := range images {
-			fmt.Fprintf(os.Stderr, "   [%d/%d] %s\n", i+1, len(images), img.AbsPath)
+			outfmt.Printf("   [%d/%d] %s\n", i+1, len(images), img.AbsPath)
 			if err := uploadWxImage(tabCtx, img.AbsPath); err != nil {
-				fmt.Fprintf(os.Stderr, "⚠️  上传图片 %s 失败: %v (请手动上传)\n", img.AbsPath, err)
+				outfmt.Printf("⚠️  上传图片 %s 失败: %v (请手动上传)\n", img.AbsPath, err)
 			}
 		}
 	}
 
 	// --- Phase 10: Save draft again (with images) ---
-	fmt.Fprintf(os.Stderr, "💾 保存草稿...\n")
+	outfmt.Printf("💾 保存草稿...\n")
 	save2OK := saveWxDraftWithVerify(tabCtx)
 	if !save2OK {
-		fmt.Fprintf(os.Stderr, "⚠️  第二次保存未确认\n")
+		outfmt.Printf("⚠️  第二次保存未确认\n")
 	}
 
 	if !save1OK || !save2OK {
@@ -1433,6 +1534,6 @@ func WebWxDraft(ctx context.Context, params WeChatDraftParams) error {
 		return nil
 	}
 
-	fmt.Fprintf(os.Stderr, "✅ 草稿已成功保存\n")
+	outfmt.Printf("✅ 草稿已成功保存\n")
 	return nil
 }
