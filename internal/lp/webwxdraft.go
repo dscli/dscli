@@ -884,6 +884,7 @@ func setWxContent(ctx context.Context, contentHTML string) error {
 }
 
 // uploadWxImage uploads a single image to WeChat's media library.
+// uploadWxImage uploads a single image to WeChat's media library.
 func uploadWxImage(ctx context.Context, imagePath string) error {
 	// Step 1: Try clicking the image toolbar button.
 	imageBtnScripts := []string{
@@ -989,8 +990,71 @@ func uploadWxImage(ctx context.Context, imagePath string) error {
 		return fmt.Errorf("未找到图片上传按钮")
 	}
 
-	// Step 2: Wait for the upload dialog to appear.
+	// Step 2: Wait for the image dialog / popup.
 	chromedp.Run(ctx, chromedp.Sleep(2*time.Second))
+
+	// Step 2.5: Click "本地上传" (local upload) option in the image dialog.
+	localUploadScripts := []string{
+		// Scan all elements for exact text "本地上传"
+		`(() => {
+			const all = document.querySelectorAll('a, button, span, li, div');
+			for (const el of all) {
+				if (el.textContent.trim() === '本地上传') {
+					el.click(); return true;
+				}
+			}
+			return false;
+		})()`,
+		// Try inside a dialog container
+		`(() => {
+			const dialog = document.querySelector('.wx_dialog, .dialog, [role="dialog"], .upload_dialog');
+			if (!dialog) return false;
+			const all = dialog.querySelectorAll('a, button, span, li, div');
+			for (const el of all) {
+				if (el.textContent.trim() === '本地上传') {
+					el.click(); return true;
+				}
+			}
+			return false;
+		})()`,
+		// Try tab/panel with text "本地上传"
+		`(() => {
+			const tabs = document.querySelectorAll('.tab, [data-role="tab"], .upload_tab, .tab_item, .js_tab');
+			for (const tab of tabs) {
+				if (tab.textContent.trim() === '本地上传') {
+					tab.click(); return true;
+				}
+			}
+			return false;
+		})()`,
+		// Try label/span with text "本地上传"
+		`(() => {
+			const labels = document.querySelectorAll('label, span, em, strong');
+			for (const el of labels) {
+				if (el.textContent.trim() === '本地上传') {
+					el.click(); return true;
+				}
+			}
+			return false;
+		})()`,
+	}
+
+	var localClicked bool
+	for _, script := range localUploadScripts {
+		var ok bool
+		if err := chromedp.Run(ctx, chromedp.Evaluate(script, &ok)); err != nil {
+			continue
+		}
+		if ok {
+			localClicked = true
+			break
+		}
+	}
+
+	if !localClicked {
+		fmt.Fprintf(os.Stderr, "   ⚠️  未找到「本地上传」按钮，尝试直接查找文件输入框...\n")
+	}
+	chromedp.Run(ctx, chromedp.Sleep(1*time.Second))
 
 	// Step 3: Find and set the file input.
 	fileSelectors := []string{
@@ -1081,11 +1145,13 @@ func uploadWxImage(ctx context.Context, imagePath string) error {
 	return nil
 }
 
+
 // saveWxDraft attempts to save the current WeChat draft.
 func saveWxDraft(ctx context.Context) error {
 	saveScripts := []string{
+		// Broad scan: a, button, span, div with text containing "保存"
 		`(() => {
-			const btns = document.querySelectorAll('a, button');
+			const btns = document.querySelectorAll('a, button, span, div');
 			for (const b of btns) {
 				const t = b.textContent.trim();
 				if (t === '保存' || t === '保存草稿' || t.indexOf('保存') !== -1) {
@@ -1094,10 +1160,19 @@ func saveWxDraft(ctx context.Context) error {
 			}
 			return false;
 		})()`,
+		// Class/attribute based selectors
 		`(() => {
-			const btns = document.querySelectorAll('.toolbar-save, .js_save, [data-role="save"]');
+			const btns = document.querySelectorAll('.toolbar-save, .js_save, [data-role="save"], .save_btn, .btn_save');
 			for (const b of btns) {
 				b.click(); return true;
+			}
+			return false;
+		})()`,
+		// Try all elements looking for icon+text or aria-label
+		`(() => {
+			const all = document.querySelectorAll('[aria-label*="保存"], [title*="保存"], [data-action="save"]');
+			for (const el of all) {
+				el.click(); return true;
 			}
 			return false;
 		})()`,
@@ -1117,6 +1192,7 @@ func saveWxDraft(ctx context.Context) error {
 
 	return fmt.Errorf("未找到保存按钮")
 }
+
 
 // ---------------------------------------------------------------------------
 // Main entry point
@@ -1276,7 +1352,13 @@ func WebWxDraft(ctx context.Context, params WeChatDraftParams) error {
 		fmt.Fprintf(os.Stderr, "⚠️  粘贴正文失败: %v (请手动粘贴)\n", err)
 	}
 
-	// --- Phase 8: Upload images ---
+	// --- Phase 8: Save draft (first save — content only) ---
+	fmt.Fprintf(os.Stderr, "💾 保存草稿...\n")
+	if err := saveWxDraft(tabCtx); err != nil {
+		fmt.Fprintf(os.Stderr, "⚠️  自动保存失败: %v (请手动保存)\n", err)
+	}
+
+	// --- Phase 9: Upload images ---
 	if len(images) > 0 {
 		fmt.Fprintf(os.Stderr, "📤 上传 %d 张图片...\n", len(images))
 		for i, img := range images {
@@ -1287,7 +1369,7 @@ func WebWxDraft(ctx context.Context, params WeChatDraftParams) error {
 		}
 	}
 
-	// --- Phase 9: Save draft ---
+	// --- Phase 10: Save draft again (with images) ---
 	fmt.Fprintf(os.Stderr, "💾 保存草稿...\n")
 	if err := saveWxDraft(tabCtx); err != nil {
 		fmt.Fprintf(os.Stderr, "⚠️  自动保存失败: %v (请手动保存)\n", err)
@@ -1295,4 +1377,5 @@ func WebWxDraft(ctx context.Context, params WeChatDraftParams) error {
 
 	fmt.Fprintf(os.Stderr, "✅ 操作完成！请检查草稿内容。\n")
 	return nil
+
 }
