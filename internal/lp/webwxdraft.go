@@ -3,14 +3,12 @@ package lp
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/chromedp/cdproto/browser"
 	"github.com/chromedp/chromedp"
 )
 
@@ -1144,10 +1142,41 @@ func uploadWxImage(ctx context.Context, imagePath string) error {
 	return nil
 }
 
-// saveWxDraft attempts to save the current WeChat draft.
-func saveWxDraft(ctx context.Context) error {
+// saveWxDraftWithVerify attempts to save the current WeChat draft and
+// verifies that the save actually succeeded. Returns true if verified.
+//
+// Selector strategy: specific first (by ID, class), broad text match as
+// last resort. Each click is followed by a verification check.
+func saveWxDraftWithVerify(ctx context.Context) bool {
 	saveScripts := []string{
-		// Broad scan: a, button, span, div with text containing "保存"
+		// 1. Most specific: by ID (current WeChat editor 2025+)
+		`(() => {
+			const el = document.querySelector('#js_article_save');
+			if (el) { el.click(); return true; }
+			return false;
+		})()`,
+		// 2. Class/attribute based selectors
+		`(() => {
+			const btns = document.querySelectorAll('.toolbar-save, .js_save, [data-role="save"], .save_btn, .btn_save');
+			for (const b of btns) { b.click(); return true; }
+			return false;
+		})()`,
+		// 3. aria-label / title
+		`(() => {
+			const all = document.querySelectorAll('[aria-label*="保存"], [title*="保存"], [data-action="save"]');
+			for (const el of all) { el.click(); return true; }
+			return false;
+		})()`,
+		// 4. a, button with exact text match (more targeted)
+		`(() => {
+			const btns = document.querySelectorAll('a, button');
+			for (const b of btns) {
+				const t = b.textContent.trim();
+				if (t === '保存草稿' || t === '保存') { b.click(); return true; }
+			}
+			return false;
+		})()`,
+		// 5. Broad scan (last resort — too broad, but catches unusual layouts)
 		`(() => {
 			const btns = document.querySelectorAll('a, button, span, div');
 			for (const b of btns) {
@@ -1158,38 +1187,54 @@ func saveWxDraft(ctx context.Context) error {
 			}
 			return false;
 		})()`,
-		// Class/attribute based selectors
-		`(() => {
-			const btns = document.querySelectorAll('.toolbar-save, .js_save, [data-role="save"], .save_btn, .btn_save');
-			for (const b of btns) {
-				b.click(); return true;
-			}
-			return false;
-		})()`,
-		// Try all elements looking for icon+text or aria-label
-		`(() => {
-			const all = document.querySelectorAll('[aria-label*="保存"], [title*="保存"], [data-action="save"]');
-			for (const el of all) {
-				el.click(); return true;
-			}
-			return false;
-		})()`,
 	}
 
 	for _, script := range saveScripts {
 		var ok bool
-		if err := chromedp.Run(ctx, chromedp.Evaluate(script, &ok)); err != nil {
+		if err := chromedp.Run(ctx, chromedp.Evaluate(script, &ok)); err != nil || !ok {
 			continue
 		}
-		if ok {
-			chromedp.Run(ctx, chromedp.Sleep(2*time.Second))
+		// Wait for the save action to complete and UI to update.
+		chromedp.Run(ctx, chromedp.Sleep(2*time.Second))
+
+		if verifySaveSuccess(ctx) {
 			fmt.Fprintf(os.Stderr, "💾 草稿已保存\n")
-			return nil
+			return true
 		}
+		// Clicked something but no confirmation — try the next selector.
 	}
 
-	return fmt.Errorf("未找到保存按钮")
+	return false
 }
+
+// verifySaveSuccess checks the page for indicators that the draft was saved.
+func verifySaveSuccess(ctx context.Context) bool {
+	var result string
+	err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+		// 1. Look for success toasts (e.g., "保存成功", "已保存")
+		const toasts = document.querySelectorAll(
+			'[class*="toast"], [class*="success"], .weui-toast, [class*="tips"]'
+		);
+		for (const t of toasts) {
+			const txt = t.textContent.trim();
+			if (txt === '保存成功' || txt === '已保存') return 'toast';
+		}
+		// 2. Check if the save button changed to "已保存"
+		const btns = document.querySelectorAll('a, button');
+		for (const b of btns) {
+			if (b.textContent.trim() === '已保存') return 'saved';
+		}
+		// Note: deliberately NOT checking URL for appmsgid — that would
+		// cause a false positive on the 2nd save (URL already has appmsgid
+		// from the 1st save). Toast and button state are sufficient.
+		return '';
+	})()`, &result))
+	if err != nil {
+		return false
+	}
+	return result != ""
+}
+
 
 // ---------------------------------------------------------------------------
 // Main entry point
@@ -1251,17 +1296,18 @@ func WebWxDraft(ctx context.Context, params WeChatDraftParams) error {
 	}
 
 	allocCtx, allocCancel := chromedp.NewExecAllocator(ctx, opts...)
-	defer allocCancel()
-
 	tabCtx, tabCancel := chromedp.NewContext(allocCtx)
-	defer tabCancel()
 
-	// Graceful browser shutdown.
+	// saveFailed controls browser close behavior at the end.
+	// Default false: close Chrome on normal exit or early error.
+	// Set true when automation reaches the end but saves aren't verified.
+	var saveFailed bool
 	defer func() {
-		if err := chromedp.Run(tabCtx, browser.Close()); err != nil {
-			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-				fmt.Fprintf(os.Stderr, "⚠️ browser.Close() failed: %v\n", err)
-			}
+		tabCancel()
+		if saveFailed {
+			fmt.Fprintf(os.Stderr, "🔴 自动保存未确认，请手动保存草稿后关闭浏览器\n")
+		} else {
+			allocCancel() // closes the browser process
 		}
 	}()
 
@@ -1351,8 +1397,9 @@ func WebWxDraft(ctx context.Context, params WeChatDraftParams) error {
 
 	// --- Phase 8: Save draft (first save — content only) ---
 	fmt.Fprintf(os.Stderr, "💾 保存草稿...\n")
-	if err := saveWxDraft(tabCtx); err != nil {
-		fmt.Fprintf(os.Stderr, "⚠️  自动保存失败: %v (请手动保存)\n", err)
+	save1OK := saveWxDraftWithVerify(tabCtx)
+	if !save1OK {
+		fmt.Fprintf(os.Stderr, "⚠️  第一次保存未确认\n")
 	}
 
 	// --- Phase 9: Upload images ---
@@ -1368,10 +1415,16 @@ func WebWxDraft(ctx context.Context, params WeChatDraftParams) error {
 
 	// --- Phase 10: Save draft again (with images) ---
 	fmt.Fprintf(os.Stderr, "💾 保存草稿...\n")
-	if err := saveWxDraft(tabCtx); err != nil {
-		fmt.Fprintf(os.Stderr, "⚠️  自动保存失败: %v (请手动保存)\n", err)
+	save2OK := saveWxDraftWithVerify(tabCtx)
+	if !save2OK {
+		fmt.Fprintf(os.Stderr, "⚠️  第二次保存未确认\n")
 	}
 
-	fmt.Fprintf(os.Stderr, "✅ 操作完成！请检查草稿内容。\n")
+	if !save1OK || !save2OK {
+		saveFailed = true // leave browser open for manual save
+		return nil
+	}
+
+	fmt.Fprintf(os.Stderr, "✅ 草稿已成功保存并关闭浏览器\n")
 	return nil
 }
