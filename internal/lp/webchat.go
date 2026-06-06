@@ -158,7 +158,11 @@ func webChatWithURL(ctx context.Context, conversationURL, message string) (strin
 
 	// Graceful browser shutdown before the defers kill the process.
 	defer func() {
-		_ = chromedp.Run(tabCtx, browser.Close())
+		if err := chromedp.Run(tabCtx, browser.Close()); err != nil {
+			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+				fmt.Fprintf(os.Stderr, "⚠️ browser.Close() failed: %v\n", err)
+			}
+		}
 	}()
 
 	response, finalURL, err := webchatSend(tabCtx, conversationURL, message, 0)
@@ -214,6 +218,7 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, retry 
 	actions = append(actions, chromedp.ActionFunc(func(ctx context.Context) error {
 		var result map[string]any
 		if err := chromedp.Evaluate(jsEnableDeepThink, &result).Do(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "⚠️ 专家模式启用失败: %v\n", err)
 			return nil // non-fatal
 		}
 		if ok, _ := result["success"].(bool); ok {
