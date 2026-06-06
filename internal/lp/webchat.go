@@ -83,36 +83,66 @@ const (
 	return {success: false};
 })()`
 
-	// jsGetLastAssistantText extracts the text of the last assistant
-	// message via the .ds-markdown class used by DeepSeek for rendered
-	// markdown content. Returns "" when no assistant message exists.
-	// This is preferred over body.innerText diff because it naturally
-	// excludes UI chrome (search info, toggle labels, footer text).
+	// jsGetLastAssistantText extracts the text of the last assistant message
+	// from the MAIN content area (NOT the sidebar conversation list).
+	// Using .ds-markdown but filtering out elements inside sidebar/nav containers
+	// to avoid picking up conversation history previews from the left panel.
 	jsGetLastAssistantText = `(() => {
-	const els = document.querySelectorAll('.ds-markdown');
+	const all = document.querySelectorAll('.ds-markdown');
+	// Filter out elements that live in the sidebar/navigation panel.
+	const els = Array.from(all).filter(function(el) {
+		var p = el.parentElement;
+		while (p) {
+			var c = (p.className || '').toLowerCase();
+			var r = p.getAttribute && p.getAttribute('role') || '';
+			if (c.indexOf('sidebar') !== -1 || c.indexOf('navigation') !== -1 || r === 'navigation') {
+				return false;
+			}
+			p = p.parentElement;
+		}
+		return true;
+	});
 	if (els.length === 0) return '';
 	return els[els.length - 1].innerText || '';
 })()`
-	// jsSendEnter dispatches Enter keydown + keypress + keyup on the chat
+	// jsSendEnter dispatches Enter keydown → keypress → keyup on the chat
 	// textarea via JS.  Using KeyboardEvent dispatch instead of chromedp.KeyEvent
 	// because the latter may not trigger React's event handling in a remote
 	// allocator (chromium service) context.
 	// The full sequence (keydown → keypress → keyup) matches what a real
 	// keyboard produces, improving compatibility with frameworks that listen
 	// for specific events.
+	// Additionally, click the send button as a fallback to ensure the message
+	// is submitted even if the KeyboardEvent dispatch doesn't trigger React's
+	// submit handler (e.g. when focus is on the left sidebar conversation list
+	// and the textarea isn't the active element).
 	jsSendEnter = `(() => {
 		const ta = document.querySelector('textarea');
 		if (!ta) return {error: 'no textarea'};
-		ta.focus();
-		const opts = {
+		// Ensure the textarea has focus before dispatching keyboard events.
+		// This is critical when the page loads with focus on the left sidebar
+		// conversation list instead of the textarea.
+		ta.click();
+		ta.focus({preventScroll: true});
+		if (document.activeElement !== ta) {
+			ta.select();
+		}
+		var opts = {
 			key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
 			bubbles: true, cancelable: true,
 		};
 		ta.dispatchEvent(new KeyboardEvent('keydown', opts));
 		ta.dispatchEvent(new KeyboardEvent('keypress', opts));
 		ta.dispatchEvent(new KeyboardEvent('keyup', opts));
+		// Fallback: click the send button directly to ensure the message
+		// is submitted even if the KeyboardEvent didn't trigger React's handler.
+		var sendBtn = document.querySelector('[role="button"].ds-button--primary');
+		if (sendBtn && sendBtn.offsetParent !== null) {
+			sendBtn.click();
+		}
 		return {success: true};
 	})()`
+
 )
 
 // WebChat sends a message to chat.deepseek.com via a visible Chrome browser
@@ -273,9 +303,15 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, retry 
 		}
 		return nil
 	}))
+	// Focus the textarea so keyboard input goes to the right place.
+	// Without this, the left sidebar conversation list might retain focus
+	// after page navigation, causing Enter key events to go to the sidebar
+	// instead of the chat textarea.
+	actions = append(actions, chromedp.ActionFunc(func(ctx context.Context) error {
+		return chromedp.Evaluate(`document.querySelector('textarea')?.focus()`, nil).Do(ctx)
+	}))
 	// Pause for the toggle to take effect before textarea interaction.
 	actions = append(actions, chromedp.Sleep(1*time.Second))
-
 	actions = append(actions,
 		// Record baseline text before sending.
 		chromedp.Evaluate("document.body ? document.body.innerText : ''", &baseline),
