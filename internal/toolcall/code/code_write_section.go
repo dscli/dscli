@@ -88,18 +88,33 @@ func locateSectionRange(structure *parse.FileStructure, lines []string, selector
 	selectorType := strings.TrimSpace(parts[0])
 	selectorValue := strings.TrimSpace(parts[1])
 
+	var startLine, endLine int
+	var err error
+
 	switch selectorType {
 	case "function":
-		return locateFunctionRange(structure, selectorValue)
+		startLine, endLine, err = locateFunctionRange(structure, selectorValue)
 	case "class", "struct":
-		return locateClassRange(structure, selectorValue)
+		startLine, endLine, err = locateClassRange(structure, selectorValue)
 	case "method":
-		return locateMethodRange(structure, selectorValue)
+		startLine, endLine, err = locateMethodRange(structure, selectorValue)
 	case "lines":
-		return locateLinesRange(lines, selectorValue)
+		startLine, endLine, err = locateLinesRange(lines, selectorValue)
 	default:
 		return 0, 0, fmt.Errorf("不支持的selector类型: %s，支持的类型: function, class, struct, method, lines", selectorType)
 	}
+	if err != nil {
+		return 0, 0, err
+	}
+
+	// 防止解析器返回的 endLine 超出文件长度
+	// tree-sitter 的 end_lineno 是 exclusive（末行之后的行），
+	// 当代码块在文件末尾时会出现 endLine = len(lines) + 1
+	if endLine > len(lines) {
+		endLine = len(lines)
+	}
+
+	return startLine, endLine, nil
 }
 
 // locateFunctionRange 定位函数的行范围
@@ -185,7 +200,11 @@ func buildWriteResult(path, selector string, startLine, endLine int, lines []str
 	// 显示原内容
 	sb.WriteString("\n📄 原内容:\n")
 	sb.WriteString("```\n")
-	for i := startLine - 1; i < endLine; i++ {
+	safeEnd := endLine
+	if safeEnd > len(lines) {
+		safeEnd = len(lines)
+	}
+	for i := startLine - 1; i < safeEnd; i++ {
 		fmt.Fprintf(&sb, "%d: %s\n", i+1, lines[i])
 	}
 	sb.WriteString("```\n")
