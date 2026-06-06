@@ -93,6 +93,21 @@ const (
 	if (els.length === 0) return '';
 	return els[els.length - 1].innerText || '';
 })()`
+	// jsSendEnter dispatches Enter keydown on the chat textarea via JS.
+	// Using KeyboardEvent dispatch instead of chromedp.KeyEvent because
+	// the latter may not trigger React's event handling in a remote
+	// allocator context.
+	jsSendEnter = `(() => {
+		const ta = document.querySelector('textarea');
+		if (!ta) return {error: 'no textarea'};
+		ta.focus();
+		const ev = new KeyboardEvent('keydown', {
+			key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+			bubbles: true, cancelable: true,
+		});
+		ta.dispatchEvent(ev);
+		return {success: true};
+	})()`
 )
 
 // WebChat sends a message to chat.deepseek.com via a visible Chrome browser
@@ -129,41 +144,61 @@ func WebChatContinue(ctx context.Context, message string) (string, error) {
 
 // webChatWithURL is the common implementation shared by WebChat
 // (new conv, empty url) and WebChatContinue (saved url).
+//
+// It tries to use the running dscli-chromium service first. If the service is
+// unavailable, it falls back to launching a local Chrome/Chromium instance.
+// When local Chrome is used, the browser is closed after each call; when the
+// remote service is used, the browser stays running.
 func webChatWithURL(ctx context.Context, conversationURL, message string) (string, error) {
-	chromePath, err := findChrome()
-	if err != nil {
-		return "", err
-	}
+	var tabCtx context.Context
 
-	userDataDir, err := chromeUserDataDir()
-	if err != nil {
-		return "", err
-	}
-
-	opts := []chromedp.ExecAllocatorOption{
-		chromedp.ExecPath(chromePath),
-		chromedp.UserDataDir(userDataDir),
-		chromedp.Flag("disable-blink-features", "AutomationControlled"),
-		chromedp.Flag("no-first-run", true),
-		chromedp.Flag("no-default-browser-check", true),
-		chromedp.Flag("disable-session-crashed-bubble", true),
-		chromedp.NoSandbox,
-	}
-
-	allocCtx, allocCancel := chromedp.NewExecAllocator(ctx, opts...)
-	defer allocCancel()
-
-	tabCtx, tabCancel := chromedp.NewContext(allocCtx)
-	defer tabCancel()
-
-	// Graceful browser shutdown before the defers kill the process.
-	defer func() {
-		if err := chromedp.Run(tabCtx, browser.Close()); err != nil {
-			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-				fmt.Fprintf(os.Stderr, "⚠️ browser.Close() failed: %v\n", err)
-			}
+	// Try remote chromium service first.
+	if IsChromiumAvailable() {
+		ctx2, cancel, err := ConnectChromium(ctx)
+		if err == nil {
+			tabCtx = ctx2
+			defer cancel()
+			fmt.Fprintf(os.Stderr, "🌐 连接到 Chromium 服务 (%s)\n", chromiumAddr())
 		}
-	}()
+	}
+
+	// Fall back to launching local Chrome.
+	if tabCtx == nil {
+		chromePath, err := findChrome()
+		if err != nil {
+			return "", err
+		}
+		userDataDir, err := chromeUserDataDir()
+		if err != nil {
+			return "", err
+		}
+
+		opts := []chromedp.ExecAllocatorOption{
+			chromedp.ExecPath(chromePath),
+			chromedp.UserDataDir(userDataDir),
+			chromedp.Flag("disable-blink-features", "AutomationControlled"),
+			chromedp.Flag("no-first-run", true),
+			chromedp.Flag("no-default-browser-check", true),
+			chromedp.Flag("disable-session-crashed-bubble", true),
+			chromedp.NoSandbox,
+		}
+
+		allocCtx, allocCancel := chromedp.NewExecAllocator(ctx, opts...)
+		defer allocCancel()
+
+		var tabCancel func()
+		tabCtx, tabCancel = chromedp.NewContext(allocCtx)
+		defer tabCancel()
+
+		// Graceful browser shutdown before the defers kill the process.
+		defer func() {
+			if err := chromedp.Run(tabCtx, browser.Close()); err != nil {
+				if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+					fmt.Fprintf(os.Stderr, "⚠️ browser.Close() failed: %v\n", err)
+				}
+			}
+		}()
+	}
 
 	response, finalURL, err := webchatSend(tabCtx, conversationURL, message, 0)
 	if err != nil {
@@ -245,9 +280,12 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, retry 
 			return webchatSetValue(ctx, message)
 		}),
 
-		// Brief delay then press Enter to send.
+		// Brief delay then dispatch Enter via JS to send.
+		// JS KeyboardEvent dispatch is used instead of chromedp.KeyEvent
+		// because the latter may not trigger React's event handling in a
+		// remote allocator context (chromium service).
 		chromedp.Sleep(500*time.Millisecond),
-		chromedp.KeyEvent("\r"),
+		chromedp.Evaluate(jsSendEnter, nil),
 
 		// Wait for and extract the assistant response.
 		chromedp.ActionFunc(func(ctx context.Context) error {

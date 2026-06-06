@@ -19,7 +19,7 @@ import (
 // Services should be created via 'dscli service create dscli-chromium'.
 // See 'dscli service create --help' for usage.
 const (
-	chromiumHost = "127.2.2.9"
+	chromiumHost = "127.0.0.1"
 	chromiumPort = "9228"
 )
 
@@ -67,7 +67,7 @@ func IsChromiumAvailable() bool {
 //
 // Since the browser lifecycle is managed externally (via dscli service),
 // only the tab context is cancelled — the browser itself is never closed.
-func ConnectChromium(ctx context.Context) (allocCtx context.Context, tabCancel func(), _ error) {
+func ConnectChromium(ctx context.Context) (context.Context, func(), error) {
 	wsURL, err := chromiumCDPURL()
 	if err != nil {
 		return nil, nil, fmt.Errorf("connect chromium: %w", err)
@@ -101,7 +101,6 @@ func chromiumServiceCommand() (*exec.Cmd, error) {
 	args := []string{
 		chromePath,
 		"--remote-debugging-port=" + chromiumPort,
-		"--remote-debugging-address=" + chromiumHost,
 		"--no-first-run",
 		"--no-default-browser-check",
 		"--disable-session-crashed-bubble",
@@ -128,4 +127,3 @@ func waitForInterrupt() {
 	<-sigCh
 	signal.Stop(sigCh)
 }
-
