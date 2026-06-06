@@ -812,18 +812,12 @@ func setWxContent(ctx context.Context, contentHTML string) error {
 			}
 			return false;
 		})()`, quoted),
-		// Pattern 3: Direct contenteditable div (skip title-like elements)
+		// Pattern 3: Direct contenteditable divs (skip any element inside a title container)
 		fmt.Sprintf(`(() => {
 			const els = document.querySelectorAll('[contenteditable="true"]');
 			for (const el of els) {
-				const tag = el.tagName.toLowerCase();
-				const cls = (el.className || '').toLowerCase();
-				const id = (el.id || '').toLowerCase();
-				const role = (el.getAttribute('data-role') || '').toLowerCase();
-				// Skip title-like elements — title div is contenteditable and comes first in DOM
-				if (id.indexOf('title') !== -1 || cls.indexOf('title') !== -1 || role === 'title') continue;
-				// Skip standalone input elements (title or author field)
-				if (tag === 'input') continue;
+				if (el.closest('[class*="title"],[id*="title"]')) continue;
+				if (el.tagName === 'INPUT') continue;
 				el.innerHTML = %s;
 				el.dispatchEvent(new Event('input', {bubbles: true}));
 				return true;
@@ -867,17 +861,13 @@ func setWxContent(ctx context.Context, contentHTML string) error {
 			}
 			return false;
 		})()`, quoted),
-		// Pattern 7: ProseMirror / TipTap / contenteditable fallback (skip title elements)
+		// Pattern 7: ProseMirror / [contenteditable] fallback (skip title containers)
 		fmt.Sprintf(`(() => {
-			const editors = document.querySelectorAll('.ProseMirror, .tiptap, [contenteditable]');
-			for (const editor of editors) {
-				const cls = (editor.className || '').toLowerCase();
-				const id = (editor.id || '').toLowerCase();
-				const role = (editor.getAttribute('data-role') || '').toLowerCase();
-				// Skip title-like elements
-				if (id.indexOf('title') !== -1 || cls.indexOf('title') !== -1 || role === 'title') continue;
-				editor.innerHTML = %s;
-				editor.dispatchEvent(new Event('input', {bubbles: true}));
+			const els = document.querySelectorAll('.ProseMirror, .tiptap, [contenteditable]');
+			for (const el of els) {
+				if (el.closest('[class*="title"],[id*="title"]')) continue;
+				el.innerHTML = %s;
+				el.dispatchEvent(new Event('input', {bubbles: true}));
 				return true;
 			}
 			return false;
@@ -1319,15 +1309,14 @@ func WebWxDraft(ctx context.Context, params WeChatDraftParams) error {
 	// Set true when automation reaches the end but saves aren't verified.
 	var saveFailed bool
 	defer func() {
-		tabCancel()
 		switch {
 		case params.Debug:
-			// Debug mode: keep browser open for manual inspection.
 			fmt.Fprintf(os.Stderr, "🔍 调试模式：浏览器保持打开，请手动检查后关闭\n")
 		case saveFailed:
 			fmt.Fprintf(os.Stderr, "🔴 自动保存未确认，请手动保存草稿后关闭浏览器\n")
 		default:
-			allocCancel() // closes the browser process
+			tabCancel()
+			allocCancel()
 		}
 	}()
 	// --- Phase 2: Preview the local HTML ---
@@ -1444,6 +1433,6 @@ func WebWxDraft(ctx context.Context, params WeChatDraftParams) error {
 		return nil
 	}
 
-	fmt.Fprintf(os.Stderr, "✅ 草稿已成功保存并关闭浏览器\n")
+	fmt.Fprintf(os.Stderr, "✅ 草稿已成功保存\n")
 	return nil
 }
