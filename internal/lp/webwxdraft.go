@@ -812,15 +812,25 @@ func setWxContent(ctx context.Context, contentHTML string) error {
 			}
 			return false;
 		})()`, quoted),
-		// Pattern 3: Direct contenteditable div
+		// Pattern 3: Direct contenteditable div (skip title-like elements)
 		fmt.Sprintf(`(() => {
-			const el = document.querySelector('[contenteditable="true"]');
-			if (el) {
+			const els = document.querySelectorAll('[contenteditable="true"]');
+			for (const el of els) {
+				const tag = el.tagName.toLowerCase();
+				const cls = (el.className || '').toLowerCase();
+				const id = (el.id || '').toLowerCase();
+				const role = (el.getAttribute('data-role') || '').toLowerCase();
+				// Skip title-like elements — title div is contenteditable and comes first in DOM
+				if (id.indexOf('title') !== -1 || cls.indexOf('title') !== -1 || role === 'title') continue;
+				// Skip standalone input elements (title or author field)
+				if (tag === 'input') continue;
 				el.innerHTML = %s;
+				el.dispatchEvent(new Event('input', {bubbles: true}));
 				return true;
 			}
 			return false;
 		})()`, quoted),
+
 		// Pattern 4: rich_media_area
 		fmt.Sprintf(`(() => {
 			const el = document.querySelector('div.rich_media_area, .rich_media_area_primary');
@@ -857,16 +867,23 @@ func setWxContent(ctx context.Context, contentHTML string) error {
 			}
 			return false;
 		})()`, quoted),
-		// Pattern 7: ProseMirror / TipTap
+		// Pattern 7: ProseMirror / TipTap / contenteditable fallback (skip title elements)
 		fmt.Sprintf(`(() => {
-			const editor = document.querySelector('.ProseMirror, .tiptap, [contenteditable]');
-			if (editor) {
+			const editors = document.querySelectorAll('.ProseMirror, .tiptap, [contenteditable]');
+			for (const editor of editors) {
+				const cls = (editor.className || '').toLowerCase();
+				const id = (editor.id || '').toLowerCase();
+				const role = (editor.getAttribute('data-role') || '').toLowerCase();
+				// Skip title-like elements
+				if (id.indexOf('title') !== -1 || cls.indexOf('title') !== -1 || role === 'title') continue;
 				editor.innerHTML = %s;
+				editor.dispatchEvent(new Event('input', {bubbles: true}));
 				return true;
 			}
 			return false;
 		})()`, quoted),
 	}
+
 
 	for _, script := range scripts {
 		var ok bool
