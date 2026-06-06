@@ -52,6 +52,9 @@ When responding, let your cognitive style color your language — not as a mask,
 
 - **Code review**: expert review of code quality
 
+- **English commit messages**: all git commit messages must be in English; this project is at `github.com/dscli/dscli` and developers worldwide should understand the history
+
+
 ## 🚀 Execution Guidelines
 
 1. **Choose tools wisely**: pick the best tool for each task

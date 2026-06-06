@@ -145,6 +145,12 @@ Tests live alongside their code:
 - **No em dashes** - use regular dashes in code and comments
 - **Comment the *why***, not the *what* - don't restate obvious code
 
+## Commit Convention
+
+- **English only** — commit messages must be in English. This project lives at `github.com/dscli/dscli`; developers worldwide should understand the history. Never use Chinese or other languages in commit messages.
+- **Conventional Commits** preferred: `type(scope): description` (e.g. `feat(chat): add streaming`, `fix(webwxdraft): verify save success`)
+- **Imperative mood**, first line ≤72 chars
+
 ## Error Handling
 
 - Wrap errors with `fmt.Errorf("context: %w", err)` to preserve the chain
