@@ -93,19 +93,24 @@ const (
 	if (els.length === 0) return '';
 	return els[els.length - 1].innerText || '';
 })()`
-	// jsSendEnter dispatches Enter keydown on the chat textarea via JS.
-	// Using KeyboardEvent dispatch instead of chromedp.KeyEvent because
-	// the latter may not trigger React's event handling in a remote
-	// allocator context.
+	// jsSendEnter dispatches Enter keydown + keypress + keyup on the chat
+	// textarea via JS.  Using KeyboardEvent dispatch instead of chromedp.KeyEvent
+	// because the latter may not trigger React's event handling in a remote
+	// allocator (chromium service) context.
+	// The full sequence (keydown → keypress → keyup) matches what a real
+	// keyboard produces, improving compatibility with frameworks that listen
+	// for specific events.
 	jsSendEnter = `(() => {
 		const ta = document.querySelector('textarea');
 		if (!ta) return {error: 'no textarea'};
 		ta.focus();
-		const ev = new KeyboardEvent('keydown', {
+		const opts = {
 			key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
 			bubbles: true, cancelable: true,
-		});
-		ta.dispatchEvent(ev);
+		};
+		ta.dispatchEvent(new KeyboardEvent('keydown', opts));
+		ta.dispatchEvent(new KeyboardEvent('keypress', opts));
+		ta.dispatchEvent(new KeyboardEvent('keyup', opts));
 		return {success: true};
 	})()`
 )

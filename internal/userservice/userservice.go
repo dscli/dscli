@@ -103,7 +103,7 @@ func Refresh(name string) error {
 	}
 	return Create(name, cfg.Desc, cmd)
 }
-//
+
 // Start auto-refreshes the service configuration if it is stale
 // (dscli or config updated since the service was last created), then
 // starts the service.
@@ -194,6 +194,12 @@ func List() ([]string, error) {
 // stale configurations by recreating them from the registry entry.
 // It is only returned when the auto-refresh itself fails AND the
 // service is not running.
+//
+// Note on auto-refresh: refreshing the unit file does NOT restart the
+// running service process.  A running service continues with the old
+// binary/config until it is explicitly restarted.  For dscli-managed
+// services this is acceptable because command-line arguments rarely
+// change between versions.
 //
 // Status returns an error only when it cannot determine the state
 // (e.g. home directory unavailable).

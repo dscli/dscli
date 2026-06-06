@@ -30,9 +30,13 @@ func chromiumAddr() string {
 
 // chromiumCDPURL queries the chromium HTTP endpoint at chromiumAddr()
 // for the WebSocket debugger URL that chromedp uses to connect.
-func chromiumCDPURL() (string, error) {
+func chromiumCDPURL(ctx context.Context) (string, error) {
 	url := fmt.Sprintf("http://%s/json/version", chromiumAddr())
-	resp, err := http.Get(url) //nolint:noctx
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("chromium create request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("chromium HTTP endpoint unreachable: %w", err)
 	}
@@ -68,7 +72,7 @@ func IsChromiumAvailable() bool {
 // Since the browser lifecycle is managed externally (via dscli service),
 // only the tab context is cancelled — the browser itself is never closed.
 func ConnectChromium(ctx context.Context) (context.Context, func(), error) {
-	wsURL, err := chromiumCDPURL()
+	wsURL, err := chromiumCDPURL(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("connect chromium: %w", err)
 	}
