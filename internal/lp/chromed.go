@@ -13,17 +13,17 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
-	"github.com/dscli/dscli/internal/userservice"
 )
 
-// Chromium service constants.
+// Chromium remote debugging constants.
+// Services should be created via 'dscli service create dscli-chromium'.
+// See 'dscli service create --help' for usage.
 const (
-	ChromiumServiceName = "dscli-chromium"
-	chromiumHost        = "127.2.2.9"
-	chromiumPort        = "9228"
+	chromiumHost = "127.2.2.9"
+	chromiumPort = "9228"
 )
 
-// chromiumAddr returns the host:port address for the chromium service.
+// chromiumAddr returns the host:port address for the chromium instance.
 func chromiumAddr() string {
 	return fmt.Sprintf("%s:%s", chromiumHost, chromiumPort)
 }
@@ -61,12 +61,12 @@ func IsChromiumAvailable() bool {
 	return true
 }
 
-// ConnectChromium connects to a running chromium service and returns a
+// ConnectChromium connects to a running chromium instance and returns a
 // chromedp remote allocator context.  The caller must call the returned
 // cancel function when done with the tab.
 //
-// Since the browser lifecycle is managed by the service, only the tab
-// context is cancelled — the browser itself is never closed.
+// Since the browser lifecycle is managed externally (via dscli service),
+// only the tab context is cancelled — the browser itself is never closed.
 func ConnectChromium(ctx context.Context) (allocCtx context.Context, tabCancel func(), _ error) {
 	wsURL, err := chromiumCDPURL()
 	if err != nil {
@@ -86,6 +86,7 @@ func ConnectChromium(ctx context.Context) (allocCtx context.Context, tabCancel f
 
 // chromiumServiceCommand returns the *exec.Cmd that runs chromium as a
 // background service with remote debugging enabled.
+// This is used by the user via: dscli service create dscli-chromium <<EOF
 func chromiumServiceCommand() (*exec.Cmd, error) {
 	chromePath, err := findChrome()
 	if err != nil {
@@ -118,51 +119,6 @@ func chromiumServiceCommand() (*exec.Cmd, error) {
 	return cmd, nil
 }
 
-// SetupChromiumService creates (or updates) and starts the chromium systemd
-// user service.  It waits up to 15 seconds for the service to become
-// reachable on the CDP port.
-func SetupChromiumService() error {
-	cmd, err := chromiumServiceCommand()
-	if err != nil {
-		return fmt.Errorf("chromium service: %w", err)
-	}
-
-	desc := "Chromium headless browser for dscli"
-
-	st, err := userservice.Status(ChromiumServiceName)
-	if err != nil {
-		return fmt.Errorf("query chromium service status: %w", err)
-	}
-
-	// Fast path: service is already running and reachable.
-	if st == "running" && IsChromiumAvailable() {
-		return nil
-	}
-
-	// If the service was already running (stale or unreachable), restart.
-	needsRestart := IsChromiumAvailable()
-
-	// Create/update configuration (idempotent — skips if content unchanged).
-	if err := userservice.Create(ChromiumServiceName, desc, cmd); err != nil {
-		return fmt.Errorf("create chromium user service: %w", err)
-	}
-
-	if needsRestart {
-		_ = userservice.Stop(ChromiumServiceName)
-	}
-
-	if err := userservice.Start(ChromiumServiceName); err != nil {
-		return fmt.Errorf("start chromium service: %w", err)
-	}
-
-	// Wait up to 15 seconds for the service to open the CDP port.
-	if err := waitForTCP(chromiumHost, chromiumPort, 15*time.Second); err != nil {
-		return fmt.Errorf("chromium service did not become reachable within 15s: %w", err)
-	}
-
-	return nil
-}
-
 // waitForInterrupt blocks until SIGINT (Ctrl+C) or SIGTERM is received.
 // This is used to keep a locally-launched Chrome alive until the user
 // finishes inspecting the browser.
@@ -172,3 +128,4 @@ func waitForInterrupt() {
 	<-sigCh
 	signal.Stop(sigCh)
 }
+
