@@ -200,13 +200,14 @@ func collectFileContents(ctx context.Context, n int) string {
 			continue
 		}
 
-		// 格式: STATUS\tfile
-		parts := strings.SplitN(line, "\t", 2)
-		if len(parts) != 2 {
+		// 格式: STATUS[ old]\tfile  (R/C 状态有 3 字段: R100\told\tnew)
+		// 始终取最后一个字段作为文件路径
+		fields := strings.Split(line, "\t")
+		if len(fields) < 2 {
 			continue
 		}
-		status := parts[0]
-		file := parts[1]
+		status := fields[0]
+		file := fields[len(fields)-1]
 
 		if status == "D" {
 			fmt.Fprintf(&sb, "\n## File: %s\n[文件已删除]\n", file)
