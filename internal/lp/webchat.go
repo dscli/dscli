@@ -19,10 +19,6 @@ import (
 // Callers should trigger a visible login flow and retry.
 var ErrLoginRequired = errors.New("login required — open visible browser to complete login")
 
-// ErrNoConversation is returned by WebChatContinue when no previous
-// conversation exists to continue.
-var ErrNoConversation = errors.New("no previous conversation — start a new one first")
-
 const (
 	deepseekChatURL = "https://chat.deepseek.com"
 
@@ -52,14 +48,10 @@ const (
 	//   data-model-type="default" → 快速模式 (quick)
 	//   data-model-type="<other>"  → 专家模式 / V4 Pro (expert)
 	//
-	// Primary strategy: find the radio with data-model-type != "default" and
-	// click it. This is stable across UI changes because the attribute is
-	// structural, not textual.
-	//
-	// Fallback: if no data-model-type radios are found (older UI), search for
-	// the thinking/deepthink toggle by text content.
+	// Strategy: find the radio with data-model-type != "default" and click it.
+	// This is stable across UI changes because the attribute is structural,
+	// not textual.
 	jsEnableDeepThink = `(() => {
-	// Strategy 1: data-model-type radio buttons (current UI).
 	for (const el of document.querySelectorAll('[data-model-type]')) {
 		if (el.getAttribute('data-model-type') !== 'default') {
 			el.click();
@@ -133,6 +125,17 @@ const (
 	})()`
 )
 
+// WebChat sends a message to chat.deepseek.com via a local Chrome/Chromium
+// browser and returns the assistant's text response.
+//
+// The browser is launched fresh for each call and closed after the response is
+// received. Cookies persist via the shared Chrome profile directory, so prior
+// login state is available across calls.
+//
+// If ctx carries context.KeepKey set to true, WebChat attempts to continue the
+// last saved conversation (loaded from the profile directory) rather than
+// starting a new one. New conversations automatically enable expert mode
+// (V4 Pro).
 func WebChat(ctx context.Context, message string) (string, error) {
 	keep := context.ContextValue(ctx, context.KeepKey, false)
 	convURL := ""
@@ -142,6 +145,8 @@ func WebChat(ctx context.Context, message string) (string, error) {
 	return webChatWithURL(ctx, convURL, message)
 }
 
+// webChatWithURL is the common implementation shared by WebChat
+// (new conv, empty url) and continue (saved url).
 func webChatWithURL(ctx context.Context, conversationURL, message string) (string, error) {
 	ctx, cancel, err := NewChromium(ctx)
 	if err != nil {
@@ -162,6 +167,9 @@ func webChatWithURL(ctx context.Context, conversationURL, message string) (strin
 	return response, nil
 }
 
+// webchatSend sends a message and returns the response plus the final page URL
+// (which contains the conversation ID for continuation). If login is needed,
+// it triggers a manual login flow in the same Chrome session and retries once.
 func webchatSend(tabCtx context.Context, conversationURL, message string, retry int) (string, string, error) {
 	navURL := conversationURL
 	if navURL == "" {

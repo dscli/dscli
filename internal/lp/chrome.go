@@ -43,6 +43,14 @@ func chromeUserDataDir() (string, error) {
 	return dir, nil
 }
 
+// NetworkCheck verifies that the target URL's host is reachable via TCP
+// before launching a browser. This avoids wasting time on a truly down
+// network — Chrome would otherwise report ERR_INTERNET_DISCONNECTED and
+// fail after a much longer timeout.
+//
+// The check connects directly from the host, bypassing Chrome's network
+// stack, so it only fails when the host actually has no connectivity.
+// On URL parse errors the check is skipped (assume reachable).
 func NetworkCheck(rawURL string) error {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -66,6 +74,17 @@ func NetworkCheck(rawURL string) error {
 	return nil
 }
 
+// NewChromium creates a new chromedp ExecAllocator backed by a local
+// Chrome/Chromium browser. The caller must call the returned cancel func
+// to shut down the browser when done.
+//
+// Usage:
+//
+//	ctx, cancel, err := NewChromium(parentCtx)
+//	if err != nil { return err }
+//	defer cancel()
+//	tabCtx, tabCancel := chromedp.NewContext(ctx)
+//	defer tabCancel()
 func NewChromium(ctx context.Context) (context.Context, func(), error) {
 	chromePath, err := findChrome()
 	if err != nil {

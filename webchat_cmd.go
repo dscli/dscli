@@ -38,7 +38,7 @@ func init() {
 	})
 
 	webchatCmd.Flags().String("input", "", "从文件读取消息（使用 - 表示从 stdin 读取）")
-	webchatCmd.Flags().Bool("keep", false, "继续上次对话（--keep 保持；默认关闭，开新对话）")
+	webchatCmd.Flags().Bool("keep", false, "继续上次对话（默认开新对话）")
 }
 
 func webchatRunE(cmd *cobra.Command, args []string) error {
