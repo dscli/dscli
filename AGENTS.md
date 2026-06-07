@@ -148,7 +148,7 @@ Tests live alongside their code:
 ## Commit Convention
 
 - **English only** — commit messages must be in English. This project lives at `github.com/dscli/dscli`; developers worldwide should understand the history. Never use Chinese or other languages in commit messages.
-- **Conventional Commits** preferred: `type(scope): description` (e.g. `feat(chat): add streaming`, `fix(webwxdraft): verify save success`)
+- **Conventional Commits** preferred: `type(scope): description` (e.g. `feat(chat): add streaming`, `fix(lp): handle nil context`)
 - **Imperative mood**, first line ≤72 chars
 
 ## Error Handling
@@ -177,41 +177,7 @@ Key skills for development:
 - `fix-dup-comments` - Remove duplicate comment lines
 - `pkgsite-api` - Query pkg.go.dev API
 
-## WebWxDraft (微信公众号草稿上传)
-
-**File**: `internal/lp/webwxdraft.go` — Chrome automation via chromedp to upload HTML as a WeChat Official Account draft.
-
-### Key Functions
-
-| Function | Role |
-|----------|------|
-| `WebWxDraft` | Main entry — reads HTML, launches Chrome, logs in, fills editor, uploads images, saves |
-| `setWxTitle` | Sets title — tries selectors in cascade (input#title → div#js_editor_title → .title_input → ...) |
-| `setWxAuthor` | Sets author — may click an edit button first to open a dialog |
-| `setWxContent` | Pastes body HTML — tries iframe → contenteditable → rich_media_area → window.ue API |
-| `uploadWxImage` | Uploads single image — clicks toolbar button, if menu appears→clicks「本地上传」, finds file input |
-| `saveWxDraftWithVerify` | Clicks save button then verifies success (returns bool, not error) |
-| `verifySaveSuccess` | Checks for「保存成功」toast or「已保存」button state after save click |
-| `inspectEditorPage` | Debug mode — probes DOM to find title/author/content/image/save selectors |
-
-### Critical Lessons (learned through hard failures)
-
-1. **Save must be verified**: The old `saveWxDraft` scanned ALL elements containing「保存」and clicked the first match — often hitting a toast/label/disabled element, not the actual save button. It would print「草稿已保存」but nothing was saved.
-
-2. **Selector order matters**: Put specific selectors first (`#js_article_save` → class/attr → exact text match → broad `indexOf` fallback). Each click is followed by `verifySaveSuccess`; if not confirmed, try next selector.
-
-3. **Browser close is conditional**: If saves are not verified, the browser is left open for manual save. The `closeBrowser` flag in `WebWxDraft` controls this — `allocCancel()` only runs if `closeBrowser == true`.
-
-4. **Image upload needs Step 2.5**: After clicking the image toolbar button, a menu may appear. Must scan for「本地上传」text and click it before the file input is exposed. Without this, the upload silently fails.
-
-5. **`bodyContent` vs renderedBody**: The HTML file is read from disk for simplicity, but the rendered body (after Chrome renders it) is used for the editor — this preserves any transformations the browser applied.
-
-### Debugging
-
-Use `--debug` flag to probe DOM structure before writing new selectors. The `inspectEditorPage` function prints title/content/image/save selectors found on the page.
-
 ## AI Assistant Context
-
 AI assistants: your tool set and behavior contract are defined in `internal/prompt/` templates
 (dev/expert/review). This AGENTS.md is the **project-specific supplement** — read it before
 writing code to understand build commands, architecture, and conventions unique to dscli.
