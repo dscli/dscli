@@ -34,6 +34,7 @@ var (
 	AINameBirdFrogKey     = ContextKeyType[string]{"AINameBirdFrog"}
 	GitUserNameKey        = ContextKeyType[string]{"GitUserName"}
 	GitUserEmailKey       = ContextKeyType[string]{"GitUserEmail"}
+	KeepKey               = ContextKeyType[bool]{"Keep"}
 )
 
 var (
@@ -41,6 +42,7 @@ var (
 	WithValue        = context.WithValue
 	WithCancel       = context.WithCancel
 	DeadlineExceeded = context.DeadlineExceeded
+	Canceled         = context.Canceled
 	Background       = context.Background
 	TODO             = context.TODO
 )

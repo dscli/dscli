@@ -2,14 +2,14 @@ package lp
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
 
-	"github.com/chromedp/cdproto/browser"
 	"github.com/chromedp/chromedp"
 )
 
@@ -43,37 +43,39 @@ func chromeUserDataDir() (string, error) {
 	return dir, nil
 }
 
-// DeepSeekLoginChrome performs login to chat.deepseek.com using a local
-// Chrome/Chromium browser. This is preferred over the Lightpanda-native
-// login because Chrome properly renders the Shumei captcha widget.
-func DeepSeekLoginChrome(ctx context.Context, phone string, codeReader func() (string, error)) error {
-	return DeepSeekLoginChromeOpts(ctx, phone, codeReader, false)
+func NetworkCheck(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil // can't parse, skip check
+	}
+	host := u.Hostname()
+	port := u.Port()
+	if port == "" {
+		if u.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	addr := net.JoinHostPort(host, port)
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		return fmt.Errorf("网络不可达 (%s): %w", host, err)
+	}
+	_ = conn.Close()
+	return nil
 }
 
-// DeepSeekLoginChromeOpts is like DeepSeekLoginChrome but allows disabling
-// headless mode via the visible parameter (useful for manual captcha solving).
-func DeepSeekLoginChromeOpts(ctx context.Context, phone string, codeReader func() (string, error), visible bool) error {
+func NewChromium(ctx context.Context) (context.Context, func(), error) {
 	chromePath, err := findChrome()
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
-
-	mode := "headless"
-	if visible {
-		mode = "visible"
-	}
-	fmt.Fprintf(os.Stderr, "🌐 使用 Chrome (%s, %s) 登录 DeepSeek...\n", chromePath, mode)
-
 	userDataDir, err := chromeUserDataDir()
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
-	// Build allocator options. We use --headless=new (the newer headless
-	// mode that is harder for sites to detect as automation) and disable
-	// the "Chrome is being controlled by automated software" infobar.
-	// UserDataDir ensures cookies persist across sessions — webchat reuses
-	// the same profile so it picks up the login session automatically.
 	opts := []chromedp.ExecAllocatorOption{
 		chromedp.ExecPath(chromePath),
 		chromedp.UserDataDir(userDataDir),
@@ -83,29 +85,6 @@ func DeepSeekLoginChromeOpts(ctx context.Context, phone string, codeReader func(
 		chromedp.Flag("disable-session-crashed-bubble", true),
 		chromedp.NoSandbox,
 	}
-	if !visible {
-		opts = append(opts, chromedp.Flag("headless", "new"))
-	}
-
-	// Create a context with timeout for the whole login process.
-	// Give ample time: user needs to receive SMS and type the code.
-	allocCtx, allocCancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer allocCancel()
-
-	allocCtx, allocCancel = chromedp.NewExecAllocator(allocCtx, opts...)
-	defer allocCancel()
-
-	tabCtx, tabCancel := chromedp.NewContext(allocCtx)
-	defer tabCancel()
-
-	// Graceful browser shutdown before the defers kill the process.
-	defer func() {
-		if err := chromedp.Run(tabCtx, browser.Close()); err != nil {
-			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-				fmt.Fprintf(os.Stderr, "⚠️ browser.Close() failed: %v\n", err)
-			}
-		}
-	}()
-
-	return deepseekLogin(tabCtx, phone, codeReader, visible)
+	allocCtx, allocCancel := chromedp.NewExecAllocator(ctx, opts...)
+	return allocCtx, allocCancel, nil
 }

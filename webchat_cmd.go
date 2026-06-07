@@ -1,14 +1,15 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/lp"
+	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/spf13/cobra"
 )
 
@@ -46,33 +47,21 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	ctx := cmd.Context()
-
 	keep, _ := cmd.Flags().GetBool("keep")
 
+	ctx := context.WithValue(cmd.Context(), context.KeepKey, keep)
 	var response string
 	startTime := time.Now()
 
-	if keep {
-		// Try to continue; fall back to new conversation if none exists.
-		response, err = lp.WebChatContinue(ctx, message)
-		if errors.Is(err, lp.ErrNoConversation) {
-			fmt.Fprintf(os.Stderr, "📤 发送到 DeepSeek Web（新对话）...\n")
-			response, err = lp.WebChat(ctx, message)
-		} else {
-			fmt.Fprintf(os.Stderr, "📤 继续上次对话，发送到 DeepSeek Web...\n")
-		}
-	} else {
-		fmt.Fprintf(os.Stderr, "📤 发送到 DeepSeek Web（新对话）...\n")
-		response, err = lp.WebChat(ctx, message)
-	}
+	outfmt.Printf("📤 发送到 DeepSeek Web ...\n")
+	response, err = lp.WebChat(ctx, message)
 
 	if err != nil {
 		return fmt.Errorf("webchat 失败: %w", err)
 	}
 
 	elapsed := time.Since(startTime)
-	fmt.Fprintf(os.Stderr, "📥 收到回复 (%.1fs)\n\n", elapsed.Seconds())
+	outfmt.Printf("📥 收到回复 (%.1fs)\n\n", elapsed.Seconds())
 	fmt.Println(response)
 
 	return nil

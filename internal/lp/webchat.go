@@ -1,7 +1,6 @@
 package lp
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,7 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chromedp/cdproto/browser"
+	"github.com/dscli/dscli/internal/context"
+
 	"github.com/chromedp/chromedp"
 )
 
@@ -64,20 +64,6 @@ const (
 		if (el.getAttribute('data-model-type') !== 'default') {
 			el.click();
 			return {success: true, modelType: el.getAttribute('data-model-type'), method: 'data-model-type'};
-		}
-	}
-	// Strategy 2: text-based toggle (older UI).
-	const patterns = ['深度思考','DeepThink','Deep Think',
-		'V4 Pro','V4Pro','v4 pro','v4pro',
-		'R1','V4','专家','深度'];
-	for (const el of document.querySelectorAll('div,button,span,label')) {
-		const t = (el.textContent || '').trim();
-		if (t.length === 0 || t.length >= 40) continue;
-		for (const p of patterns) {
-			if (t.includes(p)) {
-				el.click();
-				return {success: true, clicked: t, method: 'text'};
-			}
 		}
 	}
 	return {success: false};
@@ -145,100 +131,26 @@ const (
 		}
 		return {success: true};
 	})()`
-
 )
 
-// WebChat sends a message to chat.deepseek.com via a visible Chrome browser
-// and returns the assistant's text response. Each call starts a **new**
-// conversation; the conversation state is saved so it can be continued later
-// via WebChatContinue.
-//
-// It uses the same Chrome user data directory as DeepSeekLoginChromeOpts,
-// so cookies from a prior login are automatically available. If not logged
-// in, a visible login flow is triggered automatically in the same browser
-// session — no separate WebChatLogin call needed.
-//
-// New conversations automatically enable expert mode (V4 Pro).
-//
-// Usage:
-//
-//	response, err := lp.WebChat(ctx, "hello")
 func WebChat(ctx context.Context, message string) (string, error) {
-	return webChatWithURL(ctx, "", message)
-}
-
-// WebChatContinue sends a message continuing the last conversation saved
-// by a previous WebChat call. The conversation state is loaded from the
-// shared Chrome profile directory.
-//
-// Returns ErrNoConversation if no previous conversation exists.
-func WebChatContinue(ctx context.Context, message string) (string, error) {
-	convURL := loadConversationURL()
-	if convURL == "" {
-		return "", ErrNoConversation
+	keep := context.ContextValue(ctx, context.KeepKey, false)
+	convURL := ""
+	if keep {
+		convURL = loadConversationURL()
 	}
 	return webChatWithURL(ctx, convURL, message)
 }
 
-// webChatWithURL is the common implementation shared by WebChat
-// (new conv, empty url) and WebChatContinue (saved url).
-//
-// It tries to use the running dscli-chromium service first. If the service is
-// unavailable, it falls back to launching a local Chrome/Chromium instance.
-// When local Chrome is used, the browser is closed after each call; when the
-// remote service is used, the browser stays running.
 func webChatWithURL(ctx context.Context, conversationURL, message string) (string, error) {
-	var tabCtx context.Context
-
-	// Try remote chromium service first.
-	if IsChromiumAvailable() {
-		ctx2, cancel, err := ConnectChromium(ctx)
-		if err == nil {
-			tabCtx = ctx2
-			defer cancel()
-			fmt.Fprintf(os.Stderr, "🌐 连接到 Chromium 服务 (%s)\n", chromiumAddr())
-		}
+	ctx, cancel, err := NewChromium(ctx)
+	if err != nil {
+		return "", err
 	}
-
-	// Fall back to launching local Chrome.
-	if tabCtx == nil {
-		chromePath, err := findChrome()
-		if err != nil {
-			return "", err
-		}
-		userDataDir, err := chromeUserDataDir()
-		if err != nil {
-			return "", err
-		}
-
-		opts := []chromedp.ExecAllocatorOption{
-			chromedp.ExecPath(chromePath),
-			chromedp.UserDataDir(userDataDir),
-			chromedp.Flag("disable-blink-features", "AutomationControlled"),
-			chromedp.Flag("no-first-run", true),
-			chromedp.Flag("no-default-browser-check", true),
-			chromedp.Flag("disable-session-crashed-bubble", true),
-			chromedp.NoSandbox,
-		}
-
-		allocCtx, allocCancel := chromedp.NewExecAllocator(ctx, opts...)
-		defer allocCancel()
-
-		var tabCancel func()
-		tabCtx, tabCancel = chromedp.NewContext(allocCtx)
-		defer tabCancel()
-
-		// Graceful browser shutdown before the defers kill the process.
-		defer func() {
-			if err := chromedp.Run(tabCtx, browser.Close()); err != nil {
-				if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-					fmt.Fprintf(os.Stderr, "⚠️ browser.Close() failed: %v\n", err)
-				}
-			}
-		}()
-	}
-
-	response, finalURL, err := webchatSend(tabCtx, conversationURL, message, 0)
+	defer cancel()
+	ctx, close := chromedp.NewContext(ctx)
+	defer close()
+	response, finalURL, err := webchatSend(ctx, conversationURL, message, 0)
 	if err != nil {
 		return "", fmt.Errorf("webchat: %w", err)
 	}
@@ -250,9 +162,6 @@ func webChatWithURL(ctx context.Context, conversationURL, message string) (strin
 	return response, nil
 }
 
-// webchatSend sends a message and returns the response plus the final page URL
-// (which contains the conversation ID for continuation). If login is needed,
-// it triggers a manual login flow in the same Chrome session and retries once.
 func webchatSend(tabCtx context.Context, conversationURL, message string, retry int) (string, string, error) {
 	navURL := conversationURL
 	if navURL == "" {
@@ -533,11 +442,4 @@ func loadConversationURL() string {
 		return ""
 	}
 	return state.URL
-}
-
-// WebChatLogin opens a visible Chrome browser for manual DeepSeek login.
-// The user completes captcha/SMS in the browser window; cookies are saved
-// to the shared Chrome profile for subsequent WebChat calls.
-func WebChatLogin(ctx context.Context) error {
-	return DeepSeekLoginChromeOpts(ctx, "", nil, true)
 }
