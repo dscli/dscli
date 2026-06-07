@@ -186,20 +186,34 @@ func parseSince(since string) (int, error) {
 func collectFileContents(ctx context.Context, n int) string {
 	const maxFileSize = 500 * 1024 // 500KB per file
 
-	filesScript := fmt.Sprintf(`git diff --name-only HEAD~%d HEAD`, n)
+	// 使用 --name-status 获取变更状态，区分已删除文件
+	filesScript := fmt.Sprintf(`git diff --name-status HEAD~%d HEAD`, n)
 	output, err := shell.SimpleExecute(ctx, filesScript)
 	if err != nil || strings.TrimSpace(output) == "" {
 		return ""
 	}
 
-	files := strings.Split(strings.TrimSpace(output), "\n")
+	lines := strings.Split(strings.TrimSpace(output), "\n")
 	var sb strings.Builder
-	for _, file := range files {
-		if file == "" {
+	for _, line := range lines {
+		if line == "" {
 			continue
 		}
-		// 使用 git show 从 object store 读取，不依赖 CWD，
-		// 且始终读取 HEAD 版本（避免工作区未保存更改的干扰）。
+
+		// 格式: STATUS\tfile
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		status := parts[0]
+		file := parts[1]
+
+		if status == "D" {
+			fmt.Fprintf(&sb, "\n## File: %s\n[文件已删除]\n", file)
+			continue
+		}
+
+		// 已添加或修改的文件，从 HEAD 读取
 		content, err := shell.SimpleExecute(ctx, fmt.Sprintf("git show HEAD:%s", file))
 		if err != nil {
 			fmt.Fprintf(&sb, "\n## File: %s\n[无法读取文件: %v]\n", file, err)
