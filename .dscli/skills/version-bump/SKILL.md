@@ -1,6 +1,7 @@
 ---
 name: version-bump
 description: 自动更新 version.go 并打 git tag，含工作区检查、main 分支保护、版本号格式校验、README.md 未更新告警、changelog 摘要、自动推送及远程 tag 验证，解决版本号与 tag 不同步的琐碎问题。
+author: Bohr <bohr@dscli.io>
 keywords:
 - version
 - bump
@@ -60,6 +61,7 @@ bash ~/.dscli/skills/version-bump/scripts/bump.sh --no-push 0.7.12
 | 本地 tag 验证 | 创建后 `git rev-parse` 确认 |
 | 推送失败即中止 | `set -e` + 推送返回值检查 |
 | 远程 tag 确认 | `git ls-remote --tags origin` 二次确认 |
+| SIGPIPE 防护 | changelog 截断用 `sed -n 1,20p` 而非 `head -20`，避免 `set -euo pipefail` 下 pipe 提前关闭导致 exit 141 |
 
 ## 脚本
 
