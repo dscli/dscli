@@ -53,7 +53,7 @@ echo "=== Bumping version to v$NEW_VER ==="
 # Capture changelog BEFORE commit (changes since last tag)
 LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
 if [ -n "$LAST_TAG" ]; then
-    CHANGELOG=$(git log --oneline "$LAST_TAG..HEAD" --format="- %s" | head -20)
+    CHANGELOG=$(git log --oneline "$LAST_TAG..HEAD" --format="- %s" | sed -n "1,20p")
 else
     CHANGELOG=$(git log --oneline -20 --format="- %s")
 fi
