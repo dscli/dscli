@@ -64,10 +64,6 @@ Simply put: **dscli = AI assistant + dev tools + session memory + CLI efficiency
 - **`dscli completion`** — Generate shell completion scripts (bash / zsh / fish / powershell)
 - **`dscli config edit`** — Edit configuration file
 
-### 💬 WeChat Integration
-
-- **`dscli wechat`** — WeChat AI tool interface (login, message send/receive, contact/group management)
-
 ### 🎨 General Features
 
 - **Multi-format output** — Supports `--mode markdown` (default) and `--mode org`

@@ -101,7 +101,7 @@ func TryLockGlobal() (*Lock, bool, error) {
 // 用于消除多进程并发访问 sqlite.db 时的 SQLITE_BUSY 错误。
 // LockDB 获取指定数据库文件名的文件锁（阻塞排他锁）。
 //
-// dbName 如 "sqlite.db" 或 "wechat.db"，
+// dbName 如 "sqlite.db" 或 "mydb.db"，
 // 锁文件路径为 ~/.dscli/locks/<dbName>.lock。
 func LockDB(dbName string) (*Lock, error) {
 	dir := filepath.Join(config.ConfigDir, "locks")

@@ -64,10 +64,6 @@ dscli    +---------------+
 - **`dscli completion`** — 生成 Shell 自动补全脚本（bash / zsh / fish / powershell）
 - **`dscli config edit`** — 编辑配置文件
 
-### 💬 微信集成
-
-- **`dscli wechat`** — 微信 AI 工具接口（登录、收发消息、好友/群组管理）
-
 ### 🎨 通用特性
 
 - **多格式输出** — 支持 `--mode markdown`（默认）和 `--mode org` 输出格式

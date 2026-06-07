@@ -24,7 +24,6 @@ var (
 	ShellArgsKey          = ContextKeyType[[]string]{"ShellArgs"}
 	StreamKey             = ContextKeyType[bool]{"Stream"}
 	LeftTokensKey         = ContextKeyType[int]{"LeftTokens"}
-	WechatFormatKey       = ContextKeyType[string]{"WechatFormat"}
 	FinishReasonLengthKey = ContextKeyType[bool]{"FinishReasonLength"}
 	IsChildProcessKey     = ContextKeyType[bool]{"IsChildProcess"}
 	AINameCNKey           = ContextKeyType[string]{"AINameCN"}

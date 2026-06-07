@@ -72,7 +72,6 @@ Packages use `init()` + `sqlite.Register*Schema` for declarative dependency wiri
 | `internal/gse/` | Chinese text segmentation (Go jieba) |
 | `internal/tokenizer/` | Token counting for context window management |
 | `internal/userservice/` | systemd --user dscli-<name>.service |
-| `internal/wechat/` | WeChat integration |
 
 ## Command Structure
 

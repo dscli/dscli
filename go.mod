@@ -4,7 +4,6 @@ go 1.26.3
 
 require (
 	github.com/chromedp/chromedp v0.15.1
-	github.com/eatmoreapple/openwechat v1.4.0
 	github.com/goccy/go-yaml v1.19.2
 	github.com/mattn/go-runewidth v0.0.19
 	github.com/spf13/cobra v1.8.0
