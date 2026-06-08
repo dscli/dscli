@@ -11,8 +11,8 @@ import (
 )
 
 // MaxNoteContentLen 笔记内容最大长度（rune），供 tool handler 参考
-// ~80 chars ≈ 40 tokens，对中文约40个汉字
-const MaxNoteContentLen = 80
+// ~120 chars ≈ 60 tokens，对中文约60个汉字
+const MaxNoteContentLen = 120
 
 // defaultNoteDays 加载笔记默认天数
 const defaultNoteDays = 30

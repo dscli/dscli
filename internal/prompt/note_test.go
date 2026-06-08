@@ -69,14 +69,14 @@ func TestSaveNoteAndBuildNotePrompt(t *testing.T) {
 	}
 }
 
-// TestSaveNote_Truncation 验证超过80字返回错误（不再静默截断）
+// TestSaveNote_Truncation 验证超过120字返回错误（不再静默截断）
 func TestSaveNote_Truncation(t *testing.T) {
 	ctx := context.Background()
 
-	// 构造明确超过80字的字符串（100个汉字）
-	longContent := strings.Repeat("测", 100)
-	if len([]rune(longContent)) <= 80 {
-		t.Fatalf("测试数据错误: longContent 只有 %d 字，需要 >80", len([]rune(longContent)))
+	// 构造明确超过120字的字符串（200个汉字）
+	longContent := strings.Repeat("测", 200)
+	if len([]rune(longContent)) <= 120 {
+		t.Fatalf("测试数据错误: longContent 只有 %d 字，需要 >120", len([]rune(longContent)))
 	}
 
 	err := SaveNote(ctx, longContent)

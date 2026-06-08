@@ -38,7 +38,7 @@ func TestHandleNote_Empty(t *testing.T) {
 // TestHandleNote_LongContent 验证超长内容返回错误（不再静默截断）
 func TestHandleNote_LongContent(t *testing.T) {
 	ctx := context.Background()
-	longContent := strings.Repeat("测试超长笔记内容", 11) // 88 字，超过 80
+	longContent := strings.Repeat("测", 121) // 121字，超过 120
 	args := toolcall.ToolArgs{"content": longContent}
 	_, _, err := handleNote(ctx, args)
 	if err == nil {
