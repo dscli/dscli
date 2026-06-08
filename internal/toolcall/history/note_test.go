@@ -3,9 +3,11 @@ package history
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/dscli/dscli/internal/prompt"
 	"github.com/dscli/dscli/internal/toolcall"
 )
 
@@ -46,5 +48,13 @@ func TestHandleNote_LongContent(t *testing.T) {
 	}
 	if err != nil && !strings.Contains(err.Error(), "超过") {
 		t.Errorf("错误信息应提示超限: %v", err)
+	}
+}
+
+func TestNoteMDSync(t *testing.T) {
+	// 确保 note.md 中描述的字符数与 MaxNoteContentLen 常量一致
+	want := fmt.Sprintf("%d", prompt.MaxNoteContentLen)
+	if !strings.Contains(note_md, want) {
+		t.Errorf("note.md 中未包含 MaxNoteContentLen (%s)，请同步", want)
 	}
 }

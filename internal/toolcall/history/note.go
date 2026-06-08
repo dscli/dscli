@@ -25,7 +25,7 @@ func init() {
 			"properties": map[string]any{
 				"content": map[string]any{
 					"type":        "string",
-					"description": "Summary content, max 120 chars, with key events and keywords",
+					"description": fmt.Sprintf("Summary content, max %d chars, with key events and keywords", prompt.MaxNoteContentLen),
 				},
 			},
 			"required":             []string{"content"},

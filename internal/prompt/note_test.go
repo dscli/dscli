@@ -73,18 +73,20 @@ func TestSaveNoteAndBuildNotePrompt(t *testing.T) {
 func TestSaveNote_Truncation(t *testing.T) {
 	ctx := context.Background()
 
-	// 构造明确超过120字的字符串（200个汉字）
-	longContent := strings.Repeat("测", 200)
-	if len([]rune(longContent)) <= 120 {
-		t.Fatalf("测试数据错误: longContent 只有 %d 字，需要 >120", len([]rune(longContent)))
+	// 构造恰好超过限制的字符串（121 个汉字）
+	longContent := strings.Repeat("测", 121)
+	if len([]rune(longContent)) <= MaxNoteContentLen {
+		t.Fatalf("测试数据错误: longContent 只有 %d 字，需要 >%d",
+			len([]rune(longContent)), MaxNoteContentLen)
 	}
 
 	err := SaveNote(ctx, longContent)
 	if err == nil {
 		t.Error("期望超长内容返回错误，但返回 nil")
 	}
-	if err != nil && !strings.Contains(err.Error(), "超过") {
-		t.Errorf("错误信息应包含'超过': %v", err)
+	want := fmt.Sprintf("超过%d字", MaxNoteContentLen)
+	if err != nil && !strings.Contains(err.Error(), want) {
+		t.Errorf("错误信息应包含 %q: %v", want, err)
 	}
 }
 

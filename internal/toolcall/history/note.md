@@ -1,3 +1,4 @@
+<!-- Max note length is defined in prompt.MaxNoteContentLen; keep in sync -->
 # note
 
 Summarize session for future recall.
