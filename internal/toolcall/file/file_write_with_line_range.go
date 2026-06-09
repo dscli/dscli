@@ -82,6 +82,7 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 	// content 可以为空字符串，表示删除
 
 	fullPath := ResolvePath(ctx, path)
+	displayPath := DisplayPath(ctx, fullPath)
 
 	// 解析起始行号
 	startLine, endLine, err := ParseLineRange(args)
@@ -117,7 +118,7 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 					return result, warning, err
 				}
 				newFile.Close()
-				outfmt.Notice("创建空文件 \"%s\"", path)
+				outfmt.Notice("创建空文件 \"%s\"", displayPath)
 				result = "成功创建空文件"
 				return result, warning, err
 			}
@@ -133,12 +134,12 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 				return result, warning, err
 			}
 
-			outfmt.Notice("创建文件 \"%s\" 并写入 %d 行内容", path, contentLineCount)
+			outfmt.Notice("创建文件 \"%s\" 并写入 %d 行内容", displayPath, contentLineCount)
 			result = fmt.Sprintf("成功创建文件并写入 %d 行内容", contentLineCount)
 
 			// 上下文窗口（新文件）
 			if showContext {
-				ctxStr := AppendWriteFileContext(path)
+				ctxStr := AppendWriteFileContext(displayPath)
 				if ctxStr != "" {
 					result += ctxStr
 				}
@@ -270,10 +271,10 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 		linesChanged = contentLineCount
 	}
 
-	outfmt.Notice("%s文件 \"%s\" 行范围 %s，影响 %d 行", operation, path, rangeDesc, linesChanged)
+	outfmt.Notice("%s文件 \"%s\" 行范围 %s，影响 %d 行", operation, displayPath, rangeDesc, linesChanged)
 
 	// 构建最终结果
-	result = fmt.Sprintf("成功%s文件 \"%s\" 行范围 %s", operation, path, rangeDesc)
+	result = fmt.Sprintf("成功%s文件 \"%s\" 行范围 %s", operation, displayPath, rangeDesc)
 
 	// 编辑后上下文窗口
 	if showContext {
@@ -284,14 +285,14 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 		if effectiveEndLine > oldTotalLines {
 			effectiveEndLine = oldTotalLines
 		}
-		ctxStr := AppendEditContext(path, startLine, effectiveEndLine, oldReplaced, contentLineCount)
+		ctxStr := AppendEditContext(displayPath, startLine, effectiveEndLine, oldReplaced, contentLineCount)
 		if ctxStr != "" {
 			result += ctxStr
 		}
 	}
 
 	// Run flycheck on the written file and append issues as suggestion
-	if flyResult, _, flyErr := flycheck.Flycheck(ctx, path); flyErr == nil && flyResult != "" {
+	if flyResult, _, flyErr := flycheck.Flycheck(ctx, fullPath); flyErr == nil && flyResult != "" {
 		if warning != "" {
 			warning += "\n\n"
 		}

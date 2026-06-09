@@ -110,7 +110,8 @@ func handleReadFileWithLineRange(ctx context.Context, args ToolArgs) (result, wa
 	} else {
 		endDisplay = fmt.Sprintf("%d", endLine)
 	}
-	header := fmt.Sprintf("📄 %s: lines %d-%s of %d\n", path, startLine, endDisplay, totalLines)
+	displayPath := DisplayPath(ctx, fullPath)
+	header := fmt.Sprintf("📄 %s: lines %d-%s of %d\n", displayPath, startLine, endDisplay, totalLines)
 
 	result = header + resultBuilder.String()
 
@@ -119,7 +120,7 @@ func handleReadFileWithLineRange(ctx context.Context, args ToolArgs) (result, wa
 	if endLine == -1 {
 		rangeDesc = fmt.Sprintf("第%d行 - 末尾", startLine)
 	}
-	outfmt.Notice("读取文件 \"%s\" 行范围 %s，共 %d 行（文件总行数: %d）", path, rangeDesc, linesRead, totalLines)
+	outfmt.Notice("读取文件 \"%s\" 行范围 %s，共 %d 行（文件总行数: %d）", displayPath, rangeDesc, linesRead, totalLines)
 
 	return result, warning, err
 }
