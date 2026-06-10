@@ -156,8 +156,9 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result, warn
 	// 获取修改文件的全文
 	filesContent := collectFileContents(ctx, n)
 
-	// 构建审查请求
+	// 构建审查请求并检查输入长度
 	structuredRequest := buildCodeReviewRequest(summary, fullLog, patch, filesContent)
+	structuredRequest, warning = truncateReviewRequest(structuredRequest, summary, fullLog, &patch, &filesContent)
 	outfmt.Printf("📤 发送代码审查请求到 DeepSeek Web（免费 V4 Pro）...\n%s\n", structuredRequest)
 	result, err = AskExpertWithRole(ctx, structuredRequest, "review")
 	if err != nil {
@@ -245,4 +246,57 @@ func buildCodeReviewRequest(summary, commitLog, patch, fileContents string) stri
 	}
 
 	return req
+}
+
+// maxUserInputLen is the maximum length for the user portion of a code review
+// request. DeepSeek's chat textarea enforces a total limit (~30k chars including
+// the system prompt of ~2-3k), so we keep the user content under this threshold.
+const maxUserInputLen = 24000
+
+
+// truncateReviewRequest checks the total size of the review request and truncates
+// if necessary. Strategy (in order of preference):
+//  1. Drop full file contents (keep the diff — it's what matters most)
+//  2. Truncate the diff from the front (keep the tail — newer changes are more relevant)
+//
+// Returns the (possibly truncated) request and a warning message if truncation occurred.
+func truncateReviewRequest(req, summary, commitLog string, patch, filesContent *string) (string, string) {
+	if len(req) <= maxUserInputLen {
+		return req, ""
+	}
+
+	origLen := len(req)
+	var warns []string
+
+	// Step 1: Drop full file contents
+	if *filesContent != "" {
+		*filesContent = ""
+		req = buildCodeReviewRequest(summary, commitLog, *patch, "")
+		warns = append(warns, "已移除文件全文内容")
+	}
+
+	// Step 2: Truncate patch from the front (keep the tail — newer changes are more relevant)
+	if len(req) > maxUserInputLen && *patch != "" {
+		overhead := len(buildCodeReviewRequest(summary, commitLog, "", ""))
+		maxPatchLen := maxUserInputLen - overhead
+		if maxPatchLen < 100 {
+			maxPatchLen = 100 // never go below 100 chars for patch
+		}
+		if len(*patch) > maxPatchLen {
+			truncated := len(*patch) - maxPatchLen
+			*patch = "..[diff 截断 " + strconv.Itoa(truncated) + " 字符].." + (*patch)[len(*patch)-maxPatchLen:]
+		}
+		req = buildCodeReviewRequest(summary, commitLog, *patch, "")
+		warns = append(warns, "diff 已截断（保留末尾）")
+	}
+
+	overLen := origLen - maxUserInputLen
+	if overLen < 0 {
+		overLen = 0
+	}
+	warning := fmt.Sprintf("⚠️ 审查输入过长（超出约 %d%%），已自动截断至 %d 字符。", overLen*100/maxUserInputLen, len(req))
+	if len(warns) > 0 {
+		warning += " " + strings.Join(warns, "；") + "。"
+	}
+	return req, warning
 }
