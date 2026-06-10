@@ -47,6 +47,10 @@ func isRemoteURL(rawURL string) bool {
 // getFromCDP performs the actual CDP interaction to fetch markdown content.
 var getFromCDP = defaultGetFromCDP
 
+// getFromMCP performs the actual MCP interaction to fetch markdown content.
+// This is a function variable so tests can replace it with a stub.
+var getFromMCP = defaultGetFromMCP
+
 // isLocalAvailable checks if local lightpanda is listening on 127.2.2.9:9227.
 var isLocalAvailable = defaultIsLocalAvailable
 
@@ -65,13 +69,37 @@ var setupUserService = defaultSetupUserService
 // startMu prevents concurrent auto-start attempts.
 var startMu sync.Mutex
 
-// startTried records whether we already attempted auto-start.
 var startTried bool
 
 // lightpandaServiceName is the user service name for lightpanda.
 // On Linux this maps to ~/.config/systemd/user/<name>.service
 // On macOS this maps to ~/Library/LaunchAgents/<name>.plist
 const lightpandaServiceName = "dscli-lightpanda"
+
+// ---- Transport configuration ----
+
+// Transport constants for lightpanda_transport config key.
+const (
+	// TransportMCP uses the LightPanda native MCP server (default). This
+	// spawns "lightpanda mcp" as a subprocess and communicates over stdio.
+	TransportMCP = "mcp"
+
+	// TransportCDP uses the Chrome DevTools Protocol. This requires
+	// "lightpanda serve" to be running (it will be auto-started if needed).
+	// Deprecated: will be removed in v0.10.0.
+	TransportCDP = "cdp"
+)
+
+// defaultTransport returns the configured transport or "mcp" as default.
+func defaultTransport() string {
+	t := config.Get("lightpanda_transport", TransportMCP)
+	switch t {
+	case TransportMCP, TransportCDP:
+		return t
+	default:
+		return TransportMCP
+	}
+}
 
 // ---- Default implementations ----
 
@@ -114,6 +142,19 @@ func defaultGetFromCDP(ctx context.Context, rawURL, cdpURL string) (string, erro
 	}
 
 	return markdownContent, nil
+}
+
+// defaultGetFromMCP is the default implementation of getFromMCP.
+// It starts a lightpanda mcp subprocess, connects via MCP, and calls
+// the "markdown" tool. Each call spawns a fresh process — lightweight
+// enough for sporadic use.
+func defaultGetFromMCP(ctx context.Context, rawURL string) (string, error) {
+	mc, err := NewMCPClient(ctx)
+	if err != nil {
+		return "", fmt.Errorf("mcp client: %w", err)
+	}
+	defer mc.Close()
+	return mc.GetMarkdown(ctx, rawURL)
 }
 
 func defaultIsLocalAvailable() bool {
@@ -315,6 +356,28 @@ func waitForTCP(host, port string, timeout time.Duration) error {
 //   - lightpanda-remote-url  (default: "")
 //   - lightpanda-remote-token (default: "")
 func Get(ctx context.Context, rawURL string) (string, error) {
+	switch defaultTransport() {
+	case TransportCDP:
+		return getWithCDP(ctx, rawURL)
+	default:
+		return getWithMCP(ctx, rawURL)
+	}
+}
+
+// getWithMCP fetches a page using the LightPanda MCP transport. It starts
+// "lightpanda mcp" as a subprocess per call and closes it after.
+func getWithMCP(ctx context.Context, rawURL string) (string, error) {
+	markdown, err := getFromMCP(ctx, rawURL)
+	if err != nil {
+		return "", fmt.Errorf("lightpanda mcp 连接失败: %w", err)
+	}
+	return prettyJSONInMarkdown(markdown), nil
+}
+
+// getWithCDP fetches a page using the Chrome DevTools Protocol transport.
+// It requires "lightpanda serve" to be running (auto-started if needed).
+// Deprecated: will be removed in v0.10.0 in favor of the MCP transport.
+func getWithCDP(ctx context.Context, rawURL string) (string, error) {
 	cdpURL, isLocal := cdpEndpoint(rawURL)
 
 	if isLocal {
@@ -349,6 +412,27 @@ func Get(ctx context.Context, rawURL string) (string, error) {
 //   - lightpanda-remote-url  (required)
 //   - lightpanda-remote-token (optional)
 func GetRemote(ctx context.Context, rawURL string) (string, error) {
+	switch defaultTransport() {
+	case TransportCDP:
+		return getRemoteWithCDP(ctx, rawURL)
+	default:
+		return getRemoteWithMCP(ctx, rawURL)
+	}
+}
+
+// getRemoteWithMCP fetches a page via MCP. Unlike Get, it does not route
+// based on the target host — it always uses the same MCP process.
+func getRemoteWithMCP(ctx context.Context, rawURL string) (string, error) {
+	markdown, err := getFromMCP(ctx, rawURL)
+	if err != nil {
+		return "", fmt.Errorf("lightpanda remote 连接失败: %w", err)
+	}
+	return prettyJSONInMarkdown(markdown), nil
+}
+
+// getRemoteWithCDP fetches a page via remote lightpanda CDP regardless of
+// the target host. Returns an error if remote is not configured.
+func getRemoteWithCDP(ctx context.Context, rawURL string) (string, error) {
 	cdpURL, err := remoteCDPEndpoint()
 	if err != nil {
 		return "", err

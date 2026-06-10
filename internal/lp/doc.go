@@ -1,42 +1,39 @@
-// Package lp provides web page reading via lightpanda browser with CDP.
+// Package lp provides web page reading via lightpanda browser with MCP (default)
+// or CDP (deprecated) transport.
 //
 // # Architecture
 //
-//	url(req) +------------+   wss    +---------------+ http  +-------------+
-//	-------->|  Web       +--------->|               +------>|             |
-//	         |  chromedp  |          |  Lightpanda   |       |  WebServer  |
-//	<--------+            |<---------+               |<------+             |
-//	markdown +------------+ markdown +---------------+  rep  +-------------+
+//	url(req) +---------------+  stdio   +-------------+
+//	-------->|  MCP Client    +--------->| lightpanda  |
+//	        |  (mcp.go)      |          | mcp         |
+//	<--------+                |<---------+             |
+//	markdown +---------------+ markdown +-------------+
 //
-// The package replaces the previous approach of using Go's net/http client
-// directly. Lightpanda provides a headless browser with CDP support,
-// solving these problems:
-//  1. JavaScript-rendered pages that return empty content via HTTP
-//  2. Geo-restricted sites (e.g. google.com) inaccessible from local network
-//  3. Better HTML-to-markdown conversion via LP.getMarkdown CDP command
+// The package uses LightPanda's native MCP server by default (lightpanda mcp
+// subcommand, stdio transport). The older CDP transport (lightpanda serve +
+// chromedp) remains available via the lightpanda_transport = "cdp" config key
+// but is deprecated and will be removed in v0.10.0.
+//
+// MCP transport advantages over CDP:
+//   - Self-contained: no need for a running serve process
+//   - Simpler: no WebSocket, no chromedp dependency
+//   - Same engine: calls the same Zig conversion code internally
+//
+// # Transport Configuration
+//
+// Config key (~/.dscli/config.dscli):
+//
+//	lightpanda_transport = mcp   # "mcp" (default) or "cdp" (deprecated)
 //
 // # Remote vs Local
 //
-// Lightpanda runs in two modes:
-//   - Local:  ws://127.2.2.9:9227 (no auth, user runs lightpanda serve)
-//   - Remote: wss://euwest.cloud.lightpanda.io/ws (token auth, 8h/month limit)
+// This distinction only applies to the CDP transport. With MCP, every call
+// spawns a local lightpanda mcp subprocess. For geo-restricted sites, use
+// LightPanda Cloud's MCP/SSE endpoint when available.
 //
-// Routing decision: if the target host is in the remoteHosts list
-// (geo-restricted sites), use remote; otherwise use local.
+// # CDP-only config keys (deprecated)
 //
-// # Auto-start
-//
-// When local lightpanda is not running, Get automatically starts it:
-//
-//  1. Preferred: user service via internal/userservice
-//     - Linux:   systemd user service (dscli-lightpanda.service)
-//     - macOS:   LaunchAgent (dscli-lightpanda.plist)
-//     - Lifecycle independent of dscli — survives dscli process exit
-//     - Allows multiple dscli instances to share one lightpanda
-//  2. Fallback: child process (if user service is unavailable)
-//     - Lifecycle tied to dscli — exits when dscli exits
-//
-// Config keys (~/.dscli/config.dscli):
+// These keys are only used when lightpanda_transport = "cdp":
 //
 //	lightpanda-local-url   = ws://127.2.2.9:9227
 //	lightpanda-remote-url  = wss://euwest.cloud.lightpanda.io/ws
@@ -47,7 +44,4 @@
 //	import "github.com/dscli/dscli/internal/lp"
 //
 //	markdown, err := lp.Get(ctx, "https://example.com")
-//
-// # Future work
-//   - Web writer support (e.g. interacting with chat.deepseek.com)
 package lp

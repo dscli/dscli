@@ -185,6 +185,9 @@ func TestCdpEndpoint(t *testing.T) {
 }
 
 func TestGet(t *testing.T) {
+	// These tests verify the CDP transport path specifically.
+	withConfig(t, "lightpanda_transport", "cdp")
+
 	// getFromCDP is replaced with a spy that captures the endpoint
 	// and returns predictable content. This verifies Get passes the
 	// correct cdpURL through the pipeline.
@@ -232,6 +235,7 @@ func TestGet(t *testing.T) {
 }
 
 func TestGetRemoteFallbackToLocal(t *testing.T) {
+	withConfig(t, "lightpanda_transport", "cdp")
 	withConfig(t, "lightpanda-remote-url", "")
 
 	var capturedCDPURL string
@@ -256,6 +260,8 @@ func TestGetRemoteFallbackToLocal(t *testing.T) {
 }
 
 func TestGetCDPError(t *testing.T) {
+	withConfig(t, "lightpanda_transport", "cdp")
+
 	oldFn := getFromCDP
 	getFromCDP = func(ctx context.Context, rawURL, cdpURL string) (string, error) {
 		return "", errors.New("CDP connection refused")
@@ -508,6 +514,8 @@ func TestRemoteCDPEndpoint(t *testing.T) {
 }
 
 func TestGetRemote(t *testing.T) {
+	withConfig(t, "lightpanda_transport", "cdp")
+
 	var capturedCDPURL string
 	var capturedRawURL string
 	oldFn := getFromCDP
