@@ -107,7 +107,6 @@ func (c *MCPClient) Evaluate(ctx context.Context, script, url string) (string, e
 	}
 	return c.callTool(ctx, "evaluate", args)
 }
-
 // ListTools returns the list of tools available on the MCP server.
 func (c *MCPClient) ListTools(ctx context.Context) ([]*mcp.Tool, error) {
 	c.mu.Lock()
@@ -117,6 +116,14 @@ func (c *MCPClient) ListTools(ctx context.Context) ([]*mcp.Tool, error) {
 		return nil, fmt.Errorf("mcp list tools: %w", err)
 	}
 	return result.Tools, nil
+}
+
+// CallTool calls a tool by name with the given arguments.
+// This is a generic version of GetMarkdown/GetSemanticTree/Evaluate
+// that allows calling any tool exposed by the MCP server.
+// The caller is responsible for calling Close after finishing.
+func (c *MCPClient) CallTool(ctx context.Context, name string, args map[string]any) (string, error) {
+	return c.callTool(ctx, name, args)
 }
 
 // callTool is the internal workhorse: serializes access to the session,

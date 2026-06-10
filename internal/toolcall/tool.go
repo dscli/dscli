@@ -68,6 +68,17 @@ var (
 
 	// toolRegistryRWMutex tool registry rwmutex
 	toolRegistryRWMutex = sync.RWMutex{}
+
+	// MCPToolList returns available MCP tools.
+	// Set by the lp package init to enable MCP tool integration.
+	// If nil, MCP tools are not included in GetAllTools.
+	MCPToolList func(ctx context.Context) []Tool
+
+	// HandleMCPCall dispatches a tool call to an MCP server.
+	// Set by the lp package init to enable MCP tool call routing.
+	// If nil, unknown tools return an error directly.
+	// Signature matches toolcall.HandleToolCall for unknown tools.
+	HandleMCPCall func(ctx context.Context, toolName, argsRaw string) (result, warning string, err error)
 )
 
 func init() {
@@ -212,6 +223,10 @@ func GetAllTools(ctx context.Context) []Tool {
 			},
 		})
 	}
+	// Append MCP tools (not filtered by role allowSet).
+	if MCPToolList != nil {
+		tools = append(tools, MCPToolList(ctx)...)
+	}
 	return tools
 }
 
@@ -296,6 +311,10 @@ func HandleToolCall(ctx context.Context, toolName, argsRaw string) (result, warn
 	// 获取工具处理器
 	tool, ok := GetToolDef(ctx, toolName)
 	if !ok {
+		// Not a registered dscli tool — try MCP dispatch.
+		if HandleMCPCall != nil {
+			return HandleMCPCall(ctx, toolName, argsRaw)
+		}
 		err = fmt.Errorf("未知工具: %s", toolName)
 		warning = fmt.Sprintf("所调用工具 %q 不存在，请严格按照 tools 列表所提供工具调用", toolName)
 		outfmt.Println(warning)
