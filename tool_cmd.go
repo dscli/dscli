@@ -50,7 +50,7 @@ func init() {
 func toolListRunE(cmd *cobra.Command, _ []string) error {
 	category, _ := cmd.Flags().GetString("category")
 
-	tools, err := toolcall.ListTools(category)
+	tools, err := toolcall.ListTools(cmd.Context(), category)
 	if err != nil {
 		return fmt.Errorf("列出工具失败: %w", err)
 	}

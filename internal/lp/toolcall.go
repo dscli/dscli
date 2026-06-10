@@ -1,3 +1,9 @@
+// Package lp provides LightPanda integration for web page interaction.
+//
+// MCP tool integration for the toolcall framework.
+// The init function registers callbacks with toolcall so that MCP tools
+// (markdown, semantic_tree, evaluate, goto, etc.) are included in GetAllTools
+// and dispatched via a persistent MCPClient singleton in HandleToolCall.
 package lp
 
 import (
@@ -9,16 +15,16 @@ import (
 	"github.com/dscli/dscli/internal/toolcall"
 )
 
-// MCP tool integration for the toolcall framework.
-//
-// The init function registers callbacks with toolcall so that MCP tools
-// (markdown, semantic_tree, evaluate) are included in GetAllTools and
-// dispatched via MCPClient in HandleToolCall.
-
 var (
 	mcpToolsMu    sync.Mutex
 	mcpToolsDone  bool
 	mcpToolsCache []toolcall.Tool
+
+	// mcpClientSingleton is the shared MCP client reused across all tool calls.
+	// Created lazily on first handleMCPCall; lives for the process lifetime.
+	// Using a singleton preserves LightPanda frame state (goto -> evaluate, etc.).
+	mcpClientMu         sync.Mutex
+	mcpClientSingleton  *MCPClient
 )
 
 func init() {
@@ -69,8 +75,29 @@ func getMCPTools(ctx context.Context) []toolcall.Tool {
 	return mcpToolsCache
 }
 
+// getOrCreateMCPClient returns the shared MCP client singleton.
+// Created on first call; reused for all subsequent calls so that
+// LightPanda frame state persists (e.g., goto then evaluate without url).
+func getOrCreateMCPClient() (*MCPClient, error) {
+	mcpClientMu.Lock()
+	defer mcpClientMu.Unlock()
+
+	if mcpClientSingleton != nil {
+		return mcpClientSingleton, nil
+	}
+
+	// Use background context so the subprocess outlives any single request.
+	mc, err := NewMCPClient(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	mcpClientSingleton = mc
+	return mc, nil
+}
+
 // handleMCPCall dispatches a tool call to the LightPanda MCP server.
-// It creates a fresh MCP client per call (lightpanda mcp is lightweight).
+// It uses a persistent singleton MCP client so that frame state (navigation,
+// scroll position, etc.) is preserved across consecutive tool calls.
 // If MCP transport is not active, it returns an "unknown tool" error.
 func handleMCPCall(ctx context.Context, toolName, argsRaw string) (result, warning string, err error) {
 	if defaultTransport() != TransportMCP {
@@ -83,11 +110,10 @@ func handleMCPCall(ctx context.Context, toolName, argsRaw string) (result, warni
 		return "", "", fmt.Errorf("mcp call %s: invalid args: %w", toolName, err)
 	}
 
-	mc, mcErr := NewMCPClient(ctx)
+	mc, mcErr := getOrCreateMCPClient()
 	if mcErr != nil {
 		return "", "", fmt.Errorf("mcp %s: %w", toolName, mcErr)
 	}
-	defer mc.Close()
 
 	text, callErr := mc.CallTool(ctx, toolName, args)
 	if callErr != nil {
