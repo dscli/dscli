@@ -25,10 +25,9 @@ const (
 	// Polling configuration for response detection.
 	webChatPollInterval = 2 * time.Second // interval between polls
 	webChatStablePolls  = 3               // text unchanged for this many polls = done
-	webChatMaxPolls     = 60              // max polls before timeout (120s total)
+	webChatMaxPolls     = 300             // max polls before timeout (600s total)
 
 	// JS snippet to set a textarea's value via the native setter (triggers
-	// React/Vue change detection). The %s placeholder receives the JS-quoted
 	// message string.
 	jsSetTextareaFmt = `(() => {
 	const ta = document.querySelector('textarea');
