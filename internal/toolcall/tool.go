@@ -225,8 +225,15 @@ func GetAllTools(ctx context.Context) []Tool {
 	}
 	// Append MCP tools (not filtered by role allowSet).
 	if MCPToolList != nil {
-		tools = append(tools, MCPToolList(ctx)...)
+		mcpTools := MCPToolList(ctx)
+		for _, mt := range mcpTools {
+			if _, exists := toolRegistry[mt.Function.Name]; exists {
+				panic(fmt.Sprintf("MCP tool %q conflicts with registered tool name", mt.Function.Name))
+			}
+		}
+		tools = append(tools, mcpTools...)
 	}
+
 	return tools
 }
 
@@ -538,6 +545,9 @@ func ListTools(ctx context.Context, category string) ([]ToolDesc, error) {
 	if MCPToolList != nil {
 		mcpTools := MCPToolList(ctx)
 		for _, mt := range mcpTools {
+			if _, exists := toolRegistry[mt.Function.Name]; exists {
+				panic(fmt.Sprintf("MCP tool %q conflicts with registered tool name", mt.Function.Name))
+			}
 			if category != "" {
 				// MCP 工具固定分类为 "web"
 				if category != "web" {
@@ -558,6 +568,7 @@ func ListTools(ctx context.Context, category string) ([]ToolDesc, error) {
 			tools = append(tools, td)
 		}
 	}
+
 
 	// 4. 按分类分组，分类内按使用次数降序、名称升序排序
 	sort.Slice(tools, func(i, j int) bool {
