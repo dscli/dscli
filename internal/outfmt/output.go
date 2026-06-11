@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -567,6 +568,11 @@ func PrintUserContent(ctx context.Context, content string) {
 	Println("------")
 }
 
+// codeFenceRe matches markdown code fences (```) optionally followed by a language
+// identifier. This preserves the language tag (e.g., ```go, ```python) when adding
+// newlines around the fence, preventing FillParagraph from inlining code blocks.
+var codeFenceRe = regexp.MustCompile("```[a-zA-Z0-9_+.#-]*")
+
 func PrintContent(ctx context.Context, reasoning, content string, thinkingTokens, contentTokens int) {
 	// 检查是否是streaming模式
 	stream := context.ContextValue(ctx, context.StreamKey, false)
@@ -588,7 +594,7 @@ func PrintContent(ctx context.Context, reasoning, content string, thinkingTokens
 
 	reasoning = strings.TrimSpace(reasoning)
 	if reasoning != "" {
-		reasoning = strings.ReplaceAll(reasoning, "```", "\n```\n")
+		reasoning = codeFenceRe.ReplaceAllString(reasoning, "\n$0\n")
 		tStr := ""
 		if nameCN != "" && email != "" {
 			Printf("\n%s\n\n", formatChatHeader("💭", nameCN, email, now, tStr))
