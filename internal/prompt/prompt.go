@@ -83,6 +83,7 @@ func GetPromptPath(role string, global bool) (string, error) {
 		if context.ProjectRoot == "" {
 			return "", fmt.Errorf("不在项目目录中")
 		}
+		config.EnsureProjectGitignore(context.ProjectRoot) // 确保 .dscli/.gitignore 存在
 		promptDir = filepath.Join(context.ProjectRoot, ".dscli", "prompt")
 	}
 

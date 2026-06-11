@@ -83,6 +83,7 @@ func tryLock(configDir string) (*Lock, bool, error) {
 // 使用 context.ProjectRoot 确定项目根目录，
 // 锁文件位于 <projectDir>/.dscli/locks/dscli.lock。
 func TryLockLocal() (*Lock, bool, error) {
+	config.EnsureProjectGitignore(context.ProjectRoot) // 确保 .dscli/.gitignore 存在
 	return tryLock(filepath.Join(context.ProjectRoot, ".dscli"))
 }
 

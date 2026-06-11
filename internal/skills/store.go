@@ -47,6 +47,8 @@ type ScoredSkill struct {
 
 func LocalStore() (*Store, error) {
 	localOnce.Do(func() {
+		config.EnsureProjectGitignore(context.ProjectRoot) // 确保 .dscli/.gitignore 存在
+
 		// Primary: <project>/.dscli/skills/ (dscli-native location)
 		dscliDir := filepath.Join(context.ProjectRoot, ".dscli", "skills")
 		localErr = os.MkdirAll(dscliDir, 0o755)
