@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/dscli/dscli/internal/config"
+	"github.com/dscli/dscli/internal/version"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -68,7 +69,7 @@ func NewMCPClient(ctx context.Context) (*MCPClient, error) {
 	transport := &mcp.CommandTransport{Command: cmd}
 	client := mcp.NewClient(&mcp.Implementation{
 		Name:    "dscli",
-		Version: "0.8.5",
+		Version: version.Version,
 	}, nil)
 
 	session, err := client.Connect(ctx, transport, nil)
@@ -163,6 +164,11 @@ func NewCloudMCPClient(ctx context.Context) (*MCPClient, error) {
 	endpoint := config.Get("lightpanda-cloud-url", "https://euwest.cloud.lightpanda.io/mcp/sse")
 	token := config.Get("lightpanda-remote-token", "")
 
+	// Early error: token is required when using the default LightPanda Cloud endpoint.
+	if token == "" && strings.Contains(endpoint, "cloud.lightpanda.io") {
+		return nil, fmt.Errorf("lightpanda-remote-token is required for LightPanda Cloud; set it in dscli.env or config")
+	}
+
 	if token != "" {
 		if strings.Contains(endpoint, "?") {
 			endpoint += "&token=" + url.QueryEscape(token)
@@ -174,7 +180,7 @@ func NewCloudMCPClient(ctx context.Context) (*MCPClient, error) {
 	transport := &mcp.SSEClientTransport{Endpoint: endpoint}
 	client := mcp.NewClient(&mcp.Implementation{
 		Name:    "dscli",
-		Version: "0.8.6",
+		Version: version.Version,
 	}, nil)
 
 	session, err := client.Connect(ctx, transport, nil)

@@ -21,9 +21,9 @@ else ifeq ($(VERSION),unknown)
 	VERSION = dev
 endif
 
-LDFLAGS = -ldflags "-X main.Version=$(VERSION) -X main.Build=$(BUILD_DATE)-$(GIT_COMMIT) -X github.com/dscli/dscli/internal/config.BuildTime=$(BUILD_DATE)"
+LDFLAGS = -ldflags "-X main.Version=$(VERSION) -X main.Build=$(BUILD_DATE)-$(GIT_COMMIT) -X github.com/dscli/dscli/internal/version.Version=$(VERSION) -X github.com/dscli/dscli/internal/config.BuildTime=$(BUILD_DATE)"
 # Release：-s 剥符号表 -w 剥 DWARF，binary 预计从 58M → 35~40M
-LDFLAGS_RELEASE = -ldflags "-s -w -X main.Version=$(VERSION) -X main.Build=$(BUILD_DATE)-$(GIT_COMMIT) -X github.com/dscli/dscli/internal/config.BuildTime=$(BUILD_DATE)"
+LDFLAGS_RELEASE = -ldflags "-s -w -X main.Version=$(VERSION) -X main.Build=$(BUILD_DATE)-$(GIT_COMMIT) -X github.com/dscli/dscli/internal/version.Version=$(VERSION) -X github.com/dscli/dscli/internal/config.BuildTime=$(BUILD_DATE)"
 GOFLAGS = -trimpath -tags netgo
 SOURCE_DIR = .
 BUILD_DIR = build

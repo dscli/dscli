@@ -6,12 +6,13 @@ import (
 	"github.com/dscli/dscli/internal/config"
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/version"
 	"github.com/spf13/cobra"
 )
 
 var (
 	// Version information - set via ldflags during build
-	Version = "0.8.6"
+	Version = version.Version
 	Build   = ""
 )
 
