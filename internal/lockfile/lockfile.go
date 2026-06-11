@@ -1,7 +1,7 @@
 // Package lockfile 提供项目级与全局级文件锁。
 //
-// 基于 flock(2) 实现，进程退出或文件关闭时内核自动释放锁，
-// 无残留问题。Linux 与 macOS 均支持。
+// 基于 flock(2)（Unix）或 LockFileEx（Windows）实现，
+// 进程退出或文件关闭时内核自动释放锁，无残留问题。
 //
 // # 用法
 //
@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
 
 	"github.com/dscli/dscli/internal/config"
 	"github.com/dscli/dscli/internal/context"
@@ -56,10 +55,10 @@ func tryLock(configDir string) (*Lock, bool, error) {
 	}
 
 	// 非阻塞排他锁：已被持有时返回 EWOULDBLOCK
-	err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	err = flockExNb(f.Fd())
 	if err != nil {
 		f.Close()
-		if err == syscall.EWOULDBLOCK || err == syscall.EAGAIN {
+		if isBlocking(err) {
 			// 锁已被持有。若持有者是当前进程的父进程
 			// （code review / ask expert 由主 chat 进程 fork），
 			// 视为已获取锁，允许子进程继续执行。
@@ -70,7 +69,6 @@ func tryLock(configDir string) (*Lock, bool, error) {
 		}
 		return nil, false, fmt.Errorf("lockfile: flock %s: %w", path, err)
 	}
-
 	// 写入 PID 方便排查
 	f.Truncate(0)
 	f.Seek(0, 0)
@@ -118,9 +116,9 @@ func LockDB(dbName string) (*Lock, error) {
 	}
 
 	// 阻塞排他锁 — 等待直到获取成功
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	if err := flockEx(f.Fd()); err != nil {
 		f.Close()
-		return nil, fmt.Errorf("lockfile: flock %s: %w", path, err)
+		return nil, fmt.Errorf("lockfile: lock %s: %w", path, err)
 	}
 
 	// 写入 PID 方便排查
@@ -137,7 +135,7 @@ func (l *Lock) Close() error {
 		return nil
 	}
 	// 显式解锁（close 也会自动释放，但显式做更清晰）
-	syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
+	flockUn(l.file.Fd())
 	err := l.file.Close()
 	l.file = nil
 	return err
