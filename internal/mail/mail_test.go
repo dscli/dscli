@@ -685,12 +685,45 @@ func TestFormatUnreadMailLine(t *testing.T) {
 		if !strings.Contains(result, "1 unread message") {
 			t.Errorf("expected '1 unread message', got: %s", result)
 		}
-		if !strings.Contains(result, "readmail") {
-			t.Error("expected 'readmail' instruction")
+		if !strings.Contains(result, "readmail(1)") {
+			t.Errorf("expected 'readmail(1)' with ID, got: %s", result)
+		}
+		if !strings.Contains(result, "from **Fermi**") {
+			t.Errorf("expected sender name, got: %s", result)
+		}
+		if !strings.Contains(result, "Hello") {
+			t.Errorf("expected subject, got: %s", result)
 		}
 		// Single line — no newline inside
 		if strings.Count(result, "\n") > 0 {
 			t.Error("expected single line, got multiline")
+		}
+	})
+
+	t.Run("single mail no subject", func(t *testing.T) {
+		summaries := []UnreadMailSummary{
+			{ID: 2, SenderName: "Curie", Subject: ""},
+		}
+		result := FormatUnreadMailLine(summaries)
+		if !strings.Contains(result, "(no subject)") {
+			t.Errorf("expected '(no subject)' fallback, got: %s", result)
+		}
+		if !strings.Contains(result, "readmail(2)") {
+			t.Errorf("expected 'readmail(2)' with ID, got: %s", result)
+		}
+	})
+
+	t.Run("single mail long subject", func(t *testing.T) {
+		longSubject := strings.Repeat("A", 100)
+		summaries := []UnreadMailSummary{
+			{ID: 3, SenderName: "Test", Subject: longSubject},
+		}
+		result := FormatUnreadMailLine(summaries)
+		if strings.Contains(result, longSubject) {
+			t.Error("expected long subject to be truncated")
+		}
+		if !strings.Contains(result, "...") {
+			t.Error("expected ellipsis for truncated subject")
 		}
 	})
 
@@ -703,8 +736,39 @@ func TestFormatUnreadMailLine(t *testing.T) {
 		if !strings.Contains(result, "2 unread messages") {
 			t.Errorf("expected '2 unread messages', got: %s", result)
 		}
-		if strings.Count(result, "\n") > 0 {
-			t.Error("expected single line, got multiline")
+		if !strings.Contains(result, "readmail(10)") {
+			t.Errorf("expected 'readmail(10)', got: %s", result)
+		}
+		if !strings.Contains(result, "readmail(11)") {
+			t.Errorf("expected 'readmail(11)', got: %s", result)
+		}
+		if !strings.Contains(result, "Fermi") {
+			t.Errorf("expected sender 'Fermi', got: %s", result)
+		}
+		if !strings.Contains(result, "Zhang Heng") {
+			t.Errorf("expected sender 'Zhang Heng', got: %s", result)
+		}
+		if !strings.Contains(result, "Call `readmail <id>`") {
+			t.Errorf("expected closing instruction, got: %s", result)
+		}
+		// Multi-line now
+		if !strings.Contains(result, "\n") {
+			t.Error("expected multiline for multiple mails")
+		}
+	})
+
+	t.Run("multiple mails long subject truncation", func(t *testing.T) {
+		longSubject := strings.Repeat("X", 100)
+		summaries := []UnreadMailSummary{
+			{ID: 20, SenderName: "Fermi", Subject: longSubject},
+			{ID: 21, SenderName: "Curie", Subject: "Short"},
+		}
+		result := FormatUnreadMailLine(summaries)
+		if strings.Contains(result, longSubject) {
+			t.Error("expected long subject to be truncated")
+		}
+		if !strings.Contains(result, "...") {
+			t.Error("expected ellipsis for truncated subject")
 		}
 	})
 }

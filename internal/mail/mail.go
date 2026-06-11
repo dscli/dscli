@@ -812,22 +812,46 @@ func FormatUnreadMailNotification(summaries []UnreadMailSummary) string {
 	return sb.String()
 }
 
-// FormatUnreadMailLine returns a one-line mail notification string.
-// Returns empty string when there are no summaries — caller should skip injection.
-// Use this instead of FormatUnreadMailNotification for concise in-message injection
-// (e.g. prepended to user or tool content).
+// FormatUnreadMailLine formats unread mail summaries with IDs into a
+// notification string injected at the top of user messages.
+// Includes each mail's ID so the LLM can call readmail(id=N) directly.
+// Returns empty string when there are no summaries.
 func FormatUnreadMailLine(summaries []UnreadMailSummary) string {
 	if len(summaries) == 0 {
 		return ""
 	}
-	word := "messages"
+
+	var sb strings.Builder
+
 	if len(summaries) == 1 {
-		word = "message"
+		s := summaries[0]
+		subject := s.Subject
+		if subject == "" {
+			subject = "(no subject)"
+		}
+		if len(subject) > 80 {
+			subject = subject[:80] + "..."
+		}
+		fmt.Fprintf(&sb, "📬 1 unread message from **%s**: \"%s\". Call `readmail(%d)` before responding.",
+			s.SenderName, subject, s.ID)
+		return sb.String()
 	}
-	return fmt.Sprintf("📬 %d unread %s. Call `readmail` before responding.", len(summaries), word)
+
+	// Multiple mails
+	fmt.Fprintf(&sb, "📬 %d unread messages:\n", len(summaries))
+	for _, s := range summaries {
+		subject := s.Subject
+		if subject == "" {
+			subject = "(no subject)"
+		}
+		if len(subject) > 80 {
+			subject = subject[:80] + "..."
+		}
+		fmt.Fprintf(&sb, "  • `readmail(%d)` — %s: %s\n", s.ID, s.SenderName, subject)
+	}
+	sb.WriteString("Call `readmail <id>` before responding.")
+	return sb.String()
 }
-
-
 
 func formatMailRow(row MailRow) string {
 	readStatus := "已读"
