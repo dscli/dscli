@@ -4,6 +4,12 @@
 // The init function registers callbacks with toolcall so that MCP tools
 // (markdown, semantic_tree, evaluate, goto, etc.) are included in GetAllTools
 // and dispatched via a persistent MCPClient singleton in HandleToolCall.
+//
+// Two MCP modes are supported:
+//   - local: spawns "lightpanda mcp" subprocess (stdio). Default.
+//   - cloud: connects to LightPanda Cloud SSE endpoint.
+//
+// The AI switches between modes via the mcp_client tool.
 package lp
 
 import (
@@ -21,22 +27,67 @@ var (
 	mcpToolsDone  bool
 	mcpToolsCache []toolcall.Tool
 
-	// mcpClientSingleton is the shared MCP client reused across all tool calls.
-	// Created lazily on first handleMCPCall; lives for the process lifetime.
+	// mcpClientSingleton is the shared local MCP client reused across all tool calls.
+	// Created lazily on first activeMCPClient call; lives for the process lifetime.
 	// Using a singleton preserves LightPanda frame state (goto -> evaluate, etc.).
-	mcpClientMu         sync.Mutex
-	mcpClientSingleton  *MCPClient
+	mcpClientMu        sync.Mutex
+	mcpClientSingleton *MCPClient
+
+	// cloudMCPClientSingleton is the shared cloud MCP client.
+	// Created on first mcp_client(target="cloud") call.
+	cloudMCPClientMu        sync.Mutex
+	cloudMCPClientSingleton *MCPClient
+
+	// mcpClientTarget controls which MCP client to use for tool calls.
+	// Default "local". Set by the mcp_client tool.
+	mcpClientTarget   string
+	mcpClientTargetMu sync.Mutex
 )
 
 func init() {
 	toolcall.MCPToolList = getMCPTools
 	toolcall.HandleMCPCall = handleMCPCall
+
+	// Register the mcp_client tool so the AI can switch between local/cloud MCP.
+	toolcall.RegisterTool(toolcall.ToolDef{
+		Name:        "mcp_client",
+		Description: "切换 MCP 目标：local（本地，适合无需代理的网站）或 cloud（云端，适合 Google/Wikimedia 等需要代理的网站）。",
+		Strict:      true,
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"target": map[string]any{
+					"type":        "string",
+					"enum":        []string{"local", "cloud"},
+					"description": "MCP 目标: 'local' 使用本地 LightPanda MCP（默认），'cloud' 使用 LightPanda Cloud SSE",
+				},
+			},
+			"required":             []string{"target"},
+			"additionalProperties": false,
+		},
+		Category: "web",
+		Handler:  handleMCPClientTool,
+	})
+}
+
+// activeMCPClient returns the MCP client for the current target ("local" or "cloud").
+func activeMCPClient() (*MCPClient, error) {
+	mcpClientTargetMu.Lock()
+	target := mcpClientTarget
+	mcpClientTargetMu.Unlock()
+
+	switch target {
+	case "cloud":
+		return getOrCreateCloudMCPClient()
+	default:
+		return getOrCreateMCPClient()
+	}
 }
 
 // getMCPTools lazily discovers tools from the LightPanda MCP server.
 // It is called once per process lifetime; results are cached.
-// If MCP transport is not active or discovery fails, it returns nil
-// (tools are silently omitted from GetAllTools).
+// Always discovers via LOCAL MCP regardless of active target.
+// If discovery fails, it returns nil (tools are silently omitted from GetAllTools).
 func getMCPTools(ctx context.Context) []toolcall.Tool {
 	mcpToolsMu.Lock()
 	defer mcpToolsMu.Unlock()
@@ -44,10 +95,6 @@ func getMCPTools(ctx context.Context) []toolcall.Tool {
 		return mcpToolsCache
 	}
 	mcpToolsDone = true
-
-	if defaultTransport() != TransportMCP {
-		return nil
-	}
 
 	mc, err := NewMCPClient(ctx)
 	if err != nil {
@@ -76,9 +123,8 @@ func getMCPTools(ctx context.Context) []toolcall.Tool {
 	return mcpToolsCache
 }
 
-// getOrCreateMCPClient returns the shared MCP client singleton.
-// Created on first call; reused for all subsequent calls so that
-// LightPanda frame state persists (e.g., goto then evaluate without url).
+// getOrCreateMCPClient returns the shared local MCP client singleton.
+// Created on first call; reused for all subsequent calls.
 func getOrCreateMCPClient() (*MCPClient, error) {
 	mcpClientMu.Lock()
 	defer mcpClientMu.Unlock()
@@ -96,22 +142,33 @@ func getOrCreateMCPClient() (*MCPClient, error) {
 	return mc, nil
 }
 
-// handleMCPCall dispatches a tool call to the LightPanda MCP server.
-// It uses a persistent singleton MCP client so that frame state (navigation,
-// scroll position, etc.) is preserved across consecutive tool calls.
-// If MCP transport is not active, it returns an "unknown tool" error.
-func handleMCPCall(ctx context.Context, toolName, argsRaw string) (result, warning string, err error) {
-	if defaultTransport() != TransportMCP {
-		err = fmt.Errorf("unknown tool: %s (not a registered dscli tool and MCP transport is not active)", toolName)
-		return
+// getOrCreateCloudMCPClient returns the shared cloud MCP client singleton.
+// Created on first call; reused for all subsequent calls.
+func getOrCreateCloudMCPClient() (*MCPClient, error) {
+	cloudMCPClientMu.Lock()
+	defer cloudMCPClientMu.Unlock()
+
+	if cloudMCPClientSingleton != nil {
+		return cloudMCPClientSingleton, nil
 	}
 
+	mc, err := NewCloudMCPClient(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	cloudMCPClientSingleton = mc
+	return mc, nil
+}
+
+// handleMCPCall dispatches a tool call to the active MCP client.
+// Uses a persistent singleton so frame state persists across calls.
+func handleMCPCall(ctx context.Context, toolName, argsRaw string) (result, warning string, err error) {
 	var args map[string]any
 	if err := json.Unmarshal([]byte(argsRaw), &args); err != nil {
 		return "", "", fmt.Errorf("mcp call %s: invalid args: %w", toolName, err)
 	}
 
-	mc, mcErr := getOrCreateMCPClient()
+	mc, mcErr := activeMCPClient()
 	if mcErr != nil {
 		return "", "", fmt.Errorf("mcp %s: %w", toolName, mcErr)
 	}
@@ -126,6 +183,33 @@ func handleMCPCall(ctx context.Context, toolName, argsRaw string) (result, warni
 
 	outfmt.Printf("✅ %s 执行成功\n", toolName)
 	return text, "", nil
+}
+
+// handleMCPClientTool is the handler for the mcp_client tool.
+// It switches the active MCP target between "local" and "cloud".
+func handleMCPClientTool(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
+	target := toolcall.ToolArgsValue(args, "target", "")
+
+	switch target {
+	case "local":
+		mcpClientTargetMu.Lock()
+		mcpClientTarget = "local"
+		mcpClientTargetMu.Unlock()
+		return "✅ 已切换到本地 MCP 模式，适用于访问无需代理的网站", "", nil
+
+	case "cloud":
+		// Initialize to validate connectivity before switching.
+		if _, err := getOrCreateCloudMCPClient(); err != nil {
+			return "", "", fmt.Errorf("❌ 云端 MCP 连接失败: %w", err)
+		}
+		mcpClientTargetMu.Lock()
+		mcpClientTarget = "cloud"
+		mcpClientTargetMu.Unlock()
+		return "✅ 已切换到云端 MCP 模式，适用于 Google、Wikimedia 等需要代理的网站", "", nil
+
+	default:
+		return "", "", fmt.Errorf("无效的 target: %q，可选: local, cloud", target)
+	}
 }
 
 // inputSchemaToMap converts an MCP InputSchema (any) to a JSON Schema map.

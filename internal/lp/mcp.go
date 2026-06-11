@@ -3,10 +3,12 @@ package lp
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os/exec"
 	"strings"
 	"sync"
 
+	"github.com/dscli/dscli/internal/config"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -153,4 +155,34 @@ func (c *MCPClient) callTool(ctx context.Context, name string, args map[string]a
 	}
 
 	return "", fmt.Errorf("mcp call %s: no text content in result", name)
+}
+
+// NewCloudMCPClient connects to LightPanda Cloud MCP over SSE.
+// Uses lightpanda-cloud-url and lightpanda-remote-token from config.
+func NewCloudMCPClient(ctx context.Context) (*MCPClient, error) {
+	endpoint := config.Get("lightpanda-cloud-url", "https://euwest.cloud.lightpanda.io/mcp/sse")
+	token := config.Get("lightpanda-remote-token", "")
+
+	if token != "" {
+		if strings.Contains(endpoint, "?") {
+			endpoint += "&token=" + url.QueryEscape(token)
+		} else {
+			endpoint += "?token=" + url.QueryEscape(token)
+		}
+	}
+
+	transport := &mcp.SSEClientTransport{Endpoint: endpoint}
+	client := mcp.NewClient(&mcp.Implementation{
+		Name:    "dscli",
+		Version: "0.8.6",
+	}, nil)
+
+	session, err := client.Connect(ctx, transport, nil)
+	if err != nil {
+		return nil, fmt.Errorf("mcp cloud connect: %w", err)
+	}
+
+	return &MCPClient{
+		session: session,
+	}, nil
 }
