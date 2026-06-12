@@ -10,7 +10,8 @@
 //
 // The package uses LightPanda's native MCP server by default (lightpanda mcp
 // subcommand, stdio transport). Each Get call spawns a fresh lightpanda mcp
-// subprocess. For geo-restricted sites, use the mcp_client tool to switch
+// subprocess, navigates via "goto", then extracts content via "markdown".
+// For geo-restricted sites, use the mcp_client tool to switch
 // to LightPanda Cloud's MCP/SSE endpoint.
 //
 // # Deprecated
