@@ -86,7 +86,8 @@ var roleDefaults = []struct {
 	{"dev", "all", "all", "dev"},
 	{"expert", "none", "none", "expert"},
 	{"review", "none", "none", "expert"},
-	{"test", "none", "none", "test"},
+	{"test", "all", "all", "test"},
+
 }
 
 func roleListRunE(cmd *cobra.Command, _ []string) error {
