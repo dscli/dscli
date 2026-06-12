@@ -1,13 +1,13 @@
 // Package roles manages role-to-skills/tools/prompt mappings stored in SQLite.
 //
-// Each role (dev/expert/review) can have per-session configuration.
+// Each role (dev/expert/review/test) can have per-session configuration.
 // The table is keyed by (role, session_id), not (role, project_path). This is
 // intentional: session_id is a stable identifier that survives project relocation.
 // When a user copies a project to a new directory, they only need to update
 // sessions.project_path — role_configs follows automatically.
 //
 // Fallback: when no row exists for a role+session, the system uses hardcoded
-// defaults: dev gets all skills+tools, expert/review get none.
+// defaults: dev gets all skills+tools, expert/review/test get none.
 //
 // API conventions:
 //   - "all"  → nil slice (no filtering, include everything)

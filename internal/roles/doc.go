@@ -16,7 +16,7 @@
 // # Fallback chain
 //
 //	DB row exists? → use it
-//	No row        → hardcoded: dev=all, expert=none, review=none
+//	No row        → hardcoded: dev=all, expert=none, review=none, test=none
 //
 // # "all" vs ""
 //

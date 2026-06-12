@@ -18,7 +18,7 @@ func init() {
 		Short: "角色配置管理 - 管理角色与技能、工具、提示词的映射",
 		Long: `role 命令用于管理角色的技能、工具和提示词映射配置。
 
-当前支持 3 个角色（dev / expert / review），每个角色可以针对当前项目
+当前支持 4 个角色（dev / expert / review / test），每个角色可以针对当前项目
 配置其可用的技能列表、工具列表以及对应的系统提示词模板。
 
 示例：
@@ -76,7 +76,7 @@ func init() {
 	})
 }
 
-// roleDefaults 定义三个内置角色的默认配置。
+// roleDefaults 定义四个内置角色的默认配置。
 var roleDefaults = []struct {
 	Role   string
 	Skills string
@@ -86,6 +86,7 @@ var roleDefaults = []struct {
 	{"dev", "all", "all", "dev"},
 	{"expert", "none", "none", "expert"},
 	{"review", "none", "none", "expert"},
+	{"test", "none", "none", "test"},
 }
 
 func roleListRunE(cmd *cobra.Command, _ []string) error {
@@ -159,7 +160,7 @@ func roleShowRunE(cmd *cobra.Command, args []string) error {
 				return nil
 			}
 		}
-		fmt.Printf("角色 %q 未识别。支持的角色：dev, expert, review\n", roleName)
+	fmt.Printf("角色 %q 未识别。支持的角色：dev, expert, review, test\n", roleName)
 		return nil
 	}
 
@@ -188,9 +189,9 @@ func roleUpdateRunE(cmd *cobra.Command, args []string) error {
 	roleName := args[0]
 
 	// Validate role name
-	validRoles := map[string]bool{"dev": true, "expert": true, "review": true}
+	validRoles := map[string]bool{"dev": true, "expert": true, "review": true, "test": true}
 	if !validRoles[roleName] {
-		return fmt.Errorf("无效的角色名 %q，支持的角色：dev, expert, review", roleName)
+		return fmt.Errorf("无效的角色名 %q，支持的角色：dev, expert, review, test", roleName)
 	}
 
 	skills, _ := cmd.Flags().GetString("skills")
@@ -275,9 +276,9 @@ func roleResetRunE(cmd *cobra.Command, args []string) error {
 	roleName := args[0]
 
 	// Validate role name
-	validRoles := map[string]bool{"dev": true, "expert": true, "review": true}
+	validRoles := map[string]bool{"dev": true, "expert": true, "review": true, "test": true}
 	if !validRoles[roleName] {
-		return fmt.Errorf("无效的角色名 %q，支持的角色：dev, expert, review", roleName)
+		return fmt.Errorf("无效的角色名 %q，支持的角色：dev, expert, review, test", roleName)
 	}
 
 	sessionID := session.GetCurrentSessionID(cmd.Context())
