@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/flycheck"
@@ -62,15 +63,13 @@ func flycheckRunEImpl(path string) error {
 		ctx = context.WithValue(ctx, flycheck.EmacsKey, true)
 	}
 	result, err := flycheck.CheckPath(ctx, path)
-	// 处理错误
 	if err != nil {
 		outfmt.Error("%v", err)
 		if result != nil && result.Suggestion != "" {
 			outfmt.Println(result.Suggestion)
 		}
-		return err
+		return nil
 	}
-	// 语言不支持
 	if !result.Supported {
 		kind := "文件"
 		if result.Mode == "package" {
@@ -82,7 +81,6 @@ func flycheckRunEImpl(path string) error {
 		return nil
 	}
 
-	// 非 Go/Python 目录检查 → 单文件检查
 	if result.Mode == "file" {
 		if result.RawOutput != "" {
 			outfmt.Printf("> 检查文件: %s\n\n", result.Path)
@@ -93,26 +91,24 @@ func flycheckRunEImpl(path string) error {
 		return nil
 	}
 
-	// 包/目录检查
 	printPackageResult(result)
 
 	if result.Stats.Errors > 0 {
-		return fmt.Errorf("发现 %d 个编译错误", result.Stats.Errors)
+		os.Exit(1)
 	}
 	return nil
 }
 
+
 // printPackageResult 打印 Go 包检查结果。
 func printPackageResult(r *flycheck.CheckResult) {
 	if len(r.Issues) > 0 {
-		// Header
 		if r.Stats.Errors > 0 {
 			outfmt.PrintHeader("❌ flycheck 发现编译错误 — 必须立即修复！")
 		} else {
 			outfmt.PrintHeader("⚠️ flycheck 发现问题")
 		}
 
-		// Summary line
 		sb := fmt.Sprintf("> 检查了 %d 个包（%d 个文件），发现：", r.NPkgs, r.NFiles)
 		if r.Stats.Errors > 0 {
 			sb += fmt.Sprintf(" ❌ %d 个编译错误", r.Stats.Errors)
@@ -130,14 +126,12 @@ func printPackageResult(r *flycheck.CheckResult) {
 		}
 		outfmt.Println(sb)
 
-		// Each issue
 		outfmt.Println("")
 		for _, iss := range r.Issues {
 			outfmt.Printf("%s %s\n", iss.Severity, iss.Line)
 		}
 	}
 
-	// 报告失败的包（即使已有问题也显示）
 	if len(r.FailedPkgs) > 0 {
 		outfmt.Println("")
 		outfmt.Warn("[!] %d 个包检查失败:", len(r.FailedPkgs))
@@ -150,7 +144,6 @@ func printPackageResult(r *flycheck.CheckResult) {
 		}
 	}
 
-	// 全部成功
 	if len(r.Issues) == 0 && len(r.FailedPkgs) == 0 {
 		outfmt.Printf("✅ flycheck: 检查了 %d 个包（%d 个文件），未发现问题\n",
 			r.NPkgs, r.NFiles)

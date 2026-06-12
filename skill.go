@@ -190,7 +190,8 @@ func skillValidateRunE(cmd *cobra.Command, args []string) error {
 func skillListRunE(cmd *cobra.Command, args []string) error {
 	skillInfos, err := skills.ListAll()
 	if err != nil {
-		return fmt.Errorf("列出技能失败: %w", err)
+		fmt.Fprintf(os.Stderr, "列出技能失败: %v\n", err)
+		return nil
 	}
 
 	if len(skillInfos) == 0 {
@@ -212,7 +213,6 @@ func skillListRunE(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	// 使用FormatOutput进行格式化输出
 	headers := []string{"名称", "范围", "自动注入"}
 	rowFunc := func(data any) []string {
 		switch info := data.(type) {
@@ -223,7 +223,6 @@ func skillListRunE(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 使用默认的table格式
 	err = FormatOutput(skillMaps, "table", headers, rowFunc)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "格式化输出失败: %v\n", err)
@@ -232,6 +231,7 @@ func skillListRunE(cmd *cobra.Command, args []string) error {
 
 	return nil
 }
+
 
 func runSkillRemove(cmd *cobra.Command, args []string) error {
 	skillName := args[0]
@@ -489,23 +489,27 @@ func skillShowRunE(cmd *cobra.Command, args []string) error {
 	skillName := args[0]
 	content, err := skills.Use(skillName)
 	if err != nil {
-		return fmt.Errorf("使用技能失败: %w", err)
+		fmt.Fprintf(os.Stderr, "使用技能失败: %v\n", err)
+		return nil
 	}
 
 	outfmt.Print(content)
 	return nil
 }
 
+
 func skillQueryRunE(cmd *cobra.Command, args []string) error {
 	query := args[0]
 	result, err := skills.Query(query)
 	if err != nil {
-		return fmt.Errorf("查询技能失败: %w", err)
+		fmt.Fprintf(os.Stderr, "查询技能失败: %v\n", err)
+		return nil
 	}
 
 	outfmt.Print(result)
 	return nil
 }
+
 
 func skillSetAutoInjectRunE(cmd *cobra.Command, args []string) error {
 	name := args[0]
@@ -523,7 +527,8 @@ func skillSetAutoInjectRunE(cmd *cobra.Command, args []string) error {
 	global, _ := cmd.Flags().GetBool("global")
 
 	if err := skills.SetAutoInject(name, autoInject, global); err != nil {
-		return fmt.Errorf("设置 auto_inject 失败: %w", err)
+		fmt.Fprintf(os.Stderr, "设置 auto_inject 失败: %v\n", err)
+		return nil
 	}
 
 	scope := "本地"
@@ -533,3 +538,4 @@ func skillSetAutoInjectRunE(cmd *cobra.Command, args []string) error {
 	fmt.Printf("已将 %s 技能 %q 的 auto_inject 设置为 %v\n", scope, name, autoInject)
 	return nil
 }
+

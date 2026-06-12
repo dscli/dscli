@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 
 	"github.com/dscli/dscli/internal/mail"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/spf13/cobra"
 )
+
 
 func init() {
 	mailCmd := AddRootCommand(&cobra.Command{
@@ -102,11 +104,13 @@ func mailSendRunE(cmd *cobra.Command, args []string) error {
 
 	result, _, err := mail.HandleSendMail(context.Background(), recipient, subject, body)
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "发送邮件失败: %v\n", err)
+		return nil
 	}
 	outfmt.Println(result)
 	return nil
 }
+
 
 func mailReadRunE(cmd *cobra.Command, args []string) error {
 	mid, err := strconv.ParseInt(args[0], 10, 64)
@@ -116,11 +120,13 @@ func mailReadRunE(cmd *cobra.Command, args []string) error {
 
 	result, _, err := mail.HandleReadMail(context.Background(), mid)
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "读取邮件失败: %v\n", err)
+		return nil
 	}
 	outfmt.Print(result)
 	return nil
 }
+
 
 func mailListRunE(cmd *cobra.Command, _ []string) error {
 	unreadOnly, _ := cmd.Flags().GetBool("unread")
@@ -128,7 +134,8 @@ func mailListRunE(cmd *cobra.Command, _ []string) error {
 
 	result, _, err := mail.HandleListMail(context.Background(), unreadOnly, limit)
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "列出邮件失败: %v\n", err)
+		return nil
 	}
 	outfmt.Print(result)
 	return nil
@@ -140,7 +147,8 @@ func mailSearchRunE(cmd *cobra.Command, args []string) error {
 
 	result, _, err := mail.HandleMailSearch(context.Background(), query, limit)
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "搜索邮件失败: %v\n", err)
+		return nil
 	}
 	outfmt.Print(result)
 	return nil
@@ -149,7 +157,8 @@ func mailSearchRunE(cmd *cobra.Command, args []string) error {
 func contactsRunE(cmd *cobra.Command, _ []string) error {
 	result, _, err := mail.HandleContacts(context.Background())
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "获取通讯录失败: %v\n", err)
+		return nil
 	}
 	outfmt.Print(result)
 	return nil
@@ -165,7 +174,8 @@ func mailReplyRunE(cmd *cobra.Command, args []string) error {
 
 	result, _, err := mail.HandleReplyMail(context.Background(), mid, subject, body)
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "回复邮件失败: %v\n", err)
+		return nil
 	}
 	outfmt.Println(result)
 	return nil
@@ -179,7 +189,8 @@ func mailDeleteRunE(cmd *cobra.Command, args []string) error {
 
 	result, _, err := mail.HandleDeleteMail(context.Background(), mid)
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "删除邮件失败: %v\n", err)
+		return nil
 	}
 	outfmt.Println(result)
 	return nil

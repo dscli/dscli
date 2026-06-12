@@ -2,11 +2,13 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/dscli/dscli/internal/toolcall"
 	"github.com/spf13/cobra"
 )
+
 
 func init() {
 	toolCmd := AddRootCommand(&cobra.Command{
@@ -52,7 +54,8 @@ func toolListRunE(cmd *cobra.Command, _ []string) error {
 
 	tools, err := toolcall.ListTools(cmd.Context(), category)
 	if err != nil {
-		return fmt.Errorf("列出工具失败: %w", err)
+		fmt.Fprintf(os.Stderr, "列出工具失败: %v\n", err)
+		return nil
 	}
 
 	if len(tools) == 0 {
@@ -98,6 +101,7 @@ func toolListRunE(cmd *cobra.Command, _ []string) error {
 	return FormatOutput(rows, "table", headers, rowFunc)
 }
 
+
 func toolStatsRunE(cmd *cobra.Command, _ []string) error {
 	days, _ := cmd.Flags().GetInt("days")
 	project, _ := cmd.Flags().GetBool("project")
@@ -112,7 +116,8 @@ func toolStatsRunE(cmd *cobra.Command, _ []string) error {
 	}
 
 	if err != nil {
-		return fmt.Errorf("获取工具统计失败: %w", err)
+		fmt.Fprintf(os.Stderr, "获取工具统计失败: %v\n", err)
+		return nil
 	}
 
 	if len(stats) == 0 {
@@ -151,6 +156,7 @@ func toolStatsRunE(cmd *cobra.Command, _ []string) error {
 
 	return FormatOutput(rows, "table", headers, rowFunc)
 }
+
 
 // firstContentLine 取描述的首行正文（跳过 Markdown 标题行和空行）。
 // 如果所有行都是标题或空行，则返回空字符串。

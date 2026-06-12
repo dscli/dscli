@@ -22,10 +22,9 @@ func BalanceRunE(cmd *cobra.Command, args []string) (err error) {
 	resp, err := DeepseekClient.Balance()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "balance query failed: %v\n", err)
-		return err
+		return nil
 	}
 
-	// Use new formatting interface
 	headers := []string{"Currency", "Total Balance", "Granted Balance", "Topped-up Balance"}
 	rowFunc := func(data any) []string {
 		switch info := data.(type) {
@@ -45,5 +44,5 @@ func BalanceRunE(cmd *cobra.Command, args []string) (err error) {
 	if !resp.IsAvailable {
 		fmt.Fprintln(os.Stderr, "warning: account currently unavailable")
 	}
-	return err
+	return nil
 }

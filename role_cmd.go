@@ -94,10 +94,10 @@ func roleListRunE(cmd *cobra.Command, _ []string) error {
 	sessionID := session.GetCurrentSessionID(cmd.Context())
 	configs, err := roles.ListRoleConfigs(sessionID)
 	if err != nil {
-		return fmt.Errorf("列出角色配置失败: %w", err)
+		fmt.Fprintf(os.Stderr, "列出角色配置失败: %v\n", err)
+		return nil
 	}
 
-	// 建立自定义配置索引
 	custom := make(map[string]roles.RoleConfig)
 	for _, cfg := range configs {
 		custom[cfg.Role] = cfg
@@ -142,17 +142,18 @@ func roleListRunE(cmd *cobra.Command, _ []string) error {
 	return FormatOutput(rows, "table", headers, rowFunc)
 }
 
+
 func roleShowRunE(cmd *cobra.Command, args []string) error {
 	roleName := args[0]
 
 	sessionID := session.GetCurrentSessionID(cmd.Context())
 	cfg, err := roles.GetRoleConfig(roleName, sessionID)
 	if err != nil {
-		return fmt.Errorf("查询角色配置失败: %w", err)
+		fmt.Fprintf(os.Stderr, "查询角色配置失败: %v\n", err)
+		return nil
 	}
 
 	if cfg == nil {
-		// 查找默认配置
 		for _, d := range roleDefaults {
 			if d.Role == roleName {
 				fmt.Printf("角色 %q 在当前项目没有自定义配置，使用默认行为。\n", roleName)
@@ -161,13 +162,12 @@ func roleShowRunE(cmd *cobra.Command, args []string) error {
 				return nil
 			}
 		}
-	fmt.Printf("角色 %q 未识别。支持的角色：dev, expert, review, test\n", roleName)
+		fmt.Printf("角色 %q 未识别。支持的角色：dev, expert, review, test\n", roleName)
 		return nil
 	}
 
 	prompt := cfg.Prompt
 	if prompt == "" {
-		// 查找角色默认 prompt 名
 		defaultPrompt := roleName
 		for _, d := range roleDefaults {
 			if d.Role == roleName {
@@ -185,6 +185,7 @@ func roleShowRunE(cmd *cobra.Command, args []string) error {
 	fmt.Printf("会话ID:   %d\n", cfg.SessionID)
 	return nil
 }
+
 
 func roleUpdateRunE(cmd *cobra.Command, args []string) error {
 	roleName := args[0]
@@ -220,7 +221,8 @@ func roleUpdateRunE(cmd *cobra.Command, args []string) error {
 
 	sessionID := session.GetCurrentSessionID(cmd.Context())
 	if err := roles.UpsertRoleConfig(roleName, sessionID, skills, tools, prompt); err != nil {
-		return fmt.Errorf("保存角色配置失败: %w", err)
+		fmt.Fprintf(os.Stderr, "保存角色配置失败: %v\n", err)
+		return nil
 	}
 
 	fmt.Printf("已更新角色 %q 的配置。\n", roleName)
@@ -235,6 +237,7 @@ func roleUpdateRunE(cmd *cobra.Command, args []string) error {
 	}
 	return nil
 }
+
 
 // validateTools checks that all tool names in the comma-separated list are known.
 func validateTools(tools string) error {
@@ -284,9 +287,11 @@ func roleResetRunE(cmd *cobra.Command, args []string) error {
 
 	sessionID := session.GetCurrentSessionID(cmd.Context())
 	if err := roles.DeleteRoleConfig(roleName, sessionID); err != nil {
-		return fmt.Errorf("重置角色配置失败: %w", err)
+		fmt.Fprintf(os.Stderr, "重置角色配置失败: %v\n", err)
+		return nil
 	}
 
 	fmt.Printf("已重置角色 %q 的配置，恢复默认行为。\n", roleName)
 	return nil
 }
+

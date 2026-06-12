@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -93,6 +94,35 @@ Examples:
 	editCmd.Flags().String("column", "content", "column name to edit, default content, others like tool_calls can be edited too.")
 }
 
+func historyPreRunE(cmd *cobra.Command, args []string) (err error) {
+	ctx := cmd.Context()
+
+	ctx = context.WithValue(ctx, context.CurrentModelNameKey, context.ModelDeepseekChat)
+	ctx = context.WithValue(ctx, context.CurrentModelIDKey, DeepseekChat)
+
+	role, err := cmd.Flags().GetString("role")
+	if err != nil {
+		return err
+	}
+
+	if role == "" {
+		role = "dev"
+	}
+
+	ctx = context.WithValue(ctx, context.CurrentRoleKey, role)
+
+	contextWindow := config.GetInt("context-window", 1000000)
+	ctx = context.WithValue(ctx, context.LeftTokensKey, contextWindow)
+
+	histsize, err := cmd.Flags().GetInt("histsize")
+	if err != nil {
+		return err
+	}
+	ctx = context.WithValue(ctx, context.HistSizeKey, histsize)
+	cmd.SetContext(ctx)
+	return nil
+}
+
 func historyShowRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
 	id, err := strconv.Atoi(args[0])
@@ -101,7 +131,8 @@ func historyShowRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 	message, err := prompt.ShowMessage(ctx, int64(id))
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "获取消息失败: %v\n", err)
+		return nil
 	}
 	wrt := outfmt.NewTabwrt()
 	defer wrt.Flush()
@@ -113,7 +144,7 @@ func historyShowRunE(cmd *cobra.Command, args []string) (err error) {
 	wrt.Println("ToolCalls", prompt.ToSQLNullString(message.ToolCalls).String)
 	wrt.Println("ReasoningContent", message.ReasoningContent)
 	wrt.Println("Content", message.Content)
-	return err
+	return nil
 }
 
 func historyEditRunE(cmd *cobra.Command, args []string) (err error) {
@@ -127,24 +158,26 @@ func historyEditRunE(cmd *cobra.Command, args []string) (err error) {
 		return err
 	}
 	if !slices.Contains([]string{"content", "tool_calls"}, column) {
-		err = fmt.Errorf("not support %s", column)
-		return err
+		return fmt.Errorf("not support %s", column)
 	}
 
 	message, err := prompt.ShowMessage(ctx, int64(id))
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "获取消息失败: %v\n", err)
+		return nil
 	}
 	switch column {
 	case "content":
 		content := message.Content
 		content, err = editor.OpenEditor(ctx, content)
 		if err != nil {
-			return err
+			fmt.Fprintf(os.Stderr, "编辑内容失败: %v\n", err)
+			return nil
 		}
 		err = prompt.UpdateContent(ctx, int64(id), content)
 		if err != nil {
-			return err
+			fmt.Fprintf(os.Stderr, "更新内容失败: %v\n", err)
+			return nil
 		}
 	case "tool_calls":
 		tcs := message.ToolCalls
@@ -155,16 +188,18 @@ func historyEditRunE(cmd *cobra.Command, args []string) (err error) {
 		arguments := tc.Function.Arguments
 		arguments, err = editor.OpenEditor(ctx, arguments)
 		if err != nil {
-			return err
+			fmt.Fprintf(os.Stderr, "编辑参数失败: %v\n", err)
+			return nil
 		}
 		tc.Function.Arguments = arguments
 		tcs = []prompt.ToolCall{tc}
 		err = prompt.UpdateToolCalls(ctx, int64(id), tcs)
 		if err != nil {
-			return err
+			fmt.Fprintf(os.Stderr, "更新工具调用失败: %v\n", err)
+			return nil
 		}
 	}
-	return err
+	return nil
 }
 
 func historyUpdateRunE(cmd *cobra.Command, args []string) (err error) {
@@ -173,7 +208,11 @@ func historyUpdateRunE(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return err
 	}
-	return prompt.UpdateHistory(ctx, int64(id))
+	if err := prompt.UpdateHistory(ctx, int64(id)); err != nil {
+		fmt.Fprintf(os.Stderr, "更新历史状态失败: %v\n", err)
+		return nil
+	}
+	return nil
 }
 
 func historyRecentRunE(cmd *cobra.Command, args []string) (err error) {
@@ -194,7 +233,8 @@ func historyRecentRunE(cmd *cobra.Command, args []string) (err error) {
 
 	msgs, err := prompt.RecentMessages(ctx, limit, startID)
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "获取最近消息失败: %v\n", err)
+		return nil
 	}
 
 	if len(msgs) == 0 {
@@ -223,45 +263,12 @@ func historyRecentRunE(cmd *cobra.Command, args []string) (err error) {
 	return nil
 }
 
-func historyPreRunE(cmd *cobra.Command, args []string) (err error) {
-	ctx := cmd.Context()
-
-	ctx = context.WithValue(ctx, context.CurrentModelNameKey, context.ModelDeepseekChat)
-	ctx = context.WithValue(ctx, context.CurrentModelIDKey, DeepseekChat)
-
-	// Read --role flag and store in context
-	role, err := cmd.Flags().GetString("role")
-	if err != nil {
-		return err
-	}
-
-	if role == "" {
-		role = "dev"
-	}
-
-	ctx = context.WithValue(ctx, context.CurrentRoleKey, role)
-
-	// Read context-window from config (default 1,000,000, matching DeepSeek V4 million-token context)
-	// This value is used as the upper limit for history message token budget;
-	// actual truncation is mainly controlled by --histsize.
-	// Config key: context-window, env var: CONTEXT_WINDOW.
-	contextWindow := config.GetInt("context-window", 1000000)
-	ctx = context.WithValue(ctx, context.LeftTokensKey, contextWindow)
-
-	histsize, err := cmd.Flags().GetInt("histsize")
-	if err != nil {
-		return err
-	}
-	ctx = context.WithValue(ctx, context.HistSizeKey, histsize)
-	cmd.SetContext(ctx)
-	return err
-}
-
 func historyListRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
 	history, err := prompt.ListHistory(ctx)
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "列出历史消息失败: %v\n", err)
+		return nil
 	}
 
 	filter, err := cmd.Flags().GetString("filter")
@@ -285,14 +292,15 @@ func historyListRunE(cmd *cobra.Command, args []string) (err error) {
 			}
 		}
 	}
-	return err
+	return nil
 }
 
 func historyLoadRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
 	history, err := prompt.LoadHistory(ctx)
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "加载历史消息失败: %v\n", err)
+		return nil
 	}
 	filter, err := cmd.Flags().GetString("filter")
 	if err != nil {
@@ -323,7 +331,6 @@ func historyLoadRunE(cmd *cobra.Command, args []string) (err error) {
 			if !pass {
 				wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, prompt.ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
 			}
-
 		}
 	}
 
@@ -341,7 +348,7 @@ func historyLoadRunE(cmd *cobra.Command, args []string) (err error) {
 			wrt.Println(fmt.Sprint(hist.ID), hist.Role, hist.ToolCallID, prompt.ToolCallsID(hist.ToolCalls), fmt.Sprint(pass))
 		}
 	}
-	return err
+	return nil
 }
 
 func recallSearchRunE(cmd *cobra.Command, args []string) (err error) {
@@ -355,8 +362,6 @@ func recallSearchRunE(cmd *cobra.Command, args []string) (err error) {
 		return err
 	}
 
-	// Extract keywords from args
-	// Note: quoted phrases are passed as single args by cobra, split here
 	var keywords []string
 	for _, arg := range args {
 		for kw := range strings.FieldsSeq(arg) {
@@ -370,7 +375,8 @@ func recallSearchRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
 	results, err := prompt.SearchMessages(ctx, keywords, days, limit)
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "搜索历史消息失败: %v\n", err)
+		return nil
 	}
 
 	if len(results) == 0 {
@@ -408,7 +414,8 @@ func historyNotesRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 	notes, err := prompt.LoadNotes(ctx, days)
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "加载笔记失败: %v\n", err)
+		return nil
 	}
 	if len(notes) == 0 {
 		outfmt.Println("暂无笔记。")

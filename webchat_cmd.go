@@ -57,7 +57,8 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 	response, err = lp.WebChat(ctx, message)
 
 	if err != nil {
-		return fmt.Errorf("webchat 失败: %w", err)
+		fmt.Fprintf(os.Stderr, "webchat 失败: %v\n", err)
+		return nil
 	}
 
 	elapsed := time.Since(startTime)
@@ -66,6 +67,7 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 
 	return nil
 }
+
 
 // gatherWebchatInput collects the message from args or --input flag.
 // Priority: positional args > --input flag (file path or "-" for stdin).

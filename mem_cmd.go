@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/spf13/cobra"
 )
+
 
 func init() {
 	memCmd := AddRootCommand(&cobra.Command{
@@ -68,7 +70,8 @@ func init() {
 func memListRunE(_ *cobra.Command, _ []string) error {
 	rows, err := memories.HandleMemList(context.Background())
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "列出记忆失败: %v\n", err)
+		return nil
 	}
 
 	if len(rows) == 0 {
@@ -76,12 +79,9 @@ func memListRunE(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	// formatTime parses SQLite datetime (RFC3339 from modernc driver),
-	// converts to local timezone, and formats as Go time.Stamp ("Jan _2 15:04:05").
 	formatTime := func(raw string) string {
 		t, err := time.Parse(time.RFC3339, raw)
 		if err != nil {
-			// Fallback: SQLite space-separated format
 			t, err = time.Parse("2006-01-02 15:04:05", raw)
 			if err != nil {
 				return raw
@@ -107,6 +107,7 @@ func memListRunE(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
+
 func memSearchRunE(cmd *cobra.Command, args []string) error {
 	query := args[0]
 	typ, _ := cmd.Flags().GetString("type")
@@ -114,7 +115,8 @@ func memSearchRunE(cmd *cobra.Command, args []string) error {
 
 	result, warning, err := memories.HandleMemSearch(context.Background(), query, typ, limit)
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "搜索记忆失败: %v\n", err)
+		return nil
 	}
 	if warning != "" {
 		fmt.Fprintln(cmd.ErrOrStderr(), "⚠️ ", warning)
@@ -122,6 +124,7 @@ func memSearchRunE(cmd *cobra.Command, args []string) error {
 	outfmt.Print(result)
 	return nil
 }
+
 
 func memShowRunE(cmd *cobra.Command, args []string) error {
 	id, err := strconv.ParseInt(args[0], 10, 64)
@@ -131,7 +134,8 @@ func memShowRunE(cmd *cobra.Command, args []string) error {
 
 	result, warning, err := memories.HandleMemGetObservation(context.Background(), id)
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "获取记忆失败: %v\n", err)
+		return nil
 	}
 	if warning != "" {
 		fmt.Fprintln(cmd.ErrOrStderr(), "⚠️ ", warning)
@@ -140,10 +144,12 @@ func memShowRunE(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+
 func memStatsRunE(cmd *cobra.Command, _ []string) error {
 	result, warning, err := memories.HandleMemStats(context.Background())
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "获取记忆统计失败: %v\n", err)
+		return nil
 	}
 	if warning != "" {
 		fmt.Fprintln(cmd.ErrOrStderr(), "⚠️ ", warning)

@@ -37,7 +37,6 @@ func runParse(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("file not found: %s", filePath)
 	}
 
-	// 获取语言选项
 	lang, _ := cmd.Flags().GetString("language")
 	if lang == "" {
 		lang = parse.GuessLanguage(filePath)
@@ -45,13 +44,12 @@ func runParse(cmd *cobra.Command, args []string) error {
 
 	usePython, _ := cmd.Flags().GetBool("use-python")
 	ctx := cmd.Context()
-	// 解析文件结构
 	fs, err := parse.ParseFileStructure0(ctx, filePath, lang, usePython)
 	if err != nil {
-		return fmt.Errorf("failed to parse file: %w", err)
+		fmt.Fprintf(os.Stderr, "解析文件失败: %v\n", err)
+		return nil
 	}
 
-	// 输出JSON
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(fs)

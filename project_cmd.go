@@ -56,7 +56,8 @@ func projectListRunE(cmd *cobra.Command, _ []string) error {
 
 	projects, err := session.ListProjects()
 	if err != nil {
-		return fmt.Errorf("列出项目失败: %w", err)
+		fmt.Fprintf(os.Stderr, "列出项目失败: %v\n", err)
+		return nil
 	}
 
 	if len(projects) == 0 {
@@ -117,6 +118,7 @@ func projectListRunE(cmd *cobra.Command, _ []string) error {
 	return FormatOutput(rows, "table", headers, rowFunc)
 }
 
+
 // projectAssignRunE handles "dscli project assign <project_id> <maintainer_id>".
 func projectAssignRunE(_ *cobra.Command, args []string) error {
 	projectID, err := strconv.ParseInt(args[0], 10, 64)
@@ -129,7 +131,8 @@ func projectAssignRunE(_ *cobra.Command, args []string) error {
 	}
 
 	if err := session.AssignMaintainer(projectID, maintainerID); err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "指派维护者失败: %v\n", err)
+		return nil
 	}
 
 	fmt.Printf("已将项目 %d 指派给 maintainer %d。\n", projectID, maintainerID)
@@ -148,7 +151,8 @@ func projectUpdateRunE(_ *cobra.Command, args []string) error {
 	}
 
 	if err := session.UpdateProjectPath(projectID, newPath); err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "更新项目路径失败: %v\n", err)
+		return nil
 	}
 
 	fmt.Printf("已将项目 %d 的路径更新为 %s。\n", projectID, newPath)

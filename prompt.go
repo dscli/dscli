@@ -104,26 +104,28 @@ func promptEditRunE(cmd *cobra.Command, args []string) error {
 		p, err = prompt.ResolvePromptEditPath(name)
 	}
 	if err != nil {
-		return fmt.Errorf("确定提示词文件路径失败: %w", err)
+		fmt.Fprintf(os.Stderr, "确定提示词文件路径失败: %v\n", err)
+		return nil
 	}
 
-	// 若文件不存在，从更高作用域获取种子内容；完全新建时内容为空
 	if _, err := os.Stat(p); os.IsNotExist(err) {
 		seed := prompt.GetPromptSourceContent(name, global)
 		if err := os.WriteFile(p, []byte(seed+"\n"), 0o644); err != nil {
-			return fmt.Errorf("创建提示词文件 %s 失败: %w", p, err)
+			fmt.Fprintf(os.Stderr, "创建提示词文件 %s 失败: %v\n", p, err)
+			return nil
 		}
 	} else if err != nil {
-		return fmt.Errorf("访问提示词文件 %s 失败: %w", p, err)
+		fmt.Fprintf(os.Stderr, "访问提示词文件 %s 失败: %v\n", p, err)
+		return nil
 	}
 
 	if err := editor.Edit(cmd.Context(), p); err != nil {
-		return fmt.Errorf("编辑器退出错误: %w", err)
+		fmt.Fprintf(os.Stderr, "编辑器退出错误: %v\n", err)
+		return nil
 	}
 	return nil
 }
 
-// promptRemoveRunE 删除提示词
 func promptRemoveRunE(cmd *cobra.Command, args []string) error {
 	name, err := promptName(args)
 	if err != nil {
@@ -138,23 +140,25 @@ func promptRemoveRunE(cmd *cobra.Command, args []string) error {
 		p, err = prompt.ResolvePromptRemovePath(name)
 	}
 	if err != nil {
-		return fmt.Errorf("确定提示词文件路径失败: %w", err)
+		fmt.Fprintf(os.Stderr, "确定提示词文件路径失败: %v\n", err)
+		return nil
 	}
 
 	if _, err := os.Stat(p); os.IsNotExist(err) {
 		return fmt.Errorf("提示词 %s 不存在", name)
 	} else if err != nil {
-		return fmt.Errorf("访问提示词文件失败: %w", err)
+		fmt.Fprintf(os.Stderr, "访问提示词文件失败: %v\n", err)
+		return nil
 	}
 
 	if err := os.Remove(p); err != nil {
-		return fmt.Errorf("删除失败: %w", err)
+		fmt.Fprintf(os.Stderr, "删除失败: %v\n", err)
+		return nil
 	}
 	outfmt.Printf("已删除: %s\n", p)
 	return nil
 }
 
-// promptAddRunE 从标准输入读取内容创建提示词
 func promptAddRunE(cmd *cobra.Command, args []string) error {
 	name, err := promptName(args)
 	if err != nil {
@@ -162,17 +166,16 @@ func promptAddRunE(cmd *cobra.Command, args []string) error {
 	}
 	global, _ := cmd.Flags().GetBool("global")
 
-	// 读取 stdin
 	input, err := io.ReadAll(os.Stdin)
 	if err != nil {
-		return fmt.Errorf("读取标准输入失败: %w", err)
+		fmt.Fprintf(os.Stderr, "读取标准输入失败: %v\n", err)
+		return nil
 	}
 	content := strings.TrimSpace(string(input))
 	if content == "" {
 		return fmt.Errorf("输入内容为空")
 	}
 
-	// 确定目标路径：项目优先，--global 强制全局
 	var p string
 	if global {
 		p, err = prompt.GetPromptPath(name, true)
@@ -182,12 +185,15 @@ func promptAddRunE(cmd *cobra.Command, args []string) error {
 		p, err = prompt.GetPromptPath(name, true)
 	}
 	if err != nil {
-		return fmt.Errorf("确定提示词文件路径失败: %w", err)
+		fmt.Fprintf(os.Stderr, "确定提示词文件路径失败: %v\n", err)
+		return nil
 	}
 
 	if err := os.WriteFile(p, []byte(content+"\n"), 0o644); err != nil {
-		return fmt.Errorf("写入提示词文件失败: %w", err)
+		fmt.Fprintf(os.Stderr, "写入提示词文件失败: %v\n", err)
+		return nil
 	}
 	outfmt.Printf("已添加: %s\n", p)
 	return nil
 }
+
