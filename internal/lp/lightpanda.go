@@ -57,12 +57,23 @@ func Get(ctx context.Context, rawURL string) (string, error) {
 // markdown content. Unlike Get, it uses the persistent cloud MCP singleton
 // (SSE transport) rather than spawning a local subprocess.
 // Requires lightpanda-remote-token to be configured.
+// GetRemote fetches a web page via LightPanda Cloud MCP and returns its
+// markdown content. Unlike Get, it uses the persistent cloud MCP singleton
+// (SSE transport) rather than spawning a local subprocess.
+// Requires lightpanda-remote-token to be configured.
 func GetRemote(ctx context.Context, rawURL string) (string, error) {
 	mc, err := getCloudMCP(ctx)
 	if err != nil {
 		return "", fmt.Errorf("lightpanda mcp 连接失败: %w", err)
 	}
-	text, err := mc.GetMarkdown(ctx, rawURL)
+
+	// The cloud MCP's "markdown" tool also does not accept a URL parameter —
+	// it reads the currently loaded page. Navigate via "goto" first.
+	if _, err := mc.callTool(ctx, "goto", map[string]any{"url": rawURL}); err != nil {
+		return "", fmt.Errorf("lightpanda mcp 连接失败: %w", err)
+	}
+
+	text, err := mc.callTool(ctx, "markdown", nil)
 	if err != nil {
 		return "", fmt.Errorf("lightpanda mcp 连接失败: %w", err)
 	}

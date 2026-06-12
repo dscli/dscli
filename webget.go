@@ -49,7 +49,8 @@ func webReaderRunE(cmd *cobra.Command, args []string) error {
 		markdown, err = lp.Get(ctx, url)
 	}
 	if err != nil {
-		return fmt.Errorf("读取网页失败: %w", err)
+		fmt.Fprintln(cmd.ErrOrStderr(), "Error: 读取网页失败:", err)
+		return nil
 	}
 
 	fmt.Print(markdown)
