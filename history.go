@@ -88,7 +88,7 @@ Examples:
 	notesCmd.Flags().Int("days", 30, "Load notes from last N days")
 
 	historyCmd.PersistentFlags().Int("histsize", 32, "history size")
-	historyCmd.PersistentFlags().String("role", "dev", "role: dev, expert, review")
+	historyCmd.PersistentFlags().String("role", "dev", "role: dev, expert, review, test (QA engineer)")
 	historyCmd.PersistentFlags().String("filter", "all", "filter true, false, all")
 	editCmd.Flags().String("column", "content", "column name to edit, default content, others like tool_calls can be edited too.")
 }

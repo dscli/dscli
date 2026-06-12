@@ -590,7 +590,7 @@ Examples:
 		PreRunE: ChatPreRunE,
 		RunE:    ChatRunE,
 	})
-	chatCmd.Flags().String("role", "dev", "Role: dev (developer), expert (domain expert), review (code review)")
+	chatCmd.Flags().String("role", "dev", "Role: dev (developer), expert (domain expert), review (code review), test (QA engineer)")
 	chatCmd.Flags().Int("histsize", 8, "history size loaded")
 	chatCmd.Flags().String("input", "", "read content from input file or read content from stdin if input file empty")
 	chatCmd.Flags().Bool("stream", false, "Enable streaming output (SSE)")

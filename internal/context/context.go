@@ -60,6 +60,7 @@ const (
 	RoleDev    = "dev"
 	RoleExpert = "expert"
 	RoleReview = "review"
+	RoleTest   = "test"
 )
 
 type (
