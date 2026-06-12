@@ -1,9 +1,9 @@
-# web
+# mcp_client
 
-Fetch web page as Markdown.
+Switch MCP target between local and cloud.
 
-Fetch web page content and intelligently convert to Markdown
-format. Supports HTTP/HTTPS URLs, ideal for reading technical
-documentation.
+**local** (default): supports all 19 tools (read, interact, forms, JS scripting).
+**cloud**: supports goto / markdown / links only (read-only). Use for sites
+that need a proxy (e.g. Google, Wikimedia, blocked sites).
 
-Timeout: default 120s. Set `timeout` (seconds) to override — set longer (e.g. 300) for slow websites.
+Switching is stateless and cleanly reversible — no lingering side effects.

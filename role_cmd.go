@@ -57,7 +57,7 @@ func init() {
 示例：
   dscli role update review --skills "go-fix,gofumpt" --tools "shell,file_read"
   dscli role update expert --tools "" --prompt editor
-  dscli role update dev --skills all --tools "shell,file_read,web_reader"`,
+  dscli role update dev --skills all --tools "shell,file_read,markdown"`,
 		Args: cobra.ExactArgs(1),
 		RunE: roleUpdateRunE,
 	}

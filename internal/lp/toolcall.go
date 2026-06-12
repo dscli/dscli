@@ -2,8 +2,7 @@
 //
 // MCP tool integration for the toolcall framework.
 // The init function registers callbacks with toolcall so that MCP tools
-// (markdown, semantic_tree, evaluate, goto, etc.) are included in GetAllTools
-// and dispatched via a persistent MCPClient singleton in HandleToolCall.
+// are dispatched via a persistent MCPClient singleton in HandleToolCall.
 //
 // Two MCP modes are supported:
 //   - local: spawns "lightpanda mcp" subprocess (stdio). Default.
@@ -45,29 +44,7 @@ var (
 )
 
 func init() {
-	toolcall.MCPToolList = getMCPTools
 	toolcall.HandleMCPCall = handleMCPCall
-
-	// Register the mcp_client tool so the AI can switch between local/cloud MCP.
-	toolcall.RegisterTool(toolcall.ToolDef{
-		Name:        "mcp_client",
-		Description: "切换 MCP 目标：local（本地，适合无需代理的网站）或 cloud（云端，适合 Google/Wikimedia 等需要代理的网站）。",
-		Strict:      true,
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"target": map[string]any{
-					"type":        "string",
-					"enum":        []string{"local", "cloud"},
-					"description": "MCP 目标: 'local' 使用本地 LightPanda MCP（默认），'cloud' 使用 LightPanda Cloud SSE",
-				},
-			},
-			"required":             []string{"target"},
-			"additionalProperties": false,
-		},
-		Category: "web",
-		Handler:  handleMCPClientTool,
-	})
 }
 
 // activeMCPClient returns the MCP client for the current target ("local" or "cloud").
@@ -84,11 +61,11 @@ func activeMCPClient() (*MCPClient, error) {
 	}
 }
 
-// getMCPTools lazily discovers tools from the LightPanda MCP server.
+// MCPToolList lazily discovers tools from the LightPanda MCP server.
 // It is called once per process lifetime; results are cached.
 // Always discovers via LOCAL MCP regardless of active target.
-// If discovery fails, it returns nil (tools are silently omitted from GetAllTools).
-func getMCPTools(ctx context.Context) []toolcall.Tool {
+// If discovery fails, it returns nil (tools are silently omitted).
+func MCPToolList(ctx context.Context) []toolcall.Tool {
 	mcpToolsMu.Lock()
 	defer mcpToolsMu.Unlock()
 	if mcpToolsDone {
@@ -185,11 +162,9 @@ func handleMCPCall(ctx context.Context, toolName, argsRaw string) (result, warni
 	return text, "", nil
 }
 
-// handleMCPClientTool is the handler for the mcp_client tool.
+// HandleMCPClientTool is the handler for the mcp_client tool.
 // It switches the active MCP target between "local" and "cloud".
-func handleMCPClientTool(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
-	target := toolcall.ToolArgsValue(args, "target", "")
-
+func HandleMCPClientTool(ctx context.Context, target string) (result, warning string, err error) {
 	switch target {
 	case "local":
 		mcpClientTargetMu.Lock()

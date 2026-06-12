@@ -1,5 +1,4 @@
-// Package lp provides web page reading via lightpanda browser with MCP (default)
-// or CDP (deprecated) transport.
+// Package lp provides web page reading via LightPanda's MCP transport.
 //
 // # Architecture
 //
@@ -9,39 +8,24 @@
 //	<--------+                |<---------+             |
 //	markdown +---------------+ markdown +-------------+
 //
-// The package uses LightPanda's native MCP server by default (lightpanda mcp
-// subcommand, stdio transport). The older CDP transport (lightpanda serve +
-// chromedp) remains available via the lightpanda_transport = "cdp" config key
-// but is deprecated and will be removed in v0.10.0.
+// The package uses LightPanda's native MCP server (lightpanda mcp subcommand,
+// stdio transport). Each call spawns a fresh subprocess.
 //
-// MCP transport advantages over CDP:
-//   - Self-contained: no need for a running serve process
-//   - Simpler: no WebSocket, no chromedp dependency
-//   - Same engine: calls the same Zig conversion code internally
+// # Modes
 //
-// # Transport Configuration
+//   - local (default): spawns "lightpanda mcp" subprocess locally.
+//   - cloud: connects to LightPanda Cloud MCP/SSE endpoint. Switch via
+//     the mcp_client tool (target="cloud").
 //
-// Config key (~/.dscli/config.dscli):
+// # Cloud Configuration
 //
-//	lightpanda_transport = mcp   # "mcp" (default) or "cdp" (deprecated)
-//
-// # Remote vs Local
-//
-// This distinction only applies to the CDP transport. With MCP, every call
-// spawns a local lightpanda mcp subprocess. For geo-restricted sites, use
-// LightPanda Cloud's MCP/SSE endpoint when available.
-//
-// # CDP-only config keys (deprecated)
-//
-// These keys are only used when lightpanda_transport = "cdp":
-//
-//	lightpanda-local-url   = ws://127.2.2.9:9227
-//	lightpanda-remote-url  = wss://euwest.cloud.lightpanda.io/ws
+//	lightpanda-cloud-url    = https://euwest.cloud.lightpanda.io/mcp/sse
 //	lightpanda-remote-token = <token>
 //
-// # Usage
+// # Deprecated
 //
-//	import "github.com/dscli/dscli/internal/lp"
-//
-//	markdown, err := lp.Get(ctx, "https://example.com")
+// The older CDP transport (lightpanda serve + chromedp) was removed in v0.10.0.
+// Config keys lightpanda-local-url, lightpanda-remote-url, and
+// lightpanda_transport are no longer used.
 package lp
+

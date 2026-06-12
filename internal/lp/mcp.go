@@ -192,3 +192,17 @@ func NewCloudMCPClient(ctx context.Context) (*MCPClient, error) {
 		session: session,
 	}, nil
 }
+
+
+// defaultGetFromMCP is the default implementation of getFromMCP.
+// It starts a lightpanda mcp subprocess, connects via MCP, and calls
+// the "markdown" tool. Each call spawns a fresh process — lightweight
+// enough for sporadic use.
+func defaultGetFromMCP(ctx context.Context, rawURL string) (string, error) {
+	mc, err := NewMCPClient(ctx)
+	if err != nil {
+		return "", fmt.Errorf("mcp client: %w", err)
+	}
+	defer mc.Close()
+	return mc.GetMarkdown(ctx, rawURL)
+}

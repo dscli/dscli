@@ -3,83 +3,68 @@ package web
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
-	"strings"
-	"time"
 
 	"github.com/dscli/dscli/internal/lp"
-	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/toolcall"
 )
 
 //go:embed web.md
-var web_md string
-
-// handleWebReader 通过 lightpanda 浏览器读取网页内容并返回 Markdown。
-func handleWebReader(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
-	url := toolcall.ToolArgsValue(args, "url", "")
-	if url == "" {
-		err = fmt.Errorf("no URL or empty URL specified")
-		return result, warning, err
-	}
-
-	// 确保URL以http://或https://开头
-	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
-		url = "https://" + url
-	}
-
-	startTime := time.Now()
-	markdown, err := lp.Get(ctx, url)
-	elapsed := time.Since(startTime)
-	if err != nil {
-		return result, warning, fmt.Errorf("web_reader: %w", err)
-	}
-
-	outfmt.Notice("读取网页: %q", url)
-
-	result = fmt.Sprintf(`📝 执行结果:
-网页内容（Markdown格式）:
-%s
-
-网页信息:
-- URL: %s
-- 响应时间: %v
-- 输出格式: Markdown（lightpanda）
-
-📊 执行统计:
-执行时间: %v
-状态: 成功`,
-		markdown,
-		url,
-		elapsed,
-		elapsed)
-
-	return result, warning, nil
-}
+var mcp_client_md string
 
 func init() {
-	// 注册网页读取工具
+	// Register the mcp_client tool so the AI can switch between local/cloud MCP.
 	toolcall.RegisterTool(toolcall.ToolDef{
-		Name:        "web_reader",
-		Description: web_md,
+		Name:        "mcp_client",
+		Description: mcp_client_md,
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"url": map[string]any{
+				"target": map[string]any{
 					"type":        "string",
-					"description": "Web page URL, e.g. https://github.com/golang/go",
-				},
-				"timeout": map[string]any{
-					"type":        "integer",
-					"description": "Timeout in seconds (default 120). Set longer (e.g. 300) for slow websites.",
+					"enum":        []string{"local", "cloud"},
+					"description": "MCP target: local (default) or cloud",
 				},
 			},
-			"required":             []string{"url"},
+			"required":             []string{"target"},
 			"additionalProperties": false,
 		},
 		Category: "web",
-		Timeout:  120 * time.Second,
-		Handler:  handleWebReader,
+		Handler:  handleMCPClientTool,
 	})
+
+	// Register MCP tools from the LightPanda server as regular tools.
+	// This makes them appear alongside other built-in tools with deterministic
+	// ordering, and gives them usage tracking via the standard tool pipeline.
+	mcpTools := lp.MCPToolList(context.Background())
+	for _, t := range mcpTools {
+		// Skip tools that may already be registered (safety check).
+		name := t.Function.Name
+		if _, exists := toolcall.GetToolDef(context.Background(), name); exists {
+			continue
+		}
+		desc := t.Function.Description
+		params := t.Function.Parameters
+		toolcall.RegisterTool(toolcall.ToolDef{
+			Name:        name,
+			Description: desc,
+			Strict:      true,
+			Parameters:  params,
+			Category:    "web",
+			Handler: func(ctx context.Context, args toolcall.ToolArgs) (string, string, error) {
+				argsRaw, _ := json.Marshal(args)
+				if toolcall.HandleMCPCall != nil {
+					return toolcall.HandleMCPCall(ctx, name, string(argsRaw))
+				}
+				return "", "", fmt.Errorf("MCP not available: %s", name)
+			},
+		})
+	}
+}
+
+func handleMCPClientTool(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
+	target := toolcall.ToolArgsValue(args, "target", "local")
+	return lp.HandleMCPClientTool(ctx, target)
 }

@@ -69,11 +69,6 @@ var (
 	// toolRegistryRWMutex tool registry rwmutex
 	toolRegistryRWMutex = sync.RWMutex{}
 
-	// MCPToolList returns available MCP tools.
-	// Set by the lp package init to enable MCP tool integration.
-	// If nil, MCP tools are not included in GetAllTools.
-	MCPToolList func(ctx context.Context) []Tool
-
 	// HandleMCPCall dispatches a tool call to an MCP server.
 	// Set by the lp package init to enable MCP tool call routing.
 	// If nil, unknown tools return an error directly.
@@ -222,16 +217,6 @@ func GetAllTools(ctx context.Context) []Tool {
 				Strict:      def.Strict,
 			},
 		})
-	}
-	// Append MCP tools (not filtered by role allowSet).
-	if MCPToolList != nil {
-		mcpTools := MCPToolList(ctx)
-		for _, mt := range mcpTools {
-			if _, exists := toolRegistry[mt.Function.Name]; exists {
-				panic(fmt.Sprintf("MCP tool %q conflicts with registered tool name", mt.Function.Name))
-			}
-		}
-		tools = append(tools, mcpTools...)
 	}
 
 	return tools
@@ -495,7 +480,6 @@ func GetToolByName(name string) (*ToolDesc, error) {
 
 // ListTools 列出所有工具（可按分类过滤）。
 // 以运行时注册表为权威来源，合并 DB 中的使用统计。
-// ctx 用于获取 MCP 工具列表（如有）。
 func ListTools(ctx context.Context, category string) ([]ToolDesc, error) {
 	// 1. 从 DB 获取使用统计
 	dbStats := map[string]ToolDesc{}
@@ -540,35 +524,6 @@ func ListTools(ctx context.Context, category string) ([]ToolDesc, error) {
 		}
 		tools = append(tools, td)
 	}
-
-	// 3. 追加 MCP 工具（如有）
-	if MCPToolList != nil {
-		mcpTools := MCPToolList(ctx)
-		for _, mt := range mcpTools {
-			if _, exists := toolRegistry[mt.Function.Name]; exists {
-				panic(fmt.Sprintf("MCP tool %q conflicts with registered tool name", mt.Function.Name))
-			}
-			if category != "" {
-				// MCP 工具固定分类为 "web"
-				if category != "web" {
-					continue
-				}
-			}
-			td := ToolDesc{
-				Name:        mt.Function.Name,
-				Description: mt.Function.Description,
-				Category:    "web",
-			}
-			if db, ok := dbStats[mt.Function.Name]; ok {
-				td.ID = db.ID
-				td.UsageCount = db.UsageCount
-				td.CreatedAt = db.CreatedAt
-				td.UpdatedAt = db.UpdatedAt
-			}
-			tools = append(tools, td)
-		}
-	}
-
 
 	// 4. 按分类分组，分类内按使用次数降序、名称升序排序
 	sort.Slice(tools, func(i, j int) bool {
