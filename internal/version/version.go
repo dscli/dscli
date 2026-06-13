@@ -4,4 +4,4 @@ package version
 
 // Version is the current dscli version.
 // Overridden at build time via: -X github.com/dscli/dscli/internal/version.Version=$(VERSION)
-var Version = "0.8.6"
+var Version = "0.8.7"
