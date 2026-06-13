@@ -57,7 +57,6 @@ func init() {
 }
 
 // handleWriteFile 写入文件
-// handleWriteFile 写入文件
 func handleWriteFile(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	truncated := context.ContextValue(ctx, context.FinishReasonLengthKey, false)
 	path := toolcall.ToolArgsValue(args, "path", "")
@@ -75,6 +74,17 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result, warning string
 		if truncated {
 			warning = fmt.Sprintf("内容截断，因为内容长度 %d 超过了最大输出 Tokens 要求 %d，请严格遵守 write_file 要求，严格控制输出。", len(content), maxOutputTokens)
 		}
+		return result, warning, err
+	}
+
+	// CAS tag 污染检测：write_file 接收的是文件内容，不应含有 read_file 输出的行首 CAS tag
+	if n := detectCASTags(content); n >= casTagThreshold {
+		err = fmt.Errorf(
+			"内容包含疑似 read_file CAS tag（检测到 %d 行含有 CAS tag 前缀）。\n"+
+				"write_file 接收的是文件内容，不应包含 read_file 输出的行首 4 字符 TAG（如 \"Q8fA\"）。\n"+
+				"请去除这些 CAS tag 前缀后重试。",
+			n,
+		)
 		return result, warning, err
 	}
 

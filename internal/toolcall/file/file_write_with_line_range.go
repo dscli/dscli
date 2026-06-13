@@ -65,9 +65,6 @@ func init() {
 // handleWriteFileWithLineRange 写入文件指定行范围的内容
 // 如果 content 为空字符串，则删除指定行范围
 // 支持 CAS tag 校验：line_tag（单行）或 line_tags（多行）用于防竞态写入
-// handleWriteFileWithLineRange 写入文件指定行范围的内容
-// 如果 content 为空字符串，则删除指定行范围
-// 支持 CAS tag 校验：line_tag（单行）或 line_tags（多行）用于防竞态写入
 func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	// 检查必需参数
 	path := toolcall.ToolArgsValue(args, "path", "")
@@ -78,6 +75,17 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 
 	content := toolcall.ToolArgsValue(args, "content", "")
 	showContext := toolcall.ToolArgsValue(args, "context", true)
+
+	// CAS tag 污染检测：write_file_with_line_range 的 content 参数也不应含有 CAS tag
+	if n := detectCASTags(content); n >= casTagThreshold {
+		err = fmt.Errorf(
+			"内容包含疑似 read_file CAS tag（检测到 %d 行含有 CAS tag 前缀）。\n"+
+				"write_file_with_line_range 的 content 参数不应包含 read_file 输出的行首 TAG（如 \"Q8fA\"）。\n"+
+				"请去除这些 CAS tag 前缀后重试。",
+			n,
+		)
+		return result, warning, err
+	}
 
 	// content 可以为空字符串，表示删除
 
