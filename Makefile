@@ -150,7 +150,7 @@ watch-test:
 
 # ==================== 发布相关 ====================
 
-# release: 构建发布版本
+# release: 构建发布版本（含 gzip 压缩）
 release: clean
 	@echo "构建 dscli $(VERSION) 发布版本..."
 	@echo "构建时间: $(BUILD_DATE)"
@@ -168,20 +168,47 @@ release: clean
 	@echo "=== 构建Windows版本 ==="
 	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS_RELEASE) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe $(SOURCE_DIR)
 	@echo ""
+	# gzip 压缩所有二进制（保留原件用于版本验证）
+	@echo "=== gzip 压缩 ==="
+	@for f in $(BUILD_DIR)/*; do \
+		if [ -f "$$f" ] && [ "$${f##*.}" != "gz" ]; then \
+			gzip -k -f "$$f"; \
+		fi; \
+	done
+	@echo ""
 	@echo "✅ 发布版本构建完成！"
 	@echo "输出目录: $(BUILD_DIR)/"
-	@ls -lh $(BUILD_DIR)/*
+	@ls -lh $(BUILD_DIR)/
+	@echo ""
+	@echo "尺寸对比（原版 → gzip）:"
+	@for f in $(BUILD_DIR)/*; do \
+		case "$$f" in \
+			*.gz) ;; \
+			*)   orig="$$f"; gz="$${orig}.gz"; \
+			     if [ -f "$$gz" ]; then \
+			        orig_size=$$(stat -c%s "$$orig" 2>/dev/null || stat -f%z "$$orig" 2>/dev/null); \
+			        gz_size=$$(stat -c%s "$$gz" 2>/dev/null || stat -f%z "$$gz" 2>/dev/null); \
+			        if [ "$$orig_size" -gt 0 ] 2>/dev/null; then \
+			            pct=$$(( (gz_size * 100) / orig_size )); \
+			            echo "  $$(basename $$orig): $$(numfmt --to=iec $$orig_size 2>/dev/null || echo $$orig_size) → $$(numfmt --to=iec $$gz_size 2>/dev/null || echo $$gz_size) ($${pct}%)"; \
+			        fi; \
+			     fi ;; \
+		esac; \
+	done
 	@echo ""
 	@echo "版本信息验证:"
-	@for binary in $(BUILD_DIR)/*; do \
-		if [ -x $$binary ] || [[ $$binary == *.exe ]]; then \
-			echo -n "$$binary: "; \
-			if [[ $$binary == *.exe ]]; then \
-				wine $$binary version 2>/dev/null | head -1 || echo "无法执行"; \
-			else \
-				$$binary version 2>/dev/null | head -1 || echo "无法执行"; \
-			fi; \
-		fi; \
+	@for binary in $(BUILD_DIR)/$(BINARY_NAME)-*; do \
+		case "$$binary" in \
+			*.gz) ;; \
+			*)   if [ -x "$$binary" ] || [[ "$$binary" == *.exe ]]; then \
+				echo -n "$$(basename $$binary): "; \
+				if [[ "$$binary" == *.exe ]]; then \
+					wine "$$binary" version 2>/dev/null | head -1 || echo "无法执行"; \
+				else \
+					"$$binary" version 2>/dev/null | head -1 || echo "无法执行"; \
+				fi; \
+			     fi ;; \
+		esac; \
 	done
 
 # release-info: 显示发布信息
