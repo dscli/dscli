@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/toolcall"
 )
 
@@ -150,15 +149,11 @@ func handleMCPCall(ctx context.Context, toolName, argsRaw string) (result, warni
 		return "", "", fmt.Errorf("mcp %s: %w", toolName, mcErr)
 	}
 
-	outfmt.Printf("🔄 正在执行 %s...\n", toolName)
-
 	text, callErr := mc.CallTool(ctx, toolName, args)
 	if callErr != nil {
-		outfmt.Printf("❌ %s 执行失败: %v\n", toolName, callErr)
 		return "", "", callErr
 	}
 
-	outfmt.Printf("✅ %s 执行成功\n", toolName)
 	return text, "", nil
 }
 
