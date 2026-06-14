@@ -143,7 +143,7 @@ func handleSQL(ctx context.Context, args toolcall.ToolArgs) (result, warning str
 	if err != nil {
 		return "", "", fmt.Errorf("open database: %w", err)
 	}
-
+	defer db.Close()
 	rows, err := db.Query(translated)
 	if err != nil {
 		// SQL syntax errors → warning (LLM can correct and retry).
