@@ -43,7 +43,8 @@ func deepseekLogin(tabCtx context.Context, phone string, codeReader func() (stri
 
 	fmt.Fprintf(os.Stderr, "🌐 正在打开 DeepSeek 登录页...\n")
 
-	if err := chromedp.Run(loginCtx,
+	if err := chromedp.Run(
+		loginCtx,
 		chromedp.Navigate(deepseekSignInURL),
 		chromedp.WaitReady("body"),
 		chromedp.Sleep(4*time.Second),
@@ -118,7 +119,8 @@ func saveDeepSeekCookies(ctx context.Context) error {
 	// Use CDP Network.getCookies wrapped in chromedp.ActionFunc so the
 	// context has the proper CDP executor attached.
 	var cookies []*network.Cookie
-	if err := chromedp.Run(ctx,
+	if err := chromedp.Run(
+		ctx,
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			var err error
 			cookies, err = network.GetCookies().WithURLs([]string{
@@ -216,7 +218,8 @@ func waitForLoginComplete(ctx context.Context, timeout time.Duration) error {
 			}
 			// Check for error messages on the page.
 			var bodyText string
-			chromedp.Run(ctx,
+			chromedp.Run(
+				ctx,
 				chromedp.Evaluate("document.body ? document.body.innerText : ''", &bodyText),
 			)
 			if strings.Contains(bodyText, "incorrect") ||

@@ -19,12 +19,12 @@ import (
 	"github.com/dscli/dscli/internal/session"
 	"github.com/dscli/dscli/internal/skills"
 )
+
 //go:embed dev.md
 var devTemplate string
 
 //go:embed expert.md
 var expertTemplate string
-
 
 //go:embed review.md
 var reviewTemplate string
@@ -413,7 +413,7 @@ func newPromptConfig(ctx context.Context) *promptConfig {
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, int64(0))
 	role := context.ContextValue(ctx, context.CurrentRoleKey, "dev")
 	config := &promptConfig{
-		CurrentDate:      time.Now().Format("2006年01月"),
+		CurrentDate: time.Now().Format("2006年01月"),
 
 		ProjectRoot:      projectRoot,
 		ConfigDir:        config.ConfigDir,
@@ -473,7 +473,6 @@ func (c *promptConfig) loadGitInfo() {
 	} else {
 		c.GitBranch = "非Git仓库"
 	}
-
 }
 
 // detectProjectType 检测项目类型
@@ -565,7 +564,6 @@ func LoadPrompts(ctx context.Context) ([]Message, error) {
 		content += "\n\n"
 		content += notePrompt
 	}
-
 
 	return []Message{{
 		Role:    "system",

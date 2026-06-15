@@ -438,7 +438,7 @@ func PrintSessionStats(ctx context.Context) {
 
 					// 如果余额较低，显示提醒
 					if currentBalance < 10.0 {
-						stats = append(stats, "⚠️ Low balance, please recharge!")
+						stats = append(stats, "⚠️ 余额较低，请及时充值！")
 					}
 
 					break

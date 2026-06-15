@@ -329,7 +329,8 @@ func (e *Executor) buildSandboxOptions(_ context.Context) ([]interp.RunnerOption
 
 	// 文件访问处理器
 	if len(config.AllowedPaths) > 0 {
-		opts = append(opts,
+		opts = append(
+			opts,
 			interp.OpenHandler(e.createPathFilter()),
 			interp.ReadDirHandler2(e.createReadDirFilter()),
 		)

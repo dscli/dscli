@@ -24,8 +24,10 @@ type priceRow struct {
 	Completion      float64
 }
 
-var modelsFormat string
-var modelsPrice bool
+var (
+	modelsFormat string
+	modelsPrice  bool
+)
 
 func init() {
 	modelsCmd := AddRootCommand(&cobra.Command{

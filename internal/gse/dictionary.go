@@ -80,7 +80,8 @@ func (dict *Dictionary) RemoveToken(token Token) error {
 // LookupTokens finds tokens and words in the dictionary, matching the given pattern
 // and returns the number of tokens
 func (dict *Dictionary) LookupTokens(
-	words []Text, tokens []*Token) (numOfTokens int) {
+	words []Text, tokens []*Token,
+) (numOfTokens int) {
 	var (
 		id, value int
 		err       error

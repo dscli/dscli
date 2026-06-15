@@ -962,7 +962,8 @@ func BuildSkillPrompt(ctx context.Context, allowed ...string) string {
 			}
 			// Include sanitized path in description for path resolution
 			desc := truncateSkillDesc(skill.Description, 80)
-			fmt.Fprintf(&builder, "| %s | %s | %s |\n",
+			fmt.Fprintf(
+				&builder, "| %s | %s | %s |\n",
 				skill.Name,
 				desc,
 				keywords,

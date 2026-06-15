@@ -183,7 +183,8 @@ func translateQuery(query string) (string, string, error) {
 		if cmd == ".schema" && arg != "" {
 			return fmt.Sprintf(
 				"SELECT sql FROM sqlite_master WHERE type='table' AND name=%s",
-				quoteString(arg)), "", nil
+				quoteString(arg),
+			), "", nil
 		}
 
 		// .indices <table>
@@ -193,7 +194,8 @@ func translateQuery(query string) (string, string, error) {
 			}
 			return fmt.Sprintf(
 				"SELECT name FROM sqlite_master WHERE type='index' AND tbl_name=%s ORDER BY name",
-				quoteString(arg)), "", nil
+				quoteString(arg),
+			), "", nil
 		}
 
 		dc, ok := dotCommands[cmd]

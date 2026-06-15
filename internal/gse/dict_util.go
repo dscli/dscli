@@ -31,15 +31,12 @@ import (
 	"github.com/dscli/dscli/internal/gse/types"
 )
 
-var (
-	// ToLower set alpha to lowercase
-	ToLower = true
-)
+// ToLower set alpha to lowercase
+var ToLower = true
 
 const (
 	zhS1 = "dict/zh/s_1.txt"
 )
-
 
 // Init initializes the segmenter config
 func (seg *Segmenter) Init() {
@@ -221,9 +218,7 @@ func (seg *Segmenter) LoadTFIDFDict(files []*types.LoadDictFile) error {
 		seg.Init()
 	}
 
-	var (
-		dictDir = path.Join(path.Dir(seg.GetCurrentFilePath()), "data")
-	)
+	dictDir := path.Join(path.Dir(seg.GetCurrentFilePath()), "data")
 
 	for _, file := range files {
 		dictFiles := DictPaths(dictDir, file.FilePath)
@@ -624,7 +619,6 @@ func DictPaths(dictDir, filePath string) (files []string) {
 
 	return
 }
-
 
 // IsJp is Japan char return true
 func IsJp(segText string) bool {

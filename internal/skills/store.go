@@ -172,7 +172,7 @@ func (store *Store) Load() (err error) {
 			if statErr != nil {
 				continue
 			}
-			if info.ModTime().After(yamlInfo.ModTime()) {
+			if !info.ModTime().Before(yamlInfo.ModTime()) {
 				needReload = true
 				break
 			}

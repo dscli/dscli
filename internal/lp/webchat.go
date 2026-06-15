@@ -190,14 +190,16 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, retry 
 
 	// For continuing conversations: wait longer for chat history to load.
 	if !isNewConv {
-		actions = append(actions,
+		actions = append(
+			actions,
 			chromedp.Sleep(2*time.Second),
 			// Wait for at least one .ds-markdown element (conversation loaded).
 			chromedp.WaitVisible(".ds-markdown", chromedp.ByQuery),
 			chromedp.Sleep(1*time.Second),
 		)
 	} else {
-		actions = append(actions,
+		actions = append(
+			actions,
 			chromedp.Sleep(3*time.Second),
 		)
 	}

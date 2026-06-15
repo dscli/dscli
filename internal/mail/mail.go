@@ -859,7 +859,8 @@ func formatMailRow(row MailRow) string {
 		readStatus = "未读"
 	}
 
-	return fmt.Sprintf(`📧 **邮件 #%d** [%s]
+	return fmt.Sprintf(
+		`📧 **邮件 #%d** [%s]
 发件人: %s <%s>
 收件人: %s <%s>
 时间: %s

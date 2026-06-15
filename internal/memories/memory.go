@@ -482,7 +482,8 @@ func HandleMemList(ctx context.Context) ([]ListRow, error) {
 
 	rows, err := db.Query(
 		`SELECT id, title, created_at, updated_at FROM memories
-		 WHERE name_id = ? OR session_id = ? ORDER BY created_at DESC`, nameID, sessionID)
+		 WHERE name_id = ? OR session_id = ? ORDER BY created_at DESC`, nameID, sessionID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("查询记忆列表失败: %w", err)
 	}

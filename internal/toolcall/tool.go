@@ -452,7 +452,8 @@ func GetTool(id int64) (*ToolDesc, error) {
 		SELECT id, name, description, category, usage_count, created_at, updated_at
 		FROM tools WHERE id = ?`, id).Scan(
 		&tool.ID, &tool.Name, &tool.Description, &tool.Category,
-		&tool.UsageCount, &tool.CreatedAt, &tool.UpdatedAt)
+		&tool.UsageCount, &tool.CreatedAt, &tool.UpdatedAt,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("获取工具失败: %w", err)
 	}
@@ -471,7 +472,8 @@ func GetToolByName(name string) (*ToolDesc, error) {
 		SELECT id, name, description, category, usage_count, created_at, updated_at
 		FROM tools WHERE name = ?`, name).Scan(
 		&tool.ID, &tool.Name, &tool.Description, &tool.Category,
-		&tool.UsageCount, &tool.CreatedAt, &tool.UpdatedAt)
+		&tool.UsageCount, &tool.CreatedAt, &tool.UpdatedAt,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("获取工具失败: %w", err)
 	}

@@ -511,7 +511,7 @@ func formatChatHeader(icon, nameCN, email, now, suffix string) string {
 		leftW = runewidth.StringWidth(left)
 	}
 
-	padding := max(headerLineWidth - leftW - rightW, 2)
+	padding := max(headerLineWidth-leftW-rightW, 2)
 
 	return left + " " + strings.Repeat("·", padding-2) + " " + right
 }
@@ -607,6 +607,7 @@ func PrintContent(ctx context.Context, reasoning, content string, thinkingTokens
 
 	content = strings.TrimSpace(content)
 	if content != "" {
+		content = strings.ReplaceAll(content, "```", "\n```\n")
 		cStr := ""
 		// 在streaming模式下，内容已经在streaming过程中输出，这里不需要再次输出
 		if !stream {

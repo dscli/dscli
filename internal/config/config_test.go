@@ -44,10 +44,9 @@ func TestConfig_Get(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// 设置环境变量
-			for k, v := range tt.envVars {
-				t.Setenv(k, v)
-			}
+			// 设置/清除环境变量（未指定的变量设为空以清除全局环境）
+			t.Setenv("DEEPSEEK_API_KEY", tt.envVars["DEEPSEEK_API_KEY"])
+			t.Setenv("DEEPSEEK_BASE_URL", tt.envVars["DEEPSEEK_BASE_URL"])
 
 			// 创建临时配置目录
 			tempDir := t.TempDir()
