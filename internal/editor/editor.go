@@ -72,7 +72,48 @@ func OpenEditor(ctx context.Context, initialContent string) (content string, err
 		return content, err
 	}
 	content = strings.TrimSpace(string(b))
+
+	// Display result to user.
+	outfmt.Printf("File: %s\n", path)
+	if content == "" {
+		outfmt.Println("(empty file)")
+	} else {
+		outfmt.Printf("```\n%s\n```\n", content)
+	}
+
 	return content, err
+}
+
+
+// findEditorBinary splits an EDITOR/VISUAL value into binary and arguments.
+// Uses strings.Cut so that "emacsclient -c" is correctly parsed as
+// binary="emacsclient", args=["-c"] — unlike strings.Fields which would
+// mis-split values with spaces in the path.
+func findEditorBinary(editor string) (name string, args []string) {
+	name, rest, _ := strings.Cut(editor, " ")
+	if rest != "" {
+		args = strings.Fields(rest)
+	}
+	return name, args
+}
+
+func withTermEnv() []string {
+	// Some editors (emacsclient) fail with "Unknown terminal type" when
+	// TERM is set to "dumb" (as Emacs daemon does for subprocesses).
+	// Fix: override TERM if it's invalid for interactive use.
+	term := os.Getenv("TERM")
+	if term != "" && term != "dumb" {
+		return nil // existing TERM is fine, inherit normally
+	}
+	// Replace TERM with a valid value for the editor subprocess.
+	env := os.Environ()
+	for i, e := range env {
+		if strings.HasPrefix(e, "TERM=") {
+			env[i] = "TERM=xterm-256color"
+			return env
+		}
+	}
+	return append(env, "TERM=xterm-256color")
 }
 
 func Edit(ctx context.Context, filename string) (err error) {
@@ -81,14 +122,18 @@ func Edit(ctx context.Context, filename string) (err error) {
 		err = fmt.Errorf("no editor specified")
 		return err
 	}
-	cmdParts := strings.Fields(editor)
-	name := cmdParts[0]
-	args := cmdParts[1:]
+	name, args := findEditorBinary(editor)
+	if name == "" {
+		return fmt.Errorf("editor binary not found from: %s", editor)
+	}
 	args = append(args, filename)
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	if env := withTermEnv(); env != nil {
+		cmd.Env = env
+	}
 	outfmt.Println(cmd.String())
 	if err = cmd.Run(); err != nil {
 		return err
