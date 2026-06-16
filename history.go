@@ -92,6 +92,19 @@ Examples:
 	historyCmd.PersistentFlags().String("role", "dev", "role: dev, expert, review, test (QA engineer)")
 	historyCmd.PersistentFlags().String("filter", "all", "filter true, false, all")
 	editCmd.Flags().String("column", "content", "column name to edit, default content, others like tool_calls can be edited too.")
+
+	_ = AddCommand(historyCmd, &cobra.Command{
+		Use:   "move <project_id>",
+		Short: "将当前项目的历史消息移到另一个项目",
+		Long: `将当前项目的所有历史消息（messages）移动到指定项目。
+
+项目 ID 可以通过 dscli project list 查看。
+
+示例:
+  dscli history move 7    # 将当前项目的消息移到项目 7`,
+		Args: cobra.ExactArgs(1),
+		RunE: historyMoveRunE,
+	})
 }
 
 func historyPreRunE(cmd *cobra.Command, args []string) (err error) {
@@ -212,6 +225,23 @@ func historyUpdateRunE(cmd *cobra.Command, args []string) (err error) {
 		fmt.Fprintf(os.Stderr, "更新历史状态失败: %v\n", err)
 		return nil
 	}
+	return nil
+}
+
+// historyMoveRunE handles "dscli history move <project_id>".
+func historyMoveRunE(cmd *cobra.Command, args []string) error {
+	projectID, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil || projectID <= 0 {
+		return fmt.Errorf("无效的 project_id: %s（需要正整数）", args[0])
+	}
+
+	ctx := cmd.Context()
+	if err := prompt.MoveMessages(ctx, projectID); err != nil {
+		fmt.Fprintf(os.Stderr, "移动历史消息失败: %v\n", err)
+		return nil
+	}
+
+	fmt.Printf("已将当前项目的所有历史消息移动到项目 %d。\n", projectID)
 	return nil
 }
 

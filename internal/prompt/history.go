@@ -361,3 +361,45 @@ outloop:
 	}
 	return cleaned[k:]
 }
+
+
+// MoveMessages moves all messages from the current session to the target session.
+func MoveMessages(ctx context.Context, targetSessionID int64) error {
+	currentSessionID := GetCurrentSessionID(ctx)
+	if currentSessionID == targetSessionID {
+		return fmt.Errorf("目标项目与当前项目相同，无需移动")
+	}
+
+	db, err := sqlite.OpenDB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	// Verify target session exists
+	var sid int64
+	if err := db.QueryRow("SELECT id FROM sessions WHERE id = ?", targetSessionID).Scan(&sid); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("项目 %d 不存在，请用 dscli project list 查看可用项目", targetSessionID)
+		}
+		return err
+	}
+
+	res, err := db.ExecContext(ctx,
+		`UPDATE messages SET session_id = ? WHERE session_id = ?`,
+		targetSessionID, currentSessionID)
+	if err != nil {
+		return fmt.Errorf("移动消息失败: %w", err)
+	}
+
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if affected == 0 {
+		return fmt.Errorf("当前项目没有需要移动的消息")
+	}
+
+	return nil
+}
