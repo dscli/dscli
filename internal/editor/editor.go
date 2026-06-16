@@ -62,7 +62,7 @@ func OpenEditor(ctx context.Context, initialContent string) (content string, err
 	if err != nil {
 		return content, err
 	}
-	defer os.RemoveAll(path)
+	defer os.Remove(path)
 	if err = Edit(ctx, path); err != nil {
 		return content, err
 	}
@@ -78,7 +78,10 @@ func OpenEditor(ctx context.Context, initialContent string) (content string, err
 	if content == "" {
 		outfmt.Println("(empty file)")
 	} else {
-		outfmt.Printf("```\n%s\n```\n", content)
+		// Escape any triple backticks in content to prevent breaking the
+		// markdown code block fence used for display.
+		safe := strings.ReplaceAll(content, "```", "'''")
+		outfmt.Printf("```\n%s\n```\n", safe)
 	}
 
 	return content, err
@@ -86,9 +89,11 @@ func OpenEditor(ctx context.Context, initialContent string) (content string, err
 
 
 // findEditorBinary splits an EDITOR/VISUAL value into binary and arguments.
-// Uses strings.Cut so that "emacsclient -c" is correctly parsed as
-// binary="emacsclient", args=["-c"] — unlike strings.Fields which would
-// mis-split values with spaces in the path.
+// Uses strings.Cut on the first space so that values like "emacsclient -c"
+// are correctly parsed as binary="emcsclient", args=["-c"]. Compared to
+// strings.Fields, this avoids panicking when the value is empty or
+// whitespace-only (Fields returns an empty slice). Note: paths containing
+// spaces in the binary name itself are not supported.
 func findEditorBinary(editor string) (name string, args []string) {
 	name, rest, _ := strings.Cut(editor, " ")
 	if rest != "" {
@@ -124,7 +129,7 @@ func Edit(ctx context.Context, filename string) (err error) {
 	}
 	name, args := findEditorBinary(editor)
 	if name == "" {
-		return fmt.Errorf("editor binary not found from: %s", editor)
+		return fmt.Errorf("cannot determine editor binary from: %s", editor)
 	}
 	args = append(args, filename)
 	cmd := exec.CommandContext(ctx, name, args...)
