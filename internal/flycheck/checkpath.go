@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/nanjj/clog"
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/parse"
 )
@@ -111,6 +112,8 @@ func IsLanguageSupported(lang string) bool {
 //
 // 返回 CheckResult，调用方根据 Mode / Language / Supported 字段区别处理。
 func CheckPath(ctx context.Context, path string) (*CheckResult, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "CheckPath")
+	defer span.Finish()
 	// --emacs 选项：强制使用 Emacs flycheck（支持 119+ 语言）
 	if context.ContextValue(ctx, EmacsKey, false) {
 		return checkPathEmacs(ctx, path)
@@ -147,6 +150,8 @@ func CheckPath(ctx context.Context, path string) (*CheckResult, error) {
 
 // checkPathDir 检查目录（含递归模式）。
 func checkPathDir(ctx context.Context, dir string, recursive bool) (*CheckResult, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "checkPathDir")
+	defer span.Finish()
 	// 从 context 获取语言；未指定时自动检测目录内容
 	lang := LanguageFromContext(ctx)
 	if lang == "" {
@@ -229,6 +234,8 @@ func detectDirLanguage(dir string, recursive bool) string {
 
 // checkGoDir checks a Go directory by finding Go packages and running staticcheck on each.
 func checkGoDir(ctx context.Context, dir string, recursive bool, result *CheckResult) (*CheckResult, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "checkGoDir")
+	defer span.Finish()
 	pkgDirs := FindGoPackages(dir, recursive)
 	if len(pkgDirs) == 0 {
 		return result, nil
@@ -264,6 +271,8 @@ func checkGoDir(ctx context.Context, dir string, recursive bool, result *CheckRe
 // checkPythonDir checks a Python directory using ruff.
 // ruff handles recursion natively when given a directory path.
 func checkPythonDir(ctx context.Context, dir string, recursive bool, result *CheckResult) (*CheckResult, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "checkPythonDir")
+	defer span.Finish()
 	// Count Python files for stats
 	pyFiles := FindPyFiles(dir, recursive)
 	result.NFiles = len(pyFiles)
@@ -292,6 +301,8 @@ func checkPythonDir(ctx context.Context, dir string, recursive bool, result *Che
 
 // checkPathFile 检查单个文件。
 func checkPathFile(ctx context.Context, path string) (*CheckResult, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "checkPathFile")
+	defer span.Finish()
 	ext := strings.ToLower(filepath.Ext(path))
 	lang := parse.GuessLanguage(path)
 

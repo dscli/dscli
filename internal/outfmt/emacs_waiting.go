@@ -6,10 +6,14 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/nanjj/clog"
 )
 
 // showEmacsAnimation Emacs专用动画
 func showEmacsAnimation(ctx context.Context, done chan bool) {
+	span, ctx := clog.StartSpanFromContext(ctx, "showEmacsAnimation")
+	defer span.Finish()
 	// Emacs中输出特殊标记，让Emacs可以解析和增强
 
 	// 从环境变量读取动画频率（秒）

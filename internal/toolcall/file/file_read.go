@@ -2,8 +2,10 @@ package file
 
 import (
 	"context"
+
 	_ "embed"
 
+	"github.com/nanjj/clog"
 	"github.com/dscli/dscli/internal/toolcall"
 )
 
@@ -33,6 +35,8 @@ func init() {
 
 // handleReadFile 读取文件完整内容（read_file_with_line_range 的简化版本，等价于不传行范围参数）
 func handleReadFile(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleReadFile")
+	defer span.Finish()
 	result, warning, err = handleReadFileWithLineRange(ctx, args)
 	return result, warning, err
 }

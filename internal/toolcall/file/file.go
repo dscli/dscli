@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/nanjj/clog"
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/toolcall"
 )
@@ -20,6 +21,8 @@ type (
 //  2. 如果是绝对路径，直接使用
 //  3. 否则是相对路径，拼接项目根目录
 func ResolvePath(ctx context.Context, path string) string {
+	span, ctx := clog.StartSpanFromContext(ctx, "ResolvePath")
+	defer span.Finish()
 	// Unix ~ 展开：~/.dscli/... → /home/user/.dscli/...
 	if strings.HasPrefix(path, "~") {
 		if home, err := os.UserHomeDir(); err == nil {
@@ -37,6 +40,8 @@ func ResolvePath(ctx context.Context, path string) string {
 // 如果 path 在项目根目录下，返回相对路径；否则返回原始 path。
 // projectRoot 为空时也返回原始 path。
 func DisplayPath(ctx context.Context, path string) string {
+	span, ctx := clog.StartSpanFromContext(ctx, "DisplayPath")
+	defer span.Finish()
 	projectRoot := context.ProjectRoot
 	if projectRoot == "" {
 		return path

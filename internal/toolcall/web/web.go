@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/nanjj/clog"
 	"github.com/dscli/dscli/internal/lp"
 	"github.com/dscli/dscli/internal/toolcall"
 )
@@ -65,6 +66,8 @@ func init() {
 }
 
 func handleMCPClientTool(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleMCPClientTool")
+	defer span.Finish()
 	target := toolcall.ToolArgsValue(args, "target", "local")
 	return lp.HandleMCPClientTool(ctx, target)
 }

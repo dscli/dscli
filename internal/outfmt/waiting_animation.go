@@ -7,6 +7,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/nanjj/clog"
 )
 
 // WaitingManager 等待动画管理器
@@ -167,6 +169,8 @@ func (w *WaitingManager) monitorAndStartAnimation(delay time.Duration) {
 
 // showTerminalAnimation 在终端中显示动画（使用回显）
 func showTerminalAnimation(ctx context.Context, done chan bool) {
+	span, ctx := clog.StartSpanFromContext(ctx, "showTerminalAnimation")
+	defer span.Finish()
 	// 旋转动画字符
 	spinner := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	idx := 0
@@ -200,6 +204,8 @@ func showTerminalAnimation(ctx context.Context, done chan bool) {
 
 // showPlainAnimation 在非终端环境中显示简单点
 func showPlainAnimation(ctx context.Context, done chan bool) {
+	span, ctx := clog.StartSpanFromContext(ctx, "showPlainAnimation")
+	defer span.Finish()
 	// 简单的等待提示：每3秒打印一个点
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
