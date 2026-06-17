@@ -14,6 +14,7 @@ import (
 
 	"github.com/dscli/dscli/internal/config"
 	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/nanjj/clog"
 )
 
 //go:embed parse.py
@@ -101,6 +102,8 @@ func GuessLanguage(path string) string {
 
 // ParseFileStructure0 解析文件结构（统一使用Python解析器）
 func ParseFileStructure0(ctx context.Context, filePath, lang string, usePython bool) (*FileStructure, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "ParseFileStructure0")
+	defer span.Finish()
 	return parseWithPython(ctx, filePath, lang)
 }
 
@@ -131,6 +134,9 @@ func getOrCreatePythonCacheFile(script string) (string, error) {
 }
 
 func runPythonParsePy(ctx context.Context, filePath, lang string) (output string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "runPythonParsePy")
+	defer span.Finish()
+
 	// 从上下文中获取verbose标志
 	verbose := outfmt.GetVerbose()
 
@@ -200,6 +206,9 @@ func runPythonParsePy(ctx context.Context, filePath, lang string) (output string
 
 // parseWithPython 使用Python脚本解析文件结构
 func parseWithPython(ctx context.Context, filePath, lang string) (structure *FileStructure, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "parseWithPython")
+	defer span.Finish()
+
 	// 从上下文中获取verbose标志
 	verbose := outfmt.GetVerbose()
 
@@ -357,6 +366,8 @@ func getString(m map[string]any, key string) string {
 
 // ParseFileStructure 公共接口：解析文件结构（统一使用Python解析器）
 func ParseFileStructure(ctx context.Context, filePath string) (*FileStructure, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "ParseFileStructure")
+	defer span.Finish()
 	lang := GuessLanguage(filePath)
 	return parseWithPython(ctx, filePath, lang)
 }

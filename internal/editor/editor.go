@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/nanjj/clog"
 )
 
 func getEditor() (editor string) {
@@ -57,6 +58,9 @@ func createTempfile(initialContent, ext string) (name string, err error) {
 }
 
 func OpenEditor(ctx context.Context, initialContent string) (content string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "OpenEditor")
+	defer span.Finish()
+
 	ext := getExt()
 	path, err := createTempfile(initialContent, ext)
 	if err != nil {
@@ -121,6 +125,9 @@ func withTermEnv() []string {
 }
 
 func Edit(ctx context.Context, filename string) (err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "Edit")
+	defer span.Finish()
+
 	editor := getEditor()
 	if editor == "" {
 		err = fmt.Errorf("no editor specified")

@@ -18,6 +18,7 @@ import (
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/parse"
 	"github.com/dscli/dscli/internal/shell"
+	"github.com/nanjj/clog"
 )
 
 const (
@@ -93,6 +94,9 @@ var Registry = map[string][]Checker{
 //
 // If the language is not supported, returns ("", "", nil) — silently skipped.
 func Flycheck(ctx context.Context, filename string) (result, suggestion string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "Flycheck")
+	defer span.Finish()
+
 	lang := parse.GuessLanguage(filename)
 	checkers, ok := Registry[lang]
 	if !ok || len(checkers) == 0 {
@@ -136,6 +140,9 @@ func Flycheck(ctx context.Context, filename string) (result, suggestion string, 
 // Uses shell.SimpleExecuteSeparate to bypass the allow-list check for lint tools
 // and properly distinguish stdout (issues) from stderr (warnings/errors).
 func runChecker(ctx context.Context, checker Checker, filename string) (string, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "runChecker")
+	defer span.Finish()
+
 	// Pre-check: is the command installed?
 	if _, err := exec.LookPath(checker.Command); err != nil {
 		return "", &exec.Error{Name: checker.Command, Err: exec.ErrNotFound}
@@ -441,6 +448,9 @@ func formatCheckerOutput(checkerName, output string) string {
 //   - suggestion: install hints or fix suggestions (only when err != nil)
 //   - err: system error (checker not found, timeout, etc.)
 func FlycheckDir(ctx context.Context, lang, dir string) (result string, rawIssues []ClassifiedIssue, suggestion string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "FlycheckDir")
+	defer span.Finish()
+
 	checkers, ok := Registry[lang]
 	if !ok || len(checkers) == 0 {
 		return "", nil, "", nil
@@ -483,6 +493,9 @@ func FlycheckDir(ctx context.Context, lang, dir string) (result string, rawIssue
 // path directly instead of deriving it from a filename.
 // Uses checker.BuildDirArgs if available; otherwise falls back to BuildArgs.
 func runCheckerOnDir(ctx context.Context, checker Checker, dir string) (string, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "runCheckerOnDir")
+	defer span.Finish()
+
 	if _, err := exec.LookPath(checker.Command); err != nil {
 		return "", &exec.Error{Name: checker.Command, Err: exec.ErrNotFound}
 	}

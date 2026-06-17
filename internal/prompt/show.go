@@ -3,10 +3,15 @@ package prompt
 import (
 	"context"
 	"fmt"
+
+	"github.com/nanjj/clog"
 )
 
 // HandleShow 根据消息 ID 返回完整内容（跳过 reasoning_content），供 LLM 工具调用。
 func HandleShow(ctx context.Context, id int64) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "HandleShow")
+	defer span.Finish()
+
 	m, err := ShowMessage(ctx, id)
 	if err != nil {
 		return result, warning, fmt.Errorf("获取消息 #%d 失败: %w", id, err)

@@ -12,6 +12,7 @@ import (
 
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/shell"
+	"github.com/nanjj/clog"
 )
 
 //go:embed dscli-flycheck.sh
@@ -56,6 +57,9 @@ type emacsFlycheckResult struct {
 // filePath 是相对于项目根目录的路径。
 // timeoutSecs 是整体超时秒数（0 表示不设置超时）。
 func runEmacsFlycheck(ctx context.Context, filePath string, timeoutSecs int) (*emacsFlycheckResult, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "runEmacsFlycheck")
+	defer span.Finish()
+
 	absPath := filepath.Join(context.ProjectRoot, filePath)
 
 	// 外层超时控制：通过 context 传递给 mvdan/sh，超时后自动杀死子进程
@@ -155,6 +159,9 @@ func classifyEmacsSeverity(s string) IssueSeverity {
 // 文件：直接调用 Emacs flycheck。
 // 目录：遍历目录中的文件，逐个调用 Emacs flycheck 并聚合结果。
 func checkPathEmacs(ctx context.Context, path string) (*CheckResult, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "checkPathEmacs")
+	defer span.Finish()
+
 	// 规范化路径（去除 "./", "..." 等）
 	path, _ = NormalizePath(path)
 
@@ -172,6 +179,9 @@ func checkPathEmacs(ctx context.Context, path string) (*CheckResult, error) {
 
 // checkPathEmacsFile 对单个文件执行 Emacs flycheck。
 func checkPathEmacsFile(ctx context.Context, path string) (*CheckResult, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "checkPathEmacsFile")
+	defer span.Finish()
+
 	emacsResult, err := runEmacsFlycheck(ctx, path, 30)
 	if err != nil {
 		return nil, err
@@ -181,6 +191,9 @@ func checkPathEmacsFile(ctx context.Context, path string) (*CheckResult, error) 
 
 // checkPathEmacsDir 对目录执行 Emacs flycheck（遍历文件）。
 func checkPathEmacsDir(ctx context.Context, dir string) (*CheckResult, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "checkPathEmacsDir")
+	defer span.Finish()
+
 	absDir := filepath.Join(context.ProjectRoot, dir)
 	entries, err := os.ReadDir(absDir)
 	if err != nil {

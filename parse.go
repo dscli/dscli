@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/dscli/dscli/internal/parse"
+	"github.com/nanjj/clog"
 
 	"github.com/spf13/cobra"
 )
@@ -30,6 +31,9 @@ Supports Go files with built-in parser, other languages with Python-based parsin
 
 // runParse 是 parse 子命令的入口函数
 func runParse(cmd *cobra.Command, args []string) error {
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "runParse")
+	defer span.Finish()
+
 	filePath := args[0]
 
 	// 检查文件是否存在
@@ -43,7 +47,6 @@ func runParse(cmd *cobra.Command, args []string) error {
 	}
 
 	usePython, _ := cmd.Flags().GetBool("use-python")
-	ctx := cmd.Context()
 	fs, err := parse.ParseFileStructure0(ctx, filePath, lang, usePython)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "解析文件失败: %v\n", err)
