@@ -8,6 +8,7 @@ import (
 
 	"github.com/dscli/dscli/internal/session"
 	"github.com/dscli/dscli/internal/sqlite"
+	"github.com/nanjj/clog"
 )
 
 // MaxNoteContentLen 笔记内容最大长度（rune），供 tool handler 参考
@@ -39,6 +40,9 @@ func init() {
 
 // SaveNote 保存一条对话笔记（限制 MaxNoteContentLen 字以内，超限报错）
 func SaveNote(ctx context.Context, content string) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "SaveNote")
+	defer span.Finish()
+
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return fmt.Errorf("笔记内容不能为空")
@@ -49,11 +53,11 @@ func SaveNote(ctx context.Context, content string) error {
 	}
 
 	sessionID := session.GetCurrentSessionID(ctx)
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	_, err = db.ExecContext(ctx,
 		`INSERT INTO notes (session_id, content) VALUES (?, ?)`,
@@ -66,12 +70,14 @@ func SaveNote(ctx context.Context, content string) error {
 
 // LoadNotes 加载当前项目最近N天的笔记，最多返回10条
 func LoadNotes(ctx context.Context, days int) ([]Note, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "LoadNotes")
+	defer span.Finish()
 	sessionID := session.GetCurrentSessionID(ctx)
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	rows, err := db.QueryContext(ctx,
 		`SELECT id, content, created_at FROM notes

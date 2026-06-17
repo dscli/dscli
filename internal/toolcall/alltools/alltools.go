@@ -16,4 +16,5 @@ import (
 	_ "github.com/dscli/dscli/internal/toolcall/sql"
 	_ "github.com/dscli/dscli/internal/toolcall/web"
 )
+
 var GetAllTools = toolcall.GetAllTools

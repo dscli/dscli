@@ -40,6 +40,7 @@ import (
 	"github.com/dscli/dscli/internal/ainame"
 	"github.com/dscli/dscli/internal/sqlite"
 	"github.com/dscli/dscli/internal/tokenizer"
+	"github.com/nanjj/clog"
 )
 
 func init() {
@@ -191,6 +192,8 @@ func updateMailFTS(db *sqlite.DB, id int64, subject, body string) error {
 
 // HandleSendMail sends a mail to a recipient identified by name or email.
 func HandleSendMail(ctx context.Context, recipient, subject, body string) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "HandleSendMail")
+	defer span.Finish()
 	if recipient == "" {
 		err = fmt.Errorf("recipient is required")
 		return
@@ -202,11 +205,11 @@ func HandleSendMail(ctx context.Context, recipient, subject, body string) (resul
 
 	senderNameID := ainame.GetCurrentNameID(ctx)
 
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to open database: %w", err)
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	// Look up recipient by name_en or email (case insensitive).
 	var recipientNameID int64
@@ -258,17 +261,20 @@ func HandleSendMail(ctx context.Context, recipient, subject, body string) (resul
 // HandleReadMail reads a single mail by ID for the current maintainer.
 // Also marks the mail as read.
 func HandleReadMail(ctx context.Context, mailID int64) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "HandleReadMail")
+	defer span.Finish()
+
 	if mailID <= 0 {
 		return "", "", fmt.Errorf("mail ID is required")
 	}
 
 	nameID := ainame.GetCurrentNameID(ctx)
 
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to open database: %w", err)
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	var row MailRow
 	var isRead int
@@ -299,6 +305,8 @@ func HandleReadMail(ctx context.Context, mailID int64) (result, warning string, 
 // HandleListMail lists recent mails for the current maintainer, showing
 // subject only (no body). Optional unreadOnly filter.
 func HandleListMail(ctx context.Context, unreadOnly bool, limit int) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "HandleListMail")
+	defer span.Finish()
 	if limit <= 0 {
 		limit = 20
 	}
@@ -308,11 +316,11 @@ func HandleListMail(ctx context.Context, unreadOnly bool, limit int) (result, wa
 
 	nameID := ainame.GetCurrentNameID(ctx)
 
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to open database: %w", err)
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	query := `SELECT m.id, s.name_en, s.email, r.name_en, r.email, m.subject, m.body, m.is_read, m.created_at
 		 FROM mail m
@@ -383,6 +391,9 @@ func HandleListMail(ctx context.Context, unreadOnly bool, limit int) (result, wa
 
 // HandleMailSearch searches mails using FTS5.
 func HandleMailSearch(ctx context.Context, query string, limit int) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "HandleMailSearch")
+	defer span.Finish()
+
 	if query == "" {
 		err = fmt.Errorf("query is required")
 		return
@@ -396,11 +407,11 @@ func HandleMailSearch(ctx context.Context, query string, limit int) (result, war
 
 	nameID := ainame.GetCurrentNameID(ctx)
 
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to open database: %w", err)
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	// Sanitize query using the same tokenizer as indexing
 	sanitized := tokenizer.SanitizeFTS(query)
@@ -479,13 +490,16 @@ func HandleMailSearch(ctx context.Context, query string, limit int) (result, war
 // HandleContacts lists contacts that have been assigned to at least one project,
 // along with their project assignments.
 func HandleContacts(ctx context.Context) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "HandleContacts")
+	defer span.Finish()
+
 	currentNameID := ainame.GetCurrentNameID(ctx)
 
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to open database: %w", err)
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	rows, err := db.Query(
 		`SELECT an.id, an.name_cn, an.name_en, an.bird_frog, an.email,
@@ -570,6 +584,9 @@ func HandleContacts(ctx context.Context) (result, warning string, err error) {
 // The recipient is automatically set to the original mail's sender.
 // If subject is empty, "Re: <original subject>" is used.
 func HandleReplyMail(ctx context.Context, replyToID int64, subject, body string) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "HandleReplyMail")
+	defer span.Finish()
+
 	if replyToID <= 0 {
 		err = fmt.Errorf("replyToID is required")
 		return
@@ -581,11 +598,11 @@ func HandleReplyMail(ctx context.Context, replyToID int64, subject, body string)
 
 	senderNameID := ainame.GetCurrentNameID(ctx)
 
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to open database: %w", err)
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	// Look up original mail — must be addressed to current user
 	var origSenderNameID int64
@@ -640,6 +657,9 @@ func HandleReplyMail(ctx context.Context, replyToID int64, subject, body string)
 // HandleDeleteMail deletes a mail by ID. Only the recipient (current user)
 // can delete their own mails.
 func HandleDeleteMail(ctx context.Context, mailID int64) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "HandleDeleteMail")
+	defer span.Finish()
+
 	if mailID <= 0 {
 		err = fmt.Errorf("mail ID is required")
 		return
@@ -647,11 +667,11 @@ func HandleDeleteMail(ctx context.Context, mailID int64) (result, warning string
 
 	nameID := ainame.GetCurrentNameID(ctx)
 
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to open database: %w", err)
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	// Verify ownership: only the recipient can delete
 	var subject string
@@ -701,16 +721,19 @@ func localTime(utcStr string) string {
 // Returns 0 on any error (missing session, DB error, etc.) — errors are silently
 // swallowed because this is a prompt hint; it must never block or error out.
 func UnreadMailCount(ctx context.Context) int {
+	span, ctx := clog.StartSpanFromContext(ctx, "UnreadMailCount")
+	defer span.Finish()
+
 	nameID := ainame.GetCurrentNameID(ctx)
 	if nameID == 0 {
 		return 0
 	}
 
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return 0
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	var count int
 	if err := db.QueryRow(
@@ -733,16 +756,18 @@ type UnreadMailSummary struct {
 // Returns nil on any error — errors are silently swallowed because this is
 // a prompt hint; it must never block or error out.
 func UnreadMailList(ctx context.Context) []UnreadMailSummary {
+	span, ctx := clog.StartSpanFromContext(ctx, "UnreadMailList")
+	defer span.Finish()
 	nameID := ainame.GetCurrentNameID(ctx)
 	if nameID == 0 {
 		return nil
 	}
 
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return nil
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	rows, err := db.Query(
 		`SELECT m.id, s.name_en, m.subject
@@ -859,7 +884,8 @@ func formatMailRow(row MailRow) string {
 		readStatus = "未读"
 	}
 
-	return fmt.Sprintf(`📧 **邮件 #%d** [%s]
+	return fmt.Sprintf(
+		`📧 **邮件 #%d** [%s]
 发件人: %s <%s>
 收件人: %s <%s>
 时间: %s

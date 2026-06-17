@@ -19,7 +19,7 @@ func TestOpen(t *testing.T) {
 				t.Fatal(err)
 			}
 			dbPath := f.Name()
-			got, gotErr := Open(dbPath)
+			got, gotErr := Open(t.Context(), dbPath)
 			if gotErr != nil {
 				if !tt.wantErr {
 					t.Errorf("Open() failed: %v", gotErr)

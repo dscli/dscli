@@ -87,7 +87,6 @@ func OpenEditor(ctx context.Context, initialContent string) (content string, err
 	return content, err
 }
 
-
 // findEditorBinary splits an EDITOR/VISUAL value into binary and arguments.
 // Uses strings.Cut on the first space so that values like "emacsclient -c"
 // are correctly parsed as binary="emcsclient", args=["-c"]. Compared to

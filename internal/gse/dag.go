@@ -206,7 +206,6 @@ func (seg *Segmenter) calc(runes []rune) map[int]route {
 }
 
 func (seg *Segmenter) hmm(bufString string, buf []rune, reg ...*regexp.Regexp) (result []string) {
-
 	v, _, ok := seg.Find(bufString)
 	if !ok || v == 0 {
 		result = append(result, seg.HMMCut(bufString, reg...)...)
@@ -220,7 +219,6 @@ func (seg *Segmenter) hmm(bufString string, buf []rune, reg ...*regexp.Regexp) (
 }
 
 func (seg *Segmenter) cutDAG(str string, reg ...*regexp.Regexp) []string {
-
 	mLen := int(float32(len(str))/RatioWord) + 1
 	result := make([]string, 0, mLen)
 
@@ -350,7 +348,6 @@ func (seg *Segmenter) cutAll(str string) []string {
 }
 
 func (seg *Segmenter) cutForSearch(str string, hmm ...bool) []string {
-
 	mLen := int(float32(len(str))/RatioWordFull) + 1
 	result := make([]string, 0, mLen)
 

@@ -9,6 +9,7 @@ import (
 	"github.com/dscli/dscli/internal/session"
 	"github.com/dscli/dscli/internal/skills"
 	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/nanjj/clog"
 	"github.com/spf13/cobra"
 )
 
@@ -87,12 +88,14 @@ var roleDefaults = []struct {
 	{"expert", "none", "none", "expert"},
 	{"review", "none", "none", "expert"},
 	{"test", "all", "all", "test"},
-
 }
 
 func roleListRunE(cmd *cobra.Command, _ []string) error {
-	sessionID := session.GetCurrentSessionID(cmd.Context())
-	configs, err := roles.ListRoleConfigs(sessionID)
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "roleListRunE")
+	defer span.Finish()
+
+	sessionID := session.GetCurrentSessionID(ctx)
+	configs, err := roles.ListRoleConfigs(ctx, sessionID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "列出角色配置失败: %v\n", err)
 		return nil
@@ -142,12 +145,14 @@ func roleListRunE(cmd *cobra.Command, _ []string) error {
 	return FormatOutput(rows, "table", headers, rowFunc)
 }
 
-
 func roleShowRunE(cmd *cobra.Command, args []string) error {
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "roleShowRunE")
+	defer span.Finish()
+
 	roleName := args[0]
 
-	sessionID := session.GetCurrentSessionID(cmd.Context())
-	cfg, err := roles.GetRoleConfig(roleName, sessionID)
+	sessionID := session.GetCurrentSessionID(ctx)
+	cfg, err := roles.GetRoleConfig(ctx, roleName, sessionID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "查询角色配置失败: %v\n", err)
 		return nil
@@ -186,8 +191,10 @@ func roleShowRunE(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-
 func roleUpdateRunE(cmd *cobra.Command, args []string) error {
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "roleUpdateRunE")
+	defer span.Finish()
+
 	roleName := args[0]
 
 	// Validate role name
@@ -219,8 +226,8 @@ func roleUpdateRunE(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	sessionID := session.GetCurrentSessionID(cmd.Context())
-	if err := roles.UpsertRoleConfig(roleName, sessionID, skills, tools, prompt); err != nil {
+	sessionID := session.GetCurrentSessionID(ctx)
+	if err := roles.UpsertRoleConfig(ctx, roleName, sessionID, skills, tools, prompt); err != nil {
 		fmt.Fprintf(os.Stderr, "保存角色配置失败: %v\n", err)
 		return nil
 	}
@@ -237,7 +244,6 @@ func roleUpdateRunE(cmd *cobra.Command, args []string) error {
 	}
 	return nil
 }
-
 
 // validateTools checks that all tool names in the comma-separated list are known.
 func validateTools(tools string) error {
@@ -277,6 +283,9 @@ func validateSkills(skillsStr string) error {
 }
 
 func roleResetRunE(cmd *cobra.Command, args []string) error {
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "roleResetRunE")
+	defer span.Finish()
+
 	roleName := args[0]
 
 	// Validate role name
@@ -285,8 +294,8 @@ func roleResetRunE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("无效的角色名 %q，支持的角色：dev, expert, review, test", roleName)
 	}
 
-	sessionID := session.GetCurrentSessionID(cmd.Context())
-	if err := roles.DeleteRoleConfig(roleName, sessionID); err != nil {
+	sessionID := session.GetCurrentSessionID(ctx)
+	if err := roles.DeleteRoleConfig(ctx, roleName, sessionID); err != nil {
 		fmt.Fprintf(os.Stderr, "重置角色配置失败: %v\n", err)
 		return nil
 	}
@@ -294,4 +303,3 @@ func roleResetRunE(cmd *cobra.Command, args []string) error {
 	fmt.Printf("已重置角色 %q 的配置，恢复默认行为。\n", roleName)
 	return nil
 }
-

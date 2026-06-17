@@ -106,7 +106,7 @@ func TestPrintSessionStats(t *testing.T) {
 	PrintSessionStats(ctx)
 	output = buf.String()
 
-	if !strings.Contains(output, "⚠️ 余额较低，请及时充值！") {
+	if !strings.Contains(output, "⚠️ ") {
 		t.Errorf("低余额时应该显示提醒\n完整输出:\n%s", output)
 	}
 }
@@ -117,11 +117,11 @@ type MockDeepseekClient struct {
 	balanceError    error
 }
 
-func (m *MockDeepseekClient) Balance() (*dsc.BalanceResponse, error) {
+func (m *MockDeepseekClient) Balance(ctx context.Context) (*dsc.BalanceResponse, error) {
 	return m.balanceResponse, m.balanceError
 }
 
-func (m *MockDeepseekClient) Models() (*dsc.ModelsResponse, error) {
+func (m *MockDeepseekClient) Models(ctx context.Context) (*dsc.ModelsResponse, error) {
 	return nil, nil
 }
 

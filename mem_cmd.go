@@ -12,7 +12,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-
 func init() {
 	memCmd := AddRootCommand(&cobra.Command{
 		Use:   "memory",
@@ -107,7 +106,6 @@ func memListRunE(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-
 func memSearchRunE(cmd *cobra.Command, args []string) error {
 	query := args[0]
 	typ, _ := cmd.Flags().GetString("type")
@@ -124,7 +122,6 @@ func memSearchRunE(cmd *cobra.Command, args []string) error {
 	outfmt.Print(result)
 	return nil
 }
-
 
 func memShowRunE(cmd *cobra.Command, args []string) error {
 	id, err := strconv.ParseInt(args[0], 10, 64)
@@ -143,7 +140,6 @@ func memShowRunE(cmd *cobra.Command, args []string) error {
 	outfmt.Println(result)
 	return nil
 }
-
 
 func memStatsRunE(cmd *cobra.Command, _ []string) error {
 	result, warning, err := memories.HandleMemStats(context.Background())

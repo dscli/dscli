@@ -19,6 +19,7 @@ import (
 
 	"github.com/dscli/dscli/internal/session"
 	"github.com/dscli/dscli/internal/sqlite"
+	"github.com/nanjj/clog"
 )
 
 // NameConfig holds the AI persona data for prompt injection.
@@ -162,9 +163,11 @@ var (
 //
 // session not initialized → returns 0 (nobody).
 func GetCurrentNameID(ctx context.Context) int64 {
+	span, ctx := clog.StartSpanFromContext(ctx, "GetCurrentNameID")
+	defer span.Finish()
 	currentNameIDOnce.Do(func() {
 		sessionID := session.GetCurrentSessionID(ctx)
-		currentNameID.Store(GetNameID(sessionID))
+		currentNameID.Store(GetNameID(ctx, sessionID))
 	})
 	return currentNameID.Load()
 }
@@ -182,33 +185,37 @@ func ResetCurrentNameID() {
 //
 // sessionID == 0 → returns 0 (nobody / unclaimed).
 // DB errors → returns 0.
-func GetNameID(sessionID int64) int64 {
+func GetNameID(ctx context.Context, sessionID int64) int64 {
+	span, ctx := clog.StartSpanFromContext(ctx, "")
+	defer span.Finish()
 	if sessionID == 0 {
 		return 0
 	}
 
-	nameID, err := getNameID(sessionID)
+	nameID, err := getNameID(ctx, sessionID)
 	if err == nil {
 		return nameID
 	}
 
 	// Not assigned yet — trigger LoadOrAssign (opens its own DB connection).
-	LoadOrAssign(sessionID)
+	LoadOrAssign(ctx, sessionID)
 
 	// Re-read the now-existing assignment.
-	nameID, err = getNameID(sessionID)
+	nameID, err = getNameID(ctx, sessionID)
 	if err != nil {
 		return 0
 	}
 	return nameID
 }
 
-func getNameID(sessionID int64) (int64, error) {
-	db, err := sqlite.OpenDB()
+func getNameID(ctx context.Context, sessionID int64) (int64, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "getNameID")
+	defer span.Finish()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return 0, err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	var nameID int64
 	err = db.QueryRow("SELECT name_id FROM session_names WHERE session_id = ?", sessionID).Scan(&nameID)
@@ -223,16 +230,18 @@ func getNameID(sessionID int64) (int64, error) {
 // sessionID == 0 → returns nobody (no session initialized).
 // sessionID > 0  → returns previously assigned name, or randomly assigns one.
 // DB errors       → falls back to nobody.
-func LoadOrAssign(sessionID int64) *NameConfig {
+func LoadOrAssign(ctx context.Context, sessionID int64) *NameConfig {
+	span, ctx := clog.StartSpanFromContext(ctx, "LoadOrAssign")
+	defer span.Finish()
 	if sessionID == 0 {
 		return &nobodyCfg
 	}
 
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return &nobodyCfg
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	// 1. Check existing assignment
 	var nameID int64

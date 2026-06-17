@@ -11,6 +11,7 @@ import (
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/lockfile"
 	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/nanjj/clog"
 )
 
 var (
@@ -50,7 +51,9 @@ type DB struct {
 }
 
 // Close 关闭数据库连接并释放文件锁（如有）。
-func (db *DB) Close() error {
+func (db *DB) Close(ctx context.Context) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "dbClose")
+	defer span.Finish()
 	var err error
 	if db.DB != nil {
 		err = db.DB.Close()
@@ -80,7 +83,9 @@ func RegisterPostInitHook(hook func(*DB) error) {
 }
 
 // 初始化数据库（延迟执行，确保所有init()已完成）
-func initDatabase(db *DB) error {
+func initDatabase(ctx context.Context, db *DB) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "initDatabase")
+	defer span.Finish()
 	// 0. 确保 db_metadata 表存在（用于检测 DB 重建）
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS db_metadata (
 		key TEXT PRIMARY KEY,
@@ -141,10 +146,12 @@ func initDatabase(db *DB) error {
 //
 // 对于默认生产数据库（~/.dscli/sqlite.db），自动获取文件锁以防止
 // 多进程并发导致的 SQLITE_BUSY。测试环境和自定义路径不获取锁。
-func OpenDB(elem ...string) (*DB, error) {
+func OpenDB(ctx context.Context, elem ...string) (*DB, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "OpenDB")
+	defer span.Finish()
 	// 自定义数据库路径（elem 指定）— 不获取锁
 	if len(elem) > 0 {
-		rawDB, err := Open(filepath.Join(elem...))
+		rawDB, err := Open(ctx, filepath.Join(elem...))
 		if err != nil {
 			return nil, err
 		}
@@ -159,7 +166,7 @@ func OpenDB(elem ...string) (*DB, error) {
 			return nil, fmt.Errorf("获取数据库锁失败: %w", err)
 		}
 
-		rawDB, err := Open(dbPath)
+		rawDB, err := Open(ctx, dbPath)
 		if err != nil {
 			lk.Close()
 			return nil, fmt.Errorf("打开数据库失败: %w", err)
@@ -168,11 +175,11 @@ func OpenDB(elem ...string) (*DB, error) {
 		db := &DB{DB: rawDB, lk: lk}
 
 		dbOnce.Do(func() {
-			dbErr = initDatabase(db)
+			dbErr = initDatabase(ctx, db)
 		})
 
 		if dbErr != nil {
-			db.Close()
+			db.Close(ctx)
 			return nil, dbErr
 		}
 
@@ -180,7 +187,7 @@ func OpenDB(elem ...string) (*DB, error) {
 	}
 
 	// 非默认路径（测试环境 / SetDBPath 自定义）— 不获取锁
-	rawDB, err := Open(dbPath)
+	rawDB, err := Open(ctx, dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
@@ -188,11 +195,11 @@ func OpenDB(elem ...string) (*DB, error) {
 	db := &DB{DB: rawDB}
 
 	dbOnce.Do(func() {
-		dbErr = initDatabase(db)
+		dbErr = initDatabase(ctx, db)
 	})
 
 	if dbErr != nil {
-		db.Close()
+		db.Close(ctx)
 		return nil, dbErr
 	}
 
@@ -213,12 +220,14 @@ func GetDBPath() string {
 
 // GetMetadata 读取 db_metadata 表中的值，用于诊断 DB 状态。
 // 返回空字符串表示 key 不存在（DB 尚未初始化完成）。
-func GetMetadata(key string) string {
-	db, err := OpenDB()
+func GetMetadata(ctx context.Context, key string) string {
+	span, ctx := clog.StartSpanFromContext(ctx, "GetMetadata")
+	defer span.Finish()
+	db, err := OpenDB(ctx)
 	if err != nil {
 		return ""
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	var value string
 	_ = db.QueryRow(`SELECT value FROM db_metadata WHERE key = ?`, key).Scan(&value)

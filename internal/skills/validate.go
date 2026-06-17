@@ -80,13 +80,15 @@ func ValidateSkillDir(dir string) []string {
 		dirName := filepath.Base(dir)
 		if norm.NFKC.String(dirName) != normalized {
 			errors = append(errors, fmt.Sprintf(
-				"Directory name %q must match skill name %q", dirName, name))
+				"Directory name %q must match skill name %q", dirName, name,
+			))
 		}
 
 		// 8. Description length ≤ 1024 chars
 		if len([]rune(desc)) > 1024 {
 			errors = append(errors, fmt.Sprintf(
-				"Description exceeds 1024 character limit (%d chars)", len([]rune(desc))))
+				"Description exceeds 1024 character limit (%d chars)", len([]rune(desc)),
+			))
 		}
 
 		// 9. Compatibility validation (if present)
@@ -96,7 +98,8 @@ func ValidateSkillDir(dir string) []string {
 				errors = append(errors, "compatibility must be a string")
 			} else if len([]rune(s)) > 500 {
 				errors = append(errors, fmt.Sprintf(
-					"compatibility exceeds 500 character limit (%d chars)", len([]rune(s))))
+					"compatibility exceeds 500 character limit (%d chars)", len([]rune(s)),
+				))
 			}
 		}
 
@@ -116,7 +119,8 @@ func ValidateSkillDir(dir string) []string {
 		}
 		if len(unexpected) > 0 {
 			errors = append(errors, fmt.Sprintf(
-				"Unexpected fields in frontmatter: %s", strings.Join(unexpected, ", ")))
+				"Unexpected fields in frontmatter: %s", strings.Join(unexpected, ", "),
+			))
 		}
 	}
 
@@ -208,7 +212,8 @@ func validateName(name string) []string {
 
 	if len(name) > 64 {
 		errors = append(errors, fmt.Sprintf(
-			"Name %q exceeds 64 character limit (%d chars)", name, len(name)))
+			"Name %q exceeds 64 character limit (%d chars)", name, len(name),
+		))
 	}
 
 	// Must not start or end with hyphen
@@ -228,7 +233,8 @@ func validateName(name string) []string {
 			// Only cased characters need to be lowercase; CJK etc. are fine
 			if unicode.IsUpper(r) {
 				errors = append(errors, fmt.Sprintf(
-					"Name must be all lowercase: %q (offending char: %q)", name, r))
+					"Name must be all lowercase: %q (offending char: %q)", name, r,
+				))
 				break
 			}
 			prevHyphen = false
@@ -243,7 +249,8 @@ func validateName(name string) []string {
 		} else {
 			if !hasInvalidChar {
 				errors = append(errors, fmt.Sprintf(
-					"Name contains invalid character %q", r))
+					"Name contains invalid character %q", r,
+				))
 				hasInvalidChar = true
 			}
 			prevHyphen = false

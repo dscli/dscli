@@ -7,11 +7,8 @@ import (
 	_ "embed"
 )
 
-var (
-	//go:embed data/dict/zh/s_1.txt
-	zhS string
-)
-
+//go:embed data/dict/zh/s_1.txt
+var zhS string
 
 //go:embed data/dict/zh/stop_tokens.txt
 var stopDict string

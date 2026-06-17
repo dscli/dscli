@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/nanjj/clog"
 	"github.com/spf13/cobra"
 )
 
@@ -19,7 +20,10 @@ func init() {
 }
 
 func BalanceRunE(cmd *cobra.Command, args []string) (err error) {
-	resp, err := DeepseekClient.Balance()
+	ctx := cmd.Context()
+	span, ctx := clog.StartSpanFromContext(ctx, "BalanceRunE")
+	defer span.Finish()
+	resp, err := DeepseekClient.Balance(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "balance query failed: %v\n", err)
 		return nil

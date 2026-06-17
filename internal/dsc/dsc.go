@@ -9,6 +9,7 @@ import (
 	"github.com/dscli/dscli/internal/price"
 	"github.com/dscli/dscli/internal/prompt"
 	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/nanjj/clog"
 )
 
 // DefaultMaxTokens 默认 max_tokens，可通过 config max-tokens 覆盖
@@ -112,8 +113,8 @@ type Deepseek struct {
 }
 
 type Client interface {
-	Models() (*ModelsResponse, error)
-	Balance() (*BalanceResponse, error)
+	Models(ctx context.Context) (*ModelsResponse, error)
+	Balance(ctx context.Context) (*BalanceResponse, error)
 	FIM(ctx context.Context, req FIMRequest) (*FIMResponse, error)
 	Chat(ctx context.Context, messages []prompt.Message, tools []toolcall.Tool) (*ChatResponse, error)
 }
@@ -132,15 +133,17 @@ func NewClient(apiKey, baseURL string) Client {
 }
 
 // Models 获取模型列表
-func (c *Deepseek) Models() (*ModelsResponse, error) {
+func (c *Deepseek) Models(ctx context.Context) (*ModelsResponse, error) {
 	var resp ModelsResponse
-	err := c.doRequest("GET", "/models", nil, &resp)
+	err := c.doRequest(ctx, "GET", "/models", nil, &resp)
 	return &resp, err
 }
 
 // Balance 获取余额信息
-func (c *Deepseek) Balance() (*BalanceResponse, error) {
+func (c *Deepseek) Balance(ctx context.Context) (*BalanceResponse, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "Balance")
+	defer span.Finish()
 	var resp BalanceResponse
-	err := c.doRequest("GET", "/user/balance", nil, &resp)
+	err := c.doRequest(ctx, "GET", "/user/balance", nil, &resp)
 	return &resp, err
 }

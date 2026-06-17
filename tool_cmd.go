@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/nanjj/clog"
 	"github.com/spf13/cobra"
 )
-
 
 func init() {
 	toolCmd := AddRootCommand(&cobra.Command{
@@ -101,8 +101,9 @@ func toolListRunE(cmd *cobra.Command, _ []string) error {
 	return FormatOutput(rows, "table", headers, rowFunc)
 }
 
-
 func toolStatsRunE(cmd *cobra.Command, _ []string) error {
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "toolStatsRunE")
+	defer span.Finish()
 	days, _ := cmd.Flags().GetInt("days")
 	project, _ := cmd.Flags().GetBool("project")
 
@@ -110,9 +111,9 @@ func toolStatsRunE(cmd *cobra.Command, _ []string) error {
 	var err error
 
 	if project {
-		stats, err = toolcall.GetProjectToolUsage(cmd.Context(), days)
+		stats, err = toolcall.GetProjectToolUsage(ctx, days)
 	} else {
-		stats, err = toolcall.GetToolUsageStats(days)
+		stats, err = toolcall.GetToolUsageStats(ctx, days)
 	}
 
 	if err != nil {
@@ -156,7 +157,6 @@ func toolStatsRunE(cmd *cobra.Command, _ []string) error {
 
 	return FormatOutput(rows, "table", headers, rowFunc)
 }
-
 
 // firstContentLine 取描述的首行正文（跳过 Markdown 标题行和空行）。
 // 如果所有行都是标题或空行，则返回空字符串。

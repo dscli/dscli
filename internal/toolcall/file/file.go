@@ -33,7 +33,6 @@ func ResolvePath(ctx context.Context, path string) string {
 	return filepath.Join(projectRoot, path)
 }
 
-
 // DisplayPath 返回适合显示的文件路径（相对于项目根目录）。
 // 如果 path 在项目根目录下，返回相对路径；否则返回原始 path。
 // projectRoot 为空时也返回原始 path。

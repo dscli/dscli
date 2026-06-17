@@ -18,13 +18,14 @@ import (
 	"github.com/dscli/dscli/internal/roles"
 	"github.com/dscli/dscli/internal/session"
 	"github.com/dscli/dscli/internal/skills"
+	"github.com/nanjj/clog"
 )
+
 //go:embed dev.md
 var devTemplate string
 
 //go:embed expert.md
 var expertTemplate string
-
 
 //go:embed review.md
 var reviewTemplate string
@@ -72,9 +73,6 @@ type promptConfig struct {
 	AIPersonalityEN string // e.g. "steady, forceful, vain"
 	AIDescEN        string // English description for prompt injection
 	AIBirdFrog      string // "bird" | "frog"
-
-	// context（用于数据库查询等）
-	ctx context.Context
 }
 
 // GetPromptPath 获取提示词文件路径
@@ -299,10 +297,13 @@ func readPromptFile(p string) string {
 // 优先级：项目配置(.dscli/prompt/) > 全局配置 > 内嵌默认模板。
 // 当数据库中存在 role→prompt 映射时，使用映射后的 prompt 名称加载模板；
 func GetPromptTemplate(ctx context.Context, role string) string {
+	span, ctx := clog.StartSpanFromContext(ctx, "GetPromptTemplate")
+	defer span.Finish()
+
 	// 检查数据库中是否有 role→prompt 映射
 	promptName := role
 	sessionID := session.GetCurrentSessionID(ctx)
-	if cfg, err := roles.GetRoleConfig(role, sessionID); err == nil && cfg != nil {
+	if cfg, err := roles.GetRoleConfig(ctx, role, sessionID); err == nil && cfg != nil {
 		if cfg.Prompt != "" {
 			promptName = cfg.Prompt
 		}
@@ -374,8 +375,8 @@ func (t *promptTemplate) Render(data *promptConfig) (string, error) {
 }
 
 // GeneratePromptWithTemplate 使用模板生成提示词
-func (c *promptConfig) GeneratePromptWithTemplate() string {
-	tmpl := newPromptTemplate(c.ctx, c.Role)
+func (c *promptConfig) GeneratePromptWithTemplate(ctx context.Context) string {
+	tmpl := newPromptTemplate(ctx, c.Role)
 	if tmpl == nil {
 		// 防御性编程：理论上 newPromptTemplate 不再返回 nil，
 		// 但保留此检查以防未来重构引入 bug
@@ -392,8 +393,10 @@ func (c *promptConfig) GeneratePromptWithTemplate() string {
 
 // GetSystemPrompt 获取增强的系统提示词
 func GetSystemPrompt(ctx context.Context) string {
+	span, ctx := clog.StartSpanFromContext(ctx, "GetSystemPrompt")
+	defer span.Finish()
 	config := newPromptConfig(ctx)
-	return config.GeneratePromptWithTemplate()
+	return config.GeneratePromptWithTemplate(ctx)
 }
 
 // RenderPromptForRole renders the system prompt for a specific role
@@ -404,16 +407,18 @@ func GetSystemPrompt(ctx context.Context) string {
 func RenderPromptForRole(ctx context.Context, role string) string {
 	config := newPromptConfig(ctx)
 	config.Role = role
-	return config.GeneratePromptWithTemplate()
+	return config.GeneratePromptWithTemplate(ctx)
 }
 
 // newPromptConfig 创建系统提示词配置
 func newPromptConfig(ctx context.Context) *promptConfig {
+	span, ctx := clog.StartSpanFromContext(ctx, "newPromptConfig")
+	defer span.Finish()
 	projectRoot := context.ProjectRoot
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, int64(0))
 	role := context.ContextValue(ctx, context.CurrentRoleKey, "dev")
 	config := &promptConfig{
-		CurrentDate:      time.Now().Format("2006年01月"),
+		CurrentDate: time.Now().Format("2006年01月"),
 
 		ProjectRoot:      projectRoot,
 		ConfigDir:        config.ConfigDir,
@@ -422,7 +427,6 @@ func newPromptConfig(ctx context.Context) *promptConfig {
 		Username:         getUsername(),
 		Role:             role,
 		ModelID:          modelID,
-		ctx:              ctx,
 	}
 
 	// 获取Git信息
@@ -431,7 +435,7 @@ func newPromptConfig(ctx context.Context) *promptConfig {
 	config.ProjectType = config.detectProjectType()
 
 	// AI 名字系统（静默分配）
-	config.loadAIName()
+	config.loadAIName(ctx)
 
 	return config
 }
@@ -473,7 +477,6 @@ func (c *promptConfig) loadGitInfo() {
 	} else {
 		c.GitBranch = "非Git仓库"
 	}
-
 }
 
 // detectProjectType 检测项目类型
@@ -508,9 +511,11 @@ func (c *promptConfig) detectProjectType() string {
 
 // loadAIName populates AI name fields from session→name assignment.
 // Falls back to "nobody" when no session exists or DB is unavailable.
-func (c *promptConfig) loadAIName() {
-	sessionID := session.GetCurrentSessionID(c.ctx)
-	cfg := ainame.LoadOrAssign(sessionID)
+func (c *promptConfig) loadAIName(ctx context.Context) {
+	span, ctx := clog.StartSpanFromContext(ctx, "loadAIName")
+	defer span.Finish()
+	sessionID := session.GetCurrentSessionID(ctx)
+	cfg := ainame.LoadOrAssign(ctx, sessionID)
 	c.AINameEN = cfg.NameEN
 	c.AIPersonalityEN = cfg.PersonalityEN
 	c.AIDescEN = cfg.DescEN
@@ -523,6 +528,9 @@ func (c *promptConfig) loadAIName() {
 // Skills are injected according to role config; when no config exists,
 // only dev role gets skills (hardcoded fallback).
 func LoadPrompts(ctx context.Context) ([]Message, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "LoadPrompt")
+	defer span.Finish()
+
 	systemPrompt := GetSystemPrompt(ctx)
 
 	content := systemPrompt
@@ -531,7 +539,7 @@ func LoadPrompts(ctx context.Context) ([]Message, error) {
 	role := context.ContextValue(ctx, context.CurrentRoleKey, "dev")
 	// 查找数据库中的角色配置
 	sessionID := session.GetCurrentSessionID(ctx)
-	cfg, cfgErr := roles.GetRoleConfig(role, sessionID)
+	cfg, cfgErr := roles.GetRoleConfig(ctx, role, sessionID)
 	if cfgErr != nil {
 		outfmt.Debug("获取角色配置失败: %v，回退到默认行为\n", cfgErr)
 	}
@@ -565,7 +573,6 @@ func LoadPrompts(ctx context.Context) ([]Message, error) {
 		content += "\n\n"
 		content += notePrompt
 	}
-
 
 	return []Message{{
 		Role:    "system",

@@ -9,6 +9,7 @@ import (
 
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/session"
+	"github.com/nanjj/clog"
 	"github.com/spf13/cobra"
 )
 
@@ -51,10 +52,13 @@ func init() {
 }
 
 func projectListRunE(cmd *cobra.Command, _ []string) error {
-	// 确保当前项目已分配 session，这样即使首次访问也能列出来并标记箭头。
-	session.GetCurrentSessionID(cmd.Context())
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "projectListRunE")
+	defer span.Finish()
 
-	projects, err := session.ListProjects()
+	// 确保当前项目已分配 session，这样即使首次访问也能列出来并标记箭头。
+	session.GetCurrentSessionID(ctx)
+
+	projects, err := session.ListProjects(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "列出项目失败: %v\n", err)
 		return nil
@@ -118,9 +122,11 @@ func projectListRunE(cmd *cobra.Command, _ []string) error {
 	return FormatOutput(rows, "table", headers, rowFunc)
 }
 
-
 // projectAssignRunE handles "dscli project assign <project_id> <maintainer_id>".
-func projectAssignRunE(_ *cobra.Command, args []string) error {
+func projectAssignRunE(cmd *cobra.Command, args []string) error {
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "projectAssignRunE")
+	defer span.Finish()
+
 	projectID, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil || projectID <= 0 {
 		return fmt.Errorf("无效的 project_id: %s（需要正整数）", args[0])
@@ -130,7 +136,7 @@ func projectAssignRunE(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("无效的 maintainer_id: %s（需要正整数）", args[1])
 	}
 
-	if err := session.AssignMaintainer(projectID, maintainerID); err != nil {
+	if err := session.AssignMaintainer(ctx, projectID, maintainerID); err != nil {
 		fmt.Fprintf(os.Stderr, "指派维护者失败: %v\n", err)
 		return nil
 	}
@@ -140,7 +146,9 @@ func projectAssignRunE(_ *cobra.Command, args []string) error {
 }
 
 // projectUpdateRunE handles "dscli project update <project_id> <project>".
-func projectUpdateRunE(_ *cobra.Command, args []string) error {
+func projectUpdateRunE(cmd *cobra.Command, args []string) error {
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "projectUpdateRunE")
+	defer span.Finish()
 	projectID, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil || projectID <= 0 {
 		return fmt.Errorf("无效的 project_id: %s（需要正整数）", args[0])
@@ -150,7 +158,7 @@ func projectUpdateRunE(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("project path 不能为空")
 	}
 
-	if err := session.UpdateProjectPath(projectID, newPath); err != nil {
+	if err := session.UpdateProjectPath(ctx, projectID, newPath); err != nil {
 		fmt.Fprintf(os.Stderr, "更新项目路径失败: %v\n", err)
 		return nil
 	}

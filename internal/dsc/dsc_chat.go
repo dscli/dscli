@@ -7,10 +7,13 @@ import (
 	"github.com/dscli/dscli/internal/price"
 	"github.com/dscli/dscli/internal/prompt"
 	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/nanjj/clog"
 )
 
 // Chat 发送聊天请求
 func (c *Deepseek) Chat(ctx context.Context, messages []prompt.Message, tools []toolcall.Tool) (*ChatResponse, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "DeepseekChat")
+	defer span.Finish()
 	// 非工具调用的 assistant 消息，清空 reasoning_content（API 会忽略但保留更安全）
 	for i, message := range messages {
 		if message.Role == "assistant" && len(message.ToolCalls) == 0 && message.ReasoningContent != "" {
@@ -51,7 +54,7 @@ func (c *Deepseek) Chat(ctx context.Context, messages []prompt.Message, tools []
 
 	// 非streaming请求
 	var resp ChatResponse
-	err := c.doRequest("POST", "/chat/completions", req, &resp)
+	err := c.doRequest(ctx, "POST", "/chat/completions", req, &resp)
 	if err != nil {
 		return nil, err
 	}

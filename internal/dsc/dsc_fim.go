@@ -44,7 +44,7 @@ func (c *Deepseek) FIM(ctx context.Context, req FIMRequest) (*FIMResponse, error
 
 	// 非流式请求
 	var resp FIMResponse
-	err := c.doRequest("POST", "/beta/completions", req, &resp)
+	err := c.doRequest(ctx, "POST", "/beta/completions", req, &resp)
 	if err != nil {
 		return nil, err
 	}

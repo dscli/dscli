@@ -13,7 +13,7 @@ func TestOpenDB(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, gotErr := OpenDB()
+			got, gotErr := OpenDB(t.Context())
 			if gotErr != nil {
 				if !tt.wantErr {
 					t.Errorf("OpenDB() failed: %v", gotErr)

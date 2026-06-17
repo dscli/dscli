@@ -243,7 +243,6 @@ func serviceStopRunE(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-
 func serviceListRunE(cmd *cobra.Command, args []string) error {
 	scan, _ := cmd.Flags().GetBool("scan")
 
@@ -383,7 +382,6 @@ func serviceStatusRunE(cmd *cobra.Command, args []string) error {
 
 	return FormatOutput(maps, "table", headers, rowFunc)
 }
-
 
 // statusLabel 将 userservice 状态码转换为中文标签。
 func statusLabel(s string) string {

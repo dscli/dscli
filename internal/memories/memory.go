@@ -19,6 +19,7 @@ import (
 	"github.com/dscli/dscli/internal/session"
 	"github.com/dscli/dscli/internal/sqlite"
 	"github.com/dscli/dscli/internal/tokenizer"
+	"github.com/nanjj/clog"
 )
 
 // --- SQLite Schema (registered via init) ---
@@ -64,8 +65,8 @@ func init() {
 // --- Shared Helpers ---
 
 // openDB opens the shared dscli database.
-func openDB() (*sqlite.DB, error) {
-	return sqlite.OpenDB()
+func openDB(ctx context.Context) (*sqlite.DB, error) {
+	return sqlite.OpenDB(ctx)
 }
 
 // truncate shortens s to max runes, appending "..." if truncated.
@@ -114,6 +115,8 @@ func deleteFTS(db *sqlite.DB, id int64) error {
 
 // HandleMemSave saves a new memory observation.
 func HandleMemSave(ctx context.Context, title, body, typ string) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "HandleMemSave")
+	defer span.Finish()
 	if title == "" || body == "" {
 		err = fmt.Errorf("title 和 content 为必填项")
 		return result, warning, err
@@ -121,12 +124,12 @@ func HandleMemSave(ctx context.Context, title, body, typ string) (result, warnin
 	sessionID := session.GetCurrentSessionID(ctx)
 	nameID := ainame.GetCurrentNameID(ctx)
 
-	db, err := openDB()
+	db, err := openDB(ctx)
 	if err != nil {
 		err = fmt.Errorf("打开数据库失败: %w", err)
 		return result, warning, err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	// Truncate content if too long (>50000 chars)
 	if len(body) > 50000 {
@@ -159,15 +162,17 @@ func HandleMemSave(ctx context.Context, title, body, typ string) (result, warnin
 
 // HandleMemUpdate updates an existing memory by ID.
 func HandleMemUpdate(ctx context.Context, id int64, title, body, typ string) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "HandleMemUpdate")
+	defer span.Finish()
 	sessionID := session.GetCurrentSessionID(ctx)
 	nameID := ainame.GetCurrentNameID(ctx)
 
-	db, err := openDB()
+	db, err := openDB(ctx)
 	if err != nil {
 		err = fmt.Errorf("打开数据库失败: %w", err)
 		return result, warning, err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	// Verify the memory exists and belongs to current maintainer
 	var existing memoryRow
@@ -238,15 +243,17 @@ func HandleMemUpdate(ctx context.Context, id int64, title, body, typ string) (re
 
 // HandleMemSearch searches memories using FTS5 full-text search.
 func HandleMemSearch(ctx context.Context, query, typ string, limit int) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "HandleMemSearch")
+	defer span.Finish()
 	sessionID := session.GetCurrentSessionID(ctx)
 	nameID := ainame.GetCurrentNameID(ctx)
 
-	db, err := openDB()
+	db, err := openDB(ctx)
 	if err != nil {
 		err = fmt.Errorf("打开数据库失败: %w", err)
 		return result, warning, err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	ftsQuery := tokenizer.SanitizeFTS(query)
 
@@ -323,15 +330,17 @@ func HandleMemSearch(ctx context.Context, query, typ string, limit int) (result,
 
 // HandleMemDelete deletes a memory by ID.
 func HandleMemDelete(ctx context.Context, id int64) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "HandleMemDelete")
+	defer span.Finish()
 	sessionID := session.GetCurrentSessionID(ctx)
 	nameID := ainame.GetCurrentNameID(ctx)
 
-	db, err := openDB()
+	db, err := openDB(ctx)
 	if err != nil {
 		err = fmt.Errorf("打开数据库失败: %w", err)
 		return result, warning, err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	// Verify existence and ownership first for a meaningful error message
 	var title string
@@ -371,15 +380,17 @@ func HandleMemDelete(ctx context.Context, id int64) (result, warning string, err
 // HandleMemGetObservation retrieves full memory content by ID.
 // Unlike mem_search which returns truncated previews, this returns the complete content.
 func HandleMemGetObservation(ctx context.Context, id int64) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "HandleMemGetObservation")
+	defer span.Finish()
 	sessionID := session.GetCurrentSessionID(ctx)
 	nameID := ainame.GetCurrentNameID(ctx)
 
-	db, err := openDB()
+	db, err := openDB(ctx)
 	if err != nil {
 		err = fmt.Errorf("打开数据库失败: %w", err)
 		return result, warning, err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	var m memoryRow
 	err = db.QueryRow(
@@ -401,15 +412,17 @@ func HandleMemGetObservation(ctx context.Context, id int64) (result, warning str
 
 // HandleMemStats returns memory system statistics.
 func HandleMemStats(ctx context.Context) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "HandleMemStats")
+	defer span.Finish()
 	sessionID := session.GetCurrentSessionID(ctx)
 	nameID := ainame.GetCurrentNameID(ctx)
 
-	db, err := openDB()
+	db, err := openDB(ctx)
 	if err != nil {
 		err = fmt.Errorf("打开数据库失败: %w", err)
 		return result, warning, err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	var total int64
 	err = db.QueryRow(`SELECT COUNT(*) FROM memories WHERE name_id = ?`, nameID).Scan(&total)
@@ -471,18 +484,21 @@ type ListRow struct {
 // HandleMemList lists all memories for the current project, ordered by
 // most recently created first.
 func HandleMemList(ctx context.Context) ([]ListRow, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "HandleMemList")
+	defer span.Finish()
 	sessionID := session.GetCurrentSessionID(ctx)
 	nameID := ainame.GetCurrentNameID(ctx)
 
-	db, err := openDB()
+	db, err := openDB(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	rows, err := db.Query(
 		`SELECT id, title, created_at, updated_at FROM memories
-		 WHERE name_id = ? OR session_id = ? ORDER BY created_at DESC`, nameID, sessionID)
+		 WHERE name_id = ? OR session_id = ? ORDER BY created_at DESC`, nameID, sessionID,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("查询记忆列表失败: %w", err)
 	}

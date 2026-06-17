@@ -8,6 +8,7 @@ import (
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/session"
 	"github.com/dscli/dscli/internal/sqlite"
+	"github.com/nanjj/clog"
 )
 
 func init() {
@@ -25,12 +26,14 @@ func init() {
 // 如果该 session 尚不存在对应行则创建，否则在已有内容后追加。
 // 追加格式：原内容 + "\n" + newContent + "\n"
 func Append(ctx context.Context, newContent string) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "chimeinAppend")
+	defer span.Finish()
 	sessionID := session.GetCurrentSessionID(ctx)
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	// 先获取已有内容
 	existing, err := getContent(ctx, db, sessionID)
@@ -67,12 +70,14 @@ func Append(ctx context.Context, newContent string) error {
 // Get 获取当前 session 的 chimein 内容，读取后自动清空。
 // 如果不存在，返回空字符串和 nil error。
 func Get(ctx context.Context) (string, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "chimeinGet")
+	defer span.Finish()
 	sessionID := session.GetCurrentSessionID(ctx)
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return "", err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	content, err := getContent(ctx, db, sessionID)
 	if err != nil {
@@ -95,6 +100,8 @@ func Get(ctx context.Context) (string, error) {
 // getContent 内部函数：从指定 db 连接获取 content。
 // 未找到时返回 sql.ErrNoRows。
 func getContent(ctx context.Context, db *sqlite.DB, sessionID int64) (string, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "getContent")
+	defer span.Finish()
 	var content string
 	err := db.QueryRowContext(ctx,
 		`SELECT content FROM chimeins WHERE session_id = ?`,

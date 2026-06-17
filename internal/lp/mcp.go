@@ -110,6 +110,7 @@ func (c *MCPClient) Evaluate(ctx context.Context, script, url string) (string, e
 	}
 	return c.callTool(ctx, "evaluate", args)
 }
+
 // ListTools returns the list of tools available on the MCP server.
 func (c *MCPClient) ListTools(ctx context.Context) ([]*mcp.Tool, error) {
 	c.mu.Lock()
@@ -192,7 +193,6 @@ func NewCloudMCPClient(ctx context.Context) (*MCPClient, error) {
 		session: session,
 	}, nil
 }
-
 
 // defaultGetFromMCP is the default implementation of getFromMCP.
 // It starts a lightpanda mcp subprocess, connects via MCP, navigates

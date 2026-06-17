@@ -18,6 +18,7 @@ import (
 	"github.com/dscli/dscli/internal/roles"
 	"github.com/dscli/dscli/internal/session"
 	"github.com/dscli/dscli/internal/sqlite"
+	"github.com/nanjj/clog"
 )
 
 // ToolDesc 表示一个工具
@@ -145,6 +146,8 @@ func RegisterTool(tool ToolDef) {
 }
 
 func GetToolDef(ctx context.Context, toolName string) (tool ToolDef, ok bool) {
+	span, ctx := clog.StartSpanFromContext(ctx, "GetToolDef")
+	defer span.Finish()
 	toolRegistryRWMutex.RLock()
 	defer toolRegistryRWMutex.RUnlock()
 	tool, ok = toolRegistry[toolName]
@@ -168,12 +171,15 @@ func KnownToolNames() []string {
 // Filters tools by role config from DB; falls back to hardcoded:
 // dev gets all, others get none.
 func GetAllTools(ctx context.Context) []Tool {
+	span, ctx := clog.StartSpanFromContext(ctx, "GetAllTools")
+	defer span.Finish()
+
 	role := context.ContextValue(ctx, context.CurrentRoleKey, "dev")
 	// Determine which tools to include
 	var allowSet map[string]bool // nil = all, non-nil = filter
 
 	sessionID := session.GetCurrentSessionID(ctx)
-	cfg, _ := roles.GetRoleConfig(role, sessionID)
+	cfg, _ := roles.GetRoleConfig(ctx, role, sessionID)
 	if cfg == nil {
 		// Fallback: only dev gets tools
 		if role != "dev" {
@@ -224,6 +230,8 @@ func GetAllTools(ctx context.Context) []Tool {
 
 // HandleToolCalls 处理工具调用（带统计）
 func HandleToolCalls(ctx context.Context, tcs []prompt.ToolCall) (inputs []prompt.Message) {
+	span, ctx := clog.StartSpanFromContext(ctx, "HandleToolCalls")
+	defer span.Finish()
 	// 处理每个工具调用
 	for i, tc := range tcs {
 		id := tc.ID
@@ -300,6 +308,8 @@ func FixBrokenJSON(broken string) (result string) {
 
 // HandleToolCall 处理工具调用（带统计和超时）
 func HandleToolCall(ctx context.Context, toolName, argsRaw string) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "HandleToolCall")
+	defer span.Finish()
 	// 获取工具处理器
 	tool, ok := GetToolDef(ctx, toolName)
 	if !ok {
@@ -367,7 +377,7 @@ which lead to the error:
 		defer cancel()
 	}
 
-	toolID, err := GetOrCreateTool(tool.Name, tool.Description, tool.Category)
+	toolID, err := GetOrCreateTool(ctx, tool.Name, tool.Description, tool.Category)
 	if err != nil {
 		outfmt.Error(err.Error(), "name", tool.Name)
 		// 继续执行工具，但不记录统计
@@ -416,12 +426,15 @@ which lead to the error:
 }
 
 // GetOrCreateTool 获取或创建工具
-func GetOrCreateTool(name, description, category string) (int64, error) {
-	db, err := sqlite.OpenDB()
+func GetOrCreateTool(ctx context.Context, name, description, category string) (int64, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "GetOrCreateTool")
+	defer span.Finish()
+
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return 0, err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 	var id int64
 	err = db.QueryRow("SELECT id FROM tools WHERE name = ?", name).Scan(&id)
 	if err == nil {
@@ -441,18 +454,21 @@ func GetOrCreateTool(name, description, category string) (int64, error) {
 }
 
 // GetTool 根据ID获取工具
-func GetTool(id int64) (*ToolDesc, error) {
-	db, err := sqlite.OpenDB()
+func GetTool(ctx context.Context, id int64) (*ToolDesc, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "GetTool")
+	defer span.Finish()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 	var tool ToolDesc
 	err = db.QueryRow(`
 		SELECT id, name, description, category, usage_count, created_at, updated_at
 		FROM tools WHERE id = ?`, id).Scan(
 		&tool.ID, &tool.Name, &tool.Description, &tool.Category,
-		&tool.UsageCount, &tool.CreatedAt, &tool.UpdatedAt)
+		&tool.UsageCount, &tool.CreatedAt, &tool.UpdatedAt,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("获取工具失败: %w", err)
 	}
@@ -460,18 +476,22 @@ func GetTool(id int64) (*ToolDesc, error) {
 }
 
 // GetToolByName 根据名称获取工具
-func GetToolByName(name string) (*ToolDesc, error) {
-	db, err := sqlite.OpenDB()
+func GetToolByName(ctx context.Context, name string) (*ToolDesc, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "GetToolByName")
+	defer span.Finish()
+
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 	var tool ToolDesc
 	err = db.QueryRow(`
 		SELECT id, name, description, category, usage_count, created_at, updated_at
 		FROM tools WHERE name = ?`, name).Scan(
 		&tool.ID, &tool.Name, &tool.Description, &tool.Category,
-		&tool.UsageCount, &tool.CreatedAt, &tool.UpdatedAt)
+		&tool.UsageCount, &tool.CreatedAt, &tool.UpdatedAt,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("获取工具失败: %w", err)
 	}
@@ -481,11 +501,14 @@ func GetToolByName(name string) (*ToolDesc, error) {
 // ListTools 列出所有工具（可按分类过滤）。
 // 以运行时注册表为权威来源，合并 DB 中的使用统计。
 func ListTools(ctx context.Context, category string) ([]ToolDesc, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "ListTools")
+	defer span.Finish()
+
 	// 1. 从 DB 获取使用统计
 	dbStats := map[string]ToolDesc{}
-	if db, err := sqlite.OpenDB(); err == nil {
+	if db, err := sqlite.OpenDB(ctx); err == nil {
 		func() {
-			defer db.Close()
+			defer db.Close(ctx)
 			rows, err := db.Query(`SELECT id, name, description, category, usage_count, created_at, updated_at FROM tools`)
 			if err != nil {
 				return
@@ -541,12 +564,15 @@ func ListTools(ctx context.Context, category string) ([]ToolDesc, error) {
 
 // RecordToolUsage 记录工具使用
 func RecordToolUsage(ctx context.Context, toolID int64, success bool, errorMsg string) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "RecordToolUsage")
+	defer span.Finish()
+
 	projectRoot := context.ProjectRoot
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 	// 更新工具使用次数
 	_, err = db.Exec("UPDATE tools SET usage_count = usage_count + 1 WHERE id = ?", toolID)
 	if err != nil {
@@ -565,12 +591,16 @@ func RecordToolUsage(ctx context.Context, toolID int64, success bool, errorMsg s
 }
 
 // GetToolUsageStats 获取工具使用统计
-func GetToolUsageStats(days int) ([]ToolUsageStat, error) {
-	db, err := sqlite.OpenDB()
+func GetToolUsageStats(ctx context.Context, days int) ([]ToolUsageStat, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "GetToolUsageStats")
+	defer span.Finish()
+
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+
+	defer db.Close(ctx)
 	var rows *sql.Rows
 
 	query := `
@@ -616,12 +646,15 @@ func GetToolUsageStats(days int) ([]ToolUsageStat, error) {
 // GetProjectToolUsage 获取项目工具使用情况
 func GetProjectToolUsage(ctx context.Context, days int) ([]ToolUsageStat, error,
 ) {
+	span, ctx := clog.StartSpanFromContext(ctx, "GetProjectToolUsage")
+	defer span.Finish()
+
 	projectRoot := context.ProjectRoot
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 	var rows *sql.Rows
 
 	query := `

@@ -196,4 +196,3 @@ func promptAddRunE(cmd *cobra.Command, args []string) error {
 	outfmt.Printf("已添加: %s\n", p)
 	return nil
 }
-

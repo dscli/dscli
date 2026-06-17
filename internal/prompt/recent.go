@@ -7,23 +7,27 @@ import (
 	"strings"
 
 	"github.com/dscli/dscli/internal/sqlite"
+	"github.com/nanjj/clog"
 )
 
 // RecentMessages 返回当前 session 中最近的用户/助手消息（过滤 tool/tool_calls），
 // 按 created_at 降序排列（最新在顶部）。
 // startID 默认为 math.MaxInt64（无穷大 = 从最新开始）；传具体 ID 实现向前翻页。
 func RecentMessages(ctx context.Context, limit int, startID int64) ([]Message, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "RecentMessages")
+	defer span.Finish()
+
 	if startID <= 0 {
 		startID = math.MaxInt64
 	}
 
 	sessionID := GetCurrentSessionID(ctx)
 
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, role, content, created_at

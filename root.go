@@ -6,7 +6,7 @@ import (
 	"github.com/dscli/dscli/internal/config"
 	"github.com/dscli/dscli/internal/dsc"
 	"github.com/dscli/dscli/internal/outfmt"
-	"github.com/dscli/dscli/internal/sqlite"
+	"github.com/nanjj/clog"
 	"github.com/spf13/cobra"
 )
 
@@ -46,6 +46,8 @@ func AddRootCommand(child *cobra.Command) *cobra.Command {
 }
 
 func RootPersistentPreRunE(cmd *cobra.Command, args []string) (err error) {
+	span, _ := clog.StartSpanFromContext(cmd.Context(), "RootPersistentPreRunE")
+	defer span.Finish()
 	verbose, err := cmd.Flags().GetBool("verbose")
 	if err != nil {
 		return err
@@ -85,12 +87,6 @@ func RootPersistentPreRunE(cmd *cobra.Command, args []string) (err error) {
 		err = fmt.Errorf("unsupported output mode: %s", mode)
 		return err
 	}
-	// Initialize database (ensures all init() functions have executed)
-	db, err := sqlite.OpenDB()
-	if err != nil {
-		return fmt.Errorf("database init failed: %w", err)
-	}
-	db.Close() // Release connection after init; subsequent commands acquire as needed
 
 	key := config.Get("deepseek-api-key", "")
 	if key == "" && cmd.Name() != "flycheck" && cmd.Name() != "version" {

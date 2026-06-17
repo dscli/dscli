@@ -10,6 +10,7 @@ import (
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/session"
 	"github.com/dscli/dscli/internal/sqlite"
+	"github.com/nanjj/clog"
 )
 
 // 注意：Message 和 ToolCall 类型定义在 prompt 包中。
@@ -21,11 +22,13 @@ var GetCurrentSessionID = session.GetCurrentSessionID
 
 // UpdateContent update message content
 func UpdateContent(ctx context.Context, id int64, content string) (err error) {
-	db, err := sqlite.OpenDB()
+	span, ctx := clog.StartSpanFromContext(ctx, "UpdateContent")
+	defer span.Finish()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 	res, err := db.ExecContext(ctx,
 		`UPDATE messages SET content = ? WHERE id = ?`,
 		content, id)
@@ -55,11 +58,14 @@ func ToSQLNullString(tcs []ToolCall) (toolCalls sql.NullString) {
 
 // UpdateToolCalls update message content
 func UpdateToolCalls(ctx context.Context, id int64, tcs []ToolCall) (err error) {
-	db, err := sqlite.OpenDB()
+	span, ctx := clog.StartSpanFromContext(ctx, "UpdateToolCalls")
+	defer span.Finish()
+
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 	toolCalls := ToSQLNullString(tcs)
 	res, err := db.ExecContext(ctx,
 		`UPDATE messages SET tool_calls = ? WHERE id = ?`,
@@ -80,11 +86,14 @@ func UpdateToolCalls(ctx context.Context, id int64, tcs []ToolCall) (err error) 
 
 // UpdateHistory update message session_id to 0
 func UpdateHistory(ctx context.Context, id int64) (err error) {
-	db, err := sqlite.OpenDB()
+	span, ctx := clog.StartSpanFromContext(ctx, "UpdateHistory")
+	defer span.Finish()
+
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 	_, err = db.ExecContext(ctx,
 		`UPDATE messages SET session_id = 0 WHERE id = ?`,
 		id)
@@ -95,11 +104,14 @@ func UpdateHistory(ctx context.Context, id int64) (err error) {
 }
 
 func ShowMessage(ctx context.Context, id int64) (message *Message, err error) {
-	db, err := sqlite.OpenDB()
+	span, ctx := clog.StartSpanFromContext(ctx, "ShowMessage")
+	defer span.Finish()
+
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return message, err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 	var toolCalls sql.NullString
 	var toolCallID sql.NullString
 	var tokens int
@@ -128,14 +140,16 @@ func ShowMessage(ctx context.Context, id int64) (message *Message, err error) {
 
 // ListHistory 加载指定会话的所有历史消息，按时间升序返回
 func ListHistory(ctx context.Context) ([]*Message, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "ListHistory")
+	defer span.Finish()
 	sessionID := GetCurrentSessionID(ctx)
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	histSize := context.ContextValue(ctx, context.HistSizeKey, 8)
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 	rows, err := db.QueryContext(ctx, `SELECT id, role, content, tool_call_id, tool_calls, created_at, reasoning_content, tokens
 		FROM messages
 		WHERE session_id = ? AND model_id = ?
@@ -182,6 +196,9 @@ func ListHistory(ctx context.Context) ([]*Message, error) {
 
 // LoadHistory 加载指定会话的所有历史消息，按时间升序返回
 func LoadHistory(ctx context.Context) ([]Message, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "LoadHistory")
+	defer span.Finish()
+
 	histSize := context.ContextValue(ctx, context.HistSizeKey, 8)
 	if histSize == 0 {
 		return []Message{}, nil
@@ -190,11 +207,11 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 	sessionID := GetCurrentSessionID(ctx)
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	leftTokens := context.ContextValue(ctx, context.LeftTokensKey, 0)
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 	rows, err := db.Query(`
 		SELECT id, role, content, tool_call_id, tool_calls, created_at, reasoning_content, tokens
 		FROM messages
@@ -362,19 +379,20 @@ outloop:
 	return cleaned[k:]
 }
 
-
 // MoveMessages moves all messages from the current session to the target session.
 func MoveMessages(ctx context.Context, targetSessionID int64) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "MoveMessages")
+	defer span.Finish()
 	currentSessionID := GetCurrentSessionID(ctx)
 	if currentSessionID == targetSessionID {
 		return fmt.Errorf("目标项目与当前项目相同，无需移动")
 	}
 
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	// Verify target session exists
 	var sid int64

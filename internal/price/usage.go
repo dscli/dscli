@@ -2,8 +2,10 @@ package price
 
 import "sync"
 
-var theUsage Usage
-var theUsageLock sync.Mutex
+var (
+	theUsage     Usage
+	theUsageLock sync.Mutex
+)
 
 type Usage struct {
 	CompletionTokens        int                      `json:"completion_tokens,omitzero"`

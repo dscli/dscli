@@ -10,6 +10,7 @@ import (
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/sqlite"
 	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/nanjj/clog"
 )
 
 //go:embed sql_sql.md
@@ -117,6 +118,9 @@ func init() {
 
 // handleSQL executes a read-only SQL query or dot-command.
 func handleSQL(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleSQL")
+	defer span.Finish()
+
 	query := toolcall.ToolArgsValue(args, "query", "")
 	if query == "" {
 		return "", "", fmt.Errorf("query is required")
@@ -139,11 +143,12 @@ func handleSQL(ctx context.Context, args toolcall.ToolArgs) (result, warning str
 	}
 
 	// Execute query against the existing DB singleton.
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("open database: %w", err)
 	}
-	defer db.Close()
+
+	defer db.Close(ctx)
 	rows, err := db.Query(translated)
 	if err != nil {
 		// SQL syntax errors → warning (LLM can correct and retry).
@@ -183,7 +188,8 @@ func translateQuery(query string) (string, string, error) {
 		if cmd == ".schema" && arg != "" {
 			return fmt.Sprintf(
 				"SELECT sql FROM sqlite_master WHERE type='table' AND name=%s",
-				quoteString(arg)), "", nil
+				quoteString(arg),
+			), "", nil
 		}
 
 		// .indices <table>
@@ -193,7 +199,8 @@ func translateQuery(query string) (string, string, error) {
 			}
 			return fmt.Sprintf(
 				"SELECT name FROM sqlite_master WHERE type='index' AND tbl_name=%s ORDER BY name",
-				quoteString(arg)), "", nil
+				quoteString(arg),
+			), "", nil
 		}
 
 		dc, ok := dotCommands[cmd]

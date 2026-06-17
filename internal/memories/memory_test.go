@@ -47,11 +47,12 @@ func TestTruncate(t *testing.T) {
 
 func TestInsertAndDeleteFTS(t *testing.T) {
 	newTestDB(t)
-	db, err := openDB()
+	ctx := t.Context()
+	db, err := openDB(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	// Insert with tokenized Chinese
 	if err := insertFTS(db, 1, "测试标题", "中文内容 English", "test"); err != nil {
@@ -553,18 +554,18 @@ func TestFTSChineseTokenization(t *testing.T) {
 
 func TestOpenDBIdempotent(t *testing.T) {
 	newTestDB(t)
-
-	db1, err := openDB()
+	ctx := t.Context()
+	db1, err := openDB(ctx)
 	if err != nil {
 		t.Fatalf("first openDB failed: %v", err)
 	}
-	defer db1.Close()
+	defer db1.Close(ctx)
 
-	db2, err := openDB()
+	db2, err := openDB(ctx)
 	if err != nil {
 		t.Fatalf("second openDB failed: %v", err)
 	}
-	defer db2.Close()
+	defer db2.Close(ctx)
 
 	var count1, count2 int
 	if err := db1.QueryRow("SELECT COUNT(*) FROM memories").Scan(&count1); err != nil {
@@ -592,12 +593,12 @@ func TestDBIsolation(t *testing.T) {
 
 func TestCrossProjectMemorySharing(t *testing.T) {
 	newTestDB(t)
-
-	db, err := openDB()
+	ctx := t.Context()
+	db, err := openDB(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	// Simulate: same AI (Bohr, name_id=42) working on two projects
 	//   session 1: project "dscli"

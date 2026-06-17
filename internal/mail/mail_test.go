@@ -22,9 +22,10 @@ func newTestDB(t *testing.T) {
 
 // currentName returns the name_en of the current session's assigned name,
 // or "Newton" as a fallback if the session can't be determined.
-func currentName() string {
-	sessionID := session.GetCurrentSessionID(context.Background())
-	cfg := ainame.LoadOrAssign(sessionID)
+func currentName(t *testing.T) string {
+	ctx := t.Context()
+	sessionID := session.GetCurrentSessionID(ctx)
+	cfg := ainame.LoadOrAssign(ctx, sessionID)
 	if cfg != nil && cfg.NameEN != "" {
 		return cfg.NameEN
 	}
@@ -35,7 +36,7 @@ func currentName() string {
 
 func TestHandleSendMail(t *testing.T) {
 	newTestDB(t)
-	me := currentName()
+	me := currentName(t)
 
 	t.Run("success", func(t *testing.T) {
 		result, _, err := HandleSendMail(context.Background(), me, "测试主题", "测试正文")
@@ -114,7 +115,7 @@ func TestHandleSendMail(t *testing.T) {
 
 func TestHandleReadMail(t *testing.T) {
 	newTestDB(t)
-	me := currentName()
+	me := currentName(t)
 
 	t.Run("empty inbox", func(t *testing.T) {
 		result, _, err := HandleListMail(context.Background(), false, 20)
@@ -209,7 +210,7 @@ func TestHandleReadMail(t *testing.T) {
 
 func TestHandleMailSearch(t *testing.T) {
 	newTestDB(t)
-	me := currentName()
+	me := currentName(t)
 
 	HandleSendMail(context.Background(), me, "JWT认证实现", "关于基于RS256的JWT实现方案讨论")
 	HandleSendMail(context.Background(), me, "Bug修复报告", "修复了登录超时的bug，当token过期时正确处理401")
@@ -297,7 +298,7 @@ func TestHandleContacts(t *testing.T) {
 
 func TestMailLifecycle(t *testing.T) {
 	newTestDB(t)
-	me := currentName()
+	me := currentName(t)
 
 	// 1. Send mail to self
 	sendResult, _, err := HandleSendMail(context.Background(), me, "集成测试邮件", "这是集成测试的邮件正文。")
@@ -342,7 +343,7 @@ func TestMailLifecycle(t *testing.T) {
 
 func TestHandleReplyMail(t *testing.T) {
 	newTestDB(t)
-	me := currentName()
+	me := currentName(t)
 
 	// First send a mail to ourselves (simulating someone else sent to us)
 	sendResult, _, err := HandleSendMail(context.Background(), me, "原始邮件", "这是原始邮件内容")
@@ -414,7 +415,7 @@ func TestHandleReplyMail(t *testing.T) {
 
 func TestHandleDeleteMail(t *testing.T) {
 	newTestDB(t)
-	me := currentName()
+	me := currentName(t)
 
 	t.Run("delete success", func(t *testing.T) {
 		sendResult, _, err := HandleSendMail(context.Background(), me, "待删除邮件", "这条邮件将被删除")
@@ -458,7 +459,7 @@ func TestHandleDeleteMail(t *testing.T) {
 
 func TestMailReplyAndDeleteLifecycle(t *testing.T) {
 	newTestDB(t)
-	me := currentName()
+	me := currentName(t)
 
 	// 1. Send original mail
 	sendResult, _, err := HandleSendMail(context.Background(), me, "讨论主题", "讨论的原始内容")
@@ -517,7 +518,7 @@ func TestMailReplyAndDeleteLifecycle(t *testing.T) {
 
 func TestUnreadMailList(t *testing.T) {
 	newTestDB(t)
-	me := currentName()
+	me := currentName(t)
 
 	t.Run("empty initially", func(t *testing.T) {
 		summaries := UnreadMailList(context.Background())
@@ -773,18 +774,17 @@ func TestFormatUnreadMailLine(t *testing.T) {
 	})
 }
 
-
 // === fixMailFTS ================================================================
 
 func TestFixMailFTS(t *testing.T) {
 	newTestDB(t)
-	me := currentName()
+	me := currentName(t)
 
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(t.Context())
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer db.Close()
+	defer db.Close(t.Context())
 
 	// 1. Simulate old buggy schema: drop current mail_fts, create with content='mail'
 	db.Exec("DROP TABLE IF EXISTS mail_fts")

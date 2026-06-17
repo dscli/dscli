@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/mattn/go-runewidth"
+	"github.com/nanjj/clog"
 
 	"github.com/dscli/dscli/internal/context"
 )
@@ -511,12 +512,14 @@ func formatChatHeader(icon, nameCN, email, now, suffix string) string {
 		leftW = runewidth.StringWidth(left)
 	}
 
-	padding := max(headerLineWidth - leftW - rightW, 2)
+	padding := max(headerLineWidth-leftW-rightW, 2)
 
 	return left + " " + strings.Repeat("·", padding-2) + " " + right
 }
 
 func PrintClimeinContent(ctx context.Context, content string) {
+	span, ctx := clog.StartSpanFromContext(ctx, "PrintClimeinContent")
+	defer span.Finish()
 	userName := context.ContextValue(ctx, context.GitUserNameKey, "")
 	userEmail := context.ContextValue(ctx, context.GitUserEmailKey, "")
 	now := time.Now().Local().Format(time.TimeOnly)
@@ -543,6 +546,8 @@ func PrintClimeinContent(ctx context.Context, content string) {
 }
 
 func PrintUserContent(ctx context.Context, content string) {
+	span, ctx := clog.StartSpanFromContext(ctx, "PrintUserContent")
+	defer span.Finish()
 	userName := context.ContextValue(ctx, context.GitUserNameKey, "")
 	userEmail := context.ContextValue(ctx, context.GitUserEmailKey, "")
 	now := time.Now().Local().Format(time.TimeOnly)
@@ -574,6 +579,8 @@ func PrintUserContent(ctx context.Context, content string) {
 var codeFenceRe = regexp.MustCompile("```[a-zA-Z0-9_+.#-]*")
 
 func PrintContent(ctx context.Context, reasoning, content string, thinkingTokens, contentTokens int) {
+	span, ctx := clog.StartSpanFromContext(ctx, "PrintContent")
+	defer span.Finish()
 	// 检查是否是streaming模式
 	stream := context.ContextValue(ctx, context.StreamKey, false)
 

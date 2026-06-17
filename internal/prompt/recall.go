@@ -10,6 +10,7 @@ import (
 
 	"github.com/dscli/dscli/internal/sqlite"
 	"github.com/dscli/dscli/internal/tokenizer"
+	"github.com/nanjj/clog"
 )
 
 // Result 搜索结果
@@ -25,6 +26,9 @@ type Result struct {
 // days: 搜索最近N天，<=0 表示不限时间。
 // limit: 返回结果数量上限。
 func SearchMessages(ctx context.Context, keywords []string, days, limit int) ([]Result, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "SearchMessages")
+	defer span.Finish()
+
 	if len(keywords) == 0 {
 		return nil, fmt.Errorf("至少需要一个搜索关键词")
 	}
@@ -43,11 +47,11 @@ func SearchMessages(ctx context.Context, keywords []string, days, limit int) ([]
 
 	sessionID := GetCurrentSessionID(ctx)
 
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	// 构建 FTS5 查询：将关键词用空格拼接后分词，再用 OR 连接（保持旧 LIKE 的 OR 语义）
 	rawQuery := strings.Join(valid, " ")

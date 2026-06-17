@@ -8,6 +8,7 @@ import (
 
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/sqlite"
+	"github.com/nanjj/clog"
 )
 
 func init() {
@@ -18,7 +19,8 @@ func init() {
 			project_path TEXT UNIQUE NOT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)`)
+		)`,
+	)
 }
 
 var (
@@ -28,6 +30,8 @@ var (
 
 // GetCurrentSessionID 获取当前会话ID（线程安全，仅初始化一次）
 func GetCurrentSessionID(ctx context.Context) (sessionID int64) {
+	span, ctx := clog.StartSpanFromContext(ctx, "GetCurrentSessionID")
+	defer span.Finish()
 	sessionOnce.Do(func() {
 		id, err := CreateOrGetSessionID(ctx)
 		if err != nil {
@@ -48,15 +52,17 @@ func ResetSessionID() {
 
 // CreateOrGetSessionID 获取或创建会话ID
 func CreateOrGetSessionID(ctx context.Context) (sessionID int64, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "CreateOrGetSessionID")
+	defer span.Finish()
 	projectRoot := context.ProjectRoot
 	if projectRoot == "" {
 		panic("project root is empty, please set")
 	}
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return sessionID, err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	var id int64
 	err = db.QueryRow("SELECT id FROM sessions WHERE project_path = ?",
@@ -95,12 +101,14 @@ type ProjectRow struct {
 }
 
 // ListProjects returns all sessions with their maintainer, ordered by ID.
-func ListProjects() ([]ProjectRow, error) {
-	db, err := sqlite.OpenDB()
+func ListProjects(ctx context.Context) ([]ProjectRow, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "ListProjects")
+	defer span.Finish()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 	rows, err := db.Query(`
 		SELECT s.id, s.project_path, s.created_at,
 		       COALESCE(a.name_cn, ''),
@@ -128,12 +136,14 @@ func ListProjects() ([]ProjectRow, error) {
 
 // AssignMaintainer assigns a maintainer (ai_names.id) to a session (sessions.id).
 // Uses UPSERT — replaces any existing assignment for that session.
-func AssignMaintainer(sessionID, nameID int64) error {
-	db, err := sqlite.OpenDB()
+func AssignMaintainer(ctx context.Context, sessionID, nameID int64) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "AssignMaintainer")
+	defer span.Finish()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	// Verify session exists.
 	var sid int64
@@ -165,16 +175,18 @@ func AssignMaintainer(sessionID, nameID int64) error {
 
 // UpdateProjectPath updates the project_path for a given session.
 // Returns an error if the session does not exist or the path is empty.
-func UpdateProjectPath(sessionID int64, newPath string) error {
+func UpdateProjectPath(ctx context.Context, sessionID int64, newPath string) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "UpdateProjectPath")
+	defer span.Finish()
 	if newPath == "" {
 		return fmt.Errorf("project path 不能为空")
 	}
 
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	// Verify session exists.
 	var sid int64

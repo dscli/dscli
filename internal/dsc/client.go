@@ -13,6 +13,7 @@ import (
 
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/nanjj/clog"
 )
 
 // httpClient 单例HTTP客户端，避免创建多个连接池
@@ -83,7 +84,9 @@ func isRetryableError(err error) bool {
 }
 
 // doRequestSingle 单次请求（不带重试）
-func (c *Deepseek) doRequestSingle(method, path string, body, result any) (err error) {
+func (c *Deepseek) doRequestSingle(ctx context.Context, method, path string, body, result any) (err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "doRequestSingle")
+	defer span.Finish()
 	url := c.baseURL + path
 
 	var reqBody io.Reader
@@ -100,7 +103,7 @@ func (c *Deepseek) doRequestSingle(method, path string, body, result any) (err e
 		reqBody = bytes.NewReader(data)
 	}
 
-	req, err := http.NewRequest(method, url, reqBody)
+	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
 		err = fmt.Errorf("创建请求失败: %w", err)
 		return err
@@ -143,10 +146,12 @@ func (c *Deepseek) doRequestSingle(method, path string, body, result any) (err e
 }
 
 // doRequest 请求方法（自动重试）
-func (c *Deepseek) doRequest(method, path string, body, result any) (err error) {
+func (c *Deepseek) doRequest(ctx context.Context, method, path string, body, result any) (err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "doReqeust")
+	defer span.Finish()
 	defer outfmt.StartWaiting(time.Second * 3)()
 	return c.retryWithBackoff("网络异常", func() error {
-		return c.doRequestSingle(method, path, body, result)
+		return c.doRequestSingle(ctx, method, path, body, result)
 	})
 }
 

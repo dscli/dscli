@@ -11,6 +11,7 @@ import (
 	"github.com/dscli/dscli/internal/session"
 	"github.com/dscli/dscli/internal/sqlite"
 	"github.com/dscli/dscli/internal/tokenizer"
+	"github.com/nanjj/clog"
 )
 
 // Message 扩展，支持工具调用（注意：Content 字段不再使用 omitempty）
@@ -105,11 +106,13 @@ func ToolCallsID(tcs []ToolCall) string {
 
 // SaveMessages 保存消息，同时同步 FTS5 全文索引。
 func SaveMessages(ctx context.Context, msgs ...Message) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "SaveMessages")
+	defer span.Finish()
 	sessionID := session.GetCurrentSessionID(ctx)
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 
 	for _, m := range msgs {
-		if err := saveMessage(sessionID, modelID, m); err != nil {
+		if err := saveMessage(ctx, sessionID, modelID, m); err != nil {
 			return err
 		}
 	}
@@ -118,19 +121,22 @@ func SaveMessages(ctx context.Context, msgs ...Message) error {
 
 // saveMessage 保存单条消息及其 FTS 索引。
 // 分词在 DB 操作之前完成，避免占用 DB 锁。
-func saveMessage(sessionID, modelID int64, m Message) error {
+func saveMessage(ctx context.Context, sessionID, modelID int64, m Message) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "saveMessage")
+	defer span.Finish()
+
 	// 只对用户消息分词建索引（recall 检索目标就是用户消息）
 	var tokens string
 	if m.Role == "user" {
 		tokens = tokenizer.Tokenize(m.Content)
 	}
 
-	id, err := insertMessage(sessionID, modelID, m)
+	id, err := insertMessage(ctx, sessionID, modelID, m)
 	if err != nil {
 		return err
 	}
 	if tokens != "" {
-		if err := insertMessageFTS(id, tokens); err != nil {
+		if err := insertMessageFTS(ctx, id, tokens); err != nil {
 			return err
 		}
 	}
@@ -138,7 +144,10 @@ func saveMessage(sessionID, modelID int64, m Message) error {
 }
 
 // insertMessage 插入一条消息到 messages 表，返回自动生成的 ID。
-func insertMessage(sessionID, modelID int64, m Message) (int64, error) {
+func insertMessage(ctx context.Context, sessionID, modelID int64, m Message) (int64, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "insertMessage")
+	defer span.Finish()
+
 	var toolCallID, toolCalls sql.NullString
 	if m.ToolCallID != "" {
 		toolCallID.String = m.ToolCallID
@@ -153,11 +162,12 @@ func insertMessage(sessionID, modelID int64, m Message) (int64, error) {
 		toolCalls.Valid = true
 	}
 
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return 0, err
 	}
-	defer db.Close()
+
+	defer db.Close(ctx)
 
 	res, err := db.Exec(
 		`INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, model_id, reasoning_content, tokens)
@@ -177,12 +187,15 @@ func insertMessage(sessionID, modelID int64, m Message) (int64, error) {
 
 // insertMessageFTS 为指定消息建立 FTS5 全文索引（仅 content，不含 reasoning_content）。
 // tokens 应为预分词结果（由 tokenizer.Tokenize 生成）。
-func insertMessageFTS(id int64, tokens string) error {
-	db, err := sqlite.OpenDB()
+func insertMessageFTS(ctx context.Context, id int64, tokens string) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "insertMessageFTS")
+	defer span.Finish()
+
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	_, err = db.Exec(
 		`INSERT INTO messages_fts(rowid, content) VALUES (?, ?)`,

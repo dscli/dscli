@@ -28,4 +28,3 @@
 // Config keys lightpanda-local-url, lightpanda-remote-url, and
 // lightpanda_transport are no longer used.
 package lp
-

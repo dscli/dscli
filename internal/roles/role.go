@@ -24,6 +24,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dscli/dscli/internal/context"
+	"github.com/nanjj/clog"
+
 	"github.com/dscli/dscli/internal/sqlite"
 )
 
@@ -63,7 +66,9 @@ func init() {
 // GetRoleConfig retrieves the role config for a given role and session.
 // Uses an in-memory cache loaded once per process lifetime;
 // falls back to direct DB query when cache loading fails.
-func GetRoleConfig(role string, sessionID int64) (*RoleConfig, error) {
+func GetRoleConfig(ctx context.Context, role string, sessionID int64) (*RoleConfig, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "GetRoleConfig")
+	defer span.Finish()
 	// Fast path: read from cache (RLock only).
 	roleCacheMu.RLock()
 	if roleCache != nil {
@@ -82,7 +87,7 @@ func GetRoleConfig(role string, sessionID int64) (*RoleConfig, error) {
 		return cfg, nil
 	}
 
-	configs, err := ListRoleConfigs(sessionID)
+	configs, err := ListRoleConfigs(ctx, sessionID)
 	if err == nil {
 		m := make(map[string]*RoleConfig, len(configs))
 		for i := range configs {
@@ -96,11 +101,11 @@ func GetRoleConfig(role string, sessionID int64) (*RoleConfig, error) {
 	roleCacheMu.Unlock()
 
 	// Fallback: direct DB query.
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	cfg := &RoleConfig{}
 	err = db.QueryRow(
@@ -119,12 +124,14 @@ func GetRoleConfig(role string, sessionID int64) (*RoleConfig, error) {
 }
 
 // ListRoleConfigs returns all role configs for a given session.
-func ListRoleConfigs(sessionID int64) ([]RoleConfig, error) {
-	db, err := sqlite.OpenDB()
+func ListRoleConfigs(ctx context.Context, sessionID int64) ([]RoleConfig, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "ListRoleConfigs")
+	defer span.Finish()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	rows, err := db.Query(
 		`SELECT id, role, skills, tools, prompt, session_id, created_at, updated_at
@@ -158,12 +165,15 @@ func invalidateRoleCache() {
 }
 
 // UpsertRoleConfig inserts or updates a role config.
-func UpsertRoleConfig(role string, sessionID int64, skills, tools, prompt string) error {
-	db, err := sqlite.OpenDB()
+func UpsertRoleConfig(ctx context.Context, role string, sessionID int64, skills, tools, prompt string) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "UpsertRoleConfig")
+	defer span.Finish()
+
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	var id int64
 	err = db.QueryRow(
@@ -207,12 +217,14 @@ func UpsertRoleConfig(role string, sessionID int64, skills, tools, prompt string
 }
 
 // DeleteRoleConfig deletes a role config.
-func DeleteRoleConfig(role string, sessionID int64) error {
-	db, err := sqlite.OpenDB()
+func DeleteRoleConfig(ctx context.Context, role string, sessionID int64) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "DeleteRoleConfig")
+	defer span.Finish()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	_, err = db.Exec(
 		`DELETE FROM role_configs WHERE role = ? AND session_id = ?`,

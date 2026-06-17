@@ -7,6 +7,7 @@ import (
 
 	"github.com/dscli/dscli/internal/dsc"
 	"github.com/dscli/dscli/internal/price"
+	"github.com/nanjj/clog"
 	"github.com/spf13/cobra"
 )
 
@@ -24,8 +25,10 @@ type priceRow struct {
 	Completion      float64
 }
 
-var modelsFormat string
-var modelsPrice bool
+var (
+	modelsFormat string
+	modelsPrice  bool
+)
 
 func init() {
 	modelsCmd := AddRootCommand(&cobra.Command{
@@ -38,6 +41,9 @@ func init() {
 }
 
 func ModelsRun(cmd *cobra.Command, args []string) {
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "ModelRun")
+	defer span.Finish()
+
 	if modelsPrice {
 		priceData := price.GetPrice()
 		if priceData == nil {
@@ -78,7 +84,7 @@ func ModelsRun(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	resp, err := DeepseekClient.Models()
+	resp, err := DeepseekClient.Models(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "model list query failed: %v\n", err)
 		os.Exit(1)

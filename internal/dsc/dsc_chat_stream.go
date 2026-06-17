@@ -13,10 +13,14 @@ import (
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/prompt"
+	"github.com/nanjj/clog"
 )
 
 // chatStream 处理streaming聊天请求
 func (c *Deepseek) chatStream(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "chatStream")
+	defer span.Finish()
+
 	url := c.baseURL + "/chat/completions"
 
 	data, err := outfmt.JSONMarshal(req)

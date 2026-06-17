@@ -7,7 +7,7 @@ import (
 )
 
 func TestLoadOrAssign_Nobody(t *testing.T) {
-	cfg := LoadOrAssign(0)
+	cfg := LoadOrAssign(t.Context(), 0)
 	if cfg == nil {
 		t.Fatal("LoadOrAssign(0) returned nil")
 	}
@@ -30,7 +30,7 @@ func TestLoadOrAssign_AssignAndPersist(t *testing.T) {
 	}
 
 	// First assignment
-	cfg := LoadOrAssign(sessionID)
+	cfg := LoadOrAssign(t.Context(), sessionID)
 	if cfg == nil {
 		t.Fatal("LoadOrAssign returned nil")
 	}
@@ -42,7 +42,7 @@ func TestLoadOrAssign_AssignAndPersist(t *testing.T) {
 	}
 
 	// Second call should return same name (idempotent)
-	cfg2 := LoadOrAssign(sessionID)
+	cfg2 := LoadOrAssign(t.Context(), sessionID)
 	if cfg2.NameEN != cfg.NameEN {
 		t.Fatalf("assignment changed: %s → %s", cfg.NameEN, cfg2.NameEN)
 	}

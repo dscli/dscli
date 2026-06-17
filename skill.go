@@ -232,7 +232,6 @@ func skillListRunE(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-
 func runSkillRemove(cmd *cobra.Command, args []string) error {
 	skillName := args[0]
 	global, _ := cmd.Flags().GetBool("global")
@@ -497,7 +496,6 @@ func skillShowRunE(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-
 func skillQueryRunE(cmd *cobra.Command, args []string) error {
 	query := args[0]
 	result, err := skills.Query(query)
@@ -509,7 +507,6 @@ func skillQueryRunE(cmd *cobra.Command, args []string) error {
 	outfmt.Print(result)
 	return nil
 }
-
 
 func skillSetAutoInjectRunE(cmd *cobra.Command, args []string) error {
 	name := args[0]
@@ -538,4 +535,3 @@ func skillSetAutoInjectRunE(cmd *cobra.Command, args []string) error {
 	fmt.Printf("已将 %s 技能 %q 的 auto_inject 设置为 %v\n", scope, name, autoInject)
 	return nil
 }
-

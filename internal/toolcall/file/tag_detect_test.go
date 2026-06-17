@@ -19,7 +19,7 @@ func TestDetectCASTags(t *testing.T) {
 			want:    0,
 		},
 		{
-			name:    "no tags - normal text",
+			name: "no tags - normal text",
 			content: `Hello, this is a normal file.
 It has normal content without any CAS tags.
 Just regular text.`,

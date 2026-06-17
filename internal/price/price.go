@@ -8,8 +8,10 @@ import (
 	"sync"
 )
 
-var thePrice map[string]Price
-var thePriceOnce sync.Once
+var (
+	thePrice     map[string]Price
+	thePriceOnce sync.Once
+)
 
 type Price struct {
 	PromptCacheHit  float64 `json:"prompt_cache_hit,omitzero"`

@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-
 func init() {
 	mailCmd := AddRootCommand(&cobra.Command{
 		Use:   "mail",
@@ -111,7 +110,6 @@ func mailSendRunE(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-
 func mailReadRunE(cmd *cobra.Command, args []string) error {
 	mid, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil {
@@ -126,7 +124,6 @@ func mailReadRunE(cmd *cobra.Command, args []string) error {
 	outfmt.Print(result)
 	return nil
 }
-
 
 func mailListRunE(cmd *cobra.Command, _ []string) error {
 	unreadOnly, _ := cmd.Flags().GetBool("unread")

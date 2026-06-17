@@ -1,16 +1,25 @@
 module github.com/dscli/dscli
 
-go 1.26.3
+go 1.26.4
 
 require (
 	github.com/chromedp/chromedp v0.15.1
 	github.com/goccy/go-yaml v1.19.2
 	github.com/mattn/go-runewidth v0.0.19
+	github.com/nanjj/clog v0.1.0
 	github.com/spf13/cobra v1.8.0
 	golang.org/x/term v0.41.0
 	golang.org/x/text v0.35.0
 	modernc.org/sqlite v1.50.1
 	mvdan.cc/sh/v3 v3.13.1
+)
+
+require (
+	github.com/opentracing/opentracing-go v1.2.0 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
+	github.com/uber/jaeger-client-go v2.30.0+incompatible // indirect
+	github.com/uber/jaeger-lib v2.4.1+incompatible // indirect
+	go.uber.org/atomic v1.11.0 // indirect
 )
 
 require (

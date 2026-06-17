@@ -49,7 +49,7 @@ func TestListProjects(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	projects, err := ListProjects()
+	projects, err := ListProjects(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,23 +86,23 @@ func TestAssignMaintainer(t *testing.T) {
 	}
 
 	// Insert a test name into ai_names (normally seeded by ainame).
-	db, err := sqlite.OpenDB()
+	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer db.Close(ctx)
 
 	const testNameID int64 = 99
 	db.Exec(`INSERT OR IGNORE INTO ai_names (id, name_cn, name_en, bird_frog, personality_cn, personality_en, desc_cn, desc_en)
 		VALUES (?, '测试', 'Test', 'frog', '', '', '', '')`, testNameID)
 
 	// Assign maintainer.
-	if err := AssignMaintainer(sessionID, testNameID); err != nil {
+	if err := AssignMaintainer(ctx, sessionID, testNameID); err != nil {
 		t.Fatalf("AssignMaintainer: %v", err)
 	}
 
 	// Verify via ListProjects.
-	projects, err := ListProjects()
+	projects, err := ListProjects(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,17 +130,17 @@ func TestAssignMaintainer(t *testing.T) {
 	const newNameID int64 = 100
 	db.Exec(`INSERT OR IGNORE INTO ai_names (id, name_cn, name_en, bird_frog, personality_cn, personality_en, desc_cn, desc_en)
 		VALUES (?, '测试2', 'Test2', 'frog', '', '', '', '')`, newNameID)
-	if err := AssignMaintainer(sessionID, newNameID); err != nil {
+	if err := AssignMaintainer(ctx, sessionID, newNameID); err != nil {
 		t.Fatalf("AssignMaintainer (reassign): %v", err)
 	}
 
 	// Error: non-existent session.
-	if err := AssignMaintainer(99999, testNameID); err == nil {
+	if err := AssignMaintainer(ctx, 99999, testNameID); err == nil {
 		t.Error("expected error for non-existent session")
 	}
 
 	// Error: non-existent name.
-	if err := AssignMaintainer(sessionID, 99999); err == nil {
+	if err := AssignMaintainer(ctx, sessionID, 99999); err == nil {
 		t.Error("expected error for non-existent name")
 	}
 }
@@ -154,12 +154,12 @@ func TestUpdateProjectPath(t *testing.T) {
 
 	// Happy path: update to a valid path.
 	newPath := "/tmp/test-updated-project"
-	if err := UpdateProjectPath(sessionID, newPath); err != nil {
+	if err := UpdateProjectPath(ctx, sessionID, newPath); err != nil {
 		t.Fatalf("UpdateProjectPath: %v", err)
 	}
 
 	// Verify via ListProjects.
-	projects, err := ListProjects()
+	projects, err := ListProjects(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,12 +178,12 @@ func TestUpdateProjectPath(t *testing.T) {
 	}
 
 	// Error: non-existent session.
-	if err := UpdateProjectPath(99999, "/tmp/foo"); err == nil {
+	if err := UpdateProjectPath(ctx, 99999, "/tmp/foo"); err == nil {
 		t.Error("expected error for non-existent session")
 	}
 
 	// Error: empty path.
-	if err := UpdateProjectPath(sessionID, ""); err == nil {
+	if err := UpdateProjectPath(ctx, sessionID, ""); err == nil {
 		t.Error("expected error for empty path")
 	}
 }

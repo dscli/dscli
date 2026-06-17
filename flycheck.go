@@ -99,7 +99,6 @@ func flycheckRunEImpl(path string) error {
 	return nil
 }
 
-
 // printPackageResult 打印 Go 包检查结果。
 func printPackageResult(r *flycheck.CheckResult) {
 	if len(r.Issues) > 0 {

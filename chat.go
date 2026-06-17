@@ -22,6 +22,7 @@ import (
 	"github.com/dscli/dscli/internal/session"
 	"github.com/dscli/dscli/internal/toolcall"
 	"github.com/dscli/dscli/internal/toolcall/alltools"
+	"github.com/nanjj/clog"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 	"golang.org/x/text/unicode/norm"
@@ -86,6 +87,8 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 //   - ChatRunE Scene B (no-tool-call path): before ChatRound (no blocking op)
 //   - ChatRound recursion (multi-round tool chain): after HandleToolCalls
 func readChimein(ctx context.Context) string {
+	span, ctx := clog.StartSpanFromContext(ctx, "readChimein")
+	defer span.Finish()
 	c, err := chimein.Get(ctx)
 	if err != nil || c == "" {
 		return ""
@@ -155,7 +158,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 
 	// Set AI name in context for output formatting
 	sessionID := session.GetCurrentSessionID(ctx)
-	cfg := ainame.LoadOrAssign(sessionID)
+	cfg := ainame.LoadOrAssign(ctx, sessionID)
 	ctx = context.WithValue(ctx, context.AINameCNKey, cfg.NameCN)
 	ctx = context.WithValue(ctx, context.AINameENKey, cfg.NameEN)
 	ctx = context.WithValue(ctx, context.UserIDKey, fmt.Sprintf("%s-%d",
@@ -201,7 +204,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	// Fetch starting balance (only when user-balance is enabled)
 	var startBalance map[string]string
 	if config.GetBool("user-balance", true) {
-		if resp, err := DeepseekClient.Balance(); err == nil && len(resp.BalanceInfos) > 0 {
+		if resp, err := DeepseekClient.Balance(ctx); err == nil && len(resp.BalanceInfos) > 0 {
 			startBalance = resp.BalanceInfos[0]
 			ctx = context.WithValue(ctx, context.StartBalanceKey, startBalance)
 		}
@@ -358,6 +361,9 @@ func parseBalance(balanceStr string) (float64, error) {
 
 // PrintSessionStats 打印会话统计信息
 func PrintSessionStats(ctx context.Context) {
+	span, ctx := clog.StartSpanFromContext(ctx, "PrintSessionStats")
+	defer span.Finish()
+
 	// 子进程（code_review / ask_expert）不显示会话统计，
 	// 避免余额等信息泄露到审查/专家输出中。
 	if context.ContextValue(ctx, context.IsChildProcessKey, false) {
@@ -401,7 +407,7 @@ func PrintSessionStats(ctx context.Context) {
 
 	// 花费和余额 (only when user-balance is enabled)
 	if config.GetBool("user-balance", true) && startBalance["currency"] != "" {
-		if resp, err := DeepseekClient.Balance(); err == nil && len(resp.BalanceInfos) > 0 {
+		if resp, err := DeepseekClient.Balance(ctx); err == nil && len(resp.BalanceInfos) > 0 {
 			for _, balance := range resp.BalanceInfos {
 				if balance["currency"] == startBalance["currency"] {
 					// 计算花费（基于 token 用量）
@@ -454,7 +460,6 @@ func PrintSessionStats(ctx context.Context) {
 }
 
 func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ...prompt.Message) (err error) {
-
 	// 1. Construct messages slice (prompts → history → inputs)
 	messages := make([]prompt.Message, 0, len(prompts)+len(history)+len(inputs))
 	messages = append(messages, prompts...)

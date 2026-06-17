@@ -253,7 +253,6 @@ func buildCodeReviewRequest(summary, commitLog, patch, fileContents string) stri
 // the system prompt of ~2-3k), so we keep the user content under this threshold.
 const maxUserInputLen = 24000
 
-
 // truncateReviewRequest checks the total size of the review request and truncates
 // if necessary. Strategy (in order of preference):
 //  1. Drop full file contents (keep the diff — it's what matters most)

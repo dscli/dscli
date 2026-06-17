@@ -6,6 +6,7 @@ import (
 
 	"github.com/dscli/dscli/internal/context"
 )
+
 func TestGetEnhancedSystemPrompt(t *testing.T) {
 	tests := []struct {
 		name        string

@@ -44,7 +44,7 @@ func TestRetryLogic(t *testing.T) {
 
 	// 发送请求
 	var result map[string]string
-	err := client.doRequest("GET", "/test", nil, &result)
+	err := client.doRequest(t.Context(), "GET", "/test", nil, &result)
 	if err != nil {
 		t.Errorf("Expected success after retries, got error: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestMaxRetriesExceeded(t *testing.T) {
 
 	// 发送请求
 	var result map[string]string
-	err := client.doRequest("GET", "/test", nil, &result)
+	err := client.doRequest(t.Context(), "GET", "/test", nil, &result)
 
 	if err == nil {
 		t.Error("Expected error after max retries, got nil")
@@ -106,7 +106,7 @@ func TestNonRetryableError(t *testing.T) {
 
 	// 发送请求
 	var result map[string]string
-	err := client.doRequest("GET", "/test", nil, &result)
+	err := client.doRequest(t.Context(), "GET", "/test", nil, &result)
 
 	if err == nil {
 		t.Error("Expected error for bad request, got nil")

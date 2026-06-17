@@ -8,14 +8,14 @@ import (
 )
 
 var (
-	kernel32           = syscall.NewLazyDLL("kernel32.dll")
-	procLockFileEx     = kernel32.NewProc("LockFileEx")
-	procUnlockFileEx   = kernel32.NewProc("UnlockFileEx")
+	kernel32         = syscall.NewLazyDLL("kernel32.dll")
+	procLockFileEx   = kernel32.NewProc("LockFileEx")
+	procUnlockFileEx = kernel32.NewProc("UnlockFileEx")
 )
 
 const (
-	lockfileExclusiveLock    = 2
-	lockfileFailImmediately  = 1
+	lockfileExclusiveLock   = 2
+	lockfileFailImmediately = 1
 
 	// Windows 系统错误码（kernel32 错误，不在 syscall 包中导出）
 	windowsErrorLockViolation = 33
