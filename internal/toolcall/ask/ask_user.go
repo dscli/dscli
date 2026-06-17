@@ -9,6 +9,7 @@ import (
 	"github.com/dscli/dscli/internal/editor"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/nanjj/clog"
 )
 
 //go:embed ask_user.md
@@ -46,6 +47,8 @@ func init() {
 
 // handleAskUser handles the ask_user tool call.
 func handleAskUser(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleAskUser")
+	defer span.Finish()
 	content := toolcall.ToolArgsValue(args, "content", "")
 	if content == "" {
 		err = fmt.Errorf("content cannot be empty")

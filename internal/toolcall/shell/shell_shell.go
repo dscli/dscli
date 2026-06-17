@@ -8,6 +8,7 @@ import (
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/outfmt"
 	ishell "github.com/dscli/dscli/internal/shell"
+	"github.com/nanjj/clog"
 )
 
 //go:embed shell_shell.md
@@ -55,6 +56,8 @@ func init() { // 注册shell工具
 
 // handleShell 执行Shell脚本，使用 internal/shell 解释器
 func handleShell(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleShell")
+	defer span.Finish()
 	script := ToolArgsValue(args, "script", "")
 	summary := ToolArgsValue(args, "summary", "")
 	if summary == "" {

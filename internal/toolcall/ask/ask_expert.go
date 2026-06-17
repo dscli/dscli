@@ -14,6 +14,7 @@ import (
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/prompt"
 	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/nanjj/clog"
 )
 
 //go:embed ask_expert.md
@@ -76,6 +77,8 @@ func init() {
 
 // handleAskExpert handles the ask_expert tool call.
 func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleAskExpert")
+	defer span.Finish()
 	summary := toolcall.ToolArgsValue(args, "summary", "")
 	content := toolcall.ToolArgsValue(args, "content", "")
 	attachments := toolcall.ToolArgsValue(args, "attachments", []string{})

@@ -11,6 +11,7 @@ import (
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/parse"
 	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/nanjj/clog"
 )
 
 //go:embed code_read_section.md
@@ -24,6 +25,8 @@ var code_read_section_md string
 //	method:类名.方法名   - 读取指定方法
 //	lines:开始行-结束行  - 读取指定行范围（后备方案）
 func readCodeSection(ctx context.Context, path, selector string) (string, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "readCodeSection")
+	defer span.Finish()
 	// 检查文件是否存在
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return "", fmt.Errorf("文件不存在: %s", path)
@@ -203,6 +206,8 @@ func init() {
 }
 
 func handleReadCodeSection(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleReadCodeSection")
+	defer span.Finish()
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		result, err = "", fmt.Errorf("参数 'path' 缺失")

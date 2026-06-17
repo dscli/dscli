@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/dscli/dscli/internal/context"
+	"github.com/nanjj/clog"
 )
 
 //go:embed cwd_get.md
@@ -69,7 +70,9 @@ func init() {
 }
 
 // handleCWDGet returns current CWD, ProjectRoot and stack depth.
-func handleCWDGet(_ context.Context, _ ToolArgs) (result, warning string, err error) {
+func handleCWDGet(ctx context.Context, _ ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleCWDGet")
+	defer span.Finish()
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", "", fmt.Errorf("cannot get current directory: %w", err)
@@ -84,7 +87,9 @@ func handleCWDGet(_ context.Context, _ ToolArgs) (result, warning string, err er
 }
 
 // handleCWDPush pushes current directory onto the CWD stack and changes to target.
-func handleCWDPush(_ context.Context, args ToolArgs) (result, warning string, err error) {
+func handleCWDPush(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleCWDPush")
+	defer span.Finish()
 	path := ToolArgsValue(args, "path", "")
 	if path == "" {
 		return "", "", fmt.Errorf("path is required")
@@ -160,7 +165,9 @@ func handleCWDPush(_ context.Context, args ToolArgs) (result, warning string, er
 }
 
 // handleCWDPop restores the previous directory from the CWD stack.
-func handleCWDPop(_ context.Context, _ ToolArgs) (result, warning string, err error) {
+func handleCWDPop(ctx context.Context, _ ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleCWDPop")
+	defer span.Finish()
 	dirStackMu.Lock()
 	if len(dirStack) == 0 {
 		dirStackMu.Unlock()

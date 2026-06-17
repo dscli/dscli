@@ -10,6 +10,7 @@ import (
 
 	"github.com/dscli/dscli/internal/prompt"
 	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/nanjj/clog"
 )
 
 //go:embed note.md
@@ -38,6 +39,8 @@ func init() {
 }
 
 func handleNote(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleNote")
+	defer span.Finish()
 	content := toolcall.ToolArgsValue(args, "content", "")
 	content = strings.TrimSpace(content)
 	if content == "" {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/dscli/dscli/internal/prompt"
 	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/nanjj/clog"
 )
 
 //go:embed recall.md
@@ -45,6 +46,8 @@ func init() {
 }
 
 func handleRecall(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleRecall")
+	defer span.Finish()
 	keywordsStr := toolcall.ToolArgsValue(args, "keywords", "")
 	if keywordsStr == "" {
 		err = fmt.Errorf("参数 'keywords' 缺失")

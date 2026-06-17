@@ -8,6 +8,7 @@ import (
 
 	"github.com/dscli/dscli/internal/prompt"
 	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/nanjj/clog"
 )
 
 //go:embed show.md
@@ -36,6 +37,8 @@ func init() {
 }
 
 func handleShow(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleShow")
+	defer span.Finish()
 	id := toolcall.ToolArgsValue(args, "id", int64(0))
 	if id <= 0 {
 		err = fmt.Errorf("参数 'id' 缺失或无效")

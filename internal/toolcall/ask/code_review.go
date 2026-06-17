@@ -11,6 +11,7 @@ import (
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/shell"
 	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/nanjj/clog"
 )
 
 //go:embed code_review.md
@@ -56,6 +57,8 @@ func init() {
 
 // handleCodeReview 处理代码审查工具调用
 func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleCodeReview")
+	defer span.Finish()
 	summary := toolcall.ToolArgsValue(args, "summary", "")
 	testCommand := toolcall.ToolArgsValue(args, "test_command", "")
 	since := toolcall.ToolArgsValue(args, "since", "-1")

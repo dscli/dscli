@@ -11,6 +11,7 @@ import (
 	"github.com/dscli/dscli/internal/parse"
 	"github.com/dscli/dscli/internal/toolcall"
 	"github.com/dscli/dscli/internal/toolcall/file"
+	"github.com/nanjj/clog"
 )
 
 //go:embed code_search_semantic.md
@@ -31,6 +32,8 @@ var code_search_semantic_md string
 //	matchCount: 匹配行数
 //	error: 错误信息
 func searchCodeSemantic(ctx context.Context, path, searchPattern string, contextLines int, caseSensitive bool, maxMatches int) (string, int, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "searchCodeSemantic")
+	defer span.Finish()
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return "", 0, fmt.Errorf("文件不存在: %s", path)
 	}
@@ -210,6 +213,8 @@ func init() {
 }
 
 func handleSearchCodeSemantic(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleSearchCodeSemantic")
+	defer span.Finish()
 	filePattern := toolcall.ToolArgsValue(args, "file_pattern", "")
 	if filePattern == "" {
 		err = fmt.Errorf("参数 'file_pattern' 缺失")

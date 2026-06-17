@@ -11,6 +11,7 @@ import (
 	"github.com/dscli/dscli/internal/flycheck"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/nanjj/clog"
 )
 
 //go:embed file_write_with_line_range.md
@@ -66,6 +67,8 @@ func init() {
 // 如果 content 为空字符串，则删除指定行范围
 // 支持 CAS tag 校验：line_tag（单行）或 line_tags（多行）用于防竞态写入
 func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleWriteFileWithLineRange")
+	defer span.Finish()
 	// 检查必需参数
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
@@ -157,7 +160,6 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 		err = fmt.Errorf("failed to open file: %w", err)
 		return result, warning, err
 	}
-
 	defer file.Close()
 
 	// 读取所有行

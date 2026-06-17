@@ -11,6 +11,7 @@ import (
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/skills"
 	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/nanjj/clog"
 )
 
 //go:embed skill_by_name.md
@@ -39,6 +40,8 @@ func ToolArgsValue[T Primitive](args ToolArgs, key string, defaultValue T) T {
 
 // handleSkillByName fetches a skill's full content by exact name.
 func handleSkillByName(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleSkillByName")
+	defer span.Finish()
 	skillName := ToolArgsValue(args, "skill_name", "")
 	if skillName == "" {
 		err = fmt.Errorf("skill name can not be empty")
@@ -64,6 +67,8 @@ func handleSkillByName(ctx context.Context, args ToolArgs) (result, warning stri
 
 // handleSkillSearch searches skills by keyword query.
 func handleSkillSearch(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleSkillSearch")
+	defer span.Finish()
 	query := ToolArgsValue(args, "query", "")
 	if query == "" {
 		err = fmt.Errorf("search query cannot be empty")
@@ -83,6 +88,8 @@ func handleSkillSearch(ctx context.Context, args ToolArgs) (result, warning stri
 // For new skills: name, description, and content are required.
 // For existing skills: only name is required — omitted fields keep existing values.
 func handleSkillSave(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleSkillSave")
+	defer span.Finish()
 	name := ToolArgsValue(args, "name", "")
 	description := ToolArgsValue(args, "description", "")
 	bodyContent := ToolArgsValue(args, "content", "")
@@ -162,6 +169,8 @@ func handleSkillSave(ctx context.Context, args ToolArgs) (result, warning string
 
 // handleSkillSetAutoInject toggles auto-inject for an existing skill (local by default).
 func handleSkillSetAutoInject(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleSkillSetAutoInject")
+	defer span.Finish()
 	skillName := ToolArgsValue(args, "skill_name", "")
 	autoInject := ToolArgsValue(args, "auto_inject", false)
 

@@ -11,6 +11,7 @@ import (
 	"github.com/dscli/dscli/internal/flycheck"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/nanjj/clog"
 )
 
 //go:embed file_write.md
@@ -58,6 +59,8 @@ func init() {
 
 // handleWriteFile 写入文件
 func handleWriteFile(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleWriteFile")
+	defer span.Finish()
 	truncated := context.ContextValue(ctx, context.FinishReasonLengthKey, false)
 	path := toolcall.ToolArgsValue(args, "path", "")
 	content := toolcall.ToolArgsValue(args, "content", "")

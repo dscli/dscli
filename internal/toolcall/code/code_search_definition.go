@@ -11,6 +11,7 @@ import (
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/parse"
 	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/nanjj/clog"
 )
 
 //go:embed code_search_definition.md
@@ -60,6 +61,8 @@ type defSearchResult struct {
 
 // handleSearchCodeDefinition 处理代码定义搜索请求
 func handleSearchCodeDefinition(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleSearchCodeDefinition")
+	defer span.Finish()
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		err = fmt.Errorf("参数 'path' 缺失")
@@ -182,6 +185,8 @@ func handleSearchCodeDefinition(ctx context.Context, args toolcall.ToolArgs) (re
 
 // searchDefInFile parses a single file and searches for matching definitions.
 func searchDefInFile(ctx context.Context, filePath, pattern, typeFilter string, caseSensitive bool) (*defSearchResult, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "searchDefInFile")
+	defer span.Finish()
 	structure, err := parse.ParseFileStructure(ctx, filePath)
 	if err != nil {
 		return nil, fmt.Errorf("解析文件结构失败: %w", err)

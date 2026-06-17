@@ -10,6 +10,7 @@ import (
 
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/nanjj/clog"
 )
 
 //go:embed file_read_with_line_range.md
@@ -50,6 +51,8 @@ func init() {
 // TAG 可传递给 write_file_with_line_range 的 line_tag/line_tags 参数防止竞态写入。
 // 结果前包含头部行：📄 path: lines start-end of total
 func handleReadFileWithLineRange(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleReadFileWithLineRange")
+	defer span.Finish()
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		err = fmt.Errorf("parameter error: no path specified")

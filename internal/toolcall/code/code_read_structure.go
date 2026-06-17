@@ -11,6 +11,7 @@ import (
 
 	"github.com/dscli/dscli/internal/parse"
 	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/nanjj/clog"
 )
 
 //go:embed code_read_structure.md
@@ -20,6 +21,8 @@ var code_read_structure_md string
 // 为后续的代码操作提供基础。
 // 支持单文件和目录：目录时聚合展示所有代码文件的结构。
 func readCodeStructure(ctx context.Context, path string) (string, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "readCodeStructure")
+	defer span.Finish()
 	info, err := os.Stat(path)
 	if os.IsNotExist(err) {
 		return "", fmt.Errorf("路径不存在: %s", path)
@@ -36,6 +39,8 @@ func readCodeStructure(ctx context.Context, path string) (string, error) {
 
 // readCodeStructureFile 解析单个文件的结构。
 func readCodeStructureFile(ctx context.Context, path string) (string, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "readCodeStructureFile")
+	defer span.Finish()
 	structure, err := parse.ParseFileStructure(ctx, path)
 	if err != nil {
 		return "", fmt.Errorf("解析文件结构失败: %w", err)
@@ -52,6 +57,8 @@ func readCodeStructureFile(ctx context.Context, path string) (string, error) {
 
 // readCodeStructureDir 解析目录下所有代码文件的结构，聚合展示。
 func readCodeStructureDir(ctx context.Context, dirPath string) (string, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "readCodeStructureDir")
+	defer span.Finish()
 	files, err := resolveDefSearchFiles(dirPath)
 	if err != nil {
 		return "", fmt.Errorf("解析目录失败: %w", err)
@@ -220,6 +227,8 @@ func init() {
 }
 
 func handleReadCodeStructure(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleReadCodeStructure")
+	defer span.Finish()
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		result, err = "", fmt.Errorf("参数 'path' 缺失")

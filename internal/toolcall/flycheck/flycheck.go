@@ -10,6 +10,7 @@ import (
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/flycheck"
 	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/nanjj/clog"
 )
 
 //go:embed flycheck.md
@@ -42,6 +43,8 @@ func init() {
 }
 
 func handleFlycheck(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleFlycheck")
+	defer span.Finish()
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		err = fmt.Errorf("参数 'path' 缺失")

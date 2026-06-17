@@ -28,6 +28,7 @@ import (
 	mailcore "github.com/dscli/dscli/internal/mail"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/nanjj/clog"
 )
 
 //go:embed sendmail.md
@@ -182,6 +183,8 @@ func init() {
 // === Handlers =================================================================
 
 func handleSendMail(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleSendMail")
+	defer span.Finish()
 	recipient := ToolArgsValue(args, "recipient", "")
 	subject := ToolArgsValue(args, "subject", "")
 	body := ToolArgsValue(args, "body", "")
@@ -200,6 +203,8 @@ func handleSendMail(ctx context.Context, args ToolArgs) (result, warning string,
 }
 
 func handleReadMail(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleReadMail")
+	defer span.Finish()
 	mid := ToolArgsValue(args, "id", int64(0))
 	if mid <= 0 {
 		err = fmt.Errorf("id is required")
@@ -214,6 +219,8 @@ func handleReadMail(ctx context.Context, args ToolArgs) (result, warning string,
 }
 
 func handleListMail(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleListMail")
+	defer span.Finish()
 	unreadOnly := ToolArgsValue(args, "unread_only", false)
 	limit := ToolArgsValue(args, "limit", 20)
 
@@ -225,6 +232,8 @@ func handleListMail(ctx context.Context, args ToolArgs) (result, warning string,
 }
 
 func handleMailSearch(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleMailSearch")
+	defer span.Finish()
 	query := ToolArgsValue(args, "query", "")
 	limit := ToolArgsValue(args, "limit", 10)
 	limit = min(limit, 50)
@@ -242,11 +251,15 @@ func handleMailSearch(ctx context.Context, args ToolArgs) (result, warning strin
 }
 
 func handleContacts(ctx context.Context, _ ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleContacts")
+	defer span.Finish()
 	result, warning, err = mailcore.HandleContacts(ctx)
 	return
 }
 
 func handleReplyMail(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleReplyMail")
+	defer span.Finish()
 	mid := ToolArgsValue(args, "id", int64(0))
 	subject := ToolArgsValue(args, "subject", "")
 	body := ToolArgsValue(args, "body", "")
@@ -265,6 +278,8 @@ func handleReplyMail(ctx context.Context, args ToolArgs) (result, warning string
 }
 
 func handleDeleteMail(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleDeleteMail")
+	defer span.Finish()
 	mid := ToolArgsValue(args, "id", int64(0))
 	if mid <= 0 {
 		err = fmt.Errorf("id is required")

@@ -13,6 +13,7 @@ import (
 	"github.com/dscli/dscli/internal/parse"
 	"github.com/dscli/dscli/internal/toolcall"
 	"github.com/dscli/dscli/internal/toolcall/file"
+	"github.com/nanjj/clog"
 )
 
 //go:embed code_write_section.md
@@ -26,6 +27,8 @@ var code_write_section_md string
 //	method:类名.方法名   - 修改指定方法
 //	lines:开始行-结束行  - 修改指定行范围（后备方案）
 func writeCodeSection(ctx context.Context, path, selector, newContent string) (result string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "writeCodeSection")
+	defer span.Finish()
 	// 检查文件是否存在
 	if _, err = os.Stat(path); os.IsNotExist(err) {
 		err = fmt.Errorf("文件不存在: %s", path)
@@ -296,6 +299,8 @@ func init() {
 }
 
 func handleWriteCodeSection(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleWriteCodeSection")
+	defer span.Finish()
 	path := toolcall.ToolArgsValue(args, "path", "")
 	if path == "" {
 		err = fmt.Errorf("参数 'path' 缺失")
@@ -352,6 +357,8 @@ func PrintWriteSection(path, selector string) {
 
 // getSectionRange 在编辑前解析 selector 对应的行范围（1-based 包含）。
 func getSectionRange(ctx context.Context, path, selector string) (int, int, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "getSectionRange")
+	defer span.Finish()
 	structure, err := parse.ParseFileStructure(ctx, path)
 	if err != nil {
 		return 0, 0, err

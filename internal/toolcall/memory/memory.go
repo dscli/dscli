@@ -9,6 +9,7 @@ import (
 
 	"github.com/dscli/dscli/internal/memories"
 	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/nanjj/clog"
 )
 
 //go:embed mem_save.md
@@ -148,6 +149,8 @@ func init() {
 
 // handleMemSave saves a new memory observation.
 func handleMemSave(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleMemSave")
+	defer span.Finish()
 	title := ToolArgsValue(args, "title", "")
 	body := ToolArgsValue(args, "content", "")
 	typ := ToolArgsValue(args, "type", "manual")
@@ -163,6 +166,8 @@ func handleMemSave(ctx context.Context, args ToolArgs) (result, warning string, 
 
 // handleMemUpdate updates an existing memory by ID.
 func handleMemUpdate(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleMemUpdate")
+	defer span.Finish()
 	id := ToolArgsValue(args, "id", int64(0))
 	if id == 0 {
 		err = fmt.Errorf("id is required")
@@ -179,6 +184,8 @@ func handleMemUpdate(ctx context.Context, args ToolArgs) (result, warning string
 
 // handleMemSearch searches memories using FTS5 full-text search.
 func handleMemSearch(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleMemSearch")
+	defer span.Finish()
 	query := ToolArgsValue(args, "query", "")
 	typ := ToolArgsValue(args, "type", "")
 	limit := ToolArgsValue(args, "limit", 10)
@@ -198,6 +205,8 @@ func handleMemSearch(ctx context.Context, args ToolArgs) (result, warning string
 
 // handleMemDelete deletes a memory by ID.
 func handleMemDelete(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleMemDelete")
+	defer span.Finish()
 	id := ToolArgsValue(args, "id", int64(0))
 	if id == 0 {
 		err = fmt.Errorf("id is required")
@@ -210,6 +219,8 @@ func handleMemDelete(ctx context.Context, args ToolArgs) (result, warning string
 // handleMemGetObservation retrieves full memory content by ID.
 // Unlike mem_search which returns truncated previews, this returns the complete content.
 func handleMemGetObservation(ctx context.Context, args ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleMemGetObservation")
+	defer span.Finish()
 	id := ToolArgsValue(args, "id", int64(0))
 	if id == 0 {
 		err = fmt.Errorf("id is required")
@@ -221,6 +232,8 @@ func handleMemGetObservation(ctx context.Context, args ToolArgs) (result, warnin
 
 // handleMemStats returns memory system statistics.
 func handleMemStats(ctx context.Context, _ ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleMemStats")
+	defer span.Finish()
 	result, warning, err = memories.HandleMemStats(ctx)
 	return result, warning, err
 }
