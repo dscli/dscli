@@ -7,6 +7,9 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/dscli/dscli/internal/context"
+	"github.com/nanjj/clog"
+
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/goccy/go-yaml"
@@ -27,7 +30,9 @@ import (
 //   - Description: non-empty, max 1024 chars
 //   - Compatibility: if present, must be string, max 500 chars
 //   - No unexpected fields (spec allows 6 fields + dscli extensions: keywords, auto_inject, author)
-func ValidateSkillDir(dir string) []string {
+func ValidateSkillDir(ctx context.Context, dir string) []string {
+	span, ctx := clog.StartSpanFromContext(ctx, "ValidateSkillDir")
+	defer span.Finish()
 	var errors []string
 
 	// 1. Path exists and is a directory

@@ -15,15 +15,16 @@ func TestValidateValidSkill(t *testing.T) {
 	skillDir := filepath.Join(dir, "my-skill")
 	mustMkdir(t, skillDir)
 	writeSKILLMD(t, skillDir, "---\nname: my-skill\ndescription: A test skill\n---\n# My Skill\n")
-
-	errors := ValidateSkillDir(skillDir)
+	ctx := t.Context()
+	errors := ValidateSkillDir(ctx, skillDir)
 	if len(errors) != 0 {
 		t.Errorf("expected no errors, got: %v", errors)
 	}
 }
 
 func TestValidateNonexistentPath(t *testing.T) {
-	errors := ValidateSkillDir(filepath.Join(t.TempDir(), "nonexistent"))
+	ctx := t.Context()
+	errors := ValidateSkillDir(ctx, filepath.Join(t.TempDir(), "nonexistent"))
 	if len(errors) != 1 {
 		t.Fatalf("expected 1 error, got %d: %v", len(errors), errors)
 	}
@@ -36,8 +37,8 @@ func TestValidateNotADirectory(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "file.txt")
 	mustWrite(t, filePath, "test")
-
-	errors := ValidateSkillDir(filePath)
+	ctx := t.Context()
+	errors := ValidateSkillDir(ctx, filePath)
 	if len(errors) != 1 {
 		t.Fatalf("expected 1 error, got %d: %v", len(errors), errors)
 	}
@@ -50,8 +51,8 @@ func TestValidateMissingSkillMD(t *testing.T) {
 	dir := t.TempDir()
 	skillDir := filepath.Join(dir, "my-skill")
 	mustMkdir(t, skillDir)
-
-	errors := ValidateSkillDir(skillDir)
+	ctx := t.Context()
+	errors := ValidateSkillDir(ctx, skillDir)
 	if len(errors) != 1 {
 		t.Fatalf("expected 1 error, got %d: %v", len(errors), errors)
 	}
@@ -65,8 +66,8 @@ func TestValidateNameUppercase(t *testing.T) {
 	skillDir := filepath.Join(dir, "MySkill")
 	mustMkdir(t, skillDir)
 	writeSKILLMD(t, skillDir, "---\nname: MySkill\ndescription: A test skill\n---\nBody\n")
-
-	errors := ValidateSkillDir(skillDir)
+	ctx := t.Context()
+	errors := ValidateSkillDir(ctx, skillDir)
 	if !anyContains(errors, "lowercase") {
 		t.Errorf("expected 'lowercase' error, got: %v", errors)
 	}
@@ -79,8 +80,8 @@ func TestValidateNameTooLong(t *testing.T) {
 	skillDir := filepath.Join(dir, longName)
 	mustMkdir(t, skillDir)
 	writeSKILLMD(t, skillDir, "---\nname: "+longName+"\ndescription: A test skill\n---\nBody\n")
-
-	errors := ValidateSkillDir(skillDir)
+	ctx := t.Context()
+	errors := ValidateSkillDir(ctx, skillDir)
 	if !anyContains(errors, "exceeds") || !anyContains(errors, "character limit") {
 		t.Errorf("expected length error, got: %v", errors)
 	}
@@ -91,8 +92,8 @@ func TestValidateNameLeadingHyphen(t *testing.T) {
 	skillDir := filepath.Join(dir, "-my-skill")
 	mustMkdir(t, skillDir)
 	writeSKILLMD(t, skillDir, "---\nname: -my-skill\ndescription: A test skill\n---\nBody\n")
-
-	errors := ValidateSkillDir(skillDir)
+	ctx := t.Context()
+	errors := ValidateSkillDir(ctx, skillDir)
 	if !anyContains(errors, "cannot start or end with a hyphen") {
 		t.Errorf("expected hyphen start/end error, got: %v", errors)
 	}
@@ -103,8 +104,8 @@ func TestValidateNameConsecutiveHyphens(t *testing.T) {
 	skillDir := filepath.Join(dir, "my--skill")
 	mustMkdir(t, skillDir)
 	writeSKILLMD(t, skillDir, "---\nname: my--skill\ndescription: A test skill\n---\nBody\n")
-
-	errors := ValidateSkillDir(skillDir)
+	ctx := t.Context()
+	errors := ValidateSkillDir(ctx, skillDir)
 	if !anyContains(errors, "consecutive hyphens") {
 		t.Errorf("expected consecutive hyphens error, got: %v", errors)
 	}
@@ -115,8 +116,8 @@ func TestValidateNameInvalidCharacters(t *testing.T) {
 	skillDir := filepath.Join(dir, "my_skill")
 	mustMkdir(t, skillDir)
 	writeSKILLMD(t, skillDir, "---\nname: my_skill\ndescription: A test skill\n---\nBody\n")
-
-	errors := ValidateSkillDir(skillDir)
+	ctx := t.Context()
+	errors := ValidateSkillDir(ctx, skillDir)
 	if !anyContains(errors, "invalid character") {
 		t.Errorf("expected invalid character error, got: %v", errors)
 	}
@@ -127,8 +128,8 @@ func TestValidateNameDirectoryMismatch(t *testing.T) {
 	skillDir := filepath.Join(dir, "wrong-name")
 	mustMkdir(t, skillDir)
 	writeSKILLMD(t, skillDir, "---\nname: correct-name\ndescription: A test skill\n---\nBody\n")
-
-	errors := ValidateSkillDir(skillDir)
+	ctx := t.Context()
+	errors := ValidateSkillDir(ctx, skillDir)
 	if !anyContains(errors, "must match skill name") {
 		t.Errorf("expected directory mismatch error, got: %v", errors)
 	}
@@ -139,8 +140,8 @@ func TestValidateUnexpectedFields(t *testing.T) {
 	skillDir := filepath.Join(dir, "my-skill")
 	mustMkdir(t, skillDir)
 	writeSKILLMD(t, skillDir, "---\nname: my-skill\ndescription: A test skill\nunknown_field: should not be here\n---\nBody\n")
-
-	errors := ValidateSkillDir(skillDir)
+	ctx := t.Context()
+	errors := ValidateSkillDir(ctx, skillDir)
 	if !anyContains(errors, "Unexpected fields") {
 		t.Errorf("expected unexpected fields error, got: %v", errors)
 	}
@@ -151,8 +152,8 @@ func TestValidateWithAllFields(t *testing.T) {
 	skillDir := filepath.Join(dir, "my-skill")
 	mustMkdir(t, skillDir)
 	writeSKILLMD(t, skillDir, "---\nname: my-skill\ndescription: A test skill\nlicense: MIT\nmetadata:\n  author: Test\n---\nBody\n")
-
-	errors := ValidateSkillDir(skillDir)
+	ctx := t.Context()
+	errors := ValidateSkillDir(ctx, skillDir)
 	if len(errors) != 0 {
 		t.Errorf("expected no errors, got: %v", errors)
 	}
@@ -163,8 +164,8 @@ func TestValidateAllowedToolsAccepted(t *testing.T) {
 	skillDir := filepath.Join(dir, "my-skill")
 	mustMkdir(t, skillDir)
 	writeSKILLMD(t, skillDir, "---\nname: my-skill\ndescription: A test skill\nallowed-tools: Bash(jq:*) Bash(git:*)\n---\nBody\n")
-
-	errors := ValidateSkillDir(skillDir)
+	ctx := t.Context()
+	errors := ValidateSkillDir(ctx, skillDir)
 	if len(errors) != 0 {
 		t.Errorf("expected no errors for allowed-tools, got: %v", errors)
 	}
@@ -175,8 +176,8 @@ func TestValidateAuthorAccepted(t *testing.T) {
 	skillDir := filepath.Join(dir, "my-skill")
 	mustMkdir(t, skillDir)
 	writeSKILLMD(t, skillDir, "---\nname: my-skill\ndescription: A test skill\nauthor: Someone <someone@example.com>\n---\nBody\n")
-
-	errors := ValidateSkillDir(skillDir)
+	ctx := t.Context()
+	errors := ValidateSkillDir(ctx, skillDir)
 	if len(errors) != 0 {
 		t.Errorf("expected no errors for author field, got: %v", errors)
 	}
@@ -187,8 +188,8 @@ func TestValidateChineseName(t *testing.T) {
 	skillDir := filepath.Join(dir, "技能")
 	mustMkdir(t, skillDir)
 	writeSKILLMD(t, skillDir, "---\nname: 技能\ndescription: A skill with Chinese name\n---\nBody\n")
-
-	errors := ValidateSkillDir(skillDir)
+	ctx := t.Context()
+	errors := ValidateSkillDir(ctx, skillDir)
 	if len(errors) != 0 {
 		t.Errorf("expected no errors for Chinese name, got: %v", errors)
 	}
@@ -199,8 +200,8 @@ func TestValidateRussianNameWithHyphens(t *testing.T) {
 	skillDir := filepath.Join(dir, "мой-навык")
 	mustMkdir(t, skillDir)
 	writeSKILLMD(t, skillDir, "---\nname: мой-навык\ndescription: A skill with Russian name\n---\nBody\n")
-
-	errors := ValidateSkillDir(skillDir)
+	ctx := t.Context()
+	errors := ValidateSkillDir(ctx, skillDir)
 	if len(errors) != 0 {
 		t.Errorf("expected no errors for Russian name with hyphens, got: %v", errors)
 	}
@@ -211,8 +212,8 @@ func TestValidateRussianLowercaseValid(t *testing.T) {
 	skillDir := filepath.Join(dir, "навык")
 	mustMkdir(t, skillDir)
 	writeSKILLMD(t, skillDir, "---\nname: навык\ndescription: A skill with Russian lowercase name\n---\nBody\n")
-
-	errors := ValidateSkillDir(skillDir)
+	ctx := t.Context()
+	errors := ValidateSkillDir(ctx, skillDir)
 	if len(errors) != 0 {
 		t.Errorf("expected no errors for Russian lowercase, got: %v", errors)
 	}
@@ -225,8 +226,8 @@ func TestValidateRussianUppercaseRejected(t *testing.T) {
 	skillDir := filepath.Join(dir, "НАВЫК")
 	mustMkdir(t, skillDir)
 	writeSKILLMD(t, skillDir, "---\nname: НАВЫК\ndescription: A skill with Russian uppercase name\n---\nBody\n")
-
-	errors := ValidateSkillDir(skillDir)
+	ctx := t.Context()
+	errors := ValidateSkillDir(ctx, skillDir)
 	if !anyContains(errors, "lowercase") {
 		t.Errorf("expected lowercase error for Russian uppercase, got: %v", errors)
 	}
@@ -241,8 +242,8 @@ func TestValidateDescriptionTooLong(t *testing.T) {
 		longDesc[i] = 'x'
 	}
 	writeSKILLMD(t, skillDir, "---\nname: my-skill\ndescription: "+string(longDesc)+"\n---\nBody\n")
-
-	errors := ValidateSkillDir(skillDir)
+	ctx := t.Context()
+	errors := ValidateSkillDir(ctx, skillDir)
 	if !anyContains(errors, "exceeds") || !anyContains(errors, "1024") {
 		t.Errorf("expected description length error, got: %v", errors)
 	}
@@ -253,8 +254,8 @@ func TestValidateValidCompatibility(t *testing.T) {
 	skillDir := filepath.Join(dir, "my-skill")
 	mustMkdir(t, skillDir)
 	writeSKILLMD(t, skillDir, "---\nname: my-skill\ndescription: A test skill\ncompatibility: Requires Python 3.11+\n---\nBody\n")
-
-	errors := ValidateSkillDir(skillDir)
+	ctx := t.Context()
+	errors := ValidateSkillDir(ctx, skillDir)
 	if len(errors) != 0 {
 		t.Errorf("expected no errors, got: %v", errors)
 	}
@@ -269,8 +270,8 @@ func TestValidateCompatibilityTooLong(t *testing.T) {
 		longCompat[i] = 'x'
 	}
 	writeSKILLMD(t, skillDir, "---\nname: my-skill\ndescription: A test skill\ncompatibility: "+string(longCompat)+"\n---\nBody\n")
-
-	errors := ValidateSkillDir(skillDir)
+	ctx := t.Context()
+	errors := ValidateSkillDir(ctx, skillDir)
 	if !anyContains(errors, "exceeds") || !anyContains(errors, "500") {
 		t.Errorf("expected compatibility length error, got: %v", errors)
 	}
@@ -285,8 +286,8 @@ func TestValidateNFKCNormalization(t *testing.T) {
 	skillDir := filepath.Join(dir, composedName)
 	mustMkdir(t, skillDir)
 	writeSKILLMD(t, skillDir, "---\nname: "+decomposedName+"\ndescription: A test skill\n---\nBody\n")
-
-	errors := ValidateSkillDir(skillDir)
+	ctx := t.Context()
+	errors := ValidateSkillDir(ctx, skillDir)
 	if len(errors) != 0 {
 		t.Errorf("NFKC normalization failed, expected no errors, got: %v", errors)
 	}

@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 )
+
 func TestFimRunE(t *testing.T) {
 	// Empty prompt should return an error.
 	cmd := &cobra.Command{}

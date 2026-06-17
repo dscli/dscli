@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/roles"
 	"github.com/dscli/dscli/internal/session"
 	"github.com/dscli/dscli/internal/skills"
@@ -221,7 +222,7 @@ func roleUpdateRunE(cmd *cobra.Command, args []string) error {
 
 	// Validate skills
 	if skills != "" && skills != "all" {
-		if err := validateSkills(skills); err != nil {
+		if err := validateSkills(ctx, skills); err != nil {
 			return err
 		}
 	}
@@ -262,8 +263,10 @@ func validateTools(tools string) error {
 }
 
 // validateSkills checks that all skill names in the comma-separated list are known.
-func validateSkills(skillsStr string) error {
-	skillInfos, err := skills.ListAll()
+func validateSkills(ctx context.Context, skillsStr string) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "validateSkills")
+	defer span.Finish()
+	skillInfos, err := skills.ListAll(ctx)
 	if err != nil {
 		// If we can't list skills, skip validation but warn the user.
 		fmt.Fprintf(os.Stderr, "警告: 无法验证技能列表: %v\n", err)

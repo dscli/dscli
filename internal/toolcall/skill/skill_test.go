@@ -98,10 +98,9 @@ func TestHandleSkillSave(t *testing.T) {
 	if !skill.AutoInject {
 		t.Error("AutoInject should be true")
 	}
-
 	// Verify immediate availability via skill_by_name / skill_search
 	// (local store should be updated)
-	used, useErr := skills.Use("test-skill")
+	used, useErr := skills.Use(ctx, "test-skill")
 	if useErr != nil {
 		t.Fatalf("skills.Use failed: %v", useErr)
 	}
@@ -111,7 +110,7 @@ func TestHandleSkillSave(t *testing.T) {
 	t.Logf("Use result preview: %.80s...", used)
 
 	// Verify search by keyword
-	searchResult, searchErr := skills.Query("unit-test")
+	searchResult, searchErr := skills.Query(ctx, "unit-test")
 	if searchErr != nil {
 		t.Fatalf("skills.Query failed: %v", searchErr)
 	}
@@ -129,7 +128,7 @@ func TestHandleSkillSave(t *testing.T) {
 	t.Logf("overwrite result: %s", content2)
 
 	// Verify updated content
-	used2, useErr2 := skills.Use("test-skill")
+	used2, useErr2 := skills.Use(ctx, "test-skill")
 	if useErr2 != nil {
 		t.Fatalf("skills.Use after overwrite failed: %v", useErr2)
 	}
@@ -254,7 +253,7 @@ func TestHandleSkillSetAutoInject(t *testing.T) {
 	t.Logf("enable result: %s", result)
 
 	// Verify via store
-	_, useErr := skills.Use("auto-inject-test")
+	_, useErr := skills.Use(ctx, "auto-inject-test")
 	if useErr != nil {
 		t.Fatalf("skills.Use failed: %v", useErr)
 	}

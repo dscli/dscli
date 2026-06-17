@@ -13,6 +13,7 @@ import (
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/goccy/go-yaml"
+	"github.com/nanjj/clog"
 )
 
 var (
@@ -45,7 +46,9 @@ type ScoredSkill struct {
 	Score int
 }
 
-func LocalStore() (*Store, error) {
+func LocalStore(ctx context.Context) (*Store, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "LocalStore")
+	defer span.Finish()
 	localOnce.Do(func() {
 		config.EnsureProjectGitignore(context.ProjectRoot) // 确保 .dscli/.gitignore 存在
 
@@ -55,7 +58,7 @@ func LocalStore() (*Store, error) {
 		if localErr != nil {
 			return
 		}
-		localStore, localErr = NewSkillStore(dscliDir, "local")
+		localStore, localErr = NewSkillStore(ctx, dscliDir, "local")
 
 		// Secondary: <project>/.agents/skills/ (cross-client interoperability)
 		// Skills from .agents/skills/ are loaded and merged with lower priority:
@@ -63,21 +66,23 @@ func LocalStore() (*Store, error) {
 		if localErr == nil {
 			agentsDir := filepath.Join(context.ProjectRoot, ".agents", "skills")
 			if info, statErr := os.Stat(agentsDir); statErr == nil && info.IsDir() {
-				mergeCrossClientSkills(localStore, agentsDir)
+				mergeCrossClientSkills(ctx, localStore, agentsDir)
 			}
 		}
 	})
 	return localStore, localErr
 }
 
-func GlobalStore() (*Store, error) {
+func GlobalStore(ctx context.Context) (*Store, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "GlobalSkill")
+	defer span.Finish()
 	globalOnce.Do(func() {
 		dir := filepath.Join(config.ConfigDir, "skills")
 		globalErr = os.MkdirAll(dir, 0o755)
 		if globalErr != nil {
 			return
 		}
-		globalStore, globalErr = NewSkillStore(dir, "global")
+		globalStore, globalErr = NewSkillStore(ctx, dir, "global")
 
 		// Secondary: ~/.agents/skills/ (cross-client user-level interoperability)
 		// Skills installed by other agents (Claude Code, Codex, etc.) at the
@@ -87,7 +92,7 @@ func GlobalStore() (*Store, error) {
 			if homeErr == nil {
 				agentsDir := filepath.Join(home, ".agents", "skills")
 				if info, statErr := os.Stat(agentsDir); statErr == nil && info.IsDir() {
-					mergeCrossClientSkills(globalStore, agentsDir)
+					mergeCrossClientSkills(ctx, globalStore, agentsDir)
 				}
 			}
 		}
@@ -95,12 +100,14 @@ func GlobalStore() (*Store, error) {
 	return globalStore, globalErr
 }
 
-func NewSkillStore(dir, source string) (*Store, error) {
+func NewSkillStore(ctx context.Context, dir, source string) (*Store, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "NewSkillStore")
+	defer span.Finish()
 	store := &Store{
 		dir:    dir,
 		source: source,
 	}
-	if err := store.Load(); err != nil {
+	if err := store.Load(ctx); err != nil {
 		// 返回空存储而非错误，确保调用方始终获得有效对象
 		store.Skills = map[string]Skill{}
 		store.Keywords = map[string][]string{}
@@ -114,8 +121,10 @@ func NewSkillStore(dir, source string) (*Store, error) {
 // are NOT overwritten — the primary store (dscli-native) takes precedence.
 // This enables cross-client interoperability: skills installed by other agents
 // (Claude Code, Codex, etc.) in .agents/skills/ become automatically available.
-func mergeCrossClientSkills(store *Store, agentsDir string) {
-	crossSkills := LoadSkills(agentsDir)
+func mergeCrossClientSkills(ctx context.Context, store *Store, agentsDir string) {
+	span, ctx := clog.StartSpanFromContext(ctx, "mergeCrossClientSkills")
+	defer span.Finish()
+	crossSkills := LoadSkills(ctx, agentsDir)
 	if len(crossSkills) == 0 {
 		return
 	}
@@ -159,14 +168,16 @@ func indexSkillKeywords(kws map[string][]string, name string, keywords []string)
 	}
 }
 
-func (store *Store) Load() (err error) {
+func (store *Store) Load(ctx context.Context) (err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "Load")
+	defer span.Finish()
 	path := filepath.Join(store.dir, "skills.yaml")
 	yamlInfo, yamlErr := os.Stat(path)
 
 	// 检查缓存是否需要更新：比较 skills.yaml 和 SKILL.md 文件的修改时间
 	needReload := yamlErr != nil
 	if yamlErr == nil {
-		skillFiles := SkillFiles(store.dir)
+		skillFiles := SkillFiles(ctx, store.dir)
 		for _, sf := range skillFiles {
 			info, statErr := os.Stat(sf)
 			if statErr != nil {
@@ -222,7 +233,7 @@ func (store *Store) Load() (err error) {
 	}
 
 	err = nil
-	skills := LoadSkills(store.dir)
+	skills := LoadSkills(ctx, store.dir)
 	if len(skills) == 0 {
 		err = fmt.Errorf("no skill loaded")
 		return err
@@ -244,7 +255,7 @@ func (store *Store) Load() (err error) {
 	store.Keywords = kws
 
 	// 保存到yaml文件，以便下次直接加载
-	if err := store.Save(); err != nil {
+	if err := store.Save(ctx); err != nil {
 		// 保存失败不影响使用，只是下次需要重新加载
 		fmt.Printf("Warning: failed to save skills.yaml: %v\n", err)
 	}
@@ -252,7 +263,9 @@ func (store *Store) Load() (err error) {
 	return err
 }
 
-func (store *Store) Save() error {
+func (store *Store) Save(ctx context.Context) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "storeSave")
+	defer span.Finish()
 	path := filepath.Join(store.dir, "skills.yaml")
 	data, err := yaml.Marshal(store)
 	if err != nil {
@@ -268,8 +281,10 @@ func (store *Store) Save() error {
 
 // Query 使用 token 匹配搜索技能。
 // 保留向后兼容的 map 返回类型。
-func (store *Store) Query(query string) (matched map[string]Skill) {
-	scored := store.QueryScored(query)
+func (store *Store) Query(ctx context.Context, query string) (matched map[string]Skill) {
+	span, ctx := clog.StartSpanFromContext(ctx, "storeQuery")
+	defer span.Finish()
+	scored := store.QueryScored(ctx, query)
 	matched = make(map[string]Skill, len(scored))
 	for _, s := range scored {
 		matched[s.Skill.Name] = s.Skill
@@ -287,14 +302,16 @@ func (store *Store) Query(query string) (matched map[string]Skill) {
 //
 // 匹配采用双向子串包含：token 包含 keyword 或 keyword 包含 token。
 // 所有匹配均为大小写不敏感。
-func (store *Store) QueryScored(query string) []ScoredSkill {
+func (store *Store) QueryScored(ctx context.Context, query string) []ScoredSkill {
+	span, ctx := clog.StartSpanFromContext(ctx, "QueryScored")
+	defer span.Finish()
 	if query == "" {
 		return nil
 	}
 
 	var results []ScoredSkill
 	for name, skill := range store.Skills {
-		if s := skill.Score(query); s > 0 {
+		if s := skill.Score(ctx, query); s > 0 {
 			results = append(results, ScoredSkill{Skill: store.Skills[name], Score: s})
 		}
 	}
@@ -324,7 +341,9 @@ func matchToken(queryToken, idxToken string) bool {
 // Use looks up a skill by name within this specific store.
 // It does not check global or built-in skills.
 // For full resolution including fallback, use the package-level Use function.
-func (store *Store) Use(name string) (content string, err error) {
+func (store *Store) Use(ctx context.Context, name string) (content string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "storeUse")
+	defer span.Finish()
 	skill, ok := store.Skills[name]
 	if ok {
 		content = skill.FormatFull()
@@ -336,19 +355,21 @@ func (store *Store) Use(name string) (content string, err error) {
 }
 
 // Query 在本地和全局 store 中搜索技能，返回按分数排序的格式化结果。
-func Query(q string) (string, error) {
-	localStore, err := LocalStore()
+func Query(ctx context.Context, q string) (string, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "Query")
+	defer span.Finish()
+	localStore, err := LocalStore(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to load local store: %w", err)
 	}
 
-	globalStore, err := GlobalStore()
+	globalStore, err := GlobalStore(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to load global store: %w", err)
 	}
 
-	localScored := localStore.QueryScored(q)
-	globalScored := globalStore.QueryScored(q)
+	localScored := localStore.QueryScored(ctx, q)
+	globalScored := globalStore.QueryScored(ctx, q)
 
 	// 合并：local 优先（同分时 local 排前面）
 	merged := mergeScored(localScored, globalScored)
@@ -362,7 +383,7 @@ func Query(q string) (string, error) {
 		if seen[name] {
 			continue
 		}
-		if s := skill.Score(q); s > 0 {
+		if s := skill.Score(ctx, q); s > 0 {
 			merged = append(merged, ScoredSkill{Skill: skill, Score: s})
 		}
 	}
@@ -416,23 +437,25 @@ func mergeScored(local, global []ScoredSkill) []ScoredSkill {
 	return merged
 }
 
-func Use(name string) (content string, err error) {
-	local, err := LocalStore()
+func Use(ctx context.Context, name string) (content string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "Use")
+	defer span.Finish()
+	local, err := LocalStore(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to load local store: %w", err)
 	}
 
-	content, err = local.Use(name)
+	content, err = local.Use(ctx, name)
 	if err == nil {
 		return content, nil
 	}
 
-	global, err := GlobalStore()
+	global, err := GlobalStore(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to load global store: %w", err)
 	}
 
-	content, err = global.Use(name)
+	content, err = global.Use(ctx, name)
 	if err == nil {
 		return content, nil
 	}
@@ -447,14 +470,16 @@ func Use(name string) (content string, err error) {
 // ResolveSkillDir resolves a skill name to its directory path by looking up
 // local and global stores. Returns empty string if the skill is not found.
 // The built-in dscli skill (virtual, no directory) is NOT resolved by this function.
-func ResolveSkillDir(name string) string {
-	localStore, err := LocalStore()
+func ResolveSkillDir(ctx context.Context, name string) string {
+	span, ctx := clog.StartSpanFromContext(ctx, "ResolveSkillDir")
+	defer span.Finish()
+	localStore, err := LocalStore(ctx)
 	if err == nil {
 		if skill, ok := localStore.Skills[name]; ok && skill.Path != "(built-in)" {
 			return skill.Path
 		}
 	}
-	globalStore, err := GlobalStore()
+	globalStore, err := GlobalStore(ctx)
 	if err == nil {
 		if skill, ok := globalStore.Skills[name]; ok && skill.Path != "(built-in)" {
 			return skill.Path
@@ -464,7 +489,9 @@ func ResolveSkillDir(name string) string {
 }
 
 // List 返回存储中的所有技能名称
-func (store *Store) List() []string {
+func (store *Store) List(ctx context.Context) []string {
+	span, ctx := clog.StartSpanFromContext(ctx, "storeList")
+	defer span.Finish()
 	if store == nil || store.Skills == nil {
 		return []string{}
 	}
@@ -481,13 +508,15 @@ func (store *Store) List() []string {
 
 // ListAll 返回所有技能（本地、全局和内置）的列表。
 // 优先级：local > global > built-in（同名时只保留最高优先级的）。
-func ListAll() ([]SkillInfo, error) {
-	localStore, err := LocalStore()
+func ListAll(ctx context.Context) ([]SkillInfo, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "ListAll")
+	defer span.Finish()
+	localStore, err := LocalStore(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load local store: %w", err)
 	}
 
-	globalStore, err := GlobalStore()
+	globalStore, err := GlobalStore(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load global store: %w", err)
 	}
@@ -496,7 +525,7 @@ func ListAll() ([]SkillInfo, error) {
 	skillInfos := make([]SkillInfo, 0)
 
 	// 添加本地技能
-	for _, name := range localStore.List() {
+	for _, name := range localStore.List(ctx) {
 		skill := localStore.Skills[name]
 		// Skip built-in skill sentinel (should never be in a store, but guard defensively)
 		if skill.Source == "built-in" || skill.Path == "(built-in)" {
@@ -510,7 +539,7 @@ func ListAll() ([]SkillInfo, error) {
 	}
 
 	// 添加全局技能（排除与本地技能同名的）
-	for _, name := range globalStore.List() {
+	for _, name := range globalStore.List(ctx) {
 		// 检查是否已有同名的本地技能
 		hasLocal := false
 		for _, info := range skillInfos {
@@ -565,32 +594,36 @@ type SkillInfo struct {
 }
 
 // SetAutoInject 设置指定技能的 auto_inject 属性并保存。
-func (store *Store) SetAutoInject(name string, autoInject bool) error {
+func (store *Store) SetAutoInject(ctx context.Context, name string, autoInject bool) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "storeSetAutoInject")
+	defer span.Finish()
 	skill, ok := store.Skills[name]
 	if !ok {
 		return fmt.Errorf("skill %q not found in %s store", name, store.source)
 	}
 	skill.AutoInject = autoInject
 	store.Skills[name] = skill
-	return store.Save()
+	return store.Save(ctx)
 }
 
 // SetAutoInject 设置技能的 auto_inject 属性。
 // 优先修改本地 store；若指定了 global 则修改全局 store。
-func SetAutoInject(name string, autoInject, global bool) error {
+func SetAutoInject(ctx context.Context, name string, autoInject, global bool) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "SetAutoInject")
+	defer span.Finish()
 	if global {
-		globalStore, err := GlobalStore()
+		globalStore, err := GlobalStore(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to load global store: %w", err)
 		}
-		return globalStore.SetAutoInject(name, autoInject)
+		return globalStore.SetAutoInject(ctx, name, autoInject)
 	}
 
-	localStore, err := LocalStore()
+	localStore, err := LocalStore(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load local store: %w", err)
 	}
-	return localStore.SetAutoInject(name, autoInject)
+	return localStore.SetAutoInject(ctx, name, autoInject)
 }
 
 func HandleSkillCreate(ctx context.Context, name, description, author, content, keywordsStr string, autoInject bool) (result, warning string, err error) {
@@ -644,7 +677,7 @@ func HandleSkillCreate(ctx context.Context, name, description, author, content, 
 	}
 
 	// Register in local store so it's immediately usable via skill_by_name / skill_search
-	localStore, err := LocalStore()
+	localStore, err := LocalStore(ctx)
 	if err != nil {
 		// Non-fatal: skill file is on disk, will be picked up on next load
 		warning = fmt.Sprintf("Warning: could not update local store cache: %v", err)
@@ -673,7 +706,7 @@ func HandleSkillCreate(ctx context.Context, name, description, author, content, 
 	indexSkillKeywords(localStore.Keywords, name, parsedSkill.Keywords)
 
 	// Persist skills.yaml
-	if err = localStore.Save(); err != nil {
+	if err = localStore.Save(ctx); err != nil {
 		warning = fmt.Sprintf("Warning: failed to save skills.yaml: %v", err)
 		outfmt.Println(warning)
 		err = nil

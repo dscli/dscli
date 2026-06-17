@@ -17,6 +17,7 @@ import (
 	"unicode"
 
 	"github.com/goccy/go-yaml"
+	"github.com/nanjj/clog"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -124,7 +125,9 @@ func (skill *Skill) FormatFull() string {
 //  2. Query token in name or name tokens: +10 each
 //  3. Query token in explicit keywords: +5 each
 //  4. Query token in description: +1 each
-func (skill *Skill) Score(query string) int {
+func (skill *Skill) Score(ctx context.Context, query string) int {
+	span, ctx := clog.StartSpanFromContext(ctx, "Score")
+	defer span.Finish()
 	queryLower := strings.ToLower(query)
 	queryTokens := tokenizeQuery(queryLower)
 
@@ -248,9 +251,11 @@ func FormatSkillMD(skill *Skill) (string, error) {
 	return b.String(), nil
 }
 
-func LoadSkills(dir string) (skills map[string]Skill) {
+func LoadSkills(ctx context.Context, dir string) (skills map[string]Skill) {
+	span, ctx := clog.StartSpanFromContext(ctx, "LoadSkills")
+	defer span.Finish()
 	skills = map[string]Skill{}
-	filenames := SkillFiles(dir)
+	filenames := SkillFiles(ctx, dir)
 	for _, filename := range filenames {
 		var skill Skill
 		if err := ParseSkill(filename, &skill); err != nil {
@@ -266,7 +271,9 @@ func LoadSkills(dir string) (skills map[string]Skill) {
 // It walks the directory tree recursively and returns absolute paths.
 // Skips common non-skill directories (.git, node_modules, etc.) and respects
 // a max depth bound to prevent runaway scanning in large directory trees.
-func SkillFiles(dir string) (skillFiles []string) {
+func SkillFiles(ctx context.Context, dir string) (skillFiles []string) {
+	span, ctx := clog.StartSpanFromContext(ctx, "SkillFiles")
+	defer span.Finish()
 	// Count depth relative to base directory by counting path separators
 	relDepth := func(base, target string) int {
 		// Use relative path to count separator differences
@@ -870,12 +877,14 @@ func loadExamples(skillDir string, skill *Skill) error {
 // When allowed contains "all", all skills are included.
 // When allowed contains specific names, only those skills are included.
 func BuildSkillPrompt(ctx context.Context, allowed ...string) string {
-	localStore, localErr := LocalStore()
+	span, ctx := clog.StartSpanFromContext(ctx, "BuildSkillPrompt")
+	defer span.Finish()
+	localStore, localErr := LocalStore(ctx)
 	if localErr != nil || localStore == nil {
 		localStore = &Store{}
 	}
 
-	globalStore, globalErr := GlobalStore()
+	globalStore, globalErr := GlobalStore(ctx)
 	if globalErr != nil || globalStore == nil {
 		globalStore = &Store{}
 	}

@@ -10,8 +10,8 @@ import (
 
 	"github.com/dscli/dscli/internal/config"
 	"github.com/dscli/dscli/internal/version"
-	"github.com/nanjj/clog"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/nanjj/clog"
 )
 
 // MCPToolError is returned when an MCP tool call completes with IsError=true.

@@ -29,8 +29,8 @@ keywords: [test, skill]
 	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillMD), 0o644); err != nil {
 		t.Fatal(err)
 	}
-
-	store, err := NewSkillStore(tmpDir, "local")
+	ctx := t.Context()
+	store, err := NewSkillStore(ctx, tmpDir, "local")
 	if err != nil {
 		t.Fatalf("NewSkillStore 失败: %v", err)
 	}
@@ -41,7 +41,7 @@ keywords: [test, skill]
 
 	skill, ok := store.Skills["test-skill"]
 	if !ok {
-		t.Fatalf("技能 test-skill 未找到, 可用: %v", store.List())
+		t.Fatalf("技能 test-skill 未找到, 可用: %v", store.List(ctx))
 	}
 
 	if skill.Name != "test-skill" {
@@ -67,13 +67,13 @@ func TestStoreList(t *testing.T) {
 			"---\nname: "+name+"\ndescription: 测试\n---\n# 内容\n",
 		), 0o644)
 	}
-
-	store, err := NewSkillStore(tmpDir, "local")
+	ctx := t.Context()
+	store, err := NewSkillStore(ctx, tmpDir, "local")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	names := store.List()
+	names := store.List(ctx)
 	if len(names) != 2 {
 		t.Fatalf("期望 2 个技能，得到 %d: %v", len(names), names)
 	}
@@ -92,14 +92,13 @@ func TestStoreSaveAndReload(t *testing.T) {
 	os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(
 		"---\nname: test-skill\ndescription: 测试\n---\n# 内容\n",
 	), 0o644)
-
-	store1, err := NewSkillStore(tmpDir, "local")
+	ctx := t.Context()
+	store1, err := NewSkillStore(ctx, tmpDir, "local")
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	// 重新加载
-	store2, err := NewSkillStore(tmpDir, "local")
+	store2, err := NewSkillStore(ctx, tmpDir, "local")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,26 +125,26 @@ func TestStoreQuery(t *testing.T) {
 	os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(
 		"---\nname: go-fix\ndescription: Go 代码现代化助手\nkeywords: [go, fix, modernize]\n---\n# Go Fix\n",
 	), 0o644)
-
-	store, err := NewSkillStore(tmpDir, "local")
+	ctx := t.Context()
+	store, err := NewSkillStore(ctx, tmpDir, "local")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// 精确关键词匹配（名称分词 + 显式关键词都可命中）
-	matched := store.Query("go")
+	matched := store.Query(ctx, "go")
 	if _, ok := matched["go-fix"]; !ok {
 		t.Error("关键词 'go' 应匹配 go-fix")
 	}
 
 	// 大小写不敏感 + 双向子串匹配
-	matched = store.Query("MODERNIZE")
+	matched = store.Query(ctx, "MODERNIZE")
 	if _, ok := matched["go-fix"]; !ok {
 		t.Error("关键词 'MODERNIZE' (小写后) 应匹配 go-fix")
 	}
 
 	// 不匹配的关键词
-	matched = store.Query("python")
+	matched = store.Query(ctx, "python")
 	if len(matched) != 0 {
 		t.Errorf("关键词 'python' 不应匹配结果: %v", matched)
 	}
@@ -162,8 +161,8 @@ func TestStoreLoadDetectsNewFiles(t *testing.T) {
 	os.WriteFile(filepath.Join(dir1, "SKILL.md"), []byte(
 		"---\nname: skill-a\ndescription: A\n---\n# A\n",
 	), 0o644)
-
-	store, err := NewSkillStore(tmpDir, "local")
+	ctx := t.Context()
+	store, err := NewSkillStore(ctx, tmpDir, "local")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,11 +178,11 @@ func TestStoreLoadDetectsNewFiles(t *testing.T) {
 	), 0o644)
 
 	// 重新加载应检测到新文件
-	if err := store.Load(); err != nil {
+	if err := store.Load(ctx); err != nil {
 		t.Fatalf("Load 失败: %v", err)
 	}
 	if len(store.Skills) != 2 {
-		t.Fatalf("期望 2 个技能，得到 %d，技能: %v", len(store.Skills), store.List())
+		t.Fatalf("期望 2 个技能，得到 %d，技能: %v", len(store.Skills), store.List(ctx))
 	}
 }
 
@@ -197,25 +196,25 @@ func TestStoreQueryByName(t *testing.T) {
 	os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(
 		"---\nname: go-fix\ndescription: Go code modernizer\nkeywords: [go, fix, modernize]\n---\n# Go Fix\n",
 	), 0o644)
-
-	store, err := NewSkillStore(tmpDir, "local")
+	ctx := t.Context()
+	store, err := NewSkillStore(ctx, tmpDir, "local")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// 通过完整名称搜索
-	matched := store.Query("go-fix")
+	matched := store.Query(ctx, "go-fix")
 	if _, ok := matched["go-fix"]; !ok {
 		t.Error("名称 'go-fix' 应匹配自身")
 	}
 
 	// 通过名称分词搜索
-	matched = store.Query("go")
+	matched = store.Query(ctx, "go")
 	if _, ok := matched["go-fix"]; !ok {
 		t.Error("名称分词 'go' 应匹配 go-fix")
 	}
 
-	matched = store.Query("fix")
+	matched = store.Query(ctx, "fix")
 	if _, ok := matched["go-fix"]; !ok {
 		t.Error("名称分词 'fix' 应匹配 go-fix")
 	}
@@ -232,37 +231,37 @@ func TestStoreQueryByNameWithHyphens(t *testing.T) {
 	os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(
 		"---\nname: use-modern-go\ndescription: Apply modern Go syntax guidelines based on project's Go version.\n---\n# Use Modern Go\n",
 	), 0o644)
-
-	store, err := NewSkillStore(tmpDir, "local")
+	ctx := t.Context()
+	store, err := NewSkillStore(ctx, tmpDir, "local")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// 完整名称匹配
-	matched := store.Query("use-modern-go")
+	matched := store.Query(ctx, "use-modern-go")
 	if _, ok := matched["use-modern-go"]; !ok {
 		t.Errorf("完整名称 'use-modern-go' 应匹配自身, got: %v", matched)
 	}
 
 	// 部分名称 token 匹配
-	matched = store.Query("modern")
+	matched = store.Query(ctx, "modern")
 	if _, ok := matched["use-modern-go"]; !ok {
 		t.Error("名称分词 'modern' 应匹配 use-modern-go")
 	}
 
-	matched = store.Query("go")
+	matched = store.Query(ctx, "go")
 	if _, ok := matched["use-modern-go"]; !ok {
 		t.Error("名称分词 'go' 应匹配 use-modern-go")
 	}
 
 	// 描述分词也会命中（自动提取的 keywords，≥3 字符）
-	matched = store.Query("syntax")
+	matched = store.Query(ctx, "syntax")
 	if _, ok := matched["use-modern-go"]; !ok {
 		t.Error("描述词 'syntax' 应匹配 use-modern-go")
 	}
 
 	// 无关关键词不应匹配（特别是不能因为 "on" 而误匹配 "python"）
-	matched = store.Query("python")
+	matched = store.Query(ctx, "python")
 	if len(matched) != 0 {
 		t.Errorf("'python' 不应匹配任何结果: %v", matched)
 	}
@@ -283,14 +282,14 @@ func TestStoreQueryScored(t *testing.T) {
 	os.WriteFile(filepath.Join(tmpDir, "use-modern-go", "SKILL.md"), []byte(
 		"---\nname: use-modern-go\ndescription: Apply modern Go syntax guidelines.\n---\n# Use Modern Go\n",
 	), 0o644)
-
-	store, err := NewSkillStore(tmpDir, "local")
+	ctx := t.Context()
+	store, err := NewSkillStore(ctx, tmpDir, "local")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// 搜索 "go modern": 两个技能都应匹配，按分数排序
-	scored := store.QueryScored("go modern")
+	scored := store.QueryScored(ctx, "go modern")
 	if len(scored) != 2 {
 		t.Fatalf("期望 2 个结果，得到 %d: %v", len(scored), scored)
 	}
@@ -316,18 +315,18 @@ func TestStoreQueryEmpty(t *testing.T) {
 	os.WriteFile(filepath.Join(tmpDir, "test-skill", "SKILL.md"), []byte(
 		"---\nname: test-skill\ndescription: test\n---\n# Test\n",
 	), 0o644)
-
-	store, err := NewSkillStore(tmpDir, "local")
+	ctx := t.Context()
+	store, err := NewSkillStore(ctx, tmpDir, "local")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	matched := store.Query("")
+	matched := store.Query(ctx, "")
 	if len(matched) != 0 {
 		t.Errorf("空查询不应返回结果: %v", matched)
 	}
 
-	scored := store.QueryScored("")
+	scored := store.QueryScored(ctx, "")
 	if scored != nil {
 		t.Errorf("空查询 QueryScored 应返回 nil: %v", scored)
 	}

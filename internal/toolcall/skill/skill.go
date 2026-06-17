@@ -50,7 +50,7 @@ func handleSkillByName(ctx context.Context, args ToolArgs) (result, warning stri
 	outfmt.Printf("Fetching skill [%s]\n", skillName)
 
 	// Use markdown-based skill system
-	skillContent, err := skills.Use(skillName)
+	skillContent, err := skills.Use(ctx, skillName)
 	if err != nil {
 		err = fmt.Errorf("failed to fetch skill %s: %w", skillName, err)
 		return result, warning, err
@@ -76,7 +76,7 @@ func handleSkillSearch(ctx context.Context, args ToolArgs) (result, warning stri
 	}
 	outfmt.Printf("Searching skills [%s]\n", query)
 
-	result, err = skills.Query(query)
+	result, err = skills.Query(ctx, query)
 	if err != nil {
 		err = fmt.Errorf("skill search failed: %w", err)
 		return result, warning, err
@@ -179,7 +179,7 @@ func handleSkillSetAutoInject(ctx context.Context, args ToolArgs) (result, warni
 		return result, warning, err
 	}
 
-	if err = skills.SetAutoInject(skillName, autoInject, false); err != nil {
+	if err = skills.SetAutoInject(ctx, skillName, autoInject, false); err != nil {
 		return result, warning, err
 	}
 

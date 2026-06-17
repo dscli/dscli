@@ -154,13 +154,13 @@ source 为技能目录路径（包含 SKILL.md 的目录）。
 }
 
 func skillValidateRunE(cmd *cobra.Command, args []string) error {
-	span, _ := clog.StartSpanFromContext(cmd.Context(), "skillValidateRunE")
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "skillValidateRunE")
 	defer span.Finish()
 	arg := args[0]
 
 	// 1. Try as directory path first
 	if info, err := os.Stat(arg); err == nil && info.IsDir() {
-		errs := skills.ValidateSkillDir(arg)
+		errs := skills.ValidateSkillDir(ctx, arg)
 		if len(errs) == 0 {
 			fmt.Println("✅ 技能目录校验通过")
 			return nil
@@ -173,12 +173,12 @@ func skillValidateRunE(cmd *cobra.Command, args []string) error {
 	}
 
 	// 2. Try as skill name — resolve to directory via local/global store
-	dir := skills.ResolveSkillDir(arg)
+	dir := skills.ResolveSkillDir(ctx, arg)
 	if dir == "" {
 		return fmt.Errorf("not a valid directory or skill name: %q", arg)
 	}
 
-	errs := skills.ValidateSkillDir(dir)
+	errs := skills.ValidateSkillDir(ctx, dir)
 	if len(errs) == 0 {
 		fmt.Printf("✅ 技能 %q 校验通过 (%s)\n", arg, dir)
 		return nil
@@ -192,9 +192,9 @@ func skillValidateRunE(cmd *cobra.Command, args []string) error {
 
 // skillListRunE 列出所有技能
 func skillListRunE(cmd *cobra.Command, args []string) error {
-	span, _ := clog.StartSpanFromContext(cmd.Context(), "skillListRunE")
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "skillListRunE")
 	defer span.Finish()
-	skillInfos, err := skills.ListAll()
+	skillInfos, err := skills.ListAll(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "列出技能失败: %v\n", err)
 		return nil
@@ -495,10 +495,10 @@ func copyDir(src, dst string) error {
 }
 
 func skillShowRunE(cmd *cobra.Command, args []string) error {
-	span, _ := clog.StartSpanFromContext(cmd.Context(), "skillShowRunE")
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "skillShowRunE")
 	defer span.Finish()
 	skillName := args[0]
-	content, err := skills.Use(skillName)
+	content, err := skills.Use(ctx, skillName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "使用技能失败: %v\n", err)
 		return nil
@@ -509,10 +509,10 @@ func skillShowRunE(cmd *cobra.Command, args []string) error {
 }
 
 func skillQueryRunE(cmd *cobra.Command, args []string) error {
-	span, _ := clog.StartSpanFromContext(cmd.Context(), "skillQueryRunE")
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "skillQueryRunE")
 	defer span.Finish()
 	query := args[0]
-	result, err := skills.Query(query)
+	result, err := skills.Query(ctx, query)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "查询技能失败: %v\n", err)
 		return nil
@@ -523,7 +523,7 @@ func skillQueryRunE(cmd *cobra.Command, args []string) error {
 }
 
 func skillSetAutoInjectRunE(cmd *cobra.Command, args []string) error {
-	span, _ := clog.StartSpanFromContext(cmd.Context(), "skillSetAutoInjectRunE")
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "skillSetAutoInjectRunE")
 	defer span.Finish()
 	name := args[0]
 	val := args[1]
@@ -539,7 +539,7 @@ func skillSetAutoInjectRunE(cmd *cobra.Command, args []string) error {
 
 	global, _ := cmd.Flags().GetBool("global")
 
-	if err := skills.SetAutoInject(name, autoInject, global); err != nil {
+	if err := skills.SetAutoInject(ctx, name, autoInject, global); err != nil {
 		fmt.Fprintf(os.Stderr, "设置 auto_inject 失败: %v\n", err)
 		return nil
 	}
