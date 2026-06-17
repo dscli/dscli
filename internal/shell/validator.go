@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nanjj/clog"
+
 	"mvdan.cc/sh/v3/syntax"
 )
 
@@ -81,6 +83,8 @@ type CommandInfo struct {
 //	*CommandInfo: 命令验证信息（始终非 nil）
 //	error: 系统级错误（如超时），命令不存在不会返回 error
 func VerifySystemCommand(ctx context.Context, cmd string) (*CommandInfo, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "VerifySystemCommand")
+	defer span.Finish()
 	info := &CommandInfo{Name: cmd}
 
 	// 1. 查找命令路径

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dscli/dscli/internal/context"
+	"github.com/nanjj/clog"
 
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
@@ -220,6 +221,8 @@ func getAllowedCommands() []string {
 
 // NewExecutor 创建新的执行器
 func NewExecutor(ctx context.Context, config *Config) *Executor {
+	span, ctx := clog.StartSpanFromContext(ctx, "NewExecutor")
+	defer span.Finish()
 	if config == nil {
 		config = DefaultConfig(ctx)
 	}
@@ -240,6 +243,8 @@ func NewExecutor(ctx context.Context, config *Config) *Executor {
 // 超时由上层（工具调用层）通过 context 控制，执行器不重复设置超时。
 // 这使得不同工具可以配置各自合理的超时时间，避免被执行器层覆盖。
 func (e *Executor) Execute(ctx context.Context, script string) (*Result, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "Execute")
+	defer span.Finish()
 	start := time.Now()
 
 	// 从 context 获取脚本名（summary），供语法错误消息使用
@@ -472,6 +477,8 @@ func extractExitCode(err error) int {
 
 // SimpleExecute 简单执行 Shell 脚本（使用默认配置）
 func SimpleExecute(ctx context.Context, script string) (string, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "SimpleExecute")
+	defer span.Finish()
 	executor := NewExecutor(ctx, DefaultConfig(ctx))
 	result, err := executor.Execute(ctx, script)
 	if err != nil {
@@ -490,6 +497,8 @@ func SimpleExecute(ctx context.Context, script string) (string, error) {
 // 对于像 staticcheck 这样通过 stdout 输出检查结果、通过非零退出码表示发现问题的工具，
 // 调用方可以区分 stdout（有用输出）和 stderr（错误信息），做出更精确的判断。
 func SimpleExecuteSeparate(ctx context.Context, script string) (stdout, stderr string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "SimpleExecuteSeparate")
+	defer span.Finish()
 	executor := NewExecutor(ctx, DefaultConfig(ctx))
 	result, execErr := executor.Execute(ctx, script)
 	if execErr != nil {
@@ -505,6 +514,8 @@ func SimpleExecuteSeparate(ctx context.Context, script string) (stdout, stderr s
 
 // SafeExecute 安全执行 Shell 脚本（启用沙箱模式）
 func SafeExecute(ctx context.Context, script string) (string, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "SafeExecute")
+	defer span.Finish()
 	config := DefaultConfig(ctx)
 	config.SandboxMode = true
 	config.SandboxConfig = DefaultSandboxConfig(ctx)
