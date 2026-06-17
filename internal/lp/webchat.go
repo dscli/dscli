@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dscli/dscli/internal/context"
+	"github.com/nanjj/clog"
 
 	"github.com/chromedp/chromedp"
 )
@@ -136,6 +137,8 @@ const (
 // starting a new one. New conversations automatically enable expert mode
 // (V4 Pro).
 func WebChat(ctx context.Context, message string) (string, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "WebChat")
+	defer span.Finish()
 	keep := context.ContextValue(ctx, context.KeepKey, false)
 	convURL := ""
 	if keep {
@@ -147,6 +150,8 @@ func WebChat(ctx context.Context, message string) (string, error) {
 // webChatWithURL is the common implementation shared by WebChat
 // (new conv, empty url) and continue (saved url).
 func webChatWithURL(ctx context.Context, conversationURL, message string) (string, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "webChatWithURL")
+	defer span.Finish()
 	ctx, cancel, err := NewChromium(ctx)
 	if err != nil {
 		return "", err
@@ -170,6 +175,8 @@ func webChatWithURL(ctx context.Context, conversationURL, message string) (strin
 // (which contains the conversation ID for continuation). If login is needed,
 // it triggers a manual login flow in the same Chrome session and retries once.
 func webchatSend(tabCtx context.Context, conversationURL, message string, retry int) (string, string, error) {
+	span, ctx := clog.StartSpanFromContext(tabCtx, "webchatSend")
+	defer span.Finish()
 	navURL := conversationURL
 	if navURL == "" {
 		navURL = deepseekChatURL
@@ -256,16 +263,16 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, retry 
 		chromedp.Location(&finalURL),
 	)
 
-	err := chromedp.Run(tabCtx, actions...)
+	err := chromedp.Run(ctx, actions...)
 	if err != nil {
 		// If login is needed and we haven't retried yet, perform login
 		// in the same Chrome session and retry once.
 		if errors.Is(err, ErrLoginRequired) && retry == 0 {
 			fmt.Fprintln(os.Stderr, "🔐 未登录，在浏览器窗口中完成登录...")
-			if loginErr := deepseekLogin(tabCtx, "", nil, true); loginErr != nil {
+			if loginErr := deepseekLogin(ctx, "", nil, true); loginErr != nil {
 				return "", "", fmt.Errorf("webchat login: %w", loginErr)
 			}
-			return webchatSend(tabCtx, conversationURL, message, retry+1)
+			return webchatSend(ctx, conversationURL, message, retry+1)
 		}
 		return "", "", fmt.Errorf("webchat: %w", err)
 	}
@@ -295,6 +302,8 @@ func webchatSetValue(ctx context.Context, message string) error {
 // webchatWait polls until the assistant response stabilizes, then extracts
 // it via the .ds-markdown element (preferred) or body-text diff (fallback).
 func webchatWait(ctx context.Context, baseline string) (string, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "webchatWait")
+	defer span.Finish()
 	var lastText string
 	stableCount := 0
 
@@ -422,6 +431,8 @@ func conversationStatePath() (string, error) {
 
 // saveConversationState persists the conversation URL for later continuation.
 func saveConversationState(convURL string) error {
+	span, _ := clog.StartSpanFromContext(context.Background(), "saveConversationState")
+	defer span.Finish()
 	path, err := conversationStatePath()
 	if err != nil {
 		return err

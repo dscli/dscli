@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nanjj/clog"
+
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 	"golang.org/x/term"
@@ -37,8 +39,10 @@ func DefaultCookiePath() string {
 // the user to complete login manually (phone, captcha, SMS, etc.). This
 // avoids all the fragile automation around captcha solving and SMS timing.
 func deepseekLogin(tabCtx context.Context, phone string, codeReader func() (string, error), visible bool) error {
+	span, ctx := clog.StartSpanFromContext(tabCtx, "deepseekLogin")
+	defer span.Finish()
 	// Give ample time for the user to complete login (especially in visible mode).
-	loginCtx, loginCancel := context.WithTimeout(tabCtx, 5*time.Minute)
+	loginCtx, loginCancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer loginCancel()
 
 	fmt.Fprintf(os.Stderr, "🌐 正在打开 DeepSeek 登录页...\n")
@@ -114,6 +118,8 @@ func deepseekLogin(tabCtx context.Context, phone string, codeReader func() (stri
 // saveDeepSeekCookies extracts cookies from the current browser context and
 // writes them to the cookie file in Lightpanda-compatible JSON format.
 func saveDeepSeekCookies(ctx context.Context) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "saveDeepSeekCookies")
+	defer span.Finish()
 	cookiePath := DefaultCookiePath()
 
 	// Use CDP Network.getCookies wrapped in chromedp.ActionFunc so the
@@ -197,6 +203,8 @@ func deepseekLoginManual(ctx context.Context) error {
 // waitForLoginComplete polls the current page URL every 2 seconds until
 // we leave the sign_in page (meaning login succeeded) or timeout.
 func waitForLoginComplete(ctx context.Context, timeout time.Duration) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "waitForLoginComplete")
+	defer span.Finish()
 	deadline := time.After(timeout)
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
