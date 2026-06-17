@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/nanjj/clog"
+
 	"github.com/chromedp/chromedp"
 )
 
@@ -86,6 +88,8 @@ func NetworkCheck(rawURL string) error {
 //	tabCtx, tabCancel := chromedp.NewContext(ctx)
 //	defer tabCancel()
 func NewChromium(ctx context.Context) (context.Context, func(), error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "NewChromium")
+	defer span.Finish()
 	chromePath, err := findChrome()
 	if err != nil {
 		return nil, nil, err
