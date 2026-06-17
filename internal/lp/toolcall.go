@@ -66,6 +66,9 @@ func activeMCPClient() (*MCPClient, error) {
 // Always discovers via LOCAL MCP regardless of active target.
 // If discovery fails, it returns nil (tools are silently omitted).
 func MCPToolList(ctx context.Context) []toolcall.Tool {
+	span, ctx := clog.StartSpanFromContext(ctx, "MCPToolList")
+	defer span.Finish()
+
 	mcpToolsMu.Lock()
 	defer mcpToolsMu.Unlock()
 	if mcpToolsDone {

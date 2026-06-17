@@ -376,6 +376,9 @@ func (t *promptTemplate) Render(data *promptConfig) (string, error) {
 
 // GeneratePromptWithTemplate 使用模板生成提示词
 func (c *promptConfig) GeneratePromptWithTemplate(ctx context.Context) string {
+	span, ctx := clog.StartSpanFromContext(ctx, "GeneratePromptWithTemplate")
+	defer span.Finish()
+
 	tmpl := newPromptTemplate(ctx, c.Role)
 	if tmpl == nil {
 		// 防御性编程：理论上 newPromptTemplate 不再返回 nil，
@@ -405,6 +408,9 @@ func GetSystemPrompt(ctx context.Context) string {
 // a given role, such as ask_expert (role="expert") and code_review
 // (role="review").
 func RenderPromptForRole(ctx context.Context, role string) string {
+	span, ctx := clog.StartSpanFromContext(ctx, "RenderPromptForRole")
+	defer span.Finish()
+
 	config := newPromptConfig(ctx)
 	config.Role = role
 	return config.GeneratePromptWithTemplate(ctx)

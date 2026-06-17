@@ -294,6 +294,9 @@ func (e *Executor) Execute(ctx context.Context, script string) (*Result, error) 
 
 // buildRunnerOptions 构建 runner 选项
 func (e *Executor) buildRunnerOptions(ctx context.Context, stdout, stderr *bytes.Buffer) ([]interp.RunnerOption, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "buildRunnerOptions")
+	defer span.Finish()
+
 	opts := []interp.RunnerOption{
 		interp.StdIO(nil, stdout, stderr),
 		interp.Dir(e.config.WorkingDir),

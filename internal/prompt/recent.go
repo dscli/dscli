@@ -58,6 +58,9 @@ func RecentMessages(ctx context.Context, limit int, startID int64) ([]Message, e
 
 // HandleRecent 格式化最近消息为表格，供 LLM 工具调用。
 func HandleRecent(ctx context.Context, limit int, startID int64) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "HandleRecent")
+	defer span.Finish()
+
 	const maxRecentResults = 20
 
 	if limit <= 0 || limit > maxRecentResults {

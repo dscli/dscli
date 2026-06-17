@@ -66,6 +66,8 @@ func init() {
 
 // openDB opens the shared dscli database.
 func openDB(ctx context.Context) (*sqlite.DB, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "openDB")
+	defer span.Finish()
 	return sqlite.OpenDB(ctx)
 }
 

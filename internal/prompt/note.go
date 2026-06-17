@@ -118,6 +118,9 @@ func FormatTime(t time.Time) string {
 
 // BuildNotePrompt 从近期笔记构建记忆线索提示词
 func BuildNotePrompt(ctx context.Context) string {
+	span, ctx := clog.StartSpanFromContext(ctx, "BuildNotePrompt")
+	defer span.Finish()
+
 	if notes, noteErr := LoadNotes(ctx, defaultNoteDays); noteErr == nil && len(notes) > 0 {
 		var b strings.Builder
 		b.WriteString("## 📝 近期对话笔记\n")
@@ -132,6 +135,9 @@ func BuildNotePrompt(ctx context.Context) string {
 }
 
 func HandleNote(ctx context.Context, content string) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "HandleNote")
+	defer span.Finish()
+
 	// 超过限制：拒绝保存（硬错误），提示使用 mem_save 记录详细信息
 	if len([]rune(content)) > MaxNoteContentLen {
 		err = fmt.Errorf("笔记超过%d字限制，请精简到%d字以内。如需记录更多信息，请使用 mem_save。",

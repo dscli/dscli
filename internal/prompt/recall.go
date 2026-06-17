@@ -184,6 +184,9 @@ func isSemantic(r rune) bool {
 }
 
 func HandleRecall(ctx context.Context, keywordsStr string, days, limit int) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "HandleRecall")
+	defer span.Finish()
+
 	// 防止 recall 结果撑爆 LLM 上下文
 	const (
 		maxRecallContentRunes = 2000 // 单条消息截断上限

@@ -286,6 +286,9 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, retry 
 
 // webchatSetValue sets the chat textarea value via JS (triggers React onChange).
 func webchatSetValue(ctx context.Context, message string) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "webchatSetValue")
+	defer span.Finish()
+
 	quoted := quoteJS(message)
 	var result map[string]any
 	js := fmt.Sprintf(jsSetTextareaFmt, quoted)
@@ -346,6 +349,9 @@ func webchatWait(ctx context.Context, baseline string) (string, error) {
 // getLastAssistantText returns the text of the last .ds-markdown element,
 // or "" if the selector doesn't match (e.g. DeepSeek changed their DOM).
 func getLastAssistantText(ctx context.Context) string {
+	span, ctx := clog.StartSpanFromContext(ctx, "getLastAssistantText")
+	defer span.Finish()
+
 	var text string
 	if err := chromedp.Evaluate(jsGetLastAssistantText, &text).Do(ctx); err != nil {
 		return ""

@@ -462,6 +462,9 @@ func PrintSessionStats(ctx context.Context) {
 }
 
 func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ...prompt.Message) (err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "ChatRound")
+	defer span.Finish()
+
 	// 1. Construct messages slice (prompts → history → inputs)
 	messages := make([]prompt.Message, 0, len(prompts)+len(history)+len(inputs))
 	messages = append(messages, prompts...)

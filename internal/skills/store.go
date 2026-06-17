@@ -627,6 +627,9 @@ func SetAutoInject(ctx context.Context, name string, autoInject, global bool) er
 }
 
 func HandleSkillCreate(ctx context.Context, name, description, author, content, keywordsStr string, autoInject bool) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "HandleSkillCreate")
+	defer span.Finish()
+
 	// Validate name against spec rules
 	errs := validateName(name)
 	if len(errs) > 0 {

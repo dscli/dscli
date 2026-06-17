@@ -184,6 +184,9 @@ func saveDeepSeekCookies(ctx context.Context) error {
 // browser window. It polls the page URL until we leave the sign_in page,
 // then saves cookies.
 func deepseekLoginManual(ctx context.Context) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "deepseekLoginManual")
+	defer span.Finish()
+
 	fmt.Fprintf(os.Stderr, "\n")
 	fmt.Fprintf(os.Stderr, "┌─────────────────────────────────────────────┐\n")
 	fmt.Fprintf(os.Stderr, "│  请在弹出的浏览器窗口中手动完成登录:        │\n")
@@ -316,6 +319,9 @@ func readCodeFromFile() (string, error) {
 // and index (0-based among matching elements) using the native setter to
 // trigger React change detection.
 func setInputValue(ctx context.Context, selector string, index int, value string) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "setInputValue")
+	defer span.Finish()
+
 	js := fmt.Sprintf(`(() => {
 	const inputs = document.querySelectorAll(%s);
 	if (inputs.length <= %d) return {error: 'input['+%d+'] not found (only '+inputs.length+' matched)'};
@@ -340,6 +346,9 @@ func setInputValue(ctx context.Context, selector string, index int, value string
 // (which uses type=tel), the code input may use various selectors. This
 // function tries multiple heuristics to find the right field.
 func setCodeInput(ctx context.Context, code string) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "setCodeInput")
+	defer span.Finish()
+
 	// Build JS that tries multiple strategies to find the code input.
 	// Strategy 1: input with placeholder containing "验证码" or "code"
 	// Strategy 2: input[type='text'] that is visible (excluding the phone input)
@@ -391,6 +400,9 @@ func setCodeInput(ctx context.Context, code string) error {
 // clickButtonByText clicks a visible button whose text content matches one of
 // the candidate texts. Tries exact match first, then partial match.
 func clickButtonByText(ctx context.Context, texts ...string) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "clickButtonByText")
+	defer span.Finish()
+
 	if len(texts) == 0 {
 		return fmt.Errorf("no button texts provided")
 	}
