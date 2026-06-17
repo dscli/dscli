@@ -41,7 +41,7 @@ func (c *Deepseek) Chat(ctx context.Context, messages []prompt.Message, tools []
 	// 如果是streaming请求，使用streaming处理（带重试）
 	if stream {
 		var resp *ChatResponse
-		err := c.retryWithBackoff("流中断", func() error {
+		err := c.retryWithBackoff(ctx, "流中断", func() error {
 			var err error
 			resp, err = c.chatStream(ctx, req)
 			return err

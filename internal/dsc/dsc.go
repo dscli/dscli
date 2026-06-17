@@ -134,6 +134,8 @@ func NewClient(apiKey, baseURL string) Client {
 
 // Models 获取模型列表
 func (c *Deepseek) Models(ctx context.Context) (*ModelsResponse, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "Models")
+	defer span.Finish()
 	var resp ModelsResponse
 	err := c.doRequest(ctx, "GET", "/models", nil, &resp)
 	return &resp, err

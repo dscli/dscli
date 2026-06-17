@@ -29,6 +29,8 @@ package lp
 import (
 	"context"
 	"fmt"
+
+	"github.com/nanjj/clog"
 )
 
 // ---- Function variables for test injection ----
@@ -46,6 +48,8 @@ var getCloudMCP = func(ctx context.Context) (*MCPClient, error) {
 // Get fetches a web page via LightPanda MCP and returns its markdown content.
 // Each call spawns "lightpanda mcp" as a subprocess per call.
 func Get(ctx context.Context, rawURL string) (string, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "Get")
+	defer span.Finish()
 	markdown, err := getFromMCP(ctx, rawURL)
 	if err != nil {
 		return "", fmt.Errorf("lightpanda mcp 连接失败: %w", err)
@@ -62,6 +66,8 @@ func Get(ctx context.Context, rawURL string) (string, error) {
 // (SSE transport) rather than spawning a local subprocess.
 // Requires lightpanda-remote-token to be configured.
 func GetRemote(ctx context.Context, rawURL string) (string, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "GetRemote")
+	defer span.Finish()
 	mc, err := getCloudMCP(ctx)
 	if err != nil {
 		return "", fmt.Errorf("lightpanda mcp 连接失败: %w", err)

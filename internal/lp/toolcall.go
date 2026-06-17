@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/nanjj/clog"
 )
 
 var (
@@ -139,6 +140,8 @@ func getOrCreateCloudMCPClient() (*MCPClient, error) {
 // handleMCPCall dispatches a tool call to the active MCP client.
 // Uses a persistent singleton so frame state persists across calls.
 func handleMCPCall(ctx context.Context, toolName, argsRaw string) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleMCPCall")
+	defer span.Finish()
 	var args map[string]any
 	if err := json.Unmarshal([]byte(argsRaw), &args); err != nil {
 		return "", "", fmt.Errorf("mcp call %s: invalid args: %w", toolName, err)
@@ -160,6 +163,8 @@ func handleMCPCall(ctx context.Context, toolName, argsRaw string) (result, warni
 // HandleMCPClientTool is the handler for the mcp_client tool.
 // It switches the active MCP target between "local" and "cloud".
 func HandleMCPClientTool(ctx context.Context, target string) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "HandleMCPClientTool")
+	defer span.Finish()
 	switch target {
 	case "local":
 		mcpClientTargetMu.Lock()

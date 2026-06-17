@@ -10,6 +10,7 @@ import (
 
 	"github.com/dscli/dscli/internal/config"
 	"github.com/dscli/dscli/internal/version"
+	"github.com/nanjj/clog"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -60,6 +61,8 @@ type MCPClient struct {
 // "mcp" subcommand, and establishes an MCP session. The caller must call
 // Close when done.
 func NewMCPClient(ctx context.Context) (*MCPClient, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "NewMCPClient")
+	defer span.Finish()
 	path, err := exec.LookPath("lightpanda")
 	if err != nil {
 		return nil, fmt.Errorf("lightpanda not found in PATH: %w", err)
@@ -85,6 +88,8 @@ func NewMCPClient(ctx context.Context) (*MCPClient, error) {
 
 // Close shuts down the MCP session and kills the subprocess.
 func (c *MCPClient) Close() error {
+	span, _ := clog.StartSpanFromContext(context.Background(), "MCPClient.Close")
+	defer span.Finish()
 	return c.session.Close()
 }
 
@@ -92,18 +97,24 @@ func (c *MCPClient) Close() error {
 // If the returned markdown is empty and no error occurred, it means the
 // page loaded but had no extractable text content.
 func (c *MCPClient) GetMarkdown(ctx context.Context, url string) (string, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "GetMarkdown")
+	defer span.Finish()
 	return c.callTool(ctx, "markdown", map[string]any{"url": url})
 }
 
 // GetSemanticTree navigates to a URL and returns the page's simplified
 // semantic DOM tree, optimized for AI reasoning about page structure.
 func (c *MCPClient) GetSemanticTree(ctx context.Context, url string) (string, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "GetSemanticTree")
+	defer span.Finish()
 	return c.callTool(ctx, "semantic_tree", map[string]any{"url": url})
 }
 
 // Evaluate runs JavaScript in the page context and returns the result.
 // If url is non-empty, the page navigates there first before evaluation.
 func (c *MCPClient) Evaluate(ctx context.Context, script, url string) (string, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "Evaluate")
+	defer span.Finish()
 	args := map[string]any{"script": script}
 	if url != "" {
 		args["url"] = url
@@ -113,6 +124,8 @@ func (c *MCPClient) Evaluate(ctx context.Context, script, url string) (string, e
 
 // ListTools returns the list of tools available on the MCP server.
 func (c *MCPClient) ListTools(ctx context.Context) ([]*mcp.Tool, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "ListTools")
+	defer span.Finish()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	result, err := c.session.ListTools(ctx, nil)
@@ -127,6 +140,8 @@ func (c *MCPClient) ListTools(ctx context.Context) ([]*mcp.Tool, error) {
 // that allows calling any tool exposed by the MCP server.
 // The caller is responsible for calling Close after finishing.
 func (c *MCPClient) CallTool(ctx context.Context, name string, args map[string]any) (string, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "CallTool")
+	defer span.Finish()
 	return c.callTool(ctx, name, args)
 }
 
@@ -134,6 +149,8 @@ func (c *MCPClient) CallTool(ctx context.Context, name string, args map[string]a
 // calls the named tool, and handles both transport errors and tool-level
 // errors (isError).
 func (c *MCPClient) callTool(ctx context.Context, name string, args map[string]any) (string, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "callTool")
+	defer span.Finish()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -162,6 +179,8 @@ func (c *MCPClient) callTool(ctx context.Context, name string, args map[string]a
 // NewCloudMCPClient connects to LightPanda Cloud MCP over SSE.
 // Uses lightpanda-cloud-url and lightpanda-remote-token from config.
 func NewCloudMCPClient(ctx context.Context) (*MCPClient, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "NewCloudMCPClient")
+	defer span.Finish()
 	endpoint := config.Get("lightpanda-cloud-url", "https://euwest.cloud.lightpanda.io/mcp/sse")
 	token := config.Get("lightpanda-remote-token", "")
 
@@ -199,6 +218,8 @@ func NewCloudMCPClient(ctx context.Context) (*MCPClient, error) {
 // to the URL via "goto", then extracts page content via "markdown".
 // Each call spawns a fresh process — lightweight enough for sporadic use.
 func defaultGetFromMCP(ctx context.Context, rawURL string) (string, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "defaultGetFromMCP")
+	defer span.Finish()
 	mc, err := NewMCPClient(ctx)
 	if err != nil {
 		return "", fmt.Errorf("mcp client: %w", err)

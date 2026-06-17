@@ -150,14 +150,16 @@ func (c *Deepseek) doRequest(ctx context.Context, method, path string, body, res
 	span, ctx := clog.StartSpanFromContext(ctx, "doReqeust")
 	defer span.Finish()
 	defer outfmt.StartWaiting(time.Second * 3)()
-	return c.retryWithBackoff("网络异常", func() error {
+	return c.retryWithBackoff(ctx, "网络异常", func() error {
 		return c.doRequestSingle(ctx, method, path, body, result)
 	})
 }
 
 // retryWithBackoff executes fn repeatedly with exponential backoff on retryable errors.
 // noticePrefix is used in the retry notification (e.g. "网络异常" or "流中断").
-func (c *Deepseek) retryWithBackoff(noticePrefix string, fn func() error) error {
+func (c *Deepseek) retryWithBackoff(ctx context.Context, noticePrefix string, fn func() error) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "retryWithBackoff")
+	defer span.Finish()
 	var lastErr error
 	for attempt := 0; attempt <= c.maxRetries; attempt++ {
 		if attempt > 0 {

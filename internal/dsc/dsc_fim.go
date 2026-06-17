@@ -12,6 +12,7 @@ import (
 
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/nanjj/clog"
 )
 
 // FIM 实现填充中间代码（Fill-In-the-Middle）功能。
@@ -22,6 +23,8 @@ import (
 //
 // 参考 API 文档: https://api.deepseek.com/beta/completions
 func (c *Deepseek) FIM(ctx context.Context, req FIMRequest) (*FIMResponse, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "FIM")
+	defer span.Finish()
 	// 默认模型：deepseek-v4-pro（FIM API 唯一支持的模型）
 	if req.Model == "" {
 		req.Model = context.ContextValue(ctx, context.CurrentModelNameKey, "deepseek-v4-pro")
@@ -58,6 +61,8 @@ func (c *Deepseek) FIM(ctx context.Context, req FIMRequest) (*FIMResponse, error
 
 // fimStream 处理 FIM 流式请求（SSE）。
 func (c *Deepseek) fimStream(ctx context.Context, req FIMRequest) (*FIMResponse, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "fimStream")
+	defer span.Finish()
 	url := c.baseURL + "/beta/completions"
 
 	data, err := outfmt.JSONMarshal(req)
