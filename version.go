@@ -3,6 +3,8 @@ package main
 import (
 	"runtime"
 
+	"github.com/nanjj/clog"
+
 	"github.com/dscli/dscli/internal/config"
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/outfmt"
@@ -35,6 +37,8 @@ func init() {
 
 func VersionRunE(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+	span, ctx := clog.StartSpanFromContext(ctx, "VersionRunE")
+	defer span.Finish()
 	return versionRunE(ctx)
 }
 

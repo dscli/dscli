@@ -1,10 +1,11 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strconv"
+
+	"github.com/nanjj/clog"
 
 	"github.com/dscli/dscli/internal/mail"
 	"github.com/dscli/dscli/internal/outfmt"
@@ -97,11 +98,13 @@ func init() {
 }
 
 func mailSendRunE(cmd *cobra.Command, args []string) error {
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "mailSendRunE")
+	defer span.Finish()
 	recipient := args[0]
 	subject, _ := cmd.Flags().GetString("subject")
 	body, _ := cmd.Flags().GetString("body")
 
-	result, _, err := mail.HandleSendMail(context.Background(), recipient, subject, body)
+	result, _, err := mail.HandleSendMail(ctx, recipient, subject, body)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "发送邮件失败: %v\n", err)
 		return nil
@@ -111,12 +114,14 @@ func mailSendRunE(cmd *cobra.Command, args []string) error {
 }
 
 func mailReadRunE(cmd *cobra.Command, args []string) error {
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "mailReadRunE")
+	defer span.Finish()
 	mid, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil {
 		return fmt.Errorf("无效的邮件 ID: %w", err)
 	}
 
-	result, _, err := mail.HandleReadMail(context.Background(), mid)
+	result, _, err := mail.HandleReadMail(ctx, mid)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "读取邮件失败: %v\n", err)
 		return nil
@@ -126,10 +131,12 @@ func mailReadRunE(cmd *cobra.Command, args []string) error {
 }
 
 func mailListRunE(cmd *cobra.Command, _ []string) error {
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "mailListRunE")
+	defer span.Finish()
 	unreadOnly, _ := cmd.Flags().GetBool("unread")
 	limit, _ := cmd.Flags().GetInt("limit")
 
-	result, _, err := mail.HandleListMail(context.Background(), unreadOnly, limit)
+	result, _, err := mail.HandleListMail(ctx, unreadOnly, limit)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "列出邮件失败: %v\n", err)
 		return nil
@@ -139,10 +146,12 @@ func mailListRunE(cmd *cobra.Command, _ []string) error {
 }
 
 func mailSearchRunE(cmd *cobra.Command, args []string) error {
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "mailSearchRunE")
+	defer span.Finish()
 	query := args[0]
 	limit, _ := cmd.Flags().GetInt("limit")
 
-	result, _, err := mail.HandleMailSearch(context.Background(), query, limit)
+	result, _, err := mail.HandleMailSearch(ctx, query, limit)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "搜索邮件失败: %v\n", err)
 		return nil
@@ -152,7 +161,9 @@ func mailSearchRunE(cmd *cobra.Command, args []string) error {
 }
 
 func contactsRunE(cmd *cobra.Command, _ []string) error {
-	result, _, err := mail.HandleContacts(context.Background())
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "contactsRunE")
+	defer span.Finish()
+	result, _, err := mail.HandleContacts(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "获取通讯录失败: %v\n", err)
 		return nil
@@ -162,6 +173,8 @@ func contactsRunE(cmd *cobra.Command, _ []string) error {
 }
 
 func mailReplyRunE(cmd *cobra.Command, args []string) error {
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "mailReplyRunE")
+	defer span.Finish()
 	mid, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil {
 		return fmt.Errorf("无效的邮件 ID: %w", err)
@@ -169,7 +182,7 @@ func mailReplyRunE(cmd *cobra.Command, args []string) error {
 	subject, _ := cmd.Flags().GetString("subject")
 	body, _ := cmd.Flags().GetString("body")
 
-	result, _, err := mail.HandleReplyMail(context.Background(), mid, subject, body)
+	result, _, err := mail.HandleReplyMail(ctx, mid, subject, body)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "回复邮件失败: %v\n", err)
 		return nil
@@ -179,12 +192,14 @@ func mailReplyRunE(cmd *cobra.Command, args []string) error {
 }
 
 func mailDeleteRunE(cmd *cobra.Command, args []string) error {
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "mailDeleteRunE")
+	defer span.Finish()
 	mid, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil {
 		return fmt.Errorf("无效的邮件 ID: %w", err)
 	}
 
-	result, _, err := mail.HandleDeleteMail(context.Background(), mid)
+	result, _, err := mail.HandleDeleteMail(ctx, mid)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "删除邮件失败: %v\n", err)
 		return nil

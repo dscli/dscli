@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nanjj/clog"
+
 	"github.com/dscli/dscli/internal/config"
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/editor"
@@ -138,6 +140,8 @@ func historyPreRunE(cmd *cobra.Command, args []string) (err error) {
 
 func historyShowRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
+	span, ctx := clog.StartSpanFromContext(ctx, "historyShowRunE")
+	defer span.Finish()
 	id, err := strconv.Atoi(args[0])
 	if err != nil {
 		return err
@@ -162,6 +166,8 @@ func historyShowRunE(cmd *cobra.Command, args []string) (err error) {
 
 func historyEditRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
+	span, ctx := clog.StartSpanFromContext(ctx, "historyEditRunE")
+	defer span.Finish()
 	id, err := strconv.Atoi(args[0])
 	if err != nil {
 		return err
@@ -217,6 +223,8 @@ func historyEditRunE(cmd *cobra.Command, args []string) (err error) {
 
 func historyUpdateRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
+	span, ctx := clog.StartSpanFromContext(ctx, "historyUpdateRunE")
+	defer span.Finish()
 	id, err := strconv.Atoi(args[0])
 	if err != nil {
 		return err
@@ -230,23 +238,25 @@ func historyUpdateRunE(cmd *cobra.Command, args []string) (err error) {
 
 // historyMoveRunE handles "dscli history move <project_id>".
 func historyMoveRunE(cmd *cobra.Command, args []string) error {
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "historyMoveRunE")
+	defer span.Finish()
 	projectID, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil || projectID <= 0 {
 		return fmt.Errorf("无效的 project_id: %s（需要正整数）", args[0])
 	}
 
-	ctx := cmd.Context()
 	if err := prompt.MoveMessages(ctx, projectID); err != nil {
 		fmt.Fprintf(os.Stderr, "移动历史消息失败: %v\n", err)
 		return nil
 	}
 
-	fmt.Printf("已将当前项目的所有历史消息移动到项目 %d。\n", projectID)
 	return nil
 }
 
 func historyRecentRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
+	span, ctx := clog.StartSpanFromContext(ctx, "historyRecentRunE")
+	defer span.Finish()
 
 	limit, err := cmd.Flags().GetInt("limit")
 	if err != nil {
@@ -295,6 +305,8 @@ func historyRecentRunE(cmd *cobra.Command, args []string) (err error) {
 
 func historyListRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
+	span, ctx := clog.StartSpanFromContext(ctx, "historyListRunE")
+	defer span.Finish()
 	history, err := prompt.ListHistory(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "列出历史消息失败: %v\n", err)
@@ -327,6 +339,8 @@ func historyListRunE(cmd *cobra.Command, args []string) (err error) {
 
 func historyLoadRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
+	span, ctx := clog.StartSpanFromContext(ctx, "historyLoadRunE")
+	defer span.Finish()
 	history, err := prompt.LoadHistory(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "加载历史消息失败: %v\n", err)
@@ -382,6 +396,8 @@ func historyLoadRunE(cmd *cobra.Command, args []string) (err error) {
 }
 
 func recallSearchRunE(cmd *cobra.Command, args []string) (err error) {
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "recallSearchRunE")
+	defer span.Finish()
 	days, err := cmd.Flags().GetInt("days")
 	if err != nil {
 		return err
@@ -402,7 +418,6 @@ func recallSearchRunE(cmd *cobra.Command, args []string) (err error) {
 		}
 	}
 
-	ctx := cmd.Context()
 	results, err := prompt.SearchMessages(ctx, keywords, days, limit)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "搜索历史消息失败: %v\n", err)
@@ -438,6 +453,8 @@ func recallSearchRunE(cmd *cobra.Command, args []string) (err error) {
 
 func historyNotesRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
+	span, ctx := clog.StartSpanFromContext(ctx, "historyNotesRunE")
+	defer span.Finish()
 	days, err := cmd.Flags().GetInt("days")
 	if err != nil {
 		return err

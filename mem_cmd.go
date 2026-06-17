@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/nanjj/clog"
+
 	"github.com/dscli/dscli/internal/memories"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/spf13/cobra"
@@ -67,7 +69,9 @@ func init() {
 // === RunE helpers ==========================================================
 
 func memListRunE(_ *cobra.Command, _ []string) error {
-	rows, err := memories.HandleMemList(context.Background())
+	span, ctx := clog.StartSpanFromContext(context.Background(), "memListRunE")
+	defer span.Finish()
+	rows, err := memories.HandleMemList(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "列出记忆失败: %v\n", err)
 		return nil
@@ -107,11 +111,13 @@ func memListRunE(_ *cobra.Command, _ []string) error {
 }
 
 func memSearchRunE(cmd *cobra.Command, args []string) error {
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "memSearchRunE")
+	defer span.Finish()
 	query := args[0]
 	typ, _ := cmd.Flags().GetString("type")
 	limit, _ := cmd.Flags().GetInt("limit")
 
-	result, warning, err := memories.HandleMemSearch(context.Background(), query, typ, limit)
+	result, warning, err := memories.HandleMemSearch(ctx, query, typ, limit)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "搜索记忆失败: %v\n", err)
 		return nil
@@ -124,12 +130,14 @@ func memSearchRunE(cmd *cobra.Command, args []string) error {
 }
 
 func memShowRunE(cmd *cobra.Command, args []string) error {
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "memShowRunE")
+	defer span.Finish()
 	id, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil {
 		return fmt.Errorf("无效的 ID: %w", err)
 	}
 
-	result, warning, err := memories.HandleMemGetObservation(context.Background(), id)
+	result, warning, err := memories.HandleMemGetObservation(ctx, id)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "获取记忆失败: %v\n", err)
 		return nil
@@ -142,7 +150,9 @@ func memShowRunE(cmd *cobra.Command, args []string) error {
 }
 
 func memStatsRunE(cmd *cobra.Command, _ []string) error {
-	result, warning, err := memories.HandleMemStats(context.Background())
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "memStatsRunE")
+	defer span.Finish()
+	result, warning, err := memories.HandleMemStats(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "获取记忆统计失败: %v\n", err)
 		return nil

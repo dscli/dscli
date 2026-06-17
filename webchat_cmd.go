@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nanjj/clog"
+
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/lp"
 	"github.com/dscli/dscli/internal/outfmt"
@@ -42,6 +44,8 @@ func init() {
 }
 
 func webchatRunE(cmd *cobra.Command, args []string) error {
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "webchatRunE")
+	defer span.Finish()
 	message, err := gatherWebchatInput(cmd, args)
 	if err != nil {
 		return err
@@ -49,7 +53,7 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 
 	keep, _ := cmd.Flags().GetBool("keep")
 
-	ctx := context.WithValue(cmd.Context(), context.KeepKey, keep)
+	ctx = context.WithValue(ctx, context.KeepKey, keep)
 	var response string
 	startTime := time.Now()
 

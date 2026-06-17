@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/nanjj/clog"
+
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/editor"
 	"github.com/dscli/dscli/internal/outfmt"
@@ -66,6 +68,8 @@ func promptName(args []string) (string, error) {
 
 // promptListRunE 列出所有可用提示词
 func promptListRunE(cmd *cobra.Command, args []string) error {
+	span, _ := clog.StartSpanFromContext(cmd.Context(), "promptListRunE")
+	defer span.Finish()
 	infos := prompt.ListPrompts()
 	if len(infos) == 0 {
 		outfmt.Println("没有可用的提示词")
@@ -79,6 +83,8 @@ func promptListRunE(cmd *cobra.Command, args []string) error {
 
 // promptShowRunE 显示提示词内容
 func promptShowRunE(cmd *cobra.Command, args []string) error {
+	span, _ := clog.StartSpanFromContext(cmd.Context(), "promptShowRunE")
+	defer span.Finish()
 	name, err := promptName(args)
 	if err != nil {
 		return err
@@ -91,6 +97,8 @@ func promptShowRunE(cmd *cobra.Command, args []string) error {
 // promptEditRunE 编辑提示词
 // 若目标文件不存在，自动从更高作用域（全局/内建）拷贝内容作为编辑起点。
 func promptEditRunE(cmd *cobra.Command, args []string) error {
+	span, _ := clog.StartSpanFromContext(cmd.Context(), "promptEditRunE")
+	defer span.Finish()
 	name, err := promptName(args)
 	if err != nil {
 		return err
@@ -127,6 +135,8 @@ func promptEditRunE(cmd *cobra.Command, args []string) error {
 }
 
 func promptRemoveRunE(cmd *cobra.Command, args []string) error {
+	span, _ := clog.StartSpanFromContext(cmd.Context(), "promptRemoveRunE")
+	defer span.Finish()
 	name, err := promptName(args)
 	if err != nil {
 		return err
@@ -160,6 +170,8 @@ func promptRemoveRunE(cmd *cobra.Command, args []string) error {
 }
 
 func promptAddRunE(cmd *cobra.Command, args []string) error {
+	span, _ := clog.StartSpanFromContext(cmd.Context(), "promptAddRunE")
+	defer span.Finish()
 	name, err := promptName(args)
 	if err != nil {
 		return err

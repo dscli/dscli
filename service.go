@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/nanjj/clog"
+
 	"github.com/dscli/dscli/internal/userservice"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -157,6 +159,8 @@ Create 是幂等的：如果服务文件已存在且内容相同，不会重复�
 }
 
 func serviceCreateRunE(cmd *cobra.Command, args []string) error {
+	span, _ := clog.StartSpanFromContext(cmd.Context(), "serviceCreateRunE")
+	defer span.Finish()
 	name := args[0]
 
 	if term.IsTerminal(int(os.Stdin.Fd())) {
@@ -208,6 +212,8 @@ func serviceCreateRunE(cmd *cobra.Command, args []string) error {
 }
 
 func serviceDeleteRunE(cmd *cobra.Command, args []string) error {
+	span, _ := clog.StartSpanFromContext(cmd.Context(), "serviceDeleteRunE")
+	defer span.Finish()
 	name := args[0]
 
 	if err := userservice.Delete(name); err != nil {
@@ -220,6 +226,8 @@ func serviceDeleteRunE(cmd *cobra.Command, args []string) error {
 }
 
 func serviceStartRunE(cmd *cobra.Command, args []string) error {
+	span, _ := clog.StartSpanFromContext(cmd.Context(), "serviceStartRunE")
+	defer span.Finish()
 	name := args[0]
 
 	if err := userservice.Start(name); err != nil {
@@ -232,6 +240,8 @@ func serviceStartRunE(cmd *cobra.Command, args []string) error {
 }
 
 func serviceStopRunE(cmd *cobra.Command, args []string) error {
+	span, _ := clog.StartSpanFromContext(cmd.Context(), "serviceStopRunE")
+	defer span.Finish()
 	name := args[0]
 
 	if err := userservice.Stop(name); err != nil {
@@ -244,6 +254,8 @@ func serviceStopRunE(cmd *cobra.Command, args []string) error {
 }
 
 func serviceListRunE(cmd *cobra.Command, args []string) error {
+	span, _ := clog.StartSpanFromContext(cmd.Context(), "serviceListRunE")
+	defer span.Finish()
 	scan, _ := cmd.Flags().GetBool("scan")
 
 	names, err := userservice.List()
@@ -305,6 +317,8 @@ func serviceListRunE(cmd *cobra.Command, args []string) error {
 }
 
 func serviceStatusRunE(cmd *cobra.Command, args []string) error {
+	span, _ := clog.StartSpanFromContext(cmd.Context(), "serviceStatusRunE")
+	defer span.Finish()
 	scan, _ := cmd.Flags().GetBool("scan")
 
 	if len(args) == 1 {

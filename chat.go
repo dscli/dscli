@@ -99,6 +99,8 @@ func readChimein(ctx context.Context) string {
 
 func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
+	span, ctx := clog.StartSpanFromContext(ctx, "ChatRunE")
+	defer span.Finish()
 
 	// 1. 优先从非阻塞来源读取内容（args 或 --input 文件路径）。
 	//    此时不读取 stdin，避免在没有主进程时因无输入而超时出错。

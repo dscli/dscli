@@ -6,6 +6,8 @@ import (
 
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/dsc"
+	"github.com/nanjj/clog"
+
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/spf13/cobra"
 )
@@ -37,6 +39,8 @@ Examples:
 }
 
 func FimRunE(cmd *cobra.Command, args []string) (err error) {
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "FimRunE")
+	defer span.Finish()
 	prompt, err := ReadInput(cmd, args)
 	if err != nil {
 		return err
@@ -73,7 +77,6 @@ func FimRunE(cmd *cobra.Command, args []string) (err error) {
 		stop = fimStop
 	}
 
-	ctx := cmd.Context()
 	ctx = context.WithValue(ctx, context.CurrentModelIDKey, DeepseekChat)
 	resp, err := DeepseekClient.FIM(ctx, dsc.FIMRequest{
 		Model:       context.ModelDeepseekChat,

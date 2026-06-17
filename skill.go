@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/nanjj/clog"
+
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/skills"
@@ -152,6 +154,8 @@ source 为技能目录路径（包含 SKILL.md 的目录）。
 }
 
 func skillValidateRunE(cmd *cobra.Command, args []string) error {
+	span, _ := clog.StartSpanFromContext(cmd.Context(), "skillValidateRunE")
+	defer span.Finish()
 	arg := args[0]
 
 	// 1. Try as directory path first
@@ -188,6 +192,8 @@ func skillValidateRunE(cmd *cobra.Command, args []string) error {
 
 // skillListRunE 列出所有技能
 func skillListRunE(cmd *cobra.Command, args []string) error {
+	span, _ := clog.StartSpanFromContext(cmd.Context(), "skillListRunE")
+	defer span.Finish()
 	skillInfos, err := skills.ListAll()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "列出技能失败: %v\n", err)
@@ -233,6 +239,8 @@ func skillListRunE(cmd *cobra.Command, args []string) error {
 }
 
 func runSkillRemove(cmd *cobra.Command, args []string) error {
+	span, _ := clog.StartSpanFromContext(cmd.Context(), "runSkillRemove")
+	defer span.Finish()
 	skillName := args[0]
 	global, _ := cmd.Flags().GetBool("global")
 
@@ -321,6 +329,8 @@ func isStaleCacheEntry(skillName, skillsDir string) bool {
 }
 
 func runSkillAdd(cmd *cobra.Command, args []string) error {
+	span, _ := clog.StartSpanFromContext(cmd.Context(), "runSkillAdd")
+	defer span.Finish()
 	sourcePath := args[0]
 	target, _ := cmd.Flags().GetString("target")
 
@@ -485,6 +495,8 @@ func copyDir(src, dst string) error {
 }
 
 func skillShowRunE(cmd *cobra.Command, args []string) error {
+	span, _ := clog.StartSpanFromContext(cmd.Context(), "skillShowRunE")
+	defer span.Finish()
 	skillName := args[0]
 	content, err := skills.Use(skillName)
 	if err != nil {
@@ -497,6 +509,8 @@ func skillShowRunE(cmd *cobra.Command, args []string) error {
 }
 
 func skillQueryRunE(cmd *cobra.Command, args []string) error {
+	span, _ := clog.StartSpanFromContext(cmd.Context(), "skillQueryRunE")
+	defer span.Finish()
 	query := args[0]
 	result, err := skills.Query(query)
 	if err != nil {
@@ -509,6 +523,8 @@ func skillQueryRunE(cmd *cobra.Command, args []string) error {
 }
 
 func skillSetAutoInjectRunE(cmd *cobra.Command, args []string) error {
+	span, _ := clog.StartSpanFromContext(cmd.Context(), "skillSetAutoInjectRunE")
+	defer span.Finish()
 	name := args[0]
 	val := args[1]
 	var autoInject bool

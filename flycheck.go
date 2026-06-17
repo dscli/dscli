@@ -7,6 +7,8 @@ import (
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/flycheck"
 	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/nanjj/clog"
+
 	"github.com/spf13/cobra"
 )
 
@@ -54,11 +56,15 @@ Examples:
 }
 
 func flycheckRunE(cmd *cobra.Command, args []string) error {
+	span, _ := clog.StartSpanFromContext(cmd.Context(), "flycheckRunE")
+	defer span.Finish()
 	return flycheckRunEImpl(args[0])
 }
 
 func flycheckRunEImpl(path string) error {
 	ctx := context.Background()
+	span, ctx := clog.StartSpanFromContext(ctx, "flycheckRunEImpl")
+	defer span.Finish()
 	if flycheckEmacs {
 		ctx = context.WithValue(ctx, flycheck.EmacsKey, true)
 	}

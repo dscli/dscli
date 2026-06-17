@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/nanjj/clog"
+
 	"github.com/dscli/dscli/internal/lp"
 	"github.com/spf13/cobra"
 )
@@ -28,11 +30,12 @@ func init() {
 }
 
 func webReaderRunE(cmd *cobra.Command, args []string) error {
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "webReaderRunE")
+	defer span.Finish()
 	url := args[0]
 	timeout, _ := cmd.Flags().GetInt("timeout")
 	forceRemote, _ := cmd.Flags().GetBool("force-remote")
 
-	ctx := cmd.Context()
 	if timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
