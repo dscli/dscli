@@ -30,6 +30,8 @@ import (
 //	bool: 如果是有效的Shell脚本返回true，否则返回false
 //	error: 解析过程中的错误信息（如果脚本不是有效的Shell脚本，会返回具体的语法错误）
 func IsShellScript(ctx context.Context, script string) (bool, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "IsShellScript")
+	defer span.Finish()
 	// 创建语法解析器
 	parser := syntax.NewParser()
 
@@ -114,6 +116,8 @@ func VerifySystemCommand(ctx context.Context, cmd string) (*CommandInfo, error) 
 // 按优先级依次尝试常见版本查询参数，返回首行输出。
 // 所有尝试都失败则返回空字符串。
 func tryGetVersion(ctx context.Context, path string) string {
+	span, ctx := clog.StartSpanFromContext(ctx, "tryGetVersion")
+	defer span.Finish()
 	// 按优先级排列：--version 是 GNU 标准，-version 次之，version 子命令再次
 	versionFlags := [][]string{
 		{"--version"},
@@ -155,6 +159,8 @@ func tryGetVersion(ctx context.Context, path string) string {
 //
 //	bool: 命令可用返回 true
 func IsCommandAvailable(ctx context.Context, cmd string, allowedCommands []string) bool {
+	span, ctx := clog.StartSpanFromContext(ctx, "IsCommandAvailable")
+	defer span.Finish()
 	// 检查是否在允许列表中（快速路径：O(n)，n 为允许命令数 ≈ 55）
 	for _, allowed := range allowedCommands {
 		if allowed == cmd {
@@ -194,6 +200,8 @@ checkSystem:
 //
 //	string: Markdown 格式的命令描述（无可用命令时返回提示信息）
 func GetAvailableCommandsDescription(ctx context.Context) string {
+	span, ctx := clog.StartSpanFromContext(ctx, "GetAvailableCommandsDescription")
+	defer span.Finish()
 	categories := getCommandCategories()
 	var b strings.Builder
 

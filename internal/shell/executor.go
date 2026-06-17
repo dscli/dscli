@@ -89,7 +89,10 @@ type Result struct {
 }
 
 // DefaultConfig 返回默认配置
+// DefaultConfig 创建默认配置
 func DefaultConfig(ctx context.Context) *Config {
+	span, ctx := clog.StartSpanFromContext(ctx, "DefaultConfig")
+	defer span.Finish()
 	return &Config{
 		WorkingDir:    ".",
 		EnvVars:       os.Environ(),
@@ -103,6 +106,8 @@ func DefaultConfig(ctx context.Context) *Config {
 
 // DefaultSandboxConfig 返回默认沙箱配置
 func DefaultSandboxConfig(ctx context.Context) *SandboxConfig {
+	span, ctx := clog.StartSpanFromContext(ctx, "DefaultSandboxConfig")
+	defer span.Finish()
 	return &SandboxConfig{
 		AllowedCommands:   getAllowedCommands(),
 		AllowedPaths:      []string{"."},
