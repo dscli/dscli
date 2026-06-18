@@ -5,8 +5,8 @@ import (
 
 	_ "embed"
 
-	"github.com/nanjj/clog"
 	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/nanjj/clog"
 )
 
 //go:embed file_read.md
