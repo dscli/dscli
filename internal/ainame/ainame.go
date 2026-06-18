@@ -163,8 +163,6 @@ var (
 //
 // session not initialized → returns 0 (nobody).
 func GetCurrentNameID(ctx context.Context) int64 {
-	span, ctx := clog.StartSpanFromContext(ctx, "GetCurrentNameID")
-	defer span.Finish()
 	currentNameIDOnce.Do(func() {
 		sessionID := session.GetCurrentSessionID(ctx)
 		currentNameID.Store(GetNameID(ctx, sessionID))

@@ -8,7 +8,7 @@ import (
 )
 
 func init() {
-	tracer, err := clog.NewTracer("Dscli")
+	tracer, err := clog.NewTracerWithOptions("Dscli")
 	if err != nil {
 		panic(err)
 	}
@@ -16,12 +16,7 @@ func init() {
 }
 
 func main() {
-	defer func() {
-		tracer := clog.GlobalTracer()
-		if tracer != nil {
-			tracer.Close()
-		}
-	}()
+	defer clog.CloseTracer(clog.GlobalTracer())
 	if err := RootExecute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

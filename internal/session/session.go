@@ -30,8 +30,6 @@ var (
 
 // GetCurrentSessionID 获取当前会话ID（线程安全，仅初始化一次）
 func GetCurrentSessionID(ctx context.Context) (sessionID int64) {
-	span, ctx := clog.StartSpanFromContext(ctx, "GetCurrentSessionID")
-	defer span.Finish()
 	sessionOnce.Do(func() {
 		id, err := CreateOrGetSessionID(ctx)
 		if err != nil {

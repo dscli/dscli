@@ -47,8 +47,6 @@ type ScoredSkill struct {
 }
 
 func LocalStore(ctx context.Context) (*Store, error) {
-	span, ctx := clog.StartSpanFromContext(ctx, "LocalStore")
-	defer span.Finish()
 	localOnce.Do(func() {
 		config.EnsureProjectGitignore(context.ProjectRoot) // 确保 .dscli/.gitignore 存在
 
@@ -74,8 +72,6 @@ func LocalStore(ctx context.Context) (*Store, error) {
 }
 
 func GlobalStore(ctx context.Context) (*Store, error) {
-	span, ctx := clog.StartSpanFromContext(ctx, "GlobalSkill")
-	defer span.Finish()
 	globalOnce.Do(func() {
 		dir := filepath.Join(config.ConfigDir, "skills")
 		globalErr = os.MkdirAll(dir, 0o755)
