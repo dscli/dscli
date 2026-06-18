@@ -6,7 +6,7 @@ require (
 	github.com/chromedp/chromedp v0.15.1
 	github.com/goccy/go-yaml v1.19.2
 	github.com/mattn/go-runewidth v0.0.19
-	github.com/nanjj/clog v0.1.1
+	github.com/nanjj/clog v0.1.2
 	github.com/spf13/cobra v1.8.0
 	golang.org/x/term v0.41.0
 	golang.org/x/text v0.35.0
