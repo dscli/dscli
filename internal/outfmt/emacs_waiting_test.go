@@ -101,21 +101,19 @@ func TestShowEmacsAnimationIntegration(t *testing.T) {
 		done := make(chan bool)
 
 		// 设置快速测试间隔
-		os.Setenv("EMACS", "1") // 1秒间隔，但我们会很快完成
+		t.Setenv("EMACS", "1")
 
 		// 启动动画（在goroutine中）
 		go func() {
 			showEmacsAnimation(ctx, done)
 		}()
 
-		// 立即发送完成信号
-		time.Sleep(50 * time.Millisecond)
+		// 给 goroutine 一点时间启动
+		time.Sleep(10 * time.Millisecond)
 		done <- true
 
 		// 给一点时间让goroutine结束
-		time.Sleep(100 * time.Millisecond)
-
-		os.Unsetenv("EMACS")
+		time.Sleep(20 * time.Millisecond)
 	})
 
 	t.Run("取消上下文", func(t *testing.T) {
@@ -124,21 +122,19 @@ func TestShowEmacsAnimationIntegration(t *testing.T) {
 		done := make(chan bool)
 
 		// 设置快速测试间隔
-		os.Setenv("EMACS", "1")
+		t.Setenv("EMACS", "1")
 
 		// 启动动画
 		go func() {
 			showEmacsAnimation(ctx, done)
 		}()
 
-		// 立即取消
-		time.Sleep(50 * time.Millisecond)
+		// 给 goroutine 一点时间启动
+		time.Sleep(10 * time.Millisecond)
 		cancel()
 
 		// 给一点时间让goroutine结束
-		time.Sleep(100 * time.Millisecond)
-
-		os.Unsetenv("EMACS")
+		time.Sleep(20 * time.Millisecond)
 	})
 }
 
