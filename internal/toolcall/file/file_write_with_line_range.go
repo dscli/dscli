@@ -83,7 +83,7 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 	if n := detectCASTags(content); n >= casTagThreshold {
 		err = fmt.Errorf(
 			"内容包含疑似 read_file CAS tag（检测到 %d 行含有 CAS tag 前缀）。\n"+
-				"write_file_with_line_range 的 content 参数不应包含 read_file 输出的行首 TAG（如 \"Q8fA\"）。\n"+
+				"write_file_with_line_range 的 content 参数不应包含 read_file 输出的行首 TAG（如 \"[Q8fA]\"）。\n"+
 				"请去除这些 CAS tag 前缀后重试。",
 			n,
 		)

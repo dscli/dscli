@@ -94,7 +94,7 @@ func handleReadFileWithLineRange(ctx context.Context, args ToolArgs) (result, wa
 		inRange := lineNum >= startLine && (endLine == -1 || lineNum <= endLine)
 		if inRange {
 			tag := computeLineTag(line)
-			fmt.Fprintf(&resultBuilder, "%d:%s %s\n", lineNum, tag, line)
+			fmt.Fprintf(&resultBuilder, "%d:[%s] %s\n", lineNum, tag, line)
 			linesRead++
 		}
 		// 不提前退出：即使超出 endLine，仍继续扫描以获取总行数

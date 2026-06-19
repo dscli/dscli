@@ -52,62 +52,62 @@ Last but not least, verify`,
 		},
 		{
 			name: "detect - bare CAS tags with mixed chars",
-			content: `Q8fA package main
-eh7b import "fmt"
-4Y5Q func main() {
-_1aB fmt.Println("hello")
+			content: `[Q8fA] package main
+[eh7b] import "fmt"
+[4Y5Q] func main() {
+[_1aB] fmt.Println("hello")
 }`,
 			want: 4,
 		},
 		{
 			name: "detect - full colon format with line numbers",
-			content: `1:Q8fA package main
-2:eh7b import "fmt"
-3:4Y5Q func main() {
-4:_1aB fmt.Println("hello")
+			content: `1:[Q8fA] package main
+2:[eh7b] import "fmt"
+3:[4Y5Q] func main() {
+4:[_1aB] fmt.Println("hello")
 }`,
 			want: 4,
 		},
 		{
 			name: "detect - below threshold (2 lines bare tag)",
-			content: `Q8fA line one
-eh7b line two
+			content: `[Q8fA] line one
+[eh7b] line two
 normal line without tags`,
 			want: 2,
 		},
 		{
 			name: "detect - mixed format (colon + bare)",
-			content: `1:Q8fA package main
-eh7b import "fmt"
-4Y5Q func main() {
+			content: `1:[Q8fA] package main
+[eh7b] import "fmt"
+[4Y5Q] func main() {
 normal line without tags`,
 			want: 3,
 		},
 		{
 			name: "detect - tags with digits only",
-			content: `1abc line one
-2def line two
-3ghi line three`,
+			content: `[1abc] line one
+[2def] line two
+[3ghi] line three`,
 			want: 3,
 		},
 		{
 			name: "detect - tags with underscore",
-			content: `_abc line one
-_d2f line two
-_g3i line three`,
+			content: `[_abc] line one
+[_d2f] line two
+[_g3i] line three`,
 			want: 3,
 		},
 		{
 			name: "no tags - single tag line alone (below threshold)",
-			content: `Q8fA just one line with a tag
+			content: `[Q8fA] just one line with a tag
 rest of file is normal and clean`,
 			want: 1,
 		},
 		{
 			name: "detect - tags with non-first uppercase",
-			content: `Q8fA first line
-aBcd second line
-AbCd third line`,
+			content: `[Q8fA] first line
+[aBcd] second line
+[AbCd] third line`,
 			want: 3,
 		},
 	}
