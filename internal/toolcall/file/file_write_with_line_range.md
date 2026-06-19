@@ -12,6 +12,9 @@ Write content to a specific line range in a file. Supports:
 
 4. Create: create a new file if it doesn't exist
 
+**Safety**: when `end_line` is omitted, defaults to `start_line` (single-line edit).
+Use `end_line=-1` explicitly to replace from `start_line` to end of file.
+
 **CAS tag verification** (optional): pass line_tag (single)
 or line_tags (multi,
 
@@ -28,10 +31,10 @@ window showing the file state around the edit. Set false
 to suppress and save output tokens.
 
 Examples:
-  write_file_with_line_range(path="file.txt", start_line=5, end_line=10, content="new")
-  write_file_with_line_range(path="file.txt", start_line=5, end_line=10, content="")
-  write_file_with_line_range(path="file.txt", start_line=5, content="new")
-  write_file_with_line_range(path="file.txt", start_line=5, content="new")
+  write_file_with_line_range(path="file.txt", start_line=5, end_line=10, content="new")   — replace lines 5-10
+  write_file_with_line_range(path="file.txt", start_line=5, end_line=10, content="")       — delete lines 5-10
+  write_file_with_line_range(path="file.txt", start_line=5, content="new")                 — replace line 5 only
+  write_file_with_line_range(path="file.txt", start_line=5, end_line=-1, content="new")    — replace line 5 to end
   write_file_with_line_range(path="file.txt", start_line=10, line_tag="Q8fA", content="int count = 11;")
   write_file_with_line_range(path="file.txt", start_line=11, line_tags="rA3_
 Kq9z

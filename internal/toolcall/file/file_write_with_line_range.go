@@ -40,7 +40,7 @@ func init() {
 				},
 				"end_line": map[string]any{
 					"type":        "integer",
-					"description": "End line, optional, default end of file",
+					"description": "End line (inclusive). Optional: defaults to start_line (single-line edit); use -1 to replace to end of file.",
 				},
 				"line_tag": map[string]any{
 					"type":        "string",
@@ -100,6 +100,12 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 	if err != nil {
 		err = fmt.Errorf("failed to parse line range: %w", err)
 		return result, warning, err
+	}
+
+	// 方案A: 不指定 end_line 时默认只编辑 start_line 这一行
+	// 如需替换到文件末尾，请显式传递 end_line=-1
+	if _, endLineProvided := args["end_line"]; !endLineProvided {
+		endLine = startLine
 	}
 
 	// 计算新内容的行数

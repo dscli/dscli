@@ -83,6 +83,7 @@ Line 5`,
 			args: toolcall.ToolArgs{
 				"path":       "test.txt",
 				"start_line": int64(3),
+				"end_line":   int64(-1),
 				"content":    "New Line 3\nNew Line 4",
 			},
 			checkFile: func(t *testing.T, filePath string) {
@@ -109,6 +110,7 @@ Line 5`,
 			args: toolcall.ToolArgs{
 				"path":       "test.txt",
 				"start_line": int64(3),
+				"end_line":   int64(-1),
 				"content":    "",
 			},
 			checkFile: func(t *testing.T, filePath string) {
@@ -128,8 +130,9 @@ Line 2`
 			initialFile: `Old Line 1
 Old Line 2`,
 			args: toolcall.ToolArgs{
-				"path":    "test.txt",
-				"content": "New Line 1\nNew Line 2\nNew Line 3",
+				"path":     "test.txt",
+				"end_line": int64(-1),
+				"content":  "New Line 1\nNew Line 2\nNew Line 3",
 			},
 			checkFile: func(t *testing.T, filePath string) {
 				content, err := os.ReadFile(filePath)
@@ -150,8 +153,9 @@ New Line 3`
 Line 2
 Line 3`,
 			args: toolcall.ToolArgs{
-				"path":    "test.txt",
-				"content": "",
+				"path":     "test.txt",
+				"end_line": int64(-1),
+				"content":  "",
 			},
 			checkFile: func(t *testing.T, filePath string) {
 				content, err := os.ReadFile(filePath)
@@ -379,8 +383,9 @@ Line 3`
 			initialFile: `Line 1
 Line 2`,
 			args: toolcall.ToolArgs{
-				"path":    "test.txt",
-				"content": "New Line 1\nNew Line 2\n",
+				"path":     "test.txt",
+				"end_line": int64(-1),
+				"content":  "New Line 1\nNew Line 2\n",
 			},
 			checkFile: func(t *testing.T, filePath string) {
 				content, err := os.ReadFile(filePath)
