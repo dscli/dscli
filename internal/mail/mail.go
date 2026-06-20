@@ -190,7 +190,20 @@ func updateMailFTS(db *sqlite.DB, id int64, subject, body string) error {
 
 // === Handlers ==================================================================
 
+// parseEmail extracts the email address from "Name <email>" format.
+// If the input doesn't contain angle brackets, it returns the input unchanged.
+func parseEmail(s string) string {
+	if i := strings.Index(s, "<"); i >= 0 {
+		if j := strings.Index(s[i+1:], ">"); j >= 0 {
+			return strings.TrimSpace(s[i+1 : i+1+j])
+		}
+	}
+	return s
+}
+
 // HandleSendMail sends a mail to a recipient identified by name or email.
+// The recipient can be a plain name, plain email, or "Name <email>" format
+// (as displayed by the contacts command).
 func HandleSendMail(ctx context.Context, recipient, subject, body string) (result, warning string, err error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "HandleSendMail")
 	defer span.Finish()
@@ -211,6 +224,9 @@ func HandleSendMail(ctx context.Context, recipient, subject, body string) (resul
 	}
 	defer db.Close(ctx)
 
+	// Support "Name <email>" format by extracting the email part.
+	lookupEmail := parseEmail(recipient)
+
 	// Look up recipient by name_en or email (case insensitive).
 	var recipientNameID int64
 	var recipientNameEN, recipientEmail string
@@ -218,7 +234,7 @@ func HandleSendMail(ctx context.Context, recipient, subject, body string) (resul
 		`SELECT id, name_en, email FROM ai_names
 		 WHERE LOWER(name_en) = LOWER(?) OR LOWER(email) = LOWER(?)
 		 LIMIT 1`,
-		recipient, recipient,
+		lookupEmail, lookupEmail,
 	).Scan(&recipientNameID, &recipientNameEN, &recipientEmail)
 	if err != nil {
 		if err == sql.ErrNoRows {

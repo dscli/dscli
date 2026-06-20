@@ -49,7 +49,7 @@ func TestHandleSendMail(t *testing.T) {
 	})
 
 	t.Run("send by email", func(t *testing.T) {
-		email := strings.ToLower(me) + "@dscli.io"
+		email := strings.ReplaceAll(strings.ToLower(me), " ", "") + "@dscli.io"
 		result, _, err := HandleSendMail(context.Background(), email, "Email主题", "正文")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -109,6 +109,44 @@ func TestHandleSendMail(t *testing.T) {
 			t.Errorf("expected '邮件已发送', got: %s", result)
 		}
 	})
+
+	t.Run("name email format", func(t *testing.T) {
+		nameEmail := fmt.Sprintf("%s <%s>", me, strings.ReplaceAll(strings.ToLower(me), " ", "")+"@dscli.io")
+		result, _, err := HandleSendMail(context.Background(), nameEmail, "Name邮箱格式", "正文")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(result, "邮件已发送") {
+			t.Errorf("expected '邮件已发送', got: %s", result)
+		}
+	})
+}
+
+// === parseEmail =============================================================
+
+func TestParseEmail(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{`Bohr <bohr@dscli.io>`, `bohr@dscli.io`},
+		{`Bohr<bohr@dscli.io>`, `bohr@dscli.io`},
+		{`<bohr@dscli.io>`, `bohr@dscli.io`},
+		{`bohr@dscli.io`, `bohr@dscli.io`},
+		{`Bohr`, `Bohr`},
+		{``, ``},
+		{`<a>`, `a`},
+		{`Name <email@domain.com>`, `email@domain.com`},
+		{`Name <email> extra`, `email`}, // extra content after > is ignored
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := parseEmail(tt.input)
+			if got != tt.expected {
+				t.Errorf("parseEmail(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
 }
 
 // === HandleReadMail & HandleListMail ==========================================
