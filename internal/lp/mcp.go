@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -69,6 +70,9 @@ func NewMCPClient(ctx context.Context) (*MCPClient, error) {
 	}
 
 	cmd := exec.CommandContext(ctx, path, "mcp")
+	// 注入 trace 上下文，使 lightpanda mcp 子进程继承当前 span。
+	cmd.Env = append(os.Environ(), clog.TraceEnv(span)...)
+
 	transport := &mcp.CommandTransport{Command: cmd}
 	client := mcp.NewClient(&mcp.Implementation{
 		Name:    "dscli",

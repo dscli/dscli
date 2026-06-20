@@ -54,12 +54,8 @@ github.com/mattn/go-runewidth v0.0.19 h1:v++JhqYnZuu5jSKrk9RbgF5v4CGUjqRfBm05byF
 github.com/mattn/go-runewidth v0.0.19/go.mod h1:XBkDxAl56ILZc9knddidhrOlY5R/pDhgLpndooCuJAs=
 github.com/modelcontextprotocol/go-sdk v1.6.1 h1:0zOSupjKUxPKSocPT1Wtago+mUHU2/uZ4xSOY0FGReU=
 github.com/modelcontextprotocol/go-sdk v1.6.1/go.mod h1:kzm3kzFL1/+AziGOE0nUs3gvPoNxMCvkxokMkuFapXQ=
-github.com/nanjj/clog v0.1.0 h1:gUk/E+XfMTRQEnp7q7oU3QBFC58kphOuzG97rHa0rio=
-github.com/nanjj/clog v0.1.0/go.mod h1:NJ8TabwP8398XUE5FQQK8nC0odx4A47QAjQkCRX2Aqw=
-github.com/nanjj/clog v0.1.1 h1:QWZN4WIilflzOla3kuLLK1g0ij0NyP3ILN4oKRO6REw=
-github.com/nanjj/clog v0.1.1/go.mod h1:NJ8TabwP8398XUE5FQQK8nC0odx4A47QAjQkCRX2Aqw=
-github.com/nanjj/clog v0.1.2 h1:bWGrQ8SwCi4TFv1hPLg7cBVYS9ipm7GUwtKdQ09R6Gs=
-github.com/nanjj/clog v0.1.2/go.mod h1:NJ8TabwP8398XUE5FQQK8nC0odx4A47QAjQkCRX2Aqw=
+github.com/nanjj/clog v0.1.4 h1:9a0rqQW6bnoOiM0+gkcnTzhlGQQcwEIRBL4BnUWIjD4=
+github.com/nanjj/clog v0.1.4/go.mod h1:NJ8TabwP8398XUE5FQQK8nC0odx4A47QAjQkCRX2Aqw=
 github.com/ncruces/go-strftime v1.0.0 h1:HMFp8mLCTPp341M/ZnA4qaf7ZlsbTc+miZjCLOFAw7w=
 github.com/ncruces/go-strftime v1.0.0/go.mod h1:Fwc5htZGVVkseilnfgOVb9mKy6w1naJmn9CehxcKcls=
 github.com/opentracing/opentracing-go v1.2.0 h1:uEJPy/1a5RIPAJ0Ov+OIO8OxWu77jEv+1B0VhjKrZUs=

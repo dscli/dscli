@@ -170,6 +170,8 @@ func runPythonParsePy(ctx context.Context, filePath, lang string) (output string
 
 	// 执行缓存的Python脚本
 	cmd := exec.CommandContext(ctx, "python3", "-u", cacheFile)
+	// 注入 trace 上下文，使 python3 子进程继承当前 span。
+	cmd.Env = append(os.Environ(), clog.TraceEnv(span)...)
 
 	cmd.Stdin = strings.NewReader(string(jsonInput))
 

@@ -250,6 +250,7 @@ func NewExecutor(ctx context.Context, config *Config) *Executor {
 func (e *Executor) Execute(ctx context.Context, script string) (*Result, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "Execute")
 	defer span.Finish()
+
 	start := time.Now()
 
 	// 从 context 获取脚本名（summary），供语法错误消息使用
@@ -307,9 +308,12 @@ func (e *Executor) buildRunnerOptions(ctx context.Context, stdout, stderr *bytes
 	if e.config.SandboxMode && e.config.SandboxConfig != nil {
 		envVars = e.filterEnvironment(envVars)
 	}
-	opts = append(opts, interp.Env(expand.ListEnviron(envVars...)))
+	// 注入 trace 上下文，使外部命令（git、go、python3、curl 等）
+	// 能继承当前 span。TraceEnv 返回 CLOG_TRACEPARENT=... 等环境变量，
+	// 零全局副作用。
+	envVars = append(envVars, clog.TraceEnv(span)...)
 
-	// Shell 参数
+	opts = append(opts, interp.Env(expand.ListEnviron(envVars...)))
 	shellParams := []string{}
 	if e.config.StrictMode {
 		shellParams = append(shellParams, "-e", "-u")
