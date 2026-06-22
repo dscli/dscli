@@ -1,14 +1,6 @@
 // Package lp provides LightPanda integration for web page interaction.
 //
 // MCP tool integration for the toolcall framework.
-// The init function registers callbacks with toolcall so that MCP tools
-// are dispatched via a persistent MCPClient singleton in HandleToolCall.
-//
-// Two MCP modes are supported:
-//   - local: spawns "lightpanda mcp" subprocess (stdio). Default.
-//   - cloud: connects to LightPanda Cloud SSE endpoint.
-//
-// The AI switches between modes via the mcp_client tool.
 package lp
 
 import (
@@ -42,10 +34,6 @@ var (
 	mcpClientTarget   string
 	mcpClientTargetMu sync.Mutex
 )
-
-func init() {
-	toolcall.HandleMCPCall = handleMCPCall
-}
 
 // activeMCPClient returns the MCP client for the current target ("local" or "cloud").
 func activeMCPClient() (*MCPClient, error) {

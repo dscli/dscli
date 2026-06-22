@@ -3,18 +3,20 @@ package web
 import (
 	"context"
 	_ "embed"
-	"encoding/json"
-	"fmt"
 
 	"github.com/dscli/dscli/internal/lp"
+	"github.com/dscli/dscli/internal/mcphub"
+	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/toolcall"
 	"github.com/nanjj/clog"
 )
-
 //go:embed web.md
 var mcp_client_md string
 
 func init() {
+	// Set the MCP dispatch function — routes unknown tool calls to mcphub.
+	toolcall.DispatchMCP = mcphub.Dispatch
+
 	// Register the mcp_client tool so the AI can switch between local/cloud MCP.
 	toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        "mcp_client",
@@ -36,32 +38,15 @@ func init() {
 		Handler:  handleMCPClientTool,
 	})
 
-	// Register MCP tools from the LightPanda server as regular tools.
-	// This makes them appear alongside other built-in tools with deterministic
-	// ordering, and gives them usage tracking via the standard tool pipeline.
-	mcpTools := lp.MCPToolList(context.Background())
-	for _, t := range mcpTools {
-		// Skip tools that may already be registered (safety check).
-		name := t.Function.Name
-		if _, exists := toolcall.GetToolDef(context.Background(), name); exists {
-			continue
-		}
-		desc := t.Function.Description
-		params := t.Function.Parameters
-		toolcall.RegisterTool(toolcall.ToolDef{
-			Name:        name,
-			Description: desc,
-			Strict:      true,
-			Parameters:  params,
-			Category:    "web",
-			Handler: func(ctx context.Context, args toolcall.ToolArgs) (string, string, error) {
-				argsRaw, _ := json.Marshal(args)
-				if toolcall.HandleMCPCall != nil {
-					return toolcall.HandleMCPCall(ctx, name, string(argsRaw))
-				}
-				return "", "", fmt.Errorf("MCP not available: %s", name)
-			},
-		})
+	// Initialize the MCP hub — connects to built-in and user-configured
+	// MCP servers, discovers their tools, and registers each with the
+	// "serverName_toolName" naming convention (e.g. "lightpanda_markdown").
+	//
+	// Init is safe to call multiple times; subsequent calls are no-ops.
+	if err := mcphub.Init(context.Background()); err != nil {
+		// MCP hub initialization errors are non-fatal — the application
+		// continues working with native tools only.
+		outfmt.Warn("web: mcphub init: %v", err)
 	}
 }
 

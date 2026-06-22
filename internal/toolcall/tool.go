@@ -62,7 +62,6 @@ type Function struct {
 	Strict      bool           `json:"strict,omitempty"`
 	Parameters  map[string]any `json:"parameters"` // JSON Schema 对象
 }
-
 var (
 	// toolRegistry 工具注册表
 	toolRegistry = map[string]ToolDef{}
@@ -70,11 +69,10 @@ var (
 	// toolRegistryRWMutex tool registry rwmutex
 	toolRegistryRWMutex = sync.RWMutex{}
 
-	// HandleMCPCall dispatches a tool call to an MCP server.
-	// Set by the lp package init to enable MCP tool call routing.
-	// If nil, unknown tools return an error directly.
-	// Signature matches toolcall.HandleToolCall for unknown tools.
-	HandleMCPCall func(ctx context.Context, toolName, argsRaw string) (result, warning string, err error)
+	// DispatchMCP dispatches a tool call to an MCP server.
+	// Set by the mcphub package init (via web package init).
+	// If nil, unknown tools fall back to the default error message.
+	DispatchMCP func(ctx context.Context, toolName, argsRaw string) (result, warning string, err error)
 )
 
 func init() {
@@ -134,15 +132,17 @@ func GetToolDisplayName(name string) string {
 }
 
 // RegisterTool 注册工具
-func RegisterTool(tool ToolDef) {
+// RegisterTool 注册工具
+func RegisterTool(tool ToolDef) error {
 	toolRegistryRWMutex.Lock()
 	defer toolRegistryRWMutex.Unlock()
 	name := tool.Name
 	if _, ok := toolRegistry[name]; ok {
-		panic(fmt.Sprintf("%s exists", name))
+		return fmt.Errorf("tool %q already registered", name)
 	}
 	tool.DisplayName = GetToolDisplayName(name)
 	toolRegistry[name] = tool
+	return nil
 }
 
 func GetToolDef(ctx context.Context, toolName string) (tool ToolDef, ok bool) {
@@ -314,15 +314,14 @@ func HandleToolCall(ctx context.Context, toolName, argsRaw string) (result, warn
 	tool, ok := GetToolDef(ctx, toolName)
 	if !ok {
 		// Not a registered dscli tool — try MCP dispatch.
-		if HandleMCPCall != nil {
-			return HandleMCPCall(ctx, toolName, argsRaw)
+		if DispatchMCP != nil {
+			return DispatchMCP(ctx, toolName, argsRaw)
 		}
 		err = fmt.Errorf("未知工具: %s", toolName)
 		warning = fmt.Sprintf("所调用工具 %q 不存在，请严格按照 tools 列表所提供工具调用", toolName)
 		outfmt.Println(warning)
 		return result, warning, err
 	}
-
 	truncated := context.ContextValue(ctx, context.FinishReasonLengthKey, false)
 	args := ToolArgs{}
 	if truncated {
