@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/dscli/dscli/internal/config"
 	"github.com/goccy/go-yaml"
@@ -12,16 +11,19 @@ import (
 
 // ServerConfig defines an MCP server connection.
 type ServerConfig struct {
-	Name    string   `yaml:"-"`       // server identifier, set from map key
+	Name    string   `yaml:"name"`   // logical server name; set from map key if empty
+	Type    string   `yaml:"type"`   // "local" (stdio) or "cloud" (SSE); default "local"
 	Command string   `yaml:"command"` // executable (stdio) or URL (http/https)
 	Args    []string `yaml:"args"`    // command-line args (stdio) or query key=value pairs (SSE)
 	Enabled bool     `yaml:"enabled"`
 }
 
 // IsSSE reports whether this server uses SSE transport.
-// SSE transport is indicated by an HTTP or HTTPS URL as the command.
+// Transport type is determined by the Type field:
+//   - "cloud" → SSE transport
+//   - otherwise → stdio transport (subprocess)
 func (s ServerConfig) IsSSE() bool {
-	return strings.HasPrefix(s.Command, "https://") || strings.HasPrefix(s.Command, "http://")
+	return s.Type == "cloud"
 }
 
 // serversFile is the parsed structure of the mcp-servers YAML file.
@@ -34,6 +36,7 @@ type serversFile struct {
 var builtinServers = []ServerConfig{
 	{
 		Name:    "lightpanda",
+		Type:    "local",
 		Command: "lightpanda",
 		Args:    []string{"mcp"},
 		Enabled: true,
@@ -44,12 +47,17 @@ var builtinServers = []ServerConfig{
 // It starts with built-in servers, then overlays user-defined servers
 // from the YAML file specified by the "mcp-servers" config key.
 //
+// Multiple configs can share the same logical Name as long as they have
+// different Type values (e.g., lightpanda local + cloud). The user YAML
+// must use unique map keys for each variant.
+//
 // The YAML file is resolved relative to the config directory (~/.dscli/).
 func loadServerConfigs() ([]ServerConfig, error) {
-	// Start with built-in servers.
-	servers := make(map[string]ServerConfig)
+	// Use a composite key "name:type" to allow multiple variants per logical name.
+	configMap := make(map[string]ServerConfig)
 	for _, s := range builtinServers {
-		servers[s.Name] = s
+		key := s.Name + ":" + s.Type
+		configMap[key] = s
 	}
 
 	// Load user-defined servers from YAML.
@@ -78,12 +86,18 @@ func loadServerConfigs() ([]ServerConfig, error) {
 	}
 
 	for key, cfg := range sf.Servers {
-		cfg.Name = key
-		servers[key] = cfg
+		if cfg.Name == "" {
+			cfg.Name = key
+		}
+		if cfg.Type == "" {
+			cfg.Type = "local"
+		}
+		configKey := cfg.Name + ":" + cfg.Type
+		configMap[configKey] = cfg
 	}
 
-	result := make([]ServerConfig, 0, len(servers))
-	for _, s := range servers {
+	result := make([]ServerConfig, 0, len(configMap))
+	for _, s := range configMap {
 		result = append(result, s)
 	}
 	return result, nil

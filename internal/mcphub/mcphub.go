@@ -16,8 +16,9 @@ func Dispatch(ctx context.Context, toolName, argsRaw string) (result, warning st
 	return globalHub.doDispatch(ctx, toolName, argsRaw)
 }
 
-// ReconnectLightpanda reconnects the lightpanda server, applying the current
-// cloud/local target setting. This allows switching transports at runtime.
-func ReconnectLightpanda(ctx context.Context) error {
-	return globalHub.ReconnectLightpanda(ctx)
+// SwitchServerTransport switches a server's transport between local (stdio)
+// and cloud (SSE) at runtime. The new connection is validated before replacing
+// the old one.
+func SwitchServerTransport(ctx context.Context, name, target string) error {
+	return globalHub.SwitchServerTransport(ctx, name, target)
 }

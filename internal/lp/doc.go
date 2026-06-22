@@ -15,12 +15,15 @@
 //
 //   - local (default): spawns "lightpanda mcp" subprocess locally.
 //   - cloud: connects to LightPanda Cloud MCP/SSE endpoint. Switch via
-//     the mcp_client tool (target="cloud").
+//     the mcp_client tool (target="cloud", server="lightpanda").
 //
 // # Cloud Configuration
 //
 //	lightpanda-cloud-url    = https://euwest.cloud.lightpanda.io/mcp/sse
 //	lightpanda-remote-token = <token>
+//
+// For the mcphub generic tool switching, define a `type: cloud` variant
+// for the "lightpanda" server in your mcp-servers YAML config.
 //
 // # Deprecated
 //
