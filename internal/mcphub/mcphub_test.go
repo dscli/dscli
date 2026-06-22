@@ -213,17 +213,17 @@ func TestLoadServerConfigs_UserConfigMerges(t *testing.T) {
 	dir := t.TempDir()
 	yamlContent := `
 servers:
-  - name: my-custom
+  my-custom:
     command: my-server
     args: ["--port", "8080"]
     enabled: true
-  - name: lightpanda
+  lightpanda:
     command: custom-lightpanda
     args: []
     enabled: false
 `
 	yamlFile := filepath.Join(dir, "test-servers.yaml")
-	if err := os.WriteFile(yamlFile, []byte(yamlContent), 0o644); err != nil {
+	if err := os.WriteFile(yamlFile, []byte(yamlContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -277,7 +277,7 @@ func TestLoadServerConfigs_MissingFile(t *testing.T) {
 func TestLoadServerConfigs_InvalidYAML(t *testing.T) {
 	dir := t.TempDir()
 	yamlFile := filepath.Join(dir, "bad.yaml")
-	if err := os.WriteFile(yamlFile, []byte("{{invalid yaml}}"), 0o644); err != nil {
+	if err := os.WriteFile(yamlFile, []byte("{{invalid yaml}}"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	config.Set("mcp-servers", yamlFile)
