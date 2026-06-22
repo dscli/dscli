@@ -11,7 +11,7 @@ import (
 
 // ServerConfig defines an MCP server connection.
 type ServerConfig struct {
-	Name    string   `yaml:"-"` // server identifier, set from map key
+	Name    string   `yaml:"name"` // server identifier
 	Command string   `yaml:"command"`
 	Args    []string `yaml:"args"`
 	Enabled bool     `yaml:"enabled"`
@@ -19,7 +19,7 @@ type ServerConfig struct {
 
 // serversFile is the parsed structure of the mcp-servers YAML file.
 type serversFile struct {
-	Servers map[string]ServerConfig `yaml:"servers"`
+	Servers []ServerConfig `yaml:"servers"`
 }
 
 // builtinServers are hardcoded MCP server configurations.
@@ -48,7 +48,6 @@ func loadServerConfigs() ([]ServerConfig, error) {
 	// Load user-defined servers from YAML.
 	filename := config.Get("mcp-servers", "")
 	if filename == "" {
-		// No user config — return built-in servers only.
 		return builtinServers, nil
 	}
 
@@ -70,9 +69,11 @@ func loadServerConfigs() ([]ServerConfig, error) {
 		return nil, fmt.Errorf("parsing mcp-servers config: %w", err)
 	}
 
-	for name, cfg := range sf.Servers {
-		cfg.Name = name
-		servers[name] = cfg
+	for _, cfg := range sf.Servers {
+		if cfg.Name == "" {
+			continue
+		}
+		servers[cfg.Name] = cfg
 	}
 
 	result := make([]ServerConfig, 0, len(servers))
