@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 
+	"net/url"
+	"github.com/dscli/dscli/internal/config"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/toolcall"
 	"github.com/nanjj/clog"
@@ -27,6 +29,18 @@ type Hub struct {
 var globalHub = &Hub{
 	servers: make(map[string]*serverConn),
 }
+
+// CloudLightpandaCheck, if non-nil, is called to determine whether to connect
+// to LightPanda Cloud via SSE instead of a local subprocess.
+// Set by web.go during initialization.
+var CloudLightpandaCheck func() bool
+
+// shouldUseCloud reports whether the cloud LightPanda should be used.
+func shouldUseCloud() bool {
+	return CloudLightpandaCheck != nil && CloudLightpandaCheck()
+}
+
+
 
 // doInit initializes the hub with built-in and user-configured servers.
 // It loads server configs, connects to enabled servers, and registers
@@ -70,7 +84,7 @@ func (h *Hub) connectLocked(ctx context.Context, cfg ServerConfig) error {
 	span, ctx := clog.StartSpanFromContext(ctx, "connectLocked")
 	defer span.Finish()
 
-	mc, err := NewMCPClient(ctx, cfg.Command, cfg.Args)
+	mc, err := newClientForConfig(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("connect %s: %w", cfg.Name, err)
 	}
@@ -111,6 +125,78 @@ func (h *Hub) connectLocked(ctx context.Context, cfg ServerConfig) error {
 		}
 	}
 
+	return nil
+}
+
+
+// newClientForConfig creates the appropriate MCP client for the given config.
+// For the lightpanda server in cloud mode, it uses SSE transport.
+// For all other cases, it uses stdio transport via the configured command.
+func newClientForConfig(ctx context.Context, cfg ServerConfig) (*MCPClient, error) {
+	if cfg.Name == "lightpanda" && shouldUseCloud() {
+		return newCloudClient(ctx)
+	}
+	return NewMCPClient(ctx, cfg.Command, cfg.Args)
+}
+
+// newCloudClient creates an MCP client connected to LightPanda Cloud.
+// It reads the endpoint URL and token from config.
+func newCloudClient(ctx context.Context) (*MCPClient, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "newCloudClient")
+	defer span.Finish()
+
+	endpoint := config.Get("lightpanda-cloud-url",
+		"https://euwest.cloud.lightpanda.io/mcp/sse")
+	token := config.Get("lightpanda-remote-token", "")
+
+	if token == "" && strings.Contains(endpoint, "cloud.lightpanda.io") {
+		return nil, fmt.Errorf("lightpanda-remote-token is required for LightPanda Cloud;" +
+			" set it in dscli.env or config")
+	}
+
+	if token != "" {
+		if strings.Contains(endpoint, "?") {
+			endpoint += "&token=" + url.QueryEscape(token)
+		} else {
+			endpoint += "?token=" + url.QueryEscape(token)
+		}
+	}
+
+	return NewSSEMCPClient(ctx, endpoint)
+}
+
+// ReconnectLightpanda replaces the lightpanda server connection with a new one
+// that matches the current cloud/local target. This allows switching transports
+// at runtime without restarting the application.
+//
+// The new connection is validated by listing tools before replacing the old one.
+// If validation fails, the old connection is preserved.
+func (h *Hub) ReconnectLightpanda(ctx context.Context) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "ReconnectLightpanda")
+	defer span.Finish()
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	conn, ok := h.servers["lightpanda"]
+	if !ok {
+		return fmt.Errorf("mcphub: lightpanda not connected")
+	}
+
+	mc, err := newClientForConfig(ctx, conn.config)
+	if err != nil {
+		return fmt.Errorf("reconnect lightpanda: %w", err)
+	}
+
+	// Validate the new connection before swapping.
+	if _, err := mc.ListTools(ctx); err != nil {
+		mc.Close()
+		return fmt.Errorf("reconnect lightpanda: validate: %w", err)
+	}
+
+	oldClient := conn.client
+	conn.client = mc
+	oldClient.Close()
 	return nil
 }
 

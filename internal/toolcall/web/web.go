@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	_ "embed"
+	"fmt"
 
 	"github.com/dscli/dscli/internal/lp"
 	"github.com/dscli/dscli/internal/mcphub"
@@ -10,12 +11,18 @@ import (
 	"github.com/dscli/dscli/internal/toolcall"
 	"github.com/nanjj/clog"
 )
+
 //go:embed web.md
 var mcp_client_md string
 
 func init() {
 	// Set the MCP dispatch function — routes unknown tool calls to mcphub.
 	toolcall.DispatchMCP = mcphub.Dispatch
+	// Set the cloud lightpanda check — called by mcphub to determine
+	// whether to use SSE transport for the lightpanda server.
+	mcphub.CloudLightpandaCheck = func() bool {
+		return lp.MCPTarget() == "cloud"
+	}
 
 	// Register the mcp_client tool so the AI can switch between local/cloud MCP.
 	toolcall.RegisterTool(toolcall.ToolDef{
@@ -54,5 +61,17 @@ func handleMCPClientTool(ctx context.Context, args toolcall.ToolArgs) (result, w
 	span, ctx := clog.StartSpanFromContext(ctx, "handleMCPClientTool")
 	defer span.Finish()
 	target := toolcall.ToolArgsValue(args, "target", "local")
-	return lp.HandleMCPClientTool(ctx, target)
+
+	result, warning, err = lp.HandleMCPClientTool(ctx, target)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Reconnect lightpanda with the selected transport.
+	// This applies the target change at the transport level.
+	if err := mcphub.ReconnectLightpanda(ctx); err != nil {
+		return "", warning, fmt.Errorf("mcphub: reconnect lightpanda: %w", err)
+	}
+
+	return result, warning, nil
 }

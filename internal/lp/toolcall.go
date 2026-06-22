@@ -49,6 +49,14 @@ func activeMCPClient() (*MCPClient, error) {
 	}
 }
 
+// MCPTarget returns the current MCP target ("local" or "cloud").
+func MCPTarget() string {
+	mcpClientTargetMu.Lock()
+	defer mcpClientTargetMu.Unlock()
+	return mcpClientTarget
+}
+
+
 // MCPToolList lazily discovers tools from the LightPanda MCP server.
 // It is called once per process lifetime; results are cached.
 // Always discovers via LOCAL MCP regardless of active target.
@@ -164,10 +172,6 @@ func HandleMCPClientTool(ctx context.Context, target string) (result, warning st
 		return "✅ 已切换到本地 MCP 模式，适用于访问无需代理的网站", "", nil
 
 	case "cloud":
-		// Initialize to validate connectivity before switching.
-		if _, err := getOrCreateCloudMCPClient(); err != nil {
-			return "", "", fmt.Errorf("❌ 云端 MCP 连接失败: %w", err)
-		}
 		mcpClientTargetMu.Lock()
 		mcpClientTarget = "cloud"
 		mcpClientTargetMu.Unlock()

@@ -104,6 +104,29 @@ func NewMCPClient(ctx context.Context, command string, args []string) (*MCPClien
 	}, nil
 }
 
+// NewSSEMCPClient connects to an MCP server over SSE.
+// The caller must call Close when done.
+func NewSSEMCPClient(ctx context.Context, endpoint string) (*MCPClient, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "NewSSEMCPClient")
+	defer span.Finish()
+
+	transport := &mcp.SSEClientTransport{Endpoint: endpoint}
+	client := mcp.NewClient(&mcp.Implementation{
+		Name:    "dscli",
+		Version: version.Version,
+	}, nil)
+
+	session, err := client.Connect(ctx, transport, nil)
+	if err != nil {
+		return nil, fmt.Errorf("mcp sse connect: %w", err)
+	}
+
+	return &MCPClient{
+		session: session,
+	}, nil
+}
+
+
 // Close shuts down the MCP session and kills the subprocess.
 func (c *MCPClient) Close() error {
 	span, _ := clog.StartSpanFromContext(context.Background(), "MCPClient.Close")

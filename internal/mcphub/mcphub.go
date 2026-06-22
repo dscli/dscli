@@ -15,3 +15,9 @@ func Init(ctx context.Context) error {
 func Dispatch(ctx context.Context, toolName, argsRaw string) (result, warning string, err error) {
 	return globalHub.doDispatch(ctx, toolName, argsRaw)
 }
+
+// ReconnectLightpanda reconnects the lightpanda server, applying the current
+// cloud/local target setting. This allows switching transports at runtime.
+func ReconnectLightpanda(ctx context.Context) error {
+	return globalHub.ReconnectLightpanda(ctx)
+}
