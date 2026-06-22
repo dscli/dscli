@@ -73,6 +73,23 @@ func (c *Config) Set(name, value string) {
 	c.data[name] = value
 }
 
+// GetValue 获取配置值，返回原始类型（支持 map、slice 等结构化数据）。
+// 未配置时返回 nil。
+func (c *Config) GetValue(name string) any {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.data[name]
+}
+
+// SetValue 设置配置值，支持结构化数据（map、slice 等）。
+// 仅在内存中设置，不持久化。调用 Save() 写入文件。
+func (c *Config) SetValue(name string, value any) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.data[name] = value
+}
+
+
 // Save 保存配置到文件
 func (c *Config) Save() error {
 	c.mu.RLock()

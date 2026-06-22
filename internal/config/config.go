@@ -28,7 +28,20 @@ func Set(name, value string) {
 	getGlobalConfig().Set(name, value)
 }
 
-// GetBool 获取布尔配置值
+
+// GetValue 获取全局配置值，返回原始类型（支持 map、slice 等结构化数据）。
+// 未配置时返回 nil。
+func GetValue(name string) any {
+	return getGlobalConfig().GetValue(name)
+}
+
+// SetValue 设置全局配置值（仅内存中，不持久化到文件）。
+// 支持结构化数据（map、slice 等），主要用于测试。
+func SetValue(name string, value any) {
+	getGlobalConfig().SetValue(name, value)
+}
+
+
 // 支持 strconv.ParseBool 的格式：1/t/T/TRUE/true/True → true，0/f/F/FALSE/false/False → false
 // 未配置或解析失败时返回 defaultValue
 func GetBool(name string, defaultValue bool, alias ...string) bool {

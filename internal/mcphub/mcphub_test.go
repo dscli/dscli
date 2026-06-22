@@ -9,8 +9,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -18,6 +16,7 @@ import (
 	"github.com/dscli/dscli/internal/toolcall"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
 
 // testToolHandler is a concrete handler type for in-memory test servers.
 // We use a wrapper function registerTool to convert to the generic SDK type.
@@ -213,24 +212,20 @@ func TestLoadServerConfigs_NoUserConfig(t *testing.T) {
 }
 
 func TestLoadServerConfigs_UserConfigMerges(t *testing.T) {
-	dir := t.TempDir()
-	yamlContent := `
-servers:
-  my-custom:
-    command: my-server
-    args: ["--port", "8080"]
-    enabled: true
-  lightpanda:
-    command: custom-lightpanda
-    args: []
-    enabled: false
-`
-	yamlFile := filepath.Join(dir, "test-servers.yaml")
-	if err := os.WriteFile(yamlFile, []byte(yamlContent), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	config.SetValue("mcp-servers", map[string]any{
+		"my-custom": map[string]any{
+			"command": "my-server",
+			"args":    []any{"--port", "8080"},
+			"enabled": true,
+		},
+		"lightpanda": map[string]any{
+			"command": "custom-lightpanda",
+			"args":    []any{},
+			"enabled": false,
+		},
+	})
+	t.Cleanup(func() { config.SetValue("mcp-servers", nil) })
 
-	config.Set("mcp-servers", yamlFile)
 	servers, err := loadServerConfigs()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -272,30 +267,33 @@ servers:
 	}
 }
 
-func TestLoadServerConfigs_MissingFile(t *testing.T) {
-	dir := t.TempDir()
-	config.Set("mcp-servers", filepath.Join(dir, "nonexistent.yaml"))
+func TestLoadServerConfigs_StringValueIgnored(t *testing.T) {
+	// Old-format string value should be silently ignored,
+	// returning only built-in servers.
+	config.SetValue("mcp-servers", "some-file.yaml")
+	t.Cleanup(func() { config.SetValue("mcp-servers", nil) })
+
 	servers, err := loadServerConfigs()
 	if err != nil {
-		t.Fatalf("expected built-in servers when file missing, got error: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(servers) == 0 {
 		t.Fatal("expected at least built-in servers")
 	}
 }
 
-func TestLoadServerConfigs_InvalidYAML(t *testing.T) {
-	dir := t.TempDir()
-	yamlFile := filepath.Join(dir, "bad.yaml")
-	if err := os.WriteFile(yamlFile, []byte("{{invalid yaml}}"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	config.Set("mcp-servers", yamlFile)
+func TestLoadServerConfigs_InvalidType(t *testing.T) {
+	// Non-map, non-string value should produce an error.
+	config.SetValue("mcp-servers", 123)
+	t.Cleanup(func() { config.SetValue("mcp-servers", nil) })
+
 	_, err := loadServerConfigs()
 	if err == nil {
-		t.Fatal("expected error for invalid YAML")
+		t.Fatal("expected error for invalid config type")
 	}
 }
+
+
 
 // ---------------------------------------------------------------------------
 // Hub dispatch (in-memory MCP server)
@@ -641,23 +639,19 @@ func TestServerConfig_Type(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestLoadServerConfigs_TypeDefaults(t *testing.T) {
-	dir := t.TempDir()
-	yamlContent := `
-servers:
-  my-custom:
-    command: my-server
-    enabled: true
-  my-cloud:
-    type: cloud
-    command: https://cloud.example.com/mcp
-    enabled: true
-`
-	yamlFile := filepath.Join(dir, "test-types.yaml")
-	if err := os.WriteFile(yamlFile, []byte(yamlContent), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	config.SetValue("mcp-servers", map[string]any{
+		"my-custom": map[string]any{
+			"command": "my-server",
+			"enabled": true,
+		},
+		"my-cloud": map[string]any{
+			"type":    "cloud",
+			"command": "https://cloud.example.com/mcp",
+			"enabled": true,
+		},
+	})
+	t.Cleanup(func() { config.SetValue("mcp-servers", nil) })
 
-	config.Set("mcp-servers", yamlFile)
 	servers, err := loadServerConfigs()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -681,27 +675,23 @@ servers:
 }
 
 func TestLoadServerConfigs_AllowsSameNameDifferentType(t *testing.T) {
-	dir := t.TempDir()
-	yamlContent := `
-servers:
-  lightpanda:
-    name: my-server
-    type: local
-    command: local-cmd
-    args: ["local"]
-    enabled: true
-  lightpanda-cloud:
-    name: my-server
-    type: cloud
-    command: https://cloud.example.com/mcp
-    enabled: true
-`
-	yamlFile := filepath.Join(dir, "test-same-name.yaml")
-	if err := os.WriteFile(yamlFile, []byte(yamlContent), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	config.SetValue("mcp-servers", map[string]any{
+		"lp-local": map[string]any{
+			"name":    "my-server",
+			"type":    "local",
+			"command": "local-cmd",
+			"args":    []any{"local"},
+			"enabled": true,
+		},
+		"lp-cloud": map[string]any{
+			"name":    "my-server",
+			"type":    "cloud",
+			"command": "https://cloud.example.com/mcp",
+			"enabled": true,
+		},
+	})
+	t.Cleanup(func() { config.SetValue("mcp-servers", nil) })
 
-	config.Set("mcp-servers", yamlFile)
 	servers, err := loadServerConfigs()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -733,20 +723,15 @@ servers:
 }
 
 func TestLoadServerConfigs_NameFromMapKey(t *testing.T) {
-	dir := t.TempDir()
-	yamlContent := `
-servers:
-  my-custom-entry:
-    command: my-server
-    args: []
-    enabled: true
-`
-	yamlFile := filepath.Join(dir, "test-name.yaml")
-	if err := os.WriteFile(yamlFile, []byte(yamlContent), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	config.SetValue("mcp-servers", map[string]any{
+		"my-custom-entry": map[string]any{
+			"command": "my-server",
+			"args":    []any{},
+			"enabled": true,
+		},
+	})
+	t.Cleanup(func() { config.SetValue("mcp-servers", nil) })
 
-	config.Set("mcp-servers", yamlFile)
 	servers, err := loadServerConfigs()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -768,28 +753,24 @@ servers:
 }
 
 func TestLoadServerConfigs_MultipleServers(t *testing.T) {
-	dir := t.TempDir()
-	yamlContent := `
-servers:
-  lightpanda:
-    name: lightpanda
-    type: local
-    command: lightpanda
-    args: ["mcp"]
-    enabled: true
-  lightpanda-cloud:
-    name: lightpanda
-    type: cloud
-    command: https://euwest.cloud.lightpanda.io/mcp/sse
-    args: ["token=secret123"]
-    enabled: true
-`
-	yamlFile := filepath.Join(dir, "test-multi.yaml")
-	if err := os.WriteFile(yamlFile, []byte(yamlContent), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	config.SetValue("mcp-servers", map[string]any{
+		"lp-local": map[string]any{
+			"name":    "lightpanda",
+			"type":    "local",
+			"command": "lightpanda",
+			"args":    []any{"mcp"},
+			"enabled": true,
+		},
+		"lp-cloud": map[string]any{
+			"name":    "lightpanda",
+			"type":    "cloud",
+			"command": "https://euwest.cloud.lightpanda.io/mcp/sse",
+			"args":    []any{"token=secret123"},
+			"enabled": true,
+		},
+	})
+	t.Cleanup(func() { config.SetValue("mcp-servers", nil) })
 
-	config.Set("mcp-servers", yamlFile)
 	servers, err := loadServerConfigs()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -820,26 +801,16 @@ servers:
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Convert legacy test to use new YAML name format
-// ---------------------------------------------------------------------------
+func TestLoadServerConfigs_NameOverridesMapKey(t *testing.T) {
+	config.SetValue("mcp-servers", map[string]any{
+		"some-key": map[string]any{
+			"name":    "logical-name",
+			"command": "my-server",
+			"enabled": true,
+		},
+	})
+	t.Cleanup(func() { config.SetValue("mcp-servers", nil) })
 
-func TestLoadServerConfigs_YAMLNameOverridesMapKey(t *testing.T) {
-	dir := t.TempDir()
-	// YAML `name` field should be used as the logical server name.
-	yamlContent := `
-servers:
-  some-key:
-    name: logical-name
-    command: my-server
-    enabled: true
-`
-	yamlFile := filepath.Join(dir, "test-name-override.yaml")
-	if err := os.WriteFile(yamlFile, []byte(yamlContent), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	config.Set("mcp-servers", yamlFile)
 	servers, err := loadServerConfigs()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

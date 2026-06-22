@@ -2,20 +2,17 @@ package mcphub
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/dscli/dscli/internal/config"
-	"github.com/goccy/go-yaml"
 )
 
 // ServerConfig defines an MCP server connection.
 type ServerConfig struct {
-	Name    string   `yaml:"name"`   // logical server name; set from map key if empty
-	Type    string   `yaml:"type"`   // "local" (stdio) or "cloud" (SSE); default "local"
-	Command string   `yaml:"command"` // executable (stdio) or URL (http/https)
-	Args    []string `yaml:"args"`    // command-line args (stdio) or query key=value pairs (SSE)
-	Enabled bool     `yaml:"enabled"`
+	Name    string   // logical server name; set from map key if empty
+	Type    string   // "local" (stdio) or "cloud" (SSE); default "local"
+	Command string   // executable (stdio) or URL (http/https)
+	Args    []string // command-line args (stdio) or query key=value pairs (SSE)
+	Enabled bool
 }
 
 // IsSSE reports whether this server uses SSE transport.
@@ -24,11 +21,6 @@ type ServerConfig struct {
 //   - otherwise → stdio transport (subprocess)
 func (s ServerConfig) IsSSE() bool {
 	return s.Type == "cloud"
-}
-
-// serversFile is the parsed structure of the mcp-servers YAML file.
-type serversFile struct {
-	Servers map[string]ServerConfig `yaml:"servers"`
 }
 
 // builtinServers are hardcoded MCP server configurations.
@@ -45,13 +37,23 @@ var builtinServers = []ServerConfig{
 
 // loadServerConfigs loads MCP server configurations.
 // It starts with built-in servers, then overlays user-defined servers
-// from the YAML file specified by the "mcp-servers" config key.
+// from the "mcp-servers" key in the native config data.
 //
 // Multiple configs can share the same logical Name as long as they have
-// different Type values (e.g., lightpanda local + cloud). The user YAML
-// must use unique map keys for each variant.
+// different Type values (e.g., lightpanda local + cloud). The user config
+// must use unique sub-keys for each variant.
 //
-// The YAML file is resolved relative to the config directory (~/.dscli/).
+// Config format (in config.dscli):
+//
+//	mcp-servers {
+//	  server-id {
+//	    name = lightpanda
+//	    type = local
+//	    command = lightpanda
+//	    args = [mcp]
+//	    enabled = true
+//	  }
+//	}
 func loadServerConfigs() ([]ServerConfig, error) {
 	// Use a composite key "name:type" to allow multiple variants per logical name.
 	configMap := make(map[string]ServerConfig)
@@ -60,34 +62,31 @@ func loadServerConfigs() ([]ServerConfig, error) {
 		configMap[key] = s
 	}
 
-	// Load user-defined servers from YAML.
-	filename := config.Get("mcp-servers", "")
-	if filename == "" {
-		// No user config — return built-in servers only.
+	// Load user-defined servers from native config data.
+	serversVal := config.GetValue("mcp-servers")
+	if serversVal == nil {
 		return builtinServers, nil
 	}
 
-	// Resolve relative to config directory.
-	if !filepath.IsAbs(filename) {
-		filename = filepath.Join(config.ConfigDir, filename)
+	// If the value is a string (old format "mcp-servers = filename.yaml"),
+	// ignore it and return built-in servers only.
+	if _, ok := serversVal.(string); ok {
+		return builtinServers, nil
 	}
 
-	data, err := os.ReadFile(filename)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return builtinServers, nil
+	serversMap, ok := serversVal.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("mcp-servers config must be a map block, got %T", serversVal)
+	}
+
+	for entryKey, entryVal := range serversMap {
+		entry, ok := entryVal.(map[string]any)
+		if !ok {
+			continue
 		}
-		return nil, fmt.Errorf("reading mcp-servers config: %w", err)
-	}
-
-	var sf serversFile
-	if err := yaml.Unmarshal(data, &sf); err != nil {
-		return nil, fmt.Errorf("parsing mcp-servers config: %w", err)
-	}
-
-	for key, cfg := range sf.Servers {
+		cfg := serverConfigFromMap(entry)
 		if cfg.Name == "" {
-			cfg.Name = key
+			cfg.Name = entryKey
 		}
 		if cfg.Type == "" {
 			cfg.Type = "local"
@@ -101,4 +100,32 @@ func loadServerConfigs() ([]ServerConfig, error) {
 		result = append(result, s)
 	}
 	return result, nil
+}
+
+// serverConfigFromMap converts a parsed config map entry to ServerConfig.
+func serverConfigFromMap(m map[string]any) ServerConfig {
+	cfg := ServerConfig{}
+	if v, ok := m["name"]; ok {
+		cfg.Name = fmt.Sprint(v)
+	}
+	if v, ok := m["type"]; ok {
+		cfg.Type = fmt.Sprint(v)
+	}
+	if v, ok := m["command"]; ok {
+		cfg.Command = fmt.Sprint(v)
+	}
+	if v, ok := m["args"]; ok {
+		if arr, ok := v.([]any); ok {
+			cfg.Args = make([]string, len(arr))
+			for i, item := range arr {
+				cfg.Args[i] = fmt.Sprint(item)
+			}
+		}
+	}
+	if v, ok := m["enabled"]; ok {
+		if b, ok := v.(bool); ok {
+			cfg.Enabled = b
+		}
+	}
+	return cfg
 }

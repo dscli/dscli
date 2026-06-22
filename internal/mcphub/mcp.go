@@ -19,12 +19,23 @@
 //
 // # Configuration
 //
-//	mcp-servers = mcp-servers.yaml  (in ~/.dscli/config.dscli)
+// MCP server definitions are in the `mcp-servers` block of config.dscli:
+//
+//	mcp-servers {
+//	  server-id {
+//	    name = lightpanda
+//	    type = local
+//	    command = lightpanda
+//	    args = [mcp]
+//	    enabled = true
+//	  }
+//	}
 //
 // Built-in servers:
 //   - lightpanda: web page interaction via LightPanda MCP
 //
-// User-defined servers are listed in the YAML file.
+// User-defined servers are defined in the mcp-servers config block.
+//
 package mcphub
 
 import (

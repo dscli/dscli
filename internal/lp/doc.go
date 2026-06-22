@@ -23,7 +23,7 @@
 //	lightpanda-remote-token = <token>
 //
 // For the mcphub generic tool switching, define a `type: cloud` variant
-// for the "lightpanda" server in your mcp-servers YAML config.
+// for the "lightpanda" server in your mcp-servers config block.
 //
 // # Deprecated
 //
