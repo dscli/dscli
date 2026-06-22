@@ -18,11 +18,6 @@ var mcp_client_md string
 func init() {
 	// Set the MCP dispatch function — routes unknown tool calls to mcphub.
 	toolcall.DispatchMCP = mcphub.Dispatch
-	// Set the cloud lightpanda check — called by mcphub to determine
-	// whether to use SSE transport for the lightpanda server.
-	mcphub.CloudLightpandaCheck = func() bool {
-		return lp.MCPTarget() == "cloud"
-	}
 
 	// Register the mcp_client tool so the AI can switch between local/cloud MCP.
 	toolcall.RegisterTool(toolcall.ToolDef{
@@ -67,8 +62,8 @@ func handleMCPClientTool(ctx context.Context, args toolcall.ToolArgs) (result, w
 		return "", "", err
 	}
 
-	// Reconnect lightpanda with the selected transport.
-	// This applies the target change at the transport level.
+	// Update the hub's target and reconnect lightpanda.
+	mcphub.SetMCPServerTarget(target)
 	if err := mcphub.ReconnectLightpanda(ctx); err != nil {
 		return "", warning, fmt.Errorf("mcphub: reconnect lightpanda: %w", err)
 	}

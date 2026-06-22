@@ -126,7 +126,6 @@ func NewSSEMCPClient(ctx context.Context, endpoint string) (*MCPClient, error) {
 	}, nil
 }
 
-
 // Close shuts down the MCP session and kills the subprocess.
 func (c *MCPClient) Close() error {
 	span, _ := clog.StartSpanFromContext(context.Background(), "MCPClient.Close")

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/dscli/dscli/internal/config"
 	"github.com/goccy/go-yaml"
@@ -11,10 +12,16 @@ import (
 
 // ServerConfig defines an MCP server connection.
 type ServerConfig struct {
-	Name    string   `yaml:"-"` // server identifier, set from map key
-	Command string   `yaml:"command"`
-	Args    []string `yaml:"args"`
+	Name    string   `yaml:"-"`       // server identifier, set from map key
+	Command string   `yaml:"command"` // executable (stdio) or URL (http/https)
+	Args    []string `yaml:"args"`    // command-line args (stdio) or query key=value pairs (SSE)
 	Enabled bool     `yaml:"enabled"`
+}
+
+// IsSSE reports whether this server uses SSE transport.
+// SSE transport is indicated by an HTTP or HTTPS URL as the command.
+func (s ServerConfig) IsSSE() bool {
+	return strings.HasPrefix(s.Command, "https://") || strings.HasPrefix(s.Command, "http://")
 }
 
 // serversFile is the parsed structure of the mcp-servers YAML file.
@@ -70,9 +77,9 @@ func loadServerConfigs() ([]ServerConfig, error) {
 		return nil, fmt.Errorf("parsing mcp-servers config: %w", err)
 	}
 
-	for name, cfg := range sf.Servers {
-		cfg.Name = name
-		servers[name] = cfg
+	for key, cfg := range sf.Servers {
+		cfg.Name = key
+		servers[key] = cfg
 	}
 
 	result := make([]ServerConfig, 0, len(servers))

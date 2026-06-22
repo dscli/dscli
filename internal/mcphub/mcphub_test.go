@@ -223,7 +223,7 @@ servers:
     enabled: false
 `
 	yamlFile := filepath.Join(dir, "test-servers.yaml")
-	if err := os.WriteFile(yamlFile, []byte(yamlContent), 0644); err != nil {
+	if err := os.WriteFile(yamlFile, []byte(yamlContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -277,7 +277,7 @@ func TestLoadServerConfigs_MissingFile(t *testing.T) {
 func TestLoadServerConfigs_InvalidYAML(t *testing.T) {
 	dir := t.TempDir()
 	yamlFile := filepath.Join(dir, "bad.yaml")
-	if err := os.WriteFile(yamlFile, []byte("{{invalid yaml}}"), 0644); err != nil {
+	if err := os.WriteFile(yamlFile, []byte("{{invalid yaml}}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	config.Set("mcp-servers", yamlFile)
@@ -596,5 +596,203 @@ func TestHub_CallTool_IsError(t *testing.T) {
 	}
 	if mcpErr.Tool != "failable" {
 		t.Errorf("tool = %q, want %q", mcpErr.Tool, "failable")
+	}
+}
+
+func TestServerConfig_IsSSE(t *testing.T) {
+	tests := []struct {
+		command string
+		want    bool
+	}{
+		{"https://euwest.cloud.lightpanda.io/mcp/sse", true},
+		{"http://localhost:8080/mcp", true},
+		{"lightpanda", false},
+		{"/usr/bin/my-server", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		cfg := ServerConfig{Command: tt.command}
+		got := cfg.IsSSE()
+		if got != tt.want {
+			t.Errorf("IsSSE(%q) = %v, want %v", tt.command, got, tt.want)
+		}
+	}
+}
+
+func TestLoadServerConfigs_NameFromMapKey(t *testing.T) {
+	dir := t.TempDir()
+	yamlContent := `
+servers:
+  my-custom-entry:
+    name: custom-name
+    command: my-server
+    args: []
+    enabled: true
+`
+	yamlFile := filepath.Join(dir, "test-name.yaml")
+	if err := os.WriteFile(yamlFile, []byte(yamlContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	config.Set("mcp-servers", yamlFile)
+	servers, err := loadServerConfigs()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Name should come from the map key, not the YAML name field.
+	found := false
+	for _, s := range servers {
+		if s.Name == "my-custom-entry" {
+			found = true
+			if s.Command != "my-server" {
+				t.Errorf("command = %q, want %q", s.Command, "my-server")
+			}
+		}
+	}
+	if !found {
+		t.Error("server with name 'my-custom-entry' not found")
+	}
+
+	// The YAML 'name' field should NOT override the map key.
+	for _, s := range servers {
+		if s.Name == "custom-name" {
+			t.Error("YAML 'name' field should not override map key, but it did")
+		}
+	}
+}
+
+func TestLoadServerConfigs_MultipleServers(t *testing.T) {
+	dir := t.TempDir()
+	yamlContent := `
+servers:
+  lightpanda-local:
+    command: lightpanda
+    args: ["mcp"]
+    enabled: true
+  lightpanda-cloud:
+    command: https://euwest.cloud.lightpanda.io/mcp/sse
+    args: ["token", "secret123"]
+    enabled: true
+`
+	yamlFile := filepath.Join(dir, "test-multi.yaml")
+	if err := os.WriteFile(yamlFile, []byte(yamlContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	config.Set("mcp-servers", yamlFile)
+	servers, err := loadServerConfigs()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var localFound, cloudFound bool
+	for _, s := range servers {
+		if s.Name == "lightpanda-local" {
+			localFound = true
+			if !s.IsSSE() {
+				// lightpanda-local is stdio
+			} else {
+				t.Error("lightpanda-local should not be SSE")
+			}
+		}
+		if s.Name == "lightpanda-cloud" {
+			cloudFound = true
+			if !s.IsSSE() {
+				t.Error("lightpanda-cloud should be SSE")
+			}
+		}
+	}
+	if !localFound {
+		t.Error("lightpanda-local not found")
+	}
+	if !cloudFound {
+		t.Error("lightpanda-cloud not found")
+	}
+}
+
+func TestMCPServerTarget(t *testing.T) {
+	// Default should be "local"
+	if got := getMCPServerTarget(); got != "local" {
+		t.Errorf("default target = %q, want %q", got, "local")
+	}
+
+	// Set and read back
+	SetMCPServerTarget("cloud")
+	if got := getMCPServerTarget(); got != "cloud" {
+		t.Errorf("target after set = %q, want %q", got, "cloud")
+	}
+
+	SetMCPServerTarget("local")
+	if got := getMCPServerTarget(); got != "local" {
+		t.Errorf("target after set = %q, want %q", got, "local")
+	}
+
+	// Reset for other tests
+	SetMCPServerTarget("")
+}
+
+func TestBuildSSEEndpoint(t *testing.T) {
+	tests := []struct {
+		name   string
+		cfg    ServerConfig
+		wantEP string
+	}{
+		{
+			name: "no-args",
+			cfg: ServerConfig{
+				Command: "https://example.com/mcp/sse",
+			},
+			wantEP: "https://example.com/mcp/sse",
+		},
+		{
+			name: "with-token",
+			cfg: ServerConfig{
+				Command: "https://example.com/mcp/sse",
+				Args:    []string{"token", "secret123"},
+			},
+			wantEP: "https://example.com/mcp/sse?token=secret123",
+		},
+		{
+			name: "paired-args",
+			cfg: ServerConfig{
+				Command: "https://example.com/mcp/sse",
+				Args:    []string{"key1", "val1", "key2", "val2"},
+			},
+			wantEP: "https://example.com/mcp/sse?key1=val1&key2=val2",
+		},
+		{
+			name: "odd-arg",
+			cfg: ServerConfig{
+				Command: "https://example.com/mcp/sse",
+				Args:    []string{"token", "secret", "extra"},
+			},
+			wantEP: "https://example.com/mcp/sse?token=secret&extra=",
+		},
+		{
+			name: "existing-params",
+			cfg: ServerConfig{
+				Command: "https://example.com/mcp/sse?version=1",
+				Args:    []string{"token", "x"},
+			},
+			wantEP: "https://example.com/mcp/sse?version=1&token=x",
+		},
+		{
+			name: "url-encode",
+			cfg: ServerConfig{
+				Command: "https://example.com/mcp/sse",
+				Args:    []string{"token", "a b/c"},
+			},
+			wantEP: "https://example.com/mcp/sse?token=a+b%2Fc",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildSSEEndpoint(tt.cfg)
+			if got != tt.wantEP {
+				t.Errorf("buildSSEEndpoint() = %q, want %q", got, tt.wantEP)
+			}
+		})
 	}
 }

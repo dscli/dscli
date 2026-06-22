@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 
-	"net/url"
 	"github.com/dscli/dscli/internal/config"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/toolcall"
@@ -22,25 +22,31 @@ type serverConn struct {
 
 // Hub manages multiple MCP server connections.
 type Hub struct {
-	mu      sync.RWMutex
-	servers map[string]*serverConn // keyed by server name
+	mu         sync.RWMutex
+	servers    map[string]*serverConn // keyed by server name
+	allConfigs []ServerConfig         // all configs loaded, for reconnection
 }
 
 var globalHub = &Hub{
 	servers: make(map[string]*serverConn),
 }
 
-// CloudLightpandaCheck, if non-nil, is called to determine whether to connect
-// to LightPanda Cloud via SSE instead of a local subprocess.
-// Set by web.go during initialization.
-var CloudLightpandaCheck func() bool
+// mcpTarget overrides the transport selection for servers that support
+// both local (stdio) and cloud (SSE) modes. Set by the mcp_client tool.
+var mcpTarget string // "local" or "cloud"
 
-// shouldUseCloud reports whether the cloud LightPanda should be used.
-func shouldUseCloud() bool {
-	return CloudLightpandaCheck != nil && CloudLightpandaCheck()
+// SetMCPServerTarget sets the target transport mode for MCP servers.
+func SetMCPServerTarget(target string) {
+	mcpTarget = target
 }
 
-
+// getMCPServerTarget returns the current target, defaulting to "local".
+func getMCPServerTarget() string {
+	if mcpTarget == "" {
+		return "local"
+	}
+	return mcpTarget
+}
 
 // doInit initializes the hub with built-in and user-configured servers.
 // It loads server configs, connects to enabled servers, and registers
@@ -63,6 +69,9 @@ func (h *Hub) doInit(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("mcphub: loading server configs: %w", err)
 	}
+
+	// Store all configs for reconnection.
+	h.allConfigs = configs
 
 	for _, cfg := range configs {
 		if !cfg.Enabled {
@@ -128,41 +137,58 @@ func (h *Hub) connectLocked(ctx context.Context, cfg ServerConfig) error {
 	return nil
 }
 
-
 // newClientForConfig creates the appropriate MCP client for the given config.
-// For the lightpanda server in cloud mode, it uses SSE transport.
-// For all other cases, it uses stdio transport via the configured command.
+// Transport is determined by the command prefix:
+//   - http:// or https:// → SSE transport
+//   - otherwise → stdio transport (subprocess)
 func newClientForConfig(ctx context.Context, cfg ServerConfig) (*MCPClient, error) {
-	if cfg.Name == "lightpanda" && shouldUseCloud() {
-		return newCloudClient(ctx)
+	if cfg.IsSSE() {
+		return newSSEClient(ctx, cfg)
 	}
 	return NewMCPClient(ctx, cfg.Command, cfg.Args)
 }
 
-// newCloudClient creates an MCP client connected to LightPanda Cloud.
-// It reads the endpoint URL and token from config.
-func newCloudClient(ctx context.Context) (*MCPClient, error) {
-	span, ctx := clog.StartSpanFromContext(ctx, "newCloudClient")
+// newSSEClient creates an MCP client connected via SSE transport.
+// It uses cfg.Command as the endpoint URL and cfg.Args as key=value
+// query parameter pairs.
+func newSSEClient(ctx context.Context, cfg ServerConfig) (*MCPClient, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "newSSEClient")
 	defer span.Finish()
 
-	endpoint := config.Get("lightpanda-cloud-url",
-		"https://euwest.cloud.lightpanda.io/mcp/sse")
-	token := config.Get("lightpanda-remote-token", "")
-
-	if token == "" && strings.Contains(endpoint, "cloud.lightpanda.io") {
-		return nil, fmt.Errorf("lightpanda-remote-token is required for LightPanda Cloud;" +
-			" set it in dscli.env or config")
-	}
-
-	if token != "" {
-		if strings.Contains(endpoint, "?") {
-			endpoint += "&token=" + url.QueryEscape(token)
-		} else {
-			endpoint += "?token=" + url.QueryEscape(token)
-		}
-	}
-
+	endpoint := buildSSEEndpoint(cfg)
 	return NewSSEMCPClient(ctx, endpoint)
+}
+
+// buildSSEEndpoint builds the SSE endpoint URL from a server config.
+// It takes cfg.Command as the base URL and appends cfg.Args as
+// key=value query parameter pairs. Each pair of args becomes
+// "?key=value" or "&key=value" if query params already exist.
+func buildSSEEndpoint(cfg ServerConfig) string {
+	endpoint := cfg.Command
+
+	// Append args as key=value query parameters (paired).
+	for i := 0; i < len(cfg.Args)-1; i += 2 {
+		key := cfg.Args[i]
+		value := cfg.Args[i+1]
+		if strings.Contains(endpoint, "?") {
+			endpoint += "&"
+		} else {
+			endpoint += "?"
+		}
+		endpoint += url.QueryEscape(key) + "=" + url.QueryEscape(value)
+	}
+	// If odd trailing arg, treat as key with empty value.
+	if len(cfg.Args)%2 == 1 {
+		key := cfg.Args[len(cfg.Args)-1]
+		if strings.Contains(endpoint, "?") {
+			endpoint += "&"
+		} else {
+			endpoint += "?"
+		}
+		endpoint += url.QueryEscape(key) + "="
+	}
+
+	return endpoint
 }
 
 // ReconnectLightpanda replaces the lightpanda server connection with a new one
@@ -175,15 +201,50 @@ func (h *Hub) ReconnectLightpanda(ctx context.Context) error {
 	span, ctx := clog.StartSpanFromContext(ctx, "ReconnectLightpanda")
 	defer span.Finish()
 
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
 	conn, ok := h.servers["lightpanda"]
 	if !ok {
 		return fmt.Errorf("mcphub: lightpanda not connected")
 	}
 
-	mc, err := newClientForConfig(ctx, conn.config)
+	// Select the right config based on target.
+	target := getMCPServerTarget()
+	cfg := conn.config
+	if target == "cloud" && !cfg.IsSSE() {
+		// Look for an SSE config for lightpanda in allConfigs.
+		if found := h.findConfig("lightpanda", true); found != nil {
+			cfg = *found
+		} else {
+			// Fall back to legacy config keys for backward compatibility.
+			endpoint := config.Get("lightpanda-cloud-url",
+				"https://euwest.cloud.lightpanda.io/mcp/sse")
+			token := config.Get("lightpanda-remote-token", "")
+			if token != "" {
+				if strings.Contains(endpoint, "?") {
+					endpoint += "&token=" + url.QueryEscape(token)
+				} else {
+					endpoint += "?token=" + url.QueryEscape(token)
+				}
+			}
+			cfg = ServerConfig{
+				Name:    "lightpanda",
+				Command: endpoint,
+			}
+		}
+	} else if target != "cloud" && cfg.IsSSE() {
+		// Switching back to local — find the stdio config.
+		if found := h.findConfig("lightpanda", false); found != nil {
+			cfg = *found
+		} else {
+			// Use built-in default.
+			cfg = ServerConfig{
+				Name:    "lightpanda",
+				Command: "lightpanda",
+				Args:    []string{"mcp"},
+			}
+		}
+	}
+
+	mc, err := newClientForConfig(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("reconnect lightpanda: %w", err)
 	}
@@ -196,7 +257,22 @@ func (h *Hub) ReconnectLightpanda(ctx context.Context) error {
 
 	oldClient := conn.client
 	conn.client = mc
+	conn.config = cfg
 	oldClient.Close()
+	return nil
+}
+
+// findConfig finds a server config by name and SSE status from allConfigs.
+// It matches both exact name (e.g., "lightpanda") and prefixed names
+// (e.g., "lightpanda-local", "lightpanda-cloud").
+func (h *Hub) findConfig(name string, sse bool) *ServerConfig {
+	for i := range h.allConfigs {
+		if h.allConfigs[i].IsSSE() == sse &&
+			(h.allConfigs[i].Name == name ||
+				strings.HasPrefix(h.allConfigs[i].Name, name+"-")) {
+			return &h.allConfigs[i]
+		}
+	}
 	return nil
 }
 
