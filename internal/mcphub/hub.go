@@ -148,32 +148,24 @@ func newSSEClient(ctx context.Context, cfg ServerConfig) (*MCPClient, error) {
 }
 
 // buildSSEEndpoint builds the SSE endpoint URL from a server config.
-// It takes cfg.Command as the base URL and appends cfg.Args as
-// key=value query parameter pairs. Each pair of args becomes
-// "?key=value" or "&key=value" if query params already exist.
+// It takes cfg.Command as the base URL and appends each element of
+// cfg.Args as a query parameter parsed from "key=value" format.
+// If an arg has no "=" it is treated as a bare key with no value
+// (appended as "?key" or "&key").
 func buildSSEEndpoint(cfg ServerConfig) string {
 	endpoint := cfg.Command
 
-	// Append args as key=value query parameters (paired).
-	for i := 0; i < len(cfg.Args)-1; i += 2 {
-		key := cfg.Args[i]
-		value := cfg.Args[i+1]
+	for _, arg := range cfg.Args {
+		key, value, hasEquals := strings.Cut(arg, "=")
 		if strings.Contains(endpoint, "?") {
 			endpoint += "&"
 		} else {
 			endpoint += "?"
 		}
-		endpoint += url.QueryEscape(key) + "=" + url.QueryEscape(value)
-	}
-	// If odd trailing arg, treat as key with empty value.
-	if len(cfg.Args)%2 == 1 {
-		key := cfg.Args[len(cfg.Args)-1]
-		if strings.Contains(endpoint, "?") {
-			endpoint += "&"
-		} else {
-			endpoint += "?"
+		endpoint += url.QueryEscape(key)
+		if hasEquals {
+			endpoint += "=" + url.QueryEscape(value)
 		}
-		endpoint += url.QueryEscape(key) + "="
 	}
 
 	return endpoint

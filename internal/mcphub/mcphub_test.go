@@ -781,7 +781,7 @@ servers:
     name: lightpanda
     type: cloud
     command: https://euwest.cloud.lightpanda.io/mcp/sse
-    args: ["token", "secret123"]
+    args: ["token=secret123"]
     enabled: true
 `
 	yamlFile := filepath.Join(dir, "test-multi.yaml")
@@ -885,34 +885,34 @@ func TestBuildSSEEndpoint(t *testing.T) {
 			wantEP: "https://example.com/mcp/sse",
 		},
 		{
-			name: "with-token",
+			name: "with-key-value",
 			cfg: ServerConfig{
 				Command: "https://example.com/mcp/sse",
-				Args:    []string{"token", "secret123"},
+				Args:    []string{"token=secret123"},
 			},
 			wantEP: "https://example.com/mcp/sse?token=secret123",
 		},
 		{
-			name: "paired-args",
+			name: "multiple-pairs",
 			cfg: ServerConfig{
 				Command: "https://example.com/mcp/sse",
-				Args:    []string{"key1", "val1", "key2", "val2"},
+				Args:    []string{"key1=val1", "key2=val2"},
 			},
 			wantEP: "https://example.com/mcp/sse?key1=val1&key2=val2",
 		},
 		{
-			name: "odd-arg",
+			name: "bare-key",
 			cfg: ServerConfig{
 				Command: "https://example.com/mcp/sse",
-				Args:    []string{"token", "secret", "extra"},
+				Args:    []string{"debug"},
 			},
-			wantEP: "https://example.com/mcp/sse?token=secret&extra=",
+			wantEP: "https://example.com/mcp/sse?debug",
 		},
 		{
 			name: "existing-params",
 			cfg: ServerConfig{
 				Command: "https://example.com/mcp/sse?version=1",
-				Args:    []string{"token", "x"},
+				Args:    []string{"token=x"},
 			},
 			wantEP: "https://example.com/mcp/sse?version=1&token=x",
 		},
@@ -920,9 +920,25 @@ func TestBuildSSEEndpoint(t *testing.T) {
 			name: "url-encode",
 			cfg: ServerConfig{
 				Command: "https://example.com/mcp/sse",
-				Args:    []string{"token", "a b/c"},
+				Args:    []string{"token=a b/c"},
 			},
 			wantEP: "https://example.com/mcp/sse?token=a+b%2Fc",
+		},
+		{
+			name: "value-with-equals",
+			cfg: ServerConfig{
+				Command: "https://example.com/mcp/sse",
+				Args:    []string{"key=value=with=equals"},
+			},
+			wantEP: "https://example.com/mcp/sse?key=value%3Dwith%3Dequals",
+		},
+		{
+			name: "empty-value",
+			cfg: ServerConfig{
+				Command: "https://example.com/mcp/sse",
+				Args:    []string{"key="},
+			},
+			wantEP: "https://example.com/mcp/sse?key=",
 		},
 	}
 
