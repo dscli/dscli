@@ -11,7 +11,7 @@ import (
 // Config 配置管理器
 type Config struct {
 	mu        sync.RWMutex
-	data      map[string]string
+	data      map[string]any
 	configDir string
 }
 
@@ -24,7 +24,7 @@ func New() (*Config, error) {
 
 	cfg := &Config{
 		configDir: configDir,
-		data:      make(map[string]string),
+		data:      make(map[string]any),
 	}
 
 	if err := cfg.load(); err != nil {
@@ -38,7 +38,7 @@ func New() (*Config, error) {
 func NewWithDir(dir string) (*Config, error) {
 	cfg := &Config{
 		configDir: dir,
-		data:      make(map[string]string),
+		data:      make(map[string]any),
 	}
 
 	if err := cfg.load(); err != nil {
@@ -54,12 +54,12 @@ func (c *Config) Get(name, defaultValue string, alias ...string) string {
 	defer c.mu.RUnlock()
 
 	if value, ok := c.data[name]; ok && value != "" {
-		return value
+		return fmt.Sprint(value)
 	}
 
 	for _, aliasName := range alias {
 		if value, ok := c.data[aliasName]; ok && value != "" {
-			return value
+			return fmt.Sprint(value)
 		}
 	}
 
@@ -91,19 +91,8 @@ func (c *Config) load() error {
 	// 尝试从新格式文件加载
 	configFile := filepath.Join(c.configDir, "config.dscli")
 	defer c.Set("filename", configFile)
-	if data, err := loadConfigFromFile(configFile); err == nil && len(data) > 0 {
+	if data, err := ParseFile(configFile); err == nil && len(data) > 0 {
 		c.data = data
-		return nil
-	}
-
-	// 尝试从旧格式文件加载
-	oldConfigFile := filepath.Join(c.configDir, "dscli.env")
-	if data, err := loadConfigFromFile(oldConfigFile); err == nil && len(data) > 0 {
-		c.data = data
-		// 自动迁移到新格式
-		if err := saveConfigToFile(c.configDir, data); err != nil {
-			return fmt.Errorf("failed to migrate config: %w", err)
-		}
 		return nil
 	}
 
@@ -119,7 +108,7 @@ func (c *Config) load() error {
 	}
 
 	// 没有找到任何配置，使用空配置
-	c.data = make(map[string]string)
+	c.data = make(map[string]any)
 	return nil
 }
 
@@ -138,43 +127,110 @@ func getConfigDir() (string, error) {
 }
 
 // saveConfigToFile 保存配置到文件
-func saveConfigToFile(configDir string, data map[string]string) error {
+func saveConfigToFile(configDir string, data map[string]any) error {
 	if len(data) == 0 {
 		return nil
 	}
 
-	lines := []string{}
+	var buf strings.Builder
+	first := true
 	for k, v := range data {
-		line := fmt.Sprintf("%s = %s", k, v)
-		lines = append(lines, line)
+		if !first {
+			buf.WriteString("\n\n")
+		}
+		first = false
+		writeConfigValue(&buf, k, v, 0)
 	}
+	buf.WriteByte('\n')
 
-	content := strings.Join(lines, "\n\n")
 	configFile := filepath.Join(configDir, "config.dscli")
-
-	if err := os.WriteFile(configFile, []byte(content), 0o600); err != nil {
+	if err := os.WriteFile(configFile, []byte(buf.String()), 0o600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 	return nil
 }
 
-// loadConfigFromFile 从文件加载配置
-func loadConfigFromFile(filename string) (map[string]string, error) {
-	b, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, err
+// writeConfigValue 递归写入配置值为 nats-conf 格式。
+// key = value 的简单值
+// key { ... }  的嵌套 map
+// key = [ ... ] 的数组
+func writeConfigValue(w *strings.Builder, key string, val any, indent int) {
+	prefix := strings.Repeat("  ", indent)
+
+	switch v := val.(type) {
+	case nil:
+		return
+	case map[string]any:
+		if len(v) == 0 {
+			fmt.Fprintf(w, "%s%s {}", prefix, key)
+			return
+		}
+		fmt.Fprintf(w, "%s%s {\n", prefix, key)
+		for k, subVal := range v {
+			writeConfigValue(w, k, subVal, indent+1)
+			w.WriteByte('\n')
+		}
+		fmt.Fprintf(w, "%s}", prefix)
+	case []any:
+		if len(v) == 0 {
+			fmt.Fprintf(w, "%s%s = []", prefix, key)
+			return
+		}
+		fmt.Fprintf(w, "%s%s = [\n", prefix, key)
+		for _, item := range v {
+			w.WriteString(prefix)
+			w.WriteString("  ")
+			writeArrayItem(w, item)
+			w.WriteByte('\n')
+		}
+		fmt.Fprintf(w, "%s]", prefix)
+	default:
+		// 简单值：string、int64、float64、bool、time.Time 等
+		fmt.Fprintf(w, "%s%s = %v", prefix, key, v)
 	}
-	return parseConfig(string(b))
 }
 
+// writeArrayItem 写入数组项，支持内联 map 和简单值
+func writeArrayItem(w *strings.Builder, val any) {
+	switch v := val.(type) {
+	case map[string]any:
+		writeInlineMap(w, v)
+	default:
+		fmt.Fprint(w, val)
+	}
+}
+
+// writeInlineMap 写入内联 map，格式 {key: value, key: value}
+func writeInlineMap(w *strings.Builder, m map[string]any) {
+	w.WriteByte('{')
+	first := true
+	for k, v := range m {
+		if !first {
+			w.WriteString(", ")
+		}
+		first = false
+		fmt.Fprintf(w, "%s: %v", k, v)
+	}
+	w.WriteByte('}')
+}
+
+// // loadConfigFromFile 从文件加载配置
+// func loadConfigFromFile(filename string) (map[string]any, error) {
+// 	b, err := os.ReadFile(filename)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	return Parse(string(b))
+// }
+
 // loadConfigFromEnv 从环境变量加载配置
-func loadConfigFromEnv() map[string]string {
+func loadConfigFromEnv() map[string]any {
 	const (
 		BaseURL = "DEEPSEEK_BASE_URL"
 		APIKey  = "DEEPSEEK_API_KEY"
 	)
 
-	config := make(map[string]string)
+	config := make(map[string]any)
 
 	baseURL := os.Getenv(BaseURL)
 	if baseURL != "" {
@@ -196,60 +252,7 @@ func configName(envName string) string {
 	}
 	// DEEPSEEK_API_KEY -> deepseek-api-key
 	name := strings.ReplaceAll(envName, "_", "-")
-	return strings.ToLower(name)
-}
-
-// parseConfig 解析配置内容
-func parseConfig(data string) (map[string]string, error) {
-	config := make(map[string]string)
-
-	// 使用 SplitSeq 避免中间切片分配
-	for line := range strings.SplitSeq(data, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		// 处理注释
-		if commentIdx := strings.Index(line, "#"); commentIdx != -1 {
-			line = line[:commentIdx]
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-		}
-
-		// 查找等号分隔符
-		before, after, ok := strings.Cut(line, "=")
-		if !ok {
-			// 尝试支持 "export KEY = VALUE" 格式
-			fields := strings.Fields(line)
-			if len(fields) >= 4 && fields[0] == "export" && fields[2] == "=" {
-				key := fields[1]
-				value := strings.Join(fields[3:], " ")
-				config[configName(key)] = value
-			} else if len(fields) >= 3 && fields[1] == "=" {
-				// 支持 "KEY = VALUE" 格式
-				key := fields[0]
-				value := strings.Join(fields[2:], " ")
-				config[configName(key)] = value
-			}
-			continue
-		}
-
-		// 解析 "KEY=VALUE" 或 "KEY = VALUE" 格式
-		key := strings.TrimSpace(before)
-		value := strings.TrimSpace(after)
-
-		// 处理 "export KEY=VALUE" 格式
-		if strings.HasPrefix(key, "export ") {
-			key = strings.TrimSpace(strings.TrimPrefix(key, "export"))
-		}
-
-		if key != "" {
-			config[configName(key)] = value
-		}
-	}
-
-	return config, nil
+	name = strings.ToLower(name)
+	name = strings.TrimPrefix(name, "export ")
+	return name
 }

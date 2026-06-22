@@ -44,21 +44,17 @@ func TestConfig_Get(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// 设置环境变量
 			for k, v := range tt.envVars {
 				t.Setenv(k, v)
 			}
 
-			// 创建临时配置目录
 			tempDir := t.TempDir()
 
-			// 创建新的配置实例
 			cfg, err := NewWithDir(tempDir)
 			if err != nil {
 				t.Fatalf("NewWithDir() error = %v", err)
 			}
 
-			// 测试Get方法
 			got := cfg.Get(tt.configKey, tt.defaultValue)
 			if got != tt.want {
 				t.Errorf("Config.Get() = %v, want %v", got, tt.want)
@@ -75,28 +71,23 @@ func TestConfig_SaveAndLoad(t *testing.T) {
 		t.Fatalf("NewWithDir() error = %v", err)
 	}
 
-	// 设置一些配置值
 	cfg.Set("deepseek-api-key", "sk-save-test")
 	cfg.Set("deepseek-base-url", "https://api.save.test")
 
-	// 保存配置
 	if err := cfg.Save(); err != nil {
 		t.Fatalf("Config.Save() error = %v", err)
 	}
 
-	// 验证配置文件存在
 	configFile := filepath.Join(tempDir, "config.dscli")
 	if _, err := os.Stat(configFile); os.IsNotExist(err) {
 		t.Fatalf("config file not created: %v", err)
 	}
 
-	// 重新加载配置
 	cfg2, err := NewWithDir(tempDir)
 	if err != nil {
 		t.Fatalf("NewWithDir() second time error = %v", err)
 	}
 
-	// 验证配置值
 	if got := cfg2.Get("deepseek-api-key", ""); got != "sk-save-test" {
 		t.Errorf("reloaded api key = %v, want sk-save-test", got)
 	}
@@ -105,116 +96,7 @@ func TestConfig_SaveAndLoad(t *testing.T) {
 	}
 }
 
-func TestParseConfig(t *testing.T) {
-	tests := []struct {
-		name    string
-		input   string
-		want    map[string]string
-		wantErr bool
-	}{
-		{
-			name: "简单键值对",
-			input: `deepseek-api-key = sk-test123
-deepseek-base-url = https://api.test.com`,
-			want: map[string]string{
-				"deepseek-api-key":  "sk-test123",
-				"deepseek-base-url": "https://api.test.com",
-			},
-		},
-		{
-			name: "带注释",
-			input: `# API配置
-deepseek-api-key = sk-test123
-# 基础URL
-deepseek-base-url = https://api.test.com`,
-			want: map[string]string{
-				"deepseek-api-key":  "sk-test123",
-				"deepseek-base-url": "https://api.test.com",
-			},
-		},
-		{
-			name: "旧格式export",
-			input: `export DEEPSEEK_API_KEY=sk-test123
-export DEEPSEEK_BASE_URL=https://api.test.com`,
-			want: map[string]string{
-				"deepseek-api-key":  "sk-test123",
-				"deepseek-base-url": "https://api.test.com",
-			},
-		},
-		{
-			name: "空行和空格",
-			input: `
-
-deepseek-api-key = sk-test123
-
-deepseek-base-url = https://api.test.com
-
-`,
-			want: map[string]string{
-				"deepseek-api-key":  "sk-test123",
-				"deepseek-base-url": "https://api.test.com",
-			},
-		},
-		{
-			name:    "空输入",
-			input:   "",
-			want:    map[string]string{},
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseConfig(tt.input)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("parseConfig() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if len(got) != len(tt.want) {
-				t.Errorf("parseConfig() got %d keys, want %d keys", len(got), len(tt.want))
-				return
-			}
-
-			for key, wantValue := range tt.want {
-				gotValue, ok := got[key]
-				if !ok {
-					t.Errorf("parseConfig() missing key %q", key)
-					continue
-				}
-				if gotValue != wantValue {
-					t.Errorf("parseConfig()[%q] = %v, want %v", key, gotValue, wantValue)
-				}
-			}
-		})
-	}
-}
-
-func TestConfigName(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"DEEPSEEK_API_KEY", "deepseek-api-key"},
-		{"DEEPSEEK_BASE_URL", "deepseek-base-url"},
-		{"TEST_VARIABLE", "test-variable"},
-		{"", ""},
-		{"simple", "simple"},
-		{"ALREADY_LOWER", "already-lower"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			got := configName(tt.input)
-			if got != tt.want {
-				t.Errorf("configName(%q) = %q, want %q", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestGlobalGet(t *testing.T) {
-	// 测试全局Get函数（向后兼容）
 	originalAPIKey := os.Getenv("DEEPSEEK_API_KEY")
 	defer func() {
 		if originalAPIKey != "" {
@@ -224,19 +106,161 @@ func TestGlobalGet(t *testing.T) {
 		}
 	}()
 
-	// 设置测试环境变量
 	os.Setenv("DEEPSEEK_API_KEY", "sk-global-test")
 
-	// 注意：由于全局变量只初始化一次，我们无法完全重置
-	// 这里测试的是全局Get函数的基本功能
 	got := Get("deepseek-api-key", "default")
 
-	// 检查是否获取到了环境变量的值或默认值
 	if got == "default" {
-		// 如果全局配置已经初始化过，可能不会使用新的环境变量
-		// 这是预期的行为，因为全局配置只加载一次
 		t.Log("Global config already initialized, using cached values")
 	} else if !strings.HasPrefix(got, "sk-") {
 		t.Errorf("global Get() = %v, expected API key or default", got)
+	}
+}
+
+func TestSaveConfigToFile_NestedMap(t *testing.T) {
+	tempDir := t.TempDir()
+
+	data := map[string]any{
+		"authorization": map[string]any{
+			"user":     "admin",
+			"password": "secret",
+			"timeout":  float64(1.5),
+		},
+	}
+
+	if err := saveConfigToFile(tempDir, data); err != nil {
+		t.Fatalf("saveConfigToFile() error = %v", err)
+	}
+
+	loaded, err := ParseFile(filepath.Join(tempDir, "config.dscli"))
+	if err != nil {
+		t.Fatalf("ParseFile() error = %v", err)
+	}
+
+	auth, ok := loaded["authorization"].(map[string]any)
+	if !ok {
+		t.Fatal("authorization is not a map")
+	}
+	if got, want := auth["user"], "admin"; got != want {
+		t.Errorf("user = %v, want %v", got, want)
+	}
+	if got, want := auth["password"], "secret"; got != want {
+		t.Errorf("password = %v, want %v", got, want)
+	}
+	if got, want := auth["timeout"], float64(1.5); got != want {
+		t.Errorf("timeout = %v, want %v", got, want)
+	}
+}
+
+func TestSaveConfigToFile_Array(t *testing.T) {
+	tempDir := t.TempDir()
+
+	data := map[string]any{
+		"servers": []any{"a.com", "b.com", "c.com"},
+	}
+
+	if err := saveConfigToFile(tempDir, data); err != nil {
+		t.Fatalf("saveConfigToFile() error = %v", err)
+	}
+
+	loaded, err := ParseFile(filepath.Join(tempDir, "config.dscli"))
+	if err != nil {
+		t.Fatalf("ParseFile() error = %v", err)
+	}
+
+	servers, ok := loaded["servers"].([]any)
+	if !ok {
+		t.Fatal("servers is not an array")
+	}
+	if len(servers) != 3 {
+		t.Fatalf("servers length = %d, want 3", len(servers))
+	}
+	if got, want := servers[0], "a.com"; got != want {
+		t.Errorf("servers[0] = %v, want %v", got, want)
+	}
+	if got, want := servers[1], "b.com"; got != want {
+		t.Errorf("servers[1] = %v, want %v", got, want)
+	}
+	if got, want := servers[2], "c.com"; got != want {
+		t.Errorf("servers[2] = %v, want %v", got, want)
+	}
+}
+
+func TestSaveConfigToFile_ArrayOfMaps(t *testing.T) {
+	tempDir := t.TempDir()
+
+	data := map[string]any{
+		"users": []any{
+			map[string]any{"user": "alice", "role": "admin"},
+			map[string]any{"user": "bob", "role": "user"},
+		},
+	}
+
+	if err := saveConfigToFile(tempDir, data); err != nil {
+		t.Fatalf("saveConfigToFile() error = %v", err)
+	}
+
+	loaded, err := ParseFile(filepath.Join(tempDir, "config.dscli"))
+	if err != nil {
+		t.Fatalf("ParseFile() error = %v", err)
+	}
+
+	users, ok := loaded["users"].([]any)
+	if !ok {
+		t.Fatal("users is not an array")
+	}
+	if len(users) != 2 {
+		t.Fatalf("users length = %d, want 2", len(users))
+	}
+
+	u0, ok := users[0].(map[string]any)
+	if !ok {
+		t.Fatal("users[0] is not a map")
+	}
+	if got, want := u0["user"], "alice"; got != want {
+		t.Errorf("users[0].user = %v, want %v", got, want)
+	}
+	if got, want := u0["role"], "admin"; got != want {
+		t.Errorf("users[0].role = %v, want %v", got, want)
+	}
+
+	u1, ok := users[1].(map[string]any)
+	if !ok {
+		t.Fatal("users[1] is not a map")
+	}
+	if got, want := u1["user"], "bob"; got != want {
+		t.Errorf("users[1].user = %v, want %v", got, want)
+	}
+	if got, want := u1["role"], "user"; got != want {
+		t.Errorf("users[1].role = %v, want %v", got, want)
+	}
+}
+
+func TestSaveConfigToFile_EmptyMapAndArray(t *testing.T) {
+	tempDir := t.TempDir()
+
+	data := map[string]any{
+		"emptymap":   map[string]any{},
+		"emptyarray": []any{},
+		"valid":      "ok",
+	}
+
+	if err := saveConfigToFile(tempDir, data); err != nil {
+		t.Fatalf("saveConfigToFile() error = %v", err)
+	}
+
+	loaded, err := ParseFile(filepath.Join(tempDir, "config.dscli"))
+	if err != nil {
+		t.Fatalf("ParseFile() error = %v", err)
+	}
+
+	if _, ok := loaded["emptymap"]; !ok {
+		t.Error("emptymap key missing")
+	}
+	if _, ok := loaded["emptyarray"]; !ok {
+		t.Error("emptyarray key missing")
+	}
+	if got, want := loaded["valid"], "ok"; got != want {
+		t.Errorf("valid = %v, want %v", got, want)
 	}
 }

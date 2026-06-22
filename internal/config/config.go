@@ -71,7 +71,7 @@ func getGlobalConfig() *Config {
 		if err != nil {
 			// 记录错误但不panic，使用空配置继续运行
 			globalConfig = &Config{
-				data:      make(map[string]string),
+				data:      make(map[string]any),
 				configDir: defaultConfigDir(),
 			}
 		}
