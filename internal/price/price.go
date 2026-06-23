@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	thePrice     map[string]Price
-	thePriceOnce sync.Once
+	thePrice   map[string]Price
+	thePriceMu sync.Mutex
 )
 
 type Price struct {
@@ -20,20 +20,22 @@ type Price struct {
 }
 
 func GetPrice() (price map[string]Price) {
-	thePriceOnce.Do(func() {
-		resp, err := http.Get("https://api-docs.deepseek.com/zh-cn/quick_start/pricing")
-		if err != nil {
-			thePriceOnce = sync.Once{}
-			return
-		}
-		body := resp.Body
-		defer body.Close()
-		b, err := io.ReadAll(body)
-		if err != nil {
-			thePriceOnce = sync.Once{}
-		}
-		thePrice = parsePrice(string(b))
-	})
+	thePriceMu.Lock()
+	defer thePriceMu.Unlock()
+	if thePrice != nil {
+		return thePrice
+	}
+
+	resp, err := http.Get("https://api-docs.deepseek.com/zh-cn/quick_start/pricing")
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil
+	}
+	thePrice = parsePrice(string(b))
 	return thePrice
 }
 

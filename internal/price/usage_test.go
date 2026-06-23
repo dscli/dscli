@@ -7,8 +7,9 @@ import (
 
 func TestGetCostZeroWhenNoPrices(t *testing.T) {
 	// 没有价格数据时，任何模型都返回 0
+	thePriceMu.Lock()
 	thePrice = nil
-	thePriceOnce = sync.Once{}
+	thePriceMu.Unlock()
 	theUsage = Usage{
 		PromptCacheHitTokens:  100,
 		PromptCacheMissTokens: 200,
@@ -22,10 +23,11 @@ func TestGetCostZeroWhenNoPrices(t *testing.T) {
 
 func TestGetCostWithPrices(t *testing.T) {
 	// 设置价格数据
+	thePriceMu.Lock()
 	thePrice = map[string]Price{
 		"deepseek-v4-flash": {PromptCacheHit: 0.02, PromptCacheMiss: 1.0, Completion: 2.0},
 	}
-	thePriceOnce = sync.Once{}
+	thePriceMu.Unlock()
 	theUsage = Usage{
 		PromptCacheHitTokens:  1_000_000, // 1M tokens → 0.02 元
 		PromptCacheMissTokens: 500_000,   // 0.5M tokens → 0.5 元
@@ -39,10 +41,11 @@ func TestGetCostWithPrices(t *testing.T) {
 }
 
 func TestGetCostZeroUsage(t *testing.T) {
+	thePriceMu.Lock()
 	thePrice = map[string]Price{
 		"deepseek-v4-flash": {PromptCacheHit: 0.02, PromptCacheMiss: 1.0, Completion: 2.0},
 	}
-	thePriceOnce = sync.Once{}
+	thePriceMu.Unlock()
 	theUsage = Usage{}
 	cost := GetCost("deepseek-v4-flash")
 	if cost != 0 {
@@ -51,10 +54,11 @@ func TestGetCostZeroUsage(t *testing.T) {
 }
 
 func TestGetCostConcurrentSafe(t *testing.T) {
+	thePriceMu.Lock()
 	thePrice = map[string]Price{
 		"deepseek-v4-flash": {PromptCacheHit: 0.02, PromptCacheMiss: 1.0, Completion: 2.0},
 	}
-	thePriceOnce = sync.Once{}
+	thePriceMu.Unlock()
 	theUsage = Usage{
 		PromptCacheHitTokens:  100,
 		PromptCacheMissTokens: 200,
