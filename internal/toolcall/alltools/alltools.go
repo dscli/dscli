@@ -3,8 +3,8 @@ package alltools
 
 import (
 	"github.com/dscli/dscli/internal/toolcall"
+
 	_ "github.com/dscli/dscli/internal/toolcall/ask"
-	_ "github.com/dscli/dscli/internal/toolcall/code"
 	_ "github.com/dscli/dscli/internal/toolcall/cwd"
 	_ "github.com/dscli/dscli/internal/toolcall/file"
 	_ "github.com/dscli/dscli/internal/toolcall/flycheck"
