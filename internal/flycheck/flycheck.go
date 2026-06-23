@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/dscli/dscli/internal/context"
-	"github.com/dscli/dscli/internal/parse"
 	"github.com/dscli/dscli/internal/shell"
 	"github.com/nanjj/clog"
 )
@@ -76,7 +75,7 @@ var pythonRuff = Checker{
 	},
 }
 
-// Registry maps language identifiers (from parse.GuessLanguage) to their checkers.
+// Registry maps language identifiers (from GuessLanguage) to their checkers.
 // Add entries here when supporting new languages.
 var Registry = map[string][]Checker{
 	"go":     {goStaticcheck},
@@ -97,7 +96,7 @@ func Flycheck(ctx context.Context, filename string) (result, suggestion string, 
 	span, ctx := clog.StartSpanFromContext(ctx, "Flycheck")
 	defer span.Finish()
 
-	lang := parse.GuessLanguage(filename)
+	lang := GuessLanguage(filename)
 	checkers, ok := Registry[lang]
 	if !ok || len(checkers) == 0 {
 		return "", "", nil

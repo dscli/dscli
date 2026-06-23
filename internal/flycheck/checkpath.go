@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/dscli/dscli/internal/context"
-	"github.com/dscli/dscli/internal/parse"
 	"github.com/nanjj/clog"
 )
 
@@ -103,7 +102,7 @@ func IsLanguageSupported(lang string) bool {
 //   - 自动判断文件 vs 目录
 //
 // 语言识别：
-//   - 文件：从扩展名自动识别（parse.GuessLanguage）
+//   - 文件：从扩展名自动识别（GuessLanguage）
 //   - 目录：默认查找 Go 包；可通过 context.WithValue(LanguageKey, lang) 指定语言
 //
 // 选项：
@@ -304,7 +303,7 @@ func checkPathFile(ctx context.Context, path string) (*CheckResult, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "checkPathFile")
 	defer span.Finish()
 	ext := strings.ToLower(filepath.Ext(path))
-	lang := parse.GuessLanguage(path)
+	lang := GuessLanguage(path)
 
 	result := &CheckResult{
 		Language:  lang,

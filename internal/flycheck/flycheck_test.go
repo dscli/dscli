@@ -64,8 +64,8 @@ func TestFlycheckGoNoIssues(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// internal/parse/parse.go is a stable utility file with no linter issues
-	result, suggestion, err := Flycheck(ctx, "internal/parse/parse.go")
+	// internal/flycheck/language.go is a stable utility file with no linter issues
+	result, suggestion, err := Flycheck(ctx, "internal/flycheck/language.go")
 	if err != nil {
 		t.Errorf("Flycheck error: %v, suggestion: %s", err, suggestion)
 	}
