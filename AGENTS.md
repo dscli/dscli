@@ -67,7 +67,6 @@ Packages use `init()` + `sqlite.Register*Schema` for declarative dependency wiri
 | `internal/editor/` | External editor integration |
 | `internal/shell/` | Safe shell execution via mvdan/sh |
 | `internal/lp/` | Language parser (C, Python, JSON) |
-| `internal/parse/` | Code structure parsing (Go/Python), symbol extraction |
 | `internal/memories/` | Persistent cross-session memory with FTS5 |
 | `internal/gse/` | Chinese text segmentation (Go jieba) |
 | `internal/tokenizer/` | Token counting for context window management |
