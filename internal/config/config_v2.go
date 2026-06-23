@@ -53,12 +53,12 @@ func (c *Config) Get(name, defaultValue string, alias ...string) string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if value, ok := c.data[name]; ok && value != "" {
+	if value, ok := c.data[name]; ok && value != nil {
 		return fmt.Sprint(value)
 	}
 
 	for _, aliasName := range alias {
-		if value, ok := c.data[aliasName]; ok && value != "" {
+		if value, ok := c.data[aliasName]; ok && value != nil {
 			return fmt.Sprint(value)
 		}
 	}

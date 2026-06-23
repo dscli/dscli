@@ -3,6 +3,7 @@ package mcphub
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -113,7 +114,7 @@ func (h *Hub) connectLocked(ctx context.Context, cfg ServerConfig) error {
 			Description: t.Description,
 			Strict:      true,
 			Parameters:  params,
-			Category:    "web",
+			Category:    cfg.Name,
 			Handler:     handler,
 		}); err != nil {
 			// If a tool is already registered (e.g., duplicate name),
@@ -226,7 +227,56 @@ func (h *Hub) SwitchServerTransport(ctx context.Context, name, target string) er
 	return nil
 }
 
+// reconnect replaces the client for a disconnected server.
+// It acquires the write lock internally and validates the new connection
+// before swapping. If validation fails, the old (dead) client is preserved.
+func (h *Hub) reconnect(ctx context.Context, serverName string) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "reconnect")
+	defer span.Finish()
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	conn, ok := h.servers[serverName]
+	if !ok {
+		return fmt.Errorf("mcphub: server %q not connected", serverName)
+	}
+
+	// Find the config matching the current transport type.
+	var cfg *ServerConfig
+	for i := range h.allConfigs {
+		if h.allConfigs[i].Name == serverName && h.allConfigs[i].Type == conn.config.Type {
+			cfg = &h.allConfigs[i]
+			break
+		}
+	}
+	if cfg == nil {
+		return fmt.Errorf("mcphub: no config for server %q", serverName)
+	}
+
+	// Close old client.
+	conn.client.Close()
+
+	// Create new client.
+	mc, err := newClientForConfig(ctx, *cfg)
+	if err != nil {
+		return fmt.Errorf("mcphub: reconnect %s: %w", serverName, err)
+	}
+
+	// Validate the new connection before swapping.
+	if _, err := mc.ListTools(ctx); err != nil {
+		mc.Close()
+		return fmt.Errorf("mcphub: reconnect validate %s: %w", serverName, err)
+	}
+
+	outfmt.Info("mcphub: reconnected %s (%s transport)", serverName, cfg.Type)
+	conn.client = mc
+	return nil
+}
+
 // dispatchToServer routes a tool call to the specified server.
+// If the call fails with a transport-level error, it attempts a lazy reconnect
+// and retries once. Tool-level errors (MCPToolError) are returned as-is.
 func (h *Hub) dispatchToServer(ctx context.Context, serverName, toolName string, args toolcall.ToolArgs) (string, string, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "dispatchToServer")
 	defer span.Finish()
@@ -245,10 +295,28 @@ func (h *Hub) dispatchToServer(ctx context.Context, serverName, toolName string,
 	}
 
 	text, err := conn.client.CallTool(ctx, toolName, argsRaw)
-	if err != nil {
+	if err == nil {
+		return text, "", nil
+	}
+
+	// Distinguish tool-level errors from transport-level errors.
+	// MCPToolError means the tool ran but returned an error (e.g., URL unreachable).
+	// A plain Go error means the connection itself is broken.
+	var toolErr *MCPToolError
+	if errors.As(err, &toolErr) {
 		return "", "", err
 	}
-	return text, "", nil
+
+	// Transport-level error — attempt lazy reconnect and retry once.
+	outfmt.Warn("mcphub: %s disconnected (call %s: %v); reconnecting...", serverName, toolName, err)
+	if rerr := h.reconnect(ctx, serverName); rerr != nil {
+		outfmt.Warn("mcphub: reconnect %s failed: %v", serverName, rerr)
+		return "", "", err // return original error
+	}
+
+	// conn.client now points to the reconnected client (through pointer).
+	text, err = conn.client.CallTool(ctx, toolName, argsRaw)
+	return text, "", err
 }
 
 // doDispatch routes a tool call to the correct MCP server based on the
@@ -259,25 +327,29 @@ func (h *Hub) dispatchToServer(ctx context.Context, serverName, toolName string,
 //
 // If the tool name has no underscore prefix, all registered servers are
 // tried in order (best-effort fallback for backward compatibility).
+//
+// Like dispatchToServer, transport-level errors trigger a lazy reconnect.
 func (h *Hub) doDispatch(ctx context.Context, toolName, argsRaw string) (result, warning string, err error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "mcphub.Dispatch")
 	defer span.Finish()
 
 	h.mu.RLock()
-	defer h.mu.RUnlock()
-
 	if len(h.servers) == 0 {
+		h.mu.RUnlock()
 		return "", "", fmt.Errorf("mcphub: no MCP servers connected")
 	}
 
 	// Parse "serverName_toolName".
 	serverName, actualToolName, found := strings.Cut(toolName, "_")
 	if !found {
+		h.mu.RUnlock()
 		// No underscore — try all servers in order (backward compat fallback).
 		return h.dispatchFallback(ctx, toolName, argsRaw)
 	}
 
 	conn, ok := h.servers[serverName]
+	h.mu.RUnlock()
+
 	if !ok {
 		return "", "", fmt.Errorf("mcphub: unknown server %q in tool name %q", serverName, toolName)
 	}
@@ -288,10 +360,25 @@ func (h *Hub) doDispatch(ctx context.Context, toolName, argsRaw string) (result,
 	}
 
 	text, callErr := conn.client.CallTool(ctx, actualToolName, args)
-	if callErr != nil {
+	if callErr == nil {
+		return text, "", nil
+	}
+
+	// Tool-level errors are returned directly.
+	var toolErr *MCPToolError
+	if errors.As(callErr, &toolErr) {
 		return "", "", callErr
 	}
-	return text, "", nil
+
+	// Transport-level error — attempt lazy reconnect and retry once.
+	outfmt.Warn("mcphub: %s disconnected (dispatch %s: %v); reconnecting...", serverName, toolName, callErr)
+	if rerr := h.reconnect(ctx, serverName); rerr != nil {
+		outfmt.Warn("mcphub: reconnect %s failed: %v", serverName, rerr)
+		return "", "", callErr
+	}
+
+	text, callErr = conn.client.CallTool(ctx, actualToolName, args)
+	return text, "", callErr
 }
 
 // dispatchFallback tries to call a tool on all connected servers in order.

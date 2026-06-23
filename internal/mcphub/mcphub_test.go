@@ -922,3 +922,62 @@ func TestBuildSSEEndpoint(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// reconnect
+// ---------------------------------------------------------------------------
+
+func TestHub_Reconnect_ServerNotFound(t *testing.T) {
+	hub := &Hub{servers: map[string]*serverConn{}}
+	err := hub.reconnect(context.Background(), "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent server")
+	}
+}
+
+func TestHub_Reconnect_NoConfig(t *testing.T) {
+	hub := &Hub{
+		servers: map[string]*serverConn{
+			"test": {config: ServerConfig{Name: "test", Type: "local"}},
+		},
+		allConfigs: nil,
+	}
+	err := hub.reconnect(context.Background(), "test")
+	if err == nil {
+		t.Fatal("expected error when no config found")
+	}
+}
+
+// dispatchToServer with a tool-level error (IsError=true) should return the
+// error directly without attempting reconnect.
+func TestDispatchToServer_ToolError(t *testing.T) {
+	ctx := context.Background()
+
+	tools := []*mcp.Tool{
+		{Name: "failable", Description: "may fail"},
+	}
+	handlers := map[string]testToolHandler{
+		"failable": func(ctx context.Context, req *mcp.CallToolRequest, _ map[string]any) (*mcp.CallToolResult, any, error) {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: "tool level error"}},
+			}, nil, nil
+		},
+	}
+
+	mc, stop := newTestMCP(t, ctx, tools, handlers)
+	defer stop()
+
+	hub := &Hub{servers: map[string]*serverConn{
+		"test": {client: mc, config: ServerConfig{Name: "test"}},
+	}}
+
+	_, _, err := hub.dispatchToServer(ctx, "test", "failable", nil)
+	if err == nil {
+		t.Fatal("expected error for tool-level failure")
+	}
+	var mcpErr *MCPToolError
+	if !errors.As(err, &mcpErr) {
+		t.Fatalf("error type = %T, want *MCPToolError", err)
+	}
+}
