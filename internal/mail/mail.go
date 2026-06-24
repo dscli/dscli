@@ -487,16 +487,8 @@ func HandleMailSearch(ctx context.Context, query string, limit int) (result, war
 		if shortSubject == "" {
 			shortSubject = "(无主题)"
 		}
-		shortBody := m.Body
-		if len(shortBody) > 100 {
-			shortBody = shortBody[:100] + "..."
-		}
-
 		fmt.Fprintf(&sb, "**#%d** | %s → %s | %s\n", m.ID, m.SenderName, m.RecipientName, localTime(m.CreatedAt))
 		fmt.Fprintf(&sb, "  主题: %s\n", shortSubject)
-		if shortBody != "" {
-			fmt.Fprintf(&sb, "  内容: %s\n", shortBody)
-		}
 		sb.WriteString("\n")
 	}
 
