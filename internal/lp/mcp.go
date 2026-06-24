@@ -70,7 +70,7 @@ func NewMCPClient(ctx context.Context) (*MCPClient, error) {
 	}
 
 	cmd := exec.CommandContext(ctx, path, "mcp")
-	// 注入 trace 上下文，使 lightpanda mcp 子进程继承当前 span。
+	// Inject trace context so the lightpanda MCP subprocess inherits the current span.
 	cmd.Env = append(os.Environ(), clog.TraceEnv(span)...)
 
 	transport := &mcp.CommandTransport{Command: cmd}
@@ -151,17 +151,31 @@ func (c *MCPClient) CallTool(ctx context.Context, name string, args map[string]a
 
 // callTool is the internal workhorse: serializes access to the session,
 // calls the named tool, and handles both transport errors and tool-level
-// errors (isError).
+// errors (isError). It also injects the W3C traceparent into _meta for
+// cross-process distributed tracing.
 func (c *MCPClient) callTool(ctx context.Context, name string, args map[string]any) (string, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "callTool")
 	defer span.Finish()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	result, err := c.session.CallTool(ctx, &mcp.CallToolParams{
+	params := &mcp.CallToolParams{
 		Name:      name,
 		Arguments: args,
-	})
+	}
+
+	// Inject traceparent for cross-process trace propagation.
+	// The MCP server (e.g., slingshot TracingMiddleware) extracts
+	// this from _meta.traceparent to create a child span, enabling
+	// end-to-end distributed tracing across process boundaries.
+	for _, e := range clog.TraceEnv(span) {
+		if after, ok := strings.CutPrefix(e, "CLOG_TRACEPARENT="); ok {
+			params.SetMeta(map[string]any{"traceparent": after})
+			break
+		}
+	}
+
+	result, err := c.session.CallTool(ctx, params)
 	if err != nil {
 		return "", fmt.Errorf("mcp call %s: %w", name, err)
 	}
