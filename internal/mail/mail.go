@@ -176,7 +176,7 @@ func insertMailFTS(db *sqlite.DB, id int64, subject, body string) error {
 
 // deleteMailFTS removes a mail from the FTS index.
 func deleteMailFTS(db *sqlite.DB, id int64) error {
-	_, err := db.Exec("INSERT INTO mail_fts(mail_fts, rowid, content) VALUES('delete', ?, ?)", id, "")
+	_, err := db.Exec("DELETE FROM mail_fts WHERE rowid = ?", id)
 	return err
 }
 
