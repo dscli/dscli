@@ -199,3 +199,67 @@ func UpdateProjectPath(ctx context.Context, sessionID int64, newPath string) err
 		newPath, sessionID)
 	return err
 }
+
+// RemoveProject removes a session (project) by ID.
+// Deletes all associated data (session_names, memories, messages, notes, chimeins)
+// before deleting the session itself. Returns an error if the session does not exist.
+func RemoveProject(ctx context.Context, sessionID int64) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "RemoveProject")
+	defer span.Finish()
+
+	db, err := sqlite.OpenDB(ctx)
+	if err != nil {
+		return err
+	}
+	defer db.Close(ctx)
+
+	// Verify session exists.
+	var sid int64
+	if err := db.QueryRow("SELECT id FROM sessions WHERE id = ?", sessionID).Scan(&sid); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("project %d: 不存在", sessionID)
+		}
+		return err
+	}
+
+	// Query existing child tables to gracefully handle test environments
+	// where not all tables are registered.
+	tableRows, err := db.Query(
+		`SELECT name FROM sqlite_master
+		 WHERE type='table' AND name IN ('session_names','memories','messages','notes','chimeins')`)
+	if err != nil {
+		return fmt.Errorf("查询表列表失败: %w", err)
+	}
+	existing := make(map[string]bool, 5)
+	for tableRows.Next() {
+		var name string
+		if err := tableRows.Scan(&name); err != nil {
+			tableRows.Close()
+			return fmt.Errorf("扫描表名失败: %w", err)
+		}
+		existing[name] = true
+	}
+	tableRows.Close()
+
+	// Delete from all referencing tables that exist.
+	for _, table := range []string{"session_names", "memories", "messages", "notes", "chimeins"} {
+		if !existing[table] {
+			continue
+		}
+		if _, err := db.Exec("DELETE FROM "+table+" WHERE session_id = ?", sessionID); err != nil {
+			return fmt.Errorf("删除 %s 失败: %w", table, err)
+		}
+	}
+
+	// Delete the session itself.
+	result, err := db.Exec("DELETE FROM sessions WHERE id = ?", sessionID)
+	if err != nil {
+		return fmt.Errorf("删除 session 失败: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("project %d: 不存在", sessionID)
+	}
+
+	return nil
+}

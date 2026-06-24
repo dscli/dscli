@@ -187,3 +187,53 @@ func TestUpdateProjectPath(t *testing.T) {
 		t.Error("expected error for empty path")
 	}
 }
+
+func TestRemoveProject(t *testing.T) {
+	ctx := t.Context()
+	sessionID, err := CreateOrGetSessionID(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify it exists in ListProjects.
+	projects, err := ListProjects(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, p := range projects {
+		if p.ID == sessionID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("session %d should exist before removal", sessionID)
+	}
+
+	// Remove the project.
+	if err := RemoveProject(ctx, sessionID); err != nil {
+		t.Fatalf("RemoveProject: %v", err)
+	}
+
+	// Verify it's gone.
+	projects, err = ListProjects(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range projects {
+		if p.ID == sessionID {
+			t.Errorf("session %d should have been removed", sessionID)
+		}
+	}
+
+	// Error: removing non-existent session.
+	if err := RemoveProject(ctx, sessionID); err == nil {
+		t.Error("expected error for non-existent session")
+	}
+
+	// Error: removing invalid ID.
+	if err := RemoveProject(ctx, 0); err == nil {
+		t.Error("expected error for invalid ID")
+	}
+}

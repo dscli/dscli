@@ -49,6 +49,17 @@ func init() {
 		Args: cobra.ExactArgs(2),
 		RunE: projectUpdateRunE,
 	})
+
+	projectCmd.AddCommand(&cobra.Command{
+		Use:   "remove <project_id>",
+		Short: "删除指定项目",
+		Long: `从数据库中删除指定项目（session）及其所有关联数据。
+
+示例:
+  dscli project remove 6    # 删除项目 6`,
+		Args: cobra.ExactArgs(1),
+		RunE: projectRemoveRunE,
+	})
 }
 
 func projectListRunE(cmd *cobra.Command, _ []string) error {
@@ -164,5 +175,24 @@ func projectUpdateRunE(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("已将项目 %d 的路径更新为 %s。\n", projectID, newPath)
+	return nil
+}
+
+// projectRemoveRunE handles "dscli project remove <project_id>".
+func projectRemoveRunE(cmd *cobra.Command, args []string) error {
+	span, ctx := clog.StartSpanFromContext(cmd.Context(), "projectRemoveRunE")
+	defer span.Finish()
+
+	projectID, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil || projectID <= 0 {
+		return fmt.Errorf("无效的 project_id: %s（需要正整数）", args[0])
+	}
+
+	if err := session.RemoveProject(ctx, projectID); err != nil {
+		fmt.Fprintf(os.Stderr, "删除项目失败: %v\n", err)
+		return nil
+	}
+
+	fmt.Printf("已删除项目 %d。\n", projectID)
 	return nil
 }

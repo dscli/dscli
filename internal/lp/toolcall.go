@@ -31,7 +31,7 @@ var (
 
 	// mcpClientTarget controls which MCP client to use for tool calls.
 	// Default "local". Set by the mcp_client tool.
-	mcpClientTarget   string
+	mcpClientTarget = "local"
 	mcpClientTargetMu sync.Mutex
 )
 
@@ -165,6 +165,12 @@ func HandleMCPClientTool(ctx context.Context, target string) (result, warning st
 	span, ctx := clog.StartSpanFromContext(ctx, "HandleMCPClientTool")
 	defer span.Finish()
 	switch target {
+	case "":
+		mcpClientTargetMu.Lock()
+		current := mcpClientTarget
+		mcpClientTargetMu.Unlock()
+		return fmt.Sprintf("当前 MCP 模式: %s（未执行切换）", current), "", nil
+
 	case "local":
 		mcpClientTargetMu.Lock()
 		mcpClientTarget = "local"
@@ -181,7 +187,6 @@ func HandleMCPClientTool(ctx context.Context, target string) (result, warning st
 		return "", "", fmt.Errorf("无效的 target: %q，可选: local, cloud", target)
 	}
 }
-
 // inputSchemaToMap converts an MCP InputSchema (any) to a JSON Schema map.
 // The MCP SDK returns InputSchema as map[string]any from the server.
 // This handles both the common case and edge cases, and ensures

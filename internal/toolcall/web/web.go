@@ -62,7 +62,7 @@ func handleMCPClientTool(ctx context.Context, args toolcall.ToolArgs) (result, w
 	defer span.Finish()
 
 	server := toolcall.ToolArgsValue(args, "server", "lightpanda")
-	target := toolcall.ToolArgsValue(args, "target", "local")
+	target := toolcall.ToolArgsValue(args, "target", "")
 
 	// Switch the server transport in mcphub (generic — works for any server).
 	if err := mcphub.SwitchServerTransport(ctx, server, target); err != nil {
