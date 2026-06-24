@@ -35,7 +35,6 @@
 //   - lightpanda: web page interaction via LightPanda MCP
 //
 // User-defined servers are defined in the mcp-servers config block.
-//
 package mcphub
 
 import (
@@ -183,11 +182,8 @@ func (c *MCPClient) callTool(ctx context.Context, name string, args map[string]a
 	// The MCP server (e.g., slingshot TracingMiddleware) extracts
 	// this from _meta.traceparent to create a child span, enabling
 	// end-to-end distributed tracing across process boundaries.
-	for _, e := range clog.TraceEnv(span) {
-		if after, ok := strings.CutPrefix(e, "CLOG_TRACEPARENT="); ok {
-			params.SetMeta(map[string]any{"traceparent": after})
-			break
-		}
+	if tp := clog.TraceparentOf(span); tp != "" {
+		params.SetMeta(map[string]any{"traceparent": tp})
 	}
 
 	result, err := c.session.CallTool(ctx, params)
