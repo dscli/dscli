@@ -258,3 +258,89 @@ func TestCleanupReverse(t *testing.T) {
 		})
 	}
 }
+
+func TestCompressHistory(t *testing.T) {
+	tests := []struct {
+		name     string
+		messages []Message
+		want     []Message
+	}{
+		{
+			name: "empty",
+		},
+		{
+			name: "single user message",
+			messages: []Message{
+				{Role: "user", Content: "hello"},
+			},
+			want: []Message{
+				{Role: "user", Content: "hello"},
+			},
+		},
+		{
+			name: "filters out assistant with tool_calls and tool messages",
+			messages: []Message{
+				{Role: "user", Content: "edit file"},
+				{Role: "assistant", ToolCalls: []ToolCall{{ID: "01"}}},
+				{Role: "tool", ToolCallID: "01"},
+				{Role: "assistant", Content: "done"},
+			},
+			want: []Message{
+				{Role: "user", Content: "edit file"},
+				{Role: "assistant", Content: "done"},
+			},
+		},
+		{
+			name: "multiple turns with tool calls",
+			messages: []Message{
+				{Role: "user", Content: "create file"},
+				{Role: "assistant", ToolCalls: []ToolCall{{ID: "01"}}},
+				{Role: "tool", ToolCallID: "01", Content: "ok"},
+				{Role: "assistant", Content: "created"},
+				{Role: "user", Content: "add tests"},
+				{Role: "assistant", ToolCalls: []ToolCall{{ID: "02"}}},
+				{Role: "tool", ToolCallID: "02", Content: "ok"},
+				{Role: "assistant", Content: "tests added"},
+			},
+			want: []Message{
+				{Role: "user", Content: "create file"},
+				{Role: "assistant", Content: "created"},
+				{Role: "user", Content: "add tests"},
+				{Role: "assistant", Content: "tests added"},
+			},
+		},
+		{
+			name: "keeps assistant without tool_calls",
+			messages: []Message{
+				{Role: "user", Content: "hello"},
+				{Role: "assistant", Content: "hi"},
+			},
+			want: []Message{
+				{Role: "user", Content: "hello"},
+				{Role: "assistant", Content: "hi"},
+			},
+		},
+		{
+			name: "multiple tool calls per turn",
+			messages: []Message{
+				{Role: "user", Content: "do multiple"},
+				{Role: "assistant", ToolCalls: []ToolCall{{ID: "01"}, {ID: "02"}}},
+				{Role: "tool", ToolCallID: "01"},
+				{Role: "tool", ToolCallID: "02"},
+				{Role: "assistant", Content: "all done"},
+			},
+			want: []Message{
+				{Role: "user", Content: "do multiple"},
+				{Role: "assistant", Content: "all done"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := compressHistory(tt.messages)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("compressHistory() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

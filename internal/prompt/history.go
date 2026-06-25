@@ -207,24 +207,24 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 	sessionID := GetCurrentSessionID(ctx)
 	modelID := context.ContextValue(ctx, context.CurrentModelIDKey, context.DeepseekChat)
 	leftTokens := context.ContextValue(ctx, context.LeftTokensKey, 0)
+
 	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close(ctx)
+
+	// 提高 LIMIT：原本 histSize+2 对工具调用场景太小（一个完整轮次可能 4-6 条消息），
+	// 增大后确保压缩过滤后仍有足够的历史轮次。
 	rows, err := db.Query(`
 		SELECT id, role, content, tool_call_id, tool_calls, created_at, reasoning_content, tokens
 		FROM messages
 		WHERE session_id = ? AND model_id = ?
 		ORDER BY id DESC
-        LIMIT ?`, sessionID, modelID, histSize+2) // histSize + 2就可
-	// 以，因为主要就是最后两个。注意我们按降低排的序：{100, 99, 98,
-	// ...} 最大ID在前面应用LIMIT，总能把最新消息的找出来。但我们提交
-	// 给大语言模型时，最新消息要在最后: {...,98, 99, 100}。
+		LIMIT ?`, sessionID, modelID, histSize*5)
 	if err != nil {
 		return nil, fmt.Errorf("查询历史消息失败: %w", err)
 	}
-
 	defer rows.Close()
 
 	var messages []Message
@@ -249,18 +249,34 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 			tokens = m.GetTokens()
 		}
 		leftTokens -= tokens
-		if leftTokens <= tokens*2 { // 我们还要给后面的user消息留下些tokens。
+		if leftTokens <= tokens*2 {
 			break
 		}
-
 		messages = append(messages, m)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("遍历消息失败: %w", err)
 	}
 
-	// Cleanup
+	// Cleanup — 重排为 ASC 并正确配对 assistant↔tool
 	messages = CleanupReverse(messages)
+
+	// 对话压缩：当最后一轮已完成（最后一条是 assistant 且无 tool_calls），
+	// 跳过中间 assistant(tc)+tool 消息，只保留 user + assistant(content)，
+	// 用同样 token 预算容纳更多对话轮次。
+	if len(messages) > 0 {
+		last := messages[len(messages)-1]
+		if last.Role == "assistant" && len(last.ToolCalls) == 0 {
+			messages = compressHistory(messages)
+			// 压缩后按 histSize 截断
+			if len(messages) > histSize {
+				messages = messages[len(messages)-histSize:]
+			}
+			return messages, nil
+		}
+	}
+
+	// 原截断逻辑（对话未完成时使用）
 	n := len(messages)
 	idx := n - histSize
 	if idx > 0 {
@@ -378,6 +394,23 @@ outloop:
 	}
 	return cleaned[k:]
 }
+
+// compressHistory removes intermediate tool-call messages, keeping only
+// user messages and assistant messages without tool_calls. This produces
+// a compressed view of the conversation where each turn is represented
+// as (user, assistant-with-content) without the tool internals.
+// Only safe to call when the last message is an assistant response
+// without pending tool calls (i.e. conversation is at rest).
+func compressHistory(messages []Message) []Message {
+	var result []Message
+	for _, m := range messages {
+		if m.Role == "user" || (m.Role == "assistant" && len(m.ToolCalls) == 0) {
+			result = append(result, m)
+		}
+	}
+	return result
+}
+
 
 // MoveMessages moves all messages from the current session to the target session.
 func MoveMessages(ctx context.Context, targetSessionID int64) error {
