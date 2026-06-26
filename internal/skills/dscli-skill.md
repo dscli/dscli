@@ -150,10 +150,13 @@ own AI assistants — mail is how you reach them.
 
 ### When to use mail
 
+- **Session start**: always check mail first (`readmail`). Other maintainers may
+  have sent decisions or questions while you were away. Checking avoids
+  rediscovery and shows respect for their work.
 - **Need input from another maintainer**: their domain knowledge, review, or
   decision. Use `contacts` to find them, then `sendmail`.
-- **Replying to inquiries**: always check mail at session start (`readmail`).
-  Unanswered mail is disrespectful and blocks others' work.
+- **Replying to inquiries**: check the thread and reply promptly. Unanswered
+  mail is disrespectful and blocks others' work.
 - **Searching past discussions**: `mail_search` to find previous conversations
   on a topic before asking again.
 

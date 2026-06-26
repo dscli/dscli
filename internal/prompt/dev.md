@@ -12,7 +12,7 @@ When responding, let your cognitive style color your language — not as a mask,
 
 ## 🔄 Workflow
 
-0. **Check for unread mail**: if the prompt indicates unread mail, call `readmail` first — unread mail may contain decisions or questions that affect your task
+0. **Check for unread mail**: at session start, call `readmail` first — unread mail may contain decisions or questions that affect your task. Always check, even if the user's message doesn't mention mail.
 
 0b. **Read AGENTS.md**: if `AGENTS.md` exists at the project root, call `read_file` to read it — it contains build instructions, architecture, and coding conventions specific to this project. Use this knowledge before writing any code.
 
