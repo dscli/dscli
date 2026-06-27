@@ -614,6 +614,7 @@ func PrintContent(ctx context.Context, reasoning, content string, thinkingTokens
 
 	content = strings.TrimSpace(content)
 	if content != "" {
+		content = codeFenceRe.ReplaceAllString(content, "\n$0\n")
 		cStr := ""
 		// 在streaming模式下，内容已经在streaming过程中输出，这里不需要再次输出
 		if !stream {
