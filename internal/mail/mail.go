@@ -14,7 +14,7 @@
 //
 // Schema:
 //
-//	mail       — id, sender_name_id, recipient_name_id, subject, body, is_read, created_at
+//	mail       — id, sender_name_id, recipient_name_id, subject, body, is_read, created_at, project_path
 //	mail_fts   — FTS5 external content table over mail(subject, body)
 //
 // FTS sync is managed explicitly in Go (not via SQL triggers), so that
@@ -33,11 +33,13 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/dscli/dscli/internal/ainame"
+	dsctx "github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/sqlite"
 	"github.com/dscli/dscli/internal/tokenizer"
 	"github.com/nanjj/clog"
@@ -54,6 +56,7 @@ func init() {
 			is_read           INTEGER NOT NULL DEFAULT 0,
 			created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
 			notified_at       DATETIME,
+			project_path      TEXT NOT NULL DEFAULT '',
 			FOREIGN KEY (sender_name_id)    REFERENCES ai_names(id),
 			FOREIGN KEY (recipient_name_id) REFERENCES ai_names(id)
 		)`,
@@ -75,6 +78,11 @@ func init() {
 	// the upgrade loop treats errors as non-fatal.
 	sqlite.RegisterUpgradeSchema(
 		`ALTER TABLE mail ADD COLUMN notified_at DATETIME`,
+	)
+
+	// Add project_path column for existing databases.
+	sqlite.RegisterUpgradeSchema(
+		`ALTER TABLE mail ADD COLUMN project_path TEXT NOT NULL DEFAULT ''`,
 	)
 
 	// Fix FTS5 table for existing databases that have the buggy external
@@ -150,6 +158,7 @@ type MailRow struct {
 	Body           string `json:"body"`
 	IsRead         bool   `json:"is_read"`
 	CreatedAt      string `json:"created_at"`
+	ProjectPath    string `json:"project_path"`
 }
 
 // MaintainerRow represents a maintainer from ai_names.
@@ -247,9 +256,11 @@ func HandleSendMail(ctx context.Context, recipient, subject, body string) (resul
 		warning = "你正在给自己发邮件 — 也许你想发给其他人？"
 	}
 
+	projectPath := homeRelativePath(dsctx.ProjectRoot)
+
 	result2, err := db.Exec(
-		`INSERT INTO mail (sender_name_id, recipient_name_id, subject, body) VALUES (?, ?, ?, ?)`,
-		senderNameID, recipientNameID, subject, body,
+		`INSERT INTO mail (sender_name_id, recipient_name_id, subject, body, project_path) VALUES (?, ?, ?, ?, ?)`,
+		senderNameID, recipientNameID, subject, body, projectPath,
 	)
 	if err != nil {
 		return "", "", fmt.Errorf("发送邮件失败: %w", err)
@@ -269,8 +280,13 @@ func HandleSendMail(ctx context.Context, recipient, subject, body string) (resul
 		senderNameEN = "nobody"
 	}
 
-	result = fmt.Sprintf("✅ 邮件已发送 (#%d)\n发件人: %s\n收件人: %s <%s>\n主题: %s",
-		mailID, senderNameEN, recipientNameEN, recipientEmail, subject)
+	projectPathDisplay := projectPath
+	if projectPathDisplay == "" {
+		projectPathDisplay = "—"
+	}
+
+	result = fmt.Sprintf("✅ 邮件已发送 (#%d)\n发件人: %s\n收件人: %s <%s>\n主题: %s\n项目: %s",
+		mailID, senderNameEN, recipientNameEN, recipientEmail, subject, projectPathDisplay)
 	return result, warning, nil
 }
 
@@ -295,7 +311,7 @@ func HandleReadMail(ctx context.Context, mailID int64) (result, warning string, 
 	var row MailRow
 	var isRead int
 	err = db.QueryRow(
-		`SELECT m.id, s.name_en, s.email, r.name_en, r.email, m.subject, m.body, m.is_read, m.created_at
+		`SELECT m.id, s.name_en, s.email, r.name_en, r.email, m.subject, m.body, m.is_read, m.created_at, m.project_path
 		 FROM mail m
 		 JOIN ai_names s ON s.id = m.sender_name_id
 		 JOIN ai_names r ON r.id = m.recipient_name_id
@@ -303,7 +319,7 @@ func HandleReadMail(ctx context.Context, mailID int64) (result, warning string, 
 		mailID, nameID,
 	).Scan(&row.ID, &row.SenderName, &row.SenderEmail,
 		&row.RecipientName, &row.RecipientEmail,
-		&row.Subject, &row.Body, &isRead, &row.CreatedAt)
+		&row.Subject, &row.Body, &isRead, &row.CreatedAt, &row.ProjectPath)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return "", "", fmt.Errorf("邮件 #%d 不存在或不属于你", mailID)
@@ -338,7 +354,7 @@ func HandleListMail(ctx context.Context, unreadOnly bool, limit int) (result, wa
 	}
 	defer db.Close(ctx)
 
-	query := `SELECT m.id, s.name_en, s.email, r.name_en, r.email, m.subject, m.body, m.is_read, m.created_at
+	query := `SELECT m.id, s.name_en, s.email, r.name_en, r.email, m.subject, m.body, m.is_read, m.created_at, m.project_path
 		 FROM mail m
 		 JOIN ai_names s ON s.id = m.sender_name_id
 		 JOIN ai_names r ON r.id = m.recipient_name_id
@@ -365,7 +381,7 @@ func HandleListMail(ctx context.Context, unreadOnly bool, limit int) (result, wa
 		var isRead int
 		if err := rows.Scan(&row.ID, &row.SenderName, &row.SenderEmail,
 			&row.RecipientName, &row.RecipientEmail,
-			&row.Subject, &row.Body, &isRead, &row.CreatedAt); err != nil {
+			&row.Subject, &row.Body, &isRead, &row.CreatedAt, &row.ProjectPath); err != nil {
 			continue
 		}
 		row.IsRead = isRead != 0
@@ -396,8 +412,13 @@ func HandleListMail(ctx context.Context, unreadOnly bool, limit int) (result, wa
 			subject = "(无主题)"
 		}
 
-		fmt.Fprintf(&sb, "%s **#%d** | %s → %s | %s\n",
-			readMark, m.ID, m.SenderName, m.RecipientName, localTime(m.CreatedAt))
+		projectTag := ""
+		if m.ProjectPath != "" {
+			projectTag = " [" + filepath.Base(m.ProjectPath) + "]"
+		}
+
+		fmt.Fprintf(&sb, "%s **#%d**%s | %s → %s | %s\n",
+			readMark, m.ID, projectTag, m.SenderName, m.RecipientName, localTime(m.CreatedAt))
 		fmt.Fprintf(&sb, "  主题: %s\n", subject)
 		sb.WriteString("\n")
 	}
@@ -436,7 +457,7 @@ func HandleMailSearch(ctx context.Context, query string, limit int) (result, war
 	}
 
 	rows, err := db.Query(
-		`SELECT m.id, s.name_en, s.email, r.name_en, r.email, m.subject, m.body, m.is_read, m.created_at
+		`SELECT m.id, s.name_en, s.email, r.name_en, r.email, m.subject, m.body, m.is_read, m.created_at, m.project_path
 		 FROM mail_fts f
 		 JOIN mail m ON m.id = f.rowid
 		 JOIN ai_names s ON s.id = m.sender_name_id
@@ -457,7 +478,7 @@ func HandleMailSearch(ctx context.Context, query string, limit int) (result, war
 		var isRead int
 		if err := rows.Scan(&row.ID, &row.SenderName, &row.SenderEmail,
 			&row.RecipientName, &row.RecipientEmail,
-			&row.Subject, &row.Body, &isRead, &row.CreatedAt); err != nil {
+			&row.Subject, &row.Body, &isRead, &row.CreatedAt, &row.ProjectPath); err != nil {
 			continue
 		}
 		row.IsRead = isRead != 0
@@ -487,7 +508,11 @@ func HandleMailSearch(ctx context.Context, query string, limit int) (result, war
 		if shortSubject == "" {
 			shortSubject = "(无主题)"
 		}
-		fmt.Fprintf(&sb, "**#%d** | %s → %s | %s\n", m.ID, m.SenderName, m.RecipientName, localTime(m.CreatedAt))
+		projectTag := ""
+		if m.ProjectPath != "" {
+			projectTag = " [" + filepath.Base(m.ProjectPath) + "]"
+		}
+		fmt.Fprintf(&sb, "**#%d**%s | %s → %s | %s\n", m.ID, projectTag, m.SenderName, m.RecipientName, localTime(m.CreatedAt))
 		fmt.Fprintf(&sb, "  主题: %s\n", shortSubject)
 		sb.WriteString("\n")
 	}
@@ -640,9 +665,11 @@ func HandleReplyMail(ctx context.Context, replyToID int64, subject, body string)
 	var recipientNameEN, recipientEmail string
 	_ = db.QueryRow("SELECT name_en, email FROM ai_names WHERE id = ?", origSenderNameID).Scan(&recipientNameEN, &recipientEmail)
 
+	projectPath := homeRelativePath(dsctx.ProjectRoot)
+
 	result2, err := db.Exec(
-		`INSERT INTO mail (sender_name_id, recipient_name_id, subject, body) VALUES (?, ?, ?, ?)`,
-		senderNameID, origSenderNameID, subject, body,
+		`INSERT INTO mail (sender_name_id, recipient_name_id, subject, body, project_path) VALUES (?, ?, ?, ?, ?)`,
+		senderNameID, origSenderNameID, subject, body, projectPath,
 	)
 	if err != nil {
 		return "", "", fmt.Errorf("回复失败: %w", err)
@@ -657,8 +684,13 @@ func HandleReplyMail(ctx context.Context, replyToID int64, subject, body string)
 	var senderNameEN string
 	_ = db.QueryRow("SELECT name_en FROM ai_names WHERE id = ?", senderNameID).Scan(&senderNameEN)
 
-	result = fmt.Sprintf("✅ 回复已发送 (#%d)\n发件人: %s\n收件人: %s <%s>\n回复: #%d\n主题: %s",
-		mailID, senderNameEN, recipientNameEN, recipientEmail, replyToID, subject)
+	projectPathDisplay := projectPath
+	if projectPathDisplay == "" {
+		projectPathDisplay = "—"
+	}
+
+	result = fmt.Sprintf("✅ 回复已发送 (#%d)\n发件人: %s\n收件人: %s <%s>\n回复: #%d\n主题: %s\n项目: %s",
+		mailID, senderNameEN, recipientNameEN, recipientEmail, replyToID, subject, projectPathDisplay)
 	return result, warning, nil
 }
 
@@ -714,6 +746,20 @@ func HandleDeleteMail(ctx context.Context, mailID int64) (result, warning string
 }
 
 // === Helpers ===================================================================
+// homeRelativePath converts an absolute path to a $HOME-relative path
+// (e.g. /home/user/projects/dscli → ~/projects/dscli).
+// Falls back to the original absolute path if $HOME cannot be determined
+// or the path is not under $HOME.
+func homeRelativePath(absPath string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return absPath
+	}
+	if strings.HasPrefix(absPath, home) {
+		return filepath.Join("~", strings.TrimPrefix(absPath, home))
+	}
+	return absPath
+}
 
 // localTime converts a UTC datetime string ("2006-01-02 15:04:05") to local time.
 // If parsing fails, the original string is returned as-is.
@@ -892,12 +938,18 @@ func formatMailRow(row MailRow) string {
 		readStatus = "未读"
 	}
 
+	projectDisplay := row.ProjectPath
+	if projectDisplay == "" {
+		projectDisplay = "—"
+	}
+
 	return fmt.Sprintf(
 		`📧 **邮件 #%d** [%s]
 发件人: %s <%s>
 收件人: %s <%s>
 时间: %s
 主题: %s
+项目: %s
 
 %s`,
 		row.ID, readStatus,
@@ -905,6 +957,7 @@ func formatMailRow(row MailRow) string {
 		row.RecipientName, row.RecipientEmail,
 		localTime(row.CreatedAt),
 		row.Subject,
+		projectDisplay,
 		row.Body,
 	)
 }

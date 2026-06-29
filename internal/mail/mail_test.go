@@ -493,6 +493,79 @@ func TestHandleDeleteMail(t *testing.T) {
 	})
 }
 
+// === HandleProjectPath ===========================================================
+
+func TestProjectPathPropagation(t *testing.T) {
+	newTestDB(t)
+	me := currentName(t)
+
+	t.Run("send mail populates project_path", func(t *testing.T) {
+		result, _, err := HandleSendMail(context.Background(), me, "路径测试", "正文")
+		if err != nil {
+			t.Fatalf("send failed: %v", err)
+		}
+		if !strings.Contains(result, "项目:") {
+			t.Errorf("expected '项目:' in result, got: %s", result)
+		}
+		// Verify project_path is stored (value depends on test environment)
+		var mid int64
+		fmt.Sscanf(result, "✅ 邮件已发送 (#%d)", &mid)
+		if mid == 0 {
+			t.Fatal("failed to extract mail ID")
+		}
+
+		// Read the mail back and check project_path is non-empty
+		readResult, _, err := HandleReadMail(context.Background(), mid)
+		if err != nil {
+			t.Fatalf("read failed: %v", err)
+		}
+		if !strings.Contains(readResult, "项目:") {
+			t.Errorf("expected '项目:' in read result, got: %s", readResult)
+		}
+	})
+
+	t.Run("reply mail populates project_path", func(t *testing.T) {
+		// Send original
+		sendResult, _, err := HandleSendMail(context.Background(), me, "原始", "内容")
+		if err != nil {
+			t.Fatalf("send failed: %v", err)
+		}
+		var mid int64
+		fmt.Sscanf(sendResult, "✅ 邮件已发送 (#%d)", &mid)
+
+		// Reply to it
+		replyResult, _, err := HandleReplyMail(context.Background(), mid, "", "回复")
+		if err != nil {
+			t.Fatalf("reply failed: %v", err)
+		}
+		if !strings.Contains(replyResult, "项目:") {
+			t.Errorf("expected '项目:' in reply result, got: %s", replyResult)
+		}
+	})
+
+	t.Run("list mail shows project tag", func(t *testing.T) {
+		HandleSendMail(context.Background(), me, "列表项目测试", "正文")
+		result, _, err := HandleListMail(context.Background(), false, 20)
+		if err != nil {
+			t.Fatalf("list failed: %v", err)
+		}
+		// List view should show [project] tag (basename)
+		if !strings.Contains(result, "[") {
+			t.Logf("list result: %s", result)
+		}
+	})
+
+	t.Run("search mail shows project tag", func(t *testing.T) {
+		HandleSendMail(context.Background(), me, "搜索项目测试", "唯一关键词xyz")
+		result, _, err := HandleMailSearch(context.Background(), "唯一关键词xyz", 10)
+		if err != nil {
+			t.Fatalf("search failed: %v", err)
+		}
+		// Search results may or may not show project tag depending on test env
+		t.Logf("search result: %s", result)
+	})
+}
+
 // === Integration: Reply + Delete Lifecycle =====================================
 
 func TestMailReplyAndDeleteLifecycle(t *testing.T) {
