@@ -34,6 +34,17 @@ make fmt-check
 - `code_review` before `git push` — fix issues before they reach remote
 - No need to do it during development; only before push
 
+## Python Dependencies
+
+Some tools (e.g. `code_analysis`, `code_get_structure`) use a Python tree-sitter script for AST parsing. This requires Python 3 and the following packages:
+
+```bash
+pip install -r scripts/python/requirements.txt
+```
+
+**What this installs:** `tree-sitter` core plus grammars for Go, Python, C, C++, Markdown, JavaScript, Rust, Zig, Java, Lua, Ruby, Bash, YAML, Objective-C, SQL, JSON, Swift, and Make.
+
+Missing grammars degrade gracefully — parsing falls back to regex for unsupported languages.
 
 ## Architecture
 
