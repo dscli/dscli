@@ -334,16 +334,16 @@ func historyListRunE(cmd *cobra.Command, args []string) (err error) {
 				Content:          hist.Content,
 				ReasoningContent: hist.ReasoningContent,
 				ToolCallID:       hist.ToolCallID,
+				ToolCalls:        hist.ToolCalls,
 				CreatedAt:        hist.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-			}
-			if len(hist.ToolCalls) > 0 {
-				entry.ToolCalls = hist.ToolCalls
 			}
 			result = append(result, entry)
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		enc.Encode(result)
+		if err := enc.Encode(result); err != nil {
+			return fmt.Errorf("json输出失败: %w", err)
+		}
 		return nil
 	}
 
