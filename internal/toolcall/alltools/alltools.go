@@ -11,6 +11,7 @@ import (
 	_ "github.com/dscli/dscli/internal/toolcall/history"
 	_ "github.com/dscli/dscli/internal/toolcall/mail"
 	_ "github.com/dscli/dscli/internal/toolcall/memory"
+	_ "github.com/dscli/dscli/internal/toolcall/sendmessage"
 	_ "github.com/dscli/dscli/internal/toolcall/shell"
 	_ "github.com/dscli/dscli/internal/toolcall/skill"
 	_ "github.com/dscli/dscli/internal/toolcall/sql"
