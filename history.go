@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"slices"
@@ -23,11 +24,12 @@ func init() {
 		Short:             "历史消息管理",
 		PersistentPreRunE: historyPreRunE,
 	})
-	_ = AddCommand(historyCmd, &cobra.Command{
+	listCmd := AddCommand(historyCmd, &cobra.Command{
 		Use:   "list",
 		Short: "List history messages",
 		RunE:  historyListRunE,
 	})
+	listCmd.Flags().Bool("json", false, "Output in JSON format (with full content)")
 	_ = AddCommand(historyCmd, &cobra.Command{
 		Use:   "load",
 		Short: "Load and validate history messages",
@@ -313,6 +315,38 @@ func historyListRunE(cmd *cobra.Command, args []string) (err error) {
 		return nil
 	}
 
+	useJSON, _ := cmd.Flags().GetBool("json")
+	if useJSON {
+		type histEntry struct {
+			ID               int64             `json:"id"`
+			Role             string            `json:"role"`
+			Content          string            `json:"content"`
+			ReasoningContent string            `json:"reasoning_content,omitempty"`
+			ToolCallID       string            `json:"tool_call_id,omitempty"`
+			ToolCalls        []prompt.ToolCall `json:"tool_calls,omitempty"`
+			CreatedAt        string            `json:"created_at"`
+		}
+		var result []histEntry
+		for _, hist := range history {
+			entry := histEntry{
+				ID:               hist.ID,
+				Role:             hist.Role,
+				Content:          hist.Content,
+				ReasoningContent: hist.ReasoningContent,
+				ToolCallID:       hist.ToolCallID,
+				CreatedAt:        hist.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			}
+			if len(hist.ToolCalls) > 0 {
+				entry.ToolCalls = hist.ToolCalls
+			}
+			result = append(result, entry)
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		enc.Encode(result)
+		return nil
+	}
+
 	filter, err := cmd.Flags().GetString("filter")
 	if err != nil {
 		return err
@@ -336,7 +370,6 @@ func historyListRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 	return nil
 }
-
 func historyLoadRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
 	span, ctx := clog.StartSpanFromContext(ctx, "historyLoadRunE")
