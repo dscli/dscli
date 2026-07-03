@@ -83,16 +83,26 @@ func handleSendMessage(ctx context.Context, args toolcall.ToolArgs) (result, war
 		return result, warning, err
 	}
 
-	// Get current AI name for the confirmation message
+	// Get sender AI name for reference
 	sessionID := session.GetCurrentSessionID(ctx)
 	cfg := ainame.LoadOrAssign(ctx, sessionID)
-	aiName := cfg.NameCN
-	if aiName == "" {
-		aiName = cfg.NameEN
+	senderName := cfg.NameCN
+	if senderName == "" {
+		senderName = cfg.NameEN
 	}
 
 	// Get project basename for the return message
 	projectName := filepath.Base(project)
+
+	// Look up target project's maintainer name for display
+	targetInfo := session.GetProjectInfo(ctx, project)
+	targetName := targetInfo.MaintainerCN
+	if targetName == "" {
+		targetName = targetInfo.MaintainerEN
+	}
+	if targetName == "" {
+		targetName = projectName // fallback
+	}
 
 	// Escape input for Emacs Lisp string safety.
 	// The expression is: (dscli--send-message-raw "<input>" "<project>")
@@ -107,7 +117,7 @@ func handleSendMessage(ctx context.Context, args toolcall.ToolArgs) (result, war
 
 	expr := fmt.Sprintf(`(dscli--send-message-raw "%s" "%s")`, input, project)
 
-	outfmt.Printf("📨 正在通过 emacsclient 发送消息至 %s (项目: %s)...\n", aiName, projectName)
+	outfmt.Printf("📨 正在通过 emacsclient 发送消息至 %s (来自 %s, 项目: %s)...\n", targetName, senderName, projectName)
 
 	cmd := exec.Command("emacsclient", "--eval", expr)
 	stdout, cmdErr := cmd.CombinedOutput()
@@ -117,8 +127,8 @@ func handleSendMessage(ctx context.Context, args toolcall.ToolArgs) (result, war
 		return result, warning, err
 	}
 
-	outfmt.Printf("✅ 消息已送达 %s 在项目 %s\n", aiName, projectName)
+	outfmt.Printf("✅ 消息已送达 %s (来自 %s, 项目: %s)\n", targetName, senderName, projectName)
 
-	result = fmt.Sprintf("消息已送达 %s 在项目 %s", aiName, projectName)
+	result = fmt.Sprintf("消息已送达 %s 在项目 %s", targetName, projectName)
 	return result, warning, nil
 }

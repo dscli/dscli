@@ -26,7 +26,23 @@ func init() {
 var (
 	currentSessionID atomic.Int64
 	sessionOnce      sync.Once
+	projectMap       map[string]ProjectRow
+	projectMapOnce   sync.Once
 )
+
+func GetProjectInfo(ctx context.Context, projectPath string) ProjectRow {
+	projectMapOnce.Do(func() {
+		projectRows, err := ListProjects(ctx)
+		if err != nil {
+			panic(err)
+		}
+		projectMap = map[string]ProjectRow{}
+		for _, prow := range projectRows {
+			projectMap[prow.ProjectPath] = prow
+		}
+	})
+	return projectMap[projectPath]
+}
 
 // GetCurrentSessionID 获取当前会话ID（线程安全，仅初始化一次）
 func GetCurrentSessionID(ctx context.Context) (sessionID int64) {
