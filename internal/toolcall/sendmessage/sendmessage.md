@@ -15,15 +15,30 @@ Dispatch a message to another dscli chat session for a given project.
 
 ## Behavior
 
-The tool dispatches the message via Emacs daemon (emacsclient --eval).  
+The tool is **IDE-agnostic** and **fire-and-forget**:
 
-If the target project already has a running dscli chat session, the message
-is injected into the existing session.  Otherwise, a new dscli chat session
-is started for that project.
+1. Writes the message to the target project's chimeins queue in the global database
+2. If a dscli chat session is already running for the target project, it picks up the message in its next round
+3. Otherwise, dispatches via a configurable display command (`send-message.command`) that starts a visible dscli session in the user's IDE
 
-The call is fire-and-forget: the message is dispatched, and control returns
-to the calling AI immediately.  The recipient AI processes the message
-independently in its own session context.
+### Display command
+
+Configured via `send-message.command` in `~/.dscli/config.dscli`:
+
+```
+send-message.command = emacsclient -n -c -e '(dscli--send-message-raw "%s" "%s")'
+```
+
+The `%s` placeholders are replaced with the message content and project path (shell-safe escaping applied automatically).
+
+Default auto-detection order:
+- `emacsclient` → `emacsclient -n -c -e '(dscli--send-message-raw ...)'`
+
+### IDE integration
+
+- **Emacs**: the `dscli--send-message-raw` function in dscli.el handles both running-session injection and new-session startup. The output buffer is displayed in the Emacs frame created by `-c`.
+- **Other IDEs**: configure `send-message.command` for your environment (VSCode, terminal, etc.)
+- **No display**: if no display command is configured and no auto-detect succeeds, the message is queued — run `dscli chat` manually in the target project to see it.
 
 ## Example
 

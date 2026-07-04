@@ -1,8 +1,13 @@
 // Package sendmessage implements the send_message tool.
 //
 // send_message dispatches a message to a dscli chat session for a given
-// project via Emacs daemon (emacsclient --eval).  The call is fire-and-forget:
-// the message is queued and control returns immediately.
+// project.  The tool is IDE-agnostic: it writes the message to the target
+// project's chimeins queue and dispatches via a configurable display
+// command when no dscli process is running for that project.
+//
+// The call is fire-and-forget: the message is queued and control returns
+// to the calling AI immediately.  The recipient AI processes the message
+// independently in its own session context.
 package sendmessage
 
 import (
@@ -13,9 +18,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
+	"github.com/dscli/dscli/internal/config"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/session"
+	"github.com/dscli/dscli/internal/sqlite"
 	"github.com/dscli/dscli/internal/toolcall"
 	"github.com/nanjj/clog"
 )
@@ -82,7 +91,6 @@ func handleSendMessage(ctx context.Context, args toolcall.ToolArgs) (result, war
 		return result, warning, err
 	}
 
-	// Get project basename for the return message
 	projectName := filepath.Base(project)
 
 	// Look up target project's maintainer name for display
@@ -95,31 +103,152 @@ func handleSendMessage(ctx context.Context, args toolcall.ToolArgs) (result, war
 		targetName = projectName // fallback
 	}
 
-	// Escape input for Emacs Lisp string safety.
-	// The expression is: (dscli--send-message-raw "<input>" "<project>")
-	// We need to escape: \ → \\, " → \", newline → \n
-	input = strings.ReplaceAll(input, "\\", "\\\\")
-	input = strings.ReplaceAll(input, "\"", "\\\"")
-	input = strings.ReplaceAll(input, "\n", "\\n")
-
-	// Escape project path too (defensive — paths rarely contain special chars)
-	project = strings.ReplaceAll(project, "\\", "\\\\")
-	project = strings.ReplaceAll(project, "\"", "\\\"")
-
-	expr := fmt.Sprintf(`(dscli--send-message-raw "%s" "%s")`, input, project)
-
-	outfmt.Printf("📨 发送消息至 %s ...\n", targetName)
-
-	cmd := exec.Command("emacsclient", "--eval", expr)
-	stdout, cmdErr := cmd.CombinedOutput()
-	if cmdErr != nil {
-		err = fmt.Errorf("emacsclient failed: %w\n%s", cmdErr, strings.TrimSpace(string(stdout)))
-		outfmt.Println("❌ 发送失败:", err)
-		return result, warning, err
+	// Step 1: Write message to target project's chimeins queue.
+	// All projects share the global sqlite.db (~/.dscli/sqlite.db), keyed by
+	// project_path in the sessions table.  This write ensures the message is
+	// never lost, regardless of display capability.
+	if err := writeChimein(ctx, project, input); err != nil {
+		// Non-fatal: chimein write is best-effort; the display command
+		// path also delivers the message.
+		outfmt.Debug("sendmessage: write chimein: %v\n", err)
 	}
 
-	outfmt.Printf("✅ 消息已送达 %s (项目: %s)\n", targetName, projectName)
+	// Step 2: Check if a dscli chat process is already running for the
+	// target project.  If so, the existing session will pick up the
+	// chimein in its next round — no further action needed.
+	if isProcessRunning(project) {
+		outfmt.Printf("📨 消息已送达 %s (已有运行中的会话)\n", targetName)
+		result = fmt.Sprintf("消息已送达 %s 在项目 %s（运行中会话）", targetName, projectName)
+		return result, warning, nil
+	}
 
-	result = fmt.Sprintf("消息已送达 %s 在项目 %s", targetName, projectName)
+	// Step 3: No running process — dispatch via configured display command.
+	dispatchCmd := config.Get("send-message.command", "")
+	if dispatchCmd == "" {
+		dispatchCmd = detectDisplayCommand()
+	}
+	if dispatchCmd != "" {
+		// Fire-and-forget: the command launches a visible dscli session
+		// in the user's IDE (Emacs frame, terminal window, etc.).
+		go runDisplayCommand(dispatchCmd, input, project)
+		outfmt.Printf("📨 已唤醒 %s 处理项目 %s 的任务\n", targetName, projectName)
+		result = fmt.Sprintf("已唤醒 %s 处理项目 %s 的任务", targetName, projectName)
+	} else {
+		// No display command available — message is queued; user must
+		// manually start dscli chat to see it.
+		outfmt.Printf("📨 消息已写入项目 %s 的待处理队列\n", projectName)
+		result = fmt.Sprintf("消息已写入项目 %s，请运行 dscli chat 查看", projectName)
+	}
+
 	return result, warning, nil
+}
+
+// writeChimein writes the input message to the target project's chimeins
+// table entry via the global database.  The target project's dscli chat
+// session (existing or next) picks it up automatically.
+func writeChimein(ctx context.Context, projectPath, content string) error {
+	db, err := sqlite.OpenDB(ctx)
+	if err != nil {
+		return fmt.Errorf("open db: %w", err)
+	}
+	defer db.Close(ctx)
+
+	// Find or create the target project's session.
+	var sessionID int64
+	err = db.QueryRow(
+		`SELECT id FROM sessions WHERE project_path = ?`, projectPath,
+	).Scan(&sessionID)
+	if err != nil {
+		// Session doesn't exist yet — create one.
+		res, insErr := db.Exec(
+			`INSERT INTO sessions (project_path) VALUES (?)`, projectPath,
+		)
+		if insErr != nil {
+			return fmt.Errorf("create session: %w", insErr)
+		}
+		sessionID, err = res.LastInsertId()
+		if err != nil {
+			return fmt.Errorf("last insert id: %w", err)
+		}
+	}
+
+	marked := fmt.Sprintf("\n[send_message at %s]\n%s\n",
+		time.Now().Format(time.RFC3339), strings.TrimSpace(content))
+
+	// UPSERT: one chimein row per session (UNIQUE constraint on session_id),
+	// content is appended so multiple messages accumulate.
+	_, err = db.Exec(`
+		INSERT INTO chimeins (session_id, content) VALUES (?, ?)
+		ON CONFLICT(session_id) DO UPDATE SET
+			content = content || ?`,
+		sessionID, marked, marked)
+	if err != nil {
+		return fmt.Errorf("upsert chimein: %w", err)
+	}
+
+	return nil
+}
+
+// isProcessRunning checks whether a dscli chat process is currently holding
+// the project-level lockfile at <project>/.dscli/locks/dscli.lock.
+func isProcessRunning(projectPath string) bool {
+	lockPath := filepath.Join(projectPath, ".dscli", "locks", "dscli.lock")
+	data, err := os.ReadFile(lockPath)
+	if err != nil {
+		return false
+	}
+
+	var pid int
+	if _, err := fmt.Sscanf(string(data), "%d", &pid); err != nil || pid == 0 {
+		return false
+	}
+
+	// On Unix, sending signal 0 is a no-op that checks process existence.
+	return syscall.Kill(pid, syscall.Signal(0)) == nil
+}
+
+// detectDisplayCommand auto-detects the best display command based on
+// tools available on the system.
+func detectDisplayCommand() string {
+	if hasExecutable("emacsclient") {
+		// Emacs: create frame (-c), return immediately (-n).
+		// dscli--send-message-raw handles both injection into existing
+		// sessions and starting new ones.
+		return `emacsclient -n -c -e '(dscli--send-message-raw "%s" "%s")'`
+	}
+	// Future detectors:
+	//   - VSCode: `code --command "dscli.startChat" --args "..."`
+	//   - Vim/nvim:  terminal-based launch
+	//   - Terminal: `x-terminal-emulator -e sh -c 'cd %s && dscli chat --input %s'`
+	return ""
+}
+
+// hasExecutable checks if a command is available in PATH.
+func hasExecutable(name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
+}
+
+// runDisplayCommand executes the display command template with the given
+// input and project, fire-and-forget.
+func runDisplayCommand(tmpl, input, project string) {
+	// Escape for safe interpolation into shell command.
+	// Emacs Lisp string escaping: \ → \\, " → \", newline → \n
+	input = strings.ReplaceAll(input, `\`, `\\`)
+	input = strings.ReplaceAll(input, `"`, `\"`)
+	input = strings.ReplaceAll(input, "\n", `\n`)
+
+	project = strings.ReplaceAll(project, `\`, `\\`)
+	project = strings.ReplaceAll(project, `"`, `\"`)
+
+	cmdStr := fmt.Sprintf(tmpl, input, project)
+	cmd := exec.Command("sh", "-c", cmdStr)
+
+	if startErr := cmd.Start(); startErr != nil {
+		outfmt.Debug("sendmessage: display command start: %v\n", startErr)
+		return
+	}
+
+	// Detach: reap the child in background.
+	go cmd.Wait()
 }
