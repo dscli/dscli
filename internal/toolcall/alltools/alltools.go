@@ -4,6 +4,8 @@ package alltools
 import (
 	"github.com/dscli/dscli/internal/toolcall"
 
+	_ "github.com/dscli/dscli/internal/toolcall/ainap"
+	_ "github.com/dscli/dscli/internal/toolcall/aistatus"
 	_ "github.com/dscli/dscli/internal/toolcall/ask"
 	_ "github.com/dscli/dscli/internal/toolcall/cwd"
 	_ "github.com/dscli/dscli/internal/toolcall/file"
