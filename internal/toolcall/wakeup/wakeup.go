@@ -1,14 +1,17 @@
-// Package sendmessage implements the send_message tool.
+// Package wakeup implements the wakeup tool.
 //
-// send_message dispatches a message to a dscli chat session for a given
-// project.  The tool is IDE-agnostic: it writes the message to the target
-// project's chimeins queue and dispatches via a configurable display
-// command when no dscli process is running for that project.
+// wakeup dispatches a message (optional) to another AI maintainer at a given
+// project, waking them up if they are not already running.  The tool is
+// IDE-agnostic: it writes the message to the target project's chimeins queue
+// and dispatches via a configurable display command when no dscli process is
+// running for that project.
 //
 // The call is fire-and-forget: the message is queued and control returns
 // to the calling AI immediately.  The recipient AI processes the message
 // independently in its own session context.
-package sendmessage
+//
+// Renamed from send_message (v0.1.x) to wakeup (v0.2+).
+package wakeup
 
 import (
 	_ "embed"
@@ -29,52 +32,53 @@ import (
 	"github.com/nanjj/clog"
 )
 
-//go:embed sendmessage.md
-var sendmessageMd string
+//go:embed wakeup.md
+var wakeupMd string
 
-// sendMessageTool tool definition
-var sendMessageTool = toolcall.ToolDef{
-	Name:        "send_message",
-	DisplayName: "Send Message",
-	Description: sendmessageMd,
+// wakeupTool tool definition
+var wakeupTool = toolcall.ToolDef{
+	Name:        "wakeup",
+	DisplayName: "Wake Up AI",
+	Description: wakeupMd,
 	Strict:      true,
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"input": map[string]any{
-				"type":        "string",
-				"description": "The message content to send to dscli",
-			},
 			"project": map[string]any{
 				"type":        "string",
 				"description": "Project root directory path — must be an existing, absolute directory",
 			},
+			"input": map[string]any{
+				"type":        "string",
+				"description": "The message content to send (optional — may be empty if you have already communicated via mail)",
+			},
+			"ainame": map[string]any{
+				"type":        "string",
+				"description": "The AI maintainer name at the target project (optional — validated against project assignment if provided)",
+			},
 		},
-		"required":             []string{"input", "project"},
+		"required":             []string{"project"},
 		"additionalProperties": false,
 	},
 	Category: "communication",
-	Handler:  handleSendMessage,
+	Handler:  handleWakeup,
 }
 
 func init() {
-	if err := toolcall.RegisterTool(sendMessageTool); err != nil {
-		panic(fmt.Sprintf("sendmessage: register tool: %v", err))
+	if err := toolcall.RegisterTool(wakeupTool); err != nil {
+		panic(fmt.Sprintf("wakeup: register tool: %v", err))
 	}
 }
 
-// handleSendMessage handles the send_message tool call.
-func handleSendMessage(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
-	span, ctx := clog.StartSpanFromContext(ctx, "handleSendMessage")
+// handleWakeup handles the wakeup tool call.
+func handleWakeup(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleWakeup")
 	defer span.Finish()
 
-	input := toolcall.ToolArgsValue(args, "input", "")
 	project := toolcall.ToolArgsValue(args, "project", "")
+	input := toolcall.ToolArgsValue(args, "input", "")
+	ainame := toolcall.ToolArgsValue(args, "ainame", "")
 
-	if input == "" {
-		err = fmt.Errorf("input is required")
-		return result, warning, err
-	}
 	if project == "" {
 		err = fmt.Errorf("project is required")
 		return result, warning, err
@@ -93,7 +97,7 @@ func handleSendMessage(ctx context.Context, args toolcall.ToolArgs) (result, war
 
 	projectName := filepath.Base(project)
 
-	// Look up target project's maintainer name for display
+	// Look up target project's maintainer information
 	targetInfo := session.GetProjectInfo(ctx, project)
 	targetName := targetInfo.MaintainerCN
 	if targetName == "" {
@@ -103,32 +107,48 @@ func handleSendMessage(ctx context.Context, args toolcall.ToolArgs) (result, war
 		targetName = projectName // fallback
 	}
 
-	// Step 1: Write message to target project's chimeins queue.
+	// Validate ainame if provided — catches LLM hallucination early.
+	if ainame != "" {
+		if targetInfo.MaintainerCN == "" && targetInfo.MaintainerEN == "" {
+			err = fmt.Errorf("project %q has no maintainer assigned — cannot validate ainame %q",
+				project, ainame)
+			return result, warning, err
+		}
+		if ainame != targetInfo.MaintainerCN && ainame != targetInfo.MaintainerEN {
+			err = fmt.Errorf("ainame %q does not match project %q's maintainer (CN: %q, EN: %q)",
+				ainame, project, targetInfo.MaintainerCN, targetInfo.MaintainerEN)
+			return result, warning, err
+		}
+	}
+
+	// Step 1: Write message to target project's chimeins queue (if input provided).
 	// All projects share the global sqlite.db (~/.dscli/sqlite.db), keyed by
 	// project_path in the sessions table.  The chimein is the sole content
 	// delivery path — the display command (Step 3) only wakes the session.
-	marked := fmt.Sprintf("[send_message at %s]\n%s",
-		time.Now().Format(time.RFC3339), input)
-	if err := chimein.AppendToProject(ctx, project, marked); err != nil {
-		// Non-fatal: a failed chimein write means the message is lost, but
-		// returning an error to the caller is worse — the display command
-		// still starts a session where the user can see context.
-		outfmt.Debug("sendmessage: append chimein: %v\n", err)
+	if input != "" {
+		marked := fmt.Sprintf("[wakeup at %s]\n%s",
+			time.Now().Format(time.RFC3339), input)
+		if chimeinErr := chimein.AppendToProject(ctx, project, marked); chimeinErr != nil {
+			// Non-fatal: a failed chimein write means the message is lost, but
+			// returning an error to the caller is worse — the display command
+			// still starts a session where the user can see context.
+			outfmt.Debug("wakeup: append chimein: %v\n", chimeinErr)
+		}
 	}
 
 	// Step 2: Check if a dscli chat process is already running for the
 	// target project.  If so, the existing session will pick up the
 	// chimein in its next round — no further action needed.
 	if isProcessRunning(project) {
-		outfmt.Printf("📨 消息已送达 %s (已有运行中的会话)\n", targetName)
-		result = fmt.Sprintf("消息已送达 %s 在项目 %s（运行中会话）", targetName, projectName)
+		outfmt.Printf("📨 已送达 %s (已有运行中的会话)\n", targetName)
+		result = fmt.Sprintf("已送达 %s 在项目 %s（运行中会话）", targetName, projectName)
 		return result, warning, nil
 	}
 
 	// Step 3: No running process — dispatch via configured display command.
 	// The display command carries ONLY the project path.  The message content
 	// is already in the chimeins queue — the started session reads it on boot.
-	dispatchCmd := config.Get("send-message.command", "")
+	dispatchCmd := config.Get("wakeup.command", "", "send-message.command")
 	if dispatchCmd == "" {
 		dispatchCmd = detectDisplayCommand()
 	}
@@ -172,7 +192,7 @@ func detectDisplayCommand() string {
 	if hasExecutable("emacsclient") {
 		// Emacs: create frame (-c), return immediately (-n).
 		// The template has one %s placeholder — the project path.
-		// dscli--send-message-raw starts a dscli chat that reads
+		// The Emacs Lisp function starts a dscli chat that reads
 		// the message from the chimeins queue on boot.
 		return `emacsclient -n -c -e '(dscli--send-message-raw "%s")'`
 	}
@@ -206,7 +226,7 @@ func runDisplayCommand(tmpl, project string) {
 	cmd := exec.Command("sh", "-c", cmdStr)
 
 	if startErr := cmd.Start(); startErr != nil {
-		outfmt.Debug("sendmessage: display command start: %v\n", startErr)
+		outfmt.Debug("wakeup: display command start: %v\n", startErr)
 		return
 	}
 
