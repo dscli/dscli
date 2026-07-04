@@ -17,27 +17,27 @@ Dispatch a message to another dscli chat session for a given project.
 
 The tool is **IDE-agnostic** and **fire-and-forget**:
 
-1. Writes the message to the target project's chimeins queue in the global database
-2. If a dscli chat session is already running for the target project, it picks up the message in its next round
-3. Otherwise, dispatches via a configurable display command (`send-message.command`) that starts a visible dscli session in the user's IDE
+1. Writes the message to the target project's **chimeins queue** in the global database — this is the sole content delivery path
+2. If a dscli chat session is already running for the target project, it picks up the message from the chimeins queue in its next round
+3. Otherwise, dispatches via a configurable display command (`send-message.command`) that starts a visible dscli session in the user's IDE. The display command carries **only the project path** — the message content is already in the chimeins queue
 
 ### Display command
 
 Configured via `send-message.command` in `~/.dscli/config.dscli`:
 
 ```
-send-message.command = emacsclient -n -c -e '(dscli--send-message-raw "%s" "%s")'
+send-message.command = emacsclient -n -c -e '(dscli--send-message-raw "%s")'
 ```
 
-The `%s` placeholders are replaced with the message content and project path (shell-safe escaping applied automatically).
+The single `%s` placeholder is replaced with the project path (shell-safe escaping applied automatically). The Emacs Lisp function `dscli--send-message-raw` receives only the project root; it starts `dscli chat` which reads the message from the chimeins queue.
 
 Default auto-detection order:
-- `emacsclient` → `emacsclient -n -c -e '(dscli--send-message-raw ...)'`
+- `emacsclient` → `emacsclient -n -c -e '(dscli--send-message-raw "%s")'`
 
 ### IDE integration
 
-- **Emacs**: the `dscli--send-message-raw` function in dscli.el handles both running-session injection and new-session startup. The output buffer is displayed in the Emacs frame created by `-c`.
-- **Other IDEs**: configure `send-message.command` for your environment (VSCode, terminal, etc.)
+- **Emacs**: the `dscli--send-message-raw` function in dscli.el starts a new dscli chat session. The output buffer is displayed in the Emacs frame created by `-c`. The started session automatically reads the chimein from the queue.
+- **Other IDEs**: configure `send-message.command` for your environment (VSCode, terminal, etc.) with a single `%s` placeholder for the project path.
 - **No display**: if no display command is configured and no auto-detect succeeds, the message is queued — run `dscli chat` manually in the target project to see it.
 
 ## Example

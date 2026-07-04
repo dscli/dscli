@@ -105,11 +105,12 @@ func handleSendMessage(ctx context.Context, args toolcall.ToolArgs) (result, war
 
 	// Step 1: Write message to target project's chimeins queue.
 	// All projects share the global sqlite.db (~/.dscli/sqlite.db), keyed by
-	// project_path in the sessions table.  This write ensures the message is
-	// never lost, regardless of display capability.
+	// project_path in the sessions table.  The chimein is the sole content
+	// delivery path — the display command (Step 3) only wakes the session.
 	if err := writeChimein(ctx, project, input); err != nil {
-		// Non-fatal: chimein write is best-effort; the display command
-		// path also delivers the message.
+		// Non-fatal: a failed chimein write means the message is lost, but
+		// returning an error to the caller is worse — the display command
+		// still starts a session where the user can see context.
 		outfmt.Debug("sendmessage: write chimein: %v\n", err)
 	}
 
@@ -123,6 +124,8 @@ func handleSendMessage(ctx context.Context, args toolcall.ToolArgs) (result, war
 	}
 
 	// Step 3: No running process — dispatch via configured display command.
+	// The display command carries ONLY the project path.  The message content
+	// is already in the chimeins queue — the started session reads it on boot.
 	dispatchCmd := config.Get("send-message.command", "")
 	if dispatchCmd == "" {
 		dispatchCmd = detectDisplayCommand()
@@ -130,7 +133,7 @@ func handleSendMessage(ctx context.Context, args toolcall.ToolArgs) (result, war
 	if dispatchCmd != "" {
 		// Fire-and-forget: the command launches a visible dscli session
 		// in the user's IDE (Emacs frame, terminal window, etc.).
-		go runDisplayCommand(dispatchCmd, input, project)
+		go runDisplayCommand(dispatchCmd, project)
 		outfmt.Printf("📨 已唤醒 %s 处理项目 %s 的任务\n", targetName, projectName)
 		result = fmt.Sprintf("已唤醒 %s 处理项目 %s 的任务", targetName, projectName)
 	} else {
@@ -212,14 +215,15 @@ func isProcessRunning(projectPath string) bool {
 func detectDisplayCommand() string {
 	if hasExecutable("emacsclient") {
 		// Emacs: create frame (-c), return immediately (-n).
-		// dscli--send-message-raw handles both injection into existing
-		// sessions and starting new ones.
-		return `emacsclient -n -c -e '(dscli--send-message-raw "%s" "%s")'`
+		// The template has one %s placeholder — the project path.
+		// dscli--send-message-raw starts a dscli chat that reads
+		// the message from the chimeins queue on boot.
+		return `emacsclient -n -c -e '(dscli--send-message-raw "%s")'`
 	}
 	// Future detectors:
 	//   - VSCode: `code --command "dscli.startChat" --args "..."`
 	//   - Vim/nvim:  terminal-based launch
-	//   - Terminal: `x-terminal-emulator -e sh -c 'cd %s && dscli chat --input %s'`
+	//   - Terminal: `x-terminal-emulator -e sh -c 'cd %s && dscli chat'`
 	return ""
 }
 
@@ -230,18 +234,19 @@ func hasExecutable(name string) bool {
 }
 
 // runDisplayCommand executes the display command template with the given
-// input and project, fire-and-forget.
-func runDisplayCommand(tmpl, input, project string) {
+// project path, fire-and-forget.  The template receives a single %s
+// placeholder for the project path (shell-escaped).
+//
+// The display command does NOT carry message content — the message is
+// already in the chimeins queue.  The command's sole job is to wake up
+// a dscli chat session in the user's IDE; the session reads the chimein
+// on startup.
+func runDisplayCommand(tmpl, project string) {
 	// Escape for safe interpolation into shell command.
-	// Emacs Lisp string escaping: \ → \\, " → \", newline → \n
-	input = strings.ReplaceAll(input, `\`, `\\`)
-	input = strings.ReplaceAll(input, `"`, `\"`)
-	input = strings.ReplaceAll(input, "\n", `\n`)
-
 	project = strings.ReplaceAll(project, `\`, `\\`)
 	project = strings.ReplaceAll(project, `"`, `\"`)
 
-	cmdStr := fmt.Sprintf(tmpl, input, project)
+	cmdStr := fmt.Sprintf(tmpl, project)
 	cmd := exec.Command("sh", "-c", cmdStr)
 
 	if startErr := cmd.Start(); startErr != nil {
