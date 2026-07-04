@@ -64,7 +64,8 @@ func ResetSessionID() {
 	currentSessionID.Store(0)
 }
 
-// CreateOrGetSessionID 获取或创建会话ID
+// CreateOrGetSessionID 获取或创建当前 context.ProjectRoot 的会话ID。
+// 委托给 CreateOrGetSessionIDByPath。
 func CreateOrGetSessionID(ctx context.Context) (sessionID int64, err error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "CreateOrGetSessionID")
 	defer span.Finish()
@@ -72,6 +73,15 @@ func CreateOrGetSessionID(ctx context.Context) (sessionID int64, err error) {
 	if projectRoot == "" {
 		panic("project root is empty, please set")
 	}
+	return CreateOrGetSessionIDByPath(ctx, projectRoot)
+}
+
+// CreateOrGetSessionIDByPath 获取或创建指定项目路径对应的会话ID。
+// 如果该路径尚未有 session 行则自动创建。
+func CreateOrGetSessionIDByPath(ctx context.Context, projectPath string) (sessionID int64, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "CreateOrGetSessionIDByPath")
+	defer span.Finish()
+
 	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		return sessionID, err
@@ -80,7 +90,7 @@ func CreateOrGetSessionID(ctx context.Context) (sessionID int64, err error) {
 
 	var id int64
 	err = db.QueryRow("SELECT id FROM sessions WHERE project_path = ?",
-		projectRoot).Scan(&id)
+		projectPath).Scan(&id)
 	if err != nil {
 		if err != sql.ErrNoRows {
 			return sessionID, err
@@ -91,7 +101,7 @@ func CreateOrGetSessionID(ctx context.Context) (sessionID int64, err error) {
 	}
 
 	result, err := db.Exec("INSERT INTO sessions (project_path) VALUES (?)",
-		projectRoot)
+		projectPath)
 	if err != nil {
 		return sessionID, err
 	}

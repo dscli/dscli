@@ -21,10 +21,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dscli/dscli/internal/chimein"
 	"github.com/dscli/dscli/internal/config"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/session"
-	"github.com/dscli/dscli/internal/sqlite"
 	"github.com/dscli/dscli/internal/toolcall"
 	"github.com/nanjj/clog"
 )
@@ -107,11 +107,13 @@ func handleSendMessage(ctx context.Context, args toolcall.ToolArgs) (result, war
 	// All projects share the global sqlite.db (~/.dscli/sqlite.db), keyed by
 	// project_path in the sessions table.  The chimein is the sole content
 	// delivery path — the display command (Step 3) only wakes the session.
-	if err := writeChimein(ctx, project, input); err != nil {
+	marked := fmt.Sprintf("[send_message at %s]\n%s",
+		time.Now().Format(time.RFC3339), input)
+	if err := chimein.AppendToProject(ctx, project, marked); err != nil {
 		// Non-fatal: a failed chimein write means the message is lost, but
 		// returning an error to the caller is worse — the display command
 		// still starts a session where the user can see context.
-		outfmt.Debug("sendmessage: write chimein: %v\n", err)
+		outfmt.Debug("sendmessage: append chimein: %v\n", err)
 	}
 
 	// Step 2: Check if a dscli chat process is already running for the
@@ -144,52 +146,6 @@ func handleSendMessage(ctx context.Context, args toolcall.ToolArgs) (result, war
 	}
 
 	return result, warning, nil
-}
-
-// writeChimein writes the input message to the target project's chimeins
-// table entry via the global database.  The target project's dscli chat
-// session (existing or next) picks it up automatically.
-func writeChimein(ctx context.Context, projectPath, content string) error {
-	db, err := sqlite.OpenDB(ctx)
-	if err != nil {
-		return fmt.Errorf("open db: %w", err)
-	}
-	defer db.Close(ctx)
-
-	// Find or create the target project's session.
-	var sessionID int64
-	err = db.QueryRow(
-		`SELECT id FROM sessions WHERE project_path = ?`, projectPath,
-	).Scan(&sessionID)
-	if err != nil {
-		// Session doesn't exist yet — create one.
-		res, insErr := db.Exec(
-			`INSERT INTO sessions (project_path) VALUES (?)`, projectPath,
-		)
-		if insErr != nil {
-			return fmt.Errorf("create session: %w", insErr)
-		}
-		sessionID, err = res.LastInsertId()
-		if err != nil {
-			return fmt.Errorf("last insert id: %w", err)
-		}
-	}
-
-	marked := fmt.Sprintf("\n[send_message at %s]\n%s\n",
-		time.Now().Format(time.RFC3339), strings.TrimSpace(content))
-
-	// UPSERT: one chimein row per session (UNIQUE constraint on session_id),
-	// content is appended so multiple messages accumulate.
-	_, err = db.Exec(`
-		INSERT INTO chimeins (session_id, content) VALUES (?, ?)
-		ON CONFLICT(session_id) DO UPDATE SET
-			content = content || ?`,
-		sessionID, marked, marked)
-	if err != nil {
-		return fmt.Errorf("upsert chimein: %w", err)
-	}
-
-	return nil
 }
 
 // isProcessRunning checks whether a dscli chat process is currently holding

@@ -66,6 +66,36 @@ func Append(ctx context.Context, newContent string) error {
 	}
 	return nil
 }
+// AppendToProject 追加内容到指定项目的 chimein 队列。
+// projectPath 是任意项目的文件系统路径（不限于当前 session）。
+// 如果该项目尚无 session 行则自动创建。
+// 与 Append 不同，AppendToProject 不依赖当前 session，适用于跨项目消息投递。
+func AppendToProject(ctx context.Context, projectPath, content string) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "chimeinAppendToProject")
+	defer span.Finish()
+
+	sessionID, err := session.CreateOrGetSessionIDByPath(ctx, projectPath)
+	if err != nil {
+		return fmt.Errorf("resolve session: %w", err)
+	}
+
+	db, err := sqlite.OpenDB(ctx)
+	if err != nil {
+		return err
+	}
+	defer db.Close(ctx)
+
+	wrapped := "\n" + strings.TrimSpace(content) + "\n"
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO chimeins (session_id, content) VALUES (?, ?)
+		ON CONFLICT(session_id) DO UPDATE SET
+			content = content || ?`,
+		sessionID, wrapped, wrapped)
+	if err != nil {
+		return fmt.Errorf("upsert chimein: %w", err)
+	}
+	return nil
+}
 
 // Get 获取当前 session 的 chimein 内容，读取后自动清空。
 // 如果不存在，返回空字符串和 nil error。
