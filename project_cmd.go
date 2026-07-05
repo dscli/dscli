@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -51,12 +52,15 @@ func init() {
 	})
 
 	projectCmd.AddCommand(&cobra.Command{
-		Use:   "remove <project_id>",
+		Use:   "remove <project_id|project_path>",
 		Short: "删除指定项目",
 		Long: `从数据库中删除指定项目（session）及其所有关联数据。
 
+支持按项目 ID 或项目路径删除。
+
 示例:
-  dscli project remove 6    # 删除项目 6`,
+  dscli project remove 6          # 删除项目 6
+  dscli project remove /home/user/tmp  # 按路径删除`,
 		Args: cobra.ExactArgs(1),
 		RunE: projectRemoveRunE,
 	})
@@ -178,14 +182,43 @@ func projectUpdateRunE(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// projectRemoveRunE handles "dscli project remove <project_id>".
+// projectRemoveRunE handles "dscli project remove <project_id|project_path>".
 func projectRemoveRunE(cmd *cobra.Command, args []string) error {
 	span, ctx := clog.StartSpanFromContext(cmd.Context(), "projectRemoveRunE")
 	defer span.Finish()
 
-	projectID, err := strconv.ParseInt(args[0], 10, 64)
+	arg := args[0]
+
+	// Try as numeric ID first.
+	projectID, err := strconv.ParseInt(arg, 10, 64)
 	if err != nil || projectID <= 0 {
-		return fmt.Errorf("无效的 project_id: %s（需要正整数）", args[0])
+		// Not a valid ID — try as project path.
+		// Resolve ~ to home directory.
+		resolvedPath := arg
+		if strings.HasPrefix(resolvedPath, "~") {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return fmt.Errorf("无法解析 ~: %w", err)
+			}
+			resolvedPath = filepath.Join(home, strings.TrimPrefix(resolvedPath, "~"))
+		}
+
+		projects, err := session.ListProjects(ctx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "查询项目列表失败: %v\n", err)
+			return nil
+		}
+		found := false
+		for _, p := range projects {
+			if p.ProjectPath == resolvedPath {
+				projectID = p.ID
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("未找到路径为 %q 的项目", arg)
+		}
 	}
 
 	if err := session.RemoveProject(ctx, projectID); err != nil {

@@ -239,6 +239,11 @@ func RemoveProject(ctx context.Context, sessionID int64) error {
 	}
 	defer db.Close(ctx)
 
+	// Protect active session.
+	if sid := currentSessionID.Load(); sid != 0 && sid == sessionID {
+		return fmt.Errorf("无法删除当前正在使用的项目")
+	}
+
 	// Verify session exists.
 	var sid int64
 	if err := db.QueryRow("SELECT id FROM sessions WHERE id = ?", sessionID).Scan(&sid); err != nil {
