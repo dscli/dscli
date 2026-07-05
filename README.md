@@ -24,6 +24,8 @@ Simply put: **dscli = AI assistant + dev tools + session memory + CLI efficiency
 
 ### Version History
 
+- v0.8.8 (2026-07-04) — Distributed tracing (Jaeger/clogs), cross-project AI communication (wakeup), project management commands, history move, session cleanup with active session protection, MCP integration framework (mcphub), gzip release archives, SQL lock leak fix, write_file CAS safety
+- v0.8.7 (2026-06-13) — LightPanda Cloud MCP support, test role (QA Engineer), code fence language preservation, cloud token validation
 - v0.8.0 (2026-05-17) — AI personality system (32 scientists), skill author auto-fill, unified output format, `git author` style user display
 - v0.7.6 (2026-05-03) — P0 nil panic fix, type alias cleanup, recall limits, 11 new tests
 - v0.7.5 (2026-05-03) — Toolcall result truncation threshold raised to 1M context
@@ -53,8 +55,10 @@ Simply put: **dscli = AI assistant + dev tools + session memory + CLI efficiency
 
 ### 📝 Session Management
 
-- **`dscli history`** — Conversation history management (list / load / show / edit / update)
+- **`dscli history`** — Conversation history management (list / load / show / edit / update / move)
+- **`dscli history move <project_id>`** — Transfer messages between projects
 - **`dscli history recall <keywords>`** — Search conversation history, recall past discussions
+- **`dscli project`** — Project management (list / assign / update / remove)
 
 ### 🛠️ Developer Tools
 
@@ -78,10 +82,21 @@ Simply put: **dscli = AI assistant + dev tools + session memory + CLI efficiency
 
 - **Random assignment** — Randomly drawn on first use, persistently bound
 - **Persona injection** — Character descriptions automatically injected into system prompts
+### 🔍 Distributed Tracing
+
+dscli integrates with [Jaeger](https://www.jaegertracing.io/) (via [clogs](https://github.com/nanjj/clog)) for distributed tracing across all layers — top-level commands, toolcall handlers, shell execution, LightPanda web interactions, and DeepSeek API calls.
+
+- **Automatic span injection** — Every command and tool call creates a trace span with parent-child relationships
+- **W3C tracecontext propagation** — Trace context (`traceparent`) is propagated across process boundaries (MCP, subprocesses) for end-to-end tracing
+- **Environment variables:**
+  - `JAEGER_DISABLED=true` — Disable tracing entirely
+  - Default Jaeger agent endpoint: `localhost:6831` (UDP)
+- **No additional configuration needed** — Traces are sent automatically when a Jaeger agent is available
 
 ## 🚀 Quick Start
 
 ### Installation
+
 
 ```bash
 # Option 1: go install (recommended)
@@ -90,7 +105,7 @@ go install github.com/dscli/dscli@latest
 # Option 2: Build from source
 git clone https://github.com/dscli/dscli.git
 cd dscli
-git checkout v0.8.0
+git checkout v0.8.8
 make install    # installs to $GOPATH/bin
 
 # Option 3: Download pre-built binary
@@ -130,11 +145,12 @@ dscli history list
 # Search history messages
 dscli history recall "Go error handling"
 
-# View message details
-dscli history show 42
-
 # Edit message content
 dscli history edit 42
+
+# Move messages to another project
+dscli history move 7
+
 ```
 
 ### 3. Skill Management
@@ -182,7 +198,25 @@ dscli memory show 1
 dscli memory stats
 ```
 
-### 5. Role Customization
+### 5. Project Management
+
+```bash
+# List all projects (current project marked with →)
+dscli project list
+
+# Remove a project by ID or path
+dscli project remove 6
+dscli project remove /home/user/tmp
+
+# Assign a maintainer to a project
+dscli project assign 7 30
+
+# Update project path
+dscli project update 2 /new/path/to/project
+```
+
+
+### 6. Role Customization
 
 dscli has three built-in AI roles: **dev** (development assistant, full tools/skills),
 **expert** (domain expert, no tools/skills), **review** (code review,
@@ -229,7 +263,7 @@ dscli role update review --skills "go-fix,gofumpt" \
 dscli role reset review
 ```
 
-### 6. Developer Tools
+### 7. Developer Tools
 
 ```bash
 # Static code analysis
@@ -243,7 +277,7 @@ dscli parse main.go
 dscli parse main.go -l python
 ```
 
-### 7. View Models and Balance
+### 8. View Models and Balance
 
 ```bash
 # List available models
@@ -257,7 +291,7 @@ dscli models --format json
 dscli balance --format json
 ```
 
-### 8. Configuration File
+### 9. Configuration File
 
 The configuration file defaults to `~/.dscli/config.dscli`, auto-generated on first run via environment variables:
 
