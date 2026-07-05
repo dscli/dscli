@@ -70,12 +70,12 @@ if [ -f README.md ]; then
     fi
 fi
 
-# 1. Update version.go
-sed -i 's/^\tVersion = ".*"/\tVersion = "'"$NEW_VER"'"/' version.go
-echo "  version.go → $NEW_VER"
+# 1. Update internal/version/version.go
+sed -i 's/^\tvar Version = ".*"/\tvar Version = "'"$NEW_VER"'"/' internal/version/version.go
+echo "  internal/version/version.go → $NEW_VER"
 
 # 2. Stage version change
-git add version.go
+git add internal/version/version.go
 
 # 3. Commit
 git commit -m "version: bump to v$NEW_VER"
