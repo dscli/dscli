@@ -21,8 +21,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
+	"github.com/dscli/dscli/internal/processutil"
 
 	"github.com/dscli/dscli/internal/chimein"
 	"github.com/dscli/dscli/internal/config"
@@ -182,8 +182,8 @@ func isProcessRunning(projectPath string) bool {
 		return false
 	}
 
-	// On Unix, sending signal 0 is a no-op that checks process existence.
-	return syscall.Kill(pid, syscall.Signal(0)) == nil
+	// Check if process is alive.
+	return processutil.IsAlive(pid)
 }
 
 // detectDisplayCommand auto-detects the best display command based on

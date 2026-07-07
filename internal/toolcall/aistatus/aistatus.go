@@ -19,9 +19,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"text/tabwriter"
 	"time"
+	"github.com/dscli/dscli/internal/processutil"
 
 	dsctx "github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/session"
@@ -188,8 +188,8 @@ func determineProjectStatus(p session.ProjectRow, napSessions map[int64]time.Tim
 		return "off"
 	}
 
-	// Signal 0 is a no-op that checks process existence.
-	if syscall.Kill(pid, syscall.Signal(0)) != nil {
+	// Check if process is alive.
+	if !processutil.IsAlive(pid) {
 		return "off"
 	}
 
