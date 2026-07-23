@@ -156,3 +156,109 @@ func TestIsTagLike(t *testing.T) {
 		})
 	}
 }
+
+func TestStripCASTags(t *testing.T) {
+	tests := []struct {
+		name         string
+		content      string
+		expectedTags []string
+		wantContent  string
+		wantChanged  bool
+	}{
+		{
+			name:         "empty content",
+			content:      "",
+			expectedTags: []string{"Q8fA"},
+			wantContent:  "",
+			wantChanged:  false,
+		},
+		{
+			name:         "no expected tags",
+			content:      "hello world",
+			expectedTags: nil,
+			wantContent:  "hello world",
+			wantChanged:  false,
+		},
+		{
+			name:         "strip bracketed tag",
+			content:      "[Q8fA] package main",
+			expectedTags: []string{"Q8fA"},
+			wantContent:  "package main",
+			wantChanged:  true,
+		},
+		{
+			name:         "strip bare tag",
+			content:      "eh7b import \"fmt\"",
+			expectedTags: []string{"eh7b"},
+			wantContent:  "import \"fmt\"",
+			wantChanged:  true,
+		},
+		{
+			name:         "strip colon with bracketed tag",
+			content:      "1:[Q8fA] package main",
+			expectedTags: []string{"Q8fA"},
+			wantContent:  "package main",
+			wantChanged:  true,
+		},
+		{
+			name:         "strip colon with bare tag",
+			content:      "3:eh7b import \"fmt\"",
+			expectedTags: []string{"eh7b"},
+			wantContent:  "import \"fmt\"",
+			wantChanged:  true,
+		},
+		{
+			name:         "strip multiple lines",
+			content:      "1:[Q8fA] package main\n2:[eh7b] import \"fmt\"\n3:[4Y5Q] func main() {\n4:[_1aB]     fmt.Println(\"hello\")\n}",
+			expectedTags: []string{"Q8fA", "eh7b", "4Y5Q", "_1aB"},
+			wantContent:  "package main\nimport \"fmt\"\nfunc main() {\n    fmt.Println(\"hello\")\n}",
+			wantChanged:  true,
+		},
+		{
+			name:         "bracketed and bare mixed",
+			content:      "[Q8fA] package main\neh7b import \"fmt\"\n3:[4Y5Q] func main() {\n4:_1aB     fmt.Println(\"hello\")\n}",
+			expectedTags: []string{"Q8fA", "eh7b", "4Y5Q", "_1aB"},
+			wantContent:  "package main\nimport \"fmt\"\nfunc main() {\n    fmt.Println(\"hello\")\n}",
+			wantChanged:  true,
+		},
+		{
+			name:         "more lines than tags -- stop after matching tags",
+			content:      "[Q8fA] line one\n[eh7b] line two\nline three untouched\nline four untouched",
+			expectedTags: []string{"Q8fA", "eh7b"},
+			wantContent:  "line one\nline two\nline three untouched\nline four untouched",
+			wantChanged:  true,
+		},
+		{
+			name:         "no match return unchanged",
+			content:      "normal text without any tags",
+			expectedTags: []string{"Q8fA"},
+			wantContent:  "normal text without any tags",
+			wantChanged:  false,
+		},
+		{
+			name:         "tag mismatch prefix does not match",
+			content:      "[XXXX] some content",
+			expectedTags: []string{"Q8fA"},
+			wantContent:  "[XXXX] some content",
+			wantChanged:  false,
+		},
+		{
+			name:         "empty expected tag in middle",
+			content:      "[Q8fA] line one\nsome content\n[eh7b] line three",
+			expectedTags: []string{"Q8fA", "", "eh7b"},
+			wantContent:  "line one\nsome content\nline three",
+			wantChanged:  true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotContent, gotChanged := stripCASTags(tt.content, tt.expectedTags)
+			if gotChanged != tt.wantChanged {
+				t.Errorf("stripCASTags() changed = %v, want %v", gotChanged, tt.wantChanged)
+			}
+			if gotContent != tt.wantContent {
+				t.Errorf("stripCASTags() content = %q, want %q", gotContent, tt.wantContent)
+			}
+		})
+	}
+}

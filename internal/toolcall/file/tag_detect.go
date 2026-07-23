@@ -5,9 +5,10 @@ import "strings"
 // detectCASTags 检查内容是否包含 read_file 输出的 CAS tag 前缀。
 // 返回检测到疑似 tag 的行数。
 //
-// 检测两种模式：
+// 检测三种模式：
 //  1. 完整冒号格式："123:[Ab12] content..."（行号 + [CAS tag]）— 几乎无假阳性
-//  2. 裸 tag 格式："[Ab12] content..."（仅 [CAS tag]）— 要求 tag 看起来像校验和
+//  2. 带括号格式："[Ab12] content..."（仅 [CAS tag]）— 要求 tag 看起来像校验和
+//  3. 裸 tag 格式："Ab12 content..."（无括号，4 字符 + 空格）— 要求 tag 看起来像校验和
 func detectCASTags(content string) int {
 	lines := strings.Split(content, "\n")
 	count := 0
@@ -43,6 +44,17 @@ func detectCASTags(content string) int {
 			tagChar(line[3]) && tagChar(line[4]) {
 			// 检查前缀是否像 CAS tag（而非英文单词）
 			if isTagLike(line[1:5]) {
+				count++
+				continue
+			}
+		}
+
+		// 模式3：行首 4 位 tag 字符 + 空格 + 内容（"Ab12 content"）
+		// 要求 4 字符全部来自 tagCharset，且看起来像校验和（而非英文单词）
+		if len(line) >= 5 && line[4] == ' ' &&
+			tagChar(line[0]) && tagChar(line[1]) &&
+			tagChar(line[2]) && tagChar(line[3]) {
+			if isTagLike(line[0:4]) {
 				count++
 			}
 		}
@@ -85,3 +97,80 @@ func isTagLike(s string) bool {
 
 // casTagThreshold 是触发 CAS tag 污染拒绝所需的最小匹配行数。
 const casTagThreshold = 3
+
+// stripCASTags 从 content 中移除匹配已知 tag 的 CAS tag 前缀。
+//
+// 对于 content 的每一行，检查是否以已知的 expectedTag（带括号或不带括号）开头。
+// 如果匹配，则剥离该前缀。返回剥离后的 content 和是否发生过剥离。
+//
+// 这是安全操作：只在已知的、已验证过的 tag 匹配时才剥离，
+// 不会误伤内容文本。
+//
+// 支持的格式：
+//   - "[tag] content" → "content"
+//   - "tag content" → "content"
+//   - "N:[tag] content" → "content"（N 为数字行号）
+//   - "N:tag content" → "content"
+func stripCASTags(content string, expectedTags []string) (string, bool) {
+	if len(expectedTags) == 0 || content == "" {
+		return content, false
+	}
+
+	lines := strings.Split(content, "\n")
+	changed := false
+
+	// 逐行处理，每行只与对应位置的 expectedTag 比较
+	for i, line := range lines {
+		if i >= len(expectedTags) {
+			break // 超过预期 tag 数量的行不再处理
+		}
+		tag := expectedTags[i]
+		if tag == "" || line == "" {
+			continue
+		}
+
+		// 模式 A: "[tag] content"
+		if strings.HasPrefix(line, "["+tag+"] ") {
+			lines[i] = strings.TrimPrefix(line, "["+tag+"] ")
+			changed = true
+			continue
+		}
+
+		// 模式 B: "tag content"
+		if strings.HasPrefix(line, tag+" ") {
+			lines[i] = strings.TrimPrefix(line, tag+" ")
+			changed = true
+			continue
+		}
+
+		// 模式 C: "N:[tag] content" — N 是数字行号
+		if colonIdx := strings.IndexByte(line, ':'); colonIdx > 0 && colonIdx < 6 {
+			allDigits := true
+			for j := 0; j < colonIdx; j++ {
+				if line[j] < '0' || line[j] > '9' {
+					allDigits = false
+					break
+				}
+			}
+			if allDigits {
+				rest := line[colonIdx+1:]
+				if strings.HasPrefix(rest, "["+tag+"] ") {
+					lines[i] = strings.TrimPrefix(rest, "["+tag+"] ")
+					changed = true
+					continue
+				}
+				if strings.HasPrefix(rest, tag+" ") {
+					lines[i] = strings.TrimPrefix(rest, tag+" ")
+					changed = true
+					continue
+				}
+			}
+		}
+	}
+
+	if !changed {
+		return content, false
+	}
+
+	return strings.Join(lines, "\n"), true
+}
