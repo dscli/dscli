@@ -185,9 +185,9 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 	// 如果提供了 line_tag 或 line_tags，写入前校验标签匹配
 	lineTag := toolcall.ToolArgsValue(args, "line_tag", "")
 	lineTags := toolcall.ToolArgsValue(args, "line_tags", "")
+	var expectedTags []string
 
 	if lineTag != "" || lineTags != "" {
-		var expectedTags []string
 		if lineTag != "" && lineTags != "" {
 			err = fmt.Errorf("cannot specify both line_tag and line_tags; use line_tag for single-line edits, line_tags for multi-line")
 			return result, warning, err
@@ -212,7 +212,19 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 		}
 	}
 
-	// 构建新内容
+	// Auto-strip CAS tag prefixes from content, using verified tags.
+	// This handles the common case where the LLM includes read_file
+	// CAS tag prefixes (like "Q8fA" or "[Q8fA]") in the content parameter.
+	// Safe because we only strip prefixes matching the verified tags.
+	if len(expectedTags) > 0 {
+		stripped, didStrip := stripCASTags(content, expectedTags)
+		if didStrip {
+			content = stripped
+			warning = "注意：已自动去除 content 中的 CAS tag 前缀（匹配已验证的 tag）。"
+		}
+	}
+
+	// --- 构建新内容 ---
 	var newLines []string
 
 	// 1. 添加 start_line 之前的部分
