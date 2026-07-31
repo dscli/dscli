@@ -40,6 +40,10 @@ func TestParsePrice(t *testing.T) {
 			"deepseek-v4-flash": {0.02, 1.0, 2.0},
 			"deepseek-v4-pro":   {0.025, 3.0, 6.0},
 		}},
+		{`<tr><td rowspan="3">价格<sup>(2)</sup></td><td>百万tokens输入（缓存命中）</td><td>0.02元</td><td>0.025元</td></tr><tr><td>百万tokens输入（缓存未命中）</td><td>1元</td><td>3元</td></tr><tr><td>百万tokens输出</td><td>2元</td><td>6元</td></tr>`, map[string]Price{
+			"deepseek-v4-flash": {0.02, 1.0, 2.0},
+			"deepseek-v4-pro":   {0.025, 3.0, 6.0},
+		}},
 	}
 	for i, tc := range tcs {
 		name := fmt.Sprintf("%d", i)

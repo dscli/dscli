@@ -44,7 +44,17 @@ func parsePrice(html string) (price map[string]Price) {
 	pro := Price{}
 	_, after, found := strings.Cut(html, ">价格</td><td>")
 	if !found {
-		return
+		// 2026-07 页面改版后，"价格"单元格带脚注标注：
+		//   <td rowspan="3">价格<sup>(2)</sup></td><td>百万tokens输入（缓存命中）</td><td>0.02元</td>...
+		// 跳过 <sup>…</sup> 后与上面的路径汇合，后续解析逻辑不变。
+		_, after, found = strings.Cut(html, ">价格<sup>")
+		if !found {
+			return
+		}
+		_, after, found = strings.Cut(after, "</sup></td><td>")
+		if !found {
+			return
+		}
 	}
 	_, after, found = strings.Cut(after, "</td><td>")
 	if !found {
