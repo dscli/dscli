@@ -134,11 +134,21 @@ func ValidateSkillDir(ctx context.Context, dir string) []string {
 
 // findSkillMD returns the path to SKILL.md (preferred) or skill.md in dir.
 // Returns empty string if neither exists.
+//
+// Uses os.ReadDir + exact name match instead of os.Stat: on case-insensitive
+// filesystems (macOS APFS default) os.Stat("SKILL.md") also matches a file
+// actually named "skill.md", returning a path that doesn't exist on disk.
+// Matching real directory entries keeps behavior identical on every FS.
 func findSkillMD(dir string) string {
-	for _, name := range []string{"SKILL.md", "skill.md"} {
-		path := filepath.Join(dir, name)
-		if _, err := os.Stat(path); err == nil {
-			return path
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	for _, want := range []string{"SKILL.md", "skill.md"} {
+		for _, e := range entries {
+			if !e.IsDir() && e.Name() == want {
+				return filepath.Join(dir, e.Name())
+			}
 		}
 	}
 	return ""
