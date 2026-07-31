@@ -4,14 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dscli/dscli/internal/context"
+	"github.com/nanjj/clog"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
-
-	"github.com/dscli/dscli/internal/context"
-	"github.com/nanjj/clog"
+	"unicode/utf8"
 
 	"github.com/chromedp/chromedp"
 )
@@ -383,38 +383,25 @@ func webchatWait(ctx context.Context, baseline, mdBaseline string) (string, erro
 				// This naturally excludes UI chrome (search info,
 				// toggle labels, footer text).
 				if resp := getAssistantText(ctx); resp != "" {
-					if canExtract {
-						// Strip pre-existing conversation history so
-						// continued conversations return only the new
-						// response. If the prefix doesn't match (page
-						// rebuilt), keep the full text rather than
-						// losing content.
-						if mdBaseline != "" && strings.HasPrefix(resp, mdBaseline) {
-							resp = strings.TrimSpace(resp[len(mdBaseline):])
-						}
-						if resp == "" {
-							return "", fmt.Errorf("response extraction failed: no new content after baseline")
-						}
+					resp = stripBaselinePrefix(resp, mdBaseline)
+					if canExtract && isCompleteResponse(resp) {
 						return resp, nil
 					}
-					continue // generation still active, keep polling
-				}
-
-				// Fallback: diff body text against baseline, then
-				// clean up known artifact patterns.
-				if fallback := cleanBodyResponse(extractResponse(baseline, current)); fallback != "" {
-					if canExtract {
-						return fallback, nil
-					}
+					// Fragment or generation still active: keep polling.
+					// The model often pauses after emitting a simulated
+					// tool call (<read_file ...>) that the web UI cannot
+					// execute; returning the fragment would lose the rest
+					// of the answer.
 					continue
 				}
 
-				// Both extraction methods failed. If generation is done,
-				// report immediately instead of polling until timeout.
-				if canExtract {
-					return "", fmt.Errorf("response extraction failed: .ds-markdown missing and body diff empty")
+				// Fallback: diff body text against baseline, then
+				// clean up known artifact patterns. Only accept clean,
+				// complete text; keep polling on fragments instead of
+				// aborting on a mid-response pause.
+				if fallback := cleanBodyResponse(extractResponse(baseline, current)); canExtract && isCompleteResponse(fallback) {
+					return fallback, nil
 				}
-				continue
 			}
 		} else {
 			stableCount = 0
@@ -494,12 +481,56 @@ func matchCitationLine(s string) bool {
 	return citationLineRE.MatchString(s)
 }
 
-// extractResponse computes the text added after baseline.
+// extractResponse computes the text added after baseline. current must
+// start with baseline: body.innerText changes during generation (the
+// textarea clears after send, the stop button appears and disappears), so a
+// naive suffix slice at len(baseline) would return garbage from a
+// misaligned offset — e.g. a lone U+FFFD replacement character.
 func extractResponse(baseline, current string) string {
-	if len(current) > len(baseline) {
+	if len(current) > len(baseline) && strings.HasPrefix(current, baseline) {
 		return strings.TrimSpace(current[len(baseline):])
 	}
 	return ""
+}
+
+// stripBaselinePrefix removes pre-existing conversation history from an
+// extracted response so continued conversations return only the new text.
+// If the prefix doesn't match (page rebuilt), the full text is kept rather
+// than losing content.
+func stripBaselinePrefix(resp, mdBaseline string) string {
+	if mdBaseline != "" && strings.HasPrefix(resp, mdBaseline) {
+		resp = strings.TrimSpace(resp[len(mdBaseline):])
+	}
+	return resp
+}
+
+// toolCallOpenRE matches the opening of a simulated tool call, e.g.
+// "<read_file ...>". dscli's role prompts (review.md etc.) instruct the
+// model to call read_file; the DeepSeek web UI cannot execute tools, so the
+// model emits the call line and pauses. Extracting at that point would
+// return a useless fragment. Only known tool names followed by an argument
+// list match, so a legitimate short answer like "<b>bold</b>" is not
+// rejected.
+var toolCallOpenRE = regexp.MustCompile(`^<(read_file|write_file|shell|code_edit|code_search|search_file_with_pattern|flycheck|sql)\s`)
+
+// minCompleteResponseLen is the minimum rune length below which an
+// extraction result may still be an incomplete fragment (e.g. a simulated
+// tool call line) rather than a real answer.
+const minCompleteResponseLen = 600
+
+// isCompleteResponse reports whether an extraction result is usable: it
+// must be non-empty, free of replacement characters (U+FFFD appears when a
+// misaligned slice cuts a multi-byte rune), and not merely the opening of a
+// simulated tool call.
+func isCompleteResponse(s string) bool {
+	if s == "" || strings.ContainsRune(s, '\uFFFD') {
+		return false
+	}
+	if utf8.RuneCountInString(s) > minCompleteResponseLen {
+		return true // long text with a body is a real answer
+	}
+	t := strings.TrimLeft(s, " \t>")
+	return !(toolCallOpenRE.MatchString(t) && !strings.Contains(t, "<tool_result"))
 }
 
 // quoteJS wraps s in a JS string literal (double quotes) with proper escaping.
