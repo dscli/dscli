@@ -76,6 +76,18 @@ func (h *Hub) doInit(ctx context.Context) error {
 	return nil
 }
 
+// maxToolDescriptionRunes caps MCP-provided tool descriptions. External MCP
+// servers (e.g. lightpanda) may ship very long descriptions that bloat every
+// LLM context; the alltools "not too large" test asserts the same budget.
+const maxToolDescriptionRunes = 1600
+
+// truncateToolDescription caps an MCP-provided tool description at
+// maxToolDescriptionRunes runes, keeping both ends (head + tail) with an
+// ellipsis in the middle.
+func truncateToolDescription(desc string) string {
+	return toolcall.TruncateHeadTail(desc, maxToolDescriptionRunes)
+}
+
 // connectLocked connects to an MCP server and registers its tools.
 // Must be called with h.mu held.
 func (h *Hub) connectLocked(ctx context.Context, cfg ServerConfig) error {
@@ -111,7 +123,7 @@ func (h *Hub) connectLocked(ctx context.Context, cfg ServerConfig) error {
 
 		if err := toolcall.RegisterTool(toolcall.ToolDef{
 			Name:        prefixedName,
-			Description: t.Description,
+			Description: truncateToolDescription(t.Description),
 			Strict:      true,
 			Parameters:  params,
 			Category:    cfg.Name,

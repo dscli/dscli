@@ -17,7 +17,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-
 // testToolHandler is a concrete handler type for in-memory test servers.
 // We use a wrapper function registerTool to convert to the generic SDK type.
 type testToolHandler func(context.Context, *mcp.CallToolRequest, map[string]any) (*mcp.CallToolResult, any, error)
@@ -292,8 +291,6 @@ func TestLoadServerConfigs_InvalidType(t *testing.T) {
 		t.Fatal("expected error for invalid config type")
 	}
 }
-
-
 
 // ---------------------------------------------------------------------------
 // Hub dispatch (in-memory MCP server)
@@ -613,9 +610,9 @@ func TestHub_CallTool_IsError(t *testing.T) {
 
 func TestServerConfig_Type(t *testing.T) {
 	tests := []struct {
-		name       string
-		cfg        ServerConfig
-		wantIsSSE  bool
+		name      string
+		cfg       ServerConfig
+		wantIsSSE bool
 	}{
 		{name: "cloud-type", cfg: ServerConfig{Type: "cloud"}, wantIsSSE: true},
 		{name: "local-type", cfg: ServerConfig{Type: "local"}, wantIsSSE: false},
@@ -979,5 +976,32 @@ func TestDispatchToServer_ToolError(t *testing.T) {
 	var mcpErr *MCPToolError
 	if !errors.As(err, &mcpErr) {
 		t.Fatalf("error type = %T, want *MCPToolError", err)
+	}
+}
+
+func TestTruncateToolDescription_ShortUnchanged(t *testing.T) {
+	desc := "short description"
+	got := truncateToolDescription(desc)
+	if got != desc {
+		t.Errorf("short description should be unchanged, got %q", got)
+	}
+}
+
+func TestTruncateToolDescription_LongCapped(t *testing.T) {
+	long := strings.Repeat("The quick brown fox jumps over the lazy dog. ", 200)
+	got := truncateToolDescription(long)
+	gotRunes := len([]rune(got))
+	if gotRunes > maxToolDescriptionRunes {
+		t.Errorf("truncated length = %d runes, want <= %d", gotRunes, maxToolDescriptionRunes)
+	}
+	// Head and tail should be preserved with an ellipsis in between.
+	if !strings.HasPrefix(got, "The quick brown fox") {
+		t.Errorf("head not preserved: %q...", got[:min(30, len(got))])
+	}
+	if !strings.HasSuffix(got, "lazy dog. ") {
+		t.Errorf("tail not preserved: ...%q", got[len(got)-min(30, len(got)):])
+	}
+	if !strings.Contains(got, "...") {
+		t.Error("expected ellipsis marker in truncated description")
 	}
 }
