@@ -1,9 +1,9 @@
 ---
 name: dscli
-description:  dscli core concepts: prompt, history, skills, memory. Not about parameters — only what the AI doesn't already know.
+description:  dscli core concepts: prompt, history, skills, memory, mail. Not auto-injected — if new to dscli, load once to learn note/recall/mem/skill conventions.
 author: Bohr <bohr@dscli.io>
 keywords: [dscli, built-in, core, concepts]
-auto_inject: true
+auto_inject: false
 ---
 
 # dscli Core Concepts
