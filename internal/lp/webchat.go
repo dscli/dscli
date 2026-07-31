@@ -24,9 +24,11 @@ const (
 	deepseekChatURL = "https://chat.deepseek.com"
 
 	// Polling configuration for response detection.
-	webChatPollInterval = 2 * time.Second // interval between polls
-	webChatStablePolls  = 3               // text unchanged for this many polls = done
-	webChatMaxPolls     = 300             // max polls before timeout (600s total)
+	webChatPollInterval  = 2 * time.Second // interval between polls
+	webChatStablePolls   = 3               // text unchanged for this many polls = tentative done
+	webChatExtendedPolls = 10              // additional stable polls before force-extraction (escape hatch)
+	webChatMaxPolls      = 300             // max polls before timeout (600s total)
+
 
 	// JS snippet to set a textarea's value via the native setter (triggers
 	// message string.
@@ -61,10 +63,10 @@ const (
 	return {success: false};
 })()`
 
-	// jsGetLastAssistantText extracts the text of the last assistant message
-	// from the MAIN content area (NOT the sidebar conversation list).
-	// Using .ds-markdown but filtering out elements inside sidebar/nav containers
-	// to avoid picking up conversation history previews from the left panel.
+	// jsGetLastAssistantText extracts all assistant response text from
+	// .ds-markdown elements in the MAIN content area (NOT sidebar/navigation).
+	// It concatenates all blocks to handle responses split across multiple
+	// elements (paragraphs, code blocks, lists).
 	jsGetLastAssistantText = `(() => {
 	const all = document.querySelectorAll('.ds-markdown');
 	// Filter out elements that live in the sidebar/navigation panel.
@@ -81,10 +83,37 @@ const (
 		return true;
 	});
 	if (els.length === 0) return '';
-	return els[els.length - 1].innerText || '';
+	// Concatenate ALL .ds-markdown elements, not just the last one.
+	// Streaming responses may be split across multiple blocks.
+	return els.map(function(el) { return el.innerText || ''; }).join('\n\n').trim();
 })()`
+	// jsIsGenerationActive checks whether the AI is still generating a response.
+	// Returns true if a stop/cancel button is visible or the textarea is disabled
+	// (both signals that generation is in progress). Used to distinguish between
+	// genuine completion and a streaming pause.
+	jsIsGenerationActive = `(() => {
+		// Signal 1: a visible stop/cancel button during generation.
+		var btns = document.querySelectorAll('button, [role="button"]');
+		for (var i = 0; i < btns.length; i++) {
+			var b = btns[i];
+			if (b.offsetParent === null) continue;
+			var txt = (b.textContent || '').trim().toLowerCase();
+			var aria = (b.getAttribute('aria-label') || '').toLowerCase();
+			if (txt.indexOf('stop') !== -1 || txt.indexOf('停止') !== -1 ||
+				txt.indexOf('cancel') !== -1 || txt.indexOf('取消') !== -1 ||
+				aria === 'stop' || aria === '停止') {
+				return true;
+			}
+		}
+		// Signal 2: textarea disabled during generation.
+		var ta = document.querySelector('textarea');
+		if (ta && ta.disabled) return true;
+		return false;
+	})()`
+
 	// jsSendEnter dispatches Enter keydown → keypress → keyup on the chat
 	// textarea via JS.  Using KeyboardEvent dispatch instead of chromedp.KeyEvent
+
 	// because the latter may not trigger React's event handling in a remote
 	// allocator (chromium service) context.
 	// The full sequence (keydown → keypress → keyup) matches what a real
@@ -304,6 +333,12 @@ func webchatSetValue(ctx context.Context, message string) error {
 
 // webchatWait polls until the assistant response stabilizes, then extracts
 // it via the .ds-markdown element (preferred) or body-text diff (fallback).
+//
+// To avoid premature extraction during streaming pauses (>6s), it uses a
+// generation-active check: when stability is first detected, it checks
+// whether DeepSeek is still generating (via DOM signals like the stop button).
+// Only extracts when generation appears complete or the extended poll window
+// expires (escape hatch after webChatExtendedPolls additional polls).
 func webchatWait(ctx context.Context, baseline string) (string, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "webchatWait")
 	defer span.Finish()
@@ -326,16 +361,34 @@ func webchatWait(ctx context.Context, baseline string) (string, error) {
 
 		if current == lastText && lastText != "" {
 			stableCount++
+
 			if stableCount >= webChatStablePolls {
-				// Preferred: extract from the last .ds-markdown element.
+				// Gated extraction: only return when generation appears complete
+				// or the escape hatch fires.
+				canExtract := !isGenerationActive(ctx) ||
+					stableCount >= webChatStablePolls+webChatExtendedPolls
+
+				// Preferred: extract from .ds-markdown elements.
 				// This naturally excludes UI chrome (search info,
 				// toggle labels, footer text).
 				if resp := getLastAssistantText(ctx); resp != "" {
-					return resp, nil
+					if canExtract {
+						return resp, nil
+					}
+					continue // generation still active, keep polling
 				}
+
 				// Fallback: diff body text against baseline, then
 				// clean up known artifact patterns.
-				return cleanBodyResponse(extractResponse(baseline, current)), nil
+				if fallback := cleanBodyResponse(extractResponse(baseline, current)); fallback != "" {
+					if canExtract {
+						return fallback, nil
+					}
+					continue
+				}
+
+				// Both extraction methods failed (unlikely) — keep polling.
+				continue
 			}
 		} else {
 			stableCount = 0
@@ -346,8 +399,23 @@ func webchatWait(ctx context.Context, baseline string) (string, error) {
 	return "", fmt.Errorf("response timeout after %d polls", webChatMaxPolls)
 }
 
-// getLastAssistantText returns the text of the last .ds-markdown element,
-// or "" if the selector doesn't match (e.g. DeepSeek changed their DOM).
+// isGenerationActive checks whether the assistant is still generating a response
+// by evaluating DOM signals (stop button visibility, textarea disabled state).
+// Returns false if generation appears complete or the DOM state is indeterminate.
+func isGenerationActive(ctx context.Context) bool {
+	span, ctx := clog.StartSpanFromContext(ctx, "isGenerationActive")
+	defer span.Finish()
+
+	var active bool
+	if err := chromedp.Evaluate(jsIsGenerationActive, &active).Do(ctx); err != nil {
+		return false // evaluation failure → be conservative, assume not active
+	}
+	return active
+}
+
+// getLastAssistantText returns the concatenated text of all .ds-markdown
+// elements in the main content area, or "" if the selector doesn't match
+// (e.g. DeepSeek changed their DOM).
 func getLastAssistantText(ctx context.Context) string {
 	span, ctx := clog.StartSpanFromContext(ctx, "getLastAssistantText")
 	defer span.Finish()
