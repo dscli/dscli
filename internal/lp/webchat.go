@@ -29,7 +29,6 @@ const (
 	webChatExtendedPolls = 10              // additional stable polls before force-extraction (escape hatch)
 	webChatMaxPolls      = 300             // max polls before timeout (600s total)
 
-
 	// JS snippet to set a textarea's value via the native setter (triggers
 	// message string.
 	jsSetTextareaFmt = `(() => {
@@ -63,11 +62,13 @@ const (
 	return {success: false};
 })()`
 
-	// jsGetLastAssistantText extracts all assistant response text from
+	// jsGetAssistantText extracts all assistant response text from
 	// .ds-markdown elements in the MAIN content area (NOT sidebar/navigation).
 	// It concatenates all blocks to handle responses split across multiple
 	// elements (paragraphs, code blocks, lists).
-	jsGetLastAssistantText = `(() => {
+	// NOTE: the result may include pre-existing conversation history (e.g.
+	// continued conversations); webchatWait strips it via mdBaseline.
+	jsGetAssistantText = `(() => {
 	const all = document.querySelectorAll('.ds-markdown');
 	// Filter out elements that live in the sidebar/navigation panel.
 	const els = Array.from(all).filter(function(el) {
@@ -216,7 +217,7 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, retry 
 		fmt.Fprintf(os.Stderr, "📋 继续会话: %s\n", conversationURL)
 	}
 
-	var baseline, response, finalURL string
+	var baseline, response, finalURL, mdBaseline string
 
 	// Base navigation and page hydration.
 	actions := []chromedp.Action{
@@ -269,6 +270,12 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, retry 
 		// Record baseline text before sending.
 		chromedp.Evaluate("document.body ? document.body.innerText : ''", &baseline),
 
+		// Record the .ds-markdown baseline (all assistant text visible
+		// before sending). webchatWait strips this prefix from the
+		// extracted text so continued conversations don't include
+		// pre-existing history.
+		chromedp.Evaluate(jsGetAssistantText, &mdBaseline),
+
 		// Set the textarea value (JS needed for React-controlled inputs).
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			return webchatSetValue(ctx, message)
@@ -284,7 +291,7 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, retry 
 		// Wait for and extract the assistant response.
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			var err error
-			response, err = webchatWait(ctx, baseline)
+			response, err = webchatWait(ctx, baseline, mdBaseline)
 			return err
 		}),
 
@@ -334,12 +341,16 @@ func webchatSetValue(ctx context.Context, message string) error {
 // webchatWait polls until the assistant response stabilizes, then extracts
 // it via the .ds-markdown element (preferred) or body-text diff (fallback).
 //
+// mdBaseline is the concatenated .ds-markdown text captured before sending;
+// it is stripped from the extracted text so continued conversations return
+// only the new response.
+//
 // To avoid premature extraction during streaming pauses (>6s), it uses a
 // generation-active check: when stability is first detected, it checks
 // whether DeepSeek is still generating (via DOM signals like the stop button).
 // Only extracts when generation appears complete or the extended poll window
 // expires (escape hatch after webChatExtendedPolls additional polls).
-func webchatWait(ctx context.Context, baseline string) (string, error) {
+func webchatWait(ctx context.Context, baseline, mdBaseline string) (string, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "webchatWait")
 	defer span.Finish()
 	var lastText string
@@ -371,8 +382,19 @@ func webchatWait(ctx context.Context, baseline string) (string, error) {
 				// Preferred: extract from .ds-markdown elements.
 				// This naturally excludes UI chrome (search info,
 				// toggle labels, footer text).
-				if resp := getLastAssistantText(ctx); resp != "" {
+				if resp := getAssistantText(ctx); resp != "" {
 					if canExtract {
+						// Strip pre-existing conversation history so
+						// continued conversations return only the new
+						// response. If the prefix doesn't match (page
+						// rebuilt), keep the full text rather than
+						// losing content.
+						if mdBaseline != "" && strings.HasPrefix(resp, mdBaseline) {
+							resp = strings.TrimSpace(resp[len(mdBaseline):])
+						}
+						if resp == "" {
+							return "", fmt.Errorf("response extraction failed: no new content after baseline")
+						}
 						return resp, nil
 					}
 					continue // generation still active, keep polling
@@ -387,7 +409,11 @@ func webchatWait(ctx context.Context, baseline string) (string, error) {
 					continue
 				}
 
-				// Both extraction methods failed (unlikely) — keep polling.
+				// Both extraction methods failed. If generation is done,
+				// report immediately instead of polling until timeout.
+				if canExtract {
+					return "", fmt.Errorf("response extraction failed: .ds-markdown missing and body diff empty")
+				}
 				continue
 			}
 		} else {
@@ -413,15 +439,16 @@ func isGenerationActive(ctx context.Context) bool {
 	return active
 }
 
-// getLastAssistantText returns the concatenated text of all .ds-markdown
+// getAssistantText returns the concatenated text of all .ds-markdown
 // elements in the main content area, or "" if the selector doesn't match
-// (e.g. DeepSeek changed their DOM).
-func getLastAssistantText(ctx context.Context) string {
-	span, ctx := clog.StartSpanFromContext(ctx, "getLastAssistantText")
+// (e.g. DeepSeek changed their DOM). The text may include pre-existing
+// conversation history; webchatWait strips it via mdBaseline.
+func getAssistantText(ctx context.Context) string {
+	span, ctx := clog.StartSpanFromContext(ctx, "getAssistantText")
 	defer span.Finish()
 
 	var text string
-	if err := chromedp.Evaluate(jsGetLastAssistantText, &text).Do(ctx); err != nil {
+	if err := chromedp.Evaluate(jsGetAssistantText, &text).Do(ctx); err != nil {
 		return ""
 	}
 	return strings.TrimSpace(text)
