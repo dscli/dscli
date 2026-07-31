@@ -411,7 +411,6 @@ func compressHistory(messages []Message) []Message {
 	return result
 }
 
-
 // MoveMessages moves all messages from the current session to the target session.
 func MoveMessages(ctx context.Context, targetSessionID int64) error {
 	span, ctx := clog.StartSpanFromContext(ctx, "MoveMessages")

@@ -14,14 +14,15 @@
 package wakeup
 
 import (
-	_ "embed"
 	"context"
+	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
 	"github.com/dscli/dscli/internal/processutil"
 
 	"github.com/dscli/dscli/internal/chimein"

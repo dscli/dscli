@@ -28,7 +28,6 @@ func Set(name, value string) {
 	getGlobalConfig().Set(name, value)
 }
 
-
 // GetValue 获取全局配置值，返回原始类型（支持 map、slice 等结构化数据）。
 // 未配置时返回 nil。
 func GetValue(name string) any {
@@ -40,7 +39,6 @@ func GetValue(name string) any {
 func SetValue(name string, value any) {
 	getGlobalConfig().SetValue(name, value)
 }
-
 
 // 支持 strconv.ParseBool 的格式：1/t/T/TRUE/true/True → true，0/f/F/FALSE/false/False → false
 // 未配置或解析失败时返回 defaultValue

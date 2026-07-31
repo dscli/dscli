@@ -11,8 +11,8 @@
 package aistatus
 
 import (
-	_ "embed"
 	"context"
+	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,6 +21,7 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+
 	"github.com/dscli/dscli/internal/processutil"
 
 	dsctx "github.com/dscli/dscli/internal/context"
@@ -151,7 +152,8 @@ func loadNapSessions(ctx context.Context) map[int64]time.Time {
 	defer db.Close(ctx)
 
 	rows, qErr := db.Query(
-		`SELECT session_id, nap_until FROM ai_status WHERE status = 'nap'`)
+		`SELECT session_id, nap_until FROM ai_status WHERE status = 'nap'`,
+	)
 	if qErr != nil {
 		return m
 	}

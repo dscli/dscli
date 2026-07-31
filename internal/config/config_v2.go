@@ -89,7 +89,6 @@ func (c *Config) SetValue(name string, value any) {
 	c.data[name] = value
 }
 
-
 // Save 保存配置到文件
 func (c *Config) Save() error {
 	c.mu.RLock()

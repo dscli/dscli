@@ -370,6 +370,7 @@ func historyListRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 	return nil
 }
+
 func historyLoadRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
 	span, ctx := clog.StartSpanFromContext(ctx, "historyLoadRunE")

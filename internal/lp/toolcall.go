@@ -31,7 +31,7 @@ var (
 
 	// mcpClientTarget controls which MCP client to use for tool calls.
 	// Default "local". Set by the mcp_client tool.
-	mcpClientTarget = "local"
+	mcpClientTarget   = "local"
 	mcpClientTargetMu sync.Mutex
 )
 
@@ -55,7 +55,6 @@ func MCPTarget() string {
 	defer mcpClientTargetMu.Unlock()
 	return mcpClientTarget
 }
-
 
 // MCPToolList lazily discovers tools from the LightPanda MCP server.
 // It is called once per process lifetime; results are cached.
@@ -187,6 +186,7 @@ func HandleMCPClientTool(ctx context.Context, target string) (result, warning st
 		return "", "", fmt.Errorf("无效的 target: %q，可选: local, cloud", target)
 	}
 }
+
 // inputSchemaToMap converts an MCP InputSchema (any) to a JSON Schema map.
 // The MCP SDK returns InputSchema as map[string]any from the server.
 // This handles both the common case and edge cases, and ensures

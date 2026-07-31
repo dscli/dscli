@@ -4,14 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/dscli/dscli/internal/context"
-	"github.com/nanjj/clog"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/dscli/dscli/internal/context"
+	"github.com/nanjj/clog"
 
 	"github.com/chromedp/chromedp"
 )

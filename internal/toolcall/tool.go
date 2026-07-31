@@ -62,6 +62,7 @@ type Function struct {
 	Strict      bool           `json:"strict,omitempty"`
 	Parameters  map[string]any `json:"parameters"` // JSON Schema 对象
 }
+
 var (
 	// toolRegistry 工具注册表
 	toolRegistry = map[string]ToolDef{}

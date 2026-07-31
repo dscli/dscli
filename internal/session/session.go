@@ -257,7 +257,8 @@ func RemoveProject(ctx context.Context, sessionID int64) error {
 	// where not all tables are registered.
 	tableRows, err := db.Query(
 		`SELECT name FROM sqlite_master
-		 WHERE type='table' AND name IN ('session_names','memories','messages','notes','chimeins')`)
+		 WHERE type='table' AND name IN ('session_names','memories','messages','notes','chimeins')`,
+	)
 	if err != nil {
 		return fmt.Errorf("查询表列表失败: %w", err)
 	}

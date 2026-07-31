@@ -66,6 +66,7 @@ func Append(ctx context.Context, newContent string) error {
 	}
 	return nil
 }
+
 // AppendToProject 追加内容到指定项目的 chimein 队列。
 // projectPath 是任意项目的文件系统路径（不限于当前 session）。
 // 如果该项目尚无 session 行则自动创建。

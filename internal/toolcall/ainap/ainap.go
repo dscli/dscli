@@ -10,8 +10,8 @@
 package ainap
 
 import (
-	_ "embed"
 	"context"
+	_ "embed"
 	"fmt"
 	"time"
 

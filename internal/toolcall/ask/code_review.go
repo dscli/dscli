@@ -165,7 +165,7 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result, warn
 	outfmt.Printf("📤 发送代码审查请求到 DeepSeek Web（免费 V4 Pro）...\n%s\n", structuredRequest)
 	result, err = AskExpertWithRole(ctx, structuredRequest, "review")
 	if err != nil {
-		err = fmt.Errorf("代码提交失败: %w", err)
+		err = fmt.Errorf("代码审查失败: %w", err)
 		return result, warning, err
 	}
 

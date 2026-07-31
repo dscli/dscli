@@ -370,11 +370,12 @@ func (p *parser) processItem(it item, fp string) error {
 		dt, err := time.Parse("2006-01-02T15:04:05Z", it.val)
 		if err != nil {
 			return fmt.Errorf(
-				"expected Zulu formatted DateTime, but got '%s'", it.val)
+				"expected Zulu formatted DateTime, but got '%s'", it.val,
+			)
 		}
 		setValue(it, dt)
 	case itemArrayStart:
-		var array = make([]any, 0)
+		array := make([]any, 0)
 		p.pushContext(array)
 	case itemArrayEnd:
 		array := p.ctx
