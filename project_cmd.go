@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,13 +22,15 @@ func init() {
 		Long:  `project 命令用于管理 dscli 追踪的项目。`,
 	})
 
-	projectCmd.AddCommand(&cobra.Command{
+	listCmd := &cobra.Command{
 		Use:   "list",
 		Short: "列出所有项目",
 		Long:  "列出 sessions 表中所有 dscli 追踪的项目，按 ID 排序。",
 		Args:  cobra.NoArgs,
 		RunE:  projectListRunE,
-	})
+	}
+	listCmd.Flags().Bool("json", false, "Output in JSON format (raw fields, machine-readable)")
+	projectCmd.AddCommand(listCmd)
 
 	projectCmd.AddCommand(&cobra.Command{
 		Use:   "assign <project_id> <maintainer_id>",
@@ -77,6 +80,11 @@ func projectListRunE(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "列出项目失败: %v\n", err)
 		return nil
+	}
+
+	useJSON, _ := cmd.Flags().GetBool("json")
+	if useJSON {
+		return projectListJSON(projects)
 	}
 
 	if len(projects) == 0 {
@@ -135,6 +143,51 @@ func projectListRunE(cmd *cobra.Command, _ []string) error {
 	}
 
 	return FormatOutput(rows, "table", headers, rowFunc)
+}
+
+// projectListJSON 以 JSON 格式输出项目列表。
+//
+// 字段与数据库同源（session.ProjectRow），不做表格展示层的转换
+// （~ 替换、→ 标记、维护者合并字符串），方便扩展等客户端直接消费。
+// created_at 统一转为 RFC3339，与 history list --json 保持一致。
+func projectListJSON(projects []session.ProjectRow) error {
+	type projectEntry struct {
+		ID           int64  `json:"id"`
+		ProjectPath  string `json:"project_path"`
+		MaintainerCN string `json:"maintainer_cn"`
+		MaintainerEN string `json:"maintainer_en"`
+		MaintainerID int64  `json:"maintainer_id"`
+		CreatedAt    string `json:"created_at"`
+		IsCurrent    bool   `json:"is_current"`
+	}
+	result := make([]projectEntry, 0, len(projects))
+	for _, p := range projects {
+		result = append(result, projectEntry{
+			ID:           p.ID,
+			ProjectPath:  p.ProjectPath,
+			MaintainerCN: p.MaintainerCN,
+			MaintainerEN: p.MaintainerEN,
+			MaintainerID: p.MaintainerID,
+			CreatedAt:    formatProjectTimeRFC3339(p.CreatedAt),
+			IsCurrent:    p.ProjectPath == context.ProjectRoot,
+		})
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(result)
+}
+
+// formatProjectTimeRFC3339 将数据库中的 created_at 字符串转为 RFC3339。
+// 数据库可能存 RFC3339 或本地时间 "2006-01-02 15:04:05"（无时区，按本地时区解释），
+// 解析失败时原样返回，保证不丢数据。
+func formatProjectTimeRFC3339(raw string) string {
+	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+		return t.Format(time.RFC3339)
+	}
+	if t, err := time.ParseInLocation("2006-01-02 15:04:05", raw, time.Local); err == nil {
+		return t.Format(time.RFC3339)
+	}
+	return raw
 }
 
 // projectAssignRunE handles "dscli project assign <project_id> <maintainer_id>".
