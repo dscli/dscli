@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/nanjj/clog"
@@ -12,6 +13,8 @@ import (
 	"github.com/dscli/dscli/internal/editor"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/prompt"
+	"github.com/dscli/dscli/internal/roles"
+	"github.com/dscli/dscli/internal/session"
 	"github.com/spf13/cobra"
 )
 
@@ -43,7 +46,7 @@ func init() {
 
 	removeCmd := &cobra.Command{
 		Use:   "remove <name>",
-		Short: "Remove a prompt",
+		Short: "Remove a prompt and fix dangling role references",
 		RunE:  promptRemoveRunE,
 	}
 	removeCmd.Flags().Bool("global", false, "Remove global prompt")
@@ -166,6 +169,58 @@ func promptRemoveRunE(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 	outfmt.Printf("已删除: %s\n", p)
+
+	// Issue #24: 删除提示词后清理 role_configs 中的悬空引用。
+	// 项目级提示词只影响当前会话；全局提示词（或项目文件不存在时
+	// 回退删除的全局文件）影响所有会话。
+	ctx := cmd.Context()
+	// 未使用 --global 且解析出的路径位于当前项目目录下才算项目级删除。
+	projectScope := !global && context.ProjectRoot != "" &&
+		strings.HasPrefix(p, filepath.Join(context.ProjectRoot, ".dscli", "prompt"))
+	var sessionID int64 // 0 表示扫描所有会话
+	if projectScope {
+		sessionID = session.GetCurrentSessionID(ctx)
+	}
+	refs, err := roles.ListRoleConfigsByPrompt(ctx, name, sessionID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "警告: 检查角色配置引用失败: %v\n", err)
+		return nil
+	}
+
+	// 全局删除时，各引用行的项目可能仍有同名提示词文件，
+	// 需要按会话判断引用是否依然有效。
+	projectBySession := map[int64]string{}
+	if !projectScope && len(refs) > 0 {
+		projects, listErr := session.ListProjects(ctx)
+		if listErr != nil {
+			// 无法确定各项目的提示词文件时保守处理：不重置任何行，
+			// 避免误删仍由项目提示词文件服务的有效配置。
+			fmt.Fprintf(os.Stderr, "警告: 无法加载项目列表 (%v)，跳过角色配置清理\n", listErr)
+			return nil
+		}
+		for _, pr := range projects {
+			projectBySession[pr.ID] = pr.ProjectPath
+		}
+	}
+
+	for _, cfg := range refs {
+		// 另一作用域仍有同名提示词文件时引用依然有效，无需处理。
+		if prompt.PromptFileExists(name, projectBySession[cfg.SessionID]) {
+			continue
+		}
+		if cfg.Skills == "" || cfg.Tools == "" {
+			// 污染特征：skills/tools 空串（INSERT 分支曾把未指定字段写成
+			// 空串，见 PR #23）。角色已失去技能与工具，重置恢复默认行为，
+			// 让一条 prompt remove 命令即可完成事故恢复。
+			if err := roles.DeleteRoleConfig(ctx, cfg.Role, cfg.SessionID); err != nil {
+				fmt.Fprintf(os.Stderr, "警告: 重置角色 %s 的配置失败: %v\n", cfg.Role, err)
+				continue
+			}
+			outfmt.Printf("已重置角色 %s 的配置（引用已删除的提示词 %s 且 skills/tools 为空）\n", cfg.Role, name)
+		} else {
+			fmt.Fprintf(os.Stderr, "警告: 角色 %s 仍引用已删除的提示词 %s，将回退默认模板；如需清理请执行 dscli role reset %s\n", cfg.Role, name, cfg.Role)
+		}
+	}
 	return nil
 }
 
