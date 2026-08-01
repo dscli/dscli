@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/dscli/dscli/internal/config"
@@ -70,7 +72,7 @@ func TestHistoryListJSON(t *testing.T) {
 	}
 	defer db.Close(ctx)
 
-	msgs, err := prompt.ListHistory(ctx)
+	msgs, err := prompt.ListHistory(ctx, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +188,7 @@ func TestHistoryListJSON_Empty(t *testing.T) {
 	}
 	defer db.Close(ctx)
 
-	msgs, err := prompt.ListHistory(ctx)
+	msgs, err := prompt.ListHistory(ctx, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,4 +196,123 @@ func TestHistoryListJSON_Empty(t *testing.T) {
 	if len(msgs) != 0 {
 		t.Fatalf("expected empty history, got %d messages", len(msgs))
 	}
+}
+
+func TestHistoryListPagination(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "dscli-test-page-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	origConfigDir := config.ConfigDir
+	config.ConfigDir = tmpDir
+	defer func() { config.ConfigDir = origConfigDir }()
+
+	origProjectRoot := context.ProjectRoot
+	context.ProjectRoot = tmpDir
+	defer func() { context.ProjectRoot = origProjectRoot }()
+
+	// Real DB isolation: OpenDB caches dbPath at package init, so changing
+	// ConfigDir alone would still hit the real ~/.dscli/sqlite.db. Point the
+	// DB path at the temp dir explicitly and restore it afterwards.
+	origDBPath := sqlite.GetDBPath()
+	sqlite.SetDBPath(filepath.Join(tmpDir, "sqlite.db"))
+	defer sqlite.SetDBPath(origDBPath)
+
+	ctx := t.Context()
+	db, err := sqlite.OpenDB(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Close(ctx)
+
+	session.ResetSessionID()
+
+	// Insert 5 messages so that with histsize=2 (LIMIT 4) we get 2 pages.
+	for i := 1; i <= 5; i++ {
+		msg := prompt.Message{
+			Role:    "user",
+			Content: fmt.Sprintf("message %d", i),
+		}
+		if err := prompt.SaveMessages(ctx, msg); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// NULL reasoning_content (e.g. migrated or hand-inserted rows) must
+	// not break scanning. Set the oldest message's to NULL as a guard.
+	db, err = sqlite.OpenDB(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE messages SET reasoning_content = NULL WHERE id = 1`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close(ctx)
+
+	const histSize = 2 // page size used for this test (LIMIT histSize+2)
+	ctx = context.WithValue(ctx, context.HistSizeKey, histSize)
+
+	// Page 1: newest messages, no before-id.
+	page1, err := prompt.ListHistory(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page1) != histSize+2 {
+		t.Fatalf("expected %d messages on page 1 (histsize+2), got %d", histSize+2, len(page1))
+	}
+	if page1[0].ID >= page1[len(page1)-1].ID {
+		t.Fatalf("page 1 should be ascending, got IDs %v", messageIDs(page1))
+	}
+
+	// Page 2: keyset continuation from the oldest ID of page 1.
+	oldestPage1 := page1[0].ID
+	page2, err := prompt.ListHistory(ctx, oldestPage1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page2) != 1 {
+		t.Fatalf("expected 1 message on page 2, got %d", len(page2))
+	}
+
+	// No overlap: page 2 must be strictly older than page 1.
+	if page2[0].ID >= oldestPage1 {
+		t.Fatalf("page 2 message %d should be older than page 1 oldest %d", page2[0].ID, oldestPage1)
+	}
+
+	// The message with NULL reasoning_content (id=1) must survive scanning
+	// and appear on page 2; otherwise the NULL guard regressed.
+	if page2[0].ID != 1 {
+		t.Fatalf("expected the NULL-reasoning message (id=1) on page 2, got %d", page2[0].ID)
+	}
+
+	// Union of both pages covers all 5 messages exactly once.
+	seen := make(map[int64]bool)
+	for _, m := range append(page1, page2...) {
+		if seen[m.ID] {
+			t.Fatalf("duplicate message ID %d across pages", m.ID)
+		}
+		seen[m.ID] = true
+	}
+	if len(seen) != 5 {
+		t.Fatalf("expected 5 unique messages across pages, got %d", len(seen))
+	}
+
+	// Page 3: beyond the end returns empty.
+	page3, err := prompt.ListHistory(ctx, page2[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page3) != 0 {
+		t.Fatalf("expected empty page 3, got %d messages", len(page3))
+	}
+}
+
+func messageIDs(msgs []*prompt.Message) []int64 {
+	ids := make([]int64, len(msgs))
+	for i, m := range msgs {
+		ids[i] = m.ID
+	}
+	return ids
 }

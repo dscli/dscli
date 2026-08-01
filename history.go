@@ -27,9 +27,21 @@ func init() {
 	listCmd := AddCommand(historyCmd, &cobra.Command{
 		Use:   "list",
 		Short: "List history messages",
-		RunE:  historyListRunE,
+		Long: `List history messages of the current session.
+
+Pagination (keyset): pass --before-id with the oldest message ID of the
+previous page to fetch the next, older page. Each page returns up to
+histsize+2 messages (+2 keeps assistant/tool pairs intact for pairing
+checks). Stop when a page returns fewer than --histsize messages; the
+final page may be followed by one empty page, which is harmless.
+
+Examples:
+  dscli history list --histsize 50
+  dscli history list --histsize 50 --before-id 12345`,
+		RunE: historyListRunE,
 	})
 	listCmd.Flags().Bool("json", false, "Output in JSON format (with full content)")
+	listCmd.Flags().Int64("before-id", 0, "Return messages older than this ID (keyset pagination)")
 	_ = AddCommand(historyCmd, &cobra.Command{
 		Use:   "load",
 		Short: "Load and validate history messages",
@@ -309,7 +321,14 @@ func historyListRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
 	span, ctx := clog.StartSpanFromContext(ctx, "historyListRunE")
 	defer span.Finish()
-	history, err := prompt.ListHistory(ctx)
+	beforeID, err := cmd.Flags().GetInt64("before-id")
+	if err != nil {
+		return err
+	}
+	if beforeID < 0 {
+		return fmt.Errorf("--before-id must be a positive integer, got %d", beforeID)
+	}
+	history, err := prompt.ListHistory(ctx, beforeID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "列出历史消息失败: %v\n", err)
 		return nil
