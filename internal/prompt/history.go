@@ -138,8 +138,10 @@ func ShowMessage(ctx context.Context, id int64) (message *Message, err error) {
 	return message, nil
 }
 
-// ListHistory 加载指定会话的所有历史消息，按时间升序返回
-func ListHistory(ctx context.Context) ([]*Message, error) {
+// ListHistory 加载指定会话的历史消息，按时间升序返回。
+// beforeID > 0 时按 keyset 分页：只返回 id < beforeID 的消息（用于 history list 翻页，
+// 客户端以"返回条数 < histsize"作为没有更多数据的终止条件）。
+func ListHistory(ctx context.Context, beforeID int64) ([]*Message, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "ListHistory")
 	defer span.Finish()
 	sessionID := GetCurrentSessionID(ctx)
@@ -150,11 +152,19 @@ func ListHistory(ctx context.Context) ([]*Message, error) {
 		return nil, err
 	}
 	defer db.Close(ctx)
-	rows, err := db.QueryContext(ctx, `SELECT id, role, content, tool_call_id, tool_calls, created_at, reasoning_content, tokens
+	query := `SELECT id, role, content, tool_call_id, tool_calls, created_at, reasoning_content, tokens
 		FROM messages
-		WHERE session_id = ? AND model_id = ?
+		WHERE session_id = ? AND model_id = ?`
+	args := []any{sessionID, modelID}
+	if beforeID > 0 {
+		query += ` AND id < ?`
+		args = append(args, beforeID)
+	}
+	query += `
 		ORDER BY id DESC
-        LIMIT ?`, sessionID, modelID, histSize+2)
+        LIMIT ?`
+	args = append(args, histSize+2)
+	rows, err := db.QueryContext(ctx, query, args...)
 	// histSize + 2就可以，因为主要就是最后两个。
 	// 注意我们按降低排的序：{100, 99, 98, ...} 最大ID在前面
 	// 应用LIMIT，总能把最新消息的找出来。但我们提交给大语言模型时，
@@ -162,15 +172,14 @@ func ListHistory(ctx context.Context) ([]*Message, error) {
 	if err != nil {
 		return nil, fmt.Errorf("查询历史消息失败: %w", err)
 	}
-
 	defer rows.Close()
 
 	var messages []*Message
 	for rows.Next() {
 		m := &Message{}
-		var toolCallID, toolCalls sql.NullString
+		var toolCallID, toolCalls, reasoningContent sql.NullString
 		var tokens int
-		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt, &m.ReasoningContent, &tokens); err != nil {
+		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt, &reasoningContent, &tokens); err != nil {
 			return nil, fmt.Errorf("扫描消息失败: %w", err)
 		}
 		m.SetTokens(tokens)
@@ -182,6 +191,9 @@ func ListHistory(ctx context.Context) ([]*Message, error) {
 			if err := json.Unmarshal([]byte(toolCalls.String), &toolCallsData); err == nil {
 				m.ToolCalls = toolCallsData
 			}
+		}
+		if reasoningContent.Valid {
+			m.ReasoningContent = reasoningContent.String
 		}
 		messages = append(messages, m)
 	}
