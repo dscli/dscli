@@ -116,6 +116,11 @@ func (h *Hub) connectLocked(ctx context.Context, cfg ServerConfig) error {
 		prefixedName := cfg.Name + "_" + t.Name
 		params := inputSchemaToMap(t.InputSchema)
 
+		// Follow the server's schema strictness: lenient schemas (open
+		// additionalProperties / no required) must not be forced into
+		// strict mode, which OpenAI-compatible APIs would reject.
+		strict := !isLenientSchema(params)
+
 		toolName := t.Name // capture for closure
 		handler := func(ctx context.Context, args toolcall.ToolArgs) (string, string, error) {
 			return h.dispatchToServer(ctx, cfg.Name, toolName, args)
@@ -124,7 +129,7 @@ func (h *Hub) connectLocked(ctx context.Context, cfg ServerConfig) error {
 		if err := toolcall.RegisterTool(toolcall.ToolDef{
 			Name:        prefixedName,
 			Description: truncateToolDescription(t.Description),
-			Strict:      true,
+			Strict:      strict,
 			Parameters:  params,
 			Category:    cfg.Name,
 			Handler:     handler,
@@ -366,6 +371,10 @@ func (h *Hub) doDispatch(ctx context.Context, toolName, argsRaw string) (result,
 		return "", "", fmt.Errorf("mcphub: unknown server %q in tool name %q", serverName, toolName)
 	}
 
+	// LLMs may emit an empty argument string for parameterless tools.
+	if argsRaw == "" {
+		argsRaw = "{}"
+	}
 	var args map[string]any
 	if err := json.Unmarshal([]byte(argsRaw), &args); err != nil {
 		return "", "", fmt.Errorf("mcphub %s: invalid args: %w", toolName, err)
@@ -397,6 +406,10 @@ func (h *Hub) doDispatch(ctx context.Context, toolName, argsRaw string) (result,
 // This is used for backward compatibility when the tool name doesn't have
 // a server prefix.
 func (h *Hub) dispatchFallback(ctx context.Context, toolName, argsRaw string) (string, string, error) {
+	// LLMs may emit an empty argument string for parameterless tools.
+	if argsRaw == "" {
+		argsRaw = "{}"
+	}
 	var args map[string]any
 	if err := json.Unmarshal([]byte(argsRaw), &args); err != nil {
 		return "", "", fmt.Errorf("mcphub %s: invalid args: %w", toolName, err)
@@ -447,4 +460,24 @@ func inputSchemaToMap(schema any) map[string]any {
 		m["additionalProperties"] = false
 	}
 	return m
+}
+
+// isLenientSchema reports whether a server's tool schema is lenient, i.e. it
+// accepts additional properties or omits required fields. Lenient servers
+// (e.g. slingshot code MCP's lenientSchema) relax the schema so LLMs fail
+// less often. dscli must not force strict mode for such tools: OpenAI-
+// compatible APIs reject strict=true combined with additionalProperties
+// that is not literally false.
+func isLenientSchema(m map[string]any) bool {
+	v, ok := m["additionalProperties"]
+	if !ok {
+		return false // dscli convention: absent → false → strict-compatible
+	}
+	switch t := v.(type) {
+	case bool:
+		return t
+	default:
+		// true, or a schema object ({}) — open to extra properties.
+		return true
+	}
 }

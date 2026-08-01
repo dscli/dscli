@@ -12,14 +12,20 @@ func TestGetAllTools(t *testing.T) {
 		name    string // description of this test case
 		checker func(toolcall.Tool) bool
 	}{
-		{"in strict", func(tool toolcall.Tool) bool {
-			return tool.Function.Strict
-		}},
-		{"no additional property", func(tool toolcall.Tool) bool {
-			if additionalProperties, ok := tool.Function.Parameters["additionalProperties"]; ok {
-				return !additionalProperties.(bool)
+		// Strict tools must carry a closed schema (additionalProperties=false);
+		// lenient tools (e.g. MCP servers with open schemas) are exempt —
+		// OpenAI-compatible APIs reject strict=true with additionalProperties
+		// that is not literally false.
+		{"strict implies closed schema", func(tool toolcall.Tool) bool {
+			if !tool.Function.Strict {
+				return true // lenient tool — no strict-mode requirements
 			}
-			return false
+			ap, ok := tool.Function.Parameters["additionalProperties"]
+			if !ok {
+				return false
+			}
+			b, ok := ap.(bool)
+			return ok && !b
 		}},
 		{"not too large", func(tool toolcall.Tool) bool {
 			return tool.GetTokens() <= 1600 // around 1.5K

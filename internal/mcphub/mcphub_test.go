@@ -97,6 +97,29 @@ func TestInputSchemaToMap_PreservesAdditionalProperties(t *testing.T) {
 	}
 }
 
+func TestIsLenientSchema(t *testing.T) {
+	tests := []struct {
+		name string
+		m    map[string]any
+		want bool
+	}{
+		{"absent", map[string]any{"type": "object"}, false},
+		{"false", map[string]any{"additionalProperties": false}, false},
+		{"true", map[string]any{"additionalProperties": true}, true},
+		// jsonschema-go serializes an open schema object as {} — the
+		// slingshot lenientSchema form.
+		{"empty-object", map[string]any{"additionalProperties": map[string]any{}}, true},
+		{"string", map[string]any{"additionalProperties": "nope"}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isLenientSchema(tt.m); got != tt.want {
+				t.Errorf("isLenientSchema(%v) = %v, want %v", tt.m, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestInputSchemaToMap_HandlesUnsupportedType(t *testing.T) {
 	m := inputSchemaToMap(42)
 	if m == nil {

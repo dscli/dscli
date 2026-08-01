@@ -255,7 +255,7 @@ func HandleToolCalls(ctx context.Context, tcs []prompt.ToolCall) (inputs []promp
 		saveErr := prompt.SaveMessages(ctx, input)
 
 		if saveErr != nil {
-			outfmt.Debug("failed to save: %v", err)
+			outfmt.Debug("failed to save: %v", saveErr)
 		}
 		inputs = append(inputs, input)
 
