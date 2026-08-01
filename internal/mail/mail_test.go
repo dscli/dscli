@@ -69,6 +69,19 @@ func TestHandleSendMail(t *testing.T) {
 		}
 	})
 
+	t.Run("case insensitive non-ASCII recipient", func(t *testing.T) {
+		// Regression: SQLite LOWER() only folds ASCII, so "SCHRÖDINGER"
+		// used to fail lookup of the seeded "Schrödinger" name. The seeded
+		// ai_names fixture always contains Schrödinger (id 25).
+		result, _, err := HandleSendMail(context.Background(), "SCHRÖDINGER", "非ASCII大小写", "正文")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(result, "邮件已发送") {
+			t.Errorf("expected '邮件已发送', got: %s", result)
+		}
+	})
+
 	t.Run("empty recipient", func(t *testing.T) {
 		_, _, err := HandleSendMail(context.Background(), "", "主题", "正文")
 		if err == nil {

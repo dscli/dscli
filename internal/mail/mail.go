@@ -236,20 +236,47 @@ func HandleSendMail(ctx context.Context, recipient, subject, body string) (resul
 	// Support "Name <email>" format by extracting the email part.
 	lookupEmail := parseEmail(recipient)
 
-	// Look up recipient by name_en or email (case insensitive).
+	// Look up recipient by name_en or email, case-insensitively.
+	// SQLite's LOWER() only folds ASCII, so an SQL-side comparison breaks
+	// non-ASCII names when the input case differs (e.g. "SCHRÖDINGER" vs
+	// "Schrödinger"). ai_names is a small fixed table, so scan it and use
+	// strings.EqualFold (Unicode-aware) in Go instead.
+	type nameCandidate struct {
+		id    int64
+		name  string
+		email string
+	}
+	var candidates []nameCandidate
+	rows, err := db.QueryContext(ctx, `SELECT id, name_en, email FROM ai_names`)
+	if err != nil {
+		return "", "", fmt.Errorf("查询接收者失败: %w", err)
+	}
+	for rows.Next() {
+		var c nameCandidate
+		if err := rows.Scan(&c.id, &c.name, &c.email); err != nil {
+			rows.Close()
+			return "", "", fmt.Errorf("扫描接收者失败: %w", err)
+		}
+		candidates = append(candidates, c)
+	}
+	// Close before any write below: an open SELECT holds a shared lock that
+	// would make the subsequent INSERT fail with SQLITE_BUSY.
+	if err := rows.Close(); err != nil {
+		return "", "", fmt.Errorf("关闭查询失败: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return "", "", fmt.Errorf("遍历接收者失败: %w", err)
+	}
 	var recipientNameID int64
 	var recipientNameEN, recipientEmail string
-	err = db.QueryRow(
-		`SELECT id, name_en, email FROM ai_names
-		 WHERE LOWER(name_en) = LOWER(?) OR LOWER(email) = LOWER(?)
-		 LIMIT 1`,
-		lookupEmail, lookupEmail,
-	).Scan(&recipientNameID, &recipientNameEN, &recipientEmail)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return "", "", fmt.Errorf("未知的接收者: %s（请使用 contacts 查看可用名字）", recipient)
+	for _, c := range candidates {
+		if strings.EqualFold(c.name, lookupEmail) || strings.EqualFold(c.email, lookupEmail) {
+			recipientNameID, recipientNameEN, recipientEmail = c.id, c.name, c.email
+			break
 		}
-		return "", "", fmt.Errorf("查询接收者失败: %w", err)
+	}
+	if recipientNameID == 0 {
+		return "", "", fmt.Errorf("未知的接收者: %s（请使用 contacts 查看可用名字）", recipient)
 	}
 
 	if recipientNameID == senderNameID && senderNameID != 0 {
