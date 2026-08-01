@@ -182,6 +182,18 @@ func UpsertRoleConfig(ctx context.Context, role string, sessionID int64, skills,
 	).Scan(&id)
 
 	if err == sql.ErrNoRows {
+		// INSERT 语义与 UPDATE 保持一致："" 表示未指定。
+		// skills/tools 未指定时回落 "all"（与表 DEFAULT 'all' 及文档承诺
+		// "新建时未指定的标志默认为 all" 一致）。此前直接写入 '' 会把
+		// tools='' 落库 → ParseToolsList 返回空 → GetAllTools 无工具可给模型，
+		// 曾导致角色工具调用完全失效（2026-07-31 事故，见 role_cmd.go 帮助）。
+		// prompt 的 '' 是合法语义（表示使用角色同名默认模板），保持原样。
+		if skills == "" {
+			skills = "all"
+		}
+		if tools == "" {
+			tools = "all"
+		}
 		_, err = db.Exec(
 			`INSERT INTO role_configs (role, skills, tools, prompt, session_id)
 			 VALUES (?, ?, ?, ?, ?)`,

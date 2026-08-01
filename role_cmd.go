@@ -63,8 +63,8 @@ func init() {
 		Args: cobra.ExactArgs(1),
 		RunE: roleUpdateRunE,
 	}
-	updateCmd.Flags().String("skills", "", "技能列表：all（全部）、空（无）、或逗号分隔的技能名")
-	updateCmd.Flags().String("tools", "", "工具列表：all（全部）、空（无）、或逗号分隔的工具名")
+	updateCmd.Flags().String("skills", "", "技能列表：all（全部）或逗号分隔的技能名；空表示不修改（新建时默认为 all）")
+	updateCmd.Flags().String("tools", "", "工具列表：all（全部）或逗号分隔的工具名；空表示不修改（新建时默认为 all）")
 	updateCmd.Flags().String("prompt", "", "提示词模板名称（空表示与角色同名）")
 	roleCmd.AddCommand(updateCmd)
 
