@@ -251,6 +251,23 @@ func ResolvePromptRemovePath(name string) (string, error) {
 	return GetPromptPath(name, true)
 }
 
+// PromptFileExists reports whether a prompt file with the given name still
+// exists. name must be non-empty. When projectPath is non-empty the project
+// prompt dir is checked first, then the global prompt dir — the same
+// resolution order as GetPromptTemplate. Used by `prompt remove` to detect
+// dangling references after deleting a prompt file.
+func PromptFileExists(name, projectPath string) bool {
+	if projectPath != "" {
+		p := filepath.Join(projectPath, ".dscli", "prompt", name+".md")
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	p := filepath.Join(config.ConfigDir, "prompt", name+".md")
+	_, err := os.Stat(p)
+	return err == nil
+}
+
 // GetPromptSourceContent 获取用于初始化新提示词文件的种子内容。
 // 非 global 作用域（项目）：先尝试全局文件，再尝试内建模板。
 // global 作用域：只尝试内建模板（已知内建名才返回内容）。

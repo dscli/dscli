@@ -155,6 +155,50 @@ func ListRoleConfigs(ctx context.Context, sessionID int64) ([]RoleConfig, error)
 	return configs, nil
 }
 
+// ListRoleConfigsByPrompt returns all role configs whose prompt field
+// references the given prompt name.
+// A positive sessionID restricts the scan to a single session; 0 scans
+// all sessions. Used by `prompt remove` to find dangling references
+// after a prompt file is deleted.
+func ListRoleConfigsByPrompt(ctx context.Context, promptName string, sessionID int64) ([]RoleConfig, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "ListRoleConfigsByPrompt")
+	defer span.Finish()
+	db, err := sqlite.OpenDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close(ctx)
+
+	query := `SELECT id, role, skills, tools, prompt, session_id, created_at, updated_at
+		 FROM role_configs WHERE prompt = ?`
+	args := []any{promptName}
+	if sessionID > 0 {
+		query += ` AND session_id = ?`
+		args = append(args, sessionID)
+	}
+	query += ` ORDER BY role`
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("查询引用提示词的配置失败: %w", err)
+	}
+	defer rows.Close()
+
+	var configs []RoleConfig
+	for rows.Next() {
+		var cfg RoleConfig
+		if err := rows.Scan(&cfg.ID, &cfg.Role, &cfg.Skills, &cfg.Tools, &cfg.Prompt,
+			&cfg.SessionID, &cfg.CreatedAt, &cfg.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("扫描角色配置失败: %w", err)
+		}
+		configs = append(configs, cfg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("遍历角色配置失败: %w", err)
+	}
+	return configs, nil
+}
+
 // invalidateRoleCache clears the in-memory role config cache.
 // Call after any write to role_configs to ensure subsequent reads
 // see the latest data.

@@ -194,3 +194,59 @@ func TestParseListSemantics(t *testing.T) {
 		}
 	}
 }
+
+// TestListRoleConfigsByPrompt verifies the dangling-reference scan used by
+// `prompt remove`: rows are found by the prompt field they reference, with
+// an optional single-session filter (0 = all sessions).
+func TestListRoleConfigsByPrompt(t *testing.T) {
+	newTestDB(t)
+
+	ctx := t.Context()
+	const (
+		sidA = int64(1)
+		sidB = int64(2)
+	)
+	if err := UpsertRoleConfig(ctx, "dev", sidA, "all", "all", "editor"); err != nil {
+		t.Fatalf("UpsertRoleConfig(dev/sidA): %v", err)
+	}
+	if err := UpsertRoleConfig(ctx, "expert", sidA, "none", "none", "dev"); err != nil {
+		t.Fatalf("UpsertRoleConfig(expert/sidA): %v", err)
+	}
+	if err := UpsertRoleConfig(ctx, "review", sidB, "none", "none", "editor"); err != nil {
+		t.Fatalf("UpsertRoleConfig(review/sidB): %v", err)
+	}
+
+	// All sessions referencing "editor".
+	refs, err := ListRoleConfigsByPrompt(ctx, "editor", 0)
+	if err != nil {
+		t.Fatalf("ListRoleConfigsByPrompt(all): %v", err)
+	}
+	if len(refs) != 2 {
+		t.Fatalf("ListRoleConfigsByPrompt(all) = %d rows, want 2", len(refs))
+	}
+	gotRoles := map[string]bool{}
+	for _, c := range refs {
+		gotRoles[c.Role] = true
+	}
+	if !gotRoles["dev"] || !gotRoles["review"] {
+		t.Errorf("ListRoleConfigsByPrompt(all) roles = %v, want dev and review", gotRoles)
+	}
+
+	// Single session only.
+	refs, err = ListRoleConfigsByPrompt(ctx, "editor", sidA)
+	if err != nil {
+		t.Fatalf("ListRoleConfigsByPrompt(sidA): %v", err)
+	}
+	if len(refs) != 1 || refs[0].Role != "dev" {
+		t.Errorf("ListRoleConfigsByPrompt(sidA) = %+v, want only dev", refs)
+	}
+
+	// Unknown prompt name.
+	refs, err = ListRoleConfigsByPrompt(ctx, "missing", 0)
+	if err != nil {
+		t.Fatalf("ListRoleConfigsByPrompt(missing): %v", err)
+	}
+	if len(refs) != 0 {
+		t.Errorf("ListRoleConfigsByPrompt(missing) = %d rows, want 0", len(refs))
+	}
+}
