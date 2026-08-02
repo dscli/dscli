@@ -229,15 +229,22 @@ func GetAllTools(ctx context.Context) []Tool {
 	return tools
 }
 
-// HandleToolCalls 处理工具调用（带统计）
+// HandleToolCalls 处理工具调用（带统计）。
+// 多个工具调用时先打印汇总行，并为每个调用显示序号。
 func HandleToolCalls(ctx context.Context, tcs []prompt.ToolCall) (inputs []prompt.Message) {
 	span, ctx := clog.StartSpanFromContext(ctx, "HandleToolCalls")
 	defer span.Finish()
+
+	// 多个工具调用时先打印汇总行，便于区分并行调用
+	if len(tcs) > 1 {
+		outfmt.Printf("📋 本轮共 %d 个工具调用\n", len(tcs))
+	}
+
 	// 处理每个工具调用
 	for i, tc := range tcs {
 		id := tc.ID
 		// 使用新的工具调用处理器
-		result, user, err := HandleToolCall(ctx, tc.Function.Name, tc.Function.Arguments)
+		result, user, err := handleToolCall(ctx, tc.Function.Name, tc.Function.Arguments, i+1, len(tcs))
 		toolContent := ToolContent{
 			Index:    i + 1,
 			ToolName: tc.Function.Name,
@@ -307,8 +314,25 @@ func FixBrokenJSON(broken string) (result string) {
 	return result
 }
 
-// HandleToolCall 处理工具调用（带统计和超时）
+// toolCallIndexPrefix 生成工具调用的序号前缀。
+// total > 1 时形如 "[1/2] "，单个调用返回空串，避免噪音。
+func toolCallIndexPrefix(index, total int) string {
+	if index > 0 && total > 1 {
+		return fmt.Sprintf("[%d/%d] ", index, total)
+	}
+	return ""
+}
+
+// HandleToolCall 处理单个工具调用（带统计和超时）。
+// 以 index=0, total=0 调用内部实现，不显示序号；
+// 批量调用请使用 HandleToolCalls。
 func HandleToolCall(ctx context.Context, toolName, argsRaw string) (result, warning string, err error) {
+	return handleToolCall(ctx, toolName, argsRaw, 0, 0)
+}
+
+// handleToolCall 是 HandleToolCall 的内部实现。
+// index/total 用于在显示中标注 "[i/total]" 序号。
+func handleToolCall(ctx context.Context, toolName, argsRaw string, index, total int) (result, warning string, err error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "HandleToolCall")
 	defer span.Finish()
 	// 获取工具处理器
@@ -384,12 +408,13 @@ which lead to the error:
 		return tool.Handler(ctx, args)
 	}
 
-	// ✅ 新增：显示工具执行开始
+	// 显示工具执行开始
 	displayName := tool.DisplayName
 	if displayName == "" {
 		displayName = tool.Name
 	}
-	outfmt.Printf("🔄 正在执行 %s...\n", displayName)
+	indexPrefix := toolCallIndexPrefix(index, total)
+	outfmt.Printf("🔄 %s正在执行 %s...\n", indexPrefix, displayName)
 
 	// 执行工具
 	result, warning, err = tool.Handler(ctx, args)
@@ -399,11 +424,11 @@ which lead to the error:
 		err = fmt.Errorf("工具执行超时（%v）", tool.Timeout)
 	}
 
-	// ✅ 新增：立即显示执行结果
+	// 立即显示执行结果
 	if err != nil {
-		outfmt.Printf("❌ %s 执行失败: %v\n", displayName, err)
+		outfmt.Printf("❌ %s%s 执行失败: %v\n", indexPrefix, displayName, err)
 	} else {
-		outfmt.Printf("✅ %s 执行成功\n", displayName)
+		outfmt.Printf("✅ %s%s 执行成功\n", indexPrefix, displayName)
 	}
 
 	// 记录使用情况
