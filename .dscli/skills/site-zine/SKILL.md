@@ -145,13 +145,18 @@ Zine 是一个优秀的工具，但你必须接受一个事实：
 zine.ziggy 配置、i18n 结构、模板系统、内容模型——这些不是文档，而是**编码后的领域知识**：
 
 ```ziggy
-Multilingual {
+.zine_version = "0.12.0",
+.site = .multilingual(.{
     .host_url = "https://example.com",
     .locales = [
-        { .code = "en-US", .name = "English", .site_title = "My Site", ... },
-        { .code = "zh-CN", .name = "简体中文", ... },
+        .{
+            .code = "en-US",
+            .name = "English",
+            .site_title = "My Site",
+            ...
+        },
     ],
-}
+}),
 ```
 
 - 一个 `.smd` 文件就是一个结构化的知识单元
@@ -180,6 +185,77 @@ Multilingual {
 ║  三者结合，才能发挥 zine 的全部价值。                  ║
 ╚══════════════════════════════════════════════════╝
 ```
+
+---
+
+## 5. 🔄 Zine 0.12 配置迁移 — 新格式速查（学费换来的）
+
+接手旧 zine 站点时，`zine release` 会直接报 `zine.ziggy:1:1 unexpected token`。
+这是 zine ≥0.12 的配置格式破坏性变更（v0.11 的 `Site { ... }` 写法已废弃）。
+本地 zine 版本（`zine --version`）决定你必须用哪种格式。
+
+### zine.ziggy 顶层
+
+```ziggy
+# ❌ v0.11 旧格式
+Site {
+    .title = "...",
+    .host_url = "https://example.com",
+    ...
+}
+
+# ✅ v0.12 新格式（单语言站点用 .simple，多语言用 .multilingual）
+.zine_version = "0.12.0",
+.site = .simple(.{
+    .title = "...",
+    .host_url = "https://example.com",
+    .content_dir_path = "content",
+    .layouts_dir_path = "layouts",
+    .assets_dir_path = "assets",
+    .static_assets = [...],
+}),
+```
+
+### .smd front matter
+
+```ziggy
+# ❌ 旧
+.date = @date("1990-01-01T00:00:00"),
+.author = "Sample Author",
+
+# ✅ 新（Date 是 union：.date("...") 或 .unix(...)；authors 是数组）
+.date = .date("1990-01-01T00:00:00"),
+.authors = ["Sample Author"],
+```
+
+### alternatives（RSS 等）— Ziggy 匿名结构体陷阱
+
+```ziggy
+# ❌ 旧：报 "wrong field style: use fmt to correct automatically"
+.alternatives = [{
+    .name = "rss",
+    .layout = "blog.xml",
+    .output = "index.xml",
+}],
+
+# ✅ 新：列表里的匿名结构体必须带前导点 [.{ ... }]
+.alternatives = [.{
+    .name = "rss",
+    .layout = "blog.xml",
+    .output = "index.xml",
+}],
+```
+
+注意：zine 0.12 **没有** `zine fmt` 命令——报错里 "use fmt to correct automatically"
+指的是 Ziggy 的独立 formatter，不是 zine 自带。遇到 "wrong field style" 基本就是
+结构体字面量少了前导点。
+
+### 其他坑
+
+- `slingshot site list` 里 type 为 `page` 的旧站点，如果目录里已经有 `zine.ziggy`，
+  用 `slingshot site update <name> type zine` 改类型，rsync 才会自动构建 public/。
+- 升级格式后先 `zine release --force` 验证构建，再 `slingshot site rsync <name>` 部署；
+  构建错误（如 unknown alternative）不会阻止部署，但会把坏站点推上去。
 
 ---
 
