@@ -52,7 +52,7 @@ exit 0
 					writeFakeScript(t, dir, name, fakeClient)
 				}
 			}
-			t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			t.Setenv("PATH", dir)
 			if tt.server != "" {
 				t.Setenv("FAKE_SERVER_EXIT", tt.server)
 			}

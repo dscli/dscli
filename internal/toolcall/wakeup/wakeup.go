@@ -23,11 +23,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dscli/dscli/internal/processutil"
-
 	"github.com/dscli/dscli/internal/chimein"
 	"github.com/dscli/dscli/internal/config"
+	"github.com/dscli/dscli/internal/emacsutil"
 	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/processutil"
 	"github.com/dscli/dscli/internal/session"
 	"github.com/dscli/dscli/internal/toolcall"
 	"github.com/nanjj/clog"
@@ -188,23 +188,24 @@ func isProcessRunning(projectPath string) bool {
 }
 
 // detectDisplayCommand auto-detects the best display command based on
-// tools available on the system.
+// tools available on the system.  The mode decision is centralized in
+// emacsutil.Detect so editor and flycheck behave identically.
 func detectDisplayCommand() string {
-	switch {
-	case hasExecutable("emacsclient") && emacsServerRunning():
+	switch emacsutil.Detect() {
+	case emacsutil.ModeClientServer:
 		// Emacs server (daemon) is up: attach a new frame via emacsclient.
 		// The template has one %s placeholder - the project path.
 		// The Emacs Lisp function starts a dscli chat that reads
 		// the message from the chimeins queue on boot.
 		return `emacsclient -n -c -e '(dscli--send-message-raw "%s")'`
-	case hasExecutable("emacs"):
+	case emacsutil.ModeStandalone:
 		// Standalone Emacs: start a fresh instance for this wakeup.
 		// Most users run Emacs without server-mode, where emacsclient
 		// cannot connect and the wakeup is silently lost; a plain
 		// `emacs` invocation always works and gives each chat its own
 		// frame instead of crowding a shared daemon.
 		return `emacs --eval '(dscli--send-message-raw "%s")'`
-	case hasExecutable("emacsclient"):
+	case emacsutil.ModeClientOnly:
 		// No emacs binary, but a client exists - last resort: it may
 		// still reach a server started by another installation.
 		return `emacsclient -n -c -e '(dscli--send-message-raw "%s")'`
@@ -214,26 +215,6 @@ func detectDisplayCommand() string {
 	//   - Vim/nvim:  terminal-based launch
 	//   - Terminal: `x-terminal-emulator -e sh -c 'cd %s && dscli chat'`
 	return ""
-}
-
-// emacsServerRunning reports whether an Emacs server is accepting client
-// connections.  It probes with a batch Emacs without loading init (-q),
-// which is fast and side-effect free.  server.el provides
-// server-running-p, which tests the actual server socket; exit code 0
-// means a server is up.  Any failure is treated as "not running" so the
-// caller falls back to starting a standalone Emacs instance.
-func emacsServerRunning() bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "emacs", "--batch", "-q",
-		"--eval", `(progn (require 'server) (if (server-running-p) (kill-emacs 0) (kill-emacs 1)))`)
-	return cmd.Run() == nil
-}
-
-// hasExecutable checks if a command is available in PATH.
-func hasExecutable(name string) bool {
-	_, err := exec.LookPath(name)
-	return err == nil
 }
 
 // runDisplayCommand executes the display command template with the given

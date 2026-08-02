@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
+	"github.com/dscli/dscli/internal/emacsutil"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/nanjj/clog"
 )
@@ -93,7 +95,7 @@ func OpenEditor(ctx context.Context, initialContent string) (content string, err
 
 // findEditorBinary splits an EDITOR/VISUAL value into binary and arguments.
 // Uses strings.Cut on the first space so that values like "emacsclient -c"
-// are correctly parsed as binary="emcsclient", args=["-c"]. Compared to
+// are correctly parsed as binary="emacsclient", args=["-c"]. Compared to
 // strings.Fields, this avoids panicking when the value is empty or
 // whitespace-only (Fields returns an empty slice). Note: paths containing
 // spaces in the binary name itself are not supported.
@@ -101,6 +103,23 @@ func findEditorBinary(editor string) (name string, args []string) {
 	name, rest, _ := strings.Cut(editor, " ")
 	if rest != "" {
 		args = strings.Fields(rest)
+	}
+	return name, args
+}
+
+// resolveEditor parses an EDITOR/VISUAL value and normalizes emacsclient
+// invocations that cannot work.
+//
+// emacsclient only succeeds when an Emacs server is running.  If the user
+// configured "emacsclient -c" but no server exists, the edit would fail
+// with a connection error.  Following the same detection as wakeup and
+// flycheck (see internal/emacsutil), we fall back to a standalone emacs
+// invocation and drop emacsclient-specific flags such as -c (which would
+// be misinterpreted by emacs as --no-site-file).
+func resolveEditor(editor string) (name string, args []string) {
+	name, args = findEditorBinary(editor)
+	if filepath.Base(name) == "emacsclient" && emacsutil.Detect() == emacsutil.ModeStandalone {
+		return "emacs", nil
 	}
 	return name, args
 }
@@ -133,7 +152,7 @@ func Edit(ctx context.Context, filename string) (err error) {
 		err = fmt.Errorf("no editor specified")
 		return err
 	}
-	name, args := findEditorBinary(editor)
+	name, args := resolveEditor(editor)
 	if name == "" {
 		return fmt.Errorf("cannot determine editor binary from: %s", editor)
 	}
