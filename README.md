@@ -24,6 +24,7 @@ Simply put: **dscli = AI assistant + dev tools + session memory + CLI efficiency
 
 ### Version History
 
+- v0.8.9 (2026-08-02) — Emacs integration (emacsclient-aware editor & wakeup), wakeup shell injection fix, MCP lenient schema support, Unicode-aware mail recipient lookup, history keyset pagination (`--before-id`), `project list --json`, site-zine skill, CI workflow
 - v0.8.8 (2026-07-04) — Distributed tracing (Jaeger/clogs), cross-project AI communication (wakeup), project management commands, history move, session cleanup with active session protection, MCP integration framework (mcphub), gzip release archives, SQL lock leak fix, write_file CAS safety
 - v0.8.7 (2026-06-13) — LightPanda Cloud MCP support, test role (QA Engineer), code fence language preservation, cloud token validation
 - v0.8.0 (2026-05-17) — AI personality system (32 scientists), skill author auto-fill, unified output format, `git author` style user display
@@ -105,7 +106,7 @@ go install github.com/dscli/dscli@latest
 # Option 2: Build from source
 git clone https://github.com/dscli/dscli.git
 cd dscli
-git checkout v0.8.8
+git checkout v0.8.9
 make install    # installs to $GOPATH/bin
 
 # Option 3: Download pre-built binary
