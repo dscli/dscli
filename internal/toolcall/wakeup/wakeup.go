@@ -232,6 +232,17 @@ func runDisplayCommand(tmpl, project string) {
 
 	cmdStr := fmt.Sprintf(tmpl, project)
 	cmd := exec.Command("sh", "-c", cmdStr)
+	// The display command must outlive the waking AI.  Without
+	// detachment it inherits the caller's process group and controlling
+	// terminal, so closing the terminal that hosts the caller (or
+	// Ctrl+C on it) sends SIGHUP/SIGINT to the whole foreground process
+	// group - taking the freshly woken AI's Emacs down with the caller.
+	// Setsid is stronger than nohup: it starts a new session with no
+	// controlling terminal, so terminal-close SIGHUP and process-group
+	// signals never reach the child.  A GUI Emacs (DISPLAY set) needs
+	// no tty; in a tty-only environment the display dies with the
+	// terminal anyway.
+	detachCmd(cmd)
 
 	if startErr := cmd.Start(); startErr != nil {
 		outfmt.Debug("wakeup: display command start: %v\n", startErr)
