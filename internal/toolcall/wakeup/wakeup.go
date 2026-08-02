@@ -20,7 +20,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/dscli/dscli/internal/chimein"
@@ -194,44 +193,46 @@ func detectDisplayCommand() string {
 	switch emacsutil.Detect() {
 	case emacsutil.ModeClientServer:
 		// Emacs server (daemon) is up: attach a new frame via emacsclient.
-		// The template has one %s placeholder - the project path.
-		// The Emacs Lisp function starts a dscli chat that reads
-		// the message from the chimeins queue on boot.
-		return `emacsclient -n -c -e '(dscli--send-message-raw "%s")'`
+		// The project path arrives as $1 and is placed in the
+		// environment of the launched process via a prefix assignment,
+		// read with getenv in Lisp.  It must NEVER be spliced into a
+		// Lisp string literal: a crafted path like
+		// `") (shell-command "evil") "` would execute arbitrary Lisp in
+		// Emacs.  The Emacs Lisp function starts a dscli chat that
+		// reads the message from the chimeins queue on boot.
+		return `DSCLI_WAKEUP_PROJECT="$1" emacsclient -n -c -e '(dscli--send-message-raw (getenv "DSCLI_WAKEUP_PROJECT"))'`
 	case emacsutil.ModeStandalone:
 		// Standalone Emacs: start a fresh instance for this wakeup.
 		// Most users run Emacs without server-mode, where emacsclient
 		// cannot connect and the wakeup is silently lost; a plain
 		// `emacs` invocation always works and gives each chat its own
 		// frame instead of crowding a shared daemon.
-		return `emacs --eval '(dscli--send-message-raw "%s")'`
+		return `DSCLI_WAKEUP_PROJECT="$1" emacs --eval '(dscli--send-message-raw (getenv "DSCLI_WAKEUP_PROJECT"))'`
 	case emacsutil.ModeClientOnly:
 		// No emacs binary, but a client exists - last resort: it may
 		// still reach a server started by another installation.
-		return `emacsclient -n -c -e '(dscli--send-message-raw "%s")'`
+		return `DSCLI_WAKEUP_PROJECT="$1" emacsclient -n -c -e '(dscli--send-message-raw (getenv "DSCLI_WAKEUP_PROJECT"))'`
 	}
-	// Future detectors:
-	//   - VSCode: `code --command "dscli.startChat" --args "..."`
+	// Future detectors (project path arrives as $1; keep passing it via
+	// an environment variable, never by splicing into the command):
+	//   - VSCode: `code --command "dscli.startChat" --args "$1"`
 	//   - Vim/nvim:  terminal-based launch
-	//   - Terminal: `x-terminal-emulator -e sh -c 'cd %s && dscli chat'`
+	//   - Terminal: `x-terminal-emulator -e sh -c 'cd "$1" && dscli chat'`
 	return ""
 }
 
 // runDisplayCommand executes the display command template with the given
-// project path, fire-and-forget.  The template receives a single %s
-// placeholder for the project path (shell-escaped).
+// project path, fire-and-forget.  The template is run via `sh -c` with
+// the project path passed as $1 - never interpolated into the command
+// string - so project paths containing shell metacharacters cannot be
+// injected.
 //
 // The display command does NOT carry message content — the message is
 // already in the chimeins queue.  The command's sole job is to wake up
 // a dscli chat session in the user's IDE; the session reads the chimein
 // on startup.
 func runDisplayCommand(tmpl, project string) {
-	// Escape for safe interpolation into shell command.
-	project = strings.ReplaceAll(project, `\`, `\\`)
-	project = strings.ReplaceAll(project, `"`, `\"`)
-
-	cmdStr := fmt.Sprintf(tmpl, project)
-	cmd := exec.Command("sh", "-c", cmdStr)
+	cmd := exec.Command("sh", "-c", tmpl, "sh", project)
 	// The display command must outlive the waking AI.  Without
 	// detachment it inherits the caller's process group and controlling
 	// terminal, so closing the terminal that hosts the caller (or

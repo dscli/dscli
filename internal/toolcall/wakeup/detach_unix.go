@@ -12,7 +12,8 @@ import (
 // SIGHUP and process-group signals cannot reach it.  See
 // runDisplayCommand for why the display command needs this.
 func detachCmd(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setsid: true,
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
+	cmd.SysProcAttr.Setsid = true
 }
