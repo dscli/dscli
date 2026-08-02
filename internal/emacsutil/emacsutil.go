@@ -36,10 +36,15 @@ const (
 //  1. emacsclient 可用且 server 在跑 → 用 emacsclient（最快、复用配置）
 //  2. emacs 可用 → 用独立 emacs（任何情况下都能启动）
 //  3. 只有 emacsclient → last resort，仍可能连上 server
+//
+// 探测本身用 emacsclient（见 ServerRunning）：一次成功的连接同时
+// 证明了 emacsclient 在 PATH 且 server 在跑，因此不需要单独的
+// executable-find 前置检查——与 dscli-flycheck.sh 的策略完全一致。
 func Detect() Mode {
-	switch {
-	case HasExecutable("emacsclient") && ServerRunning():
+	if ServerRunning() {
 		return ModeClientServer
+	}
+	switch {
 	case HasExecutable("emacs"):
 		return ModeStandalone
 	case HasExecutable("emacsclient"):
@@ -49,16 +54,22 @@ func Detect() Mode {
 }
 
 // ServerRunning reports whether an Emacs server is accepting client
-// connections.  It probes with a batch Emacs without loading init (-q),
-// which is fast and side-effect free.  server.el provides
-// server-running-p, which tests the actual server socket; exit code 0
-// means a server is up.  Any failure is treated as "not running" so the
-// caller falls back to starting a standalone Emacs instance.
+// connections.  It probes with emacsclient itself: a successful
+// connection proves both that emacsclient is on PATH and that a server
+// socket exists (the socket lives only while the server runs).
+//
+// Note: do NOT pass -a/--alternate-editor here.  A non-empty value
+// would launch a standalone Emacs when no server exists (side effect),
+// and the empty string "" actually makes emacsclient START a daemon and
+// wait for it — turning a probe into a state change.  Without -a,
+// emacsclient fails fast with exit 1 when the socket is missing (unless
+// the user set ALTERNATE_EDITOR, which is rare).  Any failure is
+// treated as "not running" so the caller falls back to starting a
+// standalone Emacs instance.
 func ServerRunning() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "emacs", "--batch", "-q",
-		"--eval", `(progn (require 'server) (if (server-running-p) (kill-emacs 0) (kill-emacs 1)))`)
+	cmd := exec.CommandContext(ctx, "emacsclient", "--eval", "(server-running-p)")
 	return cmd.Run() == nil
 }
 

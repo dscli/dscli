@@ -15,20 +15,24 @@ func writeFakeScript(t *testing.T, dir, name, body string) {
 	}
 }
 
-// TestDetectDisplayCommand exercises display-command detection with fake
-// emacs/emacsclient binaries on PATH.  The fake emacs exits with
-// FAKE_SERVER_EXIT for the --batch server probe (0 = server up) and 0
-// for a normal launch.
-func TestDetectDisplayCommand(t *testing.T) {
-	const fakeEmacs = `#!/bin/sh
+// probeClient is a fake emacsclient that honors FAKE_SERVER_EXIT for
+// --eval probes (0 = server up, 1/empty = down) and exits 0 otherwise.
+// This mirrors internal/emacsutil's probe semantics.
+const probeClient = `#!/bin/sh
 for arg in "$@"; do
-	if [ "$arg" = "--batch" ]; then
+	if [ "$arg" = "--eval" ]; then
 		exit "${FAKE_SERVER_EXIT:-1}"
 	fi
 done
 exit 0
 `
-	const fakeClient = "#!/bin/sh\nexit 0\n"
+
+// TestDetectDisplayCommand exercises display-command detection with fake
+// emacs/emacsclient binaries on PATH.  The fake emacsclient reports
+// server state via FAKE_SERVER_EXIT; the fake emacs just exists so the
+// standalone fallback branch can be reached.
+func TestDetectDisplayCommand(t *testing.T) {
+	const fakeEmacs = "#!/bin/sh\nexit 0\n"
 
 	tests := []struct {
 		name   string
@@ -49,7 +53,7 @@ exit 0
 				if name == "emacs" {
 					writeFakeScript(t, dir, name, fakeEmacs)
 				} else {
-					writeFakeScript(t, dir, name, fakeClient)
+					writeFakeScript(t, dir, name, probeClient)
 				}
 			}
 			t.Setenv("PATH", dir)

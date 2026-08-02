@@ -14,31 +14,36 @@ func writeFakeScript(t *testing.T, dir, name, body string) {
 	}
 }
 
-// TestDetect exercises mode detection with fake emacs/emacsclient
-// binaries on PATH.  The fake emacs exits with FAKE_SERVER_EXIT for the
-// --batch server probe (0 = server up) and 0 for a normal launch.
-func TestDetect(t *testing.T) {
-	const fakeEmacs = `#!/bin/sh
+// probeClient is a fake emacsclient that honors FAKE_SERVER_EXIT for
+// --eval probes (0 = server up, 1/empty = down) and exits 0 otherwise.
+const probeClient = `#!/bin/sh
 for arg in "$@"; do
-	if [ "$arg" = "--batch" ]; then
+	if [ "$arg" = "--eval" ]; then
 		exit "${FAKE_SERVER_EXIT:-1}"
 	fi
 done
 exit 0
 `
-	const fakeClient = "#!/bin/sh\nexit 0\n"
+
+// TestDetect exercises mode detection with fake emacs/emacsclient
+// binaries on PATH.  The fake emacsclient reports server state via
+// FAKE_SERVER_EXIT for --eval probes; the fake emacs just exists so the
+// standalone fallback branch can be reached.
+func TestDetect(t *testing.T) {
+	const fakeEmacs = "#!/bin/sh\nexit 0\n"
 
 	tests := []struct {
 		name   string
 		has    []string // fake binaries to put on PATH
-		server string   // FAKE_SERVER_EXIT for the probe (empty = not running)
+		server string   // FAKE_SERVER_EXIT for the probe (empty = down)
 		want   Mode
 	}{
 		{name: "no emacs tools", has: nil, want: ModeNone},
-		{name: "only emacsclient", has: []string{"emacsclient"}, want: ModeClientOnly},
-		{name: "emacs without server", has: []string{"emacs", "emacsclient"}, server: "1", want: ModeStandalone},
-		{name: "emacs with server", has: []string{"emacs", "emacsclient"}, server: "0", want: ModeClientServer},
-		{name: "emacs only", has: []string{"emacs"}, server: "1", want: ModeStandalone},
+		{name: "only emacsclient with server", has: []string{"emacsclient"}, server: "0", want: ModeClientServer},
+		{name: "only emacsclient without server", has: []string{"emacsclient"}, want: ModeClientOnly},
+		{name: "emacs and emacsclient with server", has: []string{"emacs", "emacsclient"}, server: "0", want: ModeClientServer},
+		{name: "emacs and emacsclient without server", has: []string{"emacs", "emacsclient"}, want: ModeStandalone},
+		{name: "emacs only", has: []string{"emacs"}, want: ModeStandalone},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -47,7 +52,7 @@ exit 0
 				if name == "emacs" {
 					writeFakeScript(t, dir, name, fakeEmacs)
 				} else {
-					writeFakeScript(t, dir, name, fakeClient)
+					writeFakeScript(t, dir, name, probeClient)
 				}
 			}
 			t.Setenv("PATH", dir)
@@ -62,26 +67,28 @@ exit 0
 	}
 }
 
-// TestServerRunning checks that the probe honors a batch-mode-only emacs
-// that reports server state via its exit code.
+// TestServerRunning checks the emacsclient probe: exit 0 means the
+// server socket is reachable, anything else (missing binary included)
+// means it is not.
 func TestServerRunning(t *testing.T) {
 	t.Run("server up", func(t *testing.T) {
 		dir := t.TempDir()
-		writeFakeScript(t, dir, "emacs", "#!/bin/sh\nexit 0\n")
+		writeFakeScript(t, dir, "emacsclient", probeClient)
 		t.Setenv("PATH", dir)
+		t.Setenv("FAKE_SERVER_EXIT", "0")
 		if !ServerRunning() {
 			t.Error("ServerRunning() = false, want true")
 		}
 	})
 	t.Run("server down", func(t *testing.T) {
 		dir := t.TempDir()
-		writeFakeScript(t, dir, "emacs", "#!/bin/sh\nexit 1\n")
+		writeFakeScript(t, dir, "emacsclient", probeClient)
 		t.Setenv("PATH", dir)
 		if ServerRunning() {
 			t.Error("ServerRunning() = true, want false")
 		}
 	})
-	t.Run("no emacs", func(t *testing.T) {
+	t.Run("no emacsclient", func(t *testing.T) {
 		t.Setenv("PATH", t.TempDir())
 		if ServerRunning() {
 			t.Error("ServerRunning() = true, want false")
@@ -105,16 +112,4 @@ func TestHasExecutable(t *testing.T) {
 			t.Error("HasExecutable(emacsclient) = true, want false")
 		}
 	})
-}
-
-// TestDetectNoServerClientOnly guards the last-resort branch: emacsclient
-// alone yields ModeClientOnly regardless of server state (we cannot probe
-// without an emacs binary).
-func TestDetectNoServerClientOnly(t *testing.T) {
-	dir := t.TempDir()
-	writeFakeScript(t, dir, "emacsclient", "#!/bin/sh\nexit 0\n")
-	t.Setenv("PATH", dir)
-	if got := Detect(); got != ModeClientOnly {
-		t.Errorf("Detect() = %v, want ModeClientOnly", got)
-	}
 }

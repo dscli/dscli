@@ -24,15 +24,17 @@ func writeFakeScript(t *testing.T, dir, name, body string) {
 //   - When a server is running, keep emacsclient as configured.
 //   - Non-emacs editors pass through unchanged.
 func TestResolveEditor(t *testing.T) {
-	const fakeEmacs = `#!/bin/sh
+	const fakeEmacs = "#!/bin/sh\nexit 0\n"
+	// fakeClient honors FAKE_SERVER_EXIT for --eval probes (0 = server up,
+	// 1/empty = down), mirroring internal/emacsutil's probe semantics.
+	const fakeClient = `#!/bin/sh
 for arg in "$@"; do
-	if [ "$arg" = "--batch" ]; then
+	if [ "$arg" = "--eval" ]; then
 		exit "${FAKE_SERVER_EXIT:-1}"
 	fi
 done
 exit 0
 `
-	const fakeClient = "#!/bin/sh\nexit 0\n"
 
 	setupPATH := func(t *testing.T, emacs, emacsclient bool, serverExit string) {
 		t.Helper()

@@ -28,10 +28,13 @@ ABS_FILE="$(realpath "$FILE")"
 # ── 调用 Emacs flycheck ─────────────────────────────────────────────
 # 优先 emacsclient：复用运行中的实例（含用户配置）。
 # emacsclient --eval 通过 prin1 (Elisp print) 返回结果。
-if command -v emacsclient >/dev/null 2>&1 && \
-   emacsclient --eval '(server-running-p)' >/dev/null 2>&1; then
-    emacsclient --eval "(progn (dscli-flycheck-check-file-json \"$ABS_FILE\"))" 2>/dev/null
-    exit $?
+# 探测即证明：emacsclient 连不上 server 时自身就会失败（exit 1），
+# 无需单独的 command -v 检查。注意不要加 -a/--alternate-editor：
+# "" 会让 emacsclient 自动启动 daemon（探测变成副作用），非空值会
+# 拉起独立 emacs——两者都会破坏"无 server 走 batch 回退"的语义。
+if emacsclient --eval '(server-running-p)' >/dev/null 2>&1; then
+	emacsclient --eval "(progn (dscli-flycheck-check-file-json \"$ABS_FILE\"))" 2>/dev/null
+	exit $?
 fi
 
 # ── 回退：独立 batch emacs（无 server 时）───────────────────────────
