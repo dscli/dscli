@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,7 +36,11 @@ var askExpertTool = toolcall.ToolDef{
 			},
 			"content": map[string]any{
 				"type":        "string",
-				"description": "Detailed question (required)",
+				"description": "Detailed question. Provide content or content_file (not both).",
+			},
+			"content_file": map[string]any{
+				"type":        "string",
+				"description": "Path to a file containing the detailed question. The file is read directly from disk, so the exact content is sent (no LLM transcription drift). Provide content or content_file (not both).",
 			},
 			"attachments": map[string]any{
 				"type":        "array",
@@ -45,12 +50,20 @@ var askExpertTool = toolcall.ToolDef{
 					"description": "Attachment filename",
 				},
 			},
+			"role": map[string]any{
+				"type":        "string",
+				"description": "Role name for the system prompt (default \"expert\"). Uses the prompt override chain: .dscli/prompt/<role>.md, ~/.dscli/prompt/<role>.md, role_configs mapping, built-in template. Ignored when system is provided.",
+			},
+			"system": map[string]any{
+				"type":        "string",
+				"description": "Full system prompt text. Completely replaces the default role template (takes precedence over role).",
+			},
 			"timeout": map[string]any{
 				"type":        "integer",
 				"description": "Timeout in seconds (default 600). Set longer for complex questions requiring deep analysis.",
 			},
 		},
-		"required":             []string{"content"},
+		"required":             []string{},
 		"additionalProperties": false,
 	},
 	Category: "communication",
@@ -69,7 +82,7 @@ func init() {
 
 	// Test optimization: use mock to skip browser automation.
 	if ictx.IsTesting() {
-		askExpertWithRoleFunc = func(_ context.Context, _, _ string) (string, error) {
+		askExpertWithRoleFunc = func(_ context.Context, _, _, _ string) (string, error) {
 			return "[MOCK]", nil
 		}
 	}
@@ -81,11 +94,34 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 	defer span.Finish()
 	summary := toolcall.ToolArgsValue(args, "summary", "")
 	content := toolcall.ToolArgsValue(args, "content", "")
+	contentFile := toolcall.ToolArgsValue(args, "content_file", "")
+	role := toolcall.ToolArgsValue(args, "role", "expert")
+	// Normalize: the LLM may pass an explicit empty string, which bypasses
+	// the ToolArgsValue default.
+	if role == "" {
+		role = "expert"
+	}
+	system := toolcall.ToolArgsValue(args, "system", "")
 	attachments := toolcall.ToolArgsValue(args, "attachments", []string{})
 
-	if content == "" {
-		err = fmt.Errorf("content cannot be empty")
+	// content and content_file are mutually exclusive: silently ignoring one
+	// of them would drop content the LLM deliberately generated.
+	if content != "" && contentFile != "" {
+		err = fmt.Errorf("content and content_file are mutually exclusive; provide only one")
 		return result, warning, err
+	}
+	if content == "" && contentFile == "" {
+		err = fmt.Errorf("content or content_file is required")
+		return result, warning, err
+	}
+	if contentFile != "" {
+		fileContent, readErr := readContentFile(contentFile)
+		if readErr != nil {
+			err = readErr
+			return result, warning, err
+		}
+		content = fileContent
+		outfmt.Printf("📂 Read question from file: %s (%d bytes)\n", contentFile, len(content))
 	}
 
 	// Show what was asked (truncate long content for display)
@@ -107,7 +143,7 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 		}
 	}
 
-	result, err = askExpertWithRoleFunc(ctx, structuredRequest, "expert")
+	result, err = askExpertWithRoleFunc(ctx, structuredRequest, role, system)
 	if err != nil {
 		outfmt.Println("❌ Expert consultation failed")
 		return result, warning, err
@@ -145,7 +181,7 @@ func truncateForDisplay(s string, maxLen int) string {
 //	reply: the AI model's response text
 //	err: error during execution
 func AskExpert(ctx context.Context, input string) (reply string, err error) {
-	return askExpertWithRoleFunc(ctx, input, "expert")
+	return askExpertWithRoleFunc(ctx, input, "expert", "")
 }
 
 // AskExpertWithRole calls the AI model for consultation with a specified
@@ -166,16 +202,32 @@ func AskExpert(ctx context.Context, input string) (reply string, err error) {
 //	reply: the AI model's response text
 //	err: error during execution
 func AskExpertWithRole(ctx context.Context, input, role string) (reply string, err error) {
-	return askExpertWithRoleFunc(ctx, input, role)
+	return askExpertWithRoleFunc(ctx, input, role, "")
 }
 
-// askExpertWebChat is the real implementation: renders the role prompt and
-// sends the combined message via lp.WebChat.
-func askExpertWebChat(ctx context.Context, input, role string) (reply string, err error) {
-	// Render the role-specific system prompt (expert.md / review.md / dev.md).
-	// This replaces the API's system message — WebChat has no system prompt
-	// concept, so we prepend it to the user message.
-	systemPrompt := prompt.RenderPromptForRole(ctx, role)
+// AskExpertCustom calls the AI model with full control over the system
+// prompt: a role name (rendered via the prompt override chain) or a raw
+// system prompt string. A non-empty system text takes precedence over role
+// at the prompt level; an empty role falls back to "expert".
+func AskExpertCustom(ctx context.Context, input, role, system string) (reply string, err error) {
+	if role == "" {
+		role = "expert"
+	}
+	return askExpertWithRoleFunc(ctx, input, role, system)
+}
+
+// askExpertWebChat is the real implementation: renders the system prompt
+// (either the raw system text or the role template) and sends the combined
+// message via lp.WebChat.
+func askExpertWebChat(ctx context.Context, input, role, system string) (reply string, err error) {
+	// Render the system prompt. WebChat has no system prompt concept, so we
+	// prepend it to the user message.
+	systemPrompt := system
+	if systemPrompt == "" {
+		// Render the role-specific template (expert.md / review.md / dev.md
+		// or a custom override via the prompt override chain).
+		systemPrompt = prompt.RenderPromptForRole(ctx, role)
+	}
 
 	// Build the full message: system prompt + separator + user request.
 	// The separator helps the web model distinguish the persona instructions
@@ -263,6 +315,54 @@ Please provide detailed analysis and advice, including:
 	return request, errors
 }
 
+// readContentFile reads the content_file question text from disk.
+// It applies the same safety rules as attachments: safe path only
+// (current directory and subdirectories, no absolute paths, no ".."),
+// 1MB size limit, non-empty content. Errors are explicit, never silent.
+func readContentFile(filename string) (string, error) {
+	if !isSafePath(filename) {
+		return "", fmt.Errorf("unsafe path: %s", filename)
+	}
+
+	f, err := os.Open(filename)
+	if err != nil {
+		return "", fmt.Errorf("failed to open file %s: %w", filename, err)
+	}
+	defer f.Close()
+
+	// Resolve symlinks and verify the real target still stays within cwd:
+	// isSafePath only checks the textual path, so a symlink inside cwd could
+	// otherwise smuggle in arbitrary files from outside the sandbox.
+	// EvalSymlinks keeps relative paths relative, so absolutize first.
+	abs, err := filepath.Abs(filename)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve file %s: %w", filename, err)
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve file %s: %w", filename, err)
+	}
+	if !pathWithinCwd(resolved) {
+		return "", fmt.Errorf("unsafe path: %s resolves outside the current directory", filename)
+	}
+
+	// Read at most maxAttachmentSize+1 bytes so an oversized file is caught
+	// even if it grows between open and read (no TOCTOU window).
+	b, err := io.ReadAll(io.LimitReader(f, maxAttachmentSize+1))
+	if err != nil {
+		return "", fmt.Errorf("failed to read file %s: %w", filename, err)
+	}
+	if len(b) > maxAttachmentSize {
+		return "", fmt.Errorf("file too large: %s (%d bytes > 1MB)", filename, len(b))
+	}
+
+	content := strings.TrimSpace(string(b))
+	if content == "" {
+		return "", fmt.Errorf("file is empty: %s", filename)
+	}
+	return content, nil
+}
+
 // isSafePath checks if the file path is safe.
 // Prevents path traversal attacks, only allows current directory and subdirectories.
 func isSafePath(filename string) bool {
@@ -280,15 +380,23 @@ func isSafePath(filename string) bool {
 	}
 
 	// Check if under current working directory
-	cwd, err := os.Getwd()
-	if err != nil {
-		return false
-	}
-
 	fullPath, err := filepath.Abs(cleanPath)
 	if err != nil {
 		return false
 	}
+	return pathWithinCwd(fullPath)
+}
 
-	return strings.HasPrefix(fullPath, cwd)
+// pathWithinCwd reports whether the given absolute path stays under the
+// current working directory. The separator guard prevents a sibling
+// directory with a shared prefix (e.g. /proj2 vs /proj) from passing.
+func pathWithinCwd(absPath string) bool {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return false
+	}
+	if absPath == cwd {
+		return true
+	}
+	return strings.HasPrefix(absPath, cwd+string(os.PathSeparator))
 }
