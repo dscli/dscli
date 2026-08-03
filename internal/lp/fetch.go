@@ -153,7 +153,7 @@ func fetchWithDepth(ctx context.Context, rawURL string, opts FetchOptions, depth
 	}
 	if err != nil {
 		if errors.Is(err, errEmptyContent) {
-			return resolveEmptyContent(ctx, path, rawURL, dump, proxy, httpTimeoutMS, term, depth)
+			return resolveEmptyContent(ctx, path, rawURL, dump, proxy, httpTimeoutMS, term, depth, opts)
 		}
 		return "", err
 	}
@@ -230,7 +230,10 @@ func fetchOnce(ctx context.Context, path, rawURL, dump, proxy string, timeoutMS,
 //   - the page is empty in every form - keep the original error.
 //
 // The html re-fetch reuses the same proxy decision as the original call.
-func resolveEmptyContent(ctx context.Context, path, rawURL, dump, proxy string, timeoutMS, termMS, depth int) (string, error) {
+// opts is carried through so a followed refresh target keeps the caller's
+// settings (TerminateMS, ForceProxy); Output is cleared before the hop
+// because the top-level Fetch writes it exactly once on success.
+func resolveEmptyContent(ctx context.Context, path, rawURL, dump, proxy string, timeoutMS, termMS, depth int, opts FetchOptions) (string, error) {
 	if dump != "markdown" {
 		// Only markdown conversion can legitimately come back empty for a
 		// loaded page; other dumps that are empty mean the page truly has
@@ -239,7 +242,14 @@ func resolveEmptyContent(ctx context.Context, path, rawURL, dump, proxy string, 
 	}
 	htmlOut, herr := fetchOnce(ctx, path, rawURL, "html", proxy, timeoutMS, termMS)
 	if herr != nil {
-		return "", errEmptyContent
+		if errors.Is(herr, errEmptyContent) {
+			// The html dump is empty too: the page truly has nothing.
+			return "", errEmptyContent
+		}
+		// The html re-fetch failed for a real reason (proxy down, timeout):
+		// surface it instead of a generic "no content", which would make a
+		// dead tunnel look like an empty page.
+		return "", fmt.Errorf("page's markdown dump was empty and the html re-fetch failed: %w", herr)
 	}
 	if strings.TrimSpace(htmlOut) == "" {
 		return "", errEmptyContent
@@ -247,7 +257,8 @@ func resolveEmptyContent(ctx context.Context, path, rawURL, dump, proxy string, 
 	if target, ok := parseMetaRefresh(htmlOut); ok {
 		if depth < maxRefreshFollows {
 			if resolved, rerr := resolveURL(rawURL, target); rerr == nil {
-				return fetchWithDepth(ctx, resolved, FetchOptions{Dump: dump, Proxy: proxy}, depth+1)
+				opts.Output = ""
+				return fetchWithDepth(ctx, resolved, opts, depth+1)
 			}
 		}
 		// The redirect chain exceeded the cap (or the target does not

@@ -69,6 +69,13 @@ case "$FAKE_MODE" in
       *" --dump html "*) echo '{"url":"u","http_status":200,"content":"<html><body><img src=\"x.png\"></body></html>"}' ;;
       *) echo '{"url":"u","http_status":200,"content":""}' ;;
     esac ;;
+  block-html)
+    # markdown comes back empty, but the html re-fetch dies with status 0 -
+    # the real error must surface, not a generic no-content.
+    case " $* " in
+      *" --dump html "*) echo '{"url":"u","http_status":0,"content":""}' ;;
+      *) echo '{"url":"u","http_status":200,"content":""}' ;;
+    esac ;;
   block-all) echo '{"url":"u","http_status":0,"content":""}' ;;
   *) echo '{"url":"u","http_status":200,"content":"# Fake Markdown\n"}' ;;
 esac
@@ -405,6 +412,48 @@ func TestFetchEmptyContentFallback(t *testing.T) {
 		_, err := Fetch(context.Background(), "https://example.com", FetchOptions{})
 		if err == nil || !strings.Contains(err.Error(), "no content") {
 			t.Errorf("Fetch() error = %v, want no-content error", err)
+		}
+	})
+
+	t.Run("custom TerminateMS survives a refresh follow", func(t *testing.T) {
+		// The followed target must keep the caller's JS deadline, not fall
+		// back to the default 60s (regression: the recursive hop used to
+		// construct a fresh FetchOptions and drop TerminateMS).
+		readArgs(t, argsFile) // clear any args left by earlier subtests
+		t.Setenv("FAKE_MODE", "refresh")
+		out, err := Fetch(context.Background(), "https://example.com/start", FetchOptions{TerminateMS: 12345})
+		if err != nil {
+			t.Fatalf("Fetch() error = %v", err)
+		}
+		if !strings.Contains(out, "Target Markdown") {
+			t.Errorf("Fetch() = %q, want content from the refresh target", out)
+		}
+		args := readArgs(t, argsFile)
+		for i := 0; i+1 < len(args); i++ {
+			if args[i] == "--terminate-ms" && args[i+1] != "12345" {
+				t.Errorf("invocation used --terminate-ms %s, want 12345 (full args: %v)", args[i+1], args)
+			}
+		}
+	})
+
+	t.Run("html re-fetch failure keeps the real error", func(t *testing.T) {
+		// markdown empty + html fetch dies (status 0): the proxy/tunnel
+		// diagnostic must surface instead of a generic "no content".
+		readArgs(t, argsFile) // clear any args left by earlier subtests
+		t.Setenv("FAKE_MODE", "block-html")
+		config.Set("lightpanda-http-proxy", "socks5h://localhost:9999")
+		_, err := Fetch(context.Background(), "https://example.com", FetchOptions{ForceProxy: true})
+		if err == nil {
+			t.Fatal("Fetch() error = nil, want error")
+		}
+		if strings.Contains(err.Error(), "no content") {
+			t.Errorf("Fetch() error = %v, want the real html re-fetch error, not a generic no-content", err)
+		}
+		if !strings.Contains(err.Error(), "html re-fetch failed") {
+			t.Errorf("Fetch() error = %v, want the html re-fetch context", err)
+		}
+		if !strings.Contains(err.Error(), "status 0") {
+			t.Errorf("Fetch() error = %v, want the underlying status-0 cause", err)
 		}
 	})
 }
