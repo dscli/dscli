@@ -13,6 +13,12 @@ articles, any "give me this page's content" request.
 - `dump`: output format. `markdown` (default), `html`, `semantic_tree`
   (JSON DOM), or `semantic_tree_text` (pruned plain-text tree). Prefer
   `markdown` or `semantic_tree_text` - `html` can be very large.
+- `output`: also save the result to a file. `path` overwrites the file;
+  `path:N` inserts the content at line N (1-based, the content becomes
+  file line N and the original line N shifts down). A missing file is
+  created (N is ignored), and N beyond the last line appends. The content
+  is still returned in the tool result. The path is used exactly as given
+  - relative to the working directory of the dscli process.
 
 ## Proxy
 

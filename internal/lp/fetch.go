@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -52,6 +53,7 @@ type FetchOptions struct {
 	TerminateMS int    // JS deadline in ms; 0 uses terminateMS
 	Proxy       string // --http-proxy URL; empty falls back to config lightpanda-http-proxy
 	ForceProxy  bool   // skip the direct probe and go straight through the proxy
+	Output      string // file path (or path:N) to write the result to as well; N inserts at line N
 }
 
 // Fetch runs `lightpanda fetch` for a single URL and returns its dump text.
@@ -60,6 +62,11 @@ type FetchOptions struct {
 // is no long-running process, so a hung page cannot poison later calls.
 // The dump output is returned verbatim; callers should prefer markdown or
 // semantic_tree over html for large pages.
+//
+// When opts.Output is set ("path" or "path:N"), the returned text is also
+// written to that file - see writeOutput for the line-insertion semantics.
+// The write happens only after a successful fetch, so a failed probe or a
+// retry leaves no partial file behind.
 //
 // The proxy comes from opts.Proxy, or from the lightpanda-http-proxy value
 // in config when unset.  Hosts known to need a proxy (see proxyDomains, plus
@@ -91,20 +98,30 @@ func Fetch(ctx context.Context, rawURL string, opts FetchOptions) (string, error
 
 	// Known blocked domains (or ForceProxy) go straight through the proxy;
 	// probing them directly would just burn the probe timeout.
-	if proxy != "" && (opts.ForceProxy || needsProxy(rawURL)) {
-		return fetchOnce(ctx, path, rawURL, dump, proxy, httpTimeoutMS, term)
+	var out string
+	switch {
+	case proxy != "" && (opts.ForceProxy || needsProxy(rawURL)):
+		out, err = fetchOnce(ctx, path, rawURL, dump, proxy, httpTimeoutMS, term)
+	default:
+		out, err = fetchOnce(ctx, path, rawURL, dump, "", probeTimeoutMS, term)
+		// The direct attempt failed or returned nothing - retry via the
+		// proxy before giving up (covers blocked hosts not in proxyDomains).
+		if err != nil && proxy != "" {
+			out, err = fetchOnce(ctx, path, rawURL, dump, proxy, httpTimeoutMS, term)
+		}
+	}
+	if err != nil {
+		return "", err
 	}
 
-	out, err := fetchOnce(ctx, path, rawURL, dump, "", probeTimeoutMS, term)
-	if err == nil {
-		return out, nil
+	// A single success point: the result is written to opts.Output exactly
+	// once, only after a successful fetch (never on the failed probe).
+	if opts.Output != "" {
+		if werr := writeOutput(opts.Output, out); werr != nil {
+			return "", fmt.Errorf("write output file: %w", werr)
+		}
 	}
-	// The direct attempt failed or returned nothing - retry via the proxy
-	// before giving up (covers blocked hosts not in proxyDomains).
-	if proxy != "" {
-		return fetchOnce(ctx, path, rawURL, dump, proxy, httpTimeoutMS, term)
-	}
-	return "", err
+	return out, nil
 }
 
 // fetchResult mirrors the JSON object lightpanda emits with --json.
@@ -157,6 +174,73 @@ func fetchOnce(ctx context.Context, path, rawURL, dump, proxy string, timeoutMS,
 		return "", fmt.Errorf("lightpanda fetch: site returned an anti-bot interstitial instead of results; for Google search, try Bing")
 	}
 	return res.Content, nil
+}
+
+// writeOutput writes content to the file described by output.  Two forms are
+// accepted:
+//
+//	"path"      overwrite the file (create it if missing)
+//	"path:N"    insert content at line N (1-based): the content becomes file
+//	            line N and the original line N and everything after it shift
+//	            down.  A missing file ignores N; N beyond the last line appends.
+//
+// Lines are split on "\n"; CRLF files keep their \r characters verbatim.
+func writeOutput(output, content string) error {
+	path, line, err := parseOutputTarget(output)
+	if err != nil {
+		return err
+	}
+	if line == 0 {
+		return os.WriteFile(path, []byte(content), 0o644)
+	}
+
+	data, rerr := os.ReadFile(path)
+	if rerr != nil {
+		if os.IsNotExist(rerr) {
+			return os.WriteFile(path, []byte(content), 0o644)
+		}
+		return rerr
+	}
+
+	lines := strings.Split(string(data), "\n")
+	idx := line - 1 // 0-based insertion point: content starts at file line `line`
+	if idx > len(lines) {
+		idx = len(lines)
+	}
+	head := strings.Join(lines[:idx], "\n")
+	var b strings.Builder
+	b.Grow(len(data) + len(content) + 16)
+	b.WriteString(head)
+	// join() never emits a trailing separator, so restore the newline that
+	// separates lines[idx-1] from the inserted content (unless the head
+	// already ends with one, e.g. appending after a trailing newline).
+	if head != "" && !strings.HasSuffix(head, "\n") {
+		b.WriteByte('\n')
+	}
+	b.WriteString(content)
+	if content != "" && !strings.HasSuffix(content, "\n") {
+		b.WriteByte('\n')
+	}
+	b.WriteString(strings.Join(lines[idx:], "\n"))
+	return os.WriteFile(path, []byte(b.String()), 0o644)
+}
+
+// parseOutputTarget splits "path" or "path:N" into its path and a 1-based
+// line number (0 = plain overwrite).  Only a trailing ":<positive integer>"
+// is treated as a line number; anything else (e.g. "notes:v1.md") stays part
+// of the path.  A numeric but non-positive suffix is an error, since ":0"
+// is almost certainly a mistake.
+func parseOutputTarget(output string) (path string, line int, err error) {
+	if i := strings.LastIndex(output, ":"); i > 0 {
+		suffix := output[i+1:]
+		if n, aerr := strconv.Atoi(suffix); aerr == nil {
+			if n <= 0 {
+				return "", 0, fmt.Errorf("line number must be a positive integer, got %q", suffix)
+			}
+			return output[:i], n, nil
+		}
+	}
+	return output, 0, nil
 }
 
 // isGoogleHost reports whether rawURL points at a Google property (used to

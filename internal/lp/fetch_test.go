@@ -436,3 +436,245 @@ func TestFetchMissingBinary(t *testing.T) {
 		t.Errorf("error = %v, want not-found message", err)
 	}
 }
+
+func TestParseOutputTarget(t *testing.T) {
+	tests := []struct {
+		name     string
+		output   string
+		wantPath string
+		wantLine int
+		wantErr  string
+	}{
+		{name: "plain path", output: "notes.md", wantPath: "notes.md"},
+		{name: "path with line", output: "notes.md:10", wantPath: "notes.md", wantLine: 10},
+		{name: "line 1", output: "a.md:1", wantPath: "a.md", wantLine: 1},
+		{name: "colon in dir", output: "dir:sub/notes.md", wantPath: "dir:sub/notes.md"},
+		{name: "non-numeric suffix stays in path", output: "notes:v1.md", wantPath: "notes:v1.md"},
+		{name: "path with line and colon", output: "a:b.md:5", wantPath: "a:b.md", wantLine: 5},
+		{name: "zero line rejected", output: "notes.md:0", wantErr: "positive integer"},
+		{name: "negative line rejected", output: "notes.md:-3", wantErr: "positive integer"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path, line, err := parseOutputTarget(tt.output)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("parseOutputTarget(%q) error = %v, want containing %q", tt.output, err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseOutputTarget(%q) error = %v", tt.output, err)
+			}
+			if path != tt.wantPath || line != tt.wantLine {
+				t.Errorf("parseOutputTarget(%q) = (%q, %d), want (%q, %d)", tt.output, path, line, tt.wantPath, tt.wantLine)
+			}
+		})
+	}
+}
+
+func TestWriteOutput(t *testing.T) {
+	const content = "# Fetched\nbody\n"
+	read := func(t *testing.T, path string) string {
+		t.Helper()
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		return string(data)
+	}
+
+	t.Run("plain path overwrites", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "a.md")
+		if err := os.WriteFile(path, []byte("old content\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeOutput(path, content); err != nil {
+			t.Fatalf("writeOutput() error = %v", err)
+		}
+		if got := read(t, path); got != content {
+			t.Errorf("file = %q, want %q", got, content)
+		}
+	})
+
+	t.Run("missing file is created", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "new.md")
+		if err := writeOutput(path, content); err != nil {
+			t.Fatalf("writeOutput() error = %v", err)
+		}
+		if got := read(t, path); got != content {
+			t.Errorf("file = %q, want %q", got, content)
+		}
+	})
+
+	t.Run("insert at line 1", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "a.md")
+		if err := os.WriteFile(path, []byte("one\ntwo\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeOutput(path+":1", "NEW\n"); err != nil {
+			t.Fatalf("writeOutput() error = %v", err)
+		}
+		want := "NEW\none\ntwo\n"
+		if got := read(t, path); got != want {
+			t.Errorf("file = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("insert in the middle", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "a.md")
+		if err := os.WriteFile(path, []byte("one\ntwo\nthree\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeOutput(path+":2", "INS\n"); err != nil {
+			t.Fatalf("writeOutput() error = %v", err)
+		}
+		want := "one\nINS\ntwo\nthree\n"
+		if got := read(t, path); got != want {
+			t.Errorf("file = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("insert without trailing newline in content", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "a.md")
+		if err := os.WriteFile(path, []byte("one\nthree\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeOutput(path+":2", "two"); err != nil {
+			t.Fatalf("writeOutput() error = %v", err)
+		}
+		want := "one\ntwo\nthree\n"
+		if got := read(t, path); got != want {
+			t.Errorf("file = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("insert beyond last line appends", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "a.md")
+		if err := os.WriteFile(path, []byte("one\ntwo\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeOutput(path+":99", "END\n"); err != nil {
+			t.Fatalf("writeOutput() error = %v", err)
+		}
+		want := "one\ntwo\nEND\n"
+		if got := read(t, path); got != want {
+			t.Errorf("file = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("file without trailing newline", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "a.md")
+		if err := os.WriteFile(path, []byte("one\ntwo"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeOutput(path+":2", "INS\n"); err != nil {
+			t.Fatalf("writeOutput() error = %v", err)
+		}
+		want := "one\nINS\ntwo"
+		if got := read(t, path); got != want {
+			t.Errorf("file = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("empty file insert at line 1", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "a.md")
+		if err := os.WriteFile(path, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeOutput(path+":1", "NEW\n"); err != nil {
+			t.Fatalf("writeOutput() error = %v", err)
+		}
+		if got := read(t, path); got != "NEW\n" {
+			t.Errorf("file = %q, want %q", got, "NEW\n")
+		}
+	})
+
+	t.Run("invalid line rejected", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "a.md")
+		err := writeOutput(path+":0", content)
+		if err == nil || !strings.Contains(err.Error(), "positive integer") {
+			t.Errorf("writeOutput() error = %v, want positive integer hint", err)
+		}
+		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+			t.Errorf("file should not be created on invalid target, stat err = %v", statErr)
+		}
+	})
+}
+
+// TestFetchOutput verifies that a successful fetch writes the result to the
+// output file, the proxy-retry path writes exactly once, and a failed fetch
+// leaves no file behind.
+func TestFetchOutput(t *testing.T) {
+	argsFile := filepath.Join(t.TempDir(), "args.txt")
+	writeFakeBin(t, argsFile)
+	clearProxyConfig(t)
+
+	t.Run("writes file and still returns content", func(t *testing.T) {
+		outFile := filepath.Join(t.TempDir(), "out.md")
+		out, err := Fetch(context.Background(), "https://example.com", FetchOptions{Output: outFile})
+		if err != nil {
+			t.Fatalf("Fetch() error = %v", err)
+		}
+		if !strings.Contains(out, "Fake Markdown") {
+			t.Errorf("Fetch() = %q, want content returned", out)
+		}
+		data, err := os.ReadFile(outFile)
+		if err != nil {
+			t.Fatalf("read output file: %v", err)
+		}
+		if string(data) != out {
+			t.Errorf("file = %q, want %q", string(data), out)
+		}
+	})
+
+	t.Run("proxy retry writes once", func(t *testing.T) {
+		clearProxyConfig(t)
+		t.Setenv("FAKE_MODE", "block-direct")
+		config.Set("lightpanda-http-proxy", "socks5h://localhost:9999")
+		outFile := filepath.Join(t.TempDir(), "out.md")
+		if _, err := Fetch(context.Background(), "https://example.com", FetchOptions{Output: outFile}); err != nil {
+			t.Fatalf("Fetch() error = %v", err)
+		}
+		data, err := os.ReadFile(outFile)
+		if err != nil {
+			t.Fatalf("read output file: %v", err)
+		}
+		if !strings.Contains(string(data), "Fake Markdown") {
+			t.Errorf("file = %q, want markdown from the proxy attempt", string(data))
+		}
+	})
+
+	t.Run("failed fetch leaves no file", func(t *testing.T) {
+		clearProxyConfig(t)
+		t.Setenv("FAKE_MODE", "status404")
+		outFile := filepath.Join(t.TempDir(), "out.md")
+		if _, err := Fetch(context.Background(), "https://example.com", FetchOptions{Output: outFile}); err == nil {
+			t.Fatal("Fetch() error = nil, want error")
+		}
+		if _, statErr := os.Stat(outFile); !os.IsNotExist(statErr) {
+			t.Errorf("output file should not exist after failed fetch, stat err = %v", statErr)
+		}
+	})
+
+	t.Run("insert at line keeps surrounding lines", func(t *testing.T) {
+		outFile := filepath.Join(t.TempDir(), "out.md")
+		if err := os.WriteFile(outFile, []byte("# Title\nold\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		out, err := Fetch(context.Background(), "https://example.com", FetchOptions{Output: outFile + ":2"})
+		if err != nil {
+			t.Fatalf("Fetch() error = %v", err)
+		}
+		data, err := os.ReadFile(outFile)
+		if err != nil {
+			t.Fatalf("read output file: %v", err)
+		}
+		// The fake output ends with "\n", so it is inserted verbatim:
+		// "# Title\n" + out + "old\n" with no extra blank line.
+		want := "# Title\n" + out + "old\n"
+		if string(data) != want {
+			t.Errorf("file = %q, want %q", string(data), want)
+		}
+	})
+}

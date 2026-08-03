@@ -33,6 +33,10 @@ func init() {
 					"enum":        []string{"markdown", "html", "semantic_tree", "semantic_tree_text"},
 					"description": "Output format (default: markdown)",
 				},
+				"output": map[string]any{
+					"type":        "string",
+					"description": "Also save the result to this file. \"path\" overwrites; \"path:N\" inserts at line N (1-based, content becomes line N). Missing file is created; the content is still returned.",
+				},
 			},
 			"required":             []string{"url"},
 			"additionalProperties": false,
@@ -58,7 +62,8 @@ func handleWebFetch(ctx context.Context, args toolcall.ToolArgs) (result, warnin
 	}
 
 	text, err := lp.Fetch(ctx, rawURL, lp.FetchOptions{
-		Dump: toolcall.ToolArgsValue(args, "dump", ""),
+		Dump:   toolcall.ToolArgsValue(args, "dump", ""),
+		Output: toolcall.ToolArgsValue(args, "output", ""),
 	})
 	if err != nil {
 		return "", "", err

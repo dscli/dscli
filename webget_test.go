@@ -62,6 +62,7 @@ func runWebget(t *testing.T, args ...string) (stdout string, err error) {
 	cmd.Flags().Int("timeout", 330, "")
 	cmd.Flags().String("dump", "markdown", "")
 	cmd.Flags().Bool("force-proxy", false, "")
+	cmd.Flags().String("output", "", "")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&bytes.Buffer{})
@@ -158,6 +159,52 @@ func TestWebgetRunE(t *testing.T) {
 		// Single invocation (probe skipped) with the proxy flag present.
 		if !strings.Contains(args, "--http-proxy socks5h://localhost:9999") {
 			t.Errorf("lightpanda args %q missing forced proxy", args)
+		}
+	})
+
+	t.Run("output writes file and keeps stdout", func(t *testing.T) {
+		outFile := filepath.Join(t.TempDir(), "out.md")
+		out, err := runWebget(t, "https://example.com", "--output", outFile)
+		if err != nil {
+			t.Fatalf("runWebget() error = %v", err)
+		}
+		if !strings.Contains(out, "Fake Markdown") {
+			t.Errorf("stdout = %q, want Fake Markdown", out)
+		}
+		data, err := os.ReadFile(outFile)
+		if err != nil {
+			t.Fatalf("read output file: %v", err)
+		}
+		if string(data) != out {
+			t.Errorf("file = %q, want %q", string(data), out)
+		}
+	})
+
+	t.Run("output with line number inserts", func(t *testing.T) {
+		outFile := filepath.Join(t.TempDir(), "out.md")
+		if err := os.WriteFile(outFile, []byte("# Title\nold\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := runWebget(t, "https://example.com", "--output", outFile+":2"); err != nil {
+			t.Fatalf("runWebget() error = %v", err)
+		}
+		data, err := os.ReadFile(outFile)
+		if err != nil {
+			t.Fatalf("read output file: %v", err)
+		}
+		got := string(data)
+		if !strings.HasPrefix(got, "# Title\n") || !strings.HasSuffix(got, "\nold\n") {
+			t.Errorf("file = %q, want inserted between # Title and old", got)
+		}
+		if !strings.Contains(got, "Fake Markdown") {
+			t.Errorf("file = %q, want fetched content", got)
+		}
+	})
+
+	t.Run("output invalid line rejected", func(t *testing.T) {
+		_, err := runWebget(t, "https://example.com", "--output", "out.md:0")
+		if err == nil || !strings.Contains(err.Error(), "positive integer") {
+			t.Errorf("error = %v, want positive integer hint", err)
 		}
 	})
 }

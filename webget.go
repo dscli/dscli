@@ -35,7 +35,9 @@ func init() {
   dscli webget https://go.dev
   dscli webget https://www.google.com
   dscli webget https://example.com --dump html
-  dscli webget https://example.org --force-proxy`,
+  dscli webget https://example.org --force-proxy
+  dscli webget https://example.com --output page.md
+  dscli webget https://example.com --output notes.md:10   # 插入到第 10 行`,
 		// 错误直接返回：main.go 统一打印并 exit 1。Silence* 避免 cobra 再刷
 		// usage 和重复的 "Error:" 前缀，让失败看起来不像命令行用法错误。
 		SilenceUsage:  true,
@@ -48,6 +50,7 @@ func init() {
 	webgetCmd.Flags().Int("timeout", 330, "总超时时间（秒），0 表示不设上限")
 	webgetCmd.Flags().String("dump", "markdown", "输出格式：markdown | html | semantic_tree | semantic_tree_text")
 	webgetCmd.Flags().Bool("force-proxy", false, "强制经配置的代理抓取（跳过直连探测）")
+	webgetCmd.Flags().String("output", "", "把结果写入文件；带 :N 行号时插入到第 N 行（否则覆盖写入，文件不存在则创建）")
 }
 
 func webReaderRunE(cmd *cobra.Command, args []string) error {
@@ -74,6 +77,7 @@ func webReaderRunE(cmd *cobra.Command, args []string) error {
 	}
 
 	forceProxy, _ := cmd.Flags().GetBool("force-proxy")
+	output, _ := cmd.Flags().GetString("output")
 
 	timeout, _ := cmd.Flags().GetInt("timeout")
 	if timeout > 0 {
@@ -82,7 +86,11 @@ func webReaderRunE(cmd *cobra.Command, args []string) error {
 		defer cancel()
 	}
 
-	text, err := lp.Fetch(ctx, rawURL, lp.FetchOptions{Dump: dump, ForceProxy: forceProxy})
+	text, err := lp.Fetch(ctx, rawURL, lp.FetchOptions{
+		Dump:       dump,
+		ForceProxy: forceProxy,
+		Output:     output,
+	})
 	if err != nil {
 		return fmt.Errorf("读取网页失败: %w", err)
 	}

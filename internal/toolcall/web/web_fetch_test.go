@@ -9,7 +9,7 @@ import (
 )
 
 // TestWebFetchToolSchema verifies the registered tool definition: the
-// canonical name, and the parameter surface (url + dump only - no
+// canonical name, and the parameter surface (url + dump + output only - no
 // terminate-ms or proxy knobs to leak environment details to the AI).
 func TestWebFetchToolSchema(t *testing.T) {
 	def, ok := toolcall.GetToolDef(context.Background(), "web_fetch")
@@ -28,7 +28,7 @@ func TestWebFetchToolSchema(t *testing.T) {
 	if !ok {
 		t.Fatalf("Parameters has no properties: %v", def.Parameters)
 	}
-	for _, key := range []string{"url", "dump"} {
+	for _, key := range []string{"url", "dump", "output"} {
 		if _, ok := props[key]; !ok {
 			t.Errorf("missing parameter %q", key)
 		}
