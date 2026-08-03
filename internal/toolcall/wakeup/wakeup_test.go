@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dscli/dscli/internal/config"
 )
 
 // writeFakeScript creates an executable fake command in dir.
@@ -66,5 +68,93 @@ func TestDetectDisplayCommand(t *testing.T) {
 				t.Errorf("detectDisplayCommand() = %q, want containing %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestDetectDisplayCommandNoEnvHandoff guards the wakeup handoff contract:
+// the project path must travel via the wakeup-project file, never through
+// a prefix-assigned environment variable (emacsclient does not pass those
+// into a running server's -e evaluation environment) and never spliced
+// into a Lisp string literal.
+func TestDetectDisplayCommandNoEnvHandoff(t *testing.T) {
+	dir := t.TempDir()
+	writeFakeScript(t, dir, "emacs", "#!/bin/sh\nexit 0\n")
+	writeFakeScript(t, dir, "emacsclient", probeClient)
+	t.Setenv("PATH", dir)
+	t.Setenv("FAKE_SERVER_EXIT", "0")
+
+	got := detectDisplayCommand()
+	if got == "" {
+		t.Fatal("detectDisplayCommand() = empty, want emacsclient template")
+	}
+	if strings.Contains(got, "DSCLI_WAKEUP_PROJECT") || strings.Contains(got, "getenv") {
+		t.Errorf("template must not use env-var handoff, got: %q", got)
+	}
+	if strings.Contains(got, "$1") {
+		t.Errorf("template must not splice $1 into Lisp, got: %q", got)
+	}
+}
+
+// TestWriteWakeupProjectFile verifies the handoff file is created with the
+// project path and that a missing parent directory is created on demand.
+func TestWriteWakeupProjectFile(t *testing.T) {
+	dir := t.TempDir()
+	orig := wakeupProjectFile
+	wakeupProjectFile = func() string {
+		return filepath.Join(dir, "nested", "wakeup-project")
+	}
+	t.Cleanup(func() { wakeupProjectFile = orig })
+
+	project := "/home/nanjj/.local/src/github.com/dscli/dscli"
+	if err := writeWakeupProjectFile(project); err != nil {
+		t.Fatalf("writeWakeupProjectFile() error = %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "nested", "wakeup-project"))
+	if err != nil {
+		t.Fatalf("read handoff file: %v", err)
+	}
+	if string(data) != project {
+		t.Errorf("handoff file = %q, want %q", data, project)
+	}
+
+	// Overwrite on the next wakeup.
+	if err := writeWakeupProjectFile("/other/project"); err != nil {
+		t.Fatalf("second write error = %v", err)
+	}
+	data, err = os.ReadFile(filepath.Join(dir, "nested", "wakeup-project"))
+	if err != nil {
+		t.Fatalf("re-read handoff file: %v", err)
+	}
+	if string(data) != "/other/project" {
+		t.Errorf("handoff file after overwrite = %q, want %q", data, "/other/project")
+	}
+}
+
+// TestWriteWakeupProjectFileRejectsControlChars ensures a project path
+// with newline or NUL cannot corrupt the Emacs-side file read.
+func TestWriteWakeupProjectFileRejectsControlChars(t *testing.T) {
+	dir := t.TempDir()
+	orig := wakeupProjectFile
+	wakeupProjectFile = func() string {
+		return filepath.Join(dir, "wakeup-project")
+	}
+	t.Cleanup(func() { wakeupProjectFile = orig })
+
+	for _, bad := range []string{"/proj\nect", "/proj\x00ect"} {
+		if err := writeWakeupProjectFile(bad); err == nil {
+			t.Errorf("writeWakeupProjectFile(%q) error = nil, want control-char rejection", bad)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "wakeup-project")); !os.IsNotExist(err) {
+		t.Errorf("handoff file should not be created for invalid paths, stat err = %v", err)
+	}
+}
+
+// TestWakeupProjectFileRestored ensures the default handoff path lives in
+// the global config directory, so Emacs and dscli agree on its location.
+func TestWakeupProjectFileRestored(t *testing.T) {
+	if got := wakeupProjectFile(); got != filepath.Join(config.ConfigDir, "wakeup-project") {
+		t.Errorf("wakeupProjectFile() = %q, want %q", got, filepath.Join(config.ConfigDir, "wakeup-project"))
 	}
 }
