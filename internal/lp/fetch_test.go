@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -46,7 +47,7 @@ func TestFetchArgs(t *testing.T) {
 			t.Errorf("Fetch() = %q, want fake markdown", out)
 		}
 		got := readArgs(t)
-		want := []string{"fetch", "https://example.com", "--dump", "markdown"}
+		want := []string{"fetch", "https://example.com", "--dump", "markdown", "--http-timeout", strconv.Itoa(httpTimeoutMS)}
 		if strings.Join(got, " ") != strings.Join(want, " ") {
 			t.Errorf("args = %v, want %v", got, want)
 		}
@@ -55,9 +56,6 @@ func TestFetchArgs(t *testing.T) {
 	t.Run("all options", func(t *testing.T) {
 		_, err := Fetch(context.Background(), "https://example.com", FetchOptions{
 			Dump:        "html",
-			StripMode:   "js,css,ui",
-			WaitUntil:   "domcontentloaded",
-			WaitMS:      3000,
 			TerminateMS: 5000,
 			Proxy:       "socks5h://localhost:8777",
 		})
@@ -67,9 +65,7 @@ func TestFetchArgs(t *testing.T) {
 		got := strings.Join(readArgs(t), " ")
 		for _, want := range []string{
 			"--dump html",
-			"--strip-mode js,css,ui",
-			"--wait-until domcontentloaded",
-			"--wait-ms 3000",
+			"--http-timeout 300000",
 			"--terminate-ms 5000",
 			"--http-proxy socks5h://localhost:8777",
 		} {

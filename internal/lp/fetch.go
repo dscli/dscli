@@ -12,15 +12,19 @@ import (
 	"github.com/nanjj/clog"
 )
 
+// httpTimeoutMS is the maximum time a transfer may take, passed as
+// --http-timeout.  lightpanda's default is 10000ms (10s), which is too
+// tight for slow sites over a proxy; we fix it to 5 minutes.  The tool
+// call timeout (toolcall/web) is the ultimate backstop, and TerminateMS
+// lets callers impose a tighter per-page deadline.
+const httpTimeoutMS = 300000
+
 // FetchOptions configures a lightpanda fetch invocation.  Zero values
 // mean "use lightpanda's default" (except Dump, which defaults to markdown).
 type FetchOptions struct {
 	Dump        string // markdown | html | semantic_tree | semantic_tree_text
-	StripMode   string // comma-separated tag groups: js, css, ui, invisible, full
-	WaitUntil   string // load | domcontentloaded | networkalmostidle | networkidle | done
-	WaitMS      int    // wait time in milliseconds (lightpanda default 5000)
 	TerminateMS int    // hard deadline in milliseconds; 0 = no deadline
-	Proxy       string // --http-proxy URL (e.g. socks5h://localhost:8777); falls back to lightpanda-proxy config
+	Proxy       string // --http-proxy URL (e.g. socks5h://localhost:8777); falls back to lightpanda-proxy in ~/.dscli/dscli.env
 }
 
 // Fetch runs `lightpanda fetch` for a single URL and returns its stdout.
@@ -30,8 +34,8 @@ type FetchOptions struct {
 // The dump output is returned verbatim; callers should prefer markdown or
 // semantic_tree over html for large pages.
 //
-// The proxy comes from opts.Proxy, or from the lightpanda-proxy config
-// value when unset.
+// The proxy comes from opts.Proxy, or from the lightpanda-proxy value in
+// ~/.dscli/dscli.env when unset.
 func Fetch(ctx context.Context, rawURL string, opts FetchOptions) (string, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "Fetch")
 	defer span.Finish()
@@ -47,15 +51,10 @@ func Fetch(ctx context.Context, rawURL string, opts FetchOptions) (string, error
 		dump = "markdown"
 	}
 	args = append(args, "--dump", dump)
-	if opts.StripMode != "" {
-		args = append(args, "--strip-mode", opts.StripMode)
-	}
-	if opts.WaitUntil != "" {
-		args = append(args, "--wait-until", opts.WaitUntil)
-	}
-	if opts.WaitMS > 0 {
-		args = append(args, "--wait-ms", strconv.Itoa(opts.WaitMS))
-	}
+	// Fixed generous transfer timeout: lightpanda's 10s default is a hard
+	// wall for slow sites (e.g. Google over a proxy).  The tool call
+	// timeout in toolcall/web is the real backstop.
+	args = append(args, "--http-timeout", strconv.Itoa(httpTimeoutMS))
 	if opts.TerminateMS > 0 {
 		args = append(args, "--terminate-ms", strconv.Itoa(opts.TerminateMS))
 	}

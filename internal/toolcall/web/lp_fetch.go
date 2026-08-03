@@ -33,33 +33,20 @@ func init() {
 					"enum":        []string{"markdown", "html", "semantic_tree", "semantic_tree_text"},
 					"description": "Output format (default: markdown)",
 				},
-				"strip-mode": map[string]any{
-					"type":        "string",
-					"description": "Comma-separated tag groups to remove from the dump: js, css, ui, invisible, full (e.g. \"js,css,ui\")",
-				},
-				"wait-until": map[string]any{
-					"type":        "string",
-					"enum":        []string{"load", "domcontentloaded", "networkalmostidle", "networkidle", "done"},
-					"description": "Event to wait for before dumping (default: done). Use domcontentloaded for search engines, networkidle for dynamic pages",
-				},
-				"wait-ms": map[string]any{
-					"type":        "integer",
-					"description": "Wait time in milliseconds (default 5000)",
-				},
 				"terminate-ms": map[string]any{
 					"type":        "integer",
 					"description": "Hard deadline in milliseconds; aborts pages with endless scripts",
 				},
 				"proxy": map[string]any{
 					"type":        "string",
-					"description": "HTTP proxy URL, e.g. socks5h://localhost:8777. Use socks5h (proxy-side DNS), not socks5. Falls back to the lightpanda-proxy config",
+					"description": "HTTP proxy URL, e.g. socks5h://localhost:8777. Use socks5h (proxy-side DNS), not socks5. Falls back to the lightpanda-proxy value from ~/.dscli/dscli.env when unset",
 				},
 			},
 			"required":             []string{"url"},
 			"additionalProperties": false,
 		},
 		Category: "web",
-		Timeout:  120 * time.Second, // process-level backstop; per-page JS deadline is terminate-ms
+		Timeout:  330 * time.Second, // > http-timeout (300s); per-page JS deadline is terminate-ms
 		Handler:  handleLPFetch,
 	})
 }
@@ -77,9 +64,6 @@ func handleLPFetch(ctx context.Context, args toolcall.ToolArgs) (result, warning
 	}
 	opts := lp.FetchOptions{
 		Dump:        toolcall.ToolArgsValue(args, "dump", ""),
-		StripMode:   toolcall.ToolArgsValue(args, "strip-mode", ""),
-		WaitUntil:   toolcall.ToolArgsValue(args, "wait-until", ""),
-		WaitMS:      toolcall.ToolArgsValue(args, "wait-ms", 0),
 		TerminateMS: toolcall.ToolArgsValue(args, "terminate-ms", 0),
 		Proxy:       toolcall.ToolArgsValue(args, "proxy", ""),
 	}
