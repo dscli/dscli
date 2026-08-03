@@ -146,11 +146,11 @@ func handleWakeup(ctx context.Context, args toolcall.ToolArgs) (result, warning 
 	// Step 3: No running process — dispatch via configured display command.
 	// The display command carries ONLY the project path.  The message content
 	// is already in the chimeins queue — the started session reads it on boot.
-	dispatchCmd := config.Get("wakeup.command", "", "send-message.command")
-	if dispatchCmd == "" {
+	dispatchCmd := displayCommandFromConfig()
+	if len(dispatchCmd) == 0 {
 		dispatchCmd = detectDisplayCommand()
 	}
-	if dispatchCmd != "" {
+	if len(dispatchCmd) > 0 {
 		// Fire-and-forget: the command launches a visible dscli session
 		// in the user's IDE (Emacs frame, terminal window, etc.).  The
 		// project path travels as the command's working directory
@@ -159,7 +159,7 @@ func handleWakeup(ctx context.Context, args toolcall.ToolArgs) (result, warning 
 		// cwd, so the Lisp side reads the target project from
 		// default-directory.  No shared handoff state — concurrent
 		// wakeups of different projects cannot interfere.
-		go runDisplayCommand(dispatchCmd, project)
+		go runDisplayCommand(project, dispatchCmd[0], dispatchCmd[1:]...)
 		outfmt.Printf("📨 已唤醒 %s 处理项目 %s 的任务\n", targetName, projectName)
 		result = fmt.Sprintf("已唤醒 %s 处理项目 %s 的任务", targetName, projectName)
 	} else {
@@ -193,7 +193,13 @@ func isProcessRunning(projectPath string) bool {
 // detectDisplayCommand auto-detects the best display command based on
 // tools available on the system.  The mode decision is centralized in
 // emacsutil.Detect so editor and flycheck behave identically.
-func detectDisplayCommand() string {
+//
+// The returned argv is passed verbatim to exec.Command — no shell layer,
+// no string interpolation.  The project path never appears here: it
+// travels as the command's working directory (runDisplayCommand sets
+// cmd.Dir), so a crafted path can never become a shell metacharacter or
+// a Lisp form.  Returns nil when no display command is available.
+func detectDisplayCommand() []string {
 	switch emacsutil.Detect() {
 	case emacsutil.ModeClientServer:
 		// Emacs server (daemon) is up: attach a new frame via emacsclient.
@@ -201,11 +207,9 @@ func detectDisplayCommand() string {
 		// sets cmd.Dir to the target project, and emacsclient -e evaluates
 		// with default-directory following the client's cwd, so
 		// dscli--send-message-raw reads the project from default-directory.
-		// It must NEVER be spliced into a Lisp string literal: a crafted
-		// path like `") (shell-command "evil") "` would execute arbitrary
-		// Lisp in Emacs.  The Emacs Lisp function starts a dscli chat that
-		// reads the message from the chimeins queue on boot.
-		return `emacsclient -n -c -e '(dscli--send-message-raw)'`
+		// The Emacs Lisp function starts a dscli chat that reads the
+		// message from the chimeins queue on boot.
+		return []string{"emacsclient", "-n", "-c", "-e", "(dscli--send-message-raw)"}
 	case emacsutil.ModeStandalone:
 		// Standalone Emacs: start a fresh instance for this wakeup.
 		// Most users run Emacs without server-mode, where emacsclient
@@ -213,43 +217,67 @@ func detectDisplayCommand() string {
 		// `emacs` invocation always works and gives each chat its own
 		// frame instead of crowding a shared daemon.  The new instance's
 		// default-directory is cmd.Dir — the target project.
-		return `emacs --eval '(dscli--send-message-raw)'`
+		return []string{"emacs", "--eval", "(dscli--send-message-raw)"}
 	case emacsutil.ModeClientOnly:
 		// No emacs binary, but a client exists - last resort: it may
 		// still reach a server started by another installation.
-		return `emacsclient -n -c -e '(dscli--send-message-raw)'`
+		return []string{"emacsclient", "-n", "-c", "-e", "(dscli--send-message-raw)"}
 	}
-	// Future detectors (the project path still arrives as $1 from
-	// runDisplayCommand and as the command's working directory; never
-	// splice it into a Lisp string literal):
-	//   - VSCode: `code --command "dscli.startChat" --args "$1"`
-	//   - Vim/nvim:  terminal-based launch
-	//   - Terminal: `x-terminal-emulator -e sh -c 'cd "$1" && dscli chat'`
-	return ""
+	// Future detectors (the project path still arrives as the command's
+	// working directory; keep it out of argv so it is never interpreted):
+	//   - VSCode:   []string{"code", "--command", "dscli.startChat"} — reads cwd
+	//   - Vim/nvim: terminal-based launch
+	//   - Terminal: []string{"x-terminal-emulator", "-e", "dscli", "chat"} — inherits cwd
+	return nil
 }
 
-// runDisplayCommand executes the display command template with the given
-// project path, fire-and-forget.  The template is run via `sh -c` with
-// the project path passed as $1 - never interpolated into the command
-// string - so project paths containing shell metacharacters cannot be
-// injected.
+// displayCommandFromConfig resolves the user-configured display command:
 //
-// The project path also becomes the command's working directory
-// (cmd.Dir).  That is the handoff channel to the Emacs side: emacsclient
-// -e evaluates forms in the running server (daemon), whose environment
-// and startup directory are fixed, but the eval buffer's
-// default-directory follows the client's cwd.  dscli--send-message-raw
-// therefore reads the target project from default-directory — no env
-// var, no handoff file, no shared state, so concurrent wakeups of
-// different projects cannot interfere.
+//	wakeup-command = ["emacs", "--eval", "(dscli--send-message-raw)"]
+//
+// The array is passed verbatim to exec.Command — no shell layer, no
+// template expansion.  Any other value type (or nothing) means "not
+// configured" and returns nil, so the caller falls back to
+// detectDisplayCommand.
+func displayCommandFromConfig() []string {
+	v := config.GetValue("wakeup-command")
+	arr, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	cmd := make([]string, 0, len(arr))
+	for _, e := range arr {
+		if s, ok := e.(string); ok && s != "" {
+			cmd = append(cmd, s)
+		}
+	}
+	if len(cmd) == 0 {
+		return nil
+	}
+	return cmd
+}
+
+// runDisplayCommand executes the display command with the target project
+// as its working directory, fire-and-forget.  The command goes straight
+// to exec.Command as (name, args...) — there is no shell layer, so nothing
+// is reinterpreted: configured argv is used verbatim, and the project
+// path never appears in argv at all.
+//
+// The project path travels as the command's working directory (cmd.Dir).
+// That is the handoff channel to the Emacs side: emacsclient -e evaluates
+// forms in the running server (daemon), whose environment and startup
+// directory are fixed, but the eval buffer's default-directory follows
+// the client's cwd.  dscli--send-message-raw therefore reads the target
+// project from default-directory — no env var, no handoff file, no shared
+// state, so concurrent wakeups of different projects cannot interfere.
 //
 // The display command does NOT carry message content — the message is
 // already in the chimeins queue.  The command's sole job is to wake up
 // a dscli chat session in the user's IDE; the session reads the chimein
 // on startup.
-func runDisplayCommand(tmpl, project string) {
-	cmd := exec.Command("sh", "-c", tmpl, "sh", project)
-	cmd.Dir = project
+func runDisplayCommand(dir, name string, args ...string) {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
 	// The display command must outlive the waking AI.  Without
 	// detachment it inherits the caller's process group and controlling
 	// terminal, so closing the terminal that hosts the caller (or

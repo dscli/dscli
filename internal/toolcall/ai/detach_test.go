@@ -20,15 +20,18 @@ func TestRunDisplayCommandDetaches(t *testing.T) {
 		t.Skip("ps not available")
 	}
 	// project must be a real directory now — it becomes cmd.Dir.  The
-	// marker file lives outside it; the template writes to the marker's
-	// absolute path (test-controlled, no metacharacters).
+	// marker file lives outside it; the script writes to the marker's
+	// absolute path passed as $1 (test-controlled, no metacharacters).
 	project := t.TempDir()
 	marker := filepath.Join(t.TempDir(), "sid")
+	script := filepath.Join(t.TempDir(), "sid.sh")
 	// The command records its own sid+tty on the first line and the
 	// caller's sid on the second, then exits.
-	runDisplayCommand(
-		`{ ps -o sid=,tty= -p $$; ps -o sid= -p $PPID; } > "`+marker+`"`, project,
-	)
+	body := "#!/bin/sh\n{ ps -o sid=,tty= -p $$; ps -o sid= -p $PPID; } > \"$1\"\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runDisplayCommand(project, script, marker)
 
 	// The child opens the marker immediately on redirection but writes
 	// output afterwards; poll for complete content, not just existence.
@@ -65,13 +68,12 @@ func TestRunDisplayCommandDetaches(t *testing.T) {
 	}
 }
 
-// TestRunDisplayCommandNoInjection verifies the project path is passed
-// as a positional argument, so shell metacharacters in the path are
-// never interpreted.  The old %s interpolation executed $(...) inside a
-// double-quoted template.  The malicious path must still be a real
-// directory (it becomes cmd.Dir), so the payload lives in the directory
-// name itself; if the shell ever interpreted it, `touch pwned` would run
-// in the command's cwd (the project dir).
+// TestRunDisplayCommandNoInjection verifies the project path never enters
+// the command's argv: it travels only as cmd.Dir.  Under the old sh -c
+// template it was passed as $1, and before that %s interpolation executed
+// $(...) inside a double-quoted template.  With exec.Command there is no
+// shell layer at all — the test proves the malicious path is used
+// verbatim as the working directory and produces no side effects.
 func TestRunDisplayCommandNoInjection(t *testing.T) {
 	base := t.TempDir()
 	pwned := filepath.Join(base, "pwned")
@@ -79,16 +81,20 @@ func TestRunDisplayCommandNoInjection(t *testing.T) {
 	if err := os.Mkdir(evil, 0o755); err != nil {
 		t.Fatalf("mkdir malicious project dir: %v", err)
 	}
-	marker := filepath.Join(t.TempDir(), "out")
+	out := filepath.Join(t.TempDir(), "cwd.txt")
+	script := filepath.Join(t.TempDir(), "capture-cwd.sh")
+	// The script records its working directory (cmd.Dir = evil) into a
+	// fixed marker file; the evil path appears nowhere in the command.
+	if err := os.WriteFile(script, []byte("#!/bin/sh\npwd > \"$1\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
-	// The template echoes $1 verbatim into a fixed marker file; the
-	// project path appears only as a positional argument.
-	runDisplayCommand(`{ echo "$1"; } > "`+marker+`"`, evil)
+	runDisplayCommand(evil, script, out)
 
 	deadline := time.Now().Add(5 * time.Second)
 	var data []byte
 	for {
-		d, err := os.ReadFile(marker)
+		d, err := os.ReadFile(out)
 		if err == nil && len(d) > 0 {
 			data = d
 			break
@@ -100,7 +106,7 @@ func TestRunDisplayCommandNoInjection(t *testing.T) {
 	}
 
 	if got := strings.TrimSpace(string(data)); got != evil {
-		t.Errorf("project path was mangled: got %q, want %q", got, evil)
+		t.Errorf("command cwd = %q, want %q (project path used verbatim)", got, evil)
 	}
 	// `touch pwned` would run in the shell's cwd (= cmd.Dir, the evil
 	// directory); check both the project dir and its parent.

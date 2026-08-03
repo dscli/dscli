@@ -3,6 +3,7 @@ package ai
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -39,13 +40,13 @@ func TestDetectDisplayCommand(t *testing.T) {
 		name   string
 		has    []string // fake binaries to put on PATH
 		server string   // FAKE_SERVER_EXIT for the probe (empty = not running)
-		want   string   // substring the returned template must contain
+		want   []string // expected argv, nil for none
 	}{
-		{name: "no emacs tools", has: nil, want: ""},
-		{name: "only emacsclient", has: []string{"emacsclient"}, want: "emacsclient -n -c"},
-		{name: "emacs without server", has: []string{"emacs", "emacsclient"}, server: "1", want: "emacs --eval"},
-		{name: "emacs with server", has: []string{"emacs", "emacsclient"}, server: "0", want: "emacsclient -n -c"},
-		{name: "emacs only", has: []string{"emacs"}, server: "1", want: "emacs --eval"},
+		{name: "no emacs tools", has: nil, want: nil},
+		{name: "only emacsclient", has: []string{"emacsclient"}, want: []string{"emacsclient", "-n", "-c", "-e", "(dscli--send-message-raw)"}},
+		{name: "emacs without server", has: []string{"emacs", "emacsclient"}, server: "1", want: []string{"emacs", "--eval", "(dscli--send-message-raw)"}},
+		{name: "emacs with server", has: []string{"emacs", "emacsclient"}, server: "0", want: []string{"emacsclient", "-n", "-c", "-e", "(dscli--send-message-raw)"}},
+		{name: "emacs only", has: []string{"emacs"}, server: "1", want: []string{"emacs", "--eval", "(dscli--send-message-raw)"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -63,8 +64,8 @@ func TestDetectDisplayCommand(t *testing.T) {
 			}
 
 			got := detectDisplayCommand()
-			if !strings.Contains(got, tt.want) {
-				t.Errorf("detectDisplayCommand() = %q, want containing %q", got, tt.want)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("detectDisplayCommand() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -85,14 +86,15 @@ func TestDetectDisplayCommandNoEnvHandoff(t *testing.T) {
 	t.Setenv("FAKE_SERVER_EXIT", "0")
 
 	got := detectDisplayCommand()
-	if got == "" {
-		t.Fatal("detectDisplayCommand() = empty, want emacsclient template")
+	if len(got) == 0 {
+		t.Fatal("detectDisplayCommand() = empty, want emacsclient command")
 	}
-	if strings.Contains(got, "DSCLI_WAKEUP_PROJECT") || strings.Contains(got, "getenv") {
-		t.Errorf("template must not use env-var handoff, got: %q", got)
+	joined := strings.Join(got, " ")
+	if strings.Contains(joined, "DSCLI_WAKEUP_PROJECT") || strings.Contains(joined, "getenv") {
+		t.Errorf("command must not use env-var handoff, got: %v", got)
 	}
-	if strings.Contains(got, "$1") {
-		t.Errorf("template must not splice $1 into Lisp, got: %q", got)
+	if strings.Contains(joined, "$1") {
+		t.Errorf("command must not reference a positional project arg, got: %v", got)
 	}
 }
 
@@ -104,9 +106,15 @@ func TestDetectDisplayCommandNoEnvHandoff(t *testing.T) {
 func TestRunDisplayCommandUsesProjectDir(t *testing.T) {
 	project := t.TempDir()
 	out := filepath.Join(t.TempDir(), "cwd.txt")
-	tmpl := "pwd > '" + out + "'"
+	script := filepath.Join(t.TempDir(), "capture-cwd.sh")
+	// The script records its own working directory into the marker file
+	// passed as $1.  runDisplayCommand executes it directly (no shell
+	// wrapper), so the captured cwd proves cmd.Dir == project.
+	if err := os.WriteFile(script, []byte("#!/bin/sh\npwd > \"$1\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
-	runDisplayCommand(tmpl, project)
+	runDisplayCommand(project, script, out)
 
 	// The command starts async children; poll for the capture file.
 	deadline := time.Now().Add(2 * time.Second)
