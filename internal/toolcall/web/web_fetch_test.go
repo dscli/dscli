@@ -38,8 +38,9 @@ func TestWebFetchToolSchema(t *testing.T) {
 			t.Errorf("parameter %q should not be exposed", banned)
 		}
 	}
-	if _, ok := def.Parameters["required"].([]string); !ok {
-		t.Errorf("required should be a []string: %v", def.Parameters["required"])
+	required, ok := def.Parameters["required"].([]string)
+	if !ok || len(required) != 1 || required[0] != "url" {
+		t.Errorf("required = %v (type %T), want exactly [\"url\"]", def.Parameters["required"], def.Parameters["required"])
 	}
 }
 

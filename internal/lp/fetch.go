@@ -129,7 +129,11 @@ func fetchOnce(ctx context.Context, path, rawURL, dump, proxy string, timeoutMS,
 	}
 	var res fetchResult
 	if err := json.Unmarshal([]byte(out), &res); err != nil {
-		return "", fmt.Errorf("lightpanda fetch: parse --json output: %w", err)
+		preview := out
+		if len(preview) > 100 {
+			preview = preview[:100]
+		}
+		return "", fmt.Errorf("lightpanda fetch: parse --json output: %w (output: %q)", err, preview)
 	}
 	switch {
 	case res.HTTPStatus == 0:
@@ -138,6 +142,9 @@ func fetchOnce(ctx context.Context, path, rawURL, dump, proxy string, timeoutMS,
 		}
 		return "", fmt.Errorf("lightpanda fetch: page did not load (HTTP status 0); site may be blocked or unreachable")
 	case res.HTTPStatus >= 400:
+		if res.HTTPStatus == 429 && isGoogleHost(rawURL) {
+			return "", fmt.Errorf("lightpanda fetch: HTTP 429: Google rate-limited the request (bot detection); use Bing for search")
+		}
 		return "", fmt.Errorf("lightpanda fetch: HTTP %d", res.HTTPStatus)
 	case strings.TrimSpace(res.Content) == "":
 		return "", fmt.Errorf("lightpanda fetch: page returned no content")

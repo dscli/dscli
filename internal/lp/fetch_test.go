@@ -36,6 +36,7 @@ case "$FAKE_MODE" in
       *) echo '{"url":"u","http_status":0,"content":""}' ;;
     esac ;;
   status404) echo '{"url":"u","http_status":404,"content":"not found"}' ;;
+  status429) echo '{"url":"u","http_status":429,"content":"sorry"}' ;;
   empty) echo '{"url":"u","http_status":200,"content":""}' ;;
   interstitial) echo '{"url":"u","http_status":200,"content":"Trouble accessing Google Search, please click here"}' ;;
   raw) echo 'this is not json' ;;
@@ -229,6 +230,8 @@ func TestFetchResultValidation(t *testing.T) {
 		wantErr string
 	}{
 		{name: "http error", mode: "status404", wantErr: "HTTP 404"},
+		{name: "google 429 hints bing", mode: "status429", url: "https://www.google.com/search?q=x", wantErr: "Bing"},
+		{name: "non-google 429 is generic", mode: "status429", wantErr: "HTTP 429"},
 		{name: "empty content", mode: "empty", wantErr: "no content"},
 		{name: "bot interstitial", mode: "interstitial", url: "https://www.google.com/search?q=x", wantErr: "anti-bot"},
 		{name: "raw output", mode: "raw", wantErr: "parse --json"},
