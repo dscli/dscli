@@ -133,7 +133,6 @@ func GetToolDisplayName(name string) string {
 }
 
 // RegisterTool 注册工具
-// RegisterTool 注册工具
 func RegisterTool(tool ToolDef) error {
 	toolRegistryRWMutex.Lock()
 	defer toolRegistryRWMutex.Unlock()
@@ -167,7 +166,6 @@ func KnownToolNames() []string {
 	return names
 }
 
-// GetAllTools 获取所有工具定义（用于API调用）
 // GetAllTools returns tools available for the current role.
 // Filters tools by role config from DB; falls back to hardcoded:
 // dev gets all, others get none.
