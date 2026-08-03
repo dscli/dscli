@@ -48,11 +48,6 @@ Create 会解析 cmd 的绝对路径并写入平台特定的服务配置，但�
 Create 是幂等的：如果服务文件已存在且内容相同，不会重复写入。
 
 示例：
-  dscli service create dscli-lightpanda <<EOF
-  Lightpanda Browser (dscli)
-  lightpanda serve --host 127.2.2.9 --port 9227
-  EOF
-
   dscli service create myapp <<EOF
   My Application
   /usr/local/bin/myapp --verbose --config /etc/myapp.conf
@@ -150,7 +145,7 @@ Create 是幂等的：如果服务文件已存在且内容相同，不会重复�
 示例：
   dscli service status lp
   dscli service status
-  dscli service status dscli-lightpanda --scan`,
+  dscli service status myapp --scan`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: serviceStatusRunE,
 	}

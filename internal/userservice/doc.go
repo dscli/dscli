@@ -150,11 +150,11 @@
 //
 //	import "github.com/dscli/dscli/internal/userservice"
 //
-//	cmd := exec.Command("/usr/bin/lightpanda", "serve", "--host", "127.2.2.9", "--port", "9227")
-//	if err := userservice.Create("dscli-lightpanda", "Lightpanda Browser", cmd); err != nil {
+//	cmd := exec.Command("/usr/local/bin/myapp", "--serve")
+//	if err := userservice.Create("myapp", "My Application", cmd); err != nil {
 //	    // handle
 //	}
-//	if err := userservice.Start("dscli-lightpanda"); err != nil {
+//	if err := userservice.Start("myapp"); err != nil {
 //	    // handle
 //	}
 package userservice
