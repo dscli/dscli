@@ -4,7 +4,6 @@ Ask expert for help.
 
 Ask an expert to review plans or answer difficult questions.
 Uses DeepSeek Web (free V4 Pro) via Chrome browser — no API key needed,
-so feel free to consult the expert whenever you need deep analysis.
 
 Parameters:
 
@@ -16,7 +15,13 @@ Parameters:
 
 - summary: brief summary (optional)
 
-- attachments: file attachments list (optional)
+- attachments: file attachments list (optional). Images (png/jpg/gif/webp/
+  bmp) are uploaded to the web chat and analyzed visually; other files are
+  inlined as text (max 1MB each, safe paths, up to 50 files/100MB).
+
+- mode: web chat mode (optional). "pro" (expert, default), "flash" (fast
+  with smart search), "vision" (image uploads). Empty: vision if images
+  attached, else pro.
 
 - role: role name for the system prompt (optional, default "expert"). Uses the
   prompt override chain: .dscli/prompt/<role>.md, ~/.dscli/prompt/<role>.md,
@@ -28,5 +33,4 @@ Parameters:
 - timeout: timeout in seconds (default 600). Set longer for complex questions
   requiring deep analysis.
 
-Use when facing technical difficulties, needing plan review, or
-requiring in-depth analysis.
+Use for technical difficulties, plan review, or in-depth analysis.

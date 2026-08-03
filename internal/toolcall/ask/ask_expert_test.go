@@ -12,9 +12,11 @@ import (
 
 // capturedCall records the arguments passed to askExpertWithRoleFunc.
 type capturedCall struct {
-	input  string
-	role   string
-	system string
+	input       string
+	role        string
+	system      string
+	mode        string
+	attachments []string
 }
 
 // captureAskExpert replaces askExpertWithRoleFunc with a recording mock and
@@ -24,10 +26,12 @@ func captureAskExpert(t *testing.T) *capturedCall {
 	t.Helper()
 	orig := askExpertWithRoleFunc
 	calls := &capturedCall{}
-	askExpertWithRoleFunc = func(_ context.Context, input, role, system string) (string, error) {
+	askExpertWithRoleFunc = func(_ context.Context, input, role, system, mode string, attachments []string) (string, error) {
 		calls.input = input
 		calls.role = role
 		calls.system = system
+		calls.mode = mode
+		calls.attachments = attachments
 		return "[MOCK]", nil
 	}
 	t.Cleanup(func() { askExpertWithRoleFunc = orig })
@@ -63,7 +67,7 @@ func TestAskExpertToolParameters(t *testing.T) {
 	if params == nil {
 		t.Fatal("tool parameters missing properties")
 	}
-	for _, key := range []string{"content", "content_file", "summary", "attachments", "role", "system", "timeout"} {
+	for _, key := range []string{"content", "content_file", "summary", "attachments", "role", "system", "mode", "timeout"} {
 		if _, ok := params[key]; !ok {
 			t.Errorf("tool parameters missing %q", key)
 		}
@@ -240,8 +244,8 @@ func TestHandleAskExpertContentFileMissing(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing file, got nil")
 	}
-	if !strings.Contains(err.Error(), "failed to open") {
-		t.Errorf("error = %q, want open failure message", err)
+	if !strings.Contains(err.Error(), "failed to resolve") {
+		t.Errorf("error = %q, want resolve failure message", err)
 	}
 }
 
@@ -332,5 +336,103 @@ func TestAskExpertCustom(t *testing.T) {
 	// Empty role falls back to expert; system is passed through.
 	if calls.role != "expert" || calls.system != "system text" {
 		t.Errorf("AskExpertCustom(system): got role=%q system=%q", calls.role, calls.system)
+	}
+}
+
+// tempImageInCwd creates a fake image file (extension only) under cwd and
+// returns its relative name. The content is never read for uploads, so any
+// bytes pass.
+func tempImageInCwd(t *testing.T, name string) string {
+	t.Helper()
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(cwd, name)
+	if err := os.WriteFile(path, []byte("fake image bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Remove(path) })
+	return name
+}
+
+func TestHandleAskExpertImageAttachment(t *testing.T) {
+	calls := captureAskExpert(t)
+	img := tempImageInCwd(t, "askexpert-test-screenshot.png")
+	args := toolcall.ToolArgs{
+		"content":     "What does this screenshot show?",
+		"attachments": []string{img},
+	}
+
+	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
+		t.Fatalf("handleAskExpert: %v", err)
+	}
+	if len(calls.attachments) != 1 || calls.attachments[0] != img {
+		t.Errorf("attachments = %v, want [%s]", calls.attachments, img)
+	}
+	if strings.Contains(calls.input, "fake image bytes") {
+		t.Error("image content must not be inlined into the request text")
+	}
+}
+
+func TestHandleAskExpertMixedAttachments(t *testing.T) {
+	calls := captureAskExpert(t)
+	img := tempImageInCwd(t, "askexpert-test-mixed.png")
+	text := tempFileInCwd(t, "text attachment content")
+	args := toolcall.ToolArgs{
+		"content":     "Question",
+		"attachments": []string{img, text},
+	}
+
+	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
+		t.Fatalf("handleAskExpert: %v", err)
+	}
+	if len(calls.attachments) != 1 || calls.attachments[0] != img {
+		t.Errorf("attachments = %v, want only the image [%s]", calls.attachments, img)
+	}
+	if !strings.Contains(calls.input, "text attachment content") {
+		t.Error("non-image attachment must be inlined as text")
+	}
+}
+
+func TestHandleAskExpertUnsafeImageAttachment(t *testing.T) {
+	calls := captureAskExpert(t)
+	args := toolcall.ToolArgs{
+		"content":     "Question",
+		"attachments": []string{"../outside.png"},
+	}
+
+	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
+		t.Fatalf("handleAskExpert: %v", err)
+	}
+	if len(calls.attachments) != 0 {
+		t.Errorf("attachments = %v, want none (unsafe path must be dropped)", calls.attachments)
+	}
+}
+
+func TestHandleAskExpertMode(t *testing.T) {
+	calls := captureAskExpert(t)
+	args := toolcall.ToolArgs{
+		"content": "Question",
+		"mode":    "flash",
+	}
+
+	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
+		t.Fatalf("handleAskExpert: %v", err)
+	}
+	if calls.mode != "flash" {
+		t.Errorf("mode = %q, want flash", calls.mode)
+	}
+}
+
+func TestHandleAskExpertModeDefaultsToEmpty(t *testing.T) {
+	calls := captureAskExpert(t)
+	args := toolcall.ToolArgs{"content": "Question"}
+
+	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
+		t.Fatalf("handleAskExpert: %v", err)
+	}
+	if calls.mode != "" {
+		t.Errorf("mode = %q, want empty (auto-select in web chat layer)", calls.mode)
 	}
 }

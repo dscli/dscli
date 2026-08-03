@@ -14,6 +14,8 @@ import (
 	"github.com/dscli/dscli/internal/context"
 	"github.com/nanjj/clog"
 
+	"github.com/chromedp/cdproto/dom"
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )
 
@@ -45,23 +47,168 @@ const (
 	return {success: true};
 })()`
 
-	// jsEnableDeepThink switches the model selector to expert/deepthink mode.
-	// DeepSeek renders radio buttons with data-model-type attributes:
-	//   data-model-type="default" → 快速模式 (quick)
-	//   data-model-type="<other>"  → 专家模式 / V4 Pro (expert)
-	//
-	// Strategy: find the radio with data-model-type != "default" and click it.
-	// This is stable across UI changes because the attribute is structural,
-	// not textual.
-	jsEnableDeepThink = `(() => {
-	for (const el of document.querySelectorAll('[data-model-type]')) {
-		if (el.getAttribute('data-model-type') !== 'default') {
-			el.click();
-			return {success: true, modelType: el.getAttribute('data-model-type'), method: 'data-model-type'};
+	// jsSelectModeFmt switches the model selector to the requested mode
+	// (flash = 快速模式, pro = 专家模式, vision = 识图模式). %s is the
+	// quoted mode name. DeepSeek renders the selector as radio buttons with
+	// data-model-type attributes; the strategy prefers the structural
+	// attribute and falls back to label text:
+	//   data-model-type="default" → 快速模式 (flash)
+	//   data-model-type="<other>" → 专家模式 / V4 Pro (pro)
+	// The third radio (识图模式 / vision) is matched by label text or a
+	// vision-ish attribute value.
+	jsSelectModeFmt = `(() => {
+		const want = %s;
+		const radios = document.querySelectorAll('[data-model-type]');
+		if (radios.length === 0) {
+			return {success: false, error: 'no mode selector found'};
 		}
-	}
-	return {success: false};
-})()`
+		// Label text: the element's own text first, then its ancestors.
+		// The radio's parent is a shared container whose text contains ALL
+		// mode labels, so ancestor walks must never be the primary source.
+		const labelOf = function(el) {
+			var t = (el.textContent || '').trim();
+			if (t) return t;
+			var p = el.parentElement;
+			for (var i = 0; i < 2 && p; i++) {
+				t = (p.textContent || '').trim();
+				if (t) return t;
+				p = p.parentElement;
+			}
+			return '';
+		};
+		const find = function(pred) {
+			for (const r of radios) {
+				if (pred(r)) return r;
+			}
+			return null;
+		};
+		const lt = function(r) { return labelOf(r).toLowerCase(); };
+		let target = null;
+		let method = '';
+		if (want === 'flash') {
+			target = find(function(r) { return r.getAttribute('data-model-type') === 'default'; });
+			if (target) { method = 'data-model-type=default'; }
+			else {
+				target = find(function(r) { return lt(r).indexOf('快速') !== -1; });
+				if (target) method = 'label=快速模式';
+			}
+		} else if (want === 'pro') {
+			target = find(function(r) { return r.getAttribute('data-model-type') === 'expert'; });
+			if (target) { method = 'data-model-type=expert'; }
+			else {
+				// Fallback for older UIs: first non-default radio that is
+				// not the vision one (flash is excluded by data-model-type,
+				// vision by its own label text).
+				target = find(function(r) {
+					const t = r.getAttribute('data-model-type');
+					const own = (r.textContent || '').toLowerCase();
+					return t && t !== 'default' && own.indexOf('识图') === -1 && own.indexOf('vision') === -1;
+				});
+				if (target) { method = 'data-model-type=' + target.getAttribute('data-model-type'); }
+				else {
+					target = find(function(r) { return lt(r).indexOf('专家') !== -1; });
+					if (target) method = 'label=专家模式';
+				}
+			}
+			if (!target) {
+				// Last resort for the two-radio UI: first non-default.
+				target = find(function(r) { return r.getAttribute('data-model-type') !== 'default'; });
+				if (target) method = 'data-model-type!=default';
+			}
+		} else if (want === 'vision') {
+			// Attribute first: the real DOM uses data-model-type="vision",
+			// and label matching is ambiguous — the flash radio's shared
+			// ancestor container also contains the 识图 label.
+			target = find(function(r) {
+				const t = (r.getAttribute('data-model-type') || '').toLowerCase();
+				return t.indexOf('vision') !== -1 || t.indexOf('image') !== -1;
+			});
+			if (target) { method = 'data-model-type=' + target.getAttribute('data-model-type'); }
+			else {
+				target = find(function(r) { return lt(r).indexOf('识图') !== -1 || lt(r).indexOf('vision') !== -1; });
+				if (target) method = 'label=识图模式';
+			}
+		}
+		if (!target) {
+			return {success: false, error: 'mode not found: ' + want};
+		}
+		target.click();
+		return {success: true, mode: want, method: method, modelType: target.getAttribute('data-model-type')};
+	})()`
+
+	// jsToggleChipFmt ensures a labeled toggle chip (深度思考, 智能搜索) is
+	// in the wanted state. %s1 is a JSON array of label fragments, %s2 is
+	// "true" or "false". Chips are buttons/labels whose text matches; the
+	// active state is read from aria attributes, data-state, or class
+	// names, and the chip is clicked only when its state differs from
+	// wanted (clicking an already-active toggle would turn it OFF).
+	jsToggleChipFmt = `(() => {
+		const labels = %s;
+		const wantActive = %s;
+		const els = document.querySelectorAll('button, [role="button"], [role="switch"], [role="checkbox"], [role="radio"], label, [class*="toggle"], [class*="chip"], [class*="option"]');
+		let best = null;
+		for (const el of els) {
+			const t = (el.textContent || '').trim();
+			if (t.length === 0 || t.length > 30) continue;
+			const hit = labels.some(function(l) { return t === l || t.indexOf(l) !== -1; });
+			if (!hit) continue;
+			// Skip plain text wrappers (span without role or chip class).
+			const tag = el.tagName.toLowerCase();
+			const role = el.getAttribute('role') || '';
+			if (tag === 'span' && !role && !/\b(toggle|chip|option)\b/.test(el.className || '')) continue;
+			best = el;
+			break;
+		}
+		if (!best) {
+			return {success: false, error: 'toggle not found: ' + labels.join('/')};
+		}
+		const cls = best.className || '';
+		const stateAttr = best.getAttribute('aria-pressed') || best.getAttribute('aria-checked') ||
+			best.getAttribute('aria-selected') || best.getAttribute('data-state') || '';
+		const active = stateAttr === 'true' || stateAttr === 'active' || stateAttr === 'checked' ||
+			stateAttr === 'selected' || /\b(active|selected|checked|on)\b/.test(cls);
+		if (active === wantActive) {
+			return {success: true, already: true, label: best.textContent.trim()};
+		}
+		best.click();
+		return {success: true, clicked: true, wasActive: active, label: best.textContent.trim()};
+	})()`
+
+	// jsFindFileInput reports whether the chat page has a file input in the
+	// DOM. Modern chat UIs pre-render a hidden <input type="file"> and open
+	// it from the paperclip button, so uploads usually need no click at all.
+	jsFindFileInput = `(() => {
+		return {found: !!document.querySelector('input[type="file"]')};
+	})()`
+
+	// jsClickUploadBtnFmt clicks the upload (paperclip) button by
+	// aria-label/title/text heuristics. Used when the file input is not in
+	// the DOM and must be revealed by the button.
+	jsClickUploadBtnFmt = `(() => {
+		const keys = ['上传', '附件', 'upload', 'attachment', 'paperclip'];
+		const els = document.querySelectorAll('button, [role="button"], [aria-label], [title]');
+		for (const el of els) {
+			if (el.offsetParent === null) continue;
+			const t = (el.textContent || '').trim();
+			if (t.length > 20) continue;
+			const aria = ((el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('title') || '')).toLowerCase();
+			const txt = t.toLowerCase();
+			for (const k of keys) {
+				if (aria.indexOf(k) !== -1 || txt.indexOf(k) !== -1) {
+					el.click();
+					return {success: true, matched: k};
+				}
+			}
+		}
+		return {success: false, error: 'upload button not found'};
+	})()`
+
+	// jsUploadPreviewCountFmt counts blob/data-URL images, which is how the
+	// chat renders upload previews. Used to confirm React picked up the files.
+	jsUploadPreviewCountFmt = `(() => {
+		const imgs = document.querySelectorAll('img[src^="blob:"], img[src^="data:image/"]');
+		return {count: imgs.length};
+	})()`
 
 	// jsGetAssistantText extracts all assistant response text from
 	// .ds-markdown elements in the MAIN content area (NOT sidebar/navigation).
@@ -156,6 +303,42 @@ const (
 	})()`
 )
 
+// Mode selects which DeepSeek web chat mode to use.
+type Mode string
+
+const (
+	// ModePro is 专家模式 (V4 Pro): deep think only, no uploads.
+	ModePro Mode = "pro"
+	// ModeFlash is 快速模式 (V4 Flash): deep think, smart search and uploads.
+	ModeFlash Mode = "flash"
+	// ModeVision is 识图模式 (V4 Vision): deep think and uploads.
+	ModeVision Mode = "vision"
+)
+
+// validModes lists the modes accepted by validateWebChatOptions.
+var validModes = map[Mode]bool{
+	ModePro:    true,
+	ModeFlash:  true,
+	ModeVision: true,
+}
+
+// WebChatOptions configures a WebChat call.
+type WebChatOptions struct {
+	// Mode selects the web chat mode (ModePro, ModeFlash, ModeVision).
+	// Empty means: pro for new conversations, vision when attachments are
+	// given, and the conversation's existing mode is preserved when Keep
+	// is true.
+	Mode Mode
+
+	// Attachments are image file paths uploaded to the chat. Only flash
+	// and vision modes support uploads (up to 50 files, 100MB total).
+	Attachments []string
+
+	// Keep continues the last saved conversation instead of starting a
+	// new one.
+	Keep bool
+}
+
 // WebChat sends a message to chat.deepseek.com via a local Chrome/Chromium
 // browser and returns the assistant's text response.
 //
@@ -165,22 +348,60 @@ const (
 //
 // If ctx carries context.KeepKey set to true, WebChat attempts to continue the
 // last saved conversation (loaded from the profile directory) rather than
-// starting a new one. New conversations automatically enable expert mode
-// (V4 Pro).
+// starting a new one. New conversations use expert mode (V4 Pro). Use
+// WebChatWithOptions for explicit mode selection and file uploads.
 func WebChat(ctx context.Context, message string) (string, error) {
-	span, ctx := clog.StartSpanFromContext(ctx, "WebChat")
-	defer span.Finish()
-	keep := context.ContextValue(ctx, context.KeepKey, false)
-	convURL := ""
-	if keep {
-		convURL = loadConversationURL()
-	}
-	return webChatWithURL(ctx, convURL, message)
+	return WebChatWithOptions(ctx, message, WebChatOptions{
+		Keep: context.ContextValue(ctx, context.KeepKey, false),
+	})
 }
 
-// webChatWithURL is the common implementation shared by WebChat
-// (new conv, empty url) and continue (saved url).
-func webChatWithURL(ctx context.Context, conversationURL, message string) (string, error) {
+// WebChatWithOptions is WebChat with explicit mode and attachment options.
+// Options are normalized and validated before a browser is launched, so bad
+// input (unknown mode, oversized attachments) fails fast without starting
+// Chrome. See WebChatOptions for the mode defaults.
+func WebChatWithOptions(ctx context.Context, message string, opts WebChatOptions) (string, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "WebChatWithOptions")
+	defer span.Finish()
+	opts = normalizeWebChatOptions(opts)
+	if err := validateWebChatOptions(opts); err != nil {
+		return "", err
+	}
+	convURL := ""
+	if opts.Keep {
+		convURL = loadConversationURL()
+	}
+	return webChatWithURL(ctx, convURL, message, opts)
+}
+
+// normalizeWebChatOptions fills in implicit mode choices.
+func normalizeWebChatOptions(opts WebChatOptions) WebChatOptions {
+	if opts.Mode == "" {
+		switch {
+		case len(opts.Attachments) > 0:
+			opts.Mode = ModeVision // the multi-modal mode
+		case !opts.Keep:
+			opts.Mode = ModePro // default for new conversations
+		}
+	}
+	return opts
+}
+
+// validateWebChatOptions checks mode and attachment limits before launching
+// a browser, so bad input fails fast without starting Chrome.
+func validateWebChatOptions(opts WebChatOptions) error {
+	if opts.Mode != "" && !validModes[opts.Mode] {
+		return fmt.Errorf("unknown webchat mode %q (want flash, pro or vision)", opts.Mode)
+	}
+	if opts.Mode == ModePro && len(opts.Attachments) > 0 {
+		return fmt.Errorf("attachments require flash or vision mode, got %q", opts.Mode)
+	}
+	return validateWebAttachments(opts.Attachments)
+}
+
+// webChatWithURL is the common implementation shared by new conversations
+// (empty url) and continuation (saved url).
+func webChatWithURL(ctx context.Context, conversationURL, message string, opts WebChatOptions) (string, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "webChatWithURL")
 	defer span.Finish()
 	ctx, cancel, err := NewChromium(ctx)
@@ -190,7 +411,7 @@ func webChatWithURL(ctx context.Context, conversationURL, message string) (strin
 	defer cancel()
 	ctx, close := chromedp.NewContext(ctx)
 	defer close()
-	response, finalURL, err := webchatSend(ctx, conversationURL, message, 0)
+	response, finalURL, err := webchatSend(ctx, conversationURL, message, opts, 0)
 	if err != nil {
 		return "", fmt.Errorf("webchat: %w", err)
 	}
@@ -205,7 +426,12 @@ func webChatWithURL(ctx context.Context, conversationURL, message string) (strin
 // webchatSend sends a message and returns the response plus the final page URL
 // (which contains the conversation ID for continuation). If login is needed,
 // it triggers a manual login flow in the same Chrome session and retries once.
-func webchatSend(tabCtx context.Context, conversationURL, message string, retry int) (string, string, error) {
+//
+// opts.Mode selects the web chat mode; an empty mode leaves the
+// conversation's current mode untouched (used when continuing a
+// conversation). opts.Attachments are image files uploaded before sending
+// (flash/vision modes only; pro rejects them in validateWebChatOptions).
+func webchatSend(tabCtx context.Context, conversationURL, message string, opts WebChatOptions, retry int) (string, string, error) {
 	span, ctx := clog.StartSpanFromContext(tabCtx, "webchatSend")
 	defer span.Finish()
 	navURL := conversationURL
@@ -242,30 +468,26 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, retry 
 		)
 	}
 
-	// Enable expert/deepthink mode (V4 Pro) for all conversations.
-	// This improves review quality and response depth.
-	actions = append(actions, chromedp.ActionFunc(func(ctx context.Context) error {
-		var result map[string]any
-		if err := chromedp.Evaluate(jsEnableDeepThink, &result).Do(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "⚠️ 专家模式启用失败: %v\n", err)
-			return nil // non-fatal
-		}
-		if ok, _ := result["success"].(bool); ok {
-			method, _ := result["method"].(string)
-			switch method {
-			case "data-model-type":
-				mt, _ := result["modelType"].(string)
-				fmt.Fprintf(os.Stderr, "🔬 已启用专家模式 (model=%s)\n", mt)
-			default:
-				fmt.Fprintln(os.Stderr, "🔬 已启用专家模式 (V4 Pro)")
-			}
-		}
-		return nil
-	}))
-	// Pause for the toggle to take effect before textarea interaction.
-	// jsSendEnter handles textarea focus internally (click → focus → select),
-	// so no separate focus action is needed here.
-	actions = append(actions, chromedp.Sleep(1*time.Second))
+	// Apply the requested mode: model selector radio, deep think for every
+	// mode, smart search for flash. Skipped when mode is "" (continue the
+	// conversation with its existing mode).
+	if opts.Mode != "" {
+		actions = append(actions, chromedp.ActionFunc(func(ctx context.Context) error {
+			webchatApplyMode(ctx, opts.Mode)
+			return nil
+		}))
+		// Pause for the toggle to take effect before textarea interaction.
+		actions = append(actions, chromedp.Sleep(1*time.Second))
+	}
+
+	// Upload attachments (flash/vision modes only). Fatal on failure: files
+	// the caller asked to attach must not be silently dropped.
+	if len(opts.Attachments) > 0 {
+		actions = append(actions, chromedp.ActionFunc(func(ctx context.Context) error {
+			return webchatUpload(ctx, opts.Attachments)
+		}))
+	}
+
 	actions = append(
 		actions,
 		// Record baseline text before sending.
@@ -309,7 +531,7 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, retry 
 			if loginErr := deepseekLogin(ctx, "", nil, true); loginErr != nil {
 				return "", "", fmt.Errorf("webchat login: %w", loginErr)
 			}
-			return webchatSend(ctx, conversationURL, message, retry+1)
+			return webchatSend(ctx, conversationURL, message, opts, retry+1)
 		}
 		return "", "", fmt.Errorf("webchat: %w", err)
 	}
@@ -336,6 +558,220 @@ func webchatSetValue(ctx context.Context, message string) error {
 	if errMsg, ok := result["error"].(string); ok {
 		return fmt.Errorf("%s: %w", errMsg, ErrLoginRequired)
 	}
+	return nil
+}
+
+// webchatApplyMode switches the model selector to the requested mode and
+// ensures the deep-think toggle (and smart search for flash) is on. Mode
+// selection is best-effort: a UI change that breaks the selector is logged
+// loudly but does not fail the chat (the page keeps its current mode).
+// Deep think is inherent in expert mode, so chips are only toggled for
+// flash and vision.
+func webchatApplyMode(ctx context.Context, mode Mode) {
+	var result map[string]any
+	js := fmt.Sprintf(jsSelectModeFmt, quoteJS(string(mode)))
+	if err := chromedp.Evaluate(js, &result).Do(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "⚠️ 模式切换失败 (%s): %v\n", mode, err)
+		return
+	}
+	if ok, _ := result["success"].(bool); !ok {
+		msg, _ := result["error"].(string)
+		fmt.Fprintf(os.Stderr, "⚠️ 模式切换失败 (%s): %s\n", mode, msg)
+		return
+	}
+	method, _ := result["method"].(string)
+	modelType, _ := result["modelType"].(string)
+	switch mode {
+	case ModeFlash:
+		fmt.Fprintf(os.Stderr, "⚡ 已启用快速模式 (%s%s)\n", method, modelSuffix(modelType))
+	case ModeVision:
+		fmt.Fprintf(os.Stderr, "👁 已启用识图模式 (%s%s)\n", method, modelSuffix(modelType))
+	default:
+		fmt.Fprintf(os.Stderr, "🔬 已启用专家模式 (%s%s)\n", method, modelSuffix(modelType))
+	}
+	// Deep think is available in every mode except that expert mode has it
+	// built in; flash and vision expose a chip.
+	if mode == ModeFlash || mode == ModeVision {
+		webchatToggleChip(ctx, []string{"深度思考", "Deep Think"}, true)
+	}
+	// Smart search is a flash-mode extra.
+	if mode == ModeFlash {
+		webchatToggleChip(ctx, []string{"智能搜索", "联网搜索", "Deep Search"}, true)
+	}
+}
+
+// modelSuffix formats an optional model type for the mode log line.
+func modelSuffix(modelType string) string {
+	if modelType == "" {
+		return ""
+	}
+	return ", model=" + modelType
+}
+
+// webchatToggleChip ensures a labeled toggle chip is in the wanted state.
+// Best-effort: missing chips (e.g. smart search in pro mode) and state
+// detection failures are logged but never fail the chat. Chips already in
+// the wanted state are left untouched silently.
+func webchatToggleChip(ctx context.Context, labels []string, wantActive bool) {
+	quoted := make([]string, len(labels))
+	for i, l := range labels {
+		quoted[i] = quoteJS(l)
+	}
+	want := "false"
+	if wantActive {
+		want = "true"
+	}
+	js := fmt.Sprintf(jsToggleChipFmt, "["+strings.Join(quoted, ", ")+"]", want)
+	var result map[string]any
+	if err := chromedp.Evaluate(js, &result).Do(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "⚠️ 开关设置失败 (%s): %v\n", strings.Join(labels, "/"), err)
+		return
+	}
+	if ok, _ := result["success"].(bool); !ok {
+		msg, _ := result["error"].(string)
+		fmt.Fprintf(os.Stderr, "⚠️ %s\n", msg)
+		return
+	}
+	if already, _ := result["already"].(bool); already {
+		return // already in the wanted state
+	}
+	label, _ := result["label"].(string)
+	wasActive, _ := result["wasActive"].(bool)
+	from, to := "关", "开"
+	if wasActive {
+		from = "开"
+	}
+	if !wantActive {
+		to = "关"
+	}
+	fmt.Fprintf(os.Stderr, "🔘 %s: %s → %s\n", label, from, to)
+}
+
+// Web chat upload limits enforced by chat.deepseek.com.
+const (
+	webUploadMaxFiles = 50
+	webUploadMaxTotal = 100 << 20 // 100MB total
+)
+
+// validateWebAttachments checks the web chat upload limits: at most 50
+// files and 100MB total. Non-image extensions are warned about (the page
+// only recognizes text embedded in images) but not rejected.
+func validateWebAttachments(files []string) error {
+	if len(files) == 0 {
+		return nil
+	}
+	if len(files) > webUploadMaxFiles {
+		return fmt.Errorf("too many attachments: %d (max %d)", len(files), webUploadMaxFiles)
+	}
+	var total int64
+	for _, f := range files {
+		info, err := os.Stat(f)
+		if err != nil {
+			return fmt.Errorf("attachment %s: %w", f, err)
+		}
+		total += info.Size()
+		if !IsImageFile(f) {
+			fmt.Fprintf(os.Stderr, "⚠️ 附件不是常见图片格式，网页版可能不支持: %s\n", f)
+		}
+	}
+	if total > webUploadMaxTotal {
+		return fmt.Errorf("attachments too large: %d bytes (max %d)", total, webUploadMaxTotal)
+	}
+	return nil
+}
+
+// IsImageFile reports whether path has an image extension accepted by the
+// DeepSeek web upload (which recognizes text embedded in images).
+func IsImageFile(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp":
+		return true
+	}
+	return false
+}
+
+// webchatUpload attaches files to the chat via the hidden file input. The
+// direct path sets files on the input node with CDP DOM.setFileInputFiles,
+// which fires React's change handler without opening a native dialog. If
+// the input is missing, the upload button is clicked with file-chooser
+// interception enabled and the opened chooser is completed programmatically.
+func webchatUpload(ctx context.Context, files []string) error {
+	if err := validateWebAttachments(files); err != nil {
+		return err
+	}
+	var probe map[string]any
+	if err := chromedp.Evaluate(jsFindFileInput, &probe).Do(ctx); err != nil {
+		return fmt.Errorf("locate file input: %w", err)
+	}
+	if found, _ := probe["found"].(bool); found {
+		return webchatSetUploadFiles(ctx, files)
+	}
+
+	// The input is created on demand. Intercept the chooser so no native
+	// dialog appears in the visible browser, click the upload button, and
+	// complete the chooser from the opened event.
+	chooserCh := make(chan *page.EventFileChooserOpened, 1)
+	chromedp.ListenTarget(ctx, func(ev any) {
+		if e, ok := ev.(*page.EventFileChooserOpened); ok {
+			select {
+			case chooserCh <- e:
+			default:
+			}
+		}
+	})
+	if err := page.SetInterceptFileChooserDialog(true).Do(ctx); err != nil {
+		return fmt.Errorf("enable file chooser interception: %w", err)
+	}
+	var clickResult map[string]any
+	if err := chromedp.Evaluate(jsClickUploadBtnFmt, &clickResult).Do(ctx); err != nil {
+		return fmt.Errorf("click upload button: %w", err)
+	}
+	if ok, _ := clickResult["success"].(bool); !ok {
+		msg, _ := clickResult["error"].(string)
+		return fmt.Errorf("click upload button: %s", msg)
+	}
+	matched, _ := clickResult["matched"].(string)
+	fmt.Fprintf(os.Stderr, "📎 点击上传按钮 (%s)\n", matched)
+	select {
+	case ev := <-chooserCh:
+		return dom.SetFileInputFiles(files).WithBackendNodeID(ev.BackendNodeID).Do(ctx)
+	case <-time.After(3 * time.Second):
+		// No chooser event: the click may have rendered the input without
+		// opening a dialog. Retry the direct path.
+		var probe map[string]any
+		if err := chromedp.Evaluate(jsFindFileInput, &probe).Do(ctx); err != nil {
+			return fmt.Errorf("locate file input after click: %w", err)
+		}
+		if found, _ := probe["found"].(bool); found {
+			return webchatSetUploadFiles(ctx, files)
+		}
+		return fmt.Errorf("upload button did not reveal a file input")
+	}
+}
+
+// webchatSetUploadFiles sets the files on the file input node via CDP, then
+// waits (best-effort) for preview thumbnails to confirm React picked them up.
+func webchatSetUploadFiles(ctx context.Context, files []string) error {
+	if err := chromedp.SetUploadFiles("input[type='file']", files, chromedp.ByQuery).Do(ctx); err != nil {
+		return fmt.Errorf("set upload files: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "📎 已添加 %d 个附件\n", len(files))
+	for range 10 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+		var countResult map[string]any
+		if err := chromedp.Evaluate(jsUploadPreviewCountFmt, &countResult).Do(ctx); err != nil {
+			continue
+		}
+		if n, _ := countResult["count"].(float64); int(n) >= len(files) {
+			fmt.Fprintf(os.Stderr, "🖼 %d 个附件预览已就绪\n", int(n))
+			return nil
+		}
+	}
+	fmt.Fprintln(os.Stderr, "⚠️ 附件预览未确认，继续发送")
 	return nil
 }
 

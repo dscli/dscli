@@ -44,7 +44,7 @@ var askExpertTool = toolcall.ToolDef{
 			},
 			"attachments": map[string]any{
 				"type":        "array",
-				"description": "File attachments list (optional)",
+				"description": "File attachments list (optional). Images are uploaded and analyzed visually; other files inlined as text (1MB max, safe paths, ≤50 files/≤100MB).",
 				"items": map[string]string{
 					"type":        "string",
 					"description": "Attachment filename",
@@ -57,6 +57,10 @@ var askExpertTool = toolcall.ToolDef{
 			"system": map[string]any{
 				"type":        "string",
 				"description": "Full system prompt text. Completely replaces the default role template (takes precedence over role).",
+			},
+			"mode": map[string]any{
+				"type":        "string",
+				"description": "Web chat mode: flash (fast, smart search), pro (expert, default), vision (image uploads). Empty: vision if images attached, else pro.",
 			},
 			"timeout": map[string]any{
 				"type":        "integer",
@@ -73,6 +77,8 @@ var askExpertTool = toolcall.ToolDef{
 
 // askExpertWithRoleFunc is the function used to call the expert.
 // It is a package-level variable so tests can replace it with a mock.
+// mode selects the web chat mode ("" = auto: pro, or vision with image
+// uploads); attachments are image files uploaded to the web chat.
 var askExpertWithRoleFunc = askExpertWebChat
 
 func init() {
@@ -82,7 +88,7 @@ func init() {
 
 	// Test optimization: use mock to skip browser automation.
 	if ictx.IsTesting() {
-		askExpertWithRoleFunc = func(_ context.Context, _, _, _ string) (string, error) {
+		askExpertWithRoleFunc = func(_ context.Context, _, _, _, _ string, _ []string) (string, error) {
 			return "[MOCK]", nil
 		}
 	}
@@ -102,6 +108,7 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 		role = "expert"
 	}
 	system := toolcall.ToolArgsValue(args, "system", "")
+	mode := toolcall.ToolArgsValue(args, "mode", "")
 	attachments := toolcall.ToolArgsValue(args, "attachments", []string{})
 
 	// content and content_file are mutually exclusive: silently ignoring one
@@ -124,16 +131,42 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 		outfmt.Printf("📂 Read question from file: %s (%d bytes)\n", contentFile, len(content))
 	}
 
+	// Split attachments by type: image files are uploaded to the web chat
+	// (flash/vision modes), everything else is inlined as text. Uploaded
+	// paths are still sandboxed to the current directory (symlink-resolved)
+	// so the LLM cannot exfiltrate arbitrary local files.
+	var uploads, inline []string
+	var attachmentErrors []error
+	for _, a := range attachments {
+		if lp.IsImageFile(a) {
+			if err := verifySafePath(a); err != nil {
+				attachmentErrors = append(attachmentErrors, err)
+				continue
+			}
+			uploads = append(uploads, a)
+		} else {
+			inline = append(inline, a)
+		}
+	}
+
 	// Show what was asked (truncate long content for display)
 	summaryDisplay := summary
 	if summaryDisplay == "" {
 		summaryDisplay = truncateForDisplay(content, 120)
 	}
-	outfmt.Println("📞 Consulting expert via DeepSeek Web (free V4 Pro)...")
+	if mode != "" {
+		outfmt.Printf("📞 Consulting expert via DeepSeek Web (free, mode=%s)...\n", mode)
+	} else {
+		outfmt.Println("📞 Consulting expert via DeepSeek Web (free V4 Pro)...")
+	}
 	outfmt.Println("  Question:", summaryDisplay)
+	if len(uploads) > 0 {
+		outfmt.Printf("📎 Uploading %d image attachment(s)...\n", len(uploads))
+	}
 
 	// Build structured request (does not ask expert to generate summary)
-	structuredRequest, attachmentErrors := buildStructuredRequest(summary, content, attachments)
+	structuredRequest, inlineErrors := buildStructuredRequest(summary, content, inline)
+	attachmentErrors = append(attachmentErrors, inlineErrors...)
 
 	// Report attachment errors to user but continue execution
 	if len(attachmentErrors) > 0 {
@@ -143,7 +176,7 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 		}
 	}
 
-	result, err = askExpertWithRoleFunc(ctx, structuredRequest, role, system)
+	result, err = askExpertWithRoleFunc(ctx, structuredRequest, role, system, mode, uploads)
 	if err != nil {
 		outfmt.Println("❌ Expert consultation failed")
 		return result, warning, err
@@ -181,7 +214,7 @@ func truncateForDisplay(s string, maxLen int) string {
 //	reply: the AI model's response text
 //	err: error during execution
 func AskExpert(ctx context.Context, input string) (reply string, err error) {
-	return askExpertWithRoleFunc(ctx, input, "expert", "")
+	return askExpertWithRoleFunc(ctx, input, "expert", "", "", nil)
 }
 
 // AskExpertWithRole calls the AI model for consultation with a specified
@@ -202,7 +235,7 @@ func AskExpert(ctx context.Context, input string) (reply string, err error) {
 //	reply: the AI model's response text
 //	err: error during execution
 func AskExpertWithRole(ctx context.Context, input, role string) (reply string, err error) {
-	return askExpertWithRoleFunc(ctx, input, role, "")
+	return askExpertWithRoleFunc(ctx, input, role, "", "", nil)
 }
 
 // AskExpertCustom calls the AI model with full control over the system
@@ -213,13 +246,13 @@ func AskExpertCustom(ctx context.Context, input, role, system string) (reply str
 	if role == "" {
 		role = "expert"
 	}
-	return askExpertWithRoleFunc(ctx, input, role, system)
+	return askExpertWithRoleFunc(ctx, input, role, system, "", nil)
 }
 
 // askExpertWebChat is the real implementation: renders the system prompt
 // (either the raw system text or the role template) and sends the combined
-// message via lp.WebChat.
-func askExpertWebChat(ctx context.Context, input, role, system string) (reply string, err error) {
+// message via lp.WebChatWithOptions.
+func askExpertWebChat(ctx context.Context, input, role, system, mode string, attachments []string) (reply string, err error) {
 	// Render the system prompt. WebChat has no system prompt concept, so we
 	// prepend it to the user message.
 	systemPrompt := system
@@ -234,8 +267,12 @@ func askExpertWebChat(ctx context.Context, input, role, system string) (reply st
 	// from the actual task.
 	fullMessage := systemPrompt + "\n\n---\n\n## User Request\n\n" + input
 
-	// Start a new WebChat conversation (free DeepSeek V4 Pro).
-	return lp.WebChat(ctx, fullMessage)
+	// Start a new WebChat conversation. Image attachments are uploaded as
+	// real files; an empty mode auto-selects vision (with uploads) or pro.
+	return lp.WebChatWithOptions(ctx, fullMessage, lp.WebChatOptions{
+		Mode:        lp.Mode(mode),
+		Attachments: attachments,
+	})
 }
 
 // maxAttachmentSize is the maximum allowed size for a single attachment (1MB).
@@ -320,8 +357,8 @@ Please provide detailed analysis and advice, including:
 // (current directory and subdirectories, no absolute paths, no ".."),
 // 1MB size limit, non-empty content. Errors are explicit, never silent.
 func readContentFile(filename string) (string, error) {
-	if !isSafePath(filename) {
-		return "", fmt.Errorf("unsafe path: %s", filename)
+	if err := verifySafePath(filename); err != nil {
+		return "", err
 	}
 
 	f, err := os.Open(filename)
@@ -329,22 +366,6 @@ func readContentFile(filename string) (string, error) {
 		return "", fmt.Errorf("failed to open file %s: %w", filename, err)
 	}
 	defer f.Close()
-
-	// Resolve symlinks and verify the real target still stays within cwd:
-	// isSafePath only checks the textual path, so a symlink inside cwd could
-	// otherwise smuggle in arbitrary files from outside the sandbox.
-	// EvalSymlinks keeps relative paths relative, so absolutize first.
-	abs, err := filepath.Abs(filename)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve file %s: %w", filename, err)
-	}
-	resolved, err := filepath.EvalSymlinks(abs)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve file %s: %w", filename, err)
-	}
-	if !pathWithinCwd(resolved) {
-		return "", fmt.Errorf("unsafe path: %s resolves outside the current directory", filename)
-	}
 
 	// Read at most maxAttachmentSize+1 bytes so an oversized file is caught
 	// even if it grows between open and read (no TOCTOU window).
@@ -361,6 +382,30 @@ func readContentFile(filename string) (string, error) {
 		return "", fmt.Errorf("file is empty: %s", filename)
 	}
 	return content, nil
+}
+
+// verifySafePath checks that filename is safe to read or upload: relative,
+// inside the current directory, with symlinks that resolve back into the
+// current directory. isSafePath only checks the textual path, so a symlink
+// inside cwd could otherwise smuggle in arbitrary files from outside the
+// sandbox; EvalSymlinks resolves the real target (relative paths stay
+// relative, so absolutize first).
+func verifySafePath(filename string) error {
+	if !isSafePath(filename) {
+		return fmt.Errorf("unsafe path: %s", filename)
+	}
+	abs, err := filepath.Abs(filename)
+	if err != nil {
+		return fmt.Errorf("failed to resolve file %s: %w", filename, err)
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return fmt.Errorf("failed to resolve file %s: %w", filename, err)
+	}
+	if !pathWithinCwd(resolved) {
+		return fmt.Errorf("unsafe path: %s resolves outside the current directory", filename)
+	}
+	return nil
 }
 
 // isSafePath checks if the file path is safe.
