@@ -19,12 +19,15 @@ func TestRunDisplayCommandDetaches(t *testing.T) {
 	if _, err := exec.LookPath("ps"); err != nil {
 		t.Skip("ps not available")
 	}
+	// project must be a real directory now — it becomes cmd.Dir.  The
+	// marker file lives outside it; the template writes to the marker's
+	// absolute path (test-controlled, no metacharacters).
+	project := t.TempDir()
 	marker := filepath.Join(t.TempDir(), "sid")
-	// The template's project path ($1) is reused as the marker file.
 	// The command records its own sid+tty on the first line and the
 	// caller's sid on the second, then exits.
 	runDisplayCommand(
-		`{ ps -o sid=,tty= -p $$; ps -o sid= -p $PPID; } > "$1"`, marker,
+		`{ ps -o sid=,tty= -p $$; ps -o sid= -p $PPID; } > "`+marker+`"`, project,
 	)
 
 	// The child opens the marker immediately on redirection but writes
@@ -65,11 +68,18 @@ func TestRunDisplayCommandDetaches(t *testing.T) {
 // TestRunDisplayCommandNoInjection verifies the project path is passed
 // as a positional argument, so shell metacharacters in the path are
 // never interpreted.  The old %s interpolation executed $(...) inside a
-// double-quoted template.
+// double-quoted template.  The malicious path must still be a real
+// directory (it becomes cmd.Dir), so the payload lives in the directory
+// name itself; if the shell ever interpreted it, `touch pwned` would run
+// in the command's cwd (the project dir).
 func TestRunDisplayCommandNoInjection(t *testing.T) {
-	pwned := filepath.Join(t.TempDir(), "pwned")
+	base := t.TempDir()
+	pwned := filepath.Join(base, "pwned")
+	evil := filepath.Join(base, "$(touch pwned)") // executed by the old %s interpolation
+	if err := os.Mkdir(evil, 0o755); err != nil {
+		t.Fatalf("mkdir malicious project dir: %v", err)
+	}
 	marker := filepath.Join(t.TempDir(), "out")
-	evil := "$(touch " + pwned + ")" // executed by the old %s interpolation
 
 	// The template echoes $1 verbatim into a fixed marker file; the
 	// project path appears only as a positional argument.
@@ -92,7 +102,11 @@ func TestRunDisplayCommandNoInjection(t *testing.T) {
 	if got := strings.TrimSpace(string(data)); got != evil {
 		t.Errorf("project path was mangled: got %q, want %q", got, evil)
 	}
-	if _, err := os.Stat(pwned); err == nil {
-		t.Fatal("shell metacharacters in project path were executed")
+	// `touch pwned` would run in the shell's cwd (= cmd.Dir, the evil
+	// directory); check both the project dir and its parent.
+	for _, path := range []string{filepath.Join(evil, "pwned"), pwned} {
+		if _, err := os.Stat(path); err == nil {
+			t.Fatalf("shell metacharacters in project path were executed (%s created)", path)
+		}
 	}
 }

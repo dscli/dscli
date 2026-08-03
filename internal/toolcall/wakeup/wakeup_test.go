@@ -5,8 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/dscli/dscli/internal/config"
+	"time"
 )
 
 // writeFakeScript creates an executable fake command in dir.
@@ -72,8 +71,10 @@ func TestDetectDisplayCommand(t *testing.T) {
 }
 
 // TestDetectDisplayCommandNoEnvHandoff guards the wakeup handoff contract:
-// the project path must travel via the wakeup-project file, never through
-// a prefix-assigned environment variable (emacsclient does not pass those
+// the project path travels as the command's working directory
+// (runDisplayCommand sets cmd.Dir — emacsclient -e evaluates with
+// default-directory following the client's cwd), never via a
+// prefix-assigned environment variable (emacsclient does not pass those
 // into a running server's -e evaluation environment) and never spliced
 // into a Lisp string literal.
 func TestDetectDisplayCommandNoEnvHandoff(t *testing.T) {
@@ -95,66 +96,33 @@ func TestDetectDisplayCommandNoEnvHandoff(t *testing.T) {
 	}
 }
 
-// TestWriteWakeupProjectFile verifies the handoff file is created with the
-// project path and that a missing parent directory is created on demand.
-func TestWriteWakeupProjectFile(t *testing.T) {
-	dir := t.TempDir()
-	orig := wakeupProjectFile
-	wakeupProjectFile = func() string {
-		return filepath.Join(dir, "nested", "wakeup-project")
-	}
-	t.Cleanup(func() { wakeupProjectFile = orig })
+// TestRunDisplayCommandUsesProjectDir verifies the display command runs
+// with the target project as its working directory — that is the handoff
+// channel to the Emacs side (emacsclient -e evaluates with
+// default-directory following the client's cwd), replacing the old
+// handoff file.  A shell `pwd` is captured to prove the cwd.
+func TestRunDisplayCommandUsesProjectDir(t *testing.T) {
+	project := t.TempDir()
+	out := filepath.Join(t.TempDir(), "cwd.txt")
+	tmpl := "pwd > '" + out + "'"
 
-	project := "/home/nanjj/.local/src/github.com/dscli/dscli"
-	if err := writeWakeupProjectFile(project); err != nil {
-		t.Fatalf("writeWakeupProjectFile() error = %v", err)
-	}
+	runDisplayCommand(tmpl, project)
 
-	data, err := os.ReadFile(filepath.Join(dir, "nested", "wakeup-project"))
-	if err != nil {
-		t.Fatalf("read handoff file: %v", err)
-	}
-	if string(data) != project {
-		t.Errorf("handoff file = %q, want %q", data, project)
-	}
-
-	// Overwrite on the next wakeup.
-	if err := writeWakeupProjectFile("/other/project"); err != nil {
-		t.Fatalf("second write error = %v", err)
-	}
-	data, err = os.ReadFile(filepath.Join(dir, "nested", "wakeup-project"))
-	if err != nil {
-		t.Fatalf("re-read handoff file: %v", err)
-	}
-	if string(data) != "/other/project" {
-		t.Errorf("handoff file after overwrite = %q, want %q", data, "/other/project")
-	}
-}
-
-// TestWriteWakeupProjectFileRejectsControlChars ensures a project path
-// with newline or NUL cannot corrupt the Emacs-side file read.
-func TestWriteWakeupProjectFileRejectsControlChars(t *testing.T) {
-	dir := t.TempDir()
-	orig := wakeupProjectFile
-	wakeupProjectFile = func() string {
-		return filepath.Join(dir, "wakeup-project")
-	}
-	t.Cleanup(func() { wakeupProjectFile = orig })
-
-	for _, bad := range []string{"/proj\nect", "/proj\x00ect"} {
-		if err := writeWakeupProjectFile(bad); err == nil {
-			t.Errorf("writeWakeupProjectFile(%q) error = nil, want control-char rejection", bad)
+	// The command starts async children; poll for the capture file.
+	deadline := time.Now().Add(2 * time.Second)
+	var data []byte
+	for {
+		var err error
+		data, err = os.ReadFile(out)
+		if err == nil {
+			break
 		}
+		if time.Now().After(deadline) {
+			t.Fatalf("capture file %s not written: %v", out, err)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "wakeup-project")); !os.IsNotExist(err) {
-		t.Errorf("handoff file should not be created for invalid paths, stat err = %v", err)
-	}
-}
-
-// TestWakeupProjectFileRestored ensures the default handoff path lives in
-// the global config directory, so Emacs and dscli agree on its location.
-func TestWakeupProjectFileRestored(t *testing.T) {
-	if got := wakeupProjectFile(); got != filepath.Join(config.ConfigDir, "wakeup-project") {
-		t.Errorf("wakeupProjectFile() = %q, want %q", got, filepath.Join(config.ConfigDir, "wakeup-project"))
+	if got := strings.TrimSpace(string(data)); got != project {
+		t.Errorf("command cwd = %q, want %q", got, project)
 	}
 }
