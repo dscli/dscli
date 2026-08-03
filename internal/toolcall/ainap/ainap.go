@@ -44,7 +44,7 @@ var ainapTool = toolcall.ToolDef{
 		"required":             []string{"seconds"},
 		"additionalProperties": false,
 	},
-	Category: "utility",
+	Category: "ai",
 	Handler:  handleAinap,
 }
 

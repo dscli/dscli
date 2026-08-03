@@ -31,7 +31,7 @@ var globalHub = &Hub{
 	servers: make(map[string]*serverConn),
 }
 
-// doInit initializes the hub with built-in and user-configured servers.
+// doInit initializes the hub with user-configured servers.
 // It loads server configs, connects to enabled servers, and registers
 // their tools in the toolcall framework with prefixed names.
 //
@@ -192,61 +192,6 @@ func buildSSEEndpoint(cfg ServerConfig) string {
 	}
 
 	return endpoint
-}
-
-// SwitchServerTransport replaces a server's connection with a new one
-// that matches the specified target transport type ("local" or "cloud").
-// This allows switching between stdio and SSE transports at runtime
-// without restarting the application.
-//
-// The new connection is validated by listing tools before replacing the old one.
-// If validation fails, the old connection is preserved.
-func (h *Hub) SwitchServerTransport(ctx context.Context, name, target string) error {
-	span, ctx := clog.StartSpanFromContext(ctx, "SwitchServerTransport")
-	defer span.Finish()
-
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	conn, ok := h.servers[name]
-	if !ok {
-		return fmt.Errorf("mcphub: server %q not connected", name)
-	}
-
-	// Skip if already using the target transport type.
-	if conn.config.Type == target {
-		return nil
-	}
-
-	// Find a config matching the server name + target type.
-	var cfg *ServerConfig
-	for i := range h.allConfigs {
-		if h.allConfigs[i].Name == name && h.allConfigs[i].Type == target {
-			cfg = &h.allConfigs[i]
-			break
-		}
-	}
-	if cfg == nil {
-		return fmt.Errorf("mcphub: no %q transport config for server %q; "+
-			"define it in your mcp-servers config file", target, name)
-	}
-
-	mc, err := newClientForConfig(ctx, *cfg)
-	if err != nil {
-		return fmt.Errorf("mcphub: connect %s %s: %w", name, target, err)
-	}
-
-	// Validate the new connection before swapping.
-	if _, err := mc.ListTools(ctx); err != nil {
-		mc.Close()
-		return fmt.Errorf("mcphub: validate %s %s: %w", name, target, err)
-	}
-
-	oldClient := conn.client
-	conn.client = mc
-	conn.config = *cfg
-	oldClient.Close()
-	return nil
 }
 
 // reconnect replaces the client for a disconnected server.

@@ -45,7 +45,7 @@ var aistatusTool = toolcall.ToolDef{
 		"required":             []string{},
 		"additionalProperties": false,
 	},
-	Category: "utility",
+	Category: "ai",
 	Handler:  handleAistatus,
 }
 

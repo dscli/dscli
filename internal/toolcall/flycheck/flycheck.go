@@ -36,7 +36,7 @@ func init() {
 			"required":             []string{"path"},
 			"additionalProperties": false,
 		},
-		Category: "code_ops",
+		Category: "check",
 		Timeout:  120 * time.Second,
 		Handler:  handleFlycheck,
 	})

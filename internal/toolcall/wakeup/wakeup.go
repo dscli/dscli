@@ -60,7 +60,7 @@ var wakeupTool = toolcall.ToolDef{
 		"required":             []string{"project"},
 		"additionalProperties": false,
 	},
-	Category: "communication",
+	Category: "ai",
 	Handler:  handleWakeup,
 }
 
