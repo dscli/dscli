@@ -4,8 +4,7 @@ package alltools
 import (
 	"github.com/dscli/dscli/internal/toolcall"
 
-	_ "github.com/dscli/dscli/internal/toolcall/ainap"
-	_ "github.com/dscli/dscli/internal/toolcall/aistatus"
+	_ "github.com/dscli/dscli/internal/toolcall/ai"
 	_ "github.com/dscli/dscli/internal/toolcall/ask"
 	_ "github.com/dscli/dscli/internal/toolcall/cwd"
 	_ "github.com/dscli/dscli/internal/toolcall/file"
@@ -16,7 +15,6 @@ import (
 	_ "github.com/dscli/dscli/internal/toolcall/shell"
 	_ "github.com/dscli/dscli/internal/toolcall/skill"
 	_ "github.com/dscli/dscli/internal/toolcall/sql"
-	_ "github.com/dscli/dscli/internal/toolcall/wakeup"
 	_ "github.com/dscli/dscli/internal/toolcall/web"
 )
 

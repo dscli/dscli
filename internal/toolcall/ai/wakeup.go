@@ -1,5 +1,3 @@
-// Package wakeup implements the wakeup tool.
-//
 // wakeup dispatches a message (optional) to another AI maintainer at a given
 // project, waking them up if they are not already running.  The tool is
 // IDE-agnostic: it writes the message to the target project's chimeins queue
@@ -11,7 +9,7 @@
 // independently in its own session context.
 //
 // Renamed from send_message (v0.1.x) to wakeup (v0.2+).
-package wakeup
+package ai
 
 import (
 	"context"

@@ -1,5 +1,3 @@
-// Package aistatus implements the aistatus tool.
-//
 // aistatus lists all projects with their AI maintainer and status,
 // following the same table format as "dscli project list" with an
 // added Status column.
@@ -8,7 +6,7 @@
 //   - on:  lockfile exists and the owning process is alive
 //   - nap: process is alive AND the ai_status table has an active nap
 //   - off: no running process
-package aistatus
+package ai
 
 import (
 	"context"

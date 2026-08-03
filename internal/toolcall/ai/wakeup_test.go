@@ -1,4 +1,4 @@
-package wakeup
+package ai
 
 import (
 	"os"

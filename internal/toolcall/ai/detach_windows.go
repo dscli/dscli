@@ -1,6 +1,6 @@
 //go:build windows
 
-package wakeup
+package ai
 
 import "os/exec"
 

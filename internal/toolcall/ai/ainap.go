@@ -1,5 +1,3 @@
-// Package ainap implements the ainap tool.
-//
 // ainap puts the current AI session to sleep for a specified duration.
 // It records the nap state in the ai_status table so that aistatus
 // can report the session as "nap" to other AIs.
@@ -7,7 +5,7 @@
 // The implementation is deliberately simple: it writes the nap state
 // to the database, blocks with time.Sleep, then restores the state
 // to "on" on wake.
-package ainap
+package ai
 
 import (
 	"context"
