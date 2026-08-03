@@ -12,14 +12,14 @@ import (
 	"github.com/nanjj/clog"
 )
 
-//go:embed lp_fetch.md
-var lpFetchMd string
+//go:embed web_fetch.md
+var webFetchMd string
 
 func init() {
 	toolcall.RegisterTool(toolcall.ToolDef{
-		Name:        "lightpanda-fetch",
-		DisplayName: "LightPanda Fetch",
-		Description: lpFetchMd,
+		Name:        "web_fetch",
+		DisplayName: "Web Fetch",
+		Description: webFetchMd,
 		Strict:      true,
 		Parameters: map[string]any{
 			"type": "object",
@@ -33,26 +33,20 @@ func init() {
 					"enum":        []string{"markdown", "html", "semantic_tree", "semantic_tree_text"},
 					"description": "Output format (default: markdown)",
 				},
-				"terminate-ms": map[string]any{
-					"type":        "integer",
-					"description": "Hard deadline in milliseconds; aborts pages with endless scripts",
-				},
-				"proxy": map[string]any{
-					"type":        "string",
-					"description": "HTTP proxy URL, e.g. socks5h://localhost:8777. Use socks5h (proxy-side DNS), not socks5. Falls back to the lightpanda-proxy value from ~/.dscli/dscli.env when unset",
-				},
 			},
 			"required":             []string{"url"},
 			"additionalProperties": false,
 		},
 		Category: "web",
-		Timeout:  330 * time.Second, // > http-timeout (300s); per-page JS deadline is terminate-ms
-		Handler:  handleLPFetch,
+		// Tool call timeout must exceed http-timeout (300s); JS is capped at
+		// 60s internally, so a hung page fails well before the deadline.
+		Timeout: 330 * time.Second,
+		Handler: handleWebFetch,
 	})
 }
 
-func handleLPFetch(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
-	span, ctx := clog.StartSpanFromContext(ctx, "handleLPFetch")
+func handleWebFetch(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleWebFetch")
 	defer span.Finish()
 
 	rawURL := toolcall.ToolArgsValue(args, "url", "")
@@ -62,13 +56,10 @@ func handleLPFetch(ctx context.Context, args toolcall.ToolArgs) (result, warning
 	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
 		return "", "", fmt.Errorf("url must start with http:// or https://, got %q", rawURL)
 	}
-	opts := lp.FetchOptions{
-		Dump:        toolcall.ToolArgsValue(args, "dump", ""),
-		TerminateMS: toolcall.ToolArgsValue(args, "terminate-ms", 0),
-		Proxy:       toolcall.ToolArgsValue(args, "proxy", ""),
-	}
 
-	text, err := lp.Fetch(ctx, rawURL, opts)
+	text, err := lp.Fetch(ctx, rawURL, lp.FetchOptions{
+		Dump: toolcall.ToolArgsValue(args, "dump", ""),
+	})
 	if err != nil {
 		return "", "", err
 	}

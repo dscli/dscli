@@ -4,11 +4,48 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
-// TestHandleLPFetchURLValidation verifies the handler rejects empty and
+// TestWebFetchToolSchema verifies the registered tool definition: the
+// canonical name, and the parameter surface (url + dump only - no
+// terminate-ms or proxy knobs to leak environment details to the AI).
+func TestWebFetchToolSchema(t *testing.T) {
+	def, ok := toolcall.GetToolDef(context.Background(), "web_fetch")
+	if !ok {
+		t.Fatal("tool web_fetch not registered")
+	}
+	// RegisterTool derives DisplayName from the name (GetToolDisplayName),
+	// so the exact spelling is framework-generated.
+	if def.DisplayName != "WebFetch" {
+		t.Errorf("DisplayName = %q, want WebFetch", def.DisplayName)
+	}
+	if def.Category != "web" {
+		t.Errorf("Category = %q, want web", def.Category)
+	}
+	props, ok := def.Parameters["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("Parameters has no properties: %v", def.Parameters)
+	}
+	for _, key := range []string{"url", "dump"} {
+		if _, ok := props[key]; !ok {
+			t.Errorf("missing parameter %q", key)
+		}
+	}
+	for _, banned := range []string{"terminate-ms", "proxy"} {
+		if _, ok := props[banned]; ok {
+			t.Errorf("parameter %q should not be exposed", banned)
+		}
+	}
+	if _, ok := def.Parameters["required"].([]string); !ok {
+		t.Errorf("required should be a []string: %v", def.Parameters["required"])
+	}
+}
+
+// TestHandleWebFetchURLValidation verifies the handler rejects empty and
 // scheme-less URLs before ever invoking lightpanda.
-func TestHandleLPFetchURLValidation(t *testing.T) {
+func TestHandleWebFetchURLValidation(t *testing.T) {
 	tests := []struct {
 		name string
 		url  string
@@ -20,12 +57,12 @@ func TestHandleLPFetchURLValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := handleLPFetch(context.Background(), map[string]any{"url": tt.url})
+			_, _, err := handleWebFetch(context.Background(), map[string]any{"url": tt.url})
 			if err == nil {
-				t.Fatalf("handleLPFetch(url=%q) error = nil, want %q", tt.url, tt.want)
+				t.Fatalf("handleWebFetch(url=%q) error = nil, want %q", tt.url, tt.want)
 			}
 			if !strings.Contains(err.Error(), tt.want) {
-				t.Errorf("handleLPFetch(url=%q) error = %v, want containing %q", tt.url, err, tt.want)
+				t.Errorf("handleWebFetch(url=%q) error = %v, want containing %q", tt.url, err, tt.want)
 			}
 		})
 	}
