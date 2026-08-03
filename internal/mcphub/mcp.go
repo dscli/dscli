@@ -9,12 +9,12 @@
 //	┌──────────────────────────────────────┐
 //	│              mcphub.Dispatch         │
 //	│                                      │
-//	│  "lightpanda_markdown" → parse       │
-//	│    server="lightpanda"               │
-//	│    tool="markdown"                   │
+//	│  "serverName_toolName" → parse       │
+//	│    server="serverName"               │
+//	│    tool="toolName"                   │
 //	│       │                              │
 //	│       ▼                              │
-//	│  lightpanda MCPClient.CallTool       │
+//	│  MCPClient.CallTool                  │
 //	└──────────────────────────────────────┘
 //
 // # Configuration
@@ -23,18 +23,16 @@
 //
 //	mcp-servers {
 //	  server-id {
-//	    name = lightpanda
+//	    name = my-server
 //	    type = local
-//	    command = lightpanda
+//	    command = my-server
 //	    args = [mcp]
 //	    enabled = true
 //	  }
 //	}
 //
-// Built-in servers:
-//   - lightpanda: web page interaction via LightPanda MCP
-//
-// User-defined servers are defined in the mcp-servers config block.
+// There are no built-in servers: every MCP server (LightPanda, slingshot
+// code, etc.) is configured explicitly by the user in the mcp-servers block.
 package mcphub
 
 import (

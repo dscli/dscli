@@ -210,38 +210,20 @@ func TestLoadServerConfigs_NoUserConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(servers) == 0 {
-		t.Fatal("expected at least built-in servers")
-	}
-	found := false
-	for _, s := range servers {
-		if s.Name == "lightpanda" {
-			found = true
-			if !s.Enabled {
-				t.Error("lightpanda should be enabled by default")
-			}
-			if s.Command != "lightpanda" {
-				t.Errorf("command = %q, want lightpanda", s.Command)
-			}
-			if s.Type != "local" {
-				t.Errorf("type = %q, want local", s.Type)
-			}
-		}
-	}
-	if !found {
-		t.Error("lightpanda not found in built-in servers")
+	if len(servers) != 0 {
+		t.Errorf("expected no servers without user config, got %d", len(servers))
 	}
 }
 
-func TestLoadServerConfigs_UserConfigMerges(t *testing.T) {
+func TestLoadServerConfigs_UserConfigOnly(t *testing.T) {
 	config.SetValue("mcp-servers", map[string]any{
 		"my-custom": map[string]any{
 			"command": "my-server",
 			"args":    []any{"--port", "8080"},
 			"enabled": true,
 		},
-		"lightpanda": map[string]any{
-			"command": "custom-lightpanda",
+		"extra": map[string]any{
+			"command": "extra-server",
 			"args":    []any{},
 			"enabled": false,
 		},
@@ -253,20 +235,19 @@ func TestLoadServerConfigs_UserConfigMerges(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	var lp, custom bool
+	var extra, custom bool
 	for _, s := range servers {
 		switch s.Name {
-		case "lightpanda":
-			lp = true
-			if s.Command != "custom-lightpanda" {
-				t.Errorf("lightpanda command = %q, want custom-lightpanda", s.Command)
+		case "extra":
+			extra = true
+			if s.Command != "extra-server" {
+				t.Errorf("extra command = %q, want extra-server", s.Command)
 			}
 			if s.Enabled {
-				t.Error("lightpanda should be disabled per user config")
+				t.Error("extra should be disabled per user config")
 			}
-			// Type should still be local (overrides built-in but type preserved)
 			if s.Type != "local" {
-				t.Errorf("lightpanda type = %q, want local", s.Type)
+				t.Errorf("extra type = %q, want local", s.Type)
 			}
 		case "my-custom":
 			custom = true
@@ -281,8 +262,8 @@ func TestLoadServerConfigs_UserConfigMerges(t *testing.T) {
 			}
 		}
 	}
-	if !lp {
-		t.Error("lightpanda not found")
+	if !extra {
+		t.Error("extra not found")
 	}
 	if !custom {
 		t.Error("my-custom not found")
@@ -291,7 +272,7 @@ func TestLoadServerConfigs_UserConfigMerges(t *testing.T) {
 
 func TestLoadServerConfigs_StringValueIgnored(t *testing.T) {
 	// Old-format string value should be silently ignored,
-	// returning only built-in servers.
+	// resulting in no configured servers.
 	config.SetValue("mcp-servers", "some-file.yaml")
 	t.Cleanup(func() { config.SetValue("mcp-servers", nil) })
 
@@ -299,8 +280,8 @@ func TestLoadServerConfigs_StringValueIgnored(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(servers) == 0 {
-		t.Fatal("expected at least built-in servers")
+	if len(servers) != 0 {
+		t.Errorf("expected no servers for ignored string value, got %d", len(servers))
 	}
 }
 
@@ -774,17 +755,17 @@ func TestLoadServerConfigs_NameFromMapKey(t *testing.T) {
 
 func TestLoadServerConfigs_MultipleServers(t *testing.T) {
 	config.SetValue("mcp-servers", map[string]any{
-		"lp-local": map[string]any{
-			"name":    "lightpanda",
+		"svc-local": map[string]any{
+			"name":    "my-server",
 			"type":    "local",
-			"command": "lightpanda",
+			"command": "my-server",
 			"args":    []any{"mcp"},
 			"enabled": true,
 		},
-		"lp-cloud": map[string]any{
-			"name":    "lightpanda",
+		"svc-cloud": map[string]any{
+			"name":    "my-server",
 			"type":    "cloud",
-			"command": "https://euwest.cloud.lightpanda.io/mcp/sse",
+			"command": "https://cloud.example.com/mcp/sse",
 			"args":    []any{"token=secret123"},
 			"enabled": true,
 		},
@@ -798,26 +779,26 @@ func TestLoadServerConfigs_MultipleServers(t *testing.T) {
 
 	var localFound, cloudFound bool
 	for _, s := range servers {
-		if s.Name == "lightpanda" {
+		if s.Name == "my-server" {
 			switch s.Type {
 			case "local":
 				localFound = true
 				if s.IsSSE() {
-					t.Error("lightpanda local should not be SSE")
+					t.Error("local variant should not be SSE")
 				}
 			case "cloud":
 				cloudFound = true
 				if !s.IsSSE() {
-					t.Error("lightpanda cloud should be SSE")
+					t.Error("cloud variant should be SSE")
 				}
 			}
 		}
 	}
 	if !localFound {
-		t.Error("lightpanda local not found")
+		t.Error("local variant not found")
 	}
 	if !cloudFound {
-		t.Error("lightpanda cloud not found")
+		t.Error("cloud variant not found")
 	}
 }
 

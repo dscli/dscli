@@ -56,6 +56,11 @@ func (h *Hub) doInit(ctx context.Context) error {
 	// Store all configs for reconnection/switching.
 	h.allConfigs = configs
 
+	if len(configs) == 0 {
+		outfmt.Warn("mcphub: no MCP servers configured; MCP tools are unavailable. Define mcp-servers in config.dscli to enable them.")
+		return nil
+	}
+
 	// Connect each logical server once (first enabled config wins).
 	// With the Type field, a server can have local and cloud variants.
 	// During init we connect the first enabled one — typically the local variant.
@@ -77,8 +82,8 @@ func (h *Hub) doInit(ctx context.Context) error {
 }
 
 // maxToolDescriptionRunes caps MCP-provided tool descriptions. External MCP
-// servers (e.g. lightpanda) may ship very long descriptions that bloat every
-// LLM context; the alltools "not too large" test asserts the same budget.
+// servers may ship very long descriptions that bloat every LLM context;
+// the alltools "not too large" test asserts the same budget.
 const maxToolDescriptionRunes = 1600
 
 // truncateToolDescription caps an MCP-provided tool description at
@@ -339,8 +344,8 @@ func (h *Hub) dispatchToServer(ctx context.Context, serverName, toolName string,
 // doDispatch routes a tool call to the correct MCP server based on the
 // tool name prefix. The tool name format is "serverName_toolName".
 //
-// For example, "lightpanda_markdown" dispatches to the "lightpanda" server
-// with the tool name "markdown".
+// For example, "code_search" dispatches to the "code" server with the
+// tool name "search".
 //
 // If the tool name has no underscore prefix, all registered servers are
 // tried in order (best-effort fallback for backward compatibility).

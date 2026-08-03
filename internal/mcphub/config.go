@@ -23,55 +23,41 @@ func (s ServerConfig) IsSSE() bool {
 	return s.Type == "cloud"
 }
 
-// builtinServers are hardcoded MCP server configurations.
-// These are always available and can be overridden by user config.
-var builtinServers = []ServerConfig{
-	{
-		Name:    "lightpanda",
-		Type:    "local",
-		Command: "lightpanda",
-		Args:    []string{"mcp"},
-		Enabled: true,
-	},
-}
-
-// loadServerConfigs loads MCP server configurations.
-// It starts with built-in servers, then overlays user-defined servers
-// from the "mcp-servers" key in the native config data.
+// loadServerConfigs loads MCP server configurations from the
+// "mcp-servers" key in the native config data.
 //
 // Multiple configs can share the same logical Name as long as they have
-// different Type values (e.g., lightpanda local + cloud). The user config
+// different Type values (e.g., a local + cloud pair). The user config
 // must use unique sub-keys for each variant.
 //
 // Config format (in config.dscli):
 //
 //	mcp-servers {
 //	  server-id {
-//	    name = lightpanda
+//	    name = my-server
 //	    type = local
-//	    command = lightpanda
-//	    args = [mcp]
+//	    command = my-server
+//	    args = [serve]
 //	    enabled = true
 //	  }
 //	}
+//
+// No built-in servers are hardcoded anymore: every MCP server, including
+// LightPanda, is configured explicitly by the user.
 func loadServerConfigs() ([]ServerConfig, error) {
 	// Use a composite key "name:type" to allow multiple variants per logical name.
 	configMap := make(map[string]ServerConfig)
-	for _, s := range builtinServers {
-		key := s.Name + ":" + s.Type
-		configMap[key] = s
-	}
 
 	// Load user-defined servers from native config data.
 	serversVal := config.GetValue("mcp-servers")
 	if serversVal == nil {
-		return builtinServers, nil
+		return nil, nil
 	}
 
 	// If the value is a string (old format "mcp-servers = filename.yaml"),
-	// ignore it and return built-in servers only.
+	// ignore it - there are no built-in servers to fall back to.
 	if _, ok := serversVal.(string); ok {
-		return builtinServers, nil
+		return nil, nil
 	}
 
 	serversMap, ok := serversVal.(map[string]any)

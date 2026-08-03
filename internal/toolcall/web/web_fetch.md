@@ -41,4 +41,5 @@ articles, any "give me this page's content" request.
   reports this as an error. **Use Bing for search** - it works well over
   the same proxy.
 - For interactive browsing (click, fill, multi-step sessions) use the
-  MCP path instead (`lightpanda_goto`, `lightpanda_markdown`, etc.).
+  MCP path instead (tools from your configured MCP servers, named
+  `serverName_toolName`).

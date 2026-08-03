@@ -83,7 +83,7 @@ Tests get an isolated database: `context.IsTesting()` → `/tmp/dscli-test-<bina
 | `internal/lockfile/` | Per-project process lock for chat sessions |
 | `internal/editor/` | External editor integration (emacsclient-aware) |
 | `internal/shell/` | Safe shell execution via mvdan/sh |
-| `internal/lp/` | Web page reading via LightPanda MCP (local stdio / cloud SSE) |
+| `internal/lp/` | Web page reading via `lightpanda fetch` CLI, DeepSeek web login/chat (chromedp) |
 | `internal/mcphub/` | Multi-MCP-server connections; dispatches unknown tools |
 | `internal/memories/` | Persistent cross-session memory with FTS5 |
 | `internal/tokenizer/` | Chinese+English segmentation for FTS5 (gse) |

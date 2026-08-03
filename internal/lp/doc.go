@@ -1,33 +1,32 @@
-// Package lp provides web page reading via LightPanda's MCP transport.
+// Package lp provides web page reading and DeepSeek web interactions.
 //
-// # Architecture
+// # Web page reading
 //
-//	url(req) +---------------+  stdio   +-------------+
-//	-------->|  MCP Client    +--------->| lightpanda  |
-//	        |  (mcp.go)      |          | mcp         |
-//	<--------+                |<---------+             |
-//	markdown +---------------+ markdown +-------------+
+// Fetch runs the `lightpanda fetch` CLI as a one-shot subprocess and returns
+// the page dump (markdown, html, semantic tree). This is the transport used
+// by the web_fetch tool and the webget command - a fresh process per call,
+// so a hung page cannot poison later calls. Proxying is handled internally:
+// hosts known to need a proxy go straight through the configured proxy
+// (config key lightpanda-http-proxy), other hosts are fetched directly first
+// and retried via the proxy when the direct attempt fails.
 //
-// The package uses LightPanda's native MCP server (lightpanda mcp subcommand,
-// stdio transport). Each call spawns a fresh subprocess.
+// # DeepSeek web interactions
 //
-// # Modes
+// WebChat drives a local Chrome/Chromium via chromedp to chat with
+// chat.deepseek.com (used by the chat command's web fallback), and
+// deepseek_login.go automates the DeepSeek sign-in flow, sharing cookies
+// so logins survive across sessions.
 //
-//   - local (default): spawns "lightpanda mcp" subprocess locally.
-//   - cloud: connects to LightPanda Cloud MCP/SSE endpoint. Switch via
-//     the mcp_client tool (target="cloud", server="lightpanda").
+// # History
 //
-// # Cloud Configuration
+// The package previously talked to LightPanda over MCP (lightpanda mcp
+// subprocess, stdio, or LightPanda Cloud over SSE). That transport was
+// removed - MCP servers are now managed generically by internal/mcphub,
+// configured via the mcp-servers config block.
 //
-//	lightpanda-cloud-url    = https://euwest.cloud.lightpanda.io/mcp/sse
-//	lightpanda-remote-token = <token>
+// Config keys used:
 //
-// For the mcphub generic tool switching, define a `type: cloud` variant
-// for the "lightpanda" server in your mcp-servers config block.
-//
-// # Deprecated
-//
-// The older CDP transport (lightpanda serve + chromedp) was removed in v0.10.0.
-// Config keys lightpanda-local-url, lightpanda-remote-url, and
-// lightpanda_transport are no longer used.
+//	lightpanda-http-proxy              = socks5h://localhost:8777
+//	lightpanda-additional-proxy-domains = ["github.io"]
+
 package lp
