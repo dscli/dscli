@@ -45,7 +45,7 @@ var codeReviewTool = toolcall.ToolDef{
 		"required":             []string{"summary"},
 		"additionalProperties": false,
 	},
-	Category: "communication",
+	Category: "check",
 	Timeout:  5 * time.Minute, // 5分钟超时
 	Handler:  handleCodeReview,
 }

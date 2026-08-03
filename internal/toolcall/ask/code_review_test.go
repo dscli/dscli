@@ -40,8 +40,8 @@ func TestCodeReviewToolStructure(t *testing.T) {
 		t.Errorf("Expected timeout 5 minutes, got %v", codeReviewTool.Timeout)
 	}
 
-	if codeReviewTool.Category != "communication" {
-		t.Errorf("Expected category 'communication', got '%s'", codeReviewTool.Category)
+	if codeReviewTool.Category != "check" {
+		t.Errorf("Expected category 'check', got '%s'", codeReviewTool.Category)
 	}
 }
 
