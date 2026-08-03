@@ -153,13 +153,13 @@ func handleWakeup(ctx context.Context, args toolcall.ToolArgs) (result, warning 
 		// Fire-and-forget: the command launches a visible dscli session
 		// in the user's IDE (Emacs frame, terminal window, etc.).  The
 		// project path travels as the command's working directory
-		// (RunDisplayCommand sets cmd.Dir): emacsclient -e evaluates in
+		// (RunCommandBackground sets cmd.Dir): emacsclient -e evaluates in
 		// the daemon, but default-directory there follows the client's
 		// cwd, so the Lisp side reads the target project from
 		// default-directory.  No shared handoff state — concurrent
 		// wakeups of different projects cannot interfere.
 		go func() {
-			if err := processutil.RunDisplayCommand(project, dispatchCmd[0], dispatchCmd[1:]...); err != nil {
+			if err := processutil.RunCommandBackground(project, dispatchCmd[0], dispatchCmd[1:]...); err != nil {
 				outfmt.Debug("wakeup: display command start: %v\n", err)
 			}
 		}()
@@ -181,14 +181,14 @@ func handleWakeup(ctx context.Context, args toolcall.ToolArgs) (result, warning 
 //
 // The returned argv is passed verbatim to exec.Command — no shell layer,
 // no string interpolation.  The project path never appears here: it
-// travels as the command's working directory (runDisplayCommand sets
+// travels as the command's working directory (RunCommandBackground sets
 // cmd.Dir), so a crafted path can never become a shell metacharacter or
 // a Lisp form.  Returns nil when no display command is available.
 func detectDisplayCommand() []string {
 	switch emacsutil.Detect() {
 	case emacsutil.ModeClientServer:
 		// Emacs server (daemon) is up: attach a new frame via emacsclient.
-		// The command carries no project data at all — runDisplayCommand
+		// The command carries no project data at all — RunCommandBackground
 		// sets cmd.Dir to the target project, and emacsclient -e evaluates
 		// with default-directory following the client's cwd, so
 		// dscli--send-message-raw reads the project from default-directory.

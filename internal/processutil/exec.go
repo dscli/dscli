@@ -5,7 +5,7 @@ import (
 	"os/exec"
 )
 
-// RunDisplayCommand executes a command with dir as its working directory,
+// RunCommandBackground executes a command with dir as its working directory,
 // fire-and-forget and detached from the caller's session.
 //
 // The command goes straight to exec.Command as (name, args...) — there is
@@ -22,7 +22,7 @@ import (
 // It returns an error only when the command cannot be started.  Once
 // started, the child is detached (own session, no controlling terminal)
 // and reaped in the background; later errors are intentionally ignored.
-func RunDisplayCommand(dir, name string, args ...string) error {
+func RunCommandBackground(dir, name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	// The launched command must outlive the caller.  Without detachment it
@@ -37,7 +37,7 @@ func RunDisplayCommand(dir, name string, args ...string) error {
 	detachCmd(cmd)
 
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start display command %q: %w", name, err)
+		return fmt.Errorf("start background command %q: %w", name, err)
 	}
 	// Detach: reap the child in background.
 	go cmd.Wait()

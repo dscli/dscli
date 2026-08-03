@@ -11,11 +11,11 @@ import (
 	"time"
 )
 
-// TestRunDisplayCommandDetaches verifies that the display command starts
+// TestRunCommandBackgroundDetaches verifies that the display command starts
 // in its own session with no controlling terminal, so it survives the
 // caller's exit: terminal-close SIGHUP only reaches the caller's
 // process group, never a detached child.
-func TestRunDisplayCommandDetaches(t *testing.T) {
+func TestRunCommandBackgroundDetaches(t *testing.T) {
 	if _, err := exec.LookPath("ps"); err != nil {
 		t.Skip("ps not available")
 	}
@@ -31,7 +31,7 @@ func TestRunDisplayCommandDetaches(t *testing.T) {
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := RunDisplayCommand(project, script, marker); err != nil {
+	if err := RunCommandBackground(project, script, marker); err != nil {
 		t.Fatal(err)
 	}
 
@@ -70,13 +70,13 @@ func TestRunDisplayCommandDetaches(t *testing.T) {
 	}
 }
 
-// TestRunDisplayCommandNoInjection verifies the project path never enters
+// TestRunCommandBackgroundNoInjection verifies the project path never enters
 // the command's argv: it travels only as cmd.Dir.  Under the old sh -c
 // template it was passed as $1, and before that %s interpolation executed
 // $(...) inside a double-quoted template.  With exec.Command there is no
 // shell layer at all — the test proves the malicious path is used
 // verbatim as the working directory and produces no side effects.
-func TestRunDisplayCommandNoInjection(t *testing.T) {
+func TestRunCommandBackgroundNoInjection(t *testing.T) {
 	base := t.TempDir()
 	pwned := filepath.Join(base, "pwned")
 	evil := filepath.Join(base, "$(touch pwned)") // executed by the old %s interpolation
@@ -91,7 +91,7 @@ func TestRunDisplayCommandNoInjection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := RunDisplayCommand(evil, script, out); err != nil {
+	if err := RunCommandBackground(evil, script, out); err != nil {
 		t.Fatal(err)
 	}
 
@@ -121,23 +121,23 @@ func TestRunDisplayCommandNoInjection(t *testing.T) {
 	}
 }
 
-// TestRunDisplayCommandUsesProjectDir verifies the display command runs
+// TestRunCommandBackgroundUsesProjectDir verifies the display command runs
 // with the target project as its working directory — that is the handoff
 // channel to the Emacs side (emacsclient -e evaluates with
 // default-directory following the client's cwd), replacing the old
 // handoff file.  A shell `pwd` is captured to prove the cwd.
-func TestRunDisplayCommandUsesProjectDir(t *testing.T) {
+func TestRunCommandBackgroundUsesProjectDir(t *testing.T) {
 	project := t.TempDir()
 	out := filepath.Join(t.TempDir(), "cwd.txt")
 	script := filepath.Join(t.TempDir(), "capture-cwd.sh")
 	// The script records its own working directory into the marker file
-	// passed as $1.  RunDisplayCommand executes it directly (no shell
+	// passed as $1.  RunCommandBackground executes it directly (no shell
 	// wrapper), so the captured cwd proves cmd.Dir == project.
 	if err := os.WriteFile(script, []byte("#!/bin/sh\npwd > \"$1\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := RunDisplayCommand(project, script, out); err != nil {
+	if err := RunCommandBackground(project, script, out); err != nil {
 		t.Fatal(err)
 	}
 

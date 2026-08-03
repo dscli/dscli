@@ -72,7 +72,7 @@ func TestDetectDisplayCommand(t *testing.T) {
 
 // TestDetectDisplayCommandNoEnvHandoff guards the wakeup handoff contract:
 // the project path travels as the command's working directory
-// (RunDisplayCommand sets cmd.Dir — emacsclient -e evaluates with
+// (RunCommandBackground sets cmd.Dir — emacsclient -e evaluates with
 // default-directory following the client's cwd), never via a
 // prefix-assigned environment variable (emacsclient does not pass those
 // into a running server's -e evaluation environment) and never spliced
