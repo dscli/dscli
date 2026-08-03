@@ -74,9 +74,11 @@ func clearProxyConfig(t *testing.T) {
 	t.Helper()
 	config.SetValue("lightpanda-http-proxy", nil)
 	config.SetValue("lightpanda-proxy", nil)
+	config.SetValue("lightpanda-additional-proxy-domains", nil)
 	t.Cleanup(func() {
 		config.SetValue("lightpanda-http-proxy", nil)
 		config.SetValue("lightpanda-proxy", nil)
+		config.SetValue("lightpanda-additional-proxy-domains", nil)
 	})
 }
 
@@ -93,9 +95,11 @@ func TestFetchArgs(t *testing.T) {
 		if !strings.Contains(out, "Fake Markdown") {
 			t.Errorf("Fetch() = %q, want fake markdown", out)
 		}
-		want := []string{"fetch", "https://example.com", "--dump", "markdown", "--json",
+		want := []string{
+			"fetch", "https://example.com", "--dump", "markdown", "--json",
 			"--http-timeout", strconv.Itoa(probeTimeoutMS),
-			"--terminate-ms", strconv.Itoa(terminateMS)}
+			"--terminate-ms", strconv.Itoa(terminateMS),
+		}
 		if got := readArgs(t, argsFile); strings.Join(got, " ") != strings.Join(want, " ") {
 			t.Errorf("args = %v, want %v", got, want)
 		}
@@ -164,6 +168,44 @@ func TestFetchArgs(t *testing.T) {
 		}
 		if got := strings.Join(readArgs(t, argsFile), " "); !strings.Contains(got, "--http-proxy socks5h://localhost:1111") {
 			t.Errorf("args %q: explicit proxy should override config", got)
+		}
+	})
+
+	t.Run("force proxy skips the direct probe", func(t *testing.T) {
+		clearProxyConfig(t)
+		config.Set("lightpanda-http-proxy", "socks5h://localhost:9999")
+		if _, err := Fetch(context.Background(), "https://example.com",
+			FetchOptions{ForceProxy: true}); err != nil {
+			t.Fatalf("Fetch() error = %v", err)
+		}
+		args := readArgs(t, argsFile)
+		got := strings.Join(args, " ")
+		// Single attempt through the proxy with the full timeout - example.com
+		// is not in proxyDomains, so without ForceProxy this would probe first.
+		if !strings.Contains(got, "--http-proxy socks5h://localhost:9999") {
+			t.Errorf("args %q missing forced proxy", got)
+		}
+		if !strings.Contains(got, "--http-timeout "+strconv.Itoa(httpTimeoutMS)) {
+			t.Errorf("args %q missing full http timeout", got)
+		}
+		if strings.Contains(got, "--http-timeout "+strconv.Itoa(probeTimeoutMS)) {
+			t.Errorf("args %q must not contain the probe timeout", got)
+		}
+		if n := len(args); n != 11 {
+			t.Errorf("expected a single invocation (11 args), got %d", n)
+		}
+	})
+
+	t.Run("force proxy without configured proxy still fetches", func(t *testing.T) {
+		clearProxyConfig(t)
+		// No proxy configured: ForceProxy has nothing to force, the direct
+		// path must remain functional.
+		if _, err := Fetch(context.Background(), "https://example.com",
+			FetchOptions{ForceProxy: true}); err != nil {
+			t.Fatalf("Fetch() error = %v", err)
+		}
+		if got := strings.Join(readArgs(t, argsFile), " "); strings.Contains(got, "--http-proxy") {
+			t.Errorf("args %q must not contain a proxy flag", got)
 		}
 	})
 }
@@ -280,6 +322,59 @@ func TestNeedsProxy(t *testing.T) {
 		{"not a url", false},
 	}
 	for _, tt := range tests {
+		if got := needsProxy(tt.url); got != tt.want {
+			t.Errorf("needsProxy(%q) = %v, want %v", tt.url, got, tt.want)
+		}
+	}
+}
+
+// TestNeedsProxyExtraDomains verifies user-configured domains are merged into
+// the built-in list, in both array and comma-separated string forms.
+func TestNeedsProxyExtraDomains(t *testing.T) {
+	clearProxyConfig(t)
+	config.SetValue("lightpanda-additional-proxy-domains", []any{"github.io", "Example.COM"})
+	t.Cleanup(func() { config.SetValue("lightpanda-additional-proxy-domains", nil) })
+
+	tests := []struct {
+		url  string
+		want bool
+	}{
+		{"https://lilianweng.github.io/posts/2026-06-24-scaling-laws/", true},
+		{"https://foo.github.io", true},
+		{"https://github.io", true},
+		{"https://github.com/dscli/dscli", false}, // github.com, not github.io
+		{"https://example.org", false},            // not in the configured list
+	}
+	for _, tt := range tests {
+		if got := needsProxy(tt.url); got != tt.want {
+			t.Errorf("needsProxy(%q) = %v, want %v", tt.url, got, tt.want)
+		}
+	}
+
+	// Comma-separated string form, with whitespace and an empty entry.
+	config.SetValue("lightpanda-additional-proxy-domains", " gitlab.com ,,raw.githubusercontent.com ")
+	for _, tt := range []struct {
+		url  string
+		want bool
+	}{
+		{"https://gitlab.com/foo", true},
+		{"https://raw.githubusercontent.com/dscli/dscli/main/README.md", true},
+		{"https://example.com", false},
+	} {
+		if got := needsProxy(tt.url); got != tt.want {
+			t.Errorf("needsProxy(%q) = %v, want %v", tt.url, got, tt.want)
+		}
+	}
+
+	// []string form, accepted defensively (the parser produces []any today).
+	config.SetValue("lightpanda-additional-proxy-domains", []string{"GitHub.IO"})
+	for _, tt := range []struct {
+		url  string
+		want bool
+	}{
+		{"https://lilianweng.github.io/posts/2026-06-24-scaling-laws/", true},
+		{"https://example.com", false},
+	} {
 		if got := needsProxy(tt.url); got != tt.want {
 			t.Errorf("needsProxy(%q) = %v, want %v", tt.url, got, tt.want)
 		}

@@ -51,6 +51,7 @@ type FetchOptions struct {
 	Dump        string // markdown | html | semantic_tree | semantic_tree_text
 	TerminateMS int    // JS deadline in ms; 0 uses terminateMS
 	Proxy       string // --http-proxy URL; empty falls back to config lightpanda-http-proxy
+	ForceProxy  bool   // skip the direct probe and go straight through the proxy
 }
 
 // Fetch runs `lightpanda fetch` for a single URL and returns its dump text.
@@ -61,9 +62,11 @@ type FetchOptions struct {
 // semantic_tree over html for large pages.
 //
 // The proxy comes from opts.Proxy, or from the lightpanda-http-proxy value
-// in config when unset.  Hosts known to need a proxy (see proxyDomains) go
-// straight through it; other hosts are fetched directly first and retried
-// via the proxy when the direct attempt fails or returns nothing.
+// in config when unset.  Hosts known to need a proxy (see proxyDomains, plus
+// user-configured lightpanda-additional-proxy-domains) go straight through
+// it; other hosts are fetched directly first and retried via the proxy when
+// the direct attempt fails or returns nothing.  ForceProxy skips the direct
+// probe entirely.
 func Fetch(ctx context.Context, rawURL string, opts FetchOptions) (string, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "Fetch")
 	defer span.Finish()
@@ -86,9 +89,9 @@ func Fetch(ctx context.Context, rawURL string, opts FetchOptions) (string, error
 		proxy = config.Get("lightpanda-http-proxy", "", "lightpanda-proxy")
 	}
 
-	// Known blocked domains go straight through the proxy; probing them
-	// directly would just burn the probe timeout.
-	if proxy != "" && needsProxy(rawURL) {
+	// Known blocked domains (or ForceProxy) go straight through the proxy;
+	// probing them directly would just burn the probe timeout.
+	if proxy != "" && (opts.ForceProxy || needsProxy(rawURL)) {
 		return fetchOnce(ctx, path, rawURL, dump, proxy, httpTimeoutMS, term)
 	}
 
@@ -116,9 +119,11 @@ type fetchResult struct {
 // not load (status 0), an HTTP error, an anti-bot interstitial, or an empty
 // dump all become errors instead of silent empty output.
 func fetchOnce(ctx context.Context, path, rawURL, dump, proxy string, timeoutMS, termMS int) (string, error) {
-	args := []string{"fetch", rawURL, "--dump", dump, "--json",
+	args := []string{
+		"fetch", rawURL, "--dump", dump, "--json",
 		"--http-timeout", strconv.Itoa(timeoutMS),
-		"--terminate-ms", strconv.Itoa(termMS)}
+		"--terminate-ms", strconv.Itoa(termMS),
+	}
 	if proxy != "" {
 		args = append(args, "--http-proxy", proxy)
 	}
@@ -179,7 +184,9 @@ func isBotInterstitial(rawURL, content string) bool {
 		strings.Contains(s, "our systems have detected")
 }
 
-// needsProxy reports whether rawURL's host commonly requires a proxy.
+// needsProxy reports whether rawURL's host commonly requires a proxy.  The
+// built-in list is merged with user-configured extra domains (config key
+// lightpanda-additional-proxy-domains, array or comma-separated string).
 func needsProxy(rawURL string) bool {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -191,7 +198,46 @@ func needsProxy(rawURL string) bool {
 			return true
 		}
 	}
+	for _, d := range extraProxyDomains() {
+		if host == d || strings.HasSuffix(host, "."+d) {
+			return true
+		}
+	}
 	return false
+}
+
+// extraProxyDomains returns the user-configured additional proxy domains
+// from config key lightpanda-additional-proxy-domains.  Both an array value
+// and a comma-separated string are accepted; domains are trimmed and
+// lowercased.  []string is accepted defensively even though the config
+// parser currently produces []any.
+func extraProxyDomains() []string {
+	switch t := config.GetValue("lightpanda-additional-proxy-domains").(type) {
+	case []any:
+		items := make([]string, 0, len(t))
+		for _, item := range t {
+			if s, ok := item.(string); ok {
+				items = append(items, s)
+			}
+		}
+		return normDomains(items)
+	case []string:
+		return normDomains(t)
+	case string:
+		return normDomains(strings.Split(t, ","))
+	}
+	return nil
+}
+
+// normDomains trims, lowercases and drops empty entries.
+func normDomains(items []string) []string {
+	domains := make([]string, 0, len(items))
+	for _, s := range items {
+		if s = strings.ToLower(strings.TrimSpace(s)); s != "" {
+			domains = append(domains, s)
+		}
+	}
+	return domains
 }
 
 // runFetch executes the lightpanda binary and returns its stdout.

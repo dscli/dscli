@@ -41,30 +41,35 @@ esac
 func clearProxyConfig(t *testing.T) {
 	t.Helper()
 	config.SetValue("lightpanda-http-proxy", nil)
-	t.Cleanup(func() { config.SetValue("lightpanda-http-proxy", nil) })
+	config.SetValue("lightpanda-additional-proxy-domains", nil)
+	t.Cleanup(func() {
+		config.SetValue("lightpanda-http-proxy", nil)
+		config.SetValue("lightpanda-additional-proxy-domains", nil)
+	})
 }
 
 // runWebget executes webReaderRunE through a minimal cobra command and
-// returns captured stdout/stderr.
-func runWebget(t *testing.T, args ...string) (stdout, stderr string) {
+// returns captured stdout plus the returned error (mirroring main.go, which
+// prints the error to stderr and exits 1).
+func runWebget(t *testing.T, args ...string) (stdout string, err error) {
 	t.Helper()
 	cmd := &cobra.Command{
 		Use:           "webget <url>",
-		Args:          cobra.ExactArgs(1),
 		RunE:          webReaderRunE,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 	cmd.Flags().Int("timeout", 330, "")
 	cmd.Flags().String("dump", "markdown", "")
-	var out, errBuf bytes.Buffer
+	cmd.Flags().Bool("force-proxy", false, "")
+	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetErr(&errBuf)
+	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetArgs(args)
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute(%v) error = %v", args, err)
-	}
-	return out.String(), errBuf.String()
+	// Execute must run before out.String() is evaluated - Go evaluates
+	// function arguments left to right in a return statement.
+	err = cmd.Execute()
+	return out.String(), err
 }
 
 func TestWebgetRunE(t *testing.T) {
@@ -73,12 +78,12 @@ func TestWebgetRunE(t *testing.T) {
 	clearProxyConfig(t)
 
 	t.Run("success prints markdown", func(t *testing.T) {
-		out, errS := runWebget(t, "https://example.com")
+		out, err := runWebget(t, "https://example.com")
+		if err != nil {
+			t.Fatalf("runWebget() error = %v", err)
+		}
 		if !strings.Contains(out, "Fake Markdown") {
 			t.Errorf("stdout = %q, want Fake Markdown", out)
-		}
-		if errS != "" {
-			t.Errorf("stderr = %q, want empty", errS)
 		}
 	})
 
@@ -94,44 +99,65 @@ func TestWebgetRunE(t *testing.T) {
 		}
 	})
 
-	t.Run("http error reported on stderr", func(t *testing.T) {
+	t.Run("http error returned", func(t *testing.T) {
 		t.Setenv("FAKE_MODE", "status404")
-		_, errS := runWebget(t, "https://example.com")
-		if !strings.Contains(errS, "Error: 读取网页失败") {
-			t.Errorf("stderr = %q, want error prefix", errS)
+		_, err := runWebget(t, "https://example.com")
+		if err == nil || !strings.Contains(err.Error(), "读取网页失败") {
+			t.Errorf("error = %v, want 读取网页失败", err)
+		}
+	})
+
+	t.Run("missing URL rejected", func(t *testing.T) {
+		_, err := runWebget(t)
+		if err == nil || !strings.Contains(err.Error(), "URL 参数") {
+			t.Errorf("error = %v, want URL 参数 hint", err)
 		}
 	})
 
 	t.Run("missing scheme rejected", func(t *testing.T) {
-		_, errS := runWebget(t, "example.com")
-		if !strings.Contains(errS, "http:// 或 https://") {
-			t.Errorf("stderr = %q, want scheme hint", errS)
+		_, err := runWebget(t, "example.com")
+		if err == nil || !strings.Contains(err.Error(), "http:// 或 https://") {
+			t.Errorf("error = %v, want scheme hint", err)
 		}
 	})
 
 	t.Run("uppercase scheme accepted", func(t *testing.T) {
 		// RFC 3986: URL schemes are case-insensitive.
-		out, errS := runWebget(t, "HTTPS://example.com")
+		out, err := runWebget(t, "HTTPS://example.com")
+		if err != nil {
+			t.Fatalf("runWebget() error = %v", err)
+		}
 		if !strings.Contains(out, "Fake Markdown") {
 			t.Errorf("stdout = %q, want Fake Markdown", out)
-		}
-		if errS != "" {
-			t.Errorf("stderr = %q, want empty", errS)
 		}
 	})
 
 	t.Run("invalid dump rejected", func(t *testing.T) {
-		_, errS := runWebget(t, "https://example.com", "--dump", "pdf")
-		if !strings.Contains(errS, "--dump 仅支持") {
-			t.Errorf("stderr = %q, want dump enum hint", errS)
+		_, err := runWebget(t, "https://example.com", "--dump", "pdf")
+		if err == nil || !strings.Contains(err.Error(), "--dump 仅支持") {
+			t.Errorf("error = %v, want dump enum hint", err)
 		}
 	})
 
-	t.Run("bad json reported on stderr", func(t *testing.T) {
+	t.Run("bad json returned", func(t *testing.T) {
 		t.Setenv("FAKE_MODE", "raw")
-		_, errS := runWebget(t, "https://example.com")
-		if !strings.Contains(errS, "Error: 读取网页失败") {
-			t.Errorf("stderr = %q, want error prefix", errS)
+		_, err := runWebget(t, "https://example.com")
+		if err == nil || !strings.Contains(err.Error(), "读取网页失败") {
+			t.Errorf("error = %v, want 读取网页失败", err)
+		}
+	})
+
+	t.Run("force-proxy goes straight through proxy", func(t *testing.T) {
+		config.Set("lightpanda-http-proxy", "socks5h://localhost:9999")
+		runWebget(t, "https://example.com", "--force-proxy")
+		data, err := os.ReadFile(argsFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		args := strings.Join(strings.Fields(string(data)), " ")
+		// Single invocation (probe skipped) with the proxy flag present.
+		if !strings.Contains(args, "--http-proxy socks5h://localhost:9999") {
+			t.Errorf("lightpanda args %q missing forced proxy", args)
 		}
 	})
 }
