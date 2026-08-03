@@ -51,6 +51,10 @@ func init() {
 	webchatCmd.Flags().String("input", "", "从文件读取消息（使用 - 表示从 stdin 读取）")
 	webchatCmd.Flags().Bool("keep", false, "继续上次对话（默认开新对话）")
 	webchatCmd.Flags().String("chat-mode", "", "聊天模式: pro (专家/V4 Pro), flash (快速/V4 Flash), vision (识图/V4 Vision)；默认 pro，--keep 时保留原模式")
+	// --attach accepts any user-readable path (absolute included): the CLI
+	// is human-driven and the operator can already read those files. The
+	// ask_expert TOOL is LLM-driven and sandboxes paths to the project
+	// directory instead (verifySafePath), since the model is untrusted.
 	webchatCmd.Flags().StringSlice("attach", nil, "附件图片路径，可多次指定（仅 flash/vision 模式支持）")
 }
 
