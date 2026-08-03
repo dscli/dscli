@@ -257,13 +257,13 @@ func (lx *lexer) errorf(format string, values ...any) stateFn {
 func lexTop(lx *lexer) stateFn {
 	r := lx.next()
 	if unicode.IsSpace(r) {
-		return lexSkip(lx, lexTop)
+		return lexSkip(lexTop)
 	}
 
 	switch r {
 	case topOptStart:
 		lx.push(lexTop)
-		return lexSkip(lx, lexBlockStart)
+		return lexSkip(lexBlockStart)
 	case commentHashStart:
 		lx.push(lexTop)
 		return lexCommentStart
@@ -321,13 +321,13 @@ func lexTopValueEnd(lx *lexer) stateFn {
 func lexBlockStart(lx *lexer) stateFn {
 	r := lx.next()
 	if unicode.IsSpace(r) {
-		return lexSkip(lx, lexBlockStart)
+		return lexSkip(lexBlockStart)
 	}
 
 	switch r {
 	case topOptStart:
 		lx.push(lexBlockEnd)
-		return lexSkip(lx, lexBlockStart)
+		return lexSkip(lexBlockStart)
 	case topOptTerm:
 		lx.ignore()
 		return lx.pop()
@@ -426,13 +426,13 @@ func lexKeyStart(lx *lexer) stateFn {
 		return lx.errorf("Unexpected key separator '%v'", r)
 	case unicode.IsSpace(r):
 		lx.next()
-		return lexSkip(lx, lexKeyStart)
+		return lexSkip(lexKeyStart)
 	case r == dqStringStart:
 		lx.next()
-		return lexSkip(lx, lexDubQuotedKey)
+		return lexSkip(lexDubQuotedKey)
 	case r == sqStringStart:
 		lx.next()
-		return lexSkip(lx, lexQuotedKey)
+		return lexSkip(lexQuotedKey)
 	}
 	lx.ignore()
 	lx.next()
@@ -442,11 +442,12 @@ func lexKeyStart(lx *lexer) stateFn {
 // lexDubQuotedKey consumes the text of a key between quotes.
 func lexDubQuotedKey(lx *lexer) stateFn {
 	r := lx.peek()
-	if r == dqStringEnd {
+	switch r {
+	case dqStringEnd:
 		lx.emit(itemKey)
 		lx.next()
-		return lexSkip(lx, lexKeyEnd)
-	} else if r == eof {
+		return lexSkip(lexKeyEnd)
+	case eof:
 		if lx.pos > lx.start {
 			return lx.errorf("Unexpected EOF.")
 		}
@@ -460,11 +461,12 @@ func lexDubQuotedKey(lx *lexer) stateFn {
 // lexQuotedKey consumes the text of a key between quotes.
 func lexQuotedKey(lx *lexer) stateFn {
 	r := lx.peek()
-	if r == sqStringEnd {
+	switch r {
+	case sqStringEnd:
 		lx.emit(itemKey)
 		lx.next()
-		return lexSkip(lx, lexKeyEnd)
-	} else if r == eof {
+		return lexSkip(lexKeyEnd)
+	case eof:
 		if lx.pos > lx.start {
 			return lx.errorf("Unexpected EOF.")
 		}
@@ -495,7 +497,7 @@ func (lx *lexer) keyCheckKeyword(fallThrough, push stateFn) stateFn {
 func lexIncludeStart(lx *lexer) stateFn {
 	r := lx.next()
 	if isWhitespace(r) {
-		return lexSkip(lx, lexIncludeStart)
+		return lexSkip(lexIncludeStart)
 	}
 	lx.backup()
 	return lexInclude
@@ -506,14 +508,14 @@ func lexIncludeStart(lx *lexer) stateFn {
 // internal contents.
 func lexIncludeQuotedString(lx *lexer) stateFn {
 	r := lx.next()
-	switch {
-	case r == sqStringEnd:
+	switch r {
+	case sqStringEnd:
 		lx.backup()
 		lx.emit(itemInclude)
 		lx.next()
 		lx.ignore()
 		return lx.pop()
-	case r == eof:
+	case eof:
 		return lx.errorf("Unexpected EOF in quoted include")
 	}
 	return lexIncludeQuotedString
@@ -524,14 +526,14 @@ func lexIncludeQuotedString(lx *lexer) stateFn {
 // internal contents.
 func lexIncludeDubQuotedString(lx *lexer) stateFn {
 	r := lx.next()
-	switch {
-	case r == dqStringEnd:
+	switch r {
+	case dqStringEnd:
 		lx.backup()
 		lx.emit(itemInclude)
 		lx.next()
 		lx.ignore()
 		return lx.pop()
-	case r == eof:
+	case eof:
 		return lx.errorf("Unexpected EOF in double quoted include")
 	}
 	return lexIncludeDubQuotedString
@@ -605,9 +607,9 @@ func lexKeyEnd(lx *lexer) stateFn {
 	r := lx.next()
 	switch {
 	case unicode.IsSpace(r):
-		return lexSkip(lx, lexKeyEnd)
+		return lexSkip(lexKeyEnd)
 	case isKeySeparator(r):
-		return lexSkip(lx, lexValue)
+		return lexSkip(lexValue)
 	case r == eof:
 		lx.emit(itemEOF)
 		return nil
@@ -625,7 +627,7 @@ func lexValue(lx *lexer) stateFn {
 	// In array syntax, the array states are responsible for ignoring new lines.
 	r := lx.next()
 	if isWhitespace(r) {
-		return lexSkip(lx, lexValue)
+		return lexSkip(lexValue)
 	}
 
 	switch {
@@ -668,7 +670,7 @@ func lexArrayValue(lx *lexer) stateFn {
 	r := lx.next()
 	switch {
 	case unicode.IsSpace(r):
-		return lexSkip(lx, lexArrayValue)
+		return lexSkip(lexArrayValue)
 	case r == commentHashStart:
 		lx.push(lexArrayValue)
 		return lexCommentStart
@@ -697,7 +699,7 @@ func lexArrayValueEnd(lx *lexer) stateFn {
 	r := lx.next()
 	switch {
 	case isWhitespace(r):
-		return lexSkip(lx, lexArrayValueEnd)
+		return lexSkip(lexArrayValueEnd)
 	case r == commentHashStart:
 		lx.push(lexArrayValueEnd)
 		return lexCommentStart
@@ -710,7 +712,7 @@ func lexArrayValueEnd(lx *lexer) stateFn {
 		lx.backup()
 		fallthrough
 	case r == arrayValTerm || isNL(r):
-		return lexSkip(lx, lexArrayValue) // Move onto next
+		return lexSkip(lexArrayValue) // Move onto next
 	case r == arrayEnd:
 		return lexArrayEnd
 	}
@@ -738,10 +740,10 @@ func lexMapKeyStart(lx *lexer) stateFn {
 		return lx.errorf("Unexpected array end '%v' processing map.", r)
 	case unicode.IsSpace(r):
 		lx.next()
-		return lexSkip(lx, lexMapKeyStart)
+		return lexSkip(lexMapKeyStart)
 	case r == mapEnd:
 		lx.next()
-		return lexSkip(lx, lexMapEnd)
+		return lexSkip(lexMapEnd)
 	case r == commentHashStart:
 		lx.next()
 		lx.push(lexMapKeyStart)
@@ -756,10 +758,10 @@ func lexMapKeyStart(lx *lexer) stateFn {
 		lx.backup()
 	case r == sqStringStart:
 		lx.next()
-		return lexSkip(lx, lexMapQuotedKey)
+		return lexSkip(lexMapQuotedKey)
 	case r == dqStringStart:
 		lx.next()
-		return lexSkip(lx, lexMapDubQuotedKey)
+		return lexSkip(lexMapDubQuotedKey)
 	case r == eof:
 		return lx.errorf("Unexpected EOF processing map.")
 	}
@@ -775,7 +777,7 @@ func lexMapQuotedKey(lx *lexer) stateFn {
 	} else if r == sqStringEnd {
 		lx.emit(itemKey)
 		lx.next()
-		return lexSkip(lx, lexMapKeyEnd)
+		return lexSkip(lexMapKeyEnd)
 	}
 	lx.next()
 	return lexMapQuotedKey
@@ -788,7 +790,7 @@ func lexMapDubQuotedKey(lx *lexer) stateFn {
 	} else if r == dqStringEnd {
 		lx.emit(itemKey)
 		lx.next()
-		return lexSkip(lx, lexMapKeyEnd)
+		return lexSkip(lexMapKeyEnd)
 	}
 	lx.next()
 	return lexMapDubQuotedKey
@@ -818,9 +820,9 @@ func lexMapKeyEnd(lx *lexer) stateFn {
 	r := lx.next()
 	switch {
 	case unicode.IsSpace(r):
-		return lexSkip(lx, lexMapKeyEnd)
+		return lexSkip(lexMapKeyEnd)
 	case isKeySeparator(r):
-		return lexSkip(lx, lexMapValue)
+		return lexSkip(lexMapValue)
 	}
 	// We start the value here
 	lx.backup()
@@ -834,11 +836,11 @@ func lexMapValue(lx *lexer) stateFn {
 	r := lx.next()
 	switch {
 	case unicode.IsSpace(r):
-		return lexSkip(lx, lexMapValue)
+		return lexSkip(lexMapValue)
 	case r == mapValTerm:
 		return lx.errorf("Unexpected map value terminator %q.", mapValTerm)
 	case r == mapEnd:
-		return lexSkip(lx, lexMapEnd)
+		return lexSkip(lexMapEnd)
 	}
 	lx.backup()
 	lx.push(lexMapValueEnd)
@@ -851,7 +853,7 @@ func lexMapValueEnd(lx *lexer) stateFn {
 	r := lx.next()
 	switch {
 	case isWhitespace(r):
-		return lexSkip(lx, lexMapValueEnd)
+		return lexSkip(lexMapValueEnd)
 	case r == commentHashStart:
 		lx.push(lexMapValueEnd)
 		return lexCommentStart
@@ -864,9 +866,9 @@ func lexMapValueEnd(lx *lexer) stateFn {
 		lx.backup()
 		fallthrough
 	case r == optValTerm || r == mapValTerm || isNL(r):
-		return lexSkip(lx, lexMapKeyStart) // Move onto next
+		return lexSkip(lexMapKeyStart) // Move onto next
 	case r == mapEnd:
-		return lexSkip(lx, lexMapEnd)
+		return lexSkip(lexMapEnd)
 	}
 	return lx.errorf("Expected a map value terminator %q or a map "+
 		"terminator %q, but got '%v' instead.", mapValTerm, mapEnd, r)
@@ -905,14 +907,14 @@ func (lx *lexer) isVariable() bool {
 // internal contents.
 func lexQuotedString(lx *lexer) stateFn {
 	r := lx.next()
-	switch {
-	case r == sqStringEnd:
+	switch r {
+	case sqStringEnd:
 		lx.backup()
 		lx.emit(itemString)
 		lx.next()
 		lx.ignore()
 		return lx.pop()
-	case r == eof:
+	case eof:
 		if lx.pos > lx.start {
 			return lx.errorf("Unexpected EOF.")
 		}
@@ -927,17 +929,17 @@ func lexQuotedString(lx *lexer) stateFn {
 // internal contents.
 func lexDubQuotedString(lx *lexer) stateFn {
 	r := lx.next()
-	switch {
-	case r == '\\':
+	switch r {
+	case '\\':
 		lx.addCurrentStringPart(1)
 		return lexStringEscape
-	case r == dqStringEnd:
+	case dqStringEnd:
 		lx.backup()
 		lx.emitString()
 		lx.next()
 		lx.ignore()
 		return lx.pop()
-	case r == eof:
+	case eof:
 		if lx.pos > lx.start {
 			return lx.errorf("Unexpected EOF.")
 		}
@@ -985,8 +987,8 @@ func lexString(lx *lexer) stateFn {
 // processing until it finds a ')' on a new line by itself.
 func lexBlock(lx *lexer) stateFn {
 	r := lx.next()
-	switch {
-	case r == blockEnd:
+	switch r {
+	case blockEnd:
 		lx.backup()
 		lx.backup()
 
@@ -1010,7 +1012,7 @@ func lexBlock(lx *lexer) stateFn {
 			return lx.pop()
 		}
 		lx.backup()
-	case r == eof:
+	case eof:
 		return lx.errorf("Unexpected EOF processing block.")
 	}
 	return lexBlock
@@ -1105,8 +1107,8 @@ func lexNumberOrDateOrStringOrIP(lx *lexer) stateFn {
 // lexConvenientNumber is when we have a suffix, e.g. 1k or 1Mb
 func lexConvenientNumber(lx *lexer) stateFn {
 	r := lx.next()
-	switch {
-	case r == 'b' || r == 'B' || r == 'i' || r == 'I':
+	switch r {
+	case 'b', 'B', 'i', 'I':
 		return lexConvenientNumber
 	}
 	lx.backup()
@@ -1239,7 +1241,7 @@ func lexComment(lx *lexer) stateFn {
 }
 
 // lexSkip ignores all slurped input and moves on to the next state.
-func lexSkip(lx *lexer, nextState stateFn) stateFn {
+func lexSkip(nextState stateFn) stateFn {
 	return func(lx *lexer) stateFn {
 		lx.ignore()
 		return nextState

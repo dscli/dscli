@@ -230,15 +230,6 @@ func writeInlineMap(w *strings.Builder, m map[string]any) {
 	w.WriteByte('}')
 }
 
-// // loadConfigFromFile 从文件加载配置
-// func loadConfigFromFile(filename string) (map[string]any, error) {
-// 	b, err := os.ReadFile(filename)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	return Parse(string(b))
-// }
-
 // loadConfigFromEnv 从环境变量加载配置
 func loadConfigFromEnv() map[string]any {
 	const (
