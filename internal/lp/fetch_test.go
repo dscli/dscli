@@ -21,6 +21,11 @@ import (
 //	empty          HTTP 200 with no content
 //	interstitial   HTTP 200 with a Google anti-bot shell page
 //	raw            non-JSON output
+//	refresh        markdown empty; html is a meta-refresh shell; the target
+//	               URL (https://example.com/target) serves markdown
+//	refresh-rel    like refresh but with a relative refresh target
+//	empty-html     markdown empty; html has content (no refresh)
+//	block-all      HTTP 0 even through the proxy
 func writeFakeBin(t *testing.T, argsFile string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -40,6 +45,31 @@ case "$FAKE_MODE" in
   empty) echo '{"url":"u","http_status":200,"content":""}' ;;
   interstitial) echo '{"url":"u","http_status":200,"content":"Trouble accessing Google Search, please click here"}' ;;
   raw) echo 'this is not json' ;;
+  refresh)
+    case " $* " in
+      *" https://example.com/target "*) echo '{"url":"u","http_status":200,"content":"# Target Markdown\n"}' ;;
+      *" --dump html "*) echo '{"url":"u","http_status":200,"content":"<head><meta http-equiv=\"refresh\" content=\"0;url=https://example.com/target\"></head>"}' ;;
+      *) echo '{"url":"u","http_status":200,"content":""}' ;;
+    esac ;;
+  refresh-rel)
+    case " $* " in
+      *" --dump html "*) echo '{"url":"u","http_status":200,"content":"<meta http-equiv=\"refresh\" content=\"0;url=2024/post.html\">"}' ;;
+      *" https://example.com/2024/post.html "*) echo '{"url":"u","http_status":200,"content":"# Relative Target\n"}' ;;
+      *) echo '{"url":"u","http_status":200,"content":""}' ;;
+    esac ;;
+  refresh-loop)
+    # Every page is an empty markdown shell that refreshes to the same URL,
+    # so following the redirect must hit the cap and fail.
+    case " $* " in
+      *" --dump html "*) echo '{"url":"u","http_status":200,"content":"<meta http-equiv=\"refresh\" content=\"0;url=https://example.com/a\">"}' ;;
+      *) echo '{"url":"u","http_status":200,"content":""}' ;;
+    esac ;;
+  empty-html)
+    case " $* " in
+      *" --dump html "*) echo '{"url":"u","http_status":200,"content":"<html><body><img src=\"x.png\"></body></html>"}' ;;
+      *) echo '{"url":"u","http_status":200,"content":""}' ;;
+    esac ;;
+  block-all) echo '{"url":"u","http_status":0,"content":""}' ;;
   *) echo '{"url":"u","http_status":200,"content":"# Fake Markdown\n"}' ;;
 esac
 `
@@ -303,6 +333,105 @@ func TestFetchResultValidation(t *testing.T) {
 			t.Errorf("Fetch() = %q, want raw content on non-Google hosts", out)
 		}
 	})
+}
+
+// TestFetchEmptyContentFallback covers the markdown-empty resolution: a
+// meta-refresh shell is followed to its target, a page without convertible
+// text falls back to html, and a page empty in every form keeps the error.
+func TestFetchEmptyContentFallback(t *testing.T) {
+	argsFile := filepath.Join(t.TempDir(), "args.txt")
+	writeFakeBin(t, argsFile)
+	clearProxyConfig(t)
+
+	t.Run("meta refresh is followed to the target", func(t *testing.T) {
+		t.Setenv("FAKE_MODE", "refresh")
+		out, err := Fetch(context.Background(), "https://example.com/start", FetchOptions{})
+		if err != nil {
+			t.Fatalf("Fetch() error = %v", err)
+		}
+		if !strings.Contains(out, "Target Markdown") {
+			t.Errorf("Fetch() = %q, want content from the refresh target", out)
+		}
+		// markdown(empty) + html(refresh shell) + markdown(target) = 3 probes.
+		args := readArgs(t, argsFile)
+		if len(args) != 27 {
+			t.Errorf("expected 3 invocations (27 args), got %d: %v", len(args), args)
+		}
+		dumps := 0
+		for _, a := range args {
+			if a == "--dump" {
+				dumps++
+			}
+		}
+		if dumps != 3 { // one --dump per invocation
+			t.Errorf("expected --dump on each of 3 invocations, got %d flags", dumps)
+		}
+	})
+
+	t.Run("relative refresh target resolves against the page URL", func(t *testing.T) {
+		t.Setenv("FAKE_MODE", "refresh-rel")
+		out, err := Fetch(context.Background(), "https://example.com/start", FetchOptions{})
+		if err != nil {
+			t.Fatalf("Fetch() error = %v", err)
+		}
+		if !strings.Contains(out, "Relative Target") {
+			t.Errorf("Fetch() = %q, want content from the relative refresh target", out)
+		}
+	})
+
+	t.Run("refresh loop is capped", func(t *testing.T) {
+		// The fake loop mode always serves an empty markdown shell that
+		// refreshes to the same URL, so the chain must hit the cap and fail.
+		t.Setenv("FAKE_MODE", "refresh-loop")
+		_, err := Fetch(context.Background(), "https://example.com/loop", FetchOptions{})
+		if err == nil || !strings.Contains(err.Error(), "no content") {
+			t.Errorf("Fetch() error = %v, want no-content error after the cap", err)
+		}
+	})
+
+	t.Run("no-text page falls back to html", func(t *testing.T) {
+		t.Setenv("FAKE_MODE", "empty-html")
+		out, err := Fetch(context.Background(), "https://example.com/img", FetchOptions{})
+		if err != nil {
+			t.Fatalf("Fetch() error = %v", err)
+		}
+		if !strings.Contains(out, "<img") {
+			t.Errorf("Fetch() = %q, want html fallback content", out)
+		}
+	})
+
+	t.Run("truly empty page still errors", func(t *testing.T) {
+		t.Setenv("FAKE_MODE", "empty")
+		_, err := Fetch(context.Background(), "https://example.com", FetchOptions{})
+		if err == nil || !strings.Contains(err.Error(), "no content") {
+			t.Errorf("Fetch() error = %v, want no-content error", err)
+		}
+	})
+}
+
+// TestFetchProxyDownHint verifies that a status-0 failure through a proxy
+// names the proxy, so a dead ssh-socks tunnel is diagnosable instead of
+// looking like a site outage.
+func TestFetchProxyDownHint(t *testing.T) {
+	argsFile := filepath.Join(t.TempDir(), "args.txt")
+	writeFakeBin(t, argsFile)
+	clearProxyConfig(t)
+	t.Setenv("FAKE_MODE", "block-all")
+	config.Set("lightpanda-http-proxy", "socks5h://localhost:9999")
+
+	_, err := Fetch(context.Background(), "https://example.com", FetchOptions{ForceProxy: true})
+	if err == nil {
+		t.Fatal("Fetch() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "HTTP status 0") {
+		t.Errorf("error %q missing HTTP status 0", err)
+	}
+	if !strings.Contains(err.Error(), "socks5h://localhost:9999") {
+		t.Errorf("error %q missing the proxy URL", err)
+	}
+	if !strings.Contains(err.Error(), "proxy tunnel") {
+		t.Errorf("error %q missing the tunnel hint", err)
+	}
 }
 
 func TestNeedsProxy(t *testing.T) {

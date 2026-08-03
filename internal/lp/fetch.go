@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -32,7 +34,18 @@ const (
 	// httpTimeoutMS.  Normal pages finish their scripts in seconds and are
 	// unaffected.
 	terminateMS = 60000
+
+	// maxRefreshFollows caps how many <meta http-equiv="refresh"> hops Fetch
+	// will follow when a page's markdown dump comes back empty.  The cap
+	// prevents redirect loops from spawning unbounded lightpanda processes.
+	maxRefreshFollows = 2
 )
+
+// errEmptyContent marks a successful HTTP fetch whose dump came back empty.
+// It is internal: Fetch resolves it (html fallback, meta-refresh following)
+// before returning, so callers only ever see the plain "no content" error
+// when the page genuinely has nothing to offer.
+var errEmptyContent = errors.New("page returned no content")
 
 // proxyDomains are hosts that commonly require a proxy in restricted
 // networks.  Fetches to them skip the direct probe and go straight through
@@ -74,10 +87,38 @@ type FetchOptions struct {
 // it; other hosts are fetched directly first and retried via the proxy when
 // the direct attempt fails or returns nothing.  ForceProxy skips the direct
 // probe entirely.
+//
+// A markdown dump that comes back empty is not immediately an error: the
+// page may be a <meta http-equiv="refresh"> shell (common on GitHub Pages
+// sites), which converts to no markdown at all.  Fetch then re-fetches as
+// html, and if the page is a meta-refresh redirect it follows the target
+// (up to maxRefreshFollows hops) and returns the target's dump.  A page
+// with no convertible text and no redirect falls back to returning its raw
+// html instead of failing; only a page that is empty in every dump form
+// yields the "no content" error.
 func Fetch(ctx context.Context, rawURL string, opts FetchOptions) (string, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "Fetch")
 	defer span.Finish()
 
+	text, err := fetchWithDepth(ctx, rawURL, opts, 0)
+	if err != nil {
+		return "", err
+	}
+
+	// A single success point: the result is written to opts.Output exactly
+	// once, only after a successful fetch (never on the failed probe, never
+	// from a followed meta-refresh hop).
+	if opts.Output != "" {
+		if werr := writeOutput(opts.Output, text); werr != nil {
+			return "", fmt.Errorf("write output file: %w", werr)
+		}
+	}
+	return text, nil
+}
+
+// fetchWithDepth is the recursive core of Fetch.  depth tracks followed
+// meta-refresh hops and caps the recursion via maxRefreshFollows.
+func fetchWithDepth(ctx context.Context, rawURL string, opts FetchOptions, depth int) (string, error) {
 	path, err := exec.LookPath("lightpanda")
 	if err != nil {
 		return "", fmt.Errorf("lightpanda not found in PATH: %w", err)
@@ -111,15 +152,10 @@ func Fetch(ctx context.Context, rawURL string, opts FetchOptions) (string, error
 		}
 	}
 	if err != nil {
-		return "", err
-	}
-
-	// A single success point: the result is written to opts.Output exactly
-	// once, only after a successful fetch (never on the failed probe).
-	if opts.Output != "" {
-		if werr := writeOutput(opts.Output, out); werr != nil {
-			return "", fmt.Errorf("write output file: %w", werr)
+		if errors.Is(err, errEmptyContent) {
+			return resolveEmptyContent(ctx, path, rawURL, dump, proxy, httpTimeoutMS, term, depth)
 		}
+		return "", err
 	}
 	return out, nil
 }
@@ -162,6 +198,13 @@ func fetchOnce(ctx context.Context, path, rawURL, dump, proxy string, timeoutMS,
 		if isGoogleHost(rawURL) {
 			return "", fmt.Errorf("lightpanda fetch: page did not load (HTTP status 0): Google rejects the Lightpanda browser fingerprint; use Bing for search")
 		}
+		if proxy != "" {
+			// A dead proxy tunnel (e.g. the ssh-socks SOCKS5 forward) leaves
+			// the local port listening while every connection through it
+			// fails - the result is a silent status 0 with no navigate
+			// error.  Name the proxy so the user knows where to look.
+			return "", fmt.Errorf("lightpanda fetch: page did not load (HTTP status 0) via proxy %s: the proxy tunnel may be down or the site unreachable", redactProxy(proxy))
+		}
 		return "", fmt.Errorf("lightpanda fetch: page did not load (HTTP status 0); site may be blocked or unreachable")
 	case res.HTTPStatus >= 400:
 		if res.HTTPStatus == 429 && isGoogleHost(rawURL) {
@@ -169,11 +212,100 @@ func fetchOnce(ctx context.Context, path, rawURL, dump, proxy string, timeoutMS,
 		}
 		return "", fmt.Errorf("lightpanda fetch: HTTP %d", res.HTTPStatus)
 	case strings.TrimSpace(res.Content) == "":
-		return "", fmt.Errorf("lightpanda fetch: page returned no content")
+		return "", errEmptyContent
 	case isBotInterstitial(rawURL, res.Content):
 		return "", fmt.Errorf("lightpanda fetch: site returned an anti-bot interstitial instead of results; for Google search, try Bing")
 	}
 	return res.Content, nil
+}
+
+// resolveEmptyContent handles a successful HTTP 200 whose markdown dump came
+// back empty.  Three cases are possible:
+//
+//   - the page is a <meta http-equiv="refresh"> shell with no body text
+//     (common on GitHub Pages sites) - re-fetch the target and return its
+//     dump;
+//   - the page has content that simply does not convert to markdown (image
+//     page, JS shell) - return its html so the caller still gets something;
+//   - the page is empty in every form - keep the original error.
+//
+// The html re-fetch reuses the same proxy decision as the original call.
+func resolveEmptyContent(ctx context.Context, path, rawURL, dump, proxy string, timeoutMS, termMS, depth int) (string, error) {
+	if dump != "markdown" {
+		// Only markdown conversion can legitimately come back empty for a
+		// loaded page; other dumps that are empty mean the page truly has
+		// nothing.
+		return "", errEmptyContent
+	}
+	htmlOut, herr := fetchOnce(ctx, path, rawURL, "html", proxy, timeoutMS, termMS)
+	if herr != nil {
+		return "", errEmptyContent
+	}
+	if strings.TrimSpace(htmlOut) == "" {
+		return "", errEmptyContent
+	}
+	if target, ok := parseMetaRefresh(htmlOut); ok {
+		if depth < maxRefreshFollows {
+			if resolved, rerr := resolveURL(rawURL, target); rerr == nil {
+				return fetchWithDepth(ctx, resolved, FetchOptions{Dump: dump, Proxy: proxy}, depth+1)
+			}
+		}
+		// The redirect chain exceeded the cap (or the target does not
+		// resolve): returning the shell html would be useless, so keep
+		// the no-content error.
+		return "", errEmptyContent
+	}
+	// No redirect: the page has body content but no convertible text.
+	// Returning the html beats failing - the caller asked for a page and
+	// gets it, just in a different format.
+	return htmlOut, nil
+}
+
+// metaTagRe matches individual <meta ...> tags (HTML is case-insensitive).
+var metaTagRe = regexp.MustCompile(`(?i)<meta\b[^>]*>`)
+
+// metaRefreshURLRe matches the url= value inside a refresh meta tag's
+// content attribute: content="0;url=https://example.com/next".
+var metaRefreshURLRe = regexp.MustCompile(`(?i)\burl\s*=\s*["']?([^"'>\s]+)`)
+
+// parseMetaRefresh extracts the redirect target from a
+// <meta http-equiv="refresh" content="N;url=..."> tag, if present.
+func parseMetaRefresh(html string) (string, bool) {
+	for _, tag := range metaTagRe.FindAllString(html, -1) {
+		if !strings.Contains(strings.ToLower(tag), "refresh") {
+			continue
+		}
+		m := metaRefreshURLRe.FindStringSubmatch(tag)
+		if m == nil {
+			continue
+		}
+		return strings.Trim(m[1], `"'`), true
+	}
+	return "", false
+}
+
+// resolveURL resolves ref (possibly relative, e.g. "2024/post.html")
+// against the base URL of the page that contained it.
+func resolveURL(base, ref string) (string, error) {
+	b, err := url.Parse(base)
+	if err != nil {
+		return "", err
+	}
+	r, err := url.Parse(ref)
+	if err != nil {
+		return "", err
+	}
+	return b.ResolveReference(r).String(), nil
+}
+
+// redactProxy renders a proxy URL for error messages without leaking any
+// embedded credentials.
+func redactProxy(proxy string) string {
+	u, err := url.Parse(proxy)
+	if err != nil {
+		return proxy
+	}
+	return u.Redacted()
 }
 
 // writeOutput writes content to the file described by output.  Two forms are
