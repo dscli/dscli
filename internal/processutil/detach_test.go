@@ -1,6 +1,6 @@
 //go:build !windows
 
-package ai
+package processutil
 
 import (
 	"os"
@@ -31,7 +31,9 @@ func TestRunDisplayCommandDetaches(t *testing.T) {
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	runDisplayCommand(project, script, marker)
+	if err := RunDisplayCommand(project, script, marker); err != nil {
+		t.Fatal(err)
+	}
 
 	// The child opens the marker immediately on redirection but writes
 	// output afterwards; poll for complete content, not just existence.
@@ -89,7 +91,9 @@ func TestRunDisplayCommandNoInjection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	runDisplayCommand(evil, script, out)
+	if err := RunDisplayCommand(evil, script, out); err != nil {
+		t.Fatal(err)
+	}
 
 	deadline := time.Now().Add(5 * time.Second)
 	var data []byte
@@ -114,5 +118,44 @@ func TestRunDisplayCommandNoInjection(t *testing.T) {
 		if _, err := os.Stat(path); err == nil {
 			t.Fatalf("shell metacharacters in project path were executed (%s created)", path)
 		}
+	}
+}
+
+// TestRunDisplayCommandUsesProjectDir verifies the display command runs
+// with the target project as its working directory — that is the handoff
+// channel to the Emacs side (emacsclient -e evaluates with
+// default-directory following the client's cwd), replacing the old
+// handoff file.  A shell `pwd` is captured to prove the cwd.
+func TestRunDisplayCommandUsesProjectDir(t *testing.T) {
+	project := t.TempDir()
+	out := filepath.Join(t.TempDir(), "cwd.txt")
+	script := filepath.Join(t.TempDir(), "capture-cwd.sh")
+	// The script records its own working directory into the marker file
+	// passed as $1.  RunDisplayCommand executes it directly (no shell
+	// wrapper), so the captured cwd proves cmd.Dir == project.
+	if err := os.WriteFile(script, []byte("#!/bin/sh\npwd > \"$1\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RunDisplayCommand(project, script, out); err != nil {
+		t.Fatal(err)
+	}
+
+	// The command starts async children; poll for the capture file.
+	deadline := time.Now().Add(2 * time.Second)
+	var data []byte
+	for {
+		var err error
+		data, err = os.ReadFile(out)
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("capture file %s not written: %v", out, err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := strings.TrimSpace(string(data)); got != project {
+		t.Errorf("command cwd = %q, want %q", got, project)
 	}
 }

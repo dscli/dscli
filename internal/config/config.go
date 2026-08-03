@@ -34,6 +34,27 @@ func GetValue(name string) any {
 	return getGlobalConfig().GetValue(name)
 }
 
+// GetStrings 获取字符串数组配置值，如 wakeup-command = ["emacs", "--eval", ...]。
+// 解析器产生的数组元素类型为 []any；仅接受字符串元素，空字符串元素会被跳过。
+// 未配置、类型不匹配或过滤后为空时返回 nil。
+func GetStrings(name string) []string {
+	v := getGlobalConfig().GetValue(name)
+	arr, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(arr))
+	for _, e := range arr {
+		if s, ok := e.(string); ok && s != "" {
+			out = append(out, s)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // SetValue 设置全局配置值（仅内存中，不持久化到文件）。
 // 支持结构化数据（map、slice 等），主要用于测试。
 func SetValue(name string, value any) {

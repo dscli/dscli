@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -262,5 +263,30 @@ func TestSaveConfigToFile_EmptyMapAndArray(t *testing.T) {
 	}
 	if got, want := loaded["valid"], "ok"; got != want {
 		t.Errorf("valid = %v, want %v", got, want)
+	}
+}
+
+func TestGetStrings(t *testing.T) {
+	tests := []struct {
+		name  string
+		value any
+		want  []string
+	}{
+		{name: "未配置", value: nil, want: nil},
+		{name: "类型不匹配", value: "emacs", want: nil},
+		{name: "空数组", value: []any{}, want: nil},
+		{name: "正常数组", value: []any{"emacs", "--eval", "(dscli--send-message-raw)"}, want: []string{"emacs", "--eval", "(dscli--send-message-raw)"}},
+		{name: "跳过非字符串和空字符串", value: []any{"emacs", 42, "", "chat"}, want: []string{"emacs", "chat"}},
+		{name: "过滤后为空", value: []any{"", 42}, want: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			SetValue("teststrings", tt.value)
+			got := GetStrings("teststrings")
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("GetStrings() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

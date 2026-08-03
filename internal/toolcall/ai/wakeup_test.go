@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 )
 
 // writeFakeScript creates an executable fake command in dir.
@@ -73,7 +72,7 @@ func TestDetectDisplayCommand(t *testing.T) {
 
 // TestDetectDisplayCommandNoEnvHandoff guards the wakeup handoff contract:
 // the project path travels as the command's working directory
-// (runDisplayCommand sets cmd.Dir — emacsclient -e evaluates with
+// (RunDisplayCommand sets cmd.Dir — emacsclient -e evaluates with
 // default-directory following the client's cwd), never via a
 // prefix-assigned environment variable (emacsclient does not pass those
 // into a running server's -e evaluation environment) and never spliced
@@ -95,42 +94,5 @@ func TestDetectDisplayCommandNoEnvHandoff(t *testing.T) {
 	}
 	if strings.Contains(joined, "$1") {
 		t.Errorf("command must not reference a positional project arg, got: %v", got)
-	}
-}
-
-// TestRunDisplayCommandUsesProjectDir verifies the display command runs
-// with the target project as its working directory — that is the handoff
-// channel to the Emacs side (emacsclient -e evaluates with
-// default-directory following the client's cwd), replacing the old
-// handoff file.  A shell `pwd` is captured to prove the cwd.
-func TestRunDisplayCommandUsesProjectDir(t *testing.T) {
-	project := t.TempDir()
-	out := filepath.Join(t.TempDir(), "cwd.txt")
-	script := filepath.Join(t.TempDir(), "capture-cwd.sh")
-	// The script records its own working directory into the marker file
-	// passed as $1.  runDisplayCommand executes it directly (no shell
-	// wrapper), so the captured cwd proves cmd.Dir == project.
-	if err := os.WriteFile(script, []byte("#!/bin/sh\npwd > \"$1\"\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	runDisplayCommand(project, script, out)
-
-	// The command starts async children; poll for the capture file.
-	deadline := time.Now().Add(2 * time.Second)
-	var data []byte
-	for {
-		var err error
-		data, err = os.ReadFile(out)
-		if err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("capture file %s not written: %v", out, err)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if got := strings.TrimSpace(string(data)); got != project {
-		t.Errorf("command cwd = %q, want %q", got, project)
 	}
 }

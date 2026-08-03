@@ -16,7 +16,6 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -137,7 +136,7 @@ func handleWakeup(ctx context.Context, args toolcall.ToolArgs) (result, warning 
 	// Step 2: Check if a dscli chat process is already running for the
 	// target project.  If so, the existing session will pick up the
 	// chimein in its next round — no further action needed.
-	if isProcessRunning(project) {
+	if processutil.IsProcessRunning(project) {
 		outfmt.Printf("📨 已送达 %s (已有运行中的会话)\n", targetName)
 		result = fmt.Sprintf("已送达 %s 在项目 %s（运行中会话）", targetName, projectName)
 		return result, warning, nil
@@ -154,12 +153,16 @@ func handleWakeup(ctx context.Context, args toolcall.ToolArgs) (result, warning 
 		// Fire-and-forget: the command launches a visible dscli session
 		// in the user's IDE (Emacs frame, terminal window, etc.).  The
 		// project path travels as the command's working directory
-		// (runDisplayCommand sets cmd.Dir): emacsclient -e evaluates in
+		// (RunDisplayCommand sets cmd.Dir): emacsclient -e evaluates in
 		// the daemon, but default-directory there follows the client's
 		// cwd, so the Lisp side reads the target project from
 		// default-directory.  No shared handoff state — concurrent
 		// wakeups of different projects cannot interfere.
-		go runDisplayCommand(project, dispatchCmd[0], dispatchCmd[1:]...)
+		go func() {
+			if err := processutil.RunDisplayCommand(project, dispatchCmd[0], dispatchCmd[1:]...); err != nil {
+				outfmt.Debug("wakeup: display command start: %v\n", err)
+			}
+		}()
 		outfmt.Printf("📨 已唤醒 %s 处理项目 %s 的任务\n", targetName, projectName)
 		result = fmt.Sprintf("已唤醒 %s 处理项目 %s 的任务", targetName, projectName)
 	} else {
@@ -170,24 +173,6 @@ func handleWakeup(ctx context.Context, args toolcall.ToolArgs) (result, warning 
 	}
 
 	return result, warning, nil
-}
-
-// isProcessRunning checks whether a dscli chat process is currently holding
-// the project-level lockfile at <project>/.dscli/locks/dscli.lock.
-func isProcessRunning(projectPath string) bool {
-	lockPath := filepath.Join(projectPath, ".dscli", "locks", "dscli.lock")
-	data, err := os.ReadFile(lockPath)
-	if err != nil {
-		return false
-	}
-
-	var pid int
-	if _, err := fmt.Sscanf(string(data), "%d", &pid); err != nil || pid == 0 {
-		return false
-	}
-
-	// Check if process is alive.
-	return processutil.IsAlive(pid)
 }
 
 // detectDisplayCommand auto-detects the best display command based on
@@ -240,61 +225,5 @@ func detectDisplayCommand() []string {
 // configured" and returns nil, so the caller falls back to
 // detectDisplayCommand.
 func displayCommandFromConfig() []string {
-	v := config.GetValue("wakeup-command")
-	arr, ok := v.([]any)
-	if !ok {
-		return nil
-	}
-	cmd := make([]string, 0, len(arr))
-	for _, e := range arr {
-		if s, ok := e.(string); ok && s != "" {
-			cmd = append(cmd, s)
-		}
-	}
-	if len(cmd) == 0 {
-		return nil
-	}
-	return cmd
-}
-
-// runDisplayCommand executes the display command with the target project
-// as its working directory, fire-and-forget.  The command goes straight
-// to exec.Command as (name, args...) — there is no shell layer, so nothing
-// is reinterpreted: configured argv is used verbatim, and the project
-// path never appears in argv at all.
-//
-// The project path travels as the command's working directory (cmd.Dir).
-// That is the handoff channel to the Emacs side: emacsclient -e evaluates
-// forms in the running server (daemon), whose environment and startup
-// directory are fixed, but the eval buffer's default-directory follows
-// the client's cwd.  dscli--send-message-raw therefore reads the target
-// project from default-directory — no env var, no handoff file, no shared
-// state, so concurrent wakeups of different projects cannot interfere.
-//
-// The display command does NOT carry message content — the message is
-// already in the chimeins queue.  The command's sole job is to wake up
-// a dscli chat session in the user's IDE; the session reads the chimein
-// on startup.
-func runDisplayCommand(dir, name string, args ...string) {
-	cmd := exec.Command(name, args...)
-	cmd.Dir = dir
-	// The display command must outlive the waking AI.  Without
-	// detachment it inherits the caller's process group and controlling
-	// terminal, so closing the terminal that hosts the caller (or
-	// Ctrl+C on it) sends SIGHUP/SIGINT to the whole foreground process
-	// group - taking the freshly woken AI's Emacs down with the caller.
-	// Setsid is stronger than nohup: it starts a new session with no
-	// controlling terminal, so terminal-close SIGHUP and process-group
-	// signals never reach the child.  A GUI Emacs (DISPLAY set) needs
-	// no tty; in a tty-only environment the display dies with the
-	// terminal anyway.
-	detachCmd(cmd)
-
-	if startErr := cmd.Start(); startErr != nil {
-		outfmt.Debug("wakeup: display command start: %v\n", startErr)
-		return
-	}
-
-	// Detach: reap the child in background.
-	go cmd.Wait()
+	return config.GetStrings("wakeup-command")
 }
