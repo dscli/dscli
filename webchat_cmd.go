@@ -129,6 +129,7 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 
 // webchatListConversations prints the saved conversation registry.
 func webchatListConversations() error {
+	fmt.Println("ℹ️  --keep=list 仅列出已保存会话，不发送消息。")
 	convs, err := lp.ListConversations()
 	if err != nil {
 		return err

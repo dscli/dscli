@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/lockfile"
 	"github.com/nanjj/clog"
 
 	"github.com/chromedp/cdproto/dom"
@@ -1055,7 +1056,10 @@ type conversationRegistry struct {
 
 // conversationIDRE matches the conversation ID inside a DeepSeek chat URL:
 // https://chat.deepseek.com/a/chat/s/<id>
-var conversationIDRE = regexp.MustCompile(`/a/chat/s/([A-Za-z0-9_-]+)`)
+// The host is anchored so lookalike paths on other domains never match
+// (a non-DeepSeek URL must not yield an ID that could collide with a real
+// conversation's registry key).
+var conversationIDRE = regexp.MustCompile(`^https://chat\.deepseek\.com/a/chat/s/([A-Za-z0-9_-]+)`)
 
 // ConversationIDFromURL extracts the conversation ID from a chat.deepseek.com
 // conversation URL, or "" if the URL does not look like one.
@@ -1212,12 +1216,22 @@ func (r *conversationRegistry) resolve(keep string) (string, error) {
 	if entry, ok := r.Sessions[keep]; ok {
 		return entry.URL, nil
 	}
+	// Suffix/URL match: collect ALL matches so an ambiguous shorthand fails
+	// loudly instead of silently picking an arbitrary conversation.
+	var matches []string
 	for _, entry := range r.Sessions {
 		if entry.URL == keep || strings.HasSuffix(entry.URL, "/"+keep) {
-			return entry.URL, nil
+			matches = append(matches, entry.URL)
 		}
 	}
-	return "", fmt.Errorf("conversation %q not found (use keep=\"list\" to see saved conversations)", keep)
+	switch len(matches) {
+	case 0:
+		return "", fmt.Errorf("conversation %q not found (use keep=\"list\" to see saved conversations)", keep)
+	case 1:
+		return matches[0], nil
+	default:
+		return "", fmt.Errorf("conversation %q is ambiguous (%d matches); use the full conversation ID or URL", keep, len(matches))
+	}
 }
 
 // resolveConversation is the file-backed entry point: it resolves the Keep
@@ -1239,10 +1253,18 @@ func resolveConversation(keep string) (string, error) {
 	return reg.resolve(keep)
 }
 
-// registerConversation is the file-backed wrapper of registry.register.
+// registerConversation is the file-backed wrapper of registry.register. The
+// whole read-modify-write is serialized with a file lock so two concurrent
+// WebChat calls (e.g. two AI sessions in different processes) cannot lose
+// each other's entries; the kernel releases the lock if the process dies.
 func registerConversation(url string, mode Mode) error {
 	span, _ := clog.StartSpanFromContext(context.Background(), "registerConversation")
 	defer span.Finish()
+	lk, err := lockfile.LockDB("webchat_sessions")
+	if err != nil {
+		return err
+	}
+	defer lk.Close()
 	reg, err := loadConversationRegistry()
 	if err != nil {
 		return err

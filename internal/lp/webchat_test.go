@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -235,9 +236,16 @@ func TestConversationIDFromURL(t *testing.T) {
 		{"https://chat.deepseek.com/a/chat/s/abc123", "abc123"},
 		{"https://chat.deepseek.com/a/chat/s/a1b2-c3d4_e5", "a1b2-c3d4_e5"},
 		{"https://chat.deepseek.com/a/chat/s/abc123?extra=1", "abc123"},
+		{"https://chat.deepseek.com/a/chat/s/abc123#frag", "abc123"},
 		{"https://chat.deepseek.com/", ""},
 		{"", ""},
 		{"not a url", ""},
+		// Non-DeepSeek hosts and lookalike paths must not match.
+		{"https://evil.example.com/a/chat/s/abc123", ""},
+		{"https://chat.deepseek.com/other/s/abc123", ""},
+		// Weird input must not panic or match.
+		{"https://chat.deepseek.com/a/chat/s/", ""},
+		{"https://chat.deepseek.com/a/chat/s/%2e%2e", ""},
 	}
 	for _, tt := range tests {
 		if got := ConversationIDFromURL(tt.url); got != tt.want {
@@ -294,6 +302,27 @@ func TestRegistryResolve(t *testing.T) {
 
 	if _, err := reg.resolve("nope"); err == nil {
 		t.Error("unknown id must fail")
+	}
+}
+
+func TestRegistryResolveAmbiguousSuffix(t *testing.T) {
+	// Two entries whose URLs both end in /s/dup: a bare "dup" shorthand is
+	// ambiguous and must fail loudly instead of picking one arbitrarily.
+	reg := testRegistry(map[string]string{
+		"one": "https://chat.deepseek.com/a/chat/s/dup",
+		"two": "https://chat.deepseek.com/a/chat/s/other/dup",
+	})
+	_, err := reg.resolve("dup")
+	if err == nil {
+		t.Fatal("ambiguous suffix must fail")
+	}
+	if !strings.Contains(err.Error(), "ambiguous") {
+		t.Errorf("error = %q, want ambiguous message", err)
+	}
+	// The full ID still resolves.
+	got, err := reg.resolve("one")
+	if err != nil || got != "https://chat.deepseek.com/a/chat/s/dup" {
+		t.Errorf("resolve(one) = %q, %v; want exact URL, nil", got, err)
 	}
 }
 
