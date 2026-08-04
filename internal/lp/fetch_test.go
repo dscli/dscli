@@ -37,7 +37,7 @@ case "$FAKE_MODE" in
   block-direct)
     # grep is not on PATH under t.Setenv, so match with a shell case.
     case " $* " in
-      *" --http-proxy "*) echo '{"url":"u","http_status":200,"content":"# Fake Markdown\n"}' ;;
+      *" --http-proxy "*) printf '%s\n' '{"url":"u","http_status":200,"content":"# Fake Markdown\n"}' ;;
       *) echo '{"url":"u","http_status":0,"content":""}' ;;
     esac ;;
   status404) echo '{"url":"u","http_status":404,"content":"not found"}' ;;
@@ -47,26 +47,26 @@ case "$FAKE_MODE" in
   raw) echo 'this is not json' ;;
   refresh)
     case " $* " in
-      *" https://example.com/target "*) echo '{"url":"u","http_status":200,"content":"# Target Markdown\n"}' ;;
-      *" --dump html "*) echo '{"url":"u","http_status":200,"content":"<head><meta http-equiv=\"refresh\" content=\"0;url=https://example.com/target\"></head>"}' ;;
+      *" https://example.com/target "*) printf '%s\n' '{"url":"u","http_status":200,"content":"# Target Markdown\n"}' ;;
+      *" --dump html "*) printf '%s\n' '{"url":"u","http_status":200,"content":"<head><meta http-equiv=\"refresh\" content=\"0;url=https://example.com/target\"></head>"}' ;;
       *) echo '{"url":"u","http_status":200,"content":""}' ;;
     esac ;;
   refresh-rel)
     case " $* " in
-      *" --dump html "*) echo '{"url":"u","http_status":200,"content":"<meta http-equiv=\"refresh\" content=\"0;url=2024/post.html\">"}' ;;
-      *" https://example.com/2024/post.html "*) echo '{"url":"u","http_status":200,"content":"# Relative Target\n"}' ;;
+      *" --dump html "*) printf '%s\n' '{"url":"u","http_status":200,"content":"<meta http-equiv=\"refresh\" content=\"0;url=2024/post.html\">"}' ;;
+      *" https://example.com/2024/post.html "*) printf '%s\n' '{"url":"u","http_status":200,"content":"# Relative Target\n"}' ;;
       *) echo '{"url":"u","http_status":200,"content":""}' ;;
     esac ;;
   refresh-loop)
     # Every page is an empty markdown shell that refreshes to the same URL,
     # so following the redirect must hit the cap and fail.
     case " $* " in
-      *" --dump html "*) echo '{"url":"u","http_status":200,"content":"<meta http-equiv=\"refresh\" content=\"0;url=https://example.com/a\">"}' ;;
+      *" --dump html "*) printf '%s\n' '{"url":"u","http_status":200,"content":"<meta http-equiv=\"refresh\" content=\"0;url=https://example.com/a\">"}' ;;
       *) echo '{"url":"u","http_status":200,"content":""}' ;;
     esac ;;
   empty-html)
     case " $* " in
-      *" --dump html "*) echo '{"url":"u","http_status":200,"content":"<html><body><img src=\"x.png\"></body></html>"}' ;;
+      *" --dump html "*) printf '%s\n' '{"url":"u","http_status":200,"content":"<html><body><img src=\"x.png\"></body></html>"}' ;;
       *) echo '{"url":"u","http_status":200,"content":""}' ;;
     esac ;;
   block-html)
@@ -77,7 +77,7 @@ case "$FAKE_MODE" in
       *) echo '{"url":"u","http_status":200,"content":""}' ;;
     esac ;;
   block-all) echo '{"url":"u","http_status":0,"content":""}' ;;
-  *) echo '{"url":"u","http_status":200,"content":"# Fake Markdown\n"}' ;;
+  *) printf '%s\n' '{"url":"u","http_status":200,"content":"# Fake Markdown\n"}' ;;
 esac
 `
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
