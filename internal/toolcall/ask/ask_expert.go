@@ -30,17 +30,9 @@ var askExpertTool = toolcall.ToolDef{
 	Parameters: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"summary": map[string]any{
+			"input": map[string]any{
 				"type":        "string",
-				"description": "Brief summary (optional)",
-			},
-			"content": map[string]any{
-				"type":        "string",
-				"description": "Detailed question. Provide content or content_file (not both).",
-			},
-			"content_file": map[string]any{
-				"type":        "string",
-				"description": "Path to a file containing the detailed question. The file is read directly from disk, so the exact content is sent (no LLM transcription drift). Provide content or content_file (not both).",
+				"description": "The question to ask. If the value starts with @ and points to an existing file (e.g. @question.txt), the file content is read from disk as the question.",
 			},
 			"attachments": map[string]any{
 				"type":        "array",
@@ -49,14 +41,6 @@ var askExpertTool = toolcall.ToolDef{
 					"type":        "string",
 					"description": "Attachment filename",
 				},
-			},
-			"role": map[string]any{
-				"type":        "string",
-				"description": "Role name for the system prompt (default \"expert\"). Uses the prompt override chain: .dscli/prompt/<role>.md, ~/.dscli/prompt/<role>.md, role_configs mapping, built-in template. Ignored when system is provided.",
-			},
-			"system": map[string]any{
-				"type":        "string",
-				"description": "Full system prompt text. Completely replaces the default role template (takes precedence over role).",
 			},
 			"mode": map[string]any{
 				"type":        "string",
@@ -67,7 +51,7 @@ var askExpertTool = toolcall.ToolDef{
 				"description": "Timeout in seconds (default 600). Set longer for complex questions requiring deep analysis.",
 			},
 		},
-		"required":             []string{},
+		"required":             []string{"input"},
 		"additionalProperties": false,
 	},
 	Category: "communication",
@@ -98,38 +82,35 @@ func init() {
 func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "handleAskExpert")
 	defer span.Finish()
-	summary := toolcall.ToolArgsValue(args, "summary", "")
-	content := toolcall.ToolArgsValue(args, "content", "")
-	contentFile := toolcall.ToolArgsValue(args, "content_file", "")
-	role := toolcall.ToolArgsValue(args, "role", "expert")
-	// Normalize: the LLM may pass an explicit empty string, which bypasses
-	// the ToolArgsValue default.
-	if role == "" {
-		role = "expert"
+	input := toolcall.ToolArgsValue(args, "input", "")
+	// required only guarantees the key exists; the LLM may pass an empty string.
+	if strings.TrimSpace(input) == "" {
+		err = fmt.Errorf("input is required")
+		return result, warning, err
 	}
-	system := toolcall.ToolArgsValue(args, "system", "")
+
+	// An @-prefixed input is a file reference (e.g. @question.txt): read the
+	// file when it is a safe path and exists. Lenient fallback: anything else
+	// is sent as plain text, so natural language starting with @ (e.g. "@user
+	// ...") is never mangled into an error.
+	content := input
+	if strings.HasPrefix(input, "@") && len(input) > 1 {
+		candidate := input[1:]
+		if isSafePath(candidate) {
+			if _, statErr := os.Stat(candidate); statErr == nil {
+				fileContent, readErr := readContentFile(candidate)
+				if readErr != nil {
+					err = readErr
+					return result, warning, err
+				}
+				content = fileContent
+				outfmt.Printf("📂 Read question from file: %s (%d bytes)\n", candidate, len(content))
+			}
+		}
+	}
+
 	mode := toolcall.ToolArgsValue(args, "mode", "")
 	attachments := toolcall.ToolArgsValue(args, "attachments", []string{})
-
-	// content and content_file are mutually exclusive: silently ignoring one
-	// of them would drop content the LLM deliberately generated.
-	if content != "" && contentFile != "" {
-		err = fmt.Errorf("content and content_file are mutually exclusive; provide only one")
-		return result, warning, err
-	}
-	if content == "" && contentFile == "" {
-		err = fmt.Errorf("content or content_file is required")
-		return result, warning, err
-	}
-	if contentFile != "" {
-		fileContent, readErr := readContentFile(contentFile)
-		if readErr != nil {
-			err = readErr
-			return result, warning, err
-		}
-		content = fileContent
-		outfmt.Printf("📂 Read question from file: %s (%d bytes)\n", contentFile, len(content))
-	}
 
 	// Split attachments by type: image files are uploaded to the web chat
 	// (flash/vision modes), everything else is inlined as text. Uploaded
@@ -150,10 +131,7 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 	}
 
 	// Show what was asked (truncate long content for display)
-	summaryDisplay := summary
-	if summaryDisplay == "" {
-		summaryDisplay = truncateForDisplay(content, 120)
-	}
+	summaryDisplay := truncateForDisplay(content, 120)
 	if mode != "" {
 		outfmt.Printf("📞 Consulting expert via DeepSeek Web (free, mode=%s)...\n", mode)
 	} else {
@@ -164,8 +142,8 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 		outfmt.Printf("📎 Uploading %d image attachment(s)...\n", len(uploads))
 	}
 
-	// Build structured request (does not ask expert to generate summary)
-	structuredRequest, inlineErrors := buildStructuredRequest(summary, content, inline)
+	// Build the structured request with inlined text attachments.
+	structuredRequest, inlineErrors := buildStructuredRequest(content, inline)
 	attachmentErrors = append(attachmentErrors, inlineErrors...)
 
 	// Report attachment errors to user but continue execution
@@ -176,7 +154,10 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 		}
 	}
 
-	result, err = askExpertWithRoleFunc(ctx, structuredRequest, role, system, mode, uploads)
+	// No persona is injected: role and system are both empty, so
+	// askExpertWebChat sends the request verbatim (the caller's own context
+	// carries the expertise). code_review still passes a role directly.
+	result, err = askExpertWithRoleFunc(ctx, structuredRequest, "", "", mode, uploads)
 	if err != nil {
 		outfmt.Println("❌ Expert consultation failed")
 		return result, warning, err
@@ -196,25 +177,6 @@ func truncateForDisplay(s string, maxLen int) string {
 		return s
 	}
 	return string(runes[:maxLen-3]) + "..."
-}
-
-// AskExpert calls the AI expert model via DeepSeek Web (free V4 Pro).
-//
-// It renders the "expert" system prompt, prepends it to the input, and
-// sends the combined message to chat.deepseek.com via Chrome/CDP.
-// Each call starts a new conversation.
-//
-// Parameters:
-//
-//	ctx: context object for passing execution environment configuration
-//	input: input text to send to the AI model, can be any length
-//
-// Returns:
-//
-//	reply: the AI model's response text
-//	err: error during execution
-func AskExpert(ctx context.Context, input string) (reply string, err error) {
-	return askExpertWithRoleFunc(ctx, input, "expert", "", "", nil)
 }
 
 // AskExpertWithRole calls the AI model for consultation with a specified
@@ -238,34 +200,23 @@ func AskExpertWithRole(ctx context.Context, input, role string) (reply string, e
 	return askExpertWithRoleFunc(ctx, input, role, "", "", nil)
 }
 
-// AskExpertCustom calls the AI model with full control over the system
-// prompt: a role name (rendered via the prompt override chain) or a raw
-// system prompt string. A non-empty system text takes precedence over role
-// at the prompt level; an empty role falls back to "expert".
-func AskExpertCustom(ctx context.Context, input, role, system string) (reply string, err error) {
-	if role == "" {
-		role = "expert"
-	}
-	return askExpertWithRoleFunc(ctx, input, role, system, "", nil)
-}
-
 // askExpertWebChat is the real implementation: renders the system prompt
 // (either the raw system text or the role template) and sends the combined
-// message via lp.WebChatWithOptions.
+// message via lp.WebChatWithOptions. When both role and system are empty,
+// no persona is injected and the input is sent verbatim (the ask_expert
+// tool relies on the caller's own context; code_review passes a role).
 func askExpertWebChat(ctx context.Context, input, role, system, mode string, attachments []string) (reply string, err error) {
-	// Render the system prompt. WebChat has no system prompt concept, so we
-	// prepend it to the user message.
-	systemPrompt := system
-	if systemPrompt == "" {
+	// WebChat has no system prompt concept, so we prepend it to the user
+	// message. The separator helps the web model distinguish the persona
+	// instructions from the actual task.
+	fullMessage := input
+	if system != "" {
+		fullMessage = system + "\n\n---\n\n## User Request\n\n" + input
+	} else if role != "" {
 		// Render the role-specific template (expert.md / review.md / dev.md
 		// or a custom override via the prompt override chain).
-		systemPrompt = prompt.RenderPromptForRole(ctx, role)
+		fullMessage = prompt.RenderPromptForRole(ctx, role) + "\n\n---\n\n## User Request\n\n" + input
 	}
-
-	// Build the full message: system prompt + separator + user request.
-	// The separator helps the web model distinguish the persona instructions
-	// from the actual task.
-	fullMessage := systemPrompt + "\n\n---\n\n## User Request\n\n" + input
 
 	// Start a new WebChat conversation. Image attachments are uploaded as
 	// real files; an empty mode auto-selects vision (with uploads) or pro.
@@ -279,7 +230,7 @@ func askExpertWebChat(ctx context.Context, input, role, system, mode string, att
 const maxAttachmentSize = 1 << 20
 
 // buildStructuredRequest builds a structured request for the expert.
-func buildStructuredRequest(userSummary, originalContent string, attachments []string) (string, []error) {
+func buildStructuredRequest(content string, attachments []string) (string, []error) {
 	var errors []error
 	attachmentSection := ""
 
@@ -321,20 +272,7 @@ func buildStructuredRequest(userSummary, originalContent string, attachments []s
 		}
 	}
 
-	request := `Please answer the following question in a structured format.
-
-`
-	if userSummary != "" {
-		request += `
-## Background
-` + userSummary + `
-
-## Detailed Question
-` + originalContent + attachmentSection
-	} else {
-		request += originalContent + attachmentSection
-	}
-	request += `
+	request := "Please answer the following question in a structured format.\n\n" + content + attachmentSection + `
 
 ## Response Requirements
 Please provide detailed analysis and advice, including:
@@ -347,12 +285,11 @@ Please provide detailed analysis and advice, including:
 - Analysis should be logically rigorous and comprehensive
 - Suggestions should be specific, actionable, and prioritized
 - Risk assessment should be objective and thorough
-
 `
 	return request, errors
 }
 
-// readContentFile reads the content_file question text from disk.
+// readContentFile reads the @-referenced question text from disk.
 // It applies the same safety rules as attachments: safe path only
 // (current directory and subdirectories, no absolute paths, no ".."),
 // 1MB size limit, non-empty content. Errors are explicit, never silent.

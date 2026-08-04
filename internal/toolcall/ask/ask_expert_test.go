@@ -67,16 +67,19 @@ func TestAskExpertToolParameters(t *testing.T) {
 	if params == nil {
 		t.Fatal("tool parameters missing properties")
 	}
-	for _, key := range []string{"content", "content_file", "summary", "attachments", "role", "system", "mode", "timeout"} {
+	for _, key := range []string{"input", "attachments", "mode", "timeout"} {
 		if _, ok := params[key]; !ok {
 			t.Errorf("tool parameters missing %q", key)
 		}
 	}
-	required, _ := askExpertTool.Parameters["required"].([]string)
-	for _, key := range required {
-		if key == "content" {
-			t.Error("content must not be required: content or content_file must be provided")
+	for _, key := range []string{"content", "content_file", "summary", "role", "system"} {
+		if _, ok := params[key]; ok {
+			t.Errorf("tool parameter %q must be removed", key)
 		}
+	}
+	required, _ := askExpertTool.Parameters["required"].([]string)
+	if len(required) != 1 || required[0] != "input" {
+		t.Errorf("required = %v, want [input]", required)
 	}
 	// The schema must not forbid the new optional parameters.
 	if addProps, _ := askExpertTool.Parameters["additionalProperties"].(bool); addProps {
@@ -87,7 +90,7 @@ func TestAskExpertToolParameters(t *testing.T) {
 func TestHandleAskExpertDefaults(t *testing.T) {
 	calls := captureAskExpert(t)
 	ctx := context.Background()
-	args := toolcall.ToolArgs{"content": "How do I design a retry policy?"}
+	args := toolcall.ToolArgs{"input": "How do I design a retry policy?"}
 
 	result, _, err := handleAskExpert(ctx, args)
 	if err != nil {
@@ -96,8 +99,9 @@ func TestHandleAskExpertDefaults(t *testing.T) {
 	if result != "[MOCK]" {
 		t.Errorf("result = %q, want [MOCK]", result)
 	}
-	if calls.role != "expert" {
-		t.Errorf("role = %q, want default expert", calls.role)
+	// No persona is injected: role and system must be empty.
+	if calls.role != "" {
+		t.Errorf("role = %q, want empty", calls.role)
 	}
 	if calls.system != "" {
 		t.Errorf("system = %q, want empty", calls.system)
@@ -107,69 +111,11 @@ func TestHandleAskExpertDefaults(t *testing.T) {
 	}
 }
 
-func TestHandleAskExpertWithRole(t *testing.T) {
-	calls := captureAskExpert(t)
-	args := toolcall.ToolArgs{
-		"content": "Grade this math exam and tag knowledge points.",
-		"role":    "teacher",
-	}
-
-	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
-		t.Fatalf("handleAskExpert: %v", err)
-	}
-	if calls.role != "teacher" {
-		t.Errorf("role = %q, want teacher", calls.role)
-	}
-	if calls.system != "" {
-		t.Errorf("system = %q, want empty when only role is set", calls.system)
-	}
-}
-
-func TestHandleAskExpertWithSystem(t *testing.T) {
-	calls := captureAskExpert(t)
-	system := "You are a senior math teacher with 10+ years of experience."
-	args := toolcall.ToolArgs{
-		"content": "Grade this exam.",
-		"system":  system,
-	}
-
-	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
-		t.Fatalf("handleAskExpert: %v", err)
-	}
-	if calls.system != system {
-		t.Errorf("system = %q, want %q", calls.system, system)
-	}
-	// system wins: role falls back to default but is passed through.
-	if calls.role != "expert" {
-		t.Errorf("role = %q, want default expert", calls.role)
-	}
-}
-
-func TestHandleAskExpertRoleAndSystem(t *testing.T) {
-	calls := captureAskExpert(t)
-	args := toolcall.ToolArgs{
-		"content": "Question",
-		"role":    "teacher",
-		"system":  "Custom system prompt",
-	}
-
-	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
-		t.Fatalf("handleAskExpert: %v", err)
-	}
-	// Both reach the web chat layer; askExpertWebChat gives system priority.
-	if calls.role != "teacher" {
-		t.Errorf("role = %q, want teacher", calls.role)
-	}
-	if calls.system != "Custom system prompt" {
-		t.Errorf("system = %q, want custom prompt", calls.system)
-	}
-}
-
-func TestHandleAskExpertContentFile(t *testing.T) {
+func TestHandleAskExpertAtFile(t *testing.T) {
 	calls := captureAskExpert(t)
 	content := "Question 7: compute cos(-2040°).\nQuestion 8: complex modulus.\n"
 	name := tempFileInCwd(t, content)
-	args := toolcall.ToolArgs{"content_file": name}
+	args := toolcall.ToolArgs{"input": "@" + name}
 
 	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
 		t.Fatalf("handleAskExpert: %v", err)
@@ -178,81 +124,71 @@ func TestHandleAskExpertContentFile(t *testing.T) {
 	if !strings.Contains(calls.input, content) {
 		t.Errorf("input does not contain exact file content:\n%q", calls.input)
 	}
-	if calls.role != "expert" {
-		t.Errorf("role = %q, want default expert", calls.role)
-	}
 }
 
-func TestHandleAskExpertContentAndFileMutuallyExclusive(t *testing.T) {
-	captureAskExpert(t)
-	name := tempFileInCwd(t, "file content")
-	args := toolcall.ToolArgs{
-		"content":      "inline content",
-		"content_file": name,
-	}
-
-	_, _, err := handleAskExpert(context.Background(), args)
-	if err == nil {
-		t.Fatal("expected error for content + content_file, got nil")
-	}
-	if !strings.Contains(err.Error(), "mutually exclusive") {
-		t.Errorf("error = %q, want mutual-exclusion message", err)
-	}
-}
-
-func TestHandleAskExpertNoContent(t *testing.T) {
-	captureAskExpert(t)
-	_, _, err := handleAskExpert(context.Background(), toolcall.ToolArgs{})
-	if err == nil {
-		t.Fatal("expected error for empty content and content_file, got nil")
-	}
-}
-
-func TestHandleAskExpertEmptyRole(t *testing.T) {
+func TestHandleAskExpertAtPrefixTreatedAsText(t *testing.T) {
 	calls := captureAskExpert(t)
-	// The LLM may send an explicit empty role string, which must not bypass
-	// the "expert" default (ToolArgsValue only defaults on missing keys).
-	args := toolcall.ToolArgs{
-		"content": "Question",
-		"role":    "",
-	}
+	// Natural language starting with @ must not be treated as a file.
+	args := toolcall.ToolArgs{"input": "@user 你怎么看这个方案"}
 
 	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
 		t.Fatalf("handleAskExpert: %v", err)
 	}
-	if calls.role != "expert" {
-		t.Errorf("role = %q, want expert default for explicit empty string", calls.role)
+	if !strings.Contains(calls.input, "@user 你怎么看这个方案") {
+		t.Errorf("input = %q, want @-prefixed text passed through", calls.input)
 	}
 }
 
-func TestHandleAskExpertContentFileUnsafePath(t *testing.T) {
+func TestHandleAskExpertAtMissingFileTreatedAsText(t *testing.T) {
+	calls := captureAskExpert(t)
+	// The file does not exist: lenient fallback sends the text verbatim.
+	args := toolcall.ToolArgs{"input": "@no-such-file-xyz.txt"}
+
+	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
+		t.Fatalf("handleAskExpert: %v", err)
+	}
+	if !strings.Contains(calls.input, "@no-such-file-xyz.txt") {
+		t.Errorf("input = %q, want @-prefixed text passed through", calls.input)
+	}
+}
+
+func TestHandleAskExpertAtUnsafePathTreatedAsText(t *testing.T) {
+	calls := captureAskExpert(t)
+	// Unsafe paths are never read; they are sent as plain text.
+	args := toolcall.ToolArgs{"input": "@../etc/passwd"}
+
+	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
+		t.Fatalf("handleAskExpert: %v", err)
+	}
+	if !strings.Contains(calls.input, "@../etc/passwd") {
+		t.Errorf("input = %q, want @-prefixed text passed through", calls.input)
+	}
+}
+
+func TestHandleAskExpertNoInput(t *testing.T) {
 	captureAskExpert(t)
-	args := toolcall.ToolArgs{"content_file": "../etc/passwd"}
-	_, _, err := handleAskExpert(context.Background(), args)
-	if err == nil {
-		t.Fatal("expected error for unsafe path, got nil")
-	}
-	if !strings.Contains(err.Error(), "unsafe path") {
-		t.Errorf("error = %q, want unsafe path message", err)
-	}
-}
-
-func TestHandleAskExpertContentFileMissing(t *testing.T) {
-	captureAskExpert(t)
-	args := toolcall.ToolArgs{"content_file": "no-such-file-xyz.txt"}
-	_, _, err := handleAskExpert(context.Background(), args)
-	if err == nil {
-		t.Fatal("expected error for missing file, got nil")
-	}
-	if !strings.Contains(err.Error(), "failed to resolve") {
-		t.Errorf("error = %q, want resolve failure message", err)
+	for name, args := range map[string]toolcall.ToolArgs{
+		"missing": {},
+		"empty":   {"input": ""},
+		"blank":   {"input": "   "},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := handleAskExpert(context.Background(), args)
+			if err == nil {
+				t.Fatal("expected error for empty input, got nil")
+			}
+			if !strings.Contains(err.Error(), "input is required") {
+				t.Errorf("error = %q, want input-required message", err)
+			}
+		})
 	}
 }
 
-func TestHandleAskExpertContentFileEmpty(t *testing.T) {
+func TestHandleAskExpertAtFileEmpty(t *testing.T) {
 	captureAskExpert(t)
 	name := tempFileInCwd(t, "   \n\t ")
-	args := toolcall.ToolArgs{"content_file": name}
+	args := toolcall.ToolArgs{"input": "@" + name}
+
 	_, _, err := handleAskExpert(context.Background(), args)
 	if err == nil {
 		t.Fatal("expected error for whitespace-only file, got nil")
@@ -262,11 +198,12 @@ func TestHandleAskExpertContentFileEmpty(t *testing.T) {
 	}
 }
 
-func TestHandleAskExpertContentFileTooLarge(t *testing.T) {
+func TestHandleAskExpertAtFileTooLarge(t *testing.T) {
 	captureAskExpert(t)
 	big := strings.Repeat("x", maxAttachmentSize+1)
 	name := tempFileInCwd(t, big)
-	args := toolcall.ToolArgs{"content_file": name}
+	args := toolcall.ToolArgs{"input": "@" + name}
+
 	_, _, err := handleAskExpert(context.Background(), args)
 	if err == nil {
 		t.Fatal("expected error for oversized file, got nil")
@@ -298,8 +235,8 @@ func TestReadContentFileSymlinkOutsideCwd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Target outside cwd: /etc/hostname on Linux; skip if not creatable.
-	outside := t.TempDir() // /tmp/... — outside cwd
+	// Target outside cwd: /tmp/... is outside the test working directory.
+	outside := t.TempDir()
 	target := filepath.Join(outside, "target.txt")
 	if err := os.WriteFile(target, []byte("secret"), 0o600); err != nil {
 		t.Fatal(err)
@@ -316,26 +253,6 @@ func TestReadContentFileSymlinkOutsideCwd(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "outside the current directory") {
 		t.Errorf("error = %q, want outside-cwd message", err)
-	}
-}
-
-func TestAskExpertCustom(t *testing.T) {
-	calls := captureAskExpert(t)
-	ctx := context.Background()
-
-	if _, err := AskExpertCustom(ctx, "input", "teacher", ""); err != nil {
-		t.Fatalf("AskExpertCustom(role): %v", err)
-	}
-	if calls.role != "teacher" || calls.system != "" {
-		t.Errorf("AskExpertCustom(role): got role=%q system=%q", calls.role, calls.system)
-	}
-
-	if _, err := AskExpertCustom(ctx, "input", "", "system text"); err != nil {
-		t.Fatalf("AskExpertCustom(system): %v", err)
-	}
-	// Empty role falls back to expert; system is passed through.
-	if calls.role != "expert" || calls.system != "system text" {
-		t.Errorf("AskExpertCustom(system): got role=%q system=%q", calls.role, calls.system)
 	}
 }
 
@@ -360,7 +277,7 @@ func TestHandleAskExpertImageAttachment(t *testing.T) {
 	calls := captureAskExpert(t)
 	img := tempImageInCwd(t, "askexpert-test-screenshot.png")
 	args := toolcall.ToolArgs{
-		"content":     "What does this screenshot show?",
+		"input":       "What does this screenshot show?",
 		"attachments": []string{img},
 	}
 
@@ -380,7 +297,7 @@ func TestHandleAskExpertMixedAttachments(t *testing.T) {
 	img := tempImageInCwd(t, "askexpert-test-mixed.png")
 	text := tempFileInCwd(t, "text attachment content")
 	args := toolcall.ToolArgs{
-		"content":     "Question",
+		"input":       "Question",
 		"attachments": []string{img, text},
 	}
 
@@ -398,7 +315,7 @@ func TestHandleAskExpertMixedAttachments(t *testing.T) {
 func TestHandleAskExpertUnsafeImageAttachment(t *testing.T) {
 	calls := captureAskExpert(t)
 	args := toolcall.ToolArgs{
-		"content":     "Question",
+		"input":       "Question",
 		"attachments": []string{"../outside.png"},
 	}
 
@@ -413,8 +330,8 @@ func TestHandleAskExpertUnsafeImageAttachment(t *testing.T) {
 func TestHandleAskExpertMode(t *testing.T) {
 	calls := captureAskExpert(t)
 	args := toolcall.ToolArgs{
-		"content": "Question",
-		"mode":    "flash",
+		"input": "Question",
+		"mode":  "flash",
 	}
 
 	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
@@ -427,7 +344,7 @@ func TestHandleAskExpertMode(t *testing.T) {
 
 func TestHandleAskExpertModeDefaultsToEmpty(t *testing.T) {
 	calls := captureAskExpert(t)
-	args := toolcall.ToolArgs{"content": "Question"}
+	args := toolcall.ToolArgs{"input": "Question"}
 
 	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
 		t.Fatalf("handleAskExpert: %v", err)
