@@ -3,6 +3,7 @@ package ask
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -97,14 +98,22 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 	if strings.HasPrefix(input, "@") && len(input) > 1 {
 		candidate := input[1:]
 		if isSafePath(candidate) {
-			if _, statErr := os.Stat(candidate); statErr == nil {
-				fileContent, readErr := readContentFile(candidate)
-				if readErr != nil {
-					err = readErr
-					return result, warning, err
-				}
+			fileContent, readErr := readContentFile(candidate)
+			switch {
+			case readErr == nil:
 				content = fileContent
 				outfmt.Printf("📂 Read question from file: %s (%d bytes)\n", candidate, len(content))
+			case errors.Is(readErr, os.ErrNotExist):
+				// Not a real file: likely natural language. Fall back to
+				// plain text but say so, so a misspelled filename is not
+				// silently swallowed.
+				outfmt.Printf("⚠️  @%s not found, sending as plain text\n", candidate)
+			default:
+				// The file exists but cannot be used (too large, empty,
+				// symlink escapes cwd): fail loudly instead of silently
+				// dropping the user's intent.
+				err = readErr
+				return result, warning, err
 			}
 		}
 	}
