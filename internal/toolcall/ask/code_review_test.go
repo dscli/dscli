@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -701,6 +702,9 @@ func TestTruncateReviewRequestSmall(t *testing.T) {
 	}
 }
 
+// contextHeaderRe matches an excerpt header with any context level.
+var contextHeaderRe = regexp.MustCompile(`context=\d+`)
+
 // TestTruncateReviewRequestStage1 verifies full contents are replaced by
 // hunk-context excerpts when the request exceeds the input limit.
 func TestTruncateReviewRequestStage1(t *testing.T) {
@@ -722,9 +726,10 @@ func TestTruncateReviewRequestStage1(t *testing.T) {
 	if !strings.Contains(warning, "上下文摘录") {
 		t.Errorf("warning should mention context excerpts: %q", warning)
 	}
-	// Excerpt with context=40 (first stage) should fit.
-	if !strings.Contains(req, "context=40") {
-		t.Errorf("expected context=40 excerpt header in:\n%s", req)
+	// An excerpt with any context level should fit; don't pin the exact level
+	// so tuning the context ladder does not break this test.
+	if !contextHeaderRe.MatchString(req) {
+		t.Errorf("expected a context excerpt header in:\n%s", req)
 	}
 	// The bulk of the file (outside the window) must be gone.
 	if strings.Contains(req, "MARKER_OUTSIDE_WINDOW_XYZ") {
