@@ -20,7 +20,7 @@ var (
 Supports models, balance, chat, and fim subcommands.
 
 Output options:
-  --mode          Output mode: markdown (default), org (Org mode)
+  --org           Output mode: org (Org mode); default is markdown
   --verbose       Enable debug mode with detailed output
   --no-color      Disable colored output
   --no-timestamp  Disable timestamp display`,
@@ -30,7 +30,7 @@ Output options:
 )
 
 func init() {
-	rootCmd.PersistentFlags().String("mode", "markdown", "Output mode: markdown (default), org (Org mode)")
+	rootCmd.PersistentFlags().Bool("org", false, "Output mode: org (Org mode); default is markdown")
 	rootCmd.PersistentFlags().Bool("no-color", false, "Disable colored output")
 	rootCmd.PersistentFlags().Bool("no-timestamp", false, "Disable timestamp display")
 	rootCmd.PersistentFlags().Bool("verbose", false, "Enable debug mode (detailed output)")
@@ -53,7 +53,7 @@ func RootPersistentPreRunE(cmd *cobra.Command, args []string) (err error) {
 		return err
 	}
 
-	mode, err := cmd.Flags().GetString("mode")
+	orgMode, err := cmd.Flags().GetBool("org")
 	if err != nil {
 		return err
 	}
@@ -79,13 +79,10 @@ func RootPersistentPreRunE(cmd *cobra.Command, args []string) (err error) {
 
 	// Configure output system
 	outfmt.SetOutputWriter(cmd.OutOrStdout())
-	switch mode {
-	case "markdown":
-	case "org":
-		outfmt.SetOutputMode(mode)
-	default:
-		err = fmt.Errorf("unsupported output mode: %s", mode)
-		return err
+	if orgMode {
+		outfmt.SetOutputMode("org")
+	} else {
+		outfmt.SetOutputMode("markdown")
 	}
 
 	key := config.Get("deepseek-api-key", "")

@@ -66,7 +66,7 @@ dscli    +---------------+
 
 ### 🎨 通用特性
 
-- **多格式输出** — 支持 `--mode markdown`（默认）和 `--mode org` 输出格式
+- **多格式输出** — 默认 Markdown，`--org` 切换 Org mode 输出格式
 - **数据库支持** — SQLite 存储对话历史、配置、笔记等
 - **项目感知** — 自动识别 Git 仓库根目录，按项目隔离对话历史
 - **会话统计** — 每次对话后显示耗时、花费、余额
@@ -115,7 +115,7 @@ export DEEPSEEK_API_KEY="your-api-key-here"
 echo "如何用 Go 实现 HTTP 服务器？" | dscli chat
 
 # Org 模式输出
-echo "解释这个算法的时间复杂度" | dscli chat --mode org
+echo "解释这个算法的时间复杂度" | dscli chat --org
 
 # 代码补全
 echo "def fibonacci(n):" | dscli fim

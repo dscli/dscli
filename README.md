@@ -71,7 +71,7 @@ Simply put: **dscli = AI assistant + dev tools + session memory + CLI efficiency
 
 ### 🎨 General Features
 
-- **Multi-format output** — Supports `--mode markdown` (default) and `--mode org`
+- **Multi-format output** — Markdown by default, `--org` for Org mode output
 - **Database support** — SQLite for conversation history, configuration, notes, etc.
 - **Project awareness** — Automatically detects Git repository root, isolates conversation history per project
 - **Session statistics** — Shows elapsed time, cost, and balance after each conversation
@@ -131,7 +131,7 @@ export DEEPSEEK_API_KEY="your-api-key-here"
 echo "How to implement an HTTP server in Go?" | dscli chat
 
 # Org mode output
-echo "Explain the time complexity of this algorithm" | dscli chat --mode org
+echo "Explain the time complexity of this algorithm" | dscli chat --org
 
 # Code completion
 echo "def fibonacci(n):" | dscli fim
