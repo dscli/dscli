@@ -113,9 +113,9 @@ func TestNormalizeWebChatOptions(t *testing.T) {
 	}{
 		{"new conversation defaults to pro", WebChatOptions{}, ModePro},
 		{"attachments imply vision", WebChatOptions{Attachments: []string{"a.png"}}, ModeVision},
-		{"continued conversation preserves mode", WebChatOptions{Keep: true}, ""},
+		{"continued conversation preserves mode", WebChatOptions{Keep: "last"}, ""},
 		{"explicit mode wins", WebChatOptions{Mode: ModeFlash, Attachments: []string{"a.png"}}, ModeFlash},
-		{"explicit pro with keep", WebChatOptions{Mode: ModePro, Keep: true}, ModePro},
+		{"explicit pro with keep", WebChatOptions{Mode: ModePro, Keep: "last"}, ModePro},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -224,5 +224,108 @@ func TestValidateWebAttachments(t *testing.T) {
 	}
 	if err := validateWebAttachments([]string{small}); err != nil {
 		t.Errorf("small attachment must pass: %v", err)
+	}
+}
+
+func TestConversationIDFromURL(t *testing.T) {
+	tests := []struct {
+		url  string
+		want string
+	}{
+		{"https://chat.deepseek.com/a/chat/s/abc123", "abc123"},
+		{"https://chat.deepseek.com/a/chat/s/a1b2-c3d4_e5", "a1b2-c3d4_e5"},
+		{"https://chat.deepseek.com/a/chat/s/abc123?extra=1", "abc123"},
+		{"https://chat.deepseek.com/", ""},
+		{"", ""},
+		{"not a url", ""},
+	}
+	for _, tt := range tests {
+		if got := ConversationIDFromURL(tt.url); got != tt.want {
+			t.Errorf("ConversationIDFromURL(%q) = %q, want %q", tt.url, got, tt.want)
+		}
+	}
+}
+
+// testRegistry builds a registry with the given id → url entries.
+func testRegistry(entries map[string]string) *conversationRegistry {
+	reg := &conversationRegistry{Sessions: map[string]conversationEntry{}}
+	for id, url := range entries {
+		reg.Sessions[id] = conversationEntry{URL: url}
+	}
+	return reg
+}
+
+func TestRegistryResolve(t *testing.T) {
+	reg := testRegistry(map[string]string{
+		"aaa": "https://chat.deepseek.com/a/chat/s/aaa",
+		"bbb": "https://chat.deepseek.com/a/chat/s/bbb",
+	})
+	reg.Sessions["aaa"] = conversationEntry{
+		URL:       "https://chat.deepseek.com/a/chat/s/aaa",
+		UpdatedAt: "2026-08-01T00:00:00Z",
+	}
+	reg.Sessions["bbb"] = conversationEntry{
+		URL:       "https://chat.deepseek.com/a/chat/s/bbb",
+		UpdatedAt: "2026-08-02T00:00:00Z",
+	}
+
+	tests := []struct {
+		name string
+		keep string
+		want string
+	}{
+		{"empty = new conversation", "", ""},
+		{"last picks most recent", "last", "https://chat.deepseek.com/a/chat/s/bbb"},
+		{"exact id", "aaa", "https://chat.deepseek.com/a/chat/s/aaa"},
+		{"full url passthrough", "https://chat.deepseek.com/a/chat/s/zzz", "https://chat.deepseek.com/a/chat/s/zzz"},
+		{"url suffix match", "s/bbb", "https://chat.deepseek.com/a/chat/s/bbb"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := reg.resolve(tt.keep)
+			if err != nil {
+				t.Fatalf("resolve(%q): %v", tt.keep, err)
+			}
+			if got != tt.want {
+				t.Errorf("resolve(%q) = %q, want %q", tt.keep, got, tt.want)
+			}
+		})
+	}
+
+	if _, err := reg.resolve("nope"); err == nil {
+		t.Error("unknown id must fail")
+	}
+}
+
+func TestRegistryResolveEmptyRegistry(t *testing.T) {
+	reg := testRegistry(nil)
+	if _, err := reg.resolve("last"); err == nil {
+		t.Error("last on empty registry must fail")
+	}
+	if got, err := reg.resolve(""); err != nil || got != "" {
+		t.Errorf("resolve(\"\") = %q, %v; want \"\", nil", got, err)
+	}
+}
+
+func TestRegistryTrim(t *testing.T) {
+	reg := &conversationRegistry{Sessions: map[string]conversationEntry{}}
+	// Fill beyond the cap; later timestamps are newer and must survive.
+	for i := 0; i < maxSavedConversations+10; i++ {
+		id := fmt.Sprintf("id%03d", i)
+		reg.Sessions[id] = conversationEntry{
+			URL:       "https://chat.deepseek.com/a/chat/s/" + id,
+			UpdatedAt: fmt.Sprintf("2026-08-01T%02d:%02d:00Z", i/60, i%60),
+		}
+	}
+	reg.trim()
+	if len(reg.Sessions) != maxSavedConversations {
+		t.Fatalf("trim: %d entries, want %d", len(reg.Sessions), maxSavedConversations)
+	}
+	// The 10 oldest (id000..id009) must be gone.
+	if _, ok := reg.Sessions["id000"]; ok {
+		t.Error("oldest entry id000 survived trim")
+	}
+	if _, ok := reg.Sessions["id010"]; !ok {
+		t.Error("newest entry id010 was trimmed away")
 	}
 }

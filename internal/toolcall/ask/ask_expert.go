@@ -47,6 +47,10 @@ var askExpertTool = toolcall.ToolDef{
 				"type":        "string",
 				"description": "Web chat mode: flash (fast, smart search), pro (expert, default), vision (image uploads). Empty: vision if images attached, else pro.",
 			},
+			"keep": map[string]any{
+				"type":        "string",
+				"description": "Continue a previous conversation (default empty = new). \"last\" continues the most recent one; a conversation ID from a previous result's conversation_id line continues that one; a full chat.deepseek.com URL (copied from a browser) also works. \"list\" lists all saved conversations instead of asking.",
+			},
 			"timeout": map[string]any{
 				"type":        "integer",
 				"description": "Timeout in seconds (default 600). Set longer for complex questions requiring deep analysis.",
@@ -63,7 +67,10 @@ var askExpertTool = toolcall.ToolDef{
 // askExpertWithRoleFunc is the function used to call the expert.
 // It is a package-level variable so tests can replace it with a mock.
 // mode selects the web chat mode ("" = auto: pro, or vision with image
-// uploads); attachments are image files uploaded to the web chat.
+// uploads); keep continues a previous conversation ("" = new, "last" =
+// most recent, or a conversation ID/URL); attachments are image files
+// uploaded to the web chat. It returns the reply text and the conversation
+// URL (empty when unknown) so callers can continue the conversation later.
 var askExpertWithRoleFunc = askExpertWebChat
 
 func init() {
@@ -73,8 +80,8 @@ func init() {
 
 	// Test optimization: use mock to skip browser automation.
 	if ictx.IsTesting() {
-		askExpertWithRoleFunc = func(_ context.Context, _, _, _, _ string, _ []string) (string, error) {
-			return "[MOCK]", nil
+		askExpertWithRoleFunc = func(_ context.Context, _, _, _, _, _ string, _ []string) (string, string, error) {
+			return "[MOCK]", "", nil
 		}
 	}
 }
@@ -119,7 +126,14 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 	}
 
 	mode := toolcall.ToolArgsValue(args, "mode", "")
+	keep := toolcall.ToolArgsValue(args, "keep", "")
 	attachments := toolcall.ToolArgsValue(args, "attachments", []string{})
+
+	// keep="list" is a query, not a message: return the saved conversation
+	// registry so the caller can pick an ID to continue.
+	if keep == "list" {
+		return listConversations()
+	}
 
 	// Split attachments by type: image files are uploaded to the web chat
 	// (flash/vision modes), everything else is inlined as text. Uploaded
@@ -166,7 +180,7 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 	// No persona is injected: role and system are both empty, so
 	// askExpertWebChat sends the request verbatim (the caller's own context
 	// carries the expertise). code_review still passes a role directly.
-	result, err = askExpertWithRoleFunc(ctx, structuredRequest, "", "", mode, uploads)
+	result, convURL, err := askExpertWithRoleFunc(ctx, structuredRequest, "", "", mode, keep, uploads)
 	if err != nil {
 		outfmt.Println("❌ Expert consultation failed")
 		return result, warning, err
@@ -175,8 +189,42 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 	// Trim leading/trailing whitespace from expert response
 	result = strings.TrimSpace(result)
 
+	// Surface the conversation ID so the caller can continue this exact
+	// conversation later (keep=<id>) — e.g. to correct a misread image
+	// while the expert still has the original attachments in context.
+	var convID string
+	if convURL != "" {
+		if convID = lp.ConversationIDFromURL(convURL); convID != "" {
+			outfmt.Printf("📋 conversation: %s (继续追问请传 keep=%q)\n", convID, convID)
+			result += "\n\n---\nconversation_id: " + convID
+		} else {
+			outfmt.Printf("📋 conversation URL: %s\n", convURL)
+		}
+	}
+
 	outfmt.Printf("✅ Expert consultation completed\n\n%s\n", result)
 	return result, warning, err
+}
+
+// listConversations formats the saved conversation registry as a tool result.
+func listConversations() (result, warning string, err error) {
+	convs, err := lp.ListConversations()
+	if err != nil {
+		return "", "", err
+	}
+	if len(convs) == 0 {
+		return "No saved conversations yet. Ask without keep to start one, or pass a chat.deepseek.com URL to register a browser conversation.", "", nil
+	}
+	var b strings.Builder
+	b.WriteString("Saved conversations (most recent first):\n")
+	for _, c := range convs {
+		mode := string(c.Mode)
+		if mode == "" {
+			mode = "?"
+		}
+		fmt.Fprintf(&b, "- %s  [%s]  %s  %s\n", c.ID, mode, c.UpdatedAt, c.URL)
+	}
+	return b.String(), "", nil
 }
 
 // truncateForDisplay truncates s to maxLen runes for terminal display.
@@ -206,7 +254,8 @@ func truncateForDisplay(s string, maxLen int) string {
 //	reply: the AI model's response text
 //	err: error during execution
 func AskExpertWithRole(ctx context.Context, input, role string) (reply string, err error) {
-	return askExpertWithRoleFunc(ctx, input, role, "", "", nil)
+	reply, _, err = askExpertWithRoleFunc(ctx, input, role, "", "", "", nil)
+	return reply, err
 }
 
 // askExpertWebChat is the real implementation: renders the system prompt
@@ -214,7 +263,9 @@ func AskExpertWithRole(ctx context.Context, input, role string) (reply string, e
 // message via lp.WebChatWithOptions. When both role and system are empty,
 // no persona is injected and the input is sent verbatim (the ask_expert
 // tool relies on the caller's own context; code_review passes a role).
-func askExpertWebChat(ctx context.Context, input, role, system, mode string, attachments []string) (reply string, err error) {
+// keep continues a previous conversation; it is passed through to
+// lp.WebChatOptions.Keep ("" = new, "last", ID, or URL).
+func askExpertWebChat(ctx context.Context, input, role, system, mode, keep string, attachments []string) (reply, convURL string, err error) {
 	// WebChat has no system prompt concept, so we prepend it to the user
 	// message. The separator helps the web model distinguish the persona
 	// instructions from the actual task.
@@ -227,12 +278,18 @@ func askExpertWebChat(ctx context.Context, input, role, system, mode string, att
 		fullMessage = prompt.RenderPromptForRole(ctx, role) + "\n\n---\n\n## User Request\n\n" + input
 	}
 
-	// Start a new WebChat conversation. Image attachments are uploaded as
-	// real files; an empty mode auto-selects vision (with uploads) or pro.
-	return lp.WebChatWithOptions(ctx, fullMessage, lp.WebChatOptions{
+	// Start a new WebChat conversation (keep="" — the default) or continue
+	// a saved one. Image attachments are uploaded as real files; an empty
+	// mode auto-selects vision (with uploads) or pro.
+	res, err := lp.WebChatWithOptions(ctx, fullMessage, lp.WebChatOptions{
 		Mode:        lp.Mode(mode),
 		Attachments: attachments,
+		Keep:        keep,
 	})
+	if err != nil {
+		return "", "", err
+	}
+	return res.Text, res.URL, nil
 }
 
 // maxAttachmentSize is the maximum allowed size for a single attachment (1MB).

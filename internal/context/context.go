@@ -33,7 +33,7 @@ var (
 	AINameBirdFrogKey     = ContextKeyType[string]{"AINameBirdFrog"}
 	GitUserNameKey        = ContextKeyType[string]{"GitUserName"}
 	GitUserEmailKey       = ContextKeyType[string]{"GitUserEmail"}
-	KeepKey               = ContextKeyType[bool]{"Keep"}
+	KeepKey               = ContextKeyType[string]{"Keep"}
 )
 
 var (

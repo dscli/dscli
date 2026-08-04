@@ -13,15 +13,28 @@ Parameters:
   directory and subdirectories, max 1MB). Anything else starting with @ is
   sent as plain text.
 
-- attachments: file attachments list (optional). Images (png/jpg/gif/webp/
-  bmp) are uploaded to the web chat and analyzed visually; other files are
-  inlined as text (max 1MB each, safe paths, up to 50 files/100MB).
+- attachments: image files (png/jpg/gif/webp/bmp) uploaded for visual
+  analysis; other files inlined as text (1MB max, safe paths, ≤50 files/
+  ≤100MB).
 
-- mode: web chat mode (optional). "pro" (expert, default), "flash" (fast
-  with smart search), "vision" (image uploads). Empty: vision if images
-  attached, else pro.
+- mode: web chat mode. "pro" (expert, default), "flash" (fast with smart
+  search), "vision" (image uploads). Empty: vision if images attached,
+  else pro.
 
-- timeout: timeout in seconds (default 600). Set longer for complex questions
-  requiring deep analysis.
+- keep: continue a previous conversation (default empty = new). Every
+  result ends with "conversation_id: <id>"; pass that id back to continue
+  the SAME conversation — the expert keeps full history, including
+  previously uploaded images. "last" continues the most recent one. A full
+  chat.deepseek.com URL (browser-opened) is accepted and registered.
+  "list" lists saved conversations instead of asking.
+
+- timeout: timeout in seconds (default 600). Set longer for complex
+  questions requiring deep analysis.
+
+Correction flow example (misread image):
+  1. ask_expert(input="分析这张图", attachments=[img], mode="vision")
+     → result ends with conversation_id: abc123
+  2. ask_expert(input="再仔细看，是不是白发罗小黑？", keep="abc123")
+     → expert re-examines the SAME image in context, no re-upload
 
 Use for technical difficulties, plan review, or in-depth analysis.

@@ -16,6 +16,7 @@ type capturedCall struct {
 	role        string
 	system      string
 	mode        string
+	keep        string
 	attachments []string
 }
 
@@ -26,13 +27,14 @@ func captureAskExpert(t *testing.T) *capturedCall {
 	t.Helper()
 	orig := askExpertWithRoleFunc
 	calls := &capturedCall{}
-	askExpertWithRoleFunc = func(_ context.Context, input, role, system, mode string, attachments []string) (string, error) {
+	askExpertWithRoleFunc = func(_ context.Context, input, role, system, mode, keep string, attachments []string) (string, string, error) {
 		calls.input = input
 		calls.role = role
 		calls.system = system
 		calls.mode = mode
+		calls.keep = keep
 		calls.attachments = attachments
-		return "[MOCK]", nil
+		return "[MOCK]", "", nil
 	}
 	t.Cleanup(func() { askExpertWithRoleFunc = orig })
 	return calls
@@ -67,7 +69,7 @@ func TestAskExpertToolParameters(t *testing.T) {
 	if params == nil {
 		t.Fatal("tool parameters missing properties")
 	}
-	for _, key := range []string{"input", "attachments", "mode", "timeout"} {
+	for _, key := range []string{"input", "attachments", "mode", "keep", "timeout"} {
 		if _, ok := params[key]; !ok {
 			t.Errorf("tool parameters missing %q", key)
 		}
@@ -351,5 +353,93 @@ func TestHandleAskExpertModeDefaultsToEmpty(t *testing.T) {
 	}
 	if calls.mode != "" {
 		t.Errorf("mode = %q, want empty (auto-select in web chat layer)", calls.mode)
+	}
+	if calls.keep != "" {
+		t.Errorf("keep = %q, want empty (new conversation by default)", calls.keep)
+	}
+}
+
+func TestHandleAskExpertKeepPassedThrough(t *testing.T) {
+	calls := captureAskExpert(t)
+	args := toolcall.ToolArgs{
+		"input": "再仔细看这张图，是不是白发罗小黑？",
+		"keep":  "abc123def456",
+	}
+
+	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
+		t.Fatalf("handleAskExpert: %v", err)
+	}
+	if calls.keep != "abc123def456" {
+		t.Errorf("keep = %q, want abc123def456", calls.keep)
+	}
+}
+
+func TestHandleAskExpertLastPassedThrough(t *testing.T) {
+	calls := captureAskExpert(t)
+	args := toolcall.ToolArgs{
+		"input": "继续上次的话题",
+		"keep":  "last",
+	}
+
+	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
+		t.Fatalf("handleAskExpert: %v", err)
+	}
+	if calls.keep != "last" {
+		t.Errorf("keep = %q, want last", calls.keep)
+	}
+}
+
+func TestHandleAskExpertConversationIDInResult(t *testing.T) {
+	orig := askExpertWithRoleFunc
+	t.Cleanup(func() { askExpertWithRoleFunc = orig })
+	askExpertWithRoleFunc = func(_ context.Context, _, _, _, _, _ string, _ []string) (string, string, error) {
+		return "专家回答", "https://chat.deepseek.com/a/chat/s/conv12345", nil
+	}
+
+	result, _, err := handleAskExpert(context.Background(), toolcall.ToolArgs{"input": "Question"})
+	if err != nil {
+		t.Fatalf("handleAskExpert: %v", err)
+	}
+	if !strings.Contains(result, "conversation_id: conv12345") {
+		t.Errorf("result missing conversation_id suffix:\n%s", result)
+	}
+}
+
+func TestHandleAskExpertNoConversationURL(t *testing.T) {
+	// When the conversation URL is unknown, the result must not claim an ID.
+	orig := askExpertWithRoleFunc
+	t.Cleanup(func() { askExpertWithRoleFunc = orig })
+	askExpertWithRoleFunc = func(_ context.Context, _, _, _, _, _ string, _ []string) (string, string, error) {
+		return "[MOCK]", "", nil
+	}
+
+	result, _, err := handleAskExpert(context.Background(), toolcall.ToolArgs{"input": "Question"})
+	if err != nil {
+		t.Fatalf("handleAskExpert: %v", err)
+	}
+	if strings.Contains(result, "conversation_id") {
+		t.Errorf("result must not contain conversation_id when URL is unknown:\n%s", result)
+	}
+}
+
+func TestHandleAskExpertKeepList(t *testing.T) {
+	calls := captureAskExpert(t)
+	args := toolcall.ToolArgs{
+		"input": "unused",
+		"keep":  "list",
+	}
+
+	result, _, err := handleAskExpert(context.Background(), args)
+	if err != nil {
+		t.Fatalf("handleAskExpert: %v", err)
+	}
+	// The list path must not call the expert function (no message is sent).
+	if calls.input != "" {
+		t.Errorf("mock was called with input %q, want no call for keep=list", calls.input)
+	}
+	// The registry may be empty or populated on the dev machine; either way
+	// the result is a human-readable list mentioning conversations.
+	if !strings.Contains(strings.ToLower(result), "conversation") {
+		t.Errorf("keep=list result does not mention conversations:\n%s", result)
 	}
 }
