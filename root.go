@@ -20,7 +20,7 @@ var (
 Supports models, balance, chat, and fim subcommands.
 
 Output options:
-  --org           Output mode: org (Org mode); default is markdown
+  --org           Enable Org mode output (default is Markdown)
   --verbose       Enable debug mode with detailed output
   --no-color      Disable colored output
   --no-timestamp  Disable timestamp display`,
@@ -30,7 +30,7 @@ Output options:
 )
 
 func init() {
-	rootCmd.PersistentFlags().Bool("org", false, "Output mode: org (Org mode); default is markdown")
+	rootCmd.PersistentFlags().Bool("org", false, "Enable Org mode output (default is Markdown)")
 	rootCmd.PersistentFlags().Bool("no-color", false, "Disable colored output")
 	rootCmd.PersistentFlags().Bool("no-timestamp", false, "Disable timestamp display")
 	rootCmd.PersistentFlags().Bool("verbose", false, "Enable debug mode (detailed output)")
