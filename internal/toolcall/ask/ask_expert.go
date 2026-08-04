@@ -260,6 +260,17 @@ func AskExpertWithRole(ctx context.Context, input, role string) (reply string, e
 	return reply, err
 }
 
+// webChatFunc is the function used to send the message to DeepSeek Web.
+// It is a package-level variable so tests can replace it with a mock.
+var webChatFunc = lp.WebChatWithOptions
+
+// askExpertRetryDelays is the backoff sequence between retry attempts for
+// transient server overload (lp.ErrServerBusy / lp.ErrSendRejected). The
+// official DeepSeek error docs recommend retrying 429/500/503 after a
+// brief wait; each retry starts a fresh conversation, so a duplicate send
+// has no side effects. A package variable so tests can shorten it.
+var askExpertRetryDelays = []time.Duration{5 * time.Second, 15 * time.Second, 30 * time.Second}
+
 // askExpertWebChat is the real implementation: renders the system prompt
 // (either the raw system text or the role template) and sends the combined
 // message via lp.WebChatWithOptions. When both role and system are empty,
@@ -267,6 +278,10 @@ func AskExpertWithRole(ctx context.Context, input, role string) (reply string, e
 // tool relies on the caller's own context; code_review passes a role).
 // keep continues a previous conversation; it is passed through to
 // lp.WebChatOptions.Keep ("" = new, "last", ID, or URL).
+//
+// Transient server overload is retried with exponential backoff
+// (askExpertRetryDelays, one extra attempt per delay). Permanent errors
+// (login, bad arguments) fail immediately — retrying them is pointless.
 func askExpertWebChat(ctx context.Context, input, role, system, mode, keep string, attachments []string) (reply, convURL string, err error) {
 	// WebChat has no system prompt concept, so we prepend it to the user
 	// message. The separator helps the web model distinguish the persona
@@ -282,16 +297,39 @@ func askExpertWebChat(ctx context.Context, input, role, system, mode, keep strin
 
 	// Start a new WebChat conversation (keep="" — the default) or continue
 	// a saved one. Image attachments are uploaded as real files; an empty
-	// mode auto-selects vision (with uploads) or pro.
-	res, err := lp.WebChatWithOptions(ctx, fullMessage, lp.WebChatOptions{
+	// mode auto-selects vision (with uploads) or pro. Server overload
+	// (429/500/503 semantics) is transient: retry with backoff up to
+	// len(askExpertRetryDelays) extra attempts. Each retry is a fresh
+	// conversation, so re-sending is harmless.
+	opts := lp.WebChatOptions{
 		Mode:        lp.Mode(mode),
 		Attachments: attachments,
 		Keep:        keep,
-	})
-	if err != nil {
-		return "", "", err
 	}
-	return res.Text, res.URL, nil
+	var lastErr error
+	for attempt := 0; attempt <= len(askExpertRetryDelays); attempt++ {
+		if attempt > 0 {
+			delay := askExpertRetryDelays[attempt-1]
+			outfmt.Printf("🔄 服务器繁忙，%.0fs 后重试 (attempt %d/%d)...\n",
+				delay.Seconds(), attempt+1, len(askExpertRetryDelays)+1)
+
+			select {
+			case <-ctx.Done():
+				return "", "", ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+
+		res, callErr := webChatFunc(ctx, fullMessage, opts)
+		if callErr == nil {
+			return res.Text, res.URL, nil
+		}
+		lastErr = callErr
+		if !errors.Is(callErr, lp.ErrServerBusy) && !errors.Is(callErr, lp.ErrSendRejected) {
+			return "", "", callErr
+		}
+	}
+	return "", "", fmt.Errorf("ask expert: %w (after %d attempts)", lastErr, len(askExpertRetryDelays)+1)
 }
 
 // maxAttachmentSize is the maximum allowed size for a single attachment (1MB).

@@ -358,3 +358,35 @@ func TestRegistryTrim(t *testing.T) {
 		t.Error("newest entry id010 was trimmed away")
 	}
 }
+func TestIsBusyErrorText(t *testing.T) {
+	tests := []struct {
+		name string
+		s    string
+		want bool
+	}{
+		// Short texts matching known overload phrases are busy errors.
+		{name: "zh server busy", s: "服务器忙，请稍后再试", want: true},
+		{name: "zh server busy variant", s: "服务器繁忙，请稍后再试", want: true},
+		{name: "zh system busy", s: "系统繁忙，请稍后重试", want: true},
+		{name: "zh rate limit", s: "请求过于频繁，请稍后再试", want: true},
+		{name: "zh network error", s: "网络异常，请稍后再试", want: true},
+		{name: "zh send failed", s: "发送失败，请稍后重试", want: true},
+		{name: "zh unavailable", s: "服务暂不可用，请稍候再试", want: true},
+		{name: "en server busy", s: "The server is busy. Please try again later.", want: true},
+		{name: "en 429", s: "Too Many Requests: rate limit exceeded", want: true},
+		{name: "en 503", s: "503 Service Unavailable", want: true},
+		{name: "en overloaded", s: "The server is overloaded. Retry after a brief wait.", want: true},
+		// A long response is a real answer even if it mentions a phrase.
+		{name: "long answer mentioning phrase", s: "The recommendation is to try again later. " + strings.Repeat("详细分析：", 100), want: false},
+		// Normal answers are not busy errors.
+		{name: "normal answer", s: "The change looks correct. Ship it.", want: false},
+		{name: "empty", s: "", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isBusyErrorText(tt.s); got != tt.want {
+				t.Errorf("isBusyErrorText(%q) = %v, want %v", tt.s, got, tt.want)
+			}
+		})
+	}
+}

@@ -25,14 +25,32 @@ import (
 // Callers should trigger a visible login flow and retry.
 var ErrLoginRequired = errors.New("login required — open visible browser to complete login")
 
+// ErrServerBusy is returned when DeepSeek reports a temporary overload,
+// either explicitly ("服务器忙，请稍后再试") or implicitly (a stable page
+// with no answer content for a long time). This maps to the official API
+// error codes 429 (rate limit), 500 (server error) and 503 (overloaded),
+// whose documented remedy is "retry your request after a brief wait".
+// Callers should retry with a backoff; the error text may wrap the
+// server-provided message via %w.
+var ErrServerBusy = errors.New("deepseek server busy — retry after a brief wait")
+
+// ErrSendRejected is returned when the message was never acknowledged as
+// sent: the textarea keeps the input, no generation signal appears and no
+// new content shows up within the confirmation window. This typically means
+// the server rejected the submit while overloaded. Retryable like
+// ErrServerBusy.
+var ErrSendRejected = errors.New("message send not acknowledged — server may be busy")
+
 const (
 	deepseekChatURL = "https://chat.deepseek.com"
 
 	// Polling configuration for response detection.
-	webChatPollInterval  = 2 * time.Second // interval between polls
-	webChatStablePolls   = 3               // text unchanged for this many polls = tentative done
-	webChatExtendedPolls = 10              // additional stable polls before force-extraction (escape hatch)
-	webChatMaxPolls      = 300             // max polls before timeout (600s total)
+	webChatPollInterval     = 2 * time.Second // interval between polls
+	webChatStablePolls      = 3               // text unchanged for this many polls = tentative done
+	webChatExtendedPolls    = 10              // additional stable polls before force-extraction (escape hatch)
+	webChatMaxPolls         = 300             // max polls before timeout (600s total)
+	webChatConfirmPolls     = 5               // send-ack window: polls to observe send confirmation (10s)
+	webChatEmptyStablePolls = 30              // stable-with-no-content polls (60s) before treating as server busy
 
 	// JS snippet to set a textarea's value via the native setter (triggers
 	// message string.
@@ -260,6 +278,15 @@ const (
 		var ta = document.querySelector('textarea');
 		if (ta && ta.disabled) return true;
 		return false;
+	})()`
+
+	// jsTextareaCleared reports whether the chat textarea has been emptied.
+	// After a successful send the React-controlled textarea clears
+	// immediately, so a non-empty textarea inside the confirmation window
+	// means the submit was rejected (typically server overload).
+	jsTextareaCleared = `(() => {
+		const ta = document.querySelector('textarea');
+		return !!ta && ta.value.trim() === '';
 	})()`
 
 	// jsSendEnter dispatches Enter keydown → keypress → keyup on the chat
@@ -836,13 +863,30 @@ func webchatSetUploadFiles(ctx context.Context, files []string) error {
 // whether DeepSeek is still generating (via DOM signals like the stop button).
 // Only extracts when generation appears complete or the extended poll window
 // expires (escape hatch after webChatExtendedPolls additional polls).
+//
+// Server overload is handled explicitly:
+//
+//   - Send-ack window: within webChatConfirmPolls the send must be
+//     acknowledged (textarea cleared, generation active, or new content).
+//     Otherwise the submit was rejected → ErrSendRejected (fail fast
+//     instead of polling for 10 minutes).
+//   - Busy text: an extracted response that is short and matches known
+//     overload phrases ("服务器忙，请稍后再试", "try again later", ...) is
+//     returned as ErrServerBusy, never as an answer.
+//   - Empty stability: a page that is stable with no answer content for
+//     webChatEmptyStablePolls polls means the request stalled server-side
+//     → ErrServerBusy (fail fast instead of the 300-poll timeout).
 func webchatWait(ctx context.Context, baseline, mdBaseline string) (string, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "webchatWait")
 	defer span.Finish()
 	var lastText string
 	stableCount := 0
+	emptyStableCount := 0
+	sendAck := false
+	polls := 0
 
 	for range webChatMaxPolls {
+		polls++
 		select {
 		case <-ctx.Done():
 			return "", ctx.Err()
@@ -854,6 +898,23 @@ func webchatWait(ctx context.Context, baseline, mdBaseline string) (string, erro
 			"document.body ? document.body.innerText : ''", &current,
 		).Do(ctx); err != nil {
 			continue // tolerate transient errors
+		}
+
+		// Send-ack window: the message must show evidence of submission
+		// within the confirmation window. Any of new body content, an
+		// active generation, or a cleared textarea counts as ack.
+		// While unconfirmed we skip the normal stability logic so a
+		// rejected submit fails fast with ErrSendRejected (10s) instead
+		// of being misread as an empty stable page (60s) or timing out.
+		if !sendAck {
+			sendAck = current != baseline || isGenerationActive(ctx) || textareaCleared(ctx)
+			if !sendAck {
+				if polls >= webChatConfirmPolls {
+					return "", ErrSendRejected
+				}
+				lastText = current
+				continue
+			}
 		}
 
 		if current == lastText && lastText != "" {
@@ -870,6 +931,11 @@ func webchatWait(ctx context.Context, baseline, mdBaseline string) (string, erro
 				// toggle labels, footer text).
 				if resp := getAssistantText(ctx); resp != "" {
 					resp = stripBaselinePrefix(resp, mdBaseline)
+					// A short overload notice must never be returned as an
+					// answer — it would poison the caller's decision-making.
+					if isBusyErrorText(resp) {
+						return "", fmt.Errorf("%w: %s", ErrServerBusy, resp)
+					}
 					if canExtract && isCompleteResponse(resp) {
 						return resp, nil
 					}
@@ -885,17 +951,42 @@ func webchatWait(ctx context.Context, baseline, mdBaseline string) (string, erro
 				// clean up known artifact patterns. Only accept clean,
 				// complete text; keep polling on fragments instead of
 				// aborting on a mid-response pause.
-				if fallback := cleanBodyResponse(extractResponse(baseline, current)); canExtract && isCompleteResponse(fallback) {
+				fallback := cleanBodyResponse(extractResponse(baseline, current))
+				if isBusyErrorText(fallback) {
+					return "", fmt.Errorf("%w: %s", ErrServerBusy, fallback)
+				}
+				if canExtract && isCompleteResponse(fallback) {
 					return fallback, nil
 				}
+
+				// Stable page with no answer content: the request stalled
+				// server-side. Count consecutive empty polls and fail fast
+				// instead of waiting out the full 300-poll timeout.
+				emptyStableCount++
+				if emptyStableCount >= webChatEmptyStablePolls {
+					return "", ErrServerBusy
+				}
+				continue
 			}
 		} else {
 			stableCount = 0
+			emptyStableCount = 0
 		}
 		lastText = current
 	}
 
 	return "", fmt.Errorf("response timeout after %d polls", webChatMaxPolls)
+}
+
+// textareaCleared reports whether the chat textarea is empty (a successful
+// send clears it immediately). Evaluation failure is treated as "not
+// cleared" so the send-ack window stays conservative.
+func textareaCleared(ctx context.Context) bool {
+	var cleared bool
+	if err := chromedp.Evaluate(jsTextareaCleared, &cleared).Do(ctx); err != nil {
+		return false
+	}
+	return cleared
 }
 
 // isGenerationActive checks whether the assistant is still generating a response
@@ -1017,6 +1108,34 @@ func isCompleteResponse(s string) bool {
 	}
 	t := strings.TrimLeft(s, " \t>")
 	return !(toolCallOpenRE.MatchString(t) && !strings.Contains(t, "<tool_result"))
+}
+
+// maxBusyErrorLen bounds the busy-error detection to short texts. A real
+// expert answer is typically much longer than an overload notice, so a
+// long response that merely mentions a phrase ("try again later" inside a
+// recommendation) must never be classified as a busy error.
+const maxBusyErrorLen = 200
+
+// busyErrorRE matches known DeepSeek overload notices, both Chinese and
+// English. These mirror the official API error semantics for 429 (rate
+// limit), 500 (server error) and 503 (overloaded) — the transient cases
+// whose documented remedy is a brief wait and retry. Permanent errors
+// (400/401/402/422) are not listed because retrying them is pointless.
+var busyErrorRE = regexp.MustCompile(`(?i)` +
+	`服务器忙|服务器繁忙|服务繁忙|系统繁忙|系统正忙|请求过于频繁|操作过于频繁|` +
+	`网络异常|网络错误|发送失败|请稍后再试|请稍后重试|请稍候再试|服务器开小差|暂不可用|` +
+	`server busy|service is busy|try again later|too many requests|rate limit|` +
+	`service unavailable|server error|temporarily unavailable|overloaded`)
+
+// isBusyErrorText reports whether s looks like a server-overload notice
+// rather than a real answer: short text matching a known overload phrase.
+// Returning such a notice as the expert's answer would silently poison the
+// caller's decision-making, so webchatWait turns it into ErrServerBusy.
+func isBusyErrorText(s string) bool {
+	if s == "" || utf8.RuneCountInString(s) > maxBusyErrorLen {
+		return false
+	}
+	return busyErrorRE.MatchString(s)
 }
 
 // quoteJS wraps s in a JS string literal (double quotes) with proper escaping.
