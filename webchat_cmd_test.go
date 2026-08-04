@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -82,5 +83,29 @@ func TestGatherWebchatInputStdinEmpty(t *testing.T) {
 	cmd := newWebchatCmd()
 	if _, err := gatherWebchatInput(cmd, nil); err == nil {
 		t.Error("gatherWebchatInput(empty stdin) must fail")
+	}
+}
+
+func TestFormatConversationHint(t *testing.T) {
+	const id = "abc-123_XYZ"
+	url := "https://chat.deepseek.com/a/chat/s/" + id
+
+	hint := formatConversationHint(url)
+	if !strings.Contains(hint, "keep:"+id) {
+		t.Errorf("hint missing keep:<id>, got: %q", hint)
+	}
+	if !strings.Contains(hint, "--keep="+id) {
+		t.Errorf("hint missing copy-paste --keep=<id> command, got: %q", hint)
+	}
+
+	// A non-DeepSeek URL (no extractable ID) falls back to the raw URL.
+	raw := "https://example.com/other"
+	if hint := formatConversationHint(raw); !strings.Contains(hint, raw) {
+		t.Errorf("hint should contain the raw URL, got: %q", hint)
+	}
+
+	// An empty URL yields no hint at all (defensive; callers guard too).
+	if hint := formatConversationHint(""); hint != "" {
+		t.Errorf("hint for empty URL should be empty, got: %q", hint)
 	}
 }

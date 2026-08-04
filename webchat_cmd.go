@@ -32,7 +32,7 @@ func init() {
   dscli webchat --keep=<会话ID> "继续讨论..."   # 继续指定会话
   dscli webchat --keep=<会话URL> "继续讨论..."  # 继续浏览器中打开的会话
   dscli webchat --keep=list                     # 列出所有已保存会话
-每次回复都会把会话 ID 打印到 stderr（💾 会话 URL / 📋），可用作 --keep 参数。
+每次回复都会把会话 ID 打印到 stderr（格式 keep:<id>），可直接作为 --keep 参数使用。
 
 模式（--mode）：
   pro    专家模式（V4 Pro，默认），深度思考
@@ -124,7 +124,26 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 	outfmt.Printf("📥 收到回复 (%.1fs)\n\n", elapsed.Seconds())
 	fmt.Println(result.Text)
 
+	// Surface the conversation ID on stderr (never stdout, which carries the
+	// reply and may be redirected): keep:<id> is directly usable as --keep.
+	if result.URL != "" {
+		outfmt.Println(formatConversationHint(result.URL))
+	}
+
 	return nil
+}
+
+// formatConversationHint renders the stderr hint shown after a successful
+// reply. It prints the ID in keep:<id> form — copy-paste ready for --keep —
+// and falls back to the raw URL when the ID cannot be extracted.
+func formatConversationHint(url string) string {
+	if url == "" {
+		return ""
+	}
+	if id := lp.ConversationIDFromURL(url); id != "" {
+		return fmt.Sprintf("📋 会话已保存: keep:%s\n   继续对话: dscli webchat --keep=%s \"你的问题\"", id, id)
+	}
+	return "📋 会话 URL: " + url
 }
 
 // webchatListConversations prints the saved conversation registry.
@@ -138,7 +157,7 @@ func webchatListConversations() error {
 		fmt.Println("暂无已保存会话。先发一条消息，或用 --keep=<会话URL> 登记浏览器中打开的会话。")
 		return nil
 	}
-	fmt.Println("已保存会话（最新在前）：")
+	fmt.Println("已保存会话（最新在前），ID 可直接用于 --keep=<ID>：")
 	for _, c := range convs {
 		mode := string(c.Mode)
 		if mode == "" {

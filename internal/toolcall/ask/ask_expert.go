@@ -195,7 +195,7 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 	var convID string
 	if convURL != "" {
 		if convID = lp.ConversationIDFromURL(convURL); convID != "" {
-			outfmt.Printf("📋 conversation: %s (继续追问请传 keep=%q)\n", convID, convID)
+			outfmt.Printf("📋 keep:%s (继续追问请传 keep=%s)\n", convID, convID)
 			result += "\n\n---\nconversation_id: " + convID
 		} else {
 			outfmt.Printf("📋 conversation URL: %s\n", convURL)

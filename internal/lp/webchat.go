@@ -567,10 +567,8 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, opts W
 		return "", "", fmt.Errorf("webchat: %w", err)
 	}
 
-	if finalURL != "" {
-		fmt.Fprintf(os.Stderr, "💾 会话 URL: %s\n", finalURL)
-	}
-
+	// Session info (keep:<id>) is surfaced by the caller (CLI / ask_expert),
+	// not here, so the library layer stays silent about presentation.
 	return response, finalURL, nil
 }
 
