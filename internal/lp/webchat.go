@@ -357,13 +357,19 @@ func WebChat(ctx context.Context, message string) (string, error) {
 }
 
 // WebChatWithOptions is WebChat with explicit mode and attachment options.
-// Options are normalized and validated before a browser is launched, so bad
-// input (unknown mode, oversized attachments) fails fast without starting
-// Chrome. See WebChatOptions for the mode defaults.
+// Options are normalized, attachment paths resolved to absolute, and the
+// result validated before a browser is launched, so bad input (unknown
+// mode, missing/oversized attachments) fails fast without starting Chrome.
+// See WebChatOptions for the mode defaults.
 func WebChatWithOptions(ctx context.Context, message string, opts WebChatOptions) (string, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "WebChatWithOptions")
 	defer span.Finish()
 	opts = normalizeWebChatOptions(opts)
+	resolved, err := resolveWebAttachments(opts.Attachments)
+	if err != nil {
+		return "", err
+	}
+	opts.Attachments = resolved
 	if err := validateWebChatOptions(opts); err != nil {
 		return "", err
 	}
@@ -678,6 +684,26 @@ func validateWebAttachments(files []string) error {
 		return fmt.Errorf("attachments too large: %d bytes (max %d)", total, webUploadMaxTotal)
 	}
 	return nil
+}
+
+// resolveWebAttachments converts attachment paths to absolute paths.
+// Uploads are executed inside the Chrome process via CDP (DOM.setFileInputFiles),
+// which resolves paths against Chrome's working directory — not dscli's — so a
+// relative path that exists for the user would fail to upload. Absolutizing at
+// the entry point makes every path unambiguous for both validation and upload.
+func resolveWebAttachments(files []string) ([]string, error) {
+	if len(files) == 0 {
+		return files, nil // keep nil/empty as-is
+	}
+	resolved := make([]string, len(files))
+	for i, f := range files {
+		abs, err := filepath.Abs(f)
+		if err != nil {
+			return nil, fmt.Errorf("attachment %s: %w", f, err)
+		}
+		resolved[i] = abs
+	}
+	return resolved, nil
 }
 
 // IsImageFile reports whether path has an image extension accepted by the

@@ -151,6 +151,43 @@ func TestValidateWebChatOptions(t *testing.T) {
 	}
 }
 
+func TestResolveWebAttachments(t *testing.T) {
+	// Empty input stays untouched (nil stays nil, empty stays empty).
+	if got := mustResolve(t, nil); got != nil {
+		t.Errorf("resolveWebAttachments(nil) = %v, want nil", got)
+	}
+	if got := mustResolve(t, []string{}); len(got) != 0 {
+		t.Errorf("resolveWebAttachments([]) = %v, want empty", got)
+	}
+
+	// Absolute paths are kept as-is.
+	abs := filepath.Join(t.TempDir(), "shot.png")
+	if got := mustResolve(t, []string{abs}); got[0] != abs {
+		t.Errorf("resolveWebAttachments(%q) = %q, want unchanged", abs, got[0])
+	}
+
+	// Relative paths are resolved against the process cwd — Chrome's CDP
+	// upload reads files with Chrome's working directory, not dscli's.
+	rel := "relative-shot.png"
+	got := mustResolve(t, []string{rel})
+	want, _ := filepath.Abs(rel)
+	if got[0] != want {
+		t.Errorf("resolveWebAttachments(%q) = %q, want %q", rel, got[0], want)
+	}
+	if !filepath.IsAbs(got[0]) {
+		t.Errorf("resolveWebAttachments(%q) = %q, want absolute path", rel, got[0])
+	}
+}
+
+func mustResolve(t *testing.T, files []string) []string {
+	t.Helper()
+	resolved, err := resolveWebAttachments(files)
+	if err != nil {
+		t.Fatalf("resolveWebAttachments(%v): %v", files, err)
+	}
+	return resolved
+}
+
 func TestValidateWebAttachments(t *testing.T) {
 	// Too many files (count check runs before the stat loop).
 	files := make([]string, webUploadMaxFiles+1)

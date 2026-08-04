@@ -24,7 +24,8 @@ func init() {
 
 发送消息：
   dscli webchat "什么是闭包？"
-  echo "review 这段代码" | dscli webchat --input -
+  echo "review 这段代码" | dscli webchat
+  echo "识别图中文字" | dscli webchat --chat-mode flash --attach screenshot.png
 
 继续上次对话：
   dscli webchat --keep "第一个问题"
@@ -48,7 +49,10 @@ func init() {
 		RunE: webchatRunE,
 	})
 
-	webchatCmd.Flags().String("input", "", "从文件读取消息（使用 - 表示从 stdin 读取）")
+	// --input defaults to "-": piped stdin is the primary non-arg input
+	// channel (echo "msg" | dscli webchat). A terminal stdin is rejected in
+	// gatherWebchatInput with a helpful error instead of hanging on EOF.
+	webchatCmd.Flags().String("input", "-", "从文件读取消息（默认 - 从 stdin 管道读取；终端下请提供位置参数或 --input 文件）")
 	webchatCmd.Flags().Bool("keep", false, "继续上次对话（默认开新对话）")
 	webchatCmd.Flags().String("chat-mode", "", "聊天模式: pro (专家/V4 Pro), flash (快速/V4 Flash), vision (识图/V4 Vision)；默认 pro，--keep 时保留原模式")
 	// --attach accepts any user-readable path (absolute included): the CLI
@@ -94,6 +98,9 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 
 // gatherWebchatInput collects the message from args or --input flag.
 // Priority: positional args > --input flag (file path or "-" for stdin).
+// The flag defaults to "-", so a piped stdin (echo ... | dscli webchat)
+// works without any argument; a terminal stdin is rejected with a helpful
+// error instead of hanging on EOF.
 func gatherWebchatInput(cmd *cobra.Command, args []string) (string, error) {
 	if len(args) > 0 {
 		return args[0], nil
@@ -101,10 +108,13 @@ func gatherWebchatInput(cmd *cobra.Command, args []string) (string, error) {
 
 	input, _ := cmd.Flags().GetString("input")
 	if input == "" {
-		return "", fmt.Errorf("请提供消息，或使用 --input 从文件/stdin 读取")
+		input = "-" // explicit --input "" behaves like the default
 	}
 
 	if input == "-" {
+		if isTerminal(os.Stdin) {
+			return "", fmt.Errorf("请提供消息（位置参数或 --input 文件），或通过管道输入，例如: echo '消息' | dscli webchat")
+		}
 		data, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			return "", fmt.Errorf("读取 stdin 失败: %w", err)
