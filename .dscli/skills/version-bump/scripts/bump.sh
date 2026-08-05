@@ -71,7 +71,7 @@ if [ -f README.md ]; then
 fi
 
 # 1. Update internal/version/version.go
-sed -i 's/^\tvar Version = ".*"/\tvar Version = "'"$NEW_VER"'"/' internal/version/version.go
+sed -i 's/^\(\s*\)var Version = ".*"/\1var Version = "'"$NEW_VER"'"/' internal/version/version.go
 echo "  internal/version/version.go → $NEW_VER"
 
 # 2. Stage version change
