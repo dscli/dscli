@@ -68,8 +68,9 @@ func init() {
 	// --attach accepts any user-readable path (absolute included): the CLI
 	// is human-driven and the operator can already read those files. The
 	// ask_expert TOOL is LLM-driven and sandboxes paths to the project
-	// directory or the user's home (~/ or $HOME absolute) instead
-	// (verifySafePath), since the model is untrusted.
+	// directory, the user's home (~/ or $HOME absolute), or the system
+	// temp dir (/tmp) instead (verifySafePath), since the model is
+	// untrusted.
 	webchatCmd.Flags().StringSlice("attach", nil, "附件图片路径，可多次指定（仅 flash/vision 模式支持）")
 }
 

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -37,7 +38,7 @@ var askExpertTool = toolcall.ToolDef{
 			},
 			"attachments": map[string]any{
 				"type":        "array",
-				"description": "File attachments list (optional). Images are uploaded and analyzed visually; other files inlined as text (1MB max, safe paths = cwd relative or ~/... and $HOME absolute, ≤50 files/≤100MB).",
+				"description": "File attachments list (optional). Images are uploaded and analyzed visually; other files inlined as text (1MB max, safe paths = cwd, ~/$HOME, or /tmp; ≤50 files/≤100MB).",
 				"items": map[string]string{
 					"type":        "string",
 					"description": "Attachment filename",
@@ -136,17 +137,19 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 	}
 
 	// Split attachments by type: image files are uploaded to the web chat
-	// (flash/vision modes), everything else is inlined as text. Uploaded
-	// paths are still sandboxed to the current directory (symlink-resolved)
-	// so the LLM cannot exfiltrate arbitrary local files.
+	// (flash/vision modes), everything else is inlined as text. Every
+	// attachment is sandboxed to the current directory, the user's home, or
+	// the system temp directory (symlink-resolved), so the model cannot
+	// exfiltrate arbitrary local files.
 	var uploads, inline []string
-	var attachmentErrors []error
 	for _, a := range attachments {
+		// Fail fast on unsafe paths: a path that escapes the sandbox is a
+		// hard error, not a skippable attachment. Returning immediately
+		// guarantees no file is read and no browser work happens.
+		if err := verifySafePath(a); err != nil {
+			return result, warning, err
+		}
 		if lp.IsImageFile(a) {
-			if err := verifySafePath(a); err != nil {
-				attachmentErrors = append(attachmentErrors, err)
-				continue
-			}
 			uploads = append(uploads, expandHome(a))
 		} else {
 			inline = append(inline, a)
@@ -166,8 +169,7 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 	}
 
 	// Build the structured request with inlined text attachments.
-	structuredRequest, inlineErrors := buildStructuredRequest(content, inline)
-	attachmentErrors = append(attachmentErrors, inlineErrors...)
+	structuredRequest, attachmentErrors := buildStructuredRequest(content, inline)
 
 	// Report attachment errors to user but continue execution
 	if len(attachmentErrors) > 0 {
@@ -359,9 +361,10 @@ Please provide detailed analysis and advice, including:
 
 // readContentFile reads the @-referenced question text from disk.
 // It applies the same safety rules as attachments: safe path only
-// (current directory and subdirectories, or the user's home directory via
-// ~/... or absolute paths under $HOME, no ".." traversal), 1MB size limit,
-// non-empty content. Errors are explicit, never silent.
+// (current directory and subdirectories, the user's home directory via
+// ~/... or absolute paths under $HOME, or the system temp directory, no
+// ".." traversal), 1MB size limit, non-empty content. Errors are explicit,
+// never silent.
 func readContentFile(filename string) (string, error) {
 	if err := verifySafePath(filename); err != nil {
 		return "", err
@@ -390,12 +393,13 @@ func readContentFile(filename string) (string, error) {
 	return content, nil
 }
 
-// verifySafePath checks that filename is safe to read or upload: relative
-// inside the current directory, or under the user's home directory (either
-// ~/... or an absolute path under $HOME). isSafePath only checks the
-// textual path, so a symlink inside a sandbox could otherwise smuggle in
-// arbitrary files from outside it; EvalSymlinks resolves the real target
-// (relative paths stay relative, so absolutize first).
+// verifySafePath checks that filename is safe to read or upload: a relative
+// path inside the current directory, or an absolute path under the user's
+// home directory (either ~/... or $HOME/...) or the system temp directory
+// (e.g. /tmp/...). isSafePath only checks the textual path, so a symlink
+// inside a sandbox could otherwise smuggle in arbitrary files from outside
+// it; EvalSymlinks resolves the real target (relative paths stay relative,
+// so absolutize first).
 func verifySafePath(filename string) error {
 	if !isSafePath(filename) {
 		return fmt.Errorf("unsafe path: %s", filename)
@@ -408,8 +412,8 @@ func verifySafePath(filename string) error {
 	if err != nil {
 		return fmt.Errorf("failed to resolve file %s: %w", filename, err)
 	}
-	if !pathWithinCwd(resolved) && !pathWithinHome(resolved) {
-		return fmt.Errorf("unsafe path: %s resolves outside the current directory and home directory", filename)
+	if !pathWithinCwd(resolved) && !pathWithinHome(resolved) && !pathWithinTemp(resolved) {
+		return fmt.Errorf("unsafe path: %s resolves outside the current directory, home directory, or temp directory", filename)
 	}
 	return nil
 }
@@ -417,7 +421,8 @@ func verifySafePath(filename string) error {
 // isSafePath checks if the file path is safe.
 // Prevents path traversal attacks. Allows the current directory and its
 // subdirectories (relative paths), plus the user's home directory
-// (~/... and absolute paths under $HOME).
+// (~/... and absolute paths under $HOME) and the system temp directory
+// (e.g. /tmp/...).
 func isSafePath(filename string) bool {
 	// Expand a leading ~ to the user's home directory.
 	cleanPath := filepath.Clean(expandHome(filename))
@@ -431,9 +436,10 @@ func isSafePath(filename string) bool {
 		}
 	}
 
-	// Absolute paths are allowed only under the home directory.
+	// Absolute paths are allowed only under the home directory or the
+	// system temp directory.
 	if filepath.IsAbs(cleanPath) {
-		return pathWithinHome(cleanPath)
+		return pathWithinHome(cleanPath) || pathWithinTemp(cleanPath)
 	}
 
 	// Relative paths must stay under the current working directory.
@@ -479,6 +485,42 @@ func pathWithinHome(absPath string) bool {
 		return false
 	}
 	return pathWithinDir(absPath, home)
+}
+
+// pathWithinTemp reports whether the given absolute path stays under the
+// system temporary directory. Candidates are symlink-resolved so paths work
+// on systems where the temp dir is reached through a link (e.g. macOS
+// /tmp -> /private/tmp) and where callers pass the other spelling.
+func pathWithinTemp(absPath string) bool {
+	for _, dir := range tempDirs() {
+		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+			dir = resolved
+		}
+		if pathWithinDir(absPath, dir) {
+			return true
+		}
+	}
+	return false
+}
+
+// tempDirs returns the system temporary directory plus the conventional
+// /tmp on Unix when it differs (e.g. macOS with TMPDIR set reports
+// /var/folders/... while callers often pass /tmp/... paths).
+func tempDirs() []string {
+	seen := map[string]bool{}
+	var dirs []string
+	add := func(d string) {
+		if d == "" || seen[d] {
+			return
+		}
+		seen[d] = true
+		dirs = append(dirs, d)
+	}
+	add(os.TempDir())
+	if runtime.GOOS != "windows" {
+		add("/tmp")
+	}
+	return dirs
 }
 
 // pathWithinDir reports whether absPath stays under dir. The separator

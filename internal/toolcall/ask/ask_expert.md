@@ -10,12 +10,12 @@ Parameters:
 - input: the question to ask (required). If the value starts with @ and
   points to an existing file (e.g. @question.txt, @~/notes/q.txt), the file
   content is read directly from disk — no LLM transcription drift. Safe
-  paths only: cwd-relative, ~/..., or absolute under $HOME (max 1MB).
+  paths only: cwd-relative, ~/..., $HOME-absolute, or /tmp (max 1MB).
   Anything else starting with @ is sent as plain text.
 
 - attachments: image files (png/jpg/gif/webp/bmp) uploaded for visual
-  analysis; other files inlined as text (1MB max, safe paths = cwd-relative
-  or under $HOME, ≤50 files/≤100MB).
+  analysis; other files inlined as text (1MB max, safe paths = cwd, $HOME,
+  or /tmp; ≤50 files/≤100MB).
 
 - mode: web chat mode. "pro" (expert, default), "flash" (fast with smart
   search), "vision" (image uploads). Empty: vision if images attached,

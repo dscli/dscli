@@ -237,11 +237,10 @@ func TestReadContentFileSymlinkOutsideCwd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Target outside cwd: /tmp/... is outside the test working directory.
-	outside := t.TempDir()
-	target := filepath.Join(outside, "target.txt")
-	if err := os.WriteFile(target, []byte("secret"), 0o600); err != nil {
-		t.Fatal(err)
+	// Target outside the sandbox (cwd/home/temp): a real system file.
+	target := outsideSandboxPath(t)
+	if target == "" {
+		t.Skip("no candidate file outside cwd/home/temp found")
 	}
 	link := filepath.Join(cwd, "askexpert-symlink-test.txt")
 	if err := os.Symlink(target, link); err != nil {
@@ -321,11 +320,49 @@ func TestHandleAskExpertUnsafeImageAttachment(t *testing.T) {
 		"attachments": []string{"../outside.png"},
 	}
 
+	if _, _, err := handleAskExpert(context.Background(), args); err == nil {
+		t.Fatal("expected error for unsafe attachment, got nil")
+	}
+	if calls.input != "" {
+		t.Errorf("expert was called with %q, want no call (unsafe path must abort)", calls.input)
+	}
+	if len(calls.attachments) != 0 {
+		t.Errorf("attachments = %v, want none (unsafe path must abort before upload)", calls.attachments)
+	}
+}
+
+func TestHandleAskExpertUnsafeInlineAttachment(t *testing.T) {
+	calls := captureAskExpert(t)
+	args := toolcall.ToolArgs{
+		"input":       "Question",
+		"attachments": []string{"../secret.txt"},
+	}
+
+	if _, _, err := handleAskExpert(context.Background(), args); err == nil {
+		t.Fatal("expected error for unsafe inline attachment, got nil")
+	}
+	if calls.input != "" {
+		t.Errorf("expert was called with %q, want no call (unsafe path must abort)", calls.input)
+	}
+}
+
+func TestHandleAskExpertTempImageAttachment(t *testing.T) {
+	calls := captureAskExpert(t)
+	img := filepath.Join(os.TempDir(), "askexpert-test-tmp-upload.png")
+	if err := os.WriteFile(img, []byte("fake image bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Remove(img) })
+	args := toolcall.ToolArgs{
+		"input":       "What does this show?",
+		"attachments": []string{img},
+	}
+
 	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
 		t.Fatalf("handleAskExpert: %v", err)
 	}
-	if len(calls.attachments) != 0 {
-		t.Errorf("attachments = %v, want none (unsafe path must be dropped)", calls.attachments)
+	if len(calls.attachments) != 1 || calls.attachments[0] != img {
+		t.Errorf("attachments = %v, want [%s] (temp dir image must be uploadable)", calls.attachments, img)
 	}
 }
 
@@ -469,18 +506,6 @@ func tempFileInHome(t *testing.T, content string) (tildeName, absName string) {
 	return filepath.Join("~", filepath.Base(name)), name
 }
 
-// outsideHomeDir returns a directory guaranteed not to be under $HOME
-// (t.TempDir() usually is /tmp, but guard anyway) or skips the test.
-func outsideHomeDir(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	home, err := os.UserHomeDir()
-	if err == nil && home != "" && strings.HasPrefix(dir, home+string(os.PathSeparator)) {
-		t.Skipf("temp dir %s is inside home %s; cannot test outside-home rejection", dir, home)
-	}
-	return dir
-}
-
 func TestReadContentFileHomeTilde(t *testing.T) {
 	content := "question from home via tilde"
 	tildeName, _ := tempFileInHome(t, content)
@@ -508,14 +533,13 @@ func TestReadContentFileHomeAbsolute(t *testing.T) {
 }
 
 func TestReadContentFileOutsideHomeRejected(t *testing.T) {
-	outside := outsideHomeDir(t)
-	target := filepath.Join(outside, "target.txt")
-	if err := os.WriteFile(target, []byte("secret"), 0o600); err != nil {
-		t.Fatal(err)
+	outside := outsideSandboxPath(t)
+	if outside == "" {
+		t.Skip("no candidate file outside cwd/home/temp found")
 	}
 
-	if _, err := readContentFile(target); err == nil {
-		t.Fatal("expected error for absolute path outside home, got nil")
+	if _, err := readContentFile(outside); err == nil {
+		t.Fatal("expected error for absolute path outside the sandbox, got nil")
 	} else if !strings.Contains(err.Error(), "unsafe path") {
 		t.Errorf("error = %q, want unsafe-path message", err)
 	}
@@ -541,10 +565,9 @@ func TestReadContentFileHomeSymlinkEscape(t *testing.T) {
 	if err != nil || home == "" {
 		t.Skipf("cannot determine home directory: %v", err)
 	}
-	outside := outsideHomeDir(t)
-	target := filepath.Join(outside, "target.txt")
-	if err := os.WriteFile(target, []byte("secret"), 0o600); err != nil {
-		t.Fatal(err)
+	target := outsideSandboxPath(t)
+	if target == "" {
+		t.Skip("no candidate file outside cwd/home/temp found")
 	}
 	link := filepath.Join(home, "askexpert-home-symlink-test.txt")
 	if err := os.Symlink(target, link); err != nil {
@@ -553,11 +576,11 @@ func TestReadContentFileHomeSymlinkEscape(t *testing.T) {
 	t.Cleanup(func() { os.Remove(link) })
 
 	// Both the absolute and the ~/ form must be rejected: the symlink
-	// resolves outside the HOME sandbox even though its text path is inside.
+	// resolves outside the sandbox even though its text path is inside.
 	for _, name := range []string{link, filepath.Join("~", filepath.Base(link))} {
 		if _, err := readContentFile(name); err == nil {
-			t.Errorf("expected error for symlink %q resolving outside home, got nil", name)
-		} else if !strings.Contains(err.Error(), "outside the current directory and home directory") {
+			t.Errorf("expected error for symlink %q resolving outside sandbox, got nil", name)
+		} else if !strings.Contains(err.Error(), "outside the current directory, home directory, or temp directory") {
 			t.Errorf("error = %q, want outside-sandbox message", err)
 		}
 	}
@@ -603,4 +626,63 @@ func TestIsSafePathDotsInName(t *testing.T) {
 	if isSafePath("../escape.txt") {
 		t.Error("isSafePath must reject a real .. traversal component")
 	}
+}
+
+// TestIsSafePathTemp verifies that the system temp directory (e.g. /tmp) is
+// an allowed sandbox root, while traversal through it stays rejected.
+func TestIsSafePathTemp(t *testing.T) {
+	tmp := filepath.Join(os.TempDir(), "ask-expert-tmp-test.txt")
+	if !isSafePath(tmp) {
+		t.Errorf("isSafePath(%q) = false, want true (system temp dir must be safe)", tmp)
+	}
+	escaped := filepath.Join(os.TempDir(), "..", "etc", "passwd")
+	if isSafePath(escaped) {
+		t.Errorf("isSafePath(%q) = true, want false (traversal must be rejected)", escaped)
+	}
+}
+
+// TestVerifySafePathTemp verifies that a real file under the system temp
+// directory passes verification, while a real file outside cwd/home/temp
+// is still rejected.
+func TestVerifySafePathTemp(t *testing.T) {
+	tmp := filepath.Join(os.TempDir(), "askexpert-tmp-verify-test.txt")
+	if err := os.WriteFile(tmp, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Remove(tmp) })
+	if err := verifySafePath(tmp); err != nil {
+		t.Errorf("verifySafePath(%q) = %v, want nil", tmp, err)
+	}
+
+	outside := outsideSandboxPath(t)
+	if outside == "" {
+		t.Skip("no candidate file outside cwd/home/temp found")
+	}
+	if err := verifySafePath(outside); err == nil {
+		t.Errorf("verifySafePath(%q) = nil, want error", outside)
+	}
+}
+
+// outsideSandboxPath returns an existing absolute path that lies outside the
+// current directory, the home directory, and the temp directory, or "" if no
+// such candidate is found on this system.
+func outsideSandboxPath(t *testing.T) string {
+	t.Helper()
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"/etc/passwd", "/etc/hosts", "/etc/resolv.conf"} {
+		if _, err := os.Stat(p); err != nil {
+			continue
+		}
+		if !pathWithinDir(p, cwd) && !pathWithinDir(p, home) && !pathWithinTemp(p) {
+			return p
+		}
+	}
+	return ""
 }
