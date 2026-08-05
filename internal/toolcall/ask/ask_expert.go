@@ -33,11 +33,11 @@ var askExpertTool = toolcall.ToolDef{
 		"properties": map[string]any{
 			"input": map[string]any{
 				"type":        "string",
-				"description": "The question to ask. If the value starts with @ and points to an existing file (e.g. @question.txt), the file content is read from disk as the question.",
+				"description": "The question to ask. If the value starts with @ and points to an existing file (e.g. @question.txt or @~/notes/q.txt), the file content is read from disk as the question.",
 			},
 			"attachments": map[string]any{
 				"type":        "array",
-				"description": "File attachments list (optional). Images are uploaded and analyzed visually; other files inlined as text (1MB max, safe paths, ≤50 files/≤100MB).",
+				"description": "File attachments list (optional). Images are uploaded and analyzed visually; other files inlined as text (1MB max, safe paths = cwd relative or ~/... and $HOME absolute, ≤50 files/≤100MB).",
 				"items": map[string]string{
 					"type":        "string",
 					"description": "Attachment filename",
@@ -147,7 +147,7 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 				attachmentErrors = append(attachmentErrors, err)
 				continue
 			}
-			uploads = append(uploads, a)
+			uploads = append(uploads, expandHome(a))
 		} else {
 			inline = append(inline, a)
 		}
@@ -311,13 +311,15 @@ func buildStructuredRequest(content string, attachments []string) (string, []err
 				continue
 			}
 
-			// Check file size (limit to 1MB)
-			if info, err := os.Stat(filename); err == nil && info.Size() > maxAttachmentSize {
+			// Check file size (limit to 1MB). Open the ~/-expanded path:
+			// os.Stat/ReadFile do not expand a leading ~ themselves.
+			path := expandHome(filename)
+			if info, err := os.Stat(path); err == nil && info.Size() > maxAttachmentSize {
 				errors = append(errors, fmt.Errorf("file too large: %s (%d bytes > 1MB)", filename, info.Size()))
 				continue
 			}
 
-			b, err := os.ReadFile(filename)
+			b, err := os.ReadFile(path)
 			if err != nil {
 				errors = append(errors, fmt.Errorf("failed to read file %s: %w", filename, err))
 				continue
@@ -357,14 +359,15 @@ Please provide detailed analysis and advice, including:
 
 // readContentFile reads the @-referenced question text from disk.
 // It applies the same safety rules as attachments: safe path only
-// (current directory and subdirectories, no absolute paths, no ".."),
-// 1MB size limit, non-empty content. Errors are explicit, never silent.
+// (current directory and subdirectories, or the user's home directory via
+// ~/... or absolute paths under $HOME, no ".." traversal), 1MB size limit,
+// non-empty content. Errors are explicit, never silent.
 func readContentFile(filename string) (string, error) {
 	if err := verifySafePath(filename); err != nil {
 		return "", err
 	}
 
-	f, err := os.Open(filename)
+	f, err := os.Open(expandHome(filename))
 	if err != nil {
 		return "", fmt.Errorf("failed to open file %s: %w", filename, err)
 	}
@@ -387,17 +390,17 @@ func readContentFile(filename string) (string, error) {
 	return content, nil
 }
 
-// verifySafePath checks that filename is safe to read or upload: relative,
-// inside the current directory, with symlinks that resolve back into the
-// current directory. isSafePath only checks the textual path, so a symlink
-// inside cwd could otherwise smuggle in arbitrary files from outside the
-// sandbox; EvalSymlinks resolves the real target (relative paths stay
-// relative, so absolutize first).
+// verifySafePath checks that filename is safe to read or upload: relative
+// inside the current directory, or under the user's home directory (either
+// ~/... or an absolute path under $HOME). isSafePath only checks the
+// textual path, so a symlink inside a sandbox could otherwise smuggle in
+// arbitrary files from outside it; EvalSymlinks resolves the real target
+// (relative paths stay relative, so absolutize first).
 func verifySafePath(filename string) error {
 	if !isSafePath(filename) {
 		return fmt.Errorf("unsafe path: %s", filename)
 	}
-	abs, err := filepath.Abs(filename)
+	abs, err := filepath.Abs(expandHome(filename))
 	if err != nil {
 		return fmt.Errorf("failed to resolve file %s: %w", filename, err)
 	}
@@ -405,29 +408,31 @@ func verifySafePath(filename string) error {
 	if err != nil {
 		return fmt.Errorf("failed to resolve file %s: %w", filename, err)
 	}
-	if !pathWithinCwd(resolved) {
-		return fmt.Errorf("unsafe path: %s resolves outside the current directory", filename)
+	if !pathWithinCwd(resolved) && !pathWithinHome(resolved) {
+		return fmt.Errorf("unsafe path: %s resolves outside the current directory and home directory", filename)
 	}
 	return nil
 }
 
 // isSafePath checks if the file path is safe.
-// Prevents path traversal attacks, only allows current directory and subdirectories.
+// Prevents path traversal attacks. Allows the current directory and its
+// subdirectories (relative paths), plus the user's home directory
+// (~/... and absolute paths under $HOME).
 func isSafePath(filename string) bool {
-	// Clean path
-	cleanPath := filepath.Clean(filename)
+	// Expand a leading ~ to the user's home directory.
+	cleanPath := filepath.Clean(expandHome(filename))
 
 	// Check for path traversal
 	if strings.Contains(cleanPath, "..") {
 		return false
 	}
 
-	// Check if absolute path
+	// Absolute paths are allowed only under the home directory.
 	if filepath.IsAbs(cleanPath) {
-		return false
+		return pathWithinHome(cleanPath)
 	}
 
-	// Check if under current working directory
+	// Relative paths must stay under the current working directory.
 	fullPath, err := filepath.Abs(cleanPath)
 	if err != nil {
 		return false
@@ -435,16 +440,49 @@ func isSafePath(filename string) bool {
 	return pathWithinCwd(fullPath)
 }
 
+// expandHome expands a leading ~ or ~/ to the user's home directory.
+// When the home directory cannot be determined the path is returned
+// unchanged, so callers fail safe (a stray ~/ path simply does not exist).
+func expandHome(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return path
+	}
+	switch {
+	case path == "~":
+		return home
+	case strings.HasPrefix(path, "~"+string(os.PathSeparator)):
+		return filepath.Join(home, path[2:])
+	}
+	return path
+}
+
 // pathWithinCwd reports whether the given absolute path stays under the
-// current working directory. The separator guard prevents a sibling
-// directory with a shared prefix (e.g. /proj2 vs /proj) from passing.
+// current working directory.
 func pathWithinCwd(absPath string) bool {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return false
 	}
-	if absPath == cwd {
+	return pathWithinDir(absPath, cwd)
+}
+
+// pathWithinHome reports whether the given absolute path stays under the
+// user's home directory.
+func pathWithinHome(absPath string) bool {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return false
+	}
+	return pathWithinDir(absPath, home)
+}
+
+// pathWithinDir reports whether absPath stays under dir. The separator
+// guard prevents a sibling directory with a shared prefix (e.g. /proj2 vs
+// /proj) from passing.
+func pathWithinDir(absPath, dir string) bool {
+	if absPath == dir {
 		return true
 	}
-	return strings.HasPrefix(absPath, cwd+string(os.PathSeparator))
+	return strings.HasPrefix(absPath, dir+string(os.PathSeparator))
 }

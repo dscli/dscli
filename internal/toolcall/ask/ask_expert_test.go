@@ -443,3 +443,153 @@ func TestHandleAskExpertKeepList(t *testing.T) {
 		t.Errorf("keep=list result does not mention conversations:\n%s", result)
 	}
 }
+
+// tempFileInHome creates a file under the user's home directory (allowed by
+// isSafePath since the HOME sandbox was added) and returns both the ~/
+// relative form and the absolute path. Skips when HOME is unavailable.
+func tempFileInHome(t *testing.T, content string) (tildeName, absName string) {
+	t.Helper()
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		t.Skipf("cannot determine home directory: %v", err)
+	}
+	f, err := os.CreateTemp(home, "askexpert-home-test-*.txt")
+	if err != nil {
+		t.Skipf("cannot create file in home %s: %v", home, err)
+	}
+	name := f.Name()
+	t.Cleanup(func() { os.Remove(name) })
+	if _, err := f.WriteString(content); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join("~", filepath.Base(name)), name
+}
+
+// outsideHomeDir returns a directory guaranteed not to be under $HOME
+// (t.TempDir() usually is /tmp, but guard anyway) or skips the test.
+func outsideHomeDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	home, err := os.UserHomeDir()
+	if err == nil && home != "" && strings.HasPrefix(dir, home+string(os.PathSeparator)) {
+		t.Skipf("temp dir %s is inside home %s; cannot test outside-home rejection", dir, home)
+	}
+	return dir
+}
+
+func TestReadContentFileHomeTilde(t *testing.T) {
+	content := "question from home via tilde"
+	tildeName, _ := tempFileInHome(t, content)
+
+	got, err := readContentFile(tildeName)
+	if err != nil {
+		t.Fatalf("readContentFile(%q): %v", tildeName, err)
+	}
+	if got != content {
+		t.Errorf("readContentFile = %q, want %q", got, content)
+	}
+}
+
+func TestReadContentFileHomeAbsolute(t *testing.T) {
+	content := "question from home via absolute path"
+	_, absName := tempFileInHome(t, content)
+
+	got, err := readContentFile(absName)
+	if err != nil {
+		t.Fatalf("readContentFile(%q): %v", absName, err)
+	}
+	if got != content {
+		t.Errorf("readContentFile = %q, want %q", got, content)
+	}
+}
+
+func TestReadContentFileOutsideHomeRejected(t *testing.T) {
+	outside := outsideHomeDir(t)
+	target := filepath.Join(outside, "target.txt")
+	if err := os.WriteFile(target, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := readContentFile(target); err == nil {
+		t.Fatal("expected error for absolute path outside home, got nil")
+	} else if !strings.Contains(err.Error(), "unsafe path") {
+		t.Errorf("error = %q, want unsafe-path message", err)
+	}
+}
+
+func TestReadContentFileHomeTraversalRejected(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		t.Skipf("cannot determine home directory: %v", err)
+	}
+	// ~/../escapes.txt cleans to <parent-of-home>/escapes.txt, outside HOME.
+	// Build the raw string: filepath.Join would Clean "~"+"/.." away first.
+	escaped := "~/../askexpert-escape-test.txt"
+	if _, err := readContentFile(escaped); err == nil {
+		t.Fatal("expected error for ~/.. traversal, got nil")
+	} else if !strings.Contains(err.Error(), "unsafe path") {
+		t.Errorf("error = %q, want unsafe-path message", err)
+	}
+}
+
+func TestReadContentFileHomeSymlinkEscape(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		t.Skipf("cannot determine home directory: %v", err)
+	}
+	outside := outsideHomeDir(t)
+	target := filepath.Join(outside, "target.txt")
+	if err := os.WriteFile(target, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(home, "askexpert-home-symlink-test.txt")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("cannot create symlink in home: %v", err)
+	}
+	t.Cleanup(func() { os.Remove(link) })
+
+	// Both the absolute and the ~/ form must be rejected: the symlink
+	// resolves outside the HOME sandbox even though its text path is inside.
+	for _, name := range []string{link, filepath.Join("~", filepath.Base(link))} {
+		if _, err := readContentFile(name); err == nil {
+			t.Errorf("expected error for symlink %q resolving outside home, got nil", name)
+		} else if !strings.Contains(err.Error(), "outside the current directory and home directory") {
+			t.Errorf("error = %q, want outside-sandbox message", err)
+		}
+	}
+}
+
+// TestHandleAskExpertHomeImageAttachment verifies that a ~/-referenced image
+// is expanded to an absolute path before it reaches the upload layer: the
+// CDP/web-chat code opens attachment files with plain os.Open, which does
+// not expand a leading ~ (regression test for the HOME sandbox change).
+func TestHandleAskExpertHomeImageAttachment(t *testing.T) {
+	calls := captureAskExpert(t)
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		t.Skipf("cannot determine home directory: %v", err)
+	}
+	name := filepath.Join(home, "askexpert-home-image-test.png")
+	if err := os.WriteFile(name, []byte("fake image bytes"), 0o600); err != nil {
+		t.Skipf("cannot create image in home %s: %v", home, err)
+	}
+	t.Cleanup(func() { os.Remove(name) })
+
+	args := toolcall.ToolArgs{
+		"input":       "What does this show?",
+		"attachments": []string{filepath.Join("~", filepath.Base(name))},
+	}
+	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
+		t.Fatalf("handleAskExpert: %v", err)
+	}
+	if len(calls.attachments) != 1 {
+		t.Fatalf("attachments = %v, want exactly one", calls.attachments)
+	}
+	if calls.attachments[0] != name {
+		t.Errorf("attachment = %q, want expanded absolute path %q", calls.attachments[0], name)
+	}
+}
