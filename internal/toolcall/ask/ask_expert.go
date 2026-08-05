@@ -422,9 +422,13 @@ func isSafePath(filename string) bool {
 	// Expand a leading ~ to the user's home directory.
 	cleanPath := filepath.Clean(expandHome(filename))
 
-	// Check for path traversal
-	if strings.Contains(cleanPath, "..") {
-		return false
+	// Check for path traversal: no component may be "..". A component
+	// check (instead of strings.Contains) avoids rejecting legitimate
+	// names like "..hidden" that merely contain two dots.
+	for _, comp := range strings.Split(cleanPath, string(os.PathSeparator)) {
+		if comp == ".." {
+			return false
+		}
 	}
 
 	// Absolute paths are allowed only under the home directory.

@@ -593,3 +593,14 @@ func TestHandleAskExpertHomeImageAttachment(t *testing.T) {
 		t.Errorf("attachment = %q, want expanded absolute path %q", calls.attachments[0], name)
 	}
 }
+
+// TestIsSafePathDotsInName verifies that names containing ".." as a
+// substring (e.g. "..hidden") are not mistaken for traversal components.
+func TestIsSafePathDotsInName(t *testing.T) {
+	if !isSafePath("~/..hidden-file.txt") {
+		t.Error("isSafePath must allow names like ..hidden-file.txt")
+	}
+	if isSafePath("../escape.txt") {
+		t.Error("isSafePath must reject a real .. traversal component")
+	}
+}
