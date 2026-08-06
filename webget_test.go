@@ -23,7 +23,7 @@ printf '%s\n' "$@" >> "$FAKE_ARGS_FILE"
 case "$FAKE_MODE" in
   status404) echo '{"url":"u","http_status":404,"content":"not found"}' ;;
   raw) echo 'not json' ;;
-  *) echo '{"url":"u","http_status":200,"content":"# Fake Markdown\n"}' ;;
+  *) printf '%s\n' '{"url":"u","http_status":200,"content":"# Fake Markdown\n"}' ;;
 esac
 `
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
