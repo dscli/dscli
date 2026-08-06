@@ -393,6 +393,39 @@ func TestIsBusyErrorText(t *testing.T) {
 	}
 }
 
+func TestIsTruncated(t *testing.T) {
+	tests := []struct {
+		name string
+		s    string
+		want bool
+	}{
+		// Unclosed markdown code fence: cut-off code block.
+		{name: "cut-off json fence", s: "```json\n{\"a\": 1", want: true},
+		{name: "cut-off plain fence", s: "```python\nprint('hello'", want: true},
+		{name: "closed code block", s: "```json\n{\"a\": 1}\n```", want: false},
+		{name: "interior fence never closed", s: "text\n```\ncode\n```\nthen ``` more", want: true},
+		// A lone fence inside prose explains the syntax, not truncation.
+		{name: "lone fence in prose", s: "Use ``` to open a code block.", want: false},
+		// JSON that never terminates.
+		{name: "truncated object", s: "{\"question\": \"1\", \"answer\": \"A\"", want: true},
+		{name: "truncated array of objects", s: "[{\"id\": 1}, {\"id\": 2}", want: true},
+		{name: "complete object", s: "{\"question\": \"1\", \"answer\": \"A\"}", want: false},
+		{name: "complete array", s: "[{\"id\": 1}, {\"id\": 2}]", want: false},
+		// Prose that merely starts with a brace (no quoted key) is not JSON.
+		{name: "brace in prose", s: "{ 这是一个以花括号开头的普通句子 }", want: false},
+		// Normal answers are not truncated.
+		{name: "plain answer", s: "The change looks correct. Ship it.", want: false},
+		{name: "empty", s: "", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isTruncated(tt.s); got != tt.want {
+				t.Errorf("isTruncated(%q) = %v, want %v", tt.s, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestWebChatPollBudget(t *testing.T) {
 	t.Run("no deadline defaults to webChatMaxPolls", func(t *testing.T) {
 		if got := webChatPollBudget(context.Background()); got != webChatMaxPolls {
