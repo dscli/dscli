@@ -1,11 +1,13 @@
 package lp
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestExtractResponse(t *testing.T) {
@@ -389,4 +391,45 @@ func TestIsBusyErrorText(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWebChatPollBudget(t *testing.T) {
+	t.Run("no deadline defaults to webChatMaxPolls", func(t *testing.T) {
+		if got := webChatPollBudget(context.Background()); got != webChatMaxPolls {
+			t.Errorf("webChatPollBudget() = %d, want %d", got, webChatMaxPolls)
+		}
+	})
+
+	t.Run("deadline extends budget to the full timeout", func(t *testing.T) {
+		// 1200s timeout (ask_expert timeout=1200) → 600 polls × 2s.
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+		defer cancel()
+		if got, want := webChatPollBudget(ctx), 600; got != want {
+			t.Errorf("webChatPollBudget() = %d, want %d", got, want)
+		}
+	})
+
+	t.Run("default 10m deadline maps to legacy 300 polls", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		if got, want := webChatPollBudget(ctx), 300; got != want {
+			t.Errorf("webChatPollBudget() = %d, want %d", got, want)
+		}
+	})
+
+	t.Run("sub-interval deadline clamps to one poll", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if got := webChatPollBudget(ctx); got != 1 {
+			t.Errorf("webChatPollBudget() = %d, want 1", got)
+		}
+	})
+
+	t.Run("expired deadline clamps to one poll", func(t *testing.T) {
+		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+		defer cancel()
+		if got := webChatPollBudget(ctx); got != 1 {
+			t.Errorf("webChatPollBudget() = %d, want 1", got)
+		}
+	})
 }

@@ -869,13 +869,19 @@ func webchatSetUploadFiles(ctx context.Context, files []string) error {
 //   - Send-ack window: within webChatConfirmPolls the send must be
 //     acknowledged (textarea cleared, generation active, or new content).
 //     Otherwise the submit was rejected → ErrSendRejected (fail fast
-//     instead of polling for 10 minutes).
+//     instead of polling for the full budget).
 //   - Busy text: an extracted response that is short and matches known
 //     overload phrases ("服务器忙，请稍后再试", "try again later", ...) is
 //     returned as ErrServerBusy, never as an answer.
 //   - Empty stability: a page that is stable with no answer content for
 //     webChatEmptyStablePolls polls means the request stalled server-side
-//     → ErrServerBusy (fail fast instead of the 300-poll timeout).
+//     → ErrServerBusy (fail fast instead of the full poll-budget timeout).
+//
+// The poll budget comes from webChatPollBudget: when the context carries a
+// deadline (the tool framework derives it from the ask_expert timeout
+// argument), we poll until that deadline instead of the hardcoded
+// webChatMaxPolls — so a caller-passed timeout (e.g. 1200s) genuinely extends
+// the wait for long generations (full 26-question papers can exceed 600s).
 func webchatWait(ctx context.Context, baseline, mdBaseline string) (string, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "webchatWait")
 	defer span.Finish()
@@ -884,8 +890,9 @@ func webchatWait(ctx context.Context, baseline, mdBaseline string) (string, erro
 	emptyStableCount := 0
 	sendAck := false
 	polls := 0
+	maxPolls := webChatPollBudget(ctx)
 
-	for range webChatMaxPolls {
+	for i := 0; i < maxPolls; i++ {
 		polls++
 		select {
 		case <-ctx.Done():
@@ -975,7 +982,28 @@ func webchatWait(ctx context.Context, baseline, mdBaseline string) (string, erro
 		lastText = current
 	}
 
-	return "", fmt.Errorf("response timeout after %d polls", webChatMaxPolls)
+	return "", fmt.Errorf("response timeout after %d polls (%.0fs)", maxPolls, float64(maxPolls)*webChatPollInterval.Seconds())
+}
+
+// webChatPollBudget returns the number of polls webchatWait may perform.
+//
+// When the context carries a deadline (the tool framework derives it from the
+// ask_expert timeout argument), the budget is the polls remaining until that
+// deadline — so a caller-passed timeout (e.g. 1200s) actually extends the
+// wait instead of being capped at webChatMaxPolls. The +1 margin absorbs the
+// sub-interval remainder so the loop outlives the deadline and lets the
+// select's ctx.Done branch surface the framework timeout. Without a deadline,
+// the default webChatMaxPolls (300 × 2s = 600s) applies as a safety net
+// against runaway polling.
+func webChatPollBudget(ctx context.Context) int {
+	if deadline, ok := ctx.Deadline(); ok {
+		n := int(time.Until(deadline)/webChatPollInterval) + 1
+		if n < 1 {
+			return 1
+		}
+		return n
+	}
+	return webChatMaxPolls
 }
 
 // textareaCleared reports whether the chat textarea is empty (a successful
