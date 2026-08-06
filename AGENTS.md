@@ -43,7 +43,7 @@ binary's embedded commit against HEAD and warns on mismatch.
 ## Architecture
 
 Entry point: `main.go` → `RootExecute()` → `root.go` (Cobra root command with
-persistent flags: `--mode`, `--no-color`, `--no-timestamp`, `--verbose`).
+persistent flags: `--org`, `--no-color`, `--no-timestamp`, `--verbose`).
 
 Top-level `*_cmd.go` files are CLI command implementations registered via
 `AddRootCommand()` in their `init()` functions.

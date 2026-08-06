@@ -7,30 +7,34 @@ Uses DeepSeek Web (free V4 Pro) via Chrome browser — no API key needed,
 
 Parameters:
 
-- content: detailed question (provide content or content_file, not both)
+- input: the question to ask (required). If the value starts with @ and
+  points to an existing file (e.g. @question.txt, @~/notes/q.txt), the file
+  content is read directly from disk — no LLM transcription drift. Safe
+  paths only: cwd-relative, ~/..., $HOME-absolute, or /tmp (max 1MB).
+  Anything else starting with @ is sent as plain text.
 
-- content_file: path to a file containing the detailed question. The file is
-  read directly from disk, so the exact content is sent — no LLM transcription
-  drift. Safe paths only (current directory and subdirectories, max 1MB).
+- attachments: image files (png/jpg/gif/webp/bmp) uploaded for visual
+  analysis; other files inlined as text (1MB max, safe paths = cwd, $HOME,
+  or /tmp; ≤50 files/≤100MB).
 
-- summary: brief summary (optional)
+- mode: web chat mode. "pro" (expert, default), "flash" (fast with smart
+  search), "vision" (image uploads). Empty: vision if images attached,
+  else pro.
 
-- attachments: file attachments list (optional). Images (png/jpg/gif/webp/
-  bmp) are uploaded to the web chat and analyzed visually; other files are
-  inlined as text (max 1MB each, safe paths, up to 50 files/100MB).
+- keep: continue a previous conversation (default empty = new). Every
+  result ends with "conversation_id: <id>"; pass that id back to continue
+  the SAME conversation — the expert keeps full history, including
+  previously uploaded images. "last" continues the most recent one. A full
+  chat.deepseek.com URL (browser-opened) is accepted and registered.
+  "list" lists saved conversations instead of asking.
 
-- mode: web chat mode (optional). "pro" (expert, default), "flash" (fast
-  with smart search), "vision" (image uploads). Empty: vision if images
-  attached, else pro.
+- timeout: timeout in seconds (default 600). Set longer for complex
+  questions requiring deep analysis.
 
-- role: role name for the system prompt (optional, default "expert"). Uses the
-  prompt override chain: .dscli/prompt/<role>.md, ~/.dscli/prompt/<role>.md,
-  role_configs mapping, built-in template. Ignored when system is provided.
-
-- system: full system prompt text (optional). Completely replaces the default
-  role template — use this for custom personas (e.g. a domain teacher).
-
-- timeout: timeout in seconds (default 600). Set longer for complex questions
-  requiring deep analysis.
+Correction flow example (misread image):
+  1. ask_expert(input="分析这张图", attachments=[img], mode="vision")
+     → result ends with conversation_id: abc123
+  2. ask_expert(input="再仔细看，是不是白发罗小黑？", keep="abc123")
+     → expert re-examines the SAME image in context, no re-upload
 
 Use for technical difficulties, plan review, or in-depth analysis.

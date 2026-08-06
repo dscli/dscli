@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -113,9 +114,9 @@ func TestNormalizeWebChatOptions(t *testing.T) {
 	}{
 		{"new conversation defaults to pro", WebChatOptions{}, ModePro},
 		{"attachments imply vision", WebChatOptions{Attachments: []string{"a.png"}}, ModeVision},
-		{"continued conversation preserves mode", WebChatOptions{Keep: true}, ""},
+		{"continued conversation preserves mode", WebChatOptions{Keep: "last"}, ""},
 		{"explicit mode wins", WebChatOptions{Mode: ModeFlash, Attachments: []string{"a.png"}}, ModeFlash},
-		{"explicit pro with keep", WebChatOptions{Mode: ModePro, Keep: true}, ModePro},
+		{"explicit pro with keep", WebChatOptions{Mode: ModePro, Keep: "last"}, ModePro},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -149,6 +150,43 @@ func TestValidateWebChatOptions(t *testing.T) {
 	if err := validateWebChatOptions(WebChatOptions{Mode: ModePro, Attachments: []string{img}}); err == nil {
 		t.Error("pro with attachments must fail")
 	}
+}
+
+func TestResolveWebAttachments(t *testing.T) {
+	// Empty input stays untouched (nil stays nil, empty stays empty).
+	if got := mustResolve(t, nil); got != nil {
+		t.Errorf("resolveWebAttachments(nil) = %v, want nil", got)
+	}
+	if got := mustResolve(t, []string{}); len(got) != 0 {
+		t.Errorf("resolveWebAttachments([]) = %v, want empty", got)
+	}
+
+	// Absolute paths are kept as-is.
+	abs := filepath.Join(t.TempDir(), "shot.png")
+	if got := mustResolve(t, []string{abs}); got[0] != abs {
+		t.Errorf("resolveWebAttachments(%q) = %q, want unchanged", abs, got[0])
+	}
+
+	// Relative paths are resolved against the process cwd — Chrome's CDP
+	// upload reads files with Chrome's working directory, not dscli's.
+	rel := "relative-shot.png"
+	got := mustResolve(t, []string{rel})
+	want, _ := filepath.Abs(rel)
+	if got[0] != want {
+		t.Errorf("resolveWebAttachments(%q) = %q, want %q", rel, got[0], want)
+	}
+	if !filepath.IsAbs(got[0]) {
+		t.Errorf("resolveWebAttachments(%q) = %q, want absolute path", rel, got[0])
+	}
+}
+
+func mustResolve(t *testing.T, files []string) []string {
+	t.Helper()
+	resolved, err := resolveWebAttachments(files)
+	if err != nil {
+		t.Fatalf("resolveWebAttachments(%v): %v", files, err)
+	}
+	return resolved
 }
 
 func TestValidateWebAttachments(t *testing.T) {
@@ -187,5 +225,136 @@ func TestValidateWebAttachments(t *testing.T) {
 	}
 	if err := validateWebAttachments([]string{small}); err != nil {
 		t.Errorf("small attachment must pass: %v", err)
+	}
+}
+
+func TestConversationIDFromURL(t *testing.T) {
+	tests := []struct {
+		url  string
+		want string
+	}{
+		{"https://chat.deepseek.com/a/chat/s/abc123", "abc123"},
+		{"https://chat.deepseek.com/a/chat/s/a1b2-c3d4_e5", "a1b2-c3d4_e5"},
+		{"https://chat.deepseek.com/a/chat/s/abc123?extra=1", "abc123"},
+		{"https://chat.deepseek.com/a/chat/s/abc123#frag", "abc123"},
+		{"https://chat.deepseek.com/", ""},
+		{"", ""},
+		{"not a url", ""},
+		// Non-DeepSeek hosts and lookalike paths must not match.
+		{"https://evil.example.com/a/chat/s/abc123", ""},
+		{"https://chat.deepseek.com/other/s/abc123", ""},
+		// Weird input must not panic or match.
+		{"https://chat.deepseek.com/a/chat/s/", ""},
+		{"https://chat.deepseek.com/a/chat/s/%2e%2e", ""},
+	}
+	for _, tt := range tests {
+		if got := ConversationIDFromURL(tt.url); got != tt.want {
+			t.Errorf("ConversationIDFromURL(%q) = %q, want %q", tt.url, got, tt.want)
+		}
+	}
+}
+
+// testRegistry builds a registry with the given id → url entries.
+func testRegistry(entries map[string]string) *conversationRegistry {
+	reg := &conversationRegistry{Sessions: map[string]conversationEntry{}}
+	for id, url := range entries {
+		reg.Sessions[id] = conversationEntry{URL: url}
+	}
+	return reg
+}
+
+func TestRegistryResolve(t *testing.T) {
+	reg := testRegistry(map[string]string{
+		"aaa": "https://chat.deepseek.com/a/chat/s/aaa",
+		"bbb": "https://chat.deepseek.com/a/chat/s/bbb",
+	})
+	reg.Sessions["aaa"] = conversationEntry{
+		URL:       "https://chat.deepseek.com/a/chat/s/aaa",
+		UpdatedAt: "2026-08-01T00:00:00Z",
+	}
+	reg.Sessions["bbb"] = conversationEntry{
+		URL:       "https://chat.deepseek.com/a/chat/s/bbb",
+		UpdatedAt: "2026-08-02T00:00:00Z",
+	}
+
+	tests := []struct {
+		name string
+		keep string
+		want string
+	}{
+		{"empty = new conversation", "", ""},
+		{"last picks most recent", "last", "https://chat.deepseek.com/a/chat/s/bbb"},
+		{"exact id", "aaa", "https://chat.deepseek.com/a/chat/s/aaa"},
+		{"full url passthrough", "https://chat.deepseek.com/a/chat/s/zzz", "https://chat.deepseek.com/a/chat/s/zzz"},
+		{"url suffix match", "s/bbb", "https://chat.deepseek.com/a/chat/s/bbb"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := reg.resolve(tt.keep)
+			if err != nil {
+				t.Fatalf("resolve(%q): %v", tt.keep, err)
+			}
+			if got != tt.want {
+				t.Errorf("resolve(%q) = %q, want %q", tt.keep, got, tt.want)
+			}
+		})
+	}
+
+	if _, err := reg.resolve("nope"); err == nil {
+		t.Error("unknown id must fail")
+	}
+}
+
+func TestRegistryResolveAmbiguousSuffix(t *testing.T) {
+	// Two entries whose URLs both end in /s/dup: a bare "dup" shorthand is
+	// ambiguous and must fail loudly instead of picking one arbitrarily.
+	reg := testRegistry(map[string]string{
+		"one": "https://chat.deepseek.com/a/chat/s/dup",
+		"two": "https://chat.deepseek.com/a/chat/s/other/dup",
+	})
+	_, err := reg.resolve("dup")
+	if err == nil {
+		t.Fatal("ambiguous suffix must fail")
+	}
+	if !strings.Contains(err.Error(), "ambiguous") {
+		t.Errorf("error = %q, want ambiguous message", err)
+	}
+	// The full ID still resolves.
+	got, err := reg.resolve("one")
+	if err != nil || got != "https://chat.deepseek.com/a/chat/s/dup" {
+		t.Errorf("resolve(one) = %q, %v; want exact URL, nil", got, err)
+	}
+}
+
+func TestRegistryResolveEmptyRegistry(t *testing.T) {
+	reg := testRegistry(nil)
+	if _, err := reg.resolve("last"); err == nil {
+		t.Error("last on empty registry must fail")
+	}
+	if got, err := reg.resolve(""); err != nil || got != "" {
+		t.Errorf("resolve(\"\") = %q, %v; want \"\", nil", got, err)
+	}
+}
+
+func TestRegistryTrim(t *testing.T) {
+	reg := &conversationRegistry{Sessions: map[string]conversationEntry{}}
+	// Fill beyond the cap; later timestamps are newer and must survive.
+	for i := 0; i < maxSavedConversations+10; i++ {
+		id := fmt.Sprintf("id%03d", i)
+		reg.Sessions[id] = conversationEntry{
+			URL:       "https://chat.deepseek.com/a/chat/s/" + id,
+			UpdatedAt: fmt.Sprintf("2026-08-01T%02d:%02d:00Z", i/60, i%60),
+		}
+	}
+	reg.trim()
+	if len(reg.Sessions) != maxSavedConversations {
+		t.Fatalf("trim: %d entries, want %d", len(reg.Sessions), maxSavedConversations)
+	}
+	// The 10 oldest (id000..id009) must be gone.
+	if _, ok := reg.Sessions["id000"]; ok {
+		t.Error("oldest entry id000 survived trim")
+	}
+	if _, ok := reg.Sessions["id010"]; !ok {
+		t.Error("newest entry id010 was trimmed away")
 	}
 }

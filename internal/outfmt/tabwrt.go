@@ -29,7 +29,7 @@ func (t *tabwrt) Flush() error {
 	if err != nil {
 		return err
 	}
-	// Route through Print() to respect --mode flag (markdown/org conversion).
+	// Route through Print() to respect --org flag (markdown/org conversion).
 	Print(t.buf.String())
 	return nil
 }

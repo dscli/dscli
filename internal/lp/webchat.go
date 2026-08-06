@@ -7,11 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/lockfile"
 	"github.com/nanjj/clog"
 
 	"github.com/chromedp/cdproto/dom"
@@ -334,9 +336,24 @@ type WebChatOptions struct {
 	// and vision modes support uploads (up to 50 files, 100MB total).
 	Attachments []string
 
-	// Keep continues the last saved conversation instead of starting a
-	// new one.
-	Keep bool
+	// Keep continues a saved conversation instead of starting a new one.
+	// Empty means a new conversation. Special values:
+	//   "last" — the most recently saved conversation;
+	//   "<id>" — a specific conversation ID, as returned in a previous
+	//     call's WebChatResult.URL (use ConversationIDFromURL to extract);
+	//   "<full URL>" — a chat.deepseek.com conversation URL (e.g. copied
+	//     from a browser); the conversation is registered for later use.
+	// Use keep="list" with ListConversations to enumerate saved ones.
+	Keep string
+}
+
+// WebChatResult is the outcome of a WebChat call: the assistant's text
+// response plus the final conversation URL, which contains the conversation
+// ID usable with WebChatOptions.Keep to continue the same conversation
+// later. URL is "" if it could not be determined.
+type WebChatResult struct {
+	Text string
+	URL  string
 }
 
 // WebChat sends a message to chat.deepseek.com via a local Chrome/Chromium
@@ -346,30 +363,42 @@ type WebChatOptions struct {
 // received. Cookies persist via the shared Chrome profile directory, so prior
 // login state is available across calls.
 //
-// If ctx carries context.KeepKey set to true, WebChat attempts to continue the
-// last saved conversation (loaded from the profile directory) rather than
-// starting a new one. New conversations use expert mode (V4 Pro). Use
-// WebChatWithOptions for explicit mode selection and file uploads.
+// If ctx carries context.KeepKey set to "last" or a conversation ID, WebChat
+// attempts to continue that conversation rather than starting a new one. New
+// conversations use expert mode (V4 Pro). Use WebChatWithOptions for explicit
+// mode selection, file uploads, and the full Keep value set.
 func WebChat(ctx context.Context, message string) (string, error) {
-	return WebChatWithOptions(ctx, message, WebChatOptions{
-		Keep: context.ContextValue(ctx, context.KeepKey, false),
+	res, err := WebChatWithOptions(ctx, message, WebChatOptions{
+		Keep: context.ContextValue(ctx, context.KeepKey, ""),
 	})
+	if err != nil {
+		return "", err
+	}
+	return res.Text, nil
 }
 
-// WebChatWithOptions is WebChat with explicit mode and attachment options.
-// Options are normalized and validated before a browser is launched, so bad
-// input (unknown mode, oversized attachments) fails fast without starting
-// Chrome. See WebChatOptions for the mode defaults.
-func WebChatWithOptions(ctx context.Context, message string, opts WebChatOptions) (string, error) {
+// WebChatWithOptions is WebChat with explicit mode, attachment and
+// continuation options. Options are normalized, attachment paths resolved to
+// absolute, and the result validated before a browser is launched, so bad
+// input (unknown mode, missing/oversized attachments, unknown keep target)
+// fails fast without starting Chrome.
+//
+// See WebChatOptions for the mode and Keep defaults.
+func WebChatWithOptions(ctx context.Context, message string, opts WebChatOptions) (WebChatResult, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "WebChatWithOptions")
 	defer span.Finish()
 	opts = normalizeWebChatOptions(opts)
-	if err := validateWebChatOptions(opts); err != nil {
-		return "", err
+	resolved, err := resolveWebAttachments(opts.Attachments)
+	if err != nil {
+		return WebChatResult{}, err
 	}
-	convURL := ""
-	if opts.Keep {
-		convURL = loadConversationURL()
+	opts.Attachments = resolved
+	if err := validateWebChatOptions(opts); err != nil {
+		return WebChatResult{}, err
+	}
+	convURL, err := resolveConversation(opts.Keep)
+	if err != nil {
+		return WebChatResult{}, err
 	}
 	return webChatWithURL(ctx, convURL, message, opts)
 }
@@ -380,7 +409,7 @@ func normalizeWebChatOptions(opts WebChatOptions) WebChatOptions {
 		switch {
 		case len(opts.Attachments) > 0:
 			opts.Mode = ModeVision // the multi-modal mode
-		case !opts.Keep:
+		case opts.Keep == "":
 			opts.Mode = ModePro // default for new conversations
 		}
 	}
@@ -401,26 +430,28 @@ func validateWebChatOptions(opts WebChatOptions) error {
 
 // webChatWithURL is the common implementation shared by new conversations
 // (empty url) and continuation (saved url).
-func webChatWithURL(ctx context.Context, conversationURL, message string, opts WebChatOptions) (string, error) {
+func webChatWithURL(ctx context.Context, conversationURL, message string, opts WebChatOptions) (WebChatResult, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "webChatWithURL")
 	defer span.Finish()
 	ctx, cancel, err := NewChromium(ctx)
 	if err != nil {
-		return "", err
+		return WebChatResult{}, err
 	}
 	defer cancel()
 	ctx, close := chromedp.NewContext(ctx)
 	defer close()
 	response, finalURL, err := webchatSend(ctx, conversationURL, message, opts, 0)
 	if err != nil {
-		return "", fmt.Errorf("webchat: %w", err)
+		return WebChatResult{}, fmt.Errorf("webchat: %w", err)
 	}
 
+	// Every successful exchange registers (or refreshes) the conversation
+	// in the registry so it can be continued later by ID or "last".
 	if finalURL != "" {
-		_ = saveConversationState(finalURL)
+		_ = registerConversation(finalURL, opts.Mode)
 	}
 
-	return response, nil
+	return WebChatResult{Text: response, URL: finalURL}, nil
 }
 
 // webchatSend sends a message and returns the response plus the final page URL
@@ -536,10 +567,8 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, opts W
 		return "", "", fmt.Errorf("webchat: %w", err)
 	}
 
-	if finalURL != "" {
-		fmt.Fprintf(os.Stderr, "💾 会话 URL: %s\n", finalURL)
-	}
-
+	// Session info (keep:<id>) is surfaced by the caller (CLI / ask_expert),
+	// not here, so the library layer stays silent about presentation.
 	return response, finalURL, nil
 }
 
@@ -678,6 +707,26 @@ func validateWebAttachments(files []string) error {
 		return fmt.Errorf("attachments too large: %d bytes (max %d)", total, webUploadMaxTotal)
 	}
 	return nil
+}
+
+// resolveWebAttachments converts attachment paths to absolute paths.
+// Uploads are executed inside the Chrome process via CDP (DOM.setFileInputFiles),
+// which resolves paths against Chrome's working directory — not dscli's — so a
+// relative path that exists for the user would fail to upload. Absolutizing at
+// the entry point makes every path unambiguous for both validation and upload.
+func resolveWebAttachments(files []string) ([]string, error) {
+	if len(files) == 0 {
+		return files, nil // keep nil/empty as-is
+	}
+	resolved := make([]string, len(files))
+	for i, f := range files {
+		abs, err := filepath.Abs(f)
+		if err != nil {
+			return nil, fmt.Errorf("attachment %s: %w", f, err)
+		}
+		resolved[i] = abs
+	}
+	return resolved, nil
 }
 
 // IsImageFile reports whether path has an image extension accepted by the
@@ -980,56 +1029,268 @@ func quoteJS(s string) string {
 	return "\"" + escaped + "\""
 }
 
-// --- conversation state persistence ------------------------------------------
+// --- conversation registry --------------------------------------------------
+//
+// The registry maps conversation IDs to chat.deepseek.com URLs so any saved
+// conversation can be continued by ID ("keep=<id>"), by recency ("last"),
+// or by URL (browser-copied). Every successful WebChat exchange registers
+// the conversation automatically.
 
-// conversationState stores the last conversation info for continuation.
-type conversationState struct {
+// maxSavedConversations caps the registry; the oldest entries are dropped
+// when the cap is exceeded.
+const maxSavedConversations = 100
+
+// conversationEntry records one known conversation for continuation.
+type conversationEntry struct {
 	URL       string `json:"url"`
+	Mode      Mode   `json:"mode,omitempty"` // mode of the last exchange ("" = unknown)
 	UpdatedAt string `json:"updated_at"`
 }
 
-// conversationStatePath returns the path to the session state file,
-// located alongside the Chrome profile directory.
-func conversationStatePath() (string, error) {
+// conversationRegistry persists known conversations keyed by conversation ID.
+type conversationRegistry struct {
+	Sessions map[string]conversationEntry `json:"sessions"`
+}
+
+// conversationIDRE matches the conversation ID inside a DeepSeek chat URL:
+// https://chat.deepseek.com/a/chat/s/<id>
+// The host is anchored so lookalike paths on other domains never match
+// (a non-DeepSeek URL must not yield an ID that could collide with a real
+// conversation's registry key).
+var conversationIDRE = regexp.MustCompile(`^https://chat\.deepseek\.com/a/chat/s/([A-Za-z0-9_-]+)`)
+
+// ConversationIDFromURL extracts the conversation ID from a chat.deepseek.com
+// conversation URL, or "" if the URL does not look like one.
+func ConversationIDFromURL(url string) string {
+	m := conversationIDRE.FindStringSubmatch(url)
+	if m == nil {
+		return ""
+	}
+	return m[1]
+}
+
+// conversationRegistryPath returns the path to the registry file, located
+// alongside the Chrome profile directory.
+func conversationRegistryPath() (string, error) {
 	dir, err := chromeUserDataDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "webchat_session.json"), nil
+	return filepath.Join(dir, "webchat_sessions.json"), nil
 }
 
-// saveConversationState persists the conversation URL for later continuation.
-func saveConversationState(convURL string) error {
-	span, _ := clog.StartSpanFromContext(context.Background(), "saveConversationState")
-	defer span.Finish()
-	path, err := conversationStatePath()
+// loadConversationRegistry loads the registry, or returns an empty one when
+// the file does not exist yet. For backwards compatibility, a legacy
+// webchat_session.json (the single last-conversation file) is migrated into
+// the registry the first time it is loaded.
+func loadConversationRegistry() (*conversationRegistry, error) {
+	reg := &conversationRegistry{Sessions: map[string]conversationEntry{}}
+	path, err := conversationRegistryPath()
 	if err != nil {
-		return err
-	}
-	state := conversationState{
-		URL:       convURL,
-		UpdatedAt: time.Now().Format(time.RFC3339),
-	}
-	data, err := json.Marshal(state)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0o644)
-}
-
-// loadConversationURL loads the last saved conversation URL, or "" if none.
-func loadConversationURL() string {
-	path, err := conversationStatePath()
-	if err != nil {
-		return ""
+		return reg, err
 	}
 	data, err := os.ReadFile(path)
+	if err == nil {
+		if uerr := json.Unmarshal(data, reg); uerr == nil && reg.Sessions != nil {
+			return reg, nil
+		}
+		// Corrupt file: rebuild from scratch below.
+		reg = &conversationRegistry{Sessions: map[string]conversationEntry{}}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return reg, err
+	}
+
+	// Migrate the legacy single-conversation file if present.
+	dir, err := chromeUserDataDir()
 	if err != nil {
-		return ""
+		return reg, err
 	}
-	var state conversationState
-	if err := json.Unmarshal(data, &state); err != nil {
-		return ""
+	if legacy, lerr := os.ReadFile(filepath.Join(dir, "webchat_session.json")); lerr == nil {
+		var old struct {
+			URL string `json:"url"`
+		}
+		if json.Unmarshal(legacy, &old) == nil && old.URL != "" {
+			reg.register(old.URL, "")
+			if serr := reg.save(); serr != nil {
+				return reg, serr
+			}
+		}
 	}
-	return state.URL
+	return reg, nil
+}
+
+// save writes the registry atomically (temp file + rename) so a crash in the
+// middle cannot corrupt the previously saved state.
+func (r *conversationRegistry) save() error {
+	path, err := conversationRegistryPath()
+	if err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(r, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+// register adds or refreshes a conversation in the registry. The ID is
+// extracted from the URL; entries with an unknown ID shape are keyed by the
+// URL itself. An empty mode (a continuation preserved the conversation's own
+// mode) keeps the previously recorded mode. The registry is trimmed to
+// maxSavedConversations after the update.
+func (r *conversationRegistry) register(url string, mode Mode) {
+	id := ConversationIDFromURL(url)
+	if id == "" {
+		id = url
+	}
+	entry, ok := r.Sessions[id]
+	if !ok {
+		entry = conversationEntry{}
+	}
+	entry.URL = url
+	if mode != "" {
+		entry.Mode = mode
+	}
+	entry.UpdatedAt = time.Now().Format(time.RFC3339)
+	r.Sessions[id] = entry
+	r.trim()
+}
+
+// trim drops the oldest entries beyond maxSavedConversations. RFC3339
+// timestamps sort lexicographically in time order.
+func (r *conversationRegistry) trim() {
+	if len(r.Sessions) <= maxSavedConversations {
+		return
+	}
+	ids := make([]string, 0, len(r.Sessions))
+	for id := range r.Sessions {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		return r.Sessions[ids[i]].UpdatedAt > r.Sessions[ids[j]].UpdatedAt
+	})
+	kept := make(map[string]conversationEntry, maxSavedConversations)
+	for _, id := range ids[:maxSavedConversations] {
+		kept[id] = r.Sessions[id]
+	}
+	r.Sessions = kept
+}
+
+// latest returns the URL of the most recently updated conversation.
+func (r *conversationRegistry) latest() (string, error) {
+	var best conversationEntry
+	var found bool
+	for _, e := range r.Sessions {
+		if !found || e.UpdatedAt > best.UpdatedAt {
+			best = e
+			found = true
+		}
+	}
+	if !found {
+		return "", fmt.Errorf("no saved conversations yet")
+	}
+	return best.URL, nil
+}
+
+// resolve maps a Keep value to a conversation URL to navigate to. "" (new
+// conversation) stays "". "last" selects the most recently updated entry. A
+// full http(s) URL is used as-is (pre-specified, e.g. copied from a browser;
+// the caller registers it). Any other value is looked up as a conversation
+// ID: exact key first, then URL match, then URL suffix match.
+func (r *conversationRegistry) resolve(keep string) (string, error) {
+	if keep == "" {
+		return "", nil
+	}
+	if keep == "last" {
+		return r.latest()
+	}
+	if strings.HasPrefix(keep, "http://") || strings.HasPrefix(keep, "https://") {
+		return keep, nil
+	}
+	if entry, ok := r.Sessions[keep]; ok {
+		return entry.URL, nil
+	}
+	// Suffix/URL match: collect ALL matches so an ambiguous shorthand fails
+	// loudly instead of silently picking an arbitrary conversation.
+	var matches []string
+	for _, entry := range r.Sessions {
+		if entry.URL == keep || strings.HasSuffix(entry.URL, "/"+keep) {
+			matches = append(matches, entry.URL)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return "", fmt.Errorf("conversation %q not found (use keep=\"list\" to see saved conversations)", keep)
+	case 1:
+		return matches[0], nil
+	default:
+		return "", fmt.Errorf("conversation %q is ambiguous (%d matches); use the full conversation ID or URL", keep, len(matches))
+	}
+}
+
+// resolveConversation is the file-backed entry point: it resolves the Keep
+// option and registers pre-specified URLs so they can be referenced by ID
+// later. Returns "" for a new conversation.
+func resolveConversation(keep string) (string, error) {
+	if keep == "" {
+		return "", nil
+	}
+	if strings.HasPrefix(keep, "http://") || strings.HasPrefix(keep, "https://") {
+		// Pre-specified URL: use directly and register for later ID lookup.
+		_ = registerConversation(keep, "")
+		return keep, nil
+	}
+	reg, err := loadConversationRegistry()
+	if err != nil {
+		return "", err
+	}
+	return reg.resolve(keep)
+}
+
+// registerConversation is the file-backed wrapper of registry.register. The
+// whole read-modify-write is serialized with a file lock so two concurrent
+// WebChat calls (e.g. two AI sessions in different processes) cannot lose
+// each other's entries; the kernel releases the lock if the process dies.
+func registerConversation(url string, mode Mode) error {
+	span, _ := clog.StartSpanFromContext(context.Background(), "registerConversation")
+	defer span.Finish()
+	lk, err := lockfile.LockDB("webchat_sessions")
+	if err != nil {
+		return err
+	}
+	defer lk.Close()
+	reg, err := loadConversationRegistry()
+	if err != nil {
+		return err
+	}
+	reg.register(url, mode)
+	return reg.save()
+}
+
+// ConversationInfo describes one saved conversation for listing.
+type ConversationInfo struct {
+	ID        string
+	URL       string
+	Mode      Mode
+	UpdatedAt string
+}
+
+// ListConversations returns all saved conversations, most recent first.
+func ListConversations() ([]ConversationInfo, error) {
+	reg, err := loadConversationRegistry()
+	if err != nil {
+		return nil, err
+	}
+	infos := make([]ConversationInfo, 0, len(reg.Sessions))
+	for id, e := range reg.Sessions {
+		infos = append(infos, ConversationInfo{ID: id, URL: e.URL, Mode: e.Mode, UpdatedAt: e.UpdatedAt})
+	}
+	sort.Slice(infos, func(i, j int) bool {
+		return infos[i].UpdatedAt > infos[j].UpdatedAt
+	})
+	return infos, nil
 }
