@@ -760,6 +760,56 @@ func TestAskExpertWebChatNoRetryOnHardError(t *testing.T) {
 	}
 }
 
+func TestAskExpertWebChatRetriesOnTruncated(t *testing.T) {
+	origFunc, origDelays := webChatFunc, askExpertRetryDelays
+	t.Cleanup(func() { webChatFunc, askExpertRetryDelays = origFunc, origDelays })
+
+	calls := 0
+	webChatFunc = func(_ context.Context, _ string, _ lp.WebChatOptions) (lp.WebChatResult, error) {
+		calls++
+		return lp.WebChatResult{}, lp.ErrTruncated
+	}
+	askExpertRetryDelays = []time.Duration{0, 0, 0}
+
+	_, _, err := askExpertWebChat(context.Background(), "input", "expert", "", "", "", nil)
+	if err == nil {
+		t.Fatal("expected error for persistent truncation")
+	}
+	if !errors.Is(err, lp.ErrTruncated) {
+		t.Errorf("err = %v, want ErrTruncated chain", err)
+	}
+	// 1 initial attempt + 3 backoff retries.
+	if calls != 4 {
+		t.Errorf("webChatFunc calls = %d, want 4", calls)
+	}
+}
+
+func TestAskExpertWebChatTruncatedThenSuccess(t *testing.T) {
+	origFunc, origDelays := webChatFunc, askExpertRetryDelays
+	t.Cleanup(func() { webChatFunc, askExpertRetryDelays = origFunc, origDelays })
+
+	calls := 0
+	webChatFunc = func(_ context.Context, _ string, _ lp.WebChatOptions) (lp.WebChatResult, error) {
+		calls++
+		if calls <= 2 {
+			return lp.WebChatResult{}, lp.ErrTruncated
+		}
+		return lp.WebChatResult{Text: "expert answer"}, nil
+	}
+	askExpertRetryDelays = []time.Duration{0, 0, 0}
+
+	reply, _, err := askExpertWebChat(context.Background(), "input", "expert", "", "", "", nil)
+	if err != nil {
+		t.Fatalf("askExpertWebChat: %v", err)
+	}
+	if reply != "expert answer" {
+		t.Errorf("reply = %q, want expert answer", reply)
+	}
+	if calls != 3 {
+		t.Errorf("webChatFunc calls = %d, want 3", calls)
+	}
+}
+
 func TestAskExpertWebChatRetryAbortsOnCancel(t *testing.T) {
 	origFunc, origDelays := webChatFunc, askExpertRetryDelays
 	t.Cleanup(func() { webChatFunc, askExpertRetryDelays = origFunc, origDelays })

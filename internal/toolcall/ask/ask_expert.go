@@ -265,7 +265,8 @@ func AskExpertWithRole(ctx context.Context, input, role string) (reply string, e
 var webChatFunc = lp.WebChatWithOptions
 
 // askExpertRetryDelays is the backoff sequence between retry attempts for
-// transient server overload (lp.ErrServerBusy / lp.ErrSendRejected). The
+// transient server overload and truncation (lp.ErrServerBusy /
+// lp.ErrSendRejected / lp.ErrTruncated). The
 // official DeepSeek error docs recommend retrying 429/500/503 after a
 // brief wait; each retry starts a fresh conversation, so a duplicate send
 // has no side effects. A package variable so tests can shorten it.
@@ -279,9 +280,10 @@ var askExpertRetryDelays = []time.Duration{5 * time.Second, 15 * time.Second, 30
 // keep continues a previous conversation; it is passed through to
 // lp.WebChatOptions.Keep ("" = new, "last", ID, or URL).
 //
-// Transient server overload is retried with exponential backoff
-// (askExpertRetryDelays, one extra attempt per delay). Permanent errors
-// (login, bad arguments) fail immediately — retrying them is pointless.
+// Transient server overload and truncated output are retried with
+// exponential backoff (askExpertRetryDelays, one extra attempt per delay).
+// Permanent errors (login, bad arguments) fail immediately — retrying them
+// is pointless.
 func askExpertWebChat(ctx context.Context, input, role, system, mode, keep string, attachments []string) (reply, convURL string, err error) {
 	// WebChat has no system prompt concept, so we prepend it to the user
 	// message. The separator helps the web model distinguish the persona
@@ -298,9 +300,9 @@ func askExpertWebChat(ctx context.Context, input, role, system, mode, keep strin
 	// Start a new WebChat conversation (keep="" — the default) or continue
 	// a saved one. Image attachments are uploaded as real files; an empty
 	// mode auto-selects vision (with uploads) or pro. Server overload
-	// (429/500/503 semantics) is transient: retry with backoff up to
-	// len(askExpertRetryDelays) extra attempts. Each retry is a fresh
-	// conversation, so re-sending is harmless.
+	// (429/500/503 semantics) and truncated output are transient: retry with
+	// backoff up to len(askExpertRetryDelays) extra attempts. Each retry is a
+	// fresh conversation, so re-sending is harmless.
 	opts := lp.WebChatOptions{
 		Mode:        lp.Mode(mode),
 		Attachments: attachments,
@@ -310,8 +312,12 @@ func askExpertWebChat(ctx context.Context, input, role, system, mode, keep strin
 	for attempt := 0; attempt <= len(askExpertRetryDelays); attempt++ {
 		if attempt > 0 {
 			delay := askExpertRetryDelays[attempt-1]
-			outfmt.Printf("🔄 服务器繁忙，%.0fs 后重试 (attempt %d/%d)...\n",
-				delay.Seconds(), attempt+1, len(askExpertRetryDelays)+1)
+			reason := "服务器繁忙"
+			if errors.Is(lastErr, lp.ErrTruncated) {
+				reason = "输出被截断"
+			}
+			outfmt.Printf("🔄 %s，%.0fs 后重试 (attempt %d/%d)...\n",
+				reason, delay.Seconds(), attempt+1, len(askExpertRetryDelays)+1)
 
 			select {
 			case <-ctx.Done():
@@ -325,7 +331,7 @@ func askExpertWebChat(ctx context.Context, input, role, system, mode, keep strin
 			return res.Text, res.URL, nil
 		}
 		lastErr = callErr
-		if !errors.Is(callErr, lp.ErrServerBusy) && !errors.Is(callErr, lp.ErrSendRejected) {
+		if !errors.Is(callErr, lp.ErrServerBusy) && !errors.Is(callErr, lp.ErrSendRejected) && !errors.Is(callErr, lp.ErrTruncated) {
 			return "", "", callErr
 		}
 	}

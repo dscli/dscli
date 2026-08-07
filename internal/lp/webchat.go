@@ -41,6 +41,15 @@ var ErrServerBusy = errors.New("deepseek server busy — retry after a brief wai
 // ErrServerBusy.
 var ErrSendRejected = errors.New("message send not acknowledged — server may be busy")
 
+// ErrTruncated is returned when an extracted response shows clear structural
+// signs of premature termination (an unclosed code fence or unterminated
+// JSON): the generation was cut off mid-output while the server was
+// overloaded. It is distinct from ErrServerBusy (no answer at all) and from
+// the poll-budget timeout (the server kept the stream open): the answer
+// EXISTS but is incomplete, so retrying the whole request is the only useful
+// recovery.
+var ErrTruncated = errors.New("response truncated — output cut off mid-generation")
+
 const (
 	deepseekChatURL = "https://chat.deepseek.com"
 
@@ -876,6 +885,10 @@ func webchatSetUploadFiles(ctx context.Context, files []string) error {
 //   - Empty stability: a page that is stable with no answer content for
 //     webChatEmptyStablePolls polls means the request stalled server-side
 //     → ErrServerBusy (fail fast instead of the full poll-budget timeout).
+//   - Truncated output: a stable, completed generation whose text shows
+//     structural signs of being cut off (unclosed code fence, unterminated
+//     JSON) is returned as ErrTruncated, never as a silently incomplete
+//     answer. Retryable like ErrServerBusy.
 //
 // The poll budget comes from webChatPollBudget: when the context carries a
 // deadline (the tool framework derives it from the ask_expert timeout
@@ -943,8 +956,17 @@ func webchatWait(ctx context.Context, baseline, mdBaseline string) (string, erro
 					if isBusyErrorText(resp) {
 						return "", fmt.Errorf("%w: %s", ErrServerBusy, resp)
 					}
-					if canExtract && isCompleteResponse(resp) {
-						return resp, nil
+					if canExtract {
+						// A response cut off mid-generation (unclosed code
+						// fence, unterminated JSON) is a distinct, retryable
+						// failure: the answer exists but is unusable, and
+						// polling further will not complete it.
+						if isTruncated(resp) {
+							return "", fmt.Errorf("%w (%d chars)", ErrTruncated, utf8.RuneCountInString(resp))
+						}
+						if isCompleteResponse(resp) {
+							return resp, nil
+						}
 					}
 					// Fragment or generation still active: keep polling.
 					// The model often pauses after emitting a simulated
@@ -962,8 +984,13 @@ func webchatWait(ctx context.Context, baseline, mdBaseline string) (string, erro
 				if isBusyErrorText(fallback) {
 					return "", fmt.Errorf("%w: %s", ErrServerBusy, fallback)
 				}
-				if canExtract && isCompleteResponse(fallback) {
-					return fallback, nil
+				if canExtract {
+					if isTruncated(fallback) {
+						return "", fmt.Errorf("%w (%d chars)", ErrTruncated, utf8.RuneCountInString(fallback))
+					}
+					if isCompleteResponse(fallback) {
+						return fallback, nil
+					}
 				}
 
 				// Stable page with no answer content: the request stalled
@@ -1136,6 +1163,34 @@ func isCompleteResponse(s string) bool {
 	}
 	t := strings.TrimLeft(s, " \t>")
 	return !(toolCallOpenRE.MatchString(t) && !strings.Contains(t, "<tool_result"))
+}
+
+// isTruncated reports whether s shows clear structural signs of being cut
+// off mid-generation. Detection is deliberately conservative — only signals
+// that a complete answer would never exhibit count:
+//
+//   - An unclosed markdown code fence: an odd number of ``` where the text
+//     opens with a fence (a code block cut off) or has at least three fences
+//     (an interior fence never closed). A lone fence inside prose (e.g. an
+//     explanation of the syntax) is not flagged.
+//   - JSON that starts like a document (an object or array containing a
+//     quoted key) but never terminates: json.Valid fails.
+//
+// webchatWait turns such text into ErrTruncated instead of handing a
+// silently incomplete answer to the caller.
+func isTruncated(s string) bool {
+	t := strings.TrimSpace(s)
+	if t == "" {
+		return false
+	}
+	fences := strings.Count(t, "```")
+	if fences%2 == 1 && (strings.HasPrefix(t, "```") || fences >= 3) {
+		return true
+	}
+	if (strings.HasPrefix(t, "{") || strings.HasPrefix(t, "[")) && strings.Contains(t, `":`) {
+		return !json.Valid([]byte(t))
+	}
+	return false
 }
 
 // maxBusyErrorLen bounds the busy-error detection to short texts. A real
