@@ -2,11 +2,14 @@ package ask
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/dscli/dscli/internal/lp"
 	"github.com/dscli/dscli/internal/toolcall"
 )
 
@@ -685,4 +688,98 @@ func outsideSandboxPath(t *testing.T) string {
 		}
 	}
 	return ""
+}
+
+func TestAskExpertWebChatRetriesOnBusy(t *testing.T) {
+	origFunc, origDelays := webChatFunc, askExpertRetryDelays
+	t.Cleanup(func() { webChatFunc, askExpertRetryDelays = origFunc, origDelays })
+
+	calls := 0
+	webChatFunc = func(_ context.Context, _ string, _ lp.WebChatOptions) (lp.WebChatResult, error) {
+		calls++
+		return lp.WebChatResult{}, lp.ErrServerBusy
+	}
+	askExpertRetryDelays = []time.Duration{0, 0, 0}
+
+	_, _, err := askExpertWebChat(context.Background(), "input", "expert", "", "", "", nil)
+	if err == nil {
+		t.Fatal("expected error for persistent server busy")
+	}
+	if !errors.Is(err, lp.ErrServerBusy) {
+		t.Errorf("err = %v, want ErrServerBusy chain", err)
+	}
+	// 1 initial attempt + 3 backoff retries.
+	if calls != 4 {
+		t.Errorf("webChatFunc calls = %d, want 4", calls)
+	}
+}
+
+func TestAskExpertWebChatRetriesThenSuccess(t *testing.T) {
+	origFunc, origDelays := webChatFunc, askExpertRetryDelays
+	t.Cleanup(func() { webChatFunc, askExpertRetryDelays = origFunc, origDelays })
+
+	calls := 0
+	webChatFunc = func(_ context.Context, _ string, _ lp.WebChatOptions) (lp.WebChatResult, error) {
+		calls++
+		if calls <= 2 {
+			return lp.WebChatResult{}, lp.ErrServerBusy
+		}
+		return lp.WebChatResult{Text: "expert answer"}, nil
+	}
+	askExpertRetryDelays = []time.Duration{0, 0, 0}
+
+	reply, _, err := askExpertWebChat(context.Background(), "input", "expert", "", "", "", nil)
+	if err != nil {
+		t.Fatalf("askExpertWebChat: %v", err)
+	}
+	if reply != "expert answer" {
+		t.Errorf("reply = %q, want expert answer", reply)
+	}
+	if calls != 3 {
+		t.Errorf("webChatFunc calls = %d, want 3", calls)
+	}
+}
+
+func TestAskExpertWebChatNoRetryOnHardError(t *testing.T) {
+	origFunc, origDelays := webChatFunc, askExpertRetryDelays
+	t.Cleanup(func() { webChatFunc, askExpertRetryDelays = origFunc, origDelays })
+
+	hardErr := errors.New("login required")
+	calls := 0
+	webChatFunc = func(_ context.Context, _ string, _ lp.WebChatOptions) (lp.WebChatResult, error) {
+		calls++
+		return lp.WebChatResult{}, hardErr
+	}
+
+	_, _, err := askExpertWebChat(context.Background(), "input", "expert", "", "", "", nil)
+	if !errors.Is(err, hardErr) {
+		t.Errorf("err = %v, want hard error passthrough", err)
+	}
+	if calls != 1 {
+		t.Errorf("webChatFunc calls = %d, want 1 (no retry on permanent error)", calls)
+	}
+}
+
+func TestAskExpertWebChatRetryAbortsOnCancel(t *testing.T) {
+	origFunc, origDelays := webChatFunc, askExpertRetryDelays
+	t.Cleanup(func() { webChatFunc, askExpertRetryDelays = origFunc, origDelays })
+
+	calls := 0
+	webChatFunc = func(_ context.Context, _ string, _ lp.WebChatOptions) (lp.WebChatResult, error) {
+		calls++
+		return lp.WebChatResult{}, lp.ErrServerBusy
+	}
+	// Non-zero delay guarantees ctx.Done wins the select.
+	askExpertRetryDelays = []time.Duration{time.Hour}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, _, err := askExpertWebChat(ctx, "input", "expert", "", "", "", nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled", err)
+	}
+	if calls != 1 {
+		t.Errorf("webChatFunc calls = %d, want 1 (backoff aborted by cancel)", calls)
+	}
 }

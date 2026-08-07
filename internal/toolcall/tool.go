@@ -417,9 +417,10 @@ which lead to the error:
 	// 执行工具
 	result, warning, err = tool.Handler(ctx, args)
 
-	// 检查是否超时
+	// 检查是否超时。用实际生效的 timeout 变量（可能是工具参数传入的，
+	// 不一定是 tool.Timeout 默认值），否则长超时任务失败时错误信息会误导。
 	if ctx.Err() == context.DeadlineExceeded {
-		err = fmt.Errorf("工具执行超时（%v）", tool.Timeout)
+		err = fmt.Errorf("工具执行超时（%v）", timeout)
 	}
 
 	// 立即显示执行结果
