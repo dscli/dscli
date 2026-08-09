@@ -56,6 +56,10 @@ var askExpertTool = toolcall.ToolDef{
 				"type":        "integer",
 				"description": "Timeout in seconds (default 600). Set longer for complex questions requiring deep analysis.",
 			},
+			"raw": map[string]any{
+				"type":        "boolean",
+				"description": "Send the input verbatim without dscli's default response template (default false). Set true when the prompt itself defines the required output format (e.g. JSON extraction); the standard Problem Analysis/Solutions/Suggestions template is then skipped.",
+			},
 		},
 		"required":             []string{"input"},
 		"additionalProperties": false,
@@ -129,6 +133,7 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 	mode := toolcall.ToolArgsValue(args, "mode", "")
 	keep := toolcall.ToolArgsValue(args, "keep", "")
 	attachments := toolcall.ToolArgsValue(args, "attachments", []string{})
+	raw := toolcall.ToolArgsValue(args, "raw", false)
 
 	// keep="list" is a query, not a message: return the saved conversation
 	// registry so the caller can pick an ID to continue.
@@ -168,8 +173,9 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 		outfmt.Printf("📎 Uploading %d image attachment(s)...\n", len(uploads))
 	}
 
-	// Build the structured request with inlined text attachments.
-	structuredRequest, attachmentErrors := buildStructuredRequest(content, inline)
+	// Build the request with inlined text attachments. raw skips the
+	// default response template so the caller's prompt goes out verbatim.
+	structuredRequest, attachmentErrors := buildStructuredRequest(content, inline, raw)
 
 	// Report attachment errors to user but continue execution
 	if len(attachmentErrors) > 0 {
@@ -341,8 +347,14 @@ func askExpertWebChat(ctx context.Context, input, role, system, mode, keep strin
 // maxAttachmentSize is the maximum allowed size for a single attachment (1MB).
 const maxAttachmentSize = 1 << 20
 
-// buildStructuredRequest builds a structured request for the expert.
-func buildStructuredRequest(content string, attachments []string) (string, []error) {
+// buildStructuredRequest builds the request text sent to the expert.
+// When raw is true, the default response template is skipped: the caller's
+// prompt is sent verbatim (text attachments are still inlined), so custom
+// output formats (e.g. JSON extraction) are not polluted by the standard
+// Problem Analysis / Solutions / Suggestions boilerplate. When raw is false,
+// the content is wrapped in the template, which steers the expert toward a
+// structured analysis.
+func buildStructuredRequest(content string, attachments []string, raw bool) (string, []error) {
 	var errors []error
 	attachmentSection := ""
 
@@ -384,6 +396,15 @@ func buildStructuredRequest(content string, attachments []string) (string, []err
 		if attachmentContent.Len() > len("\n## Attachments\n") {
 			attachmentSection = attachmentContent.String()
 		}
+	}
+
+	if raw {
+		// Verbatim mode: the caller's own prompt defines the format. The
+		// leading newline of the attachment section keeps a separator.
+		if attachmentSection == "" {
+			return content, errors
+		}
+		return content + attachmentSection, errors
 	}
 
 	request := "Please answer the following question in a structured format.\n\n" + content + attachmentSection + `
