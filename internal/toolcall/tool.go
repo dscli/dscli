@@ -229,9 +229,15 @@ func GetAllTools(ctx context.Context) []Tool {
 
 // HandleToolCalls 处理工具调用（带统计）。
 // 多个工具调用时先打印汇总行，并为每个调用显示序号。
+// 执行期间注册中断处理：用户主动停止（Ctrl+C/kill）时先标记
+// 未完成的调用再退出，避免下次启动重放已取消的操作。
 func HandleToolCalls(ctx context.Context, tcs []prompt.ToolCall) (inputs []prompt.Message) {
 	span, ctx := clog.StartSpanFromContext(ctx, "HandleToolCalls")
 	defer span.Finish()
+
+	stop := InstallInterruptHandler(ctx)
+	defer stop()
+	toolProgress.Store(0)
 
 	// 多个工具调用时先打印汇总行，便于区分并行调用
 	if len(tcs) > 1 {
@@ -261,6 +267,9 @@ func HandleToolCalls(ctx context.Context, tcs []prompt.ToolCall) (inputs []promp
 
 		if saveErr != nil {
 			outfmt.Debug("failed to save: %v", saveErr)
+		} else {
+			// 结果已落库才算完成：中断标记据此裁剪未执行的 tool_calls。
+			toolProgress.Store(int64(i + 1))
 		}
 		inputs = append(inputs, input)
 
