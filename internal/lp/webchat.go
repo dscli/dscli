@@ -951,6 +951,10 @@ func webchatWait(ctx context.Context, baseline, mdBaseline string) (string, erro
 				// toggle labels, footer text).
 				if resp := getAssistantText(ctx); resp != "" {
 					resp = stripBaselinePrefix(resp, mdBaseline)
+					// Drop the code-block toolbar labels (language name,
+					// Copy/Download buttons) that innerText includes before
+					// the code, so the answer handed to callers is clean.
+					resp = stripUIChromePrefix(resp)
 					// A short overload notice must never be returned as an
 					// answer — it would poison the caller's decision-making.
 					if isBusyErrorText(resp) {
@@ -981,6 +985,9 @@ func webchatWait(ctx context.Context, baseline, mdBaseline string) (string, erro
 				// complete text; keep polling on fragments instead of
 				// aborting on a mid-response pause.
 				fallback := cleanBodyResponse(extractResponse(baseline, current))
+				// The body diff also picks up code-block toolbar labels;
+				// strip them like the .ds-markdown path does.
+				fallback = stripUIChromePrefix(fallback)
 				if isBusyErrorText(fallback) {
 					return "", fmt.Errorf("%w: %s", ErrServerBusy, fallback)
 				}
@@ -1165,6 +1172,35 @@ func isCompleteResponse(s string) bool {
 	return !(toolCallOpenRE.MatchString(t) && !strings.Contains(t, "<tool_result"))
 }
 
+// uiChromeLineRE matches a line of DeepSeek's code-block toolbar that
+// innerText includes before the code itself: the language label ("json")
+// and the Copy/Download buttons ("Copy", "Download"). They are UI chrome,
+// not model output.
+var uiChromeLineRE = regexp.MustCompile(`(?i)^(json|copy|download|复制|下载)$`)
+
+// stripUIChromePrefix removes leading code-block toolbar lines from s.
+// DeepSeek renders a ```json fence as a toolbar (language label + Copy +
+// Download buttons) instead of the fence text, so the extracted answer
+// starts with "json\nCopy\nDownload\n{...". These labels would otherwise
+// defeat prefix-based checks (e.g. the JSON truncation detection below)
+// and pollute the text handed to callers. Only the leading lines are
+// stripped — a standalone "Copy" or "Download" line deeper in real prose
+// is left untouched.
+func stripUIChromePrefix(s string) string {
+	lines := strings.Split(s, "\n")
+	i := 0
+	for i < len(lines) && i < 5 {
+		if !uiChromeLineRE.MatchString(strings.TrimSpace(lines[i])) {
+			break
+		}
+		i++
+	}
+	if i == 0 {
+		return s
+	}
+	return strings.Join(lines[i:], "\n")
+}
+
 // isTruncated reports whether s shows clear structural signs of being cut
 // off mid-generation. Detection is deliberately conservative — only signals
 // that a complete answer would never exhibit count:
@@ -1179,7 +1215,11 @@ func isCompleteResponse(s string) bool {
 // webchatWait turns such text into ErrTruncated instead of handing a
 // silently incomplete answer to the caller.
 func isTruncated(s string) bool {
-	t := strings.TrimSpace(s)
+	// DeepSeek's code-block toolbar labels (language name, Copy/Download
+	// buttons) prefix the extracted code text. They are UI chrome, not
+	// model output, and would defeat the prefix-based JSON check below.
+	t := stripUIChromePrefix(strings.TrimSpace(s))
+
 	if t == "" {
 		return false
 	}

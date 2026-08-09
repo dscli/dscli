@@ -360,6 +360,7 @@ func TestRegistryTrim(t *testing.T) {
 		t.Error("newest entry id010 was trimmed away")
 	}
 }
+
 func TestIsBusyErrorText(t *testing.T) {
 	tests := []struct {
 		name string
@@ -411,9 +412,18 @@ func TestIsTruncated(t *testing.T) {
 		{name: "truncated array of objects", s: "[{\"id\": 1}, {\"id\": 2}", want: true},
 		{name: "complete object", s: "{\"question\": \"1\", \"answer\": \"A\"}", want: false},
 		{name: "complete array", s: "[{\"id\": 1}, {\"id\": 2}]", want: false},
-		// Prose that merely starts with a brace (no quoted key) is not JSON.
-		{name: "brace in prose", s: "{ 这是一个以花括号开头的普通句子 }", want: false},
-		// Normal answers are not truncated.
+		// DeepSeek renders a ```json fence as a code-block toolbar whose
+		// labels (language name + Copy/Download buttons) prefix the code.
+		// The noise must not defeat the JSON check (#30 blind spot).
+		{name: "truncated json with toolbar prefix", s: "json\nCopy\nDownload\n{\"questions\": [1], \"answers\": {\"3\": \"C\"", want: true},
+		{name: "complete json with toolbar prefix", s: "json\nCopy\nDownload\n{\"questions\": [1], \"answers\": {\"3\": \"C\"}}", want: false},
+		{name: "truncated array with toolbar prefix", s: "json\nCopy\nDownload\n[{\"id\": 1}, {\"id\": 2}", want: true},
+		{name: "lowercase toolbar labels", s: "json\ncopy\ndownload\n{\"a\": 1", want: true},
+		{name: "chinese toolbar labels", s: "json\n复制\n下载\n{\"a\": 1", want: true},
+		{name: "toolbar prefix with quoted key only", s: "json\nCopy\nDownload\n{\"a\": 1", want: true},
+		// Prose that starts with a toolbar-like word must stay untouched.
+		{name: "prose starting with Download", s: "Download the release from the link below.", want: false},
+		{name: "prose starting with json", s: "json is a data interchange format.", want: false},
 		{name: "plain answer", s: "The change looks correct. Ship it.", want: false},
 		{name: "empty", s: "", want: false},
 	}
@@ -421,6 +431,31 @@ func TestIsTruncated(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := isTruncated(tt.s); got != tt.want {
 				t.Errorf("isTruncated(%q) = %v, want %v", tt.s, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStripUIChromePrefix(t *testing.T) {
+	tests := []struct {
+		name string
+		s    string
+		want string
+	}{
+		{"toolbar prefix stripped", "json\nCopy\nDownload\n{code", "{code"},
+		{"partial toolbar stripped", "json\nCopy\n{code", "{code"},
+		{"only language label", "json\n{code", "{code"},
+		{"no noise unchanged", "{\"a\": 1}", "{\"a\": 1}"},
+		{"prose unchanged", "Copy the file to /tmp.", "Copy the file to /tmp."},
+		{"mid-text noise kept", "head\njson\nCopy\n{code", "head\njson\nCopy\n{code"},
+		{"case insensitive", "JSON\nCOPY\nDOWNLOAD\n{code", "{code"},
+		{"chinese labels", "json\n复制\n下载\n{code", "{code"},
+		{"empty unchanged", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := stripUIChromePrefix(tt.s); got != tt.want {
+				t.Errorf("stripUIChromePrefix(%q) = %q, want %q", tt.s, got, tt.want)
 			}
 		})
 	}
