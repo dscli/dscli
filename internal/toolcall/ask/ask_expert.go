@@ -553,16 +553,19 @@ func pathWithinHome(absPath string) bool {
 }
 
 // pathWithinTemp reports whether the given absolute path stays under the
-// system temporary directory. Candidates are symlink-resolved so paths work
-// on systems where the temp dir is reached through a link (e.g. macOS
-// /tmp -> /private/tmp) and where callers pass the other spelling.
+// system temporary directory. The raw candidate and its symlink-resolved
+// form are both checked, so paths work on systems where the temp dir is
+// reached through a link (e.g. macOS /var -> /private/var, /tmp ->
+// /private/tmp) no matter which spelling the caller uses.
 func pathWithinTemp(absPath string) bool {
 	for _, dir := range tempDirs() {
-		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
-			dir = resolved
-		}
 		if pathWithinDir(absPath, dir) {
 			return true
+		}
+		if resolved, err := filepath.EvalSymlinks(dir); err == nil && resolved != dir {
+			if pathWithinDir(absPath, resolved) {
+				return true
+			}
 		}
 	}
 	return false
@@ -575,7 +578,11 @@ func tempDirs() []string {
 	seen := map[string]bool{}
 	var dirs []string
 	add := func(d string) {
-		if d == "" || seen[d] {
+		// Clean first: os.TempDir() inherits TMPDIR, which on macOS carries
+		// a trailing slash (e.g. /var/folders/.../T/), breaking the
+		// dir+"/" prefix match in pathWithinDir.
+		d = filepath.Clean(d)
+		if d == "" || d == "." || seen[d] {
 			return
 		}
 		seen[d] = true
