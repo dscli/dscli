@@ -34,11 +34,11 @@ var askExpertTool = toolcall.ToolDef{
 		"properties": map[string]any{
 			"input": map[string]any{
 				"type":        "string",
-				"description": "The question to ask. If the value starts with @ and points to an existing file (e.g. @question.txt or @~/notes/q.txt), the file content is read from disk as the question.",
+				"description": "The question to ask. A value starting with @ reads the file at that path (safe paths: cwd, ~/..., $HOME, or /tmp; max 1MB); otherwise sent as plain text.",
 			},
 			"attachments": map[string]any{
 				"type":        "array",
-				"description": "File attachments list (optional). Images are uploaded and analyzed visually; other files inlined as text (1MB max, safe paths = cwd, ~/$HOME, or /tmp; ≤50 files/≤100MB).",
+				"description": "File attachments (optional). Images uploaded for visual analysis; other files inlined as text (1MB max each, safe paths: cwd, $HOME, or /tmp; ≤50 files).",
 				"items": map[string]string{
 					"type":        "string",
 					"description": "Attachment filename",
@@ -50,15 +50,15 @@ var askExpertTool = toolcall.ToolDef{
 			},
 			"keep": map[string]any{
 				"type":        "string",
-				"description": "Continue a previous conversation (default empty = new). \"last\" continues the most recent one; a conversation ID from a previous result's conversation_id line continues that one; a full chat.deepseek.com URL (copied from a browser) also works. \"list\" lists all saved conversations instead of asking.",
+				"description": "Continue a previous conversation (default new). Pass the conversation_id from a previous result, \"last\" (most recent), or a chat.deepseek.com URL; \"list\" lists saved conversations.",
 			},
 			"timeout": map[string]any{
 				"type":        "integer",
-				"description": "Timeout in seconds (default 600). Set longer for complex questions requiring deep analysis.",
+				"description": "Timeout in seconds (default 600). Set longer for complex questions.",
 			},
 			"raw": map[string]any{
 				"type":        "boolean",
-				"description": "Send the input verbatim without dscli's default response template (default false). Set true when the prompt itself defines the required output format (e.g. JSON extraction); the standard Problem Analysis/Solutions/Suggestions template is then skipped.",
+				"description": "Send input verbatim, skipping dscli's default response template (default false). Use when the prompt defines the output format (e.g. JSON extraction).",
 			},
 		},
 		"required":             []string{"input"},
