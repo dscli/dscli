@@ -72,7 +72,7 @@ func TestAskExpertToolParameters(t *testing.T) {
 	if params == nil {
 		t.Fatal("tool parameters missing properties")
 	}
-	for _, key := range []string{"input", "attachments", "mode", "keep", "timeout"} {
+	for _, key := range []string{"input", "attachments", "mode", "keep", "timeout", "raw"} {
 		if _, ok := params[key]; !ok {
 			t.Errorf("tool parameters missing %q", key)
 		}
@@ -113,6 +113,72 @@ func TestHandleAskExpertDefaults(t *testing.T) {
 	}
 	if !strings.Contains(calls.input, "How do I design a retry policy?") {
 		t.Errorf("input does not contain content: %q", calls.input)
+	}
+}
+
+func TestHandleAskExpertRawVerbatim(t *testing.T) {
+	calls := captureAskExpert(t)
+	prompt := `Extract the JSON from the text below.
+Return ONLY valid JSON, no markdown fence.`
+	args := toolcall.ToolArgs{"input": prompt, "raw": true}
+
+	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
+		t.Fatalf("handleAskExpert: %v", err)
+	}
+	// Raw mode must send the caller's prompt byte for byte, with none of
+	// the default response-template boilerplate.
+	if calls.input != prompt {
+		t.Errorf("raw input = %q, want verbatim %q", calls.input, prompt)
+	}
+	for _, forbidden := range []string{"Please answer the following question", "Response Requirements", "Problem Analysis"} {
+		if strings.Contains(calls.input, forbidden) {
+			t.Errorf("raw input must not contain %q:\n%s", forbidden, calls.input)
+		}
+	}
+}
+
+func TestHandleAskExpertRawExplicitFalse(t *testing.T) {
+	calls := captureAskExpert(t)
+	args := toolcall.ToolArgs{"input": "How do I design a retry policy?", "raw": false}
+
+	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
+		t.Fatalf("handleAskExpert: %v", err)
+	}
+	if !strings.Contains(calls.input, "Response Requirements") {
+		t.Errorf("raw=false must keep the response template, got:\n%s", calls.input)
+	}
+}
+
+func TestHandleAskExpertRawKeepsInlineAttachments(t *testing.T) {
+	calls := captureAskExpert(t)
+	text := tempFileInCwd(t, "attachment payload content")
+	prompt := "Extract JSON from the attached data."
+	args := toolcall.ToolArgs{"input": prompt, "attachments": []string{text}, "raw": true}
+
+	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
+		t.Fatalf("handleAskExpert: %v", err)
+	}
+	// Raw mode must still inline text attachments (their content is part of
+	// the caller's prompt) but skip the response template.
+	if !strings.Contains(calls.input, "attachment payload content") {
+		t.Errorf("raw input missing inline attachment:\n%s", calls.input)
+	}
+	if strings.Contains(calls.input, "Response Requirements") {
+		t.Errorf("raw input must not contain the response template:\n%s", calls.input)
+	}
+}
+
+func TestHandleAskExpertRawIgnoresNonBoolValue(t *testing.T) {
+	calls := captureAskExpert(t)
+	// A stringly-typed "true" is not a bool: the default (template on)
+	// must apply instead of panicking or misbehaving.
+	args := toolcall.ToolArgs{"input": "Question", "raw": "true"}
+
+	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
+		t.Fatalf("handleAskExpert: %v", err)
+	}
+	if !strings.Contains(calls.input, "Response Requirements") {
+		t.Errorf("non-bool raw must fall back to the template, got:\n%s", calls.input)
 	}
 }
 

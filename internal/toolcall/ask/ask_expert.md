@@ -31,6 +31,11 @@ Parameters:
 - timeout: timeout in seconds (default 600). Set longer for complex
   questions requiring deep analysis.
 
+- raw: send the input verbatim, skipping dscli's default response template
+  (default false). Set true when the prompt itself defines the required
+  output format (e.g. JSON extraction) — the standard Problem
+  Analysis/Solutions/Suggestions boilerplate is then omitted.
+
 Correction flow example (misread image):
   1. ask_expert(input="分析这张图", attachments=[img], mode="vision")
      → result ends with conversation_id: abc123
