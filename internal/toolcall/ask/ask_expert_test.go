@@ -756,6 +756,34 @@ func outsideSandboxPath(t *testing.T) string {
 	return ""
 }
 
+// TestPathWithinTempSymlinkAndTrailingSlash covers the macOS quirks that
+// broke temp-dir checks while Linux CI stayed green: os.TempDir() inherits
+// TMPDIR with a trailing slash, and /var -> /private/var is a symlink, so
+// the resolved form of the temp dir must also be accepted.
+func TestPathWithinTempSymlinkAndTrailingSlash(t *testing.T) {
+	tmp := os.TempDir()
+
+	// Trailing-slash spelling: the raw TMPDIR value (e.g. macOS
+	// /var/folders/.../T/) joined with a file name yields a path that
+	// pathWithinTemp must accept after tempDirs() Cleans its candidates.
+	if !pathWithinTemp(tmp + string(os.PathSeparator) + "probe.txt") {
+		t.Errorf("pathWithinTemp(%q) = false, want true (trailing-slash temp dir)", tmp+string(os.PathSeparator)+"probe.txt")
+	}
+
+	// Symlink-resolved spelling: on macOS /var -> /private/var, so the
+	// EvalSymlinks form of the temp dir is a different prefix that must
+	// also match (callers may pass either spelling).
+	resolved, err := filepath.EvalSymlinks(tmp)
+	if err == nil && resolved != tmp {
+		p := filepath.Join(resolved, "probe.txt")
+		if !pathWithinTemp(p) {
+			t.Errorf("pathWithinTemp(%q) = false, want true (symlink-resolved temp dir)", p)
+		}
+	} else {
+		t.Logf("temp dir %q has no symlink difference; resolved-form check skipped", tmp)
+	}
+}
+
 func TestAskExpertWebChatRetriesOnBusy(t *testing.T) {
 	origFunc, origDelays := webChatFunc, askExpertRetryDelays
 	t.Cleanup(func() { webChatFunc, askExpertRetryDelays = origFunc, origDelays })
