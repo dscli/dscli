@@ -620,3 +620,117 @@ func TestHandleWriteFileWithLineRange_CAS(t *testing.T) {
 		}
 	})
 }
+
+// TestWarnOnLengthMismatch 单元测试：长度突变告警判定逻辑。
+func TestWarnOnLengthMismatch(t *testing.T) {
+	tests := []struct {
+		name     string
+		old      int
+		content  int
+		wantWarn bool
+	}{
+		{"incident-like: 5 replaced by 17", 5, 17, true},
+		{"exactly threshold: 5->15", 5, 15, true},
+		{"3x growth: 7->21", 7, 21, true},
+		{"just below threshold: 5->14", 5, 14, false},
+		{"small edit: 1->3", 1, 3, false},
+		{"2.5x growth: 10->25", 10, 25, false},
+		{"same size", 5, 5, false},
+		{"shrink: 17->5", 17, 5, false},
+		{"zero old region", 0, 17, false},
+		{"delete (content 0)", 5, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := warnOnLengthMismatch(tt.old, tt.content) != ""
+			if got != tt.wantWarn {
+				t.Errorf("warnOnLengthMismatch(%d, %d) warn=%v, want %v", tt.old, tt.content, got, tt.wantWarn)
+			}
+		})
+	}
+}
+
+// TestHandleWriteFileWithLineRange_LengthMismatchWarning 集成测试：
+// 无 CAS tag 且替换区域行数远小于内容行数时，handler 应返回告警。
+func TestHandleWriteFileWithLineRange_LengthMismatchWarning(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "mismatch.txt")
+	initial := "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\n"
+	ctx := t.Context()
+
+	content17 := strings.Join([]string{
+		"func foo() {", "    a()", "    b()", "    c()", "    d()", "    e()", "    f()", "    g()", "    h()", "    i()",
+		"    j()", "    k()", "    l()", "    m()", "    n()", "    o()", "}",
+	}, "\n")
+
+	t.Run("no tags: growth mismatch warns", func(t *testing.T) {
+		os.WriteFile(filePath, []byte(initial), 0o644)
+		args := toolcall.ToolArgs{
+			"path":       filePath,
+			"start_line": int64(2),
+			"end_line":   int64(6),
+			"content":    content17,
+		}
+		_, warning, err := handleWriteFileWithLineRange(ctx, args)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(warning, "替换区域仅 4 行") {
+			t.Errorf("expected length-mismatch warning, got: %q", warning)
+		}
+	})
+
+	t.Run("with CAS tags: no warning", func(t *testing.T) {
+		os.WriteFile(filePath, []byte(initial), 0o644)
+		lines := strings.Split(strings.TrimRight(initial, "\n"), "\n")
+		// 文件仅 5 行，区域 [2,6] 实际覆盖 4 行（第2-5行），提供这 4 行的 CAS tags
+		tags := computeLineTag(lines[1]) + "\n" + computeLineTag(lines[2]) + "\n" +
+			computeLineTag(lines[3]) + "\n" + computeLineTag(lines[4])
+		args := toolcall.ToolArgs{
+			"path":       filePath,
+			"start_line": int64(2),
+			"end_line":   int64(5),
+			"content":    content17,
+			"line_tags":  tags,
+		}
+		_, warning, err := handleWriteFileWithLineRange(ctx, args)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if strings.Contains(warning, "替换区域仅") {
+			t.Errorf("tags verified the region, should not warn, got: %q", warning)
+		}
+	})
+
+	t.Run("full-file rewrite end_line=-1: no warning", func(t *testing.T) {
+		os.WriteFile(filePath, []byte(initial), 0o644)
+		args := toolcall.ToolArgs{
+			"path":     filePath,
+			"end_line": int64(-1),
+			"content":  content17,
+		}
+		_, warning, err := handleWriteFileWithLineRange(ctx, args)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if strings.Contains(warning, "替换区域仅") {
+			t.Errorf("full rewrite is deliberate, should not warn, got: %q", warning)
+		}
+	})
+
+	t.Run("small edit: no warning", func(t *testing.T) {
+		os.WriteFile(filePath, []byte(initial), 0o644)
+		args := toolcall.ToolArgs{
+			"path":       filePath,
+			"start_line": int64(2),
+			"content":    "New 2a\nNew 2b\nNew 2c",
+		}
+		_, warning, err := handleWriteFileWithLineRange(ctx, args)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if strings.Contains(warning, "替换区域仅") {
+			t.Errorf("small edit should not warn, got: %q", warning)
+		}
+	})
+}

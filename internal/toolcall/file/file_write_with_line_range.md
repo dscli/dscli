@@ -23,6 +23,12 @@ to prevent writing when file content has changed. Tags are
 verified against current file content before applying changes.
 If any tag mismatches, the write is rejected with actual content.
 
+**Length-mismatch guard** (no tags): when the written content is much
+larger than the replaced region (≥3× and ≥10 extra lines), a warning is
+returned — a typical sign of misaligned line numbers when the intent was
+to insert, not overwrite. The write still proceeds; provide CAS tags to
+silence the warning and confirm the region.
+
 Best for non-code files (configs, docs) needing precise line
 control.
 

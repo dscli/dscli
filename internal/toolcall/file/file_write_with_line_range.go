@@ -299,6 +299,19 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 		linesChanged = contentLineCount
 	}
 
+	// 长度突变告警（无 CAS tag 时）：替换区域行数与写入内容行数严重不匹配
+	// 是"行号错位覆盖"的典型信号——AI 本意在某处插入新内容，但目标区域实际
+	// 行数远少于内容行数，静默覆盖了不该覆盖的内容。仅告警不阻断：合法的大
+	// 规模替换（如展开函数体）也会触发，由 LLM 自行判断。
+	if content != "" && endLine != -1 && lineTag == "" && lineTags == "" {
+		if m := warnOnLengthMismatch(oldReplaced, contentLineCount); m != "" {
+			if warning != "" {
+				warning += "\n\n"
+			}
+			warning += m
+		}
+	}
+
 	outfmt.Notice("%s文件 \"%s\" 行范围 %s，影响 %d 行", operation, displayPath, rangeDesc, linesChanged)
 
 	// 构建最终结果
@@ -328,4 +341,17 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 	}
 
 	return result, warning, err
+}
+
+// warnOnLengthMismatch 检测替换区域行数与写入内容行数的严重不匹配。
+// 条件：内容行数 ≥ 原区域行数 + 10 且 ≥ 3 倍原区域行数（"插入意图"特征）。
+// 返回告警文案；不匹配不严重时返回空字符串。
+func warnOnLengthMismatch(oldReplaced, contentLineCount int) string {
+	if oldReplaced < 1 || contentLineCount < oldReplaced+10 || contentLineCount < 3*oldReplaced {
+		return ""
+	}
+	return fmt.Sprintf(
+		"⚠️ 注意：替换区域仅 %d 行，但写入内容有 %d 行。若本意是插入新内容而非覆盖，"+
+			"请确认行号未错位；或使用 read_file 获取 line_tag/line_tags CAS 校验后再写入。",
+		oldReplaced, contentLineCount)
 }
