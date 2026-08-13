@@ -734,3 +734,311 @@ func TestHandleWriteFileWithLineRange_LengthMismatchWarning(t *testing.T) {
 		}
 	})
 }
+
+// TestHandleWriteFileWithLineRange_InsertBeforeLine 覆盖 insert_before_line
+// 插入语义：中间插入、头部插入、追加末尾、新文件创建、参数互斥、
+// 行号范围校验与 line_tag CAS 校验。
+func TestHandleWriteFileWithLineRange_InsertBeforeLine(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	tests := []struct {
+		name        string
+		initialFile string // "" = 文件不存在
+		args        toolcall.ToolArgs
+		wantErr     bool
+		errContains string
+		checkFile   func(t *testing.T, filePath string)
+	}{
+		{
+			name:        "insert before middle line",
+			initialFile: "Line 1\nLine 2\nLine 3\nLine 4\nLine 5",
+			args: toolcall.ToolArgs{
+				"path":               "test.txt",
+				"insert_before_line": int64(3),
+				"content":            "New A\nNew B",
+			},
+			checkFile: func(t *testing.T, filePath string) {
+				content, err := os.ReadFile(filePath)
+				if err != nil {
+					t.Fatalf("读取文件失败: %v", err)
+				}
+				expected := "Line 1\nLine 2\nNew A\nNew B\nLine 3\nLine 4\nLine 5"
+				if strings.TrimSpace(string(content)) != expected {
+					t.Errorf("文件内容不正确\n期望:\n%s\n实际:\n%s", expected, string(content))
+				}
+			},
+		},
+		{
+			name:        "insert before first line",
+			initialFile: "Line 1\nLine 2",
+			args: toolcall.ToolArgs{
+				"path":               "test.txt",
+				"insert_before_line": int64(1),
+				"content":            "Header",
+			},
+			checkFile: func(t *testing.T, filePath string) {
+				content, err := os.ReadFile(filePath)
+				if err != nil {
+					t.Fatalf("读取文件失败: %v", err)
+				}
+				expected := "Header\nLine 1\nLine 2"
+				if strings.TrimSpace(string(content)) != expected {
+					t.Errorf("文件内容不正确\n期望:\n%s\n实际:\n%s", expected, string(content))
+				}
+			},
+		},
+		{
+			name:        "append at end (N = total+1)",
+			initialFile: "Line 1\nLine 2\nLine 3",
+			args: toolcall.ToolArgs{
+				"path":               "test.txt",
+				"insert_before_line": int64(4),
+				"content":            "Tail",
+			},
+			checkFile: func(t *testing.T, filePath string) {
+				content, err := os.ReadFile(filePath)
+				if err != nil {
+					t.Fatalf("读取文件失败: %v", err)
+				}
+				expected := "Line 1\nLine 2\nLine 3\nTail"
+				if strings.TrimSpace(string(content)) != expected {
+					t.Errorf("文件内容不正确\n期望:\n%s\n实际:\n%s", expected, string(content))
+				}
+			},
+		},
+		{
+			name:        "create new file with insert_before_line=1",
+			initialFile: "",
+			args: toolcall.ToolArgs{
+				"path":               "new.txt",
+				"insert_before_line": int64(1),
+				"content":            "First\nSecond",
+			},
+			checkFile: func(t *testing.T, filePath string) {
+				content, err := os.ReadFile(filePath)
+				if err != nil {
+					t.Fatalf("读取文件失败: %v", err)
+				}
+				expected := "First\nSecond"
+				if strings.TrimSpace(string(content)) != expected {
+					t.Errorf("文件内容不正确\n期望:\n%s\n实际:\n%s", expected, string(content))
+				}
+			},
+		},
+		{
+			name:        "insert into non-existent file before line 2 fails",
+			initialFile: "",
+			args: toolcall.ToolArgs{
+				"path":               "new_only.txt",
+				"insert_before_line": int64(2),
+				"content":            "First",
+			},
+			wantErr:     true,
+			errContains: "only line 1 is valid",
+		},
+		{
+			name:        "insert_before_line=0 fails",
+			initialFile: "Line 1",
+			args: toolcall.ToolArgs{
+				"path":               "test.txt",
+				"insert_before_line": int64(0),
+				"content":            "X",
+			},
+			wantErr:     true,
+			errContains: "must be >= 1",
+		},
+		{
+			name:        "insert point beyond file+1 fails",
+			initialFile: "Line 1\nLine 2",
+			args: toolcall.ToolArgs{
+				"path":               "test.txt",
+				"insert_before_line": int64(4),
+				"content":            "X",
+			},
+			wantErr:     true,
+			errContains: "out of range",
+		},
+		{
+			name:        "mutually exclusive with start_line",
+			initialFile: "Line 1\nLine 2",
+			args: toolcall.ToolArgs{
+				"path":               "test.txt",
+				"insert_before_line": int64(2),
+				"start_line":         int64(1),
+				"content":            "X",
+			},
+			wantErr:     true,
+			errContains: "cannot be combined with start_line",
+		},
+		{
+			name:        "mutually exclusive with end_line",
+			initialFile: "Line 1\nLine 2",
+			args: toolcall.ToolArgs{
+				"path":               "test.txt",
+				"insert_before_line": int64(2),
+				"end_line":           int64(2),
+				"content":            "X",
+			},
+			wantErr:     true,
+			errContains: "cannot be combined with end_line",
+		},
+		{
+			name:        "mutually exclusive with line_tags",
+			initialFile: "Line 1\nLine 2",
+			args: toolcall.ToolArgs{
+				"path":               "test.txt",
+				"insert_before_line": int64(2),
+				"line_tags":          "AAAA\nBBBB",
+				"content":            "X",
+			},
+			wantErr:     true,
+			errContains: "cannot be combined with line_tags",
+		},
+		{
+			name:        "empty content fails",
+			initialFile: "Line 1\nLine 2",
+			args: toolcall.ToolArgs{
+				"path":               "test.txt",
+				"insert_before_line": int64(2),
+				"content":            "",
+			},
+			wantErr:     true,
+			errContains: "requires non-empty content",
+		},
+		{
+			name:        "line_tag verified: correct tag succeeds",
+			initialFile: "Line 1\nLine 2\nLine 3",
+			args: toolcall.ToolArgs{
+				"path":               "test.txt",
+				"insert_before_line": int64(2),
+				"content":            "Inserted",
+				"line_tag":           computeLineTag("Line 2"),
+			},
+			checkFile: func(t *testing.T, filePath string) {
+				content, err := os.ReadFile(filePath)
+				if err != nil {
+					t.Fatalf("读取文件失败: %v", err)
+				}
+				expected := "Line 1\nInserted\nLine 2\nLine 3"
+				if strings.TrimSpace(string(content)) != expected {
+					t.Errorf("文件内容不正确\n期望:\n%s\n实际:\n%s", expected, string(content))
+				}
+			},
+		},
+		{
+			name:        "line_tag verified: wrong tag fails",
+			initialFile: "Line 1\nLine 2\nLine 3",
+			args: toolcall.ToolArgs{
+				"path":               "test.txt",
+				"insert_before_line": int64(2),
+				"content":            "Inserted",
+				"line_tag":           "AAAA", // wrong
+			},
+			wantErr: true,
+		},
+		{
+			name:        "line_tag at append point verifies last line",
+			initialFile: "Line 1\nLine 2\nLine 3",
+			args: toolcall.ToolArgs{
+				"path":               "test.txt",
+				"insert_before_line": int64(4), // append after line 3
+				"content":            "Tail",
+				"line_tag":           computeLineTag("Line 3"),
+			},
+			checkFile: func(t *testing.T, filePath string) {
+				content, err := os.ReadFile(filePath)
+				if err != nil {
+					t.Fatalf("读取文件失败: %v", err)
+				}
+				expected := "Line 1\nLine 2\nLine 3\nTail"
+				if strings.TrimSpace(string(content)) != expected {
+					t.Errorf("文件内容不正确\n期望:\n%s\n实际:\n%s", expected, string(content))
+				}
+			},
+		},
+		{
+			name:        "content with trailing newline inserts no blank line",
+			initialFile: "Line 1\nLine 2\nLine 3",
+			args: toolcall.ToolArgs{
+				"path":               "test.txt",
+				"insert_before_line": int64(2),
+				"content":            "New A\nNew B\n", // trailing newline
+			},
+			checkFile: func(t *testing.T, filePath string) {
+				content, err := os.ReadFile(filePath)
+				if err != nil {
+					t.Fatalf("读取文件失败: %v", err)
+				}
+				expected := "Line 1\nNew A\nNew B\nLine 2\nLine 3"
+				if strings.TrimSpace(string(content)) != expected {
+					t.Errorf("文件内容不正确\n期望:\n%s\n实际:\n%s", expected, string(content))
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filePath := filepath.Join(tmpDir, toolcall.ToolArgsValue(tt.args, "path", ""))
+
+			if tt.initialFile != "" {
+				if err := os.WriteFile(filePath, []byte(tt.initialFile), 0o644); err != nil {
+					t.Fatalf("创建测试文件失败: %v", err)
+				}
+			}
+
+			tt.args["path"] = filePath
+
+			ctx := t.Context()
+			_, _, err := handleWriteFileWithLineRange(ctx, tt.args)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("期望错误，但未收到错误")
+				}
+				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("错误消息应包含 %q，实际: %v", tt.errContains, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("不期望的错误: %v", err)
+			}
+
+			if tt.checkFile != nil {
+				tt.checkFile(t, filePath)
+			}
+		})
+	}
+}
+
+// TestHandleWriteFileWithLineRange_TrailingNewlineReplace 回归测试：
+// 替换路径的 content 带末尾换行符时，替换中间区域不得产生多余空行
+// （strings.Split("a\nb\n") 会产生 ["a","b",""]，需先 TrimSuffix）。
+func TestHandleWriteFileWithLineRange_TrailingNewlineReplace(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "trail.txt")
+	if err := os.WriteFile(filePath, []byte("Line 1\nLine 2\nLine 3\n"), 0o644); err != nil {
+		t.Fatalf("创建测试文件失败: %v", err)
+	}
+
+	args := toolcall.ToolArgs{
+		"path":       filePath,
+		"start_line": int64(2),
+		"end_line":   int64(2),
+		"content":    "New 2a\nNew 2b\n", // trailing newline
+	}
+	ctx := t.Context()
+	if _, _, err := handleWriteFileWithLineRange(ctx, args); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	b, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("读取文件失败: %v", err)
+	}
+	expected := "Line 1\nNew 2a\nNew 2b\nLine 3\n"
+	if string(b) != expected {
+		t.Errorf("文件内容不正确\n期望:\n%q\n实际:\n%q", expected, string(b))
+	}
+}

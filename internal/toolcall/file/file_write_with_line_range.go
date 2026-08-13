@@ -42,6 +42,10 @@ func init() {
 					"type":        "integer",
 					"description": "End line (inclusive). Optional: defaults to start_line (single-line edit); use -1 to replace to end of file.",
 				},
+				"insert_before_line": map[string]any{
+					"type":        "integer",
+					"description": "Insert content BEFORE this 1-based line; original line N and below shift down. Mutually exclusive with start_line/end_line.",
+				},
 				"line_tag": map[string]any{
 					"type":        "string",
 					"description": "4-char CAS tag for start_line (single-line edit). If provided, verified before write.",
@@ -94,6 +98,19 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 
 	fullPath := ResolvePath(ctx, path)
 	displayPath := DisplayPath(ctx, fullPath)
+
+	// 插入模式：insert_before_line 与替换路径完全分叉，
+	// 避免 ParseLineRange 的默认行范围（1..EOF）干扰插入语义。
+	// 互斥校验集中在分叉处：插入点只有一个，替换类参数在此模式下语义冲突。
+	if insertLine, ok := parseInsertBeforeLine(args); ok {
+		for _, k := range []string{"start_line", "end_line", "line_tags"} {
+			if _, has := args[k]; has {
+				err = fmt.Errorf("insert_before_line cannot be combined with %s", k)
+				return result, warning, err
+			}
+		}
+		return handleInsertBeforeLine(ctx, args, fullPath, displayPath, content, insertLine, showContext)
+	}
 
 	// 解析起始行号
 	startLine, endLine, err := ParseLineRange(args)
@@ -242,8 +259,9 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 
 	// 3. 处理新内容
 	if content != "" {
-		// 分割新内容为多行
-		contentLines := strings.Split(content, "\n")
+		// 分割新内容为多行。去掉末尾换行符，避免 Split 产生多余空行
+		// （"a\nb\n" → ["a","b",""] 会在行中间插入空行）。
+		contentLines := strings.Split(strings.TrimSuffix(content, "\n"), "\n")
 		newLines = append(newLines, contentLines...)
 	}
 	// 如果 content 为空，这里什么都不添加，相当于删除
@@ -354,4 +372,155 @@ func warnOnLengthMismatch(oldReplaced, contentLineCount int) string {
 		"⚠️ 注意：替换区域仅 %d 行，但写入内容有 %d 行。若本意是插入新内容而非覆盖，"+
 			"请确认行号未错位；或使用 read_file 获取 line_tag/line_tags CAS 校验后再写入。",
 		oldReplaced, contentLineCount)
+}
+
+// parseInsertBeforeLine 读取 insert_before_line 参数。
+// 仅当参数显式提供时返回插入模式（ok=true），insertLine 为 1-based 插入点。
+func parseInsertBeforeLine(args ToolArgs) (insertLine int, ok bool) {
+	_, ok = args["insert_before_line"]
+	if !ok {
+		return 0, false
+	}
+	return int(toolcall.ToolArgsValue(args, "insert_before_line", int64(0))), true
+}
+
+// handleInsertBeforeLine 实现 insert_before_line 插入语义：
+// content 插入到第 N 行之前，原第 N 行及之后顺延（N=len+1 表示追加到末尾）。
+//
+// 与替换路径（start_line/end_line）完全独立：替换路径的默认行范围
+// （start=1, end=EOF）会让"插入"退化为"覆盖全文件"，这是本参数存在的意义。
+// line_tag 校验插入点行（追加末尾时校验最后一行），防止文件已变更时插错位置。
+func handleInsertBeforeLine(ctx context.Context, args ToolArgs, fullPath, displayPath, content string, insertLine int, showContext bool) (result, warning string, err error) {
+	// 注：与 start_line/end_line/line_tags 的互斥校验在调用方分叉处统一完成。
+	// 并发模型与替换路径一致：依赖 dscli 的项目级会话锁避免同进程并发写；
+	// 外部进程修改文件时由 line_tag CAS 校验兜底。
+	if insertLine < 1 {
+		err = fmt.Errorf("insert_before_line must be >= 1, got %d", insertLine)
+		return result, warning, err
+	}
+	if content == "" {
+		err = fmt.Errorf("insert_before_line requires non-empty content (use the replace path with empty content to delete lines)")
+		return result, warning, err
+	}
+
+	// 打开文件；不存在时仅允许 insert_before_line=1（等价于创建文件）
+	file, err := os.Open(fullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			if insertLine != 1 {
+				err = fmt.Errorf("cannot insert into non-existent file before line %d, only line 1 is valid", insertLine)
+				return result, warning, err
+			}
+			writeContent := content
+			if !strings.HasSuffix(writeContent, "\n") {
+				writeContent += "\n"
+			}
+			if err = os.WriteFile(fullPath, []byte(writeContent), 0o644); err != nil {
+				err = fmt.Errorf("failed to create file: %w", err)
+				return result, warning, err
+			}
+			outfmt.Notice("创建文件 \"%s\" 并写入 %d 行内容（insert_before_line=1）", displayPath, strings.Count(content, "\n")+1)
+			result = fmt.Sprintf("成功创建文件并写入 %d 行内容", strings.Count(content, "\n")+1)
+			if showContext {
+				if ctxStr := AppendWriteFileContext(displayPath); ctxStr != "" {
+					result += ctxStr
+				}
+			}
+			return result, warning, err
+		}
+		err = fmt.Errorf("failed to open file: %w", err)
+		return result, warning, err
+	}
+	defer file.Close()
+
+	// 读取所有行
+	var lines []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if err = scanner.Err(); err != nil {
+		err = fmt.Errorf("failed to read file: %w", err)
+		return result, warning, err
+	}
+
+	// 插入点范围校验：合法插入点只有 1..len+1（len+1 = 追加末尾）
+	if insertLine > len(lines)+1 {
+		err = fmt.Errorf("insert_before_line=%d out of range: file has %d lines, max insert point is %d", insertLine, len(lines), len(lines)+1)
+		return result, warning, err
+	}
+
+	// CAS：line_tag 校验插入点行；追加末尾时校验最后一行；空文件无行可校验
+	lineTag := toolcall.ToolArgsValue(args, "line_tag", "")
+	if lineTag != "" {
+		if len(lineTag) != 4 {
+			err = fmt.Errorf("line_tag must be exactly 4 characters, got %q (%d chars)", lineTag, len(lineTag))
+			return result, warning, err
+		}
+		if len(lines) > 0 {
+			verifyIdx := min(insertLine-1, len(lines)-1)
+			if err = verifyLineTags(lines, verifyIdx, []string{lineTag}); err != nil {
+				return result, warning, err
+			}
+			if stripped, didStrip := stripCASTags(content, []string{lineTag}); didStrip {
+				content = stripped
+				warning = "注意：已自动去除 content 中的 CAS tag 前缀（匹配已验证的 tag）。"
+			}
+		}
+	}
+
+	// 构建新内容：插入点之前的行 + 新内容 + 插入点及之后的行。
+	// TrimSuffix 去掉末尾换行符，避免 Split 产生多余空行（与替换路径一致）。
+	contentLineCount := strings.Count(content, "\n") + 1
+	if strings.HasSuffix(content, "\n") {
+		contentLineCount = strings.Count(content, "\n")
+	}
+	contentLines := strings.Split(strings.TrimSuffix(content, "\n"), "\n")
+	newLines := make([]string, 0, len(lines)+contentLineCount)
+	newLines = append(newLines, lines[:insertLine-1]...)
+	newLines = append(newLines, contentLines...)
+	newLines = append(newLines, lines[insertLine-1:]...)
+
+	// 写回文件，确保末尾有换行符
+	var contentBuilder strings.Builder
+	for i, line := range newLines {
+		contentBuilder.WriteString(line)
+		if i < len(newLines)-1 {
+			contentBuilder.WriteString("\n")
+		}
+	}
+	writeContent := contentBuilder.String()
+	if writeContent != "" && !strings.HasSuffix(writeContent, "\n") {
+		writeContent += "\n"
+	}
+	if err = os.WriteFile(fullPath, []byte(writeContent), 0o644); err != nil {
+		err = fmt.Errorf("failed to write file: %w", err)
+		return result, warning, err
+	}
+
+	// 结果描述：区分"插入到某行之前"与"追加到末尾"
+	rangeDesc := fmt.Sprintf("第%d行之前", insertLine)
+	if insertLine == len(lines)+1 {
+		rangeDesc = fmt.Sprintf("末尾（第%d行之后）", len(lines))
+	}
+	outfmt.Notice("插入%d行内容到文件 \"%s\" %s", contentLineCount, displayPath, rangeDesc)
+	result = fmt.Sprintf("成功插入 %d 行内容到文件 \"%s\" %s", contentLineCount, displayPath, rangeDesc)
+
+	// 编辑后上下文窗口：插入点即新内容起点；oldReplaced=0（无覆盖）。
+	// endLine=insertLine-1 使偏移警告从原第 insertLine 行（第一个受影响行）起算。
+	if showContext {
+		if ctxStr := AppendEditContext(displayPath, insertLine, insertLine-1, 0, contentLineCount); ctxStr != "" {
+			result += ctxStr
+		}
+	}
+
+	// Run flycheck on the written file and append issues as suggestion
+	if flyResult, _, flyErr := flycheck.Flycheck(ctx, fullPath); flyErr == nil && flyResult != "" {
+		if warning != "" {
+			warning += "\n\n"
+		}
+		warning += flyResult
+	}
+
+	return result, warning, err
 }

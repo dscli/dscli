@@ -8,7 +8,10 @@ Write content to a specific line range in a file. Supports:
 
 2. Delete: set content to empty string to remove lines
 
-3. Insert: when start_line exceeds file length, append at end
+3. Insert: `insert_before_line=N` inserts content BEFORE line N (original
+   line N and below shift down; N = total+1 appends at end). Mutually
+   exclusive with start_line/end_line; combine with line_tag for CAS check
+   of the insertion point
 
 4. Create: create a new file if it doesn't exist
 
@@ -46,3 +49,5 @@ Examples:
 Kq9z
 PX0b", content="if (count > limit)
     return limit;")
+  write_file_with_line_range(path="file.txt", insert_before_line=3, content="new line before 3")   — insert before line 3
+  write_file_with_line_range(path="file.txt", insert_before_line=4, line_tag="Q8fA", content="new")  — insert with CAS check of line 4

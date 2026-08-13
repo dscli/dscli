@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/dscli/dscli/internal/config"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/toolcall"
 	"github.com/nanjj/clog"
@@ -117,6 +118,27 @@ func handleReadFileWithLineRange(ctx context.Context, args ToolArgs) (result, wa
 	header := fmt.Sprintf("📄 %s: lines %d-%s of %d\n", displayPath, startLine, endDisplay, totalLines)
 
 	result = header + resultBuilder.String()
+
+	// 大文件提示：完整读取（默认范围 1..EOF）时附带文件大小。
+	// LLM 看到大小后可决定是否改用行范围精确读取，避免大输出反复占用上下文
+	// （单回合工具循环中上下文只增不减，缓存命中费用随之线性膨胀）。
+	// 阈值单位 KB，可通过配置 read-file-large-threshold 调整（默认 200）。
+	if startLine == 1 && endLine == -1 {
+		if fi, statErr := file.Stat(); statErr == nil {
+			const kb = 1024
+			if thresholdKB := config.GetInt("read-file-large-threshold", 200); fi.Size() > int64(thresholdKB)*kb {
+				var sizeDesc string
+				if fi.Size() > kb*kb {
+					sizeDesc = fmt.Sprintf("%.1f MB", float64(fi.Size())/(kb*kb))
+				} else {
+					sizeDesc = fmt.Sprintf("%.1f KB", float64(fi.Size())/kb)
+				}
+				result += fmt.Sprintf(
+					"\n⚠️ 文件较大（%s，%d 行）。若只需部分内容，请用 start_line/end_line 精确读取，避免大输出占用上下文。",
+					sizeDesc, totalLines)
+			}
+		}
+	}
 
 	// 记录日志
 	rangeDesc := fmt.Sprintf("第%d行 - 第%d行", startLine, endLine)
