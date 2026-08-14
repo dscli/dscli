@@ -226,6 +226,10 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		lastHist := history[len(history)-1]
 		tcs := lastHist.ToolCalls
 		if len(tcs) > 0 {
+			// 上次进程中断遗留的工具调用，自动恢复执行。用户主动停止
+			// （Ctrl+C/kill）会在退出前标记，不会走到这里；SIGKILL 等
+			// 不可捕获信号仍会重放，提示用户可 Ctrl+C 中断。
+			outfmt.Warn("⚠️ 检测到 %d 个上次中断遗留的工具调用，正在恢复执行（Ctrl+C 可中断）", len(tcs))
 			// Print reasoning content or content
 			outfmt.PrintContent(ctx, lastHist.ReasoningContent, lastHist.Content, 0, 0)
 			toolInputs := toolcall.HandleToolCalls(ctx, tcs)
