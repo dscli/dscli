@@ -29,8 +29,8 @@ func withIsolatedToolcallSession(t *testing.T) context.Context {
 }
 
 // TestHandleInterrupt 模拟：assistant 发起 2 个工具调用，完成 1 个后收到
-// SIGINT。验证 handleInterrupt 以 130 退出、tool_calls 被裁剪为已完成的
-// 1 个、插入 1 条占位消息，且打印提示。
+// SIGINT。验证 handleInterrupt 以 130 退出、tool_calls 完整保留（不裁剪）、
+// 插入 1 条占位消息，且打印提示。
 func TestHandleInterrupt(t *testing.T) {
 	ctx := withIsolatedToolcallSession(t)
 	tcs := []prompt.ToolCall{
@@ -55,7 +55,7 @@ func TestHandleInterrupt(t *testing.T) {
 		t.Fatalf("want exit code 130, got %d", exitCode)
 	}
 
-	// 验证 DB 状态：assistant 的 tool_calls 只剩 call_1
+	// 验证 DB 状态：assistant 的 tool_calls 完整保留（不裁剪，2 个都在）
 	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -73,8 +73,8 @@ func TestHandleInterrupt(t *testing.T) {
 	if err := json.Unmarshal([]byte(toolCalls.String), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got[0].ID != "call_1" {
-		t.Fatalf("assistant tool_calls should keep only call_1, got %+v", got)
+	if len(got) != 2 || got[0].ID != "call_1" || got[1].ID != "call_2" {
+		t.Fatalf("assistant tool_calls should keep both calls, got %+v", got)
 	}
 
 	// 验证占位消息：1 条 tool 消息（call_2），内容含中断提示

@@ -25,8 +25,12 @@ func InterruptedToolContent(name string) string {
 //
 // 本函数在可捕获信号（SIGINT/SIGTERM）到达时调用：
 //  1. 找到最后一条带 tool_calls 的 assistant 消息；
-//  2. 将 tool_calls 裁剪为已完成的前 completed 个（结果已落库）；
-//  3. 为每个未执行的调用插入占位 tool 消息，保持 API 协议配对。
+//  2. 为每个未执行（结果未落库）的调用插入占位 tool 消息。
+//
+// 注意：不裁剪 assistant 的 tool_calls。CleanupReverse（history.go）按
+// tool_calls 数量与 tool 消息数量配对，裁剪会破坏配对导致整块历史（包括
+// 已完成的真实结果）被丢弃；保留完整 tool_calls + 占位 tool 消息既维持
+// API 协议配对，又因历史最后一条是占位 tool 消息而不会触发重放。
 //
 // 完成后重启，历史最后一条是占位 tool 消息，ChatRunE 不会重放。
 // 返回插入的占位消息数；无可处理残留时返回 0。
@@ -42,13 +46,7 @@ func MarkInterruptedToolCalls(ctx context.Context, completed int) (n int, err er
 		return 0, nil // 全部完成，无需处理
 	}
 
-	// 裁剪 assistant 消息：只保留已完成（结果已保存）的调用。
-	// completed=0 时存 "[]"，重启后同样不会重放。
-	if err := UpdateToolCalls(ctx, msg.ID, msg.ToolCalls[:completed]); err != nil {
-		return 0, fmt.Errorf("裁剪 tool_calls 失败: %w", err)
-	}
-
-	// 为未执行的调用插入占位 tool 消息。
+	// 为未执行的调用插入占位 tool 消息（不裁剪 tool_calls，见函数注释）。
 	placeholders := make([]Message, 0, len(msg.ToolCalls)-completed)
 	for _, tc := range msg.ToolCalls[completed:] {
 		name := tc.Function.Name

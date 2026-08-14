@@ -268,7 +268,8 @@ func HandleToolCalls(ctx context.Context, tcs []prompt.ToolCall) (inputs []promp
 		if saveErr != nil {
 			outfmt.Debug("failed to save: %v", saveErr)
 		} else {
-			// 结果已落库才算完成：中断标记据此裁剪未执行的 tool_calls。
+			// 结果已落库才算完成：中断标记据此判断未执行的调用，
+			// 插入占位 tool 消息（不裁剪 tool_calls）。
 			toolProgress.Store(int64(i + 1))
 		}
 		inputs = append(inputs, input)
