@@ -3,13 +3,30 @@ package price
 import (
 	"sync"
 	"testing"
+	"time"
 )
+
+// setTestPrices installs a fresh in-memory cache so GetCost never touches
+// the network or the on-disk cache. The same prices are set for the current
+// and the new peak/off-peak regime so the expected cost holds regardless of
+// when the test runs.
+func setTestPrices(current map[string]Price) {
+	theCacheMu.Lock()
+	newPrices := make(map[string]peakPrice, len(current))
+	for m, p := range current {
+		newPrices[m] = peakPrice{OffPeak: p, Peak: p}
+	}
+	theCache = &priceCache{
+		FetchedAt: time.Now(),
+		Current:   current,
+		New:       newPrices,
+	}
+	theCacheMu.Unlock()
+}
 
 func TestGetCostZeroWhenNoPrices(t *testing.T) {
 	// 没有价格数据时，任何模型都返回 0
-	thePriceMu.Lock()
-	thePrice = nil
-	thePriceMu.Unlock()
+	setTestPrices(nil)
 	theUsage = Usage{
 		PromptCacheHitTokens:  100,
 		PromptCacheMissTokens: 200,
@@ -22,12 +39,9 @@ func TestGetCostZeroWhenNoPrices(t *testing.T) {
 }
 
 func TestGetCostWithPrices(t *testing.T) {
-	// 设置价格数据
-	thePriceMu.Lock()
-	thePrice = map[string]Price{
+	setTestPrices(map[string]Price{
 		"deepseek-v4-flash": {PromptCacheHit: 0.02, PromptCacheMiss: 1.0, Completion: 2.0},
-	}
-	thePriceMu.Unlock()
+	})
 	theUsage = Usage{
 		PromptCacheHitTokens:  1_000_000, // 1M tokens → 0.02 元
 		PromptCacheMissTokens: 500_000,   // 0.5M tokens → 0.5 元
@@ -41,11 +55,9 @@ func TestGetCostWithPrices(t *testing.T) {
 }
 
 func TestGetCostZeroUsage(t *testing.T) {
-	thePriceMu.Lock()
-	thePrice = map[string]Price{
+	setTestPrices(map[string]Price{
 		"deepseek-v4-flash": {PromptCacheHit: 0.02, PromptCacheMiss: 1.0, Completion: 2.0},
-	}
-	thePriceMu.Unlock()
+	})
 	theUsage = Usage{}
 	cost := GetCost("deepseek-v4-flash")
 	if cost != 0 {
@@ -54,11 +66,9 @@ func TestGetCostZeroUsage(t *testing.T) {
 }
 
 func TestGetCostConcurrentSafe(t *testing.T) {
-	thePriceMu.Lock()
-	thePrice = map[string]Price{
+	setTestPrices(map[string]Price{
 		"deepseek-v4-flash": {PromptCacheHit: 0.02, PromptCacheMiss: 1.0, Completion: 2.0},
-	}
-	thePriceMu.Unlock()
+	})
 	theUsage = Usage{
 		PromptCacheHitTokens:  100,
 		PromptCacheMissTokens: 200,
