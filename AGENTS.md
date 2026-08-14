@@ -237,9 +237,42 @@ Key skills for development:
 - `incus` - Incus container lifecycle for test environments
 - `dscli` - dscli core concepts (prompt, history, skills, memory, mail)
 
+## Key Invariants
+
+- **Tool-call pairing** - `internal/prompt/history.go` pairs assistant `tool_calls`
+  with `tool` messages by count and ID (`CleanupReverse`); on any mismatch the
+  whole block is dropped on history reload. When adding placeholder `tool`
+  messages (e.g. interrupt handling), never trim `tool_calls` - keep the full
+  list and matching `ToolCallID`s.
+- **History changes** - verify through the reload path (`LoadHistory`), not just
+  raw DB rows: `CleanupReverse` runs at load time and can silently drop blocks
+  that look correct in the table.
+- **Red CI != your change** - when CI fails on a branch, first check whether the
+  failure pre-exists on `main` before debugging your branch.
+
+## Development Workflow
+
+- Work on a branch (fork for external PRs); rebase onto latest `main` before
+  pushing - keep history linear, no merge commits.
+- Address every review comment; reply with a per-point summary and request
+  re-review in the PR thread.
+- Never modify or delete `sqlite.db` or `dscli.env` - they hold local state and
+  secrets.
+
 ## AI Assistant Context
 
 AI assistants: your tool set and behavior contract are defined in `internal/prompt/`
 templates (dev/expert/review/test). This AGENTS.md is the **project-specific
-supplement** — read it before writing code to understand build commands,
+supplement**: read it before writing code to understand build commands,
 architecture, and conventions unique to dscli.
+
+Behavioral rules:
+- **Check unread mail first** - at session start, reviews and decisions may be
+  waiting; reply before starting new work.
+- **Ask instead of guessing** - when a requirement is ambiguous, ask the user or
+  an expert; never fabricate answers.
+- **Verify before asserting** - check the actual code or run the test before
+  claiming behavior in docs, comments, or review replies.
+- **Record lessons** - when a review or test catches a subtle issue, `mem_save`
+  the lesson (searchable), and if it must apply to every future session, add it
+  to this file. This is how project rules grow.
