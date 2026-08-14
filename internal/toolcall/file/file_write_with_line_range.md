@@ -1,47 +1,20 @@
 # write_file_with_line_range
 
-Write file content with line range.
+Write content to a line range in a file; empty content deletes lines.
+Modes:
+1. Replace: overwrite [start_line, end_line]
+2. Delete: content="" removes the range
+3. Insert: insert_before_line=N puts content BEFORE line N (N=total+1 appends at end); exclusive with start_line/end_line/line_tags; pair with line_tag for CAS check
+4. Create: missing file is created (must start at line 1)
 
-Write content to a specific line range in a file. Supports:
+**Safety**: omit end_line → edit start_line only; end_line=-1 replaces to EOF.
 
-1. Replace: overwrite the specified line range with new content
+**CAS tags**: pass line_tag (single) or line_tags (newline-separated) from read_file output; any mismatch rejects the write.
 
-2. Delete: set content to empty string to remove lines
-
-3. Insert: `insert_before_line=N` inserts content BEFORE line N (original
-   line N and below shift down; N = total+1 appends at end). Mutually
-   exclusive with start_line/end_line; combine with line_tag for CAS check
-   of the insertion point
-
-4. Create: create a new file if it doesn't exist
-
-**Safety**: when `end_line` is omitted, defaults to `start_line` (single-line edit).
-Use `end_line=-1` explicitly to replace from `start_line` to end of file.
-
-**CAS tag verification** (optional): pass line_tag (single)
-or line_tags (multi,
-
--separated) from read_file output
-to prevent writing when file content has changed. Tags are
-verified against current file content before applying changes.
-If any tag mismatches, the write is rejected with actual content.
-
-**Length-mismatch guard** (no tags): when the written content is much
-larger than the replaced region (≥3× and ≥10 extra lines), a warning is
-returned — a typical sign of misaligned line numbers when the intent was
-to insert, not overwrite. The write still proceeds; provide CAS tags to
-silence the warning and confirm the region.
-
-Best for non-code files (configs, docs) needing precise line
-control.
-
-context (default true): after editing, returns a context
-window showing the file state around the edit. Set false
-to suppress and save output tokens.
+**Length-mismatch guard** (no tags): content much larger than the replaced region (≥3× and ≥10 extra lines) returns a warning — typical sign of misaligned line numbers when insert was intended. Write still proceeds; tags silence it.
 
 Examples:
   write_file_with_line_range(path="file.txt", start_line=5, end_line=10, content="new")   — replace lines 5-10
-  write_file_with_line_range(path="file.txt", start_line=5, end_line=10, content="")       — delete lines 5-10
   write_file_with_line_range(path="file.txt", start_line=5, content="new")                 — replace line 5 only
   write_file_with_line_range(path="file.txt", start_line=5, end_line=-1, content="new")    — replace line 5 to end
   write_file_with_line_range(path="file.txt", start_line=10, line_tag="Q8fA", content="int count = 11;")
