@@ -51,7 +51,7 @@ Simply put: **dscli = AI assistant + dev tools + session memory + CLI efficiency
 
 - **`dscli chat`** — Multi-turn conversation with DeepSeek AI, supports tool calls (file I/O, code search, Git operations, etc.)
 - **`dscli fim`** — Code completion (Fill-in-the-Middle), boost coding efficiency
-- **`dscli models`** — List available AI models
+- **`dscli models`** — List AI models with current token prices
 - **`dscli balance`** — Check API balance and usage
 
 ### 📝 Session Management
@@ -281,7 +281,7 @@ dscli parse main.go -l python
 ### 8. View Models and Balance
 
 ```bash
-# List available models
+# List available models (with current token prices)
 dscli models
 
 # Check account balance

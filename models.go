@@ -5,84 +5,35 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/dscli/dscli/internal/dsc"
 	"github.com/dscli/dscli/internal/price"
 	"github.com/nanjj/clog"
 	"github.com/spf13/cobra"
 )
 
-// Price stores model pricing information
-type Price struct {
-	PromptCacheHit  float64
-	PromptCacheMiss float64
-	Completion      float64
+// modelPriceRow is one output row: model ID plus its current
+// per-million-token prices in yuan (listed prices before 2026-08-17,
+// peak/off-peak prices afterwards).
+type modelPriceRow struct {
+	ID              string  `json:"id"`
+	PromptCacheHit  float64 `json:"prompt_cache_hit,omitempty"`
+	PromptCacheMiss float64 `json:"prompt_cache_miss,omitempty"`
+	Completion      float64 `json:"completion,omitempty"`
 }
 
-type priceRow struct {
-	Model           string
-	PromptCacheHit  float64
-	PromptCacheMiss float64
-	Completion      float64
-}
-
-var (
-	modelsFormat string
-	modelsPrice  bool
-)
+var modelsFormat string
 
 func init() {
 	modelsCmd := AddRootCommand(&cobra.Command{
 		Use:   "models",
-		Short: "List DeepSeek supported models",
+		Short: "List DeepSeek models with current token prices",
 		Run:   ModelsRun,
 	})
 	modelsCmd.Flags().StringVarP(&modelsFormat, "format", "f", "table", "Output format: table (default), json")
-	modelsCmd.Flags().BoolVarP(&modelsPrice, "price", "p", false, "List model prices")
 }
 
 func ModelsRun(cmd *cobra.Command, args []string) {
 	span, ctx := clog.StartSpanFromContext(cmd.Context(), "ModelRun")
 	defer span.Finish()
-
-	if modelsPrice {
-		priceData := price.GetPrice()
-		if priceData == nil {
-			fmt.Fprintf(os.Stderr, "failed to get price info\n")
-			os.Exit(1)
-		}
-
-		rows := make([]priceRow, 0, len(priceData))
-		for model, p := range priceData {
-			rows = append(rows, priceRow{
-				Model:           model,
-				PromptCacheHit:  p.PromptCacheHit,
-				PromptCacheMiss: p.PromptCacheMiss,
-				Completion:      p.Completion,
-			})
-		}
-
-		headers := []string{"Model", "Cache Hit", "Cache Miss", "Output"}
-		rowFunc := func(data any) []string {
-			switch r := data.(type) {
-			case priceRow:
-				return []string{
-					r.Model,
-					strconv.FormatFloat(r.PromptCacheHit, 'f', -1, 64),
-					strconv.FormatFloat(r.PromptCacheMiss, 'f', -1, 64),
-					strconv.FormatFloat(r.Completion, 'f', -1, 64),
-				}
-			default:
-				return []string{"", "", "", ""}
-			}
-		}
-
-		err := FormatOutput(rows, modelsFormat, headers, rowFunc)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "output formatting failed: %v\n", err)
-			os.Exit(1)
-		}
-		return
-	}
 
 	resp, err := DeepseekClient.Models(ctx)
 	if err != nil {
@@ -90,20 +41,39 @@ func ModelsRun(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	// Use new formatting interface
-	headers := []string{"ID", "Object", "Owner"}
+	prices := price.GetPrice()
+	rows := make([]modelPriceRow, 0, len(resp.Data))
+	for _, m := range resp.Data {
+		row := modelPriceRow{ID: m.ID}
+		if p, ok := prices[m.ID]; ok {
+			row.PromptCacheHit = p.PromptCacheHit
+			row.PromptCacheMiss = p.PromptCacheMiss
+			row.Completion = p.Completion
+		}
+		rows = append(rows, row)
+	}
+
+	headers := []string{"ID", "Cache Hit", "Cache Miss", "Output"}
 	rowFunc := func(data any) []string {
-		switch m := data.(type) {
-		case dsc.Model:
-			return []string{m.ID, m.Object, m.OwnedBy}
+		switch r := data.(type) {
+		case modelPriceRow:
+			return []string{r.ID, formatPrice(r.PromptCacheHit), formatPrice(r.PromptCacheMiss), formatPrice(r.Completion)}
 		default:
-			return []string{"", "", ""}
+			return []string{"", "", "", ""}
 		}
 	}
 
-	err = FormatOutput(resp.Data, modelsFormat, headers, rowFunc)
+	err = FormatOutput(rows, modelsFormat, headers, rowFunc)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "output formatting failed: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// formatPrice renders a price, leaving unknown prices blank.
+func formatPrice(f float64) string {
+	if f == 0 {
+		return ""
+	}
+	return strconv.FormatFloat(f, 'f', -1, 64)
 }
