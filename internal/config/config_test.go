@@ -8,7 +8,23 @@ import (
 	"testing"
 )
 
+// sanitizeDeepSeekEnv clears all DEEPSEEK_* environment variables that
+// loadConfigFromEnv() may read, so tests never pick up ambient secrets:
+// a real API key in the developer's shell would otherwise flow into
+// cfg.data via the env fallback and leak into test output on failure.
+func sanitizeDeepSeekEnv(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{
+		"DEEPSEEK_API_KEY",
+		"DEEPSEEK_BASE_URL",
+	} {
+		t.Setenv(key, "")
+	}
+}
+
 func TestConfig_Get(t *testing.T) {
+	sanitizeDeepSeekEnv(t)
+
 	tests := []struct {
 		name         string
 		envVars      map[string]string
@@ -65,6 +81,8 @@ func TestConfig_Get(t *testing.T) {
 }
 
 func TestConfig_SaveAndLoad(t *testing.T) {
+	sanitizeDeepSeekEnv(t)
+
 	tempDir := t.TempDir()
 
 	cfg, err := NewWithDir(tempDir)
@@ -98,16 +116,7 @@ func TestConfig_SaveAndLoad(t *testing.T) {
 }
 
 func TestGlobalGet(t *testing.T) {
-	originalAPIKey := os.Getenv("DEEPSEEK_API_KEY")
-	defer func() {
-		if originalAPIKey != "" {
-			os.Setenv("DEEPSEEK_API_KEY", originalAPIKey)
-		} else {
-			os.Unsetenv("DEEPSEEK_API_KEY")
-		}
-	}()
-
-	os.Setenv("DEEPSEEK_API_KEY", "sk-global-test")
+	t.Setenv("DEEPSEEK_API_KEY", "sk-global-test")
 
 	got := Get("deepseek-api-key", "default")
 
@@ -115,6 +124,24 @@ func TestGlobalGet(t *testing.T) {
 		t.Log("Global config already initialized, using cached values")
 	} else if !strings.HasPrefix(got, "sk-") {
 		t.Errorf("global Get() = %v, expected API key or default", got)
+	}
+}
+
+func TestConfig_SanitizePreventsAmbientLeak(t *testing.T) {
+	// Simulate a developer machine with real credentials in the shell.
+	t.Setenv("DEEPSEEK_API_KEY", "sk-ambient-secret")
+	t.Setenv("DEEPSEEK_BASE_URL", "https://ambient.invalid")
+
+	// Tests constructing a Config must sanitize the environment first;
+	// otherwise load() picks up the ambient values via loadConfigFromEnv.
+	sanitizeDeepSeekEnv(t)
+
+	cfg, err := NewWithDir(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewWithDir() error = %v", err)
+	}
+	if got := cfg.Get("deepseek-api-key", "default"); got != "default" {
+		t.Errorf("Config.Get() picked up ambient API key: %v", got)
 	}
 }
 
