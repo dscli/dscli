@@ -310,12 +310,25 @@ func parsePrice(html string) (price map[string]Price) {
 	return
 }
 
-// parseNewPrices extracts the peak/off-peak table from footnote (1) of the
-// pricing page, announced to take effect 2026-08-17:
+// parseNewPrices extracts the peak/off-peak prices for each model. Two page
+// layouts have existed: before 2026-08-17 the rates lived in a footnote (1)
+// table introduced by "具体如下：", while the post-change page embeds them
+// in the main price table under a "价格(1)" cell. Both are supported so a
+// page rollback cannot break parsing. The footnote layout is tried first —
+// when both appear (e.g. during a transition period) the footnote wins.
+func parseNewPrices(html string) map[string]peakPrice {
+	if m := parseNewPricesFootnote(html); m != nil {
+		return m
+	}
+	return parseNewPricesMainTable(html)
+}
+
+// parseNewPricesFootnote parses the pre-2026-08-17 layout, where the new
+// peak/off-peak rates were announced in footnote (1) of the pricing page:
 //
 //	<tr><td rowspan="2">deepseek-v4-flash</td><td>空闲时段</td><td>0.05元</td>...
 //	<tr><td>高峰时段</td><td>0.10元</td>...
-func parseNewPrices(html string) map[string]peakPrice {
+func parseNewPricesFootnote(html string) map[string]peakPrice {
 	_, rest, found := strings.Cut(html, "具体如下：")
 	if !found {
 		return nil
@@ -355,6 +368,119 @@ func parseNewPrices(html string) map[string]peakPrice {
 		return nil
 	}
 	return prices
+}
+
+// parseNewPricesMainTable parses the post-2026-08-17 layout, where the main
+// price table carries a single "价格(1)" cell whose rows alternate 空闲时段 /
+// 高峰时段 rates for both models:
+//
+//	<tr><td rowspan="6">价格<sup>(1)</sup></td><td rowspan="2">百万tokens输入（缓存命中）</td><td>空闲时段</td><td>0.05元</td><td>0.15元</td></tr>
+//	<tr><td>高峰时段</td><td>0.10元</td><td>0.30元</td></tr>
+//	<tr><td rowspan="2">百万tokens输入（缓存未命中）</td><td>空闲时段</td><td>1.5元</td><td>4.5元</td></tr>
+//	<tr><td>高峰时段</td><td>3.0元</td><td>9.0元</td></tr>
+//	<tr><td rowspan="2">百万tokens输出</td><td>空闲时段</td><td>4.5元</td><td>13.5元</td></tr>
+//	<tr><td>高峰时段</td><td>9.0元</td><td>27.0元</td></tr>
+func parseNewPricesMainTable(html string) map[string]peakPrice {
+	_, rest, found := strings.Cut(html, ">价格<sup>(1)</sup></td>")
+	if !found {
+		return nil
+	}
+	models := parseModelNames(html)
+	if models[0] == models[1] {
+		return nil
+	}
+	p0, p1 := peakPrice{}, peakPrice{}
+	// Six rows — 缓存命中/未命中/输出 × 空闲/高峰, for exactly two models.
+	// Each row carries both models' rate: the first cell belongs to models[0],
+	// the second to models[1]. The peak flag pins each row to the expected
+	// 空闲/高峰 alternation so a reordered page fails loudly instead of
+	// silently assigning rates to the wrong fields.
+	slots := []struct {
+		peak          bool
+		first, second *float64
+	}{
+		{false, &p0.OffPeak.PromptCacheHit, &p1.OffPeak.PromptCacheHit},
+		{true, &p0.Peak.PromptCacheHit, &p1.Peak.PromptCacheHit},
+		{false, &p0.OffPeak.PromptCacheMiss, &p1.OffPeak.PromptCacheMiss},
+		{true, &p0.Peak.PromptCacheMiss, &p1.Peak.PromptCacheMiss},
+		{false, &p0.OffPeak.Completion, &p1.OffPeak.Completion},
+		{true, &p0.Peak.Completion, &p1.Peak.Completion},
+	}
+	var a, b float64
+	var ok bool
+	for _, s := range slots {
+		var isPeak bool
+		isPeak, a, b, rest, ok = parseRatePair(rest)
+		if !ok || isPeak != s.peak {
+			return nil
+		}
+		*s.first = a
+		*s.second = b
+	}
+	return map[string]peakPrice{
+		models[0]: p0,
+		models[1]: p1,
+	}
+}
+
+// parseModelNames reads the two model names from the main table header
+// ("<td>模型</td><td>deepseek-v4-flash</td><td>deepseek-v4-pro</td>"),
+// falling back to the built-in names when the header is missing or malformed
+// (e.g. in trimmed page fragments).
+func parseModelNames(html string) [2]string {
+	models := [2]string{"deepseek-v4-flash", "deepseek-v4-pro"}
+	_, after, found := strings.Cut(html, ">模型</td><td>")
+	if !found {
+		return models
+	}
+	m1, after, found := strings.Cut(after, "</td><td>")
+	if !found {
+		return models
+	}
+	m2, _, found := strings.Cut(after, "</td>")
+	if !found {
+		return models
+	}
+	return [2]string{m1, m2}
+}
+
+// parseRatePair reads one rate row of the form
+// "<td>百万tokens输入（缓存命中）</td><td>空闲时段</td><td>0.05元</td><td>0.15元" or
+// "<td>高峰时段</td><td>0.10元</td><td>0.30元" (continuation rows carry no
+// metric cell) from the start of rest and returns whether it is a peak row,
+// both model rates, and the remaining text. The period label is the first
+// "时段</td><td>" in rest — metric names never contain "时段", so this cannot
+// skip ahead to a later row.
+func parseRatePair(rest string) (peak bool, a, b float64, after string, ok bool) {
+	before, after, found := strings.Cut(rest, "时段</td><td>")
+	if !found {
+		return false, 0, 0, "", false
+	}
+	switch {
+	case strings.HasSuffix(before, "<td>高峰"):
+		peak = true
+	case strings.HasSuffix(before, "<td>空闲"):
+		// off-peak row
+	default:
+		return false, 0, 0, "", false
+	}
+	before, after, found = strings.Cut(after, "元</td><td>")
+	if !found {
+		return false, 0, 0, "", false
+	}
+	a, err := strconv.ParseFloat(before, 64)
+	if err != nil {
+		return false, 0, 0, "", false
+	}
+	before, after, found = strings.Cut(after, "元</td>")
+	if !found {
+		return false, 0, 0, "", false
+	}
+	b, err = strconv.ParseFloat(before, 64)
+	if err != nil {
+		return false, 0, 0, "", false
+	}
+	return peak, a, b, after, true
 }
 
 // parseThreePrices reads three prices of the form

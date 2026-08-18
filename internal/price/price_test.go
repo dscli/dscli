@@ -79,6 +79,54 @@ func TestParseNewPrices(t *testing.T) {
 	}
 }
 
+func TestParseNewPricesMainTable(t *testing.T) {
+	// 2026-08-17 改版后的真实页面结构：主表"价格(1)"内嵌空闲/高峰时段
+	//（快照自 api-docs.deepseek.com/zh-cn/quick_start/pricing）。
+	html := `<table><tr><td>模型</td><td>deepseek-v4-flash</td><td>deepseek-v4-pro</td></tr>
+<tr><td rowspan="6">价格<sup>(1)</sup></td><td rowspan="2">百万tokens输入（缓存命中）</td><td>空闲时段</td><td>0.05元</td><td>0.15元</td></tr><tr><td>高峰时段</td><td>0.10元</td><td>0.30元</td></tr><tr><td rowspan="2">百万tokens输入（缓存未命中）</td><td>空闲时段</td><td>1.5元</td><td>4.5元</td></tr><tr><td>高峰时段</td><td>3.0元</td><td>9.0元</td></tr><tr><td rowspan="2">百万tokens输出</td><td>空闲时段</td><td>4.5元</td><td>13.5元</td></tr><tr><td>高峰时段</td><td>9.0元</td><td>27.0元</td></tr></table>`
+	want := map[string]peakPrice{
+		"deepseek-v4-flash": {
+			OffPeak: Price{PromptCacheHit: 0.05, PromptCacheMiss: 1.5, Completion: 4.5},
+			Peak:    Price{PromptCacheHit: 0.10, PromptCacheMiss: 3.0, Completion: 9.0},
+		},
+		"deepseek-v4-pro": {
+			OffPeak: Price{PromptCacheHit: 0.15, PromptCacheMiss: 4.5, Completion: 13.5},
+			Peak:    Price{PromptCacheHit: 0.30, PromptCacheMiss: 9.0, Completion: 27.0},
+		},
+	}
+	got := parseNewPrices(html)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("parseNewPrices = %v, want %v", got, want)
+	}
+}
+
+func TestParseNewPricesMainTableNoHeader(t *testing.T) {
+	// 页面片段缺"模型"表头：模型名回退内置默认，价格不变。
+	html := `<tr><td rowspan="6">价格<sup>(1)</sup></td><td rowspan="2">百万tokens输入（缓存命中）</td><td>空闲时段</td><td>0.05元</td><td>0.15元</td></tr><tr><td>高峰时段</td><td>0.10元</td><td>0.30元</td></tr><tr><td rowspan="2">百万tokens输入（缓存未命中）</td><td>空闲时段</td><td>1.5元</td><td>4.5元</td></tr><tr><td>高峰时段</td><td>3.0元</td><td>9.0元</td></tr><tr><td rowspan="2">百万tokens输出</td><td>空闲时段</td><td>4.5元</td><td>13.5元</td></tr><tr><td>高峰时段</td><td>9.0元</td><td>27.0元</td></tr>`
+	want := map[string]peakPrice{
+		"deepseek-v4-flash": {
+			OffPeak: Price{PromptCacheHit: 0.05, PromptCacheMiss: 1.5, Completion: 4.5},
+			Peak:    Price{PromptCacheHit: 0.10, PromptCacheMiss: 3.0, Completion: 9.0},
+		},
+		"deepseek-v4-pro": {
+			OffPeak: Price{PromptCacheHit: 0.15, PromptCacheMiss: 4.5, Completion: 13.5},
+			Peak:    Price{PromptCacheHit: 0.30, PromptCacheMiss: 9.0, Completion: 27.0},
+		},
+	}
+	got := parseNewPrices(html)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("parseNewPrices (no header) = %v, want %v", got, want)
+	}
+}
+
+func TestParseNewPricesMainTableReorderedRows(t *testing.T) {
+	// 行序变化（高峰行在前）不再静默错配：解析失败 → 内置兜底。
+	html := `<tr><td rowspan="6">价格<sup>(1)</sup></td><td rowspan="2">百万tokens输入（缓存命中）</td><td>高峰时段</td><td>0.10元</td><td>0.30元</td></tr><tr><td>空闲时段</td><td>0.05元</td><td>0.15元</td></tr><tr><td rowspan="2">百万tokens输入（缓存未命中）</td><td>空闲时段</td><td>1.5元</td><td>4.5元</td></tr><tr><td>高峰时段</td><td>3.0元</td><td>9.0元</td></tr><tr><td rowspan="2">百万tokens输出</td><td>空闲时段</td><td>4.5元</td><td>13.5元</td></tr><tr><td>高峰时段</td><td>9.0元</td><td>27.0元</td></tr>`
+	if got := parseNewPrices(html); got != nil {
+		t.Fatalf("expected nil for reordered rows, got %v", got)
+	}
+}
+
 func TestResolvePrices(t *testing.T) {
 	c := builtinCache()
 	flashOld := Price{PromptCacheHit: 0.02, PromptCacheMiss: 1.0, Completion: 2.0}
@@ -208,8 +256,14 @@ func TestGetPriceFallbackBuiltin(t *testing.T) {
 	t.Cleanup(func() { cachePath, fetchPage = origPath, origFetch })
 	resetPriceState()
 
-	got := getPrice(time.Now())
+	// 固定时间而非 time.Now()：8/17 生效日后断言会随当前日期漂移。
+	// 生效日前 → 内置现价表；生效日高峰 → 内置峰谷价。
+	got := getPrice(time.Date(2026, 8, 16, 10, 0, 0, 0, beijing))
 	if len(got) != 2 || got["deepseek-v4-flash"].PromptCacheHit != 0.02 {
 		t.Fatalf("builtin snapshot not used: %v", got)
+	}
+	got = getPrice(time.Date(2026, 8, 17, 9, 0, 0, 0, beijing)) // 高峰时段
+	if got["deepseek-v4-flash"].PromptCacheHit != 0.10 {
+		t.Fatalf("builtin new peak prices not used: %v", got)
 	}
 }
