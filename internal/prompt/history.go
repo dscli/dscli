@@ -20,6 +20,17 @@ import (
 
 var GetCurrentSessionID = session.GetCurrentSessionID
 
+// parseContentBlocks 从 content_blocks 列解析图片等块内容到 Message。
+// 解析失败时静默忽略（仅影响图片展示，不影响纯文本 Content）。
+func parseContentBlocks(m *Message, cb sql.NullString) {
+	if !cb.Valid || cb.String == "" {
+		return
+	}
+	if blocks, err := BlocksFromJSON(cb.String); err == nil {
+		m.ContentBlocks = blocks
+	}
+}
+
 // UpdateContent update message content
 func UpdateContent(ctx context.Context, id int64, content string) (err error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "UpdateContent")
@@ -113,18 +124,19 @@ func ShowMessage(ctx context.Context, id int64) (message *Message, err error) {
 	}
 	defer db.Close(ctx)
 	var toolCalls sql.NullString
-	var toolCallID sql.NullString
+	var toolCallID, contentBlocks sql.NullString
 	var tokens int
 	message = &Message{}
 	err = db.QueryRowContext(ctx, `SELECT id, session_id, role, content, tool_call_id, `+
-		`tool_calls, created_at, model_id, reasoning_content, tokens FROM messages WHERE `+
+		`tool_calls, created_at, model_id, reasoning_content, tokens, content_blocks FROM messages WHERE `+
 		`id = ?`, id).Scan(&message.ID,
 		&message.SessionID, &message.Role, &message.Content, &toolCallID,
 		&toolCalls, &message.CreatedAt, &message.ModelID, &message.ReasoningContent,
-		&tokens)
+		&tokens, &contentBlocks)
 	if err != nil {
 		return message, err
 	}
+	parseContentBlocks(message, contentBlocks)
 	message.SetTokens(tokens)
 	if toolCalls.Valid {
 		err = json.Unmarshal([]byte(toolCalls.String), &message.ToolCalls)
@@ -152,7 +164,7 @@ func ListHistory(ctx context.Context, beforeID int64) ([]*Message, error) {
 		return nil, err
 	}
 	defer db.Close(ctx)
-	query := `SELECT id, role, content, tool_call_id, tool_calls, created_at, reasoning_content, tokens
+	query := `SELECT id, role, content, tool_call_id, tool_calls, created_at, reasoning_content, tokens, content_blocks
 		FROM messages
 		WHERE session_id = ? AND model_id = ?`
 	args := []any{sessionID, modelID}
@@ -177,9 +189,9 @@ func ListHistory(ctx context.Context, beforeID int64) ([]*Message, error) {
 	var messages []*Message
 	for rows.Next() {
 		m := &Message{}
-		var toolCallID, toolCalls, reasoningContent sql.NullString
+		var toolCallID, toolCalls, reasoningContent, contentBlocks sql.NullString
 		var tokens int
-		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt, &reasoningContent, &tokens); err != nil {
+		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt, &reasoningContent, &tokens, &contentBlocks); err != nil {
 			return nil, fmt.Errorf("扫描消息失败: %w", err)
 		}
 		m.SetTokens(tokens)
@@ -195,6 +207,7 @@ func ListHistory(ctx context.Context, beforeID int64) ([]*Message, error) {
 		if reasoningContent.Valid {
 			m.ReasoningContent = reasoningContent.String
 		}
+		parseContentBlocks(m, contentBlocks)
 		messages = append(messages, m)
 	}
 	if err := rows.Err(); err != nil {
@@ -229,7 +242,7 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 	// 提高 LIMIT：原本 histSize+2 对工具调用场景太小（一个完整轮次可能 4-6 条消息），
 	// 增大后确保压缩过滤后仍有足够的历史轮次。
 	rows, err := db.Query(`
-		SELECT id, role, content, tool_call_id, tool_calls, created_at, reasoning_content, tokens
+		SELECT id, role, content, tool_call_id, tool_calls, created_at, reasoning_content, tokens, content_blocks
 		FROM messages
 		WHERE session_id = ? AND model_id = ?
 		ORDER BY id DESC
@@ -242,9 +255,9 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 	var messages []Message
 	for rows.Next() {
 		var m Message
-		var toolCallID, toolCalls sql.NullString
+		var toolCallID, toolCalls, contentBlocks sql.NullString
 		var tokens int
-		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt, &m.ReasoningContent, &tokens); err != nil {
+		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &toolCallID, &toolCalls, &m.CreatedAt, &m.ReasoningContent, &tokens, &contentBlocks); err != nil {
 			return nil, fmt.Errorf("扫描消息失败: %w", err)
 		}
 		m.SetTokens(tokens)
@@ -257,6 +270,7 @@ func LoadHistory(ctx context.Context) ([]Message, error) {
 				m.ToolCalls = toolCallsData
 			}
 		}
+		parseContentBlocks(&m, contentBlocks)
 		if m.tokens == 0 {
 			tokens = m.GetTokens()
 		}

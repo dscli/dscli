@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/dscli/dscli/internal/context"
@@ -16,17 +17,83 @@ import (
 
 // Message 扩展，支持工具调用（注意：Content 字段不再使用 omitempty）
 type Message struct {
-	ID               int64      `json:"-"`
-	SessionID        int64      `json:"-"`
-	ModelID          int64      `json:"-"`
-	Content          string     `json:"content"` // 始终输出，即使为空字符串
-	Role             string     `json:"role"`
-	ReasoningContent string     `json:"reasoning_content,omitzero"`
-	ToolCalls        []ToolCall `json:"tool_calls,omitzero"`   // 仅当有工具调用时输出
-	ToolCallID       string     `json:"tool_call_id,omitzero"` // 仅当 role="tool" 时输出
-	CreatedAt        time.Time  `json:"-"`
-	tokens           int        `json:"-"`
-	OK               bool       `json:"-"`
+	ID               int64          `json:"-"`
+	SessionID        int64          `json:"-"`
+	ModelID          int64          `json:"-"`
+	Content          string         `json:"content"` // 纯文本（显示/FTS/存储用），始终输出
+	ContentBlocks    []ContentBlock `json:"-"`       // 图片等块内容（有值时 content 序列化为块数组）
+	Role             string         `json:"role"`
+	ReasoningContent string         `json:"reasoning_content,omitzero"`
+	ToolCalls        []ToolCall     `json:"tool_calls,omitzero"`   // 仅当有工具调用时输出
+	ToolCallID       string         `json:"tool_call_id,omitzero"` // 仅当 role="tool" 时输出
+	CreatedAt        time.Time      `json:"-"`
+	tokens           int            `json:"-"`
+	OK               bool           `json:"-"`
+}
+
+// MarshalJSON 输出 content 为字符串（无图片）或块数组（有图片）。
+// 块数组用 ContentBlock 的固定字段顺序序列化，保证 KV 缓存前缀稳定。
+func (m Message) MarshalJSON() ([]byte, error) {
+	if len(m.ContentBlocks) == 0 {
+		type plain Message
+		return json.Marshal(plain(m))
+	}
+	return json.Marshal(struct {
+		Content          any        `json:"content"`
+		Role             string     `json:"role"`
+		ReasoningContent string     `json:"reasoning_content,omitzero"`
+		ToolCalls        []ToolCall `json:"tool_calls,omitzero"`
+		ToolCallID       string     `json:"tool_call_id,omitzero"`
+	}{
+		Content:          m.ContentBlocks,
+		Role:             m.Role,
+		ReasoningContent: m.ReasoningContent,
+		ToolCalls:        m.ToolCalls,
+		ToolCallID:       m.ToolCallID,
+	})
+}
+
+// UnmarshalJSON 兼容 content 的两种形态：字符串或块数组。
+// 块数组时提取 text 块拼接为 Content（纯文本），便于显示与检索。
+func (m *Message) UnmarshalJSON(data []byte) error {
+	var wire struct {
+		Content          json.RawMessage `json:"content"`
+		Role             string          `json:"role"`
+		ReasoningContent string          `json:"reasoning_content"`
+		ToolCalls        []ToolCall      `json:"tool_calls"`
+		ToolCallID       string          `json:"tool_call_id"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	m.Role = wire.Role
+	m.ReasoningContent = wire.ReasoningContent
+	m.ToolCalls = wire.ToolCalls
+	m.ToolCallID = wire.ToolCallID
+	if len(wire.Content) == 0 {
+		return nil
+	}
+	var text string
+	if err := json.Unmarshal(wire.Content, &text); err == nil {
+		m.Content = text
+		return nil
+	}
+	var blocks []ContentBlock
+	if err := json.Unmarshal(wire.Content, &blocks); err != nil {
+		return fmt.Errorf("content 既非字符串也非块数组: %w", err)
+	}
+	m.ContentBlocks = blocks
+	var s strings.Builder
+	for _, b := range blocks {
+		if b.Type == "text" && b.Text != "" {
+			if s.Len() > 0 {
+				s.WriteString("\n")
+			}
+			s.WriteString(b.Text)
+		}
+	}
+	m.Content = s.String()
+	return nil
 }
 
 type ToolCall struct {
@@ -91,6 +158,8 @@ func init() {
 		`ALTER TABLE messages ADD COLUMN reasoning_content TEXT`,
 		// 增加 tokens
 		`ALTER TABLE messages ADD COLUMN tokens INTEGER NOT NULL DEFAULT 0`,
+		// 增加 content blocks（图片等块内容，JSON 数组；为 NULL 表示纯文本消息）
+		`ALTER TABLE messages ADD COLUMN content_blocks TEXT`,
 	)
 
 	// 升级迁移：为已有消息重建 FTS 索引（仅当 FTS 表为空且有消息时执行一次）
@@ -148,7 +217,7 @@ func insertMessage(ctx context.Context, sessionID, modelID int64, m Message) (in
 	span, ctx := clog.StartSpanFromContext(ctx, "insertMessage")
 	defer span.Finish()
 
-	var toolCallID, toolCalls sql.NullString
+	var toolCallID, toolCalls, contentBlocks sql.NullString
 	if m.ToolCallID != "" {
 		toolCallID.String = m.ToolCallID
 		toolCallID.Valid = true
@@ -161,6 +230,14 @@ func insertMessage(ctx context.Context, sessionID, modelID int64, m Message) (in
 		toolCalls.String = string(data)
 		toolCalls.Valid = true
 	}
+	if len(m.ContentBlocks) > 0 {
+		data, err := BlocksToJSON(m.ContentBlocks)
+		if err != nil {
+			return 0, err
+		}
+		contentBlocks.String = data
+		contentBlocks.Valid = true
+	}
 
 	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
@@ -170,9 +247,9 @@ func insertMessage(ctx context.Context, sessionID, modelID int64, m Message) (in
 	defer db.Close(ctx)
 
 	res, err := db.Exec(
-		`INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, model_id, reasoning_content, tokens)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		sessionID, m.Role, m.Content, toolCallID, toolCalls, modelID, m.ReasoningContent, m.tokens,
+		`INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, model_id, reasoning_content, tokens, content_blocks)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		sessionID, m.Role, m.Content, toolCallID, toolCalls, modelID, m.ReasoningContent, m.tokens, contentBlocks,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("插入消息失败: %w", err)
