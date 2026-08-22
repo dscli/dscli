@@ -5,9 +5,44 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestNormalizePricingHTML(t *testing.T) {
+	// 未来页面给 <td> 加 style 属性、标签间换行时，解析仍须成功。
+	html := `<table>
+<tr><td colspan="3" style="text-align: center;">模型</td><td>deepseek-v4-flash</td>
+<td class="m">deepseek-v4-pro</td><td>deepseek-v4-flash-vision-exp</td></tr>
+<tr><td rowspan="6" style="text-align: center;">价格<sup>(1)(2)</sup></td>
+<td rowspan="2">百万tokens输入<br>（缓存命中）</td><td>空闲时段</td>
+<td style="text-align: right;">0.05元</td><td>0.15元</td><td>0.05元</td></tr>
+<tr><td>高峰时段</td><td>0.10元</td><td>0.30元</td><td>0.10元</td></tr>
+<tr><td rowspan="2">百万tokens输入<br>（缓存未命中）</td><td>空闲时段</td>
+<td>1.5元</td><td>4.5元</td><td>1.5元</td></tr>
+<tr><td>高峰时段</td><td>3.0元</td><td>9.0元</td><td>3.0元</td></tr>
+<tr><td rowspan="2">百万tokens输出</td><td>空闲时段</td><td>4.5元</td><td>13.5元</td><td>4.5元</td></tr>
+<tr><td>高峰时段</td><td>9.0元</td><td>27.0元</td><td>9.0元</td></tr>
+</table>`
+	got := parseNewPrices(normalizePricingHTML(html))
+	if got == nil {
+		t.Fatal("normalized HTML with attributes/whitespace not parsed")
+	}
+	wantFlash := Price{PromptCacheHit: 0.05, PromptCacheMiss: 1.5, Completion: 4.5}
+	for _, m := range []string{"deepseek-v4-flash", "deepseek-v4-flash-vision-exp"} {
+		if p := got[m]; p.OffPeak != wantFlash {
+			t.Fatalf("%s = %v, want %v", m, p.OffPeak, wantFlash)
+		}
+	}
+	if p := got["deepseek-v4-pro"]; p.Peak != (Price{PromptCacheHit: 0.30, PromptCacheMiss: 9.0, Completion: 27.0}) {
+		t.Fatalf("deepseek-v4-pro peak = %v", p.Peak)
+	}
+	// rowspan 必须保留：footnote 解析器依赖 <td rowspan="2">。
+	if !strings.Contains(normalizePricingHTML(html), `<td rowspan="2">`) {
+		t.Fatal("rowspan attribute stripped by normalization")
+	}
+}
 
 func TestParsePrice(t *testing.T) {
 	tcs := []struct {

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -164,27 +165,26 @@ func inPeakHours(t time.Time) bool {
 // taken 2026-08 (the page's main table plus the announced new rates). It is
 // the last-resort fallback when the page is unreachable and no cache exists.
 func builtinCache() *priceCache {
+	// deepseek-v4-flash-vision-exp (added 2026-08-17) prices its tokens
+	// identically to deepseek-v4-flash; only images are billed separately
+	// via their token conversion.
+	flashNew := peakPrice{
+		OffPeak: Price{PromptCacheHit: 0.05, PromptCacheMiss: 1.5, Completion: 4.5},
+		Peak:    Price{PromptCacheHit: 0.10, PromptCacheMiss: 3.0, Completion: 9.0},
+	}
+	proNew := peakPrice{
+		OffPeak: Price{PromptCacheHit: 0.15, PromptCacheMiss: 4.5, Completion: 13.5},
+		Peak:    Price{PromptCacheHit: 0.30, PromptCacheMiss: 9.0, Completion: 27.0},
+	}
 	return &priceCache{
 		Current: map[string]Price{
 			"deepseek-v4-flash": {PromptCacheHit: 0.02, PromptCacheMiss: 1.0, Completion: 2.0},
 			"deepseek-v4-pro":   {PromptCacheHit: 0.025, PromptCacheMiss: 3.0, Completion: 6.0},
 		},
 		New: map[string]peakPrice{
-			"deepseek-v4-flash": {
-				OffPeak: Price{PromptCacheHit: 0.05, PromptCacheMiss: 1.5, Completion: 4.5},
-				Peak:    Price{PromptCacheHit: 0.10, PromptCacheMiss: 3.0, Completion: 9.0},
-			},
-			"deepseek-v4-pro": {
-				OffPeak: Price{PromptCacheHit: 0.15, PromptCacheMiss: 4.5, Completion: 13.5},
-				Peak:    Price{PromptCacheHit: 0.30, PromptCacheMiss: 9.0, Completion: 27.0},
-			},
-			// deepseek-v4-flash-vision-exp (added 2026-08-17) prices its
-			// tokens identically to deepseek-v4-flash; only images are
-			// billed separately via their token conversion.
-			"deepseek-v4-flash-vision-exp": {
-				OffPeak: Price{PromptCacheHit: 0.05, PromptCacheMiss: 1.5, Completion: 4.5},
-				Peak:    Price{PromptCacheHit: 0.10, PromptCacheMiss: 3.0, Completion: 9.0},
-			},
+			"deepseek-v4-flash":            flashNew,
+			"deepseek-v4-pro":              proNew,
+			"deepseek-v4-flash-vision-exp": flashNew,
 		},
 	}
 }
@@ -204,14 +204,15 @@ func fetchPricingPage() (*priceCache, error) {
 		return nil, err
 	}
 
+	html := normalizePricingHTML(string(b))
 	c := builtinCache()
 	currentOK := false
-	if m := parsePrice(string(b)); m != nil {
+	if m := parsePrice(html); m != nil {
 		c.Current = m
 		currentOK = true
 	}
 	newOK := false
-	if m := parseNewPrices(string(b)); m != nil {
+	if m := parseNewPrices(html); m != nil {
 		c.New = m
 		newOK = true
 	}
@@ -220,6 +221,23 @@ func fetchPricingPage() (*priceCache, error) {
 	}
 	return c, nil
 }
+
+// normalizePricingHTML strips cell attributes (except rowspan, which the
+// footnote parser anchors on) and whitespace between tags, so the exact
+// string parsers below tolerate cosmetic HTML changes: style attributes on
+// <td> cells or pretty-printed newlines must not silently break parsing.
+func normalizePricingHTML(html string) string {
+	html = tdTagRe.ReplaceAllString(html, "<td$1>")
+	return tagGapRe.ReplaceAllString(html, "><")
+}
+
+var (
+	// tdTagRe matches a <td ...> opening tag, keeping only a rowspan
+	// attribute (e.g. <td rowspan="2" style="..."> -> <td rowspan="2">).
+	tdTagRe = regexp.MustCompile(`<td((?:\s+rowspan="[0-9]+")?)[^>]*>`)
+	// tagGapRe collapses whitespace between tags: "</td>\n<tr>" -> "</td><tr>".
+	tagGapRe = regexp.MustCompile(`>\s+<`)
+)
 
 // parsePrice extracts the listed prices from the main price table.
 func parsePrice(html string) (price map[string]Price) {
