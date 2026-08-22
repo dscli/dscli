@@ -37,7 +37,8 @@ func TestHandleInterrupt(t *testing.T) {
 		{ID: "call_1", Type: "function", Function: prompt.ToolCallFunction{Name: "git", Arguments: "{}"}},
 		{ID: "call_2", Type: "function", Function: prompt.ToolCallFunction{Name: "shell", Arguments: "{}"}},
 	}
-	if err := prompt.SaveMessages(ctx,
+	if err := prompt.SaveMessages(
+		ctx,
 		prompt.Message{Role: "user", Content: "hello"},
 		prompt.Message{Role: "assistant", ToolCalls: tcs},
 		prompt.Message{Role: "tool", ToolCallID: "call_1", Content: "ok"},

@@ -76,7 +76,8 @@ func lastToolMessages(t *testing.T, ctx context.Context, limit int) []Message {
 func TestMarkInterruptedToolCalls(t *testing.T) {
 	ctx := withIsolatedSession(t)
 	tcs := testToolCalls()
-	if err := SaveMessages(ctx,
+	if err := SaveMessages(
+		ctx,
 		Message{Role: "user", Content: "hello"},
 		Message{Role: "assistant", ToolCalls: tcs},
 		Message{Role: "tool", ToolCallID: "call_1", Content: "ok"},
@@ -124,7 +125,8 @@ func TestMarkInterruptedToolCalls(t *testing.T) {
 func TestMarkInterruptedToolCallsZeroCompleted(t *testing.T) {
 	ctx := withIsolatedSession(t)
 	tcs := testToolCalls()
-	if err := SaveMessages(ctx,
+	if err := SaveMessages(
+		ctx,
 		Message{Role: "user", Content: "hello"},
 		Message{Role: "assistant", ToolCalls: tcs},
 	); err != nil {
@@ -155,7 +157,8 @@ func TestMarkInterruptedToolCallsZeroCompleted(t *testing.T) {
 func TestMarkInterruptedToolCallsAllCompleted(t *testing.T) {
 	ctx := withIsolatedSession(t)
 	tcs := testToolCalls()
-	if err := SaveMessages(ctx,
+	if err := SaveMessages(
+		ctx,
 		Message{Role: "assistant", ToolCalls: tcs},
 		Message{Role: "tool", ToolCallID: "call_1", Content: "ok"},
 		Message{Role: "tool", ToolCallID: "call_2", Content: "ok"},
@@ -210,7 +213,8 @@ func TestMarkInterruptedToolCallsKeepsHistory(t *testing.T) {
 	ctx = context.WithValue(ctx, ictx.LeftTokensKey, 1<<30)
 
 	tcs := testToolCalls()
-	if err := SaveMessages(ctx,
+	if err := SaveMessages(
+		ctx,
 		Message{Role: "user", Content: "hello"},
 		Message{Role: "assistant", ToolCalls: tcs},
 		Message{Role: "tool", ToolCallID: "call_1", Content: "ok"},

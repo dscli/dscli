@@ -371,7 +371,8 @@ func warnOnLengthMismatch(oldReplaced, contentLineCount int) string {
 	return fmt.Sprintf(
 		"⚠️ 注意：替换区域仅 %d 行，但写入内容有 %d 行。若本意是插入新内容而非覆盖，"+
 			"请确认行号未错位；或使用 read_file 获取 line_tag/line_tags CAS 校验后再写入。",
-		oldReplaced, contentLineCount)
+		oldReplaced, contentLineCount,
+	)
 }
 
 // parseInsertBeforeLine 读取 insert_before_line 参数。

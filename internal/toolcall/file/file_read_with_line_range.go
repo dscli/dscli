@@ -135,7 +135,8 @@ func handleReadFileWithLineRange(ctx context.Context, args ToolArgs) (result, wa
 				}
 				result += fmt.Sprintf(
 					"\n⚠️ 文件较大（%s，%d 行）。若只需部分内容，请用 start_line/end_line 精确读取，避免大输出占用上下文。",
-					sizeDesc, totalLines)
+					sizeDesc, totalLines,
+				)
 			}
 		}
 	}
