@@ -1,0 +1,63 @@
+#+title: Vision support
+#+date: <2026-08-22 六>
+#+startup: linkpreviews
+
+deepseek 推出 deepseek-v4-flash-vision-exp 可以图像理解。
+
+价格参见 ：https://api-docs.deepseek.com/zh-cn/quick_start/pricing/
+
+图像理解参见：https://api-docs.deepseek.com/zh-cn/guides/vision
+
+其中提到三种图片传给模型的方式：
+1. Base64 编码图片（内联）
+2. 外部图片 URL
+3. 引用通过 Files API 上传的文件
+
+本地图片文件采用 3 (Files API file_id)，因为 message content 需要存本地
+sqlite，base64 内联会让数据库膨胀。外部图片用 2。文件块引用还带来额外
+收益：file_id 引用不受 32 MiB 内联限制（最大 64 MiB），且跨请求复用无需
+重复上传。
+
+**已实现（commit 见 git log）**：
+- 4 个 toolcall：=vision_file_upload= / =vision_file_list= /
+  =vision_file_info= / =vision_file_delete=（category: vision）
+- =dscli chat --attach=：上传图片并以 file 块组织 user 消息。
+  仅视觉模型支持（其他模型直接报错，不静默忽略）。配套新增
+  =--model= 参数覆盖默认模型：
+  #+begin_example
+    dscli chat --model deepseek-v4-flash-vision-exp --attach screenshot.png "图中有什么？"
+  #+end_example
+- 模型自主闭环：OpenAI 协议中图片只允许出现在 *user* 消息，模型在
+  tool 轮次后无法自己插入 user 消息。因此 ChatRound 检测本轮
+  =vision_file_upload= 的结果，把 file_id 自动注入为新的 user 消息
+  （file 块），视觉模型下一轮即可"看到"图片。
+
+**Message content 改造**（原草稿遗留问题的最终方案）：
+- 不用 =[]map[string]any=（map 序列化顺序不稳定，会破坏 KV 缓存前缀）。
+  用 struct 类型 =ContentBlock=（json tag 字段顺序固定：
+  type/text/image_url/file_id），实测缓存命中率 ~98%。
+- =Content= 字符串字段保留（显示 / FTS / 旧数据兼容），新增
+  =content_blocks= TEXT 列（JSON 数组，NULL 表示纯文本消息）。
+- 序列化：有 blocks 时 content 输出块数组，否则输出字符串；
+  反序列化兼容两种形态，文本块自动拼接回 Content。
+- 非视觉模型发送前剥离图片块（保留纯文本），避免历史中的图片
+  引用在切换模型时导致 API 400。
+
+**Files API 限制**（https://api-docs.deepseek.com/zh-cn/guides/files_api）：
+- 格式 JPEG/PNG/GIF/WebP（按内容判断）；单文件 64 MiB；文件名 512 字符
+- 存储配额 25 GiB / 10000 文件；有效期 1 小时 - 30 天（不传永久）
+- 端点：POST /files（multipart, purpose=user_data）、GET /files、
+  GET /files/{id}、DELETE /files/{id}
+
+**图像理解限制**（https://api-docs.deepseek.com/zh-cn/guides/vision）：
+- 图片仅支持 user 消息（system/assistant 带图 400）
+- 请求体 48 MiB；单图 32 MiB（file_id 64 MiB）；单请求最多 600 张图
+- detail 字段：low / high / original / auto（file_id 引用时被忽略）
+
+**验证**（真机端到端）：
+- =--attach= 上传 + 问答：模型正确描述图片
+- 历史重放（无 attach 追问带图）：缓存命中 98%
+- 模型自主 toolcall：upload → 注入 user 消息 → 描述图片，无 shell 辅助
+
+关于 webchat（Chrome 交互版，见 =webchat --help=）保持不变 —— 它是
+Web 版通道，不支持函数调用，与 Files API 无关。

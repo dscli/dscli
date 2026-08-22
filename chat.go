@@ -35,7 +35,12 @@ const (
 func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
 
-	ctx = context.WithValue(ctx, context.CurrentModelNameKey, context.ModelDeepseekChat)
+	// --model 覆盖配置的默认模型（如切换到视觉模型 deepseek-v4-flash-vision-exp）
+	modelName := context.ModelDeepseekChat
+	if m, flagErr := cmd.Flags().GetString("model"); flagErr == nil && m != "" {
+		modelName = m
+	}
+	ctx = context.WithValue(ctx, context.CurrentModelNameKey, modelName)
 	ctx = context.WithValue(ctx, context.CurrentModelIDKey, DeepseekChat)
 
 	// Read --role flag and store in context
@@ -108,6 +113,11 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	if err != nil {
 		return err
 	}
+	// --attach 图片上传：仅视觉模型支持；失败直接报错而非静默忽略。
+	attachBlocks, err := uploadAttachments(ctx, cmd)
+	if err != nil {
+		return err
+	}
 	// 2. 尝试获取项目级文件锁。
 	//    若已有其他 dscli chat 进程在运行，降级为 climein 模式：
 	//    将内容写入 chimeins 表，由主进程在下一轮 ChatRound 注入。
@@ -133,6 +143,9 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 				return fmt.Errorf("读取标准输入失败: %w", readErr)
 			}
 			content = strings.TrimSpace(string(b))
+		}
+		if len(attachBlocks) > 0 {
+			return fmt.Errorf("已有主 chat 进程运行中，--attach 不支持插话模式")
 		}
 		if content == "" {
 			outfmt.Println("⚠️ 插话内容为空，未执行任何操作。")
@@ -251,10 +264,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 
 			inputs := []prompt.Message{}
 			if content != "" {
-				inputs = append(inputs, prompt.Message{
-					Role:    "user",
-					Content: content,
-				})
+				inputs = append(inputs, userMessageWithAttach(content, attachBlocks))
 			}
 
 			return ChatRound(ctx, prompts, history, inputs...)
@@ -270,7 +280,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	return ChatRound(ctx, prompts, history,
-		prompt.Message{Role: "user", Content: content})
+		userMessageWithAttach(content, attachBlocks))
 }
 
 // ReadInput reads user input content from CLI args or --input flag.
@@ -312,6 +322,59 @@ func readInputSource(source string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(b)), nil
+}
+
+// uploadAttachments 上传 --attach 指定的图片文件，返回 file 内容块。
+// 仅视觉模型支持（其他模型 API 会以 400 拒绝图片）。
+// 上传失败直接报错，避免静默忽略导致用户误以为图片已发送。
+func uploadAttachments(ctx context.Context, cmd *cobra.Command) ([]prompt.ContentBlock, error) {
+	attach, err := cmd.Flags().GetStringSlice("attach")
+	if err != nil || len(attach) == 0 {
+		return nil, nil
+	}
+	model := context.ContextValue(ctx, context.CurrentModelNameKey, "")
+	if !prompt.IsVisionModel(model) {
+		return nil, fmt.Errorf("模型 %q 不支持图片输入；--attach 仅支持视觉模型（如 deepseek-v4-flash-vision-exp）", model)
+	}
+	key := config.Get("deepseek-api-key", "")
+	url := config.Get("deepseek-base-url", "https://api.deepseek.com")
+	api := dsc.NewFilesAPI(key, url)
+	blocks := make([]prompt.ContentBlock, 0, len(attach))
+	for _, p := range attach {
+		file, err := api.Upload(ctx, p, dsc.UploadOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("--attach %s: %w", p, err)
+		}
+		outfmt.Debug("attached %s -> %s\n", p, file.ID)
+		blocks = append(blocks, prompt.FileBlock(file.ID))
+	}
+	return blocks, nil
+}
+
+// userMessageWithAttach 构造用户消息：有附件时 content 序列化为块数组
+// （text 块在前、file 块在后），无附件时保持纯字符串。
+func userMessageWithAttach(content string, attach []prompt.ContentBlock) prompt.Message {
+	if len(attach) == 0 {
+		return prompt.Message{Role: "user", Content: content}
+	}
+	msg := prompt.Message{Role: "user", Content: content, ContentBlocks: attach}
+	if content != "" {
+		msg.ContentBlocks = append([]prompt.ContentBlock{prompt.TextBlock(content)}, attach...)
+	}
+	return msg
+}
+
+// cleanMessagesForModel 按模型能力清洗消息：非视觉模型发送前剥离
+// 图片内容块（保留纯文本），防止历史中的图片块导致 API 400。
+func cleanMessagesForModel(messages []prompt.Message, model string) {
+	if prompt.IsVisionModel(model) {
+		return
+	}
+	for i := range messages {
+		if len(messages[i].ContentBlocks) > 0 {
+			messages[i].ContentBlocks = nil
+		}
+	}
 }
 
 // gatherInput reads input from args or --input flag without blocking on stdin.
@@ -477,6 +540,10 @@ func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ..
 	// 2. Add current user messages
 	messages = append(messages, inputs...)
 
+	// 非视觉模型：剥离历史中的图片块（避免 API 400），纯文本保留
+	model := context.ContextValue(ctx, context.CurrentModelNameKey, context.ModelDeepseekChat)
+	cleanMessagesForModel(messages, model)
+
 	// 3. Track new messages for this round (for storage)
 	stories := make([]prompt.Message, 0, len(inputs)+1)
 	stories = append(stories, inputs...)
@@ -584,6 +651,12 @@ func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ..
 			roundInputs = append(roundInputs, prompt.Message{Role: "user", Content: c})
 		}
 
+		// 模型自主上传的图片：把 file_id 注入为新的 user 消息（file 块）。
+		// 模型无法在 tool 轮次后自己插入图片引用，必须由运行时注入。
+		if inj := prompt.BuildUploadInjection(model, tcs, toolInputs); inj != nil {
+			roundInputs = append(roundInputs, *inj)
+		}
+
 		return ChatRound(ctx, prompts, history, roundInputs...)
 	}
 	return err
@@ -597,6 +670,12 @@ func init() {
 Input is read from stdin. Conversation history is isolated per project directory.
 Supports tool calling: file I/O, search, Git operations.
 
+Image input (vision models, e.g. deepseek-v4-flash-vision-exp):
+  dscli chat --model deepseek-v4-flash-vision-exp --attach screenshot.png "图中有什么？"
+  Files are uploaded to the DeepSeek Files API and referenced by file_id
+  (no base64 blobs in history). Vision file tools are also available to the
+  model: vision_file_upload / vision_file_list / vision_file_info / vision_file_delete.
+
 Examples:
   echo "Create a main.go file" | dscli chat
   echo "Add README.md to Git and commit" | dscli chat
@@ -608,4 +687,6 @@ Examples:
 	chatCmd.Flags().Int("histsize", 8, "history size loaded")
 	chatCmd.Flags().String("input", "", "read content from input file or read content from stdin if input file empty")
 	chatCmd.Flags().Bool("stream", false, "Enable streaming output (SSE)")
+	chatCmd.Flags().String("model", "", "Override model (e.g. deepseek-v4-flash-vision-exp); default from config model-deepseek-chat")
+	chatCmd.Flags().StringSlice("attach", nil, "Image file paths to upload and attach (vision models only)")
 }

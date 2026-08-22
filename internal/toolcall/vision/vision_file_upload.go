@@ -39,7 +39,7 @@ func init() {
 			"additionalProperties": false,
 		},
 		Category: "vision",
-		Timeout:  300 * time.Second, // 大文件上传最长 10 分钟，给足余量
+		Timeout:  600 * time.Second, // API 允许上传最长 10 分钟
 		Handler:  handleUpload,
 	})
 }
