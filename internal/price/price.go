@@ -178,6 +178,13 @@ func builtinCache() *priceCache {
 				OffPeak: Price{PromptCacheHit: 0.15, PromptCacheMiss: 4.5, Completion: 13.5},
 				Peak:    Price{PromptCacheHit: 0.30, PromptCacheMiss: 9.0, Completion: 27.0},
 			},
+			// deepseek-v4-flash-vision-exp (added 2026-08-17) prices its
+			// tokens identically to deepseek-v4-flash; only images are
+			// billed separately via their token conversion.
+			"deepseek-v4-flash-vision-exp": {
+				OffPeak: Price{PromptCacheHit: 0.05, PromptCacheMiss: 1.5, Completion: 4.5},
+				Peak:    Price{PromptCacheHit: 0.10, PromptCacheMiss: 3.0, Completion: 9.0},
+			},
 		},
 	}
 }
@@ -371,90 +378,141 @@ func parseNewPricesFootnote(html string) map[string]peakPrice {
 }
 
 // parseNewPricesMainTable parses the post-2026-08-17 layout, where the main
-// price table carries a single "价格(1)" cell whose rows alternate 空闲时段 /
-// 高峰时段 rates for both models:
+// price table carries a single "价格" cell (footnote-marked) whose rows
+// alternate 空闲时段 / 高峰时段 rates for every model. The number of model
+// columns is variable - two initially, three since the
+// deepseek-v4-flash-vision-exp addition (which prices like flash):
 //
-//	<tr><td rowspan="6">价格<sup>(1)</sup></td><td rowspan="2">百万tokens输入（缓存命中）</td><td>空闲时段</td><td>0.05元</td><td>0.15元</td></tr>
-//	<tr><td>高峰时段</td><td>0.10元</td><td>0.30元</td></tr>
-//	<tr><td rowspan="2">百万tokens输入（缓存未命中）</td><td>空闲时段</td><td>1.5元</td><td>4.5元</td></tr>
-//	<tr><td>高峰时段</td><td>3.0元</td><td>9.0元</td></tr>
-//	<tr><td rowspan="2">百万tokens输出</td><td>空闲时段</td><td>4.5元</td><td>13.5元</td></tr>
-//	<tr><td>高峰时段</td><td>9.0元</td><td>27.0元</td></tr>
+//	<tr><td rowspan="6">价格<sup>(1)(2)</sup></td><td rowspan="2">百万tokens输入（缓存命中）</td><td>空闲时段</td><td>0.05元</td><td>0.15元</td><td>0.05元</td></tr>
+//	<tr><td>高峰时段</td><td>0.10元</td><td>0.30元</td><td>0.10元</td></tr>
+//	<tr><td rowspan="2">百万tokens输入（缓存未命中）</td><td>空闲时段</td><td>1.5元</td><td>4.5元</td><td>1.5元</td></tr>
+//	<tr><td>高峰时段</td><td>3.0元</td><td>9.0元</td><td>3.0元</td></tr>
+//	<tr><td rowspan="2">百万tokens输出</td><td>空闲时段</td><td>4.5元</td><td>13.5元</td><td>4.5元</td></tr>
+//	<tr><td>高峰时段</td><td>9.0元</td><td>27.0元</td><td>9.0元</td></tr>
 func parseNewPricesMainTable(html string) map[string]peakPrice {
-	_, rest, found := strings.Cut(html, ">价格<sup>(1)</sup></td>")
+	_, rest, found := strings.Cut(html, ">价格<sup>")
 	if !found {
 		return nil
 	}
-	models := parseModelNames(html)
-	if models[0] == models[1] {
+	// Skip the footnote markers ((1) or (1)(2)) inside the sup element.
+	_, rest, found = strings.Cut(rest, "</sup></td>")
+	if !found {
 		return nil
 	}
-	p0, p1 := peakPrice{}, peakPrice{}
-	// Six rows — 缓存命中/未命中/输出 × 空闲/高峰, for exactly two models.
-	// Each row carries both models' rate: the first cell belongs to models[0],
-	// the second to models[1]. The peak flag pins each row to the expected
-	// 空闲/高峰 alternation so a reordered page fails loudly instead of
-	// silently assigning rates to the wrong fields.
-	slots := []struct {
-		peak          bool
-		first, second *float64
-	}{
-		{false, &p0.OffPeak.PromptCacheHit, &p1.OffPeak.PromptCacheHit},
-		{true, &p0.Peak.PromptCacheHit, &p1.Peak.PromptCacheHit},
-		{false, &p0.OffPeak.PromptCacheMiss, &p1.OffPeak.PromptCacheMiss},
-		{true, &p0.Peak.PromptCacheMiss, &p1.Peak.PromptCacheMiss},
-		{false, &p0.OffPeak.Completion, &p1.OffPeak.Completion},
-		{true, &p0.Peak.Completion, &p1.Peak.Completion},
-	}
-	var a, b float64
-	var ok bool
-	for _, s := range slots {
-		var isPeak bool
-		isPeak, a, b, rest, ok = parseRatePair(rest)
-		if !ok || isPeak != s.peak {
+
+	// Six rows - 缓存命中/未命中/输出 × 空闲/高峰 - each carrying every
+	// model's rate in column order. The peak flag pins each row to the
+	// expected 空闲/高峰 alternation so a reordered page fails loudly
+	// instead of silently assigning rates to the wrong fields.
+	var rows [6][]float64
+	for i := 0; i < 6; i++ {
+		peak, row, after, ok := parseRateRow(rest)
+		if !ok || peak != (i%2 == 1) {
 			return nil
 		}
-		*s.first = a
-		*s.second = b
+		rows[i] = row
+		rest = after
 	}
-	return map[string]peakPrice{
-		models[0]: p0,
-		models[1]: p1,
+	n := len(rows[0])
+	if n < 2 {
+		return nil
 	}
+	for _, row := range rows[1:] {
+		if len(row) != n {
+			return nil
+		}
+	}
+
+	models := parseModelNames(html)
+	if models == nil {
+		// Header missing (trimmed fragment): fall back to the built-in
+		// model names, taking as many as there are price columns.
+		if n > len(defaultModelNames) {
+			return nil
+		}
+		models = defaultModelNames[:n]
+	}
+	if len(models) != n {
+		return nil
+	}
+	seen := make(map[string]bool, n)
+	for _, m := range models {
+		if seen[m] {
+			return nil
+		}
+		seen[m] = true
+	}
+
+	out := make(map[string]peakPrice, n)
+	for j, m := range models {
+		out[m] = peakPrice{
+			OffPeak: Price{
+				PromptCacheHit:  rows[0][j],
+				PromptCacheMiss: rows[2][j],
+				Completion:      rows[4][j],
+			},
+			Peak: Price{
+				PromptCacheHit:  rows[1][j],
+				PromptCacheMiss: rows[3][j],
+				Completion:      rows[5][j],
+			},
+		}
+	}
+	return out
 }
 
-// parseModelNames reads the two model names from the main table header
-// ("<td>模型</td><td>deepseek-v4-flash</td><td>deepseek-v4-pro</td>"),
-// falling back to the built-in names when the header is missing or malformed
-// (e.g. in trimmed page fragments).
-func parseModelNames(html string) [2]string {
-	models := [2]string{"deepseek-v4-flash", "deepseek-v4-pro"}
+// defaultModelNames are the fallback model IDs used when the main price
+// table header is missing from a page fragment; parseNewPricesMainTable
+// takes as many leading names as there are price columns.
+var defaultModelNames = []string{
+	"deepseek-v4-flash",
+	"deepseek-v4-pro",
+	"deepseek-v4-flash-vision-exp",
+}
+
+// parseModelNames reads the model names from the main table header
+// ("<td colspan="3">模型</td><td>deepseek-v4-flash</td><td>deepseek-v4-pro</td>
+// <td>deepseek-v4-flash-vision-exp</td>"), returning nil when the header is
+// missing or malformed (e.g. in trimmed page fragments). The number of
+// models is variable - it grew from 2 to 3 in 2026-08. Parsing stops at the
+// end of the header row: the price rows below use the same "</td><td>"
+// separator and would otherwise leak into the name list.
+func parseModelNames(html string) []string {
 	_, after, found := strings.Cut(html, ">模型</td><td>")
 	if !found {
-		return models
+		return nil
 	}
-	m1, after, found := strings.Cut(after, "</td><td>")
+	row, _, found := strings.Cut(after, "</tr>")
 	if !found {
-		return models
+		row = after
 	}
-	m2, _, found := strings.Cut(after, "</td>")
-	if !found {
-		return models
+	var models []string
+	for {
+		m, rest, found := strings.Cut(row, "</td><td>")
+		if !found {
+			m, _, found = strings.Cut(row, "</td>")
+			if !found {
+				return nil
+			}
+			return append(models, m)
+		}
+		models = append(models, m)
+		row = rest
 	}
-	return [2]string{m1, m2}
 }
 
-// parseRatePair reads one rate row of the form
+// parseRateRow reads one rate row of the form
 // "<td>百万tokens输入（缓存命中）</td><td>空闲时段</td><td>0.05元</td><td>0.15元" or
 // "<td>高峰时段</td><td>0.10元</td><td>0.30元" (continuation rows carry no
 // metric cell) from the start of rest and returns whether it is a peak row,
-// both model rates, and the remaining text. The period label is the first
-// "时段</td><td>" in rest — metric names never contain "时段", so this cannot
-// skip ahead to a later row.
-func parseRatePair(rest string) (peak bool, a, b float64, after string, ok bool) {
+// every model's rate in column order, and the remaining text. The period
+// label is the first "时段</td><td>" in rest - metric names never contain
+// "时段", so this cannot skip ahead to a later row. The row ends at the
+// first "</td></tr>", so any number of model columns is accepted.
+func parseRateRow(rest string) (peak bool, rates []float64, after string, ok bool) {
 	before, after, found := strings.Cut(rest, "时段</td><td>")
 	if !found {
-		return false, 0, 0, "", false
+		return false, nil, "", false
 	}
 	switch {
 	case strings.HasSuffix(before, "<td>高峰"):
@@ -462,25 +520,26 @@ func parseRatePair(rest string) (peak bool, a, b float64, after string, ok bool)
 	case strings.HasSuffix(before, "<td>空闲"):
 		// off-peak row
 	default:
-		return false, 0, 0, "", false
+		return false, nil, "", false
 	}
-	before, after, found = strings.Cut(after, "元</td><td>")
-	if !found {
-		return false, 0, 0, "", false
+	for {
+		before, after, found = strings.Cut(after, "元</td>")
+		if !found {
+			return false, nil, "", false
+		}
+		f, err := strconv.ParseFloat(before, 64)
+		if err != nil {
+			return false, nil, "", false
+		}
+		rates = append(rates, f)
+		if strings.HasPrefix(after, "</tr>") {
+			return peak, rates, after, true
+		}
+		after, found = strings.CutPrefix(after, "<td>")
+		if !found {
+			return false, nil, "", false
+		}
 	}
-	a, err := strconv.ParseFloat(before, 64)
-	if err != nil {
-		return false, 0, 0, "", false
-	}
-	before, after, found = strings.Cut(after, "元</td>")
-	if !found {
-		return false, 0, 0, "", false
-	}
-	b, err = strconv.ParseFloat(before, 64)
-	if err != nil {
-		return false, 0, 0, "", false
-	}
-	return peak, a, b, after, true
 }
 
 // parseThreePrices reads three prices of the form
