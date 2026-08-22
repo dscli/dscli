@@ -86,13 +86,16 @@ func TestUploadAttachmentsSuccess(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// 备份并设置配置
+	// 备份并设置配置（缓存路径隔离到临时目录，避免污染 ~/.dscli/files.json）
 	oldKey, oldURL := config.Get("deepseek-api-key", ""), config.Get("deepseek-base-url", "")
+	oldCache := config.Get("files-cache-path", "")
 	config.Set("deepseek-api-key", "test-key")
 	config.Set("deepseek-base-url", srv.URL)
+	config.Set("files-cache-path", filepath.Join(t.TempDir(), "files.json"))
 	defer func() {
 		config.Set("deepseek-api-key", oldKey)
 		config.Set("deepseek-base-url", oldURL)
+		config.Set("files-cache-path", oldCache)
 	}()
 
 	dir := t.TempDir()

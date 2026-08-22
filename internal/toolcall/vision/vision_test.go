@@ -12,16 +12,20 @@ import (
 	"github.com/dscli/dscli/internal/toolcall"
 )
 
-// setFilesEndpoint 将 Files API 指向测试服务器，返回恢复函数。
+// setFilesEndpoint 将 Files API 指向测试服务器并隔离文件缓存
+// （避免测试上传写入真实的 ~/.dscli/files.json）。
 func setFilesEndpoint(t *testing.T, srv *httptest.Server) {
 	t.Helper()
 	oldKey := config.Get("deepseek-api-key", "")
 	oldURL := config.Get("deepseek-base-url", "")
+	oldCache := config.Get("files-cache-path", "")
 	config.Set("deepseek-api-key", "test-key")
 	config.Set("deepseek-base-url", srv.URL)
+	config.Set("files-cache-path", filepath.Join(t.TempDir(), "files.json"))
 	t.Cleanup(func() {
 		config.Set("deepseek-api-key", oldKey)
 		config.Set("deepseek-base-url", oldURL)
+		config.Set("files-cache-path", oldCache)
 	})
 }
 

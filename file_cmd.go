@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"path/filepath"
 	"strconv"
 	"time"
 
@@ -87,15 +86,12 @@ func newFileDeleteCmd() *cobra.Command {
 	return deleteCmd
 }
 
-// newCLIFilesAPI 从配置构造 Files API 客户端（与 chat --attach 同配置）。
+// newCLIFilesAPI 从配置构造 Files API 客户端（与 chat --attach 同配置；
+// 缓存路径由 NewFilesAPI 统一处理 files-cache-path 配置）。
 func newCLIFilesAPI() *dsc.FilesAPI {
 	key := config.Get("deepseek-api-key", "")
 	url := config.Get("deepseek-base-url", "https://api.deepseek.com")
-	cachePath := config.Get("files-cache-path", "")
-	if cachePath == "" {
-		cachePath = filepath.Join(config.ConfigDir, "files.json")
-	}
-	return dsc.NewFilesAPIWithCache(key, url, cachePath)
+	return dsc.NewFilesAPI(key, url)
 }
 
 func fileUploadRunE(cmd *cobra.Command, args []string) error {

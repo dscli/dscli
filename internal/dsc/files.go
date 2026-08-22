@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/dscli/dscli/internal/config"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/nanjj/clog"
 )
@@ -53,9 +54,15 @@ type FilesAPI struct {
 	cachePath string // 本地缓存文件路径；空字符串表示禁用缓存
 }
 
-// NewFilesAPI 创建 Files API 客户端（使用默认缓存路径 ~/.dscli/files.json）。
+// NewFilesAPI 创建 Files API 客户端。
+// 缓存路径优先取配置 files-cache-path（测试可注入隔离），
+// 为空时使用默认 ~/.dscli/files.json。
 func NewFilesAPI(apiKey, baseURL string) *FilesAPI {
-	return &FilesAPI{apiKey: apiKey, baseURL: baseURL, cachePath: defaultCachePath()}
+	cachePath := config.Get("files-cache-path", "")
+	if cachePath == "" {
+		cachePath = defaultCachePath()
+	}
+	return NewFilesAPIWithCache(apiKey, baseURL, cachePath)
 }
 
 // NewFilesAPIWithCache 创建 Files API 客户端，使用指定缓存路径。
