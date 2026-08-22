@@ -45,14 +45,30 @@ type FileDeleteResult struct {
 
 // FilesAPI 封装 DeepSeek Files API（OpenAI 兼容端点）。
 // 与 Chat 使用同一 base URL 与 API key。
+// Upload 内置本地内容缓存（~/.dscli/files.json）：相同内容（SHA-256+大小）
+// 的文件重复上传直接复用已上传的 file_id，不产生网络请求。
 type FilesAPI struct {
-	apiKey  string
-	baseURL string
+	apiKey    string
+	baseURL   string
+	cachePath string // 本地缓存文件路径；空字符串表示禁用缓存
 }
 
-// NewFilesAPI 创建 Files API 客户端。
+// NewFilesAPI 创建 Files API 客户端（使用默认缓存路径 ~/.dscli/files.json）。
 func NewFilesAPI(apiKey, baseURL string) *FilesAPI {
-	return &FilesAPI{apiKey: apiKey, baseURL: baseURL}
+	return &FilesAPI{apiKey: apiKey, baseURL: baseURL, cachePath: defaultCachePath()}
+}
+
+// NewFilesAPIWithCache 创建 Files API 客户端，使用指定缓存路径。
+// cachePath 为空字符串可禁用缓存（主要用于测试隔离）。
+func NewFilesAPIWithCache(apiKey, baseURL, cachePath string) *FilesAPI {
+	return &FilesAPI{apiKey: apiKey, baseURL: baseURL, cachePath: cachePath}
+}
+
+// WithCachePath 覆盖缓存文件路径并返回自身（链式调用）；
+// 传入空字符串禁用缓存。
+func (f *FilesAPI) WithCachePath(path string) *FilesAPI {
+	f.cachePath = path
+	return f
 }
 
 // MaxFileBytes 是单个上传文件的最大大小（64 MiB，见 Files API 限制）。
@@ -65,10 +81,15 @@ type UploadOptions struct {
 	// ExpiresSeconds 有效期秒数，取值 3600-2592000（1 小时到 30 天）；
 	// 0 表示永久有效（不传 expires_after 字段）。
 	ExpiresSeconds int64
+	// NoCache 跳过本地缓存强制重新上传（上传结果也不写入缓存）。
+	// 用于文件在远端被删除后重建，或测试缓存逻辑。
+	NoCache bool
 }
 
 // Upload 上传本地图片文件，返回文件对象（含 file_id）。
 // 文件流式读取，不整体载入内存；最大 64 MiB。
+// 相同内容（SHA-256 + 大小，见 fileCacheKey）的文件如果已在本地缓存中，
+// 直接返回上次的 file_id 而不发起网络请求。
 func (f *FilesAPI) Upload(ctx context.Context, path string, opts UploadOptions) (*FileObject, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "FilesAPI.Upload")
 	defer span.Finish()
@@ -83,6 +104,21 @@ func (f *FilesAPI) Upload(ctx context.Context, path string, opts UploadOptions) 
 	purpose := opts.Purpose
 	if purpose == "" {
 		purpose = "user_data"
+	}
+
+	// 缓存查找：命中直接返回，零网络请求。
+	var cacheKey string
+	if !opts.NoCache && f.cachePath != "" {
+		key, hashErr := fileCacheKey(path, info.Size())
+		if hashErr != nil {
+			outfmt.Debug("files cache 哈希失败（忽略）: %v\n", hashErr)
+		} else {
+			cacheKey = key
+			if file, ok := f.cacheLookup(cacheKey, purpose, filepath.Base(path)); ok {
+				outfmt.Debug("files cache hit: %s -> %s\n", path, file.ID)
+				return file, nil
+			}
+		}
 	}
 
 	// 流式 multipart 编码：文件内容通过 pipe 直接送给 HTTP 客户端，
@@ -136,6 +172,10 @@ func (f *FilesAPI) Upload(ctx context.Context, path string, opts UploadOptions) 
 	if err := json.Unmarshal(respBody, &file); err != nil {
 		return nil, fmt.Errorf("解析响应失败: %w", err)
 	}
+	// 上传成功：写入缓存，下次同内容直接复用。
+	if cacheKey != "" {
+		f.cacheStore(cacheKey, &file)
+	}
 	return &file, nil
 }
 
@@ -176,7 +216,8 @@ func (f *FilesAPI) Info(ctx context.Context, fileID string) (*FileObject, error)
 	return &file, nil
 }
 
-// Delete 删除文件。
+// Delete 删除文件，同时清理对应的本地缓存记录（避免后续 Upload
+// 命中已被删除的 file_id）。
 func (f *FilesAPI) Delete(ctx context.Context, fileID string) (*FileDeleteResult, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "FilesAPI.Delete")
 	defer span.Finish()
@@ -185,6 +226,7 @@ func (f *FilesAPI) Delete(ctx context.Context, fileID string) (*FileDeleteResult
 	if err := f.doJSON(ctx, http.MethodDelete, "/files/"+url.PathEscape(fileID), nil, &result); err != nil {
 		return nil, err
 	}
+	f.cacheRemoveByFileID(result.ID)
 	return &result, nil
 }
 

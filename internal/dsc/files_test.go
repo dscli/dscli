@@ -12,11 +12,15 @@ import (
 )
 
 // newFilesTestServer 返回一个 httptest server 并记录收到的请求，便于断言。
+// 缓存路径指向 t.TempDir()，避免测试写入（或命中）开发者真实的
+// ~/.dscli/files.json。
 func newFilesTestServer(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *FilesAPI) {
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
-	return srv, NewFilesAPI("test-key", srv.URL)
+	api := NewFilesAPI("test-key", srv.URL)
+	api.WithCachePath(filepath.Join(t.TempDir(), "files.json"))
+	return srv, api
 }
 
 func TestFilesAPIUpload(t *testing.T) {
@@ -187,5 +191,202 @@ func TestFilesAPIListBadStatus(t *testing.T) {
 	_, err := api.List(context.Background(), "", 0, "", "")
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Errorf("expected boom error, got: %v", err)
+	}
+}
+
+// uploadOnceServer 返回只接受一次请求的 server；第二次请求会 t.Fatal。
+// 用于断言缓存命中时"零网络请求"。
+func uploadOnceServer(t *testing.T, fileID string) *FilesAPI {
+	t.Helper()
+	_, api := newFilesTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": fileID, "object": "file", "bytes": 11,
+			"created_at": 1700000000, "filename": "x.png", "purpose": "user_data",
+		})
+	})
+	return api
+}
+
+func TestFilesAPIUploadCacheHit(t *testing.T) {
+	api := uploadOnceServer(t, "file-cache-1")
+	dir := t.TempDir()
+	imgPath := filepath.Join(dir, "x.png")
+	if err := os.WriteFile(imgPath, []byte("hello world"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := api.Upload(context.Background(), imgPath, UploadOptions{})
+	if err != nil {
+		t.Fatalf("first upload: %v", err)
+	}
+	// 第二次上传：命中缓存，不发起请求（server 只允许一次请求）。
+	second, err := api.Upload(context.Background(), imgPath, UploadOptions{})
+	if err != nil {
+		t.Fatalf("second upload: %v", err)
+	}
+	if first.ID != "file-cache-1" || second.ID != "file-cache-1" {
+		t.Errorf("IDs = %q/%q, want file-cache-1", first.ID, second.ID)
+	}
+}
+
+func TestFilesAPIUploadCacheMissOnChange(t *testing.T) {
+	var uploads int
+	_, api := newFilesTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		uploads++
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "file-cache-2", "object": "file", "bytes": 1,
+			"created_at": 1700000000, "filename": "x.png", "purpose": "user_data",
+		})
+	})
+	dir := t.TempDir()
+	imgPath := filepath.Join(dir, "x.png")
+	if err := os.WriteFile(imgPath, []byte("v1"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := api.Upload(context.Background(), imgPath, UploadOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	// 内容变化：hash 变化，必须重新上传。
+	if err := os.WriteFile(imgPath, []byte("v2"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := api.Upload(context.Background(), imgPath, UploadOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if uploads != 2 {
+		t.Errorf("uploads = %d, want 2 (content change must miss cache)", uploads)
+	}
+}
+
+func TestFilesAPIUploadNoCache(t *testing.T) {
+	var uploads int
+	_, api := newFilesTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		uploads++
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "file-cache-3", "object": "file", "bytes": 1,
+			"created_at": 1700000000, "filename": "x.png", "purpose": "user_data",
+		})
+	})
+	dir := t.TempDir()
+	imgPath := filepath.Join(dir, "x.png")
+	if err := os.WriteFile(imgPath, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := api.Upload(context.Background(), imgPath, UploadOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	// NoCache：即使缓存已存在也强制上传，且结果不写缓存。
+	if _, err := api.Upload(context.Background(), imgPath, UploadOptions{NoCache: true}); err != nil {
+		t.Fatal(err)
+	}
+	if uploads != 2 {
+		t.Errorf("uploads = %d, want 2 (NoCache must bypass cache)", uploads)
+	}
+}
+
+func TestFilesAPIUploadPurposeMismatch(t *testing.T) {
+	var uploads int
+	_, api := newFilesTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		uploads++
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "file-cache-4", "object": "file", "bytes": 1,
+			"created_at": 1700000000, "filename": "x.png", "purpose": "user_data",
+		})
+	})
+	dir := t.TempDir()
+	imgPath := filepath.Join(dir, "x.png")
+	if err := os.WriteFile(imgPath, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := api.Upload(context.Background(), imgPath, UploadOptions{Purpose: "user_data"}); err != nil {
+		t.Fatal(err)
+	}
+	// 不同 purpose：视为 miss，重新上传。
+	if _, err := api.Upload(context.Background(), imgPath, UploadOptions{Purpose: "assistants"}); err != nil {
+		t.Fatal(err)
+	}
+	if uploads != 2 {
+		t.Errorf("uploads = %d, want 2 (purpose mismatch must re-upload)", uploads)
+	}
+}
+
+func TestFilesAPIDeleteClearsCache(t *testing.T) {
+	var uploads int
+	_, api := newFilesTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			json.NewEncoder(w).Encode(map[string]any{"id": "file-cache-5", "deleted": true})
+			return
+		}
+		uploads++
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "file-cache-5", "object": "file", "bytes": 1,
+			"created_at": 1700000000, "filename": "x.png", "purpose": "user_data",
+		})
+	})
+	dir := t.TempDir()
+	imgPath := filepath.Join(dir, "x.png")
+	if err := os.WriteFile(imgPath, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := api.Upload(context.Background(), imgPath, UploadOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := api.Delete(context.Background(), "file-cache-5"); err != nil {
+		t.Fatal(err)
+	}
+	// 删除后缓存已清理：再次上传应发起请求。
+	if _, err := api.Upload(context.Background(), imgPath, UploadOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if uploads != 2 {
+		t.Errorf("uploads = %d, want 2 (delete must purge cache)", uploads)
+	}
+}
+
+func TestFileCacheKeyDistinguishesContent(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "a.png")
+	b := filepath.Join(dir, "b.png")
+	if err := os.WriteFile(a, []byte("same-size!"), 0o600); err != nil { // 10 字节
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(b, []byte("diff-size!"), 0o600); err != nil { // 10 字节
+		t.Fatal(err)
+	}
+	ka, err := fileCacheKey(a, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kb, err := fileCacheKey(b, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ka == kb {
+		t.Errorf("keys should differ for different content: %q", ka)
+	}
+	// 同内容不同 size 也不同 key（size 参与 key）。
+	_kc, err := fileCacheKey(a, 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ka == _kc {
+		t.Errorf("keys should differ when size differs")
+	}
+}
+
+func TestFileCacheCorruptFallsBack(t *testing.T) {
+	dir := t.TempDir()
+	cachePath := filepath.Join(dir, "files.json")
+	if err := os.WriteFile(cachePath, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// 损坏的缓存不报错，返回空缓存。
+	c := loadFileCache(cachePath)
+	if len(c.Files) != 0 {
+		t.Errorf("corrupt cache should load as empty, got %d entries", len(c.Files))
+	}
+	// 缺文件也一样。
+	if c2 := loadFileCache(filepath.Join(dir, "missing.json")); len(c2.Files) != 0 {
+		t.Errorf("missing cache should load as empty, got %d entries", len(c2.Files))
 	}
 }

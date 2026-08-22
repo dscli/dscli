@@ -49,6 +49,25 @@ sqlite，base64 内联会让数据库膨胀。外部图片用 2。文件块引�
 - 端点：POST /files（multipart, purpose=user_data）、GET /files、
   GET /files/{id}、DELETE /files/{id}
 
+**本地上传缓存**（=~/.dscli/files.json=，配置 =files-cache-path= 可覆盖）：
+- key = =<size>\x00<sha256hex>=（git blob 精神：size 参与防碰撞，内容用
+  hash 避免文件膨胀）；value 记录 file_id / purpose / uploaded_at
+- Upload 命中缓存直接返回 file_id，零网络请求；内容变化自动 miss
+  （hash 变化）；不同 purpose 视为 miss 重新上传
+- 写入原子（tmp + rename）；缓存损坏/缺失静默降级为重新上传，不阻塞
+- =dscli file delete= 同步清理缓存记录（避免命中已删除的 file_id）；
+  远端文件过期/外部删除后用 =--no-cache= 强制重新上传
+
+**dscli file 命令**（人类查看/测试入口）：
+#+begin_example
+  dscli file upload <path> [--purpose p] [--expires N] [--no-cache] [--format id|json]
+  dscli file list    [--limit N] [--after id] [--order asc|desc] [--purpose p]
+  dscli file info    <file_id>
+  dscli file delete  <file_id>
+#+end_example
+- upload 默认仅打印 file_id（脚本友好）；list/info 默认表格输出
+- chat --attach 与 vision toolcall 共用同一缓存，自动受益
+
 **图像理解限制**（https://api-docs.deepseek.com/zh-cn/guides/vision）：
 - 图片仅支持 user 消息（system/assistant 带图 400）
 - 请求体 48 MiB；单图 32 MiB（file_id 64 MiB）；单请求最多 600 张图
