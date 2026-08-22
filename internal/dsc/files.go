@@ -114,7 +114,7 @@ func (f *FilesAPI) Upload(ctx context.Context, path string, opts UploadOptions) 
 			outfmt.Debug("files cache 哈希失败（忽略）: %v\n", hashErr)
 		} else {
 			cacheKey = key
-			if file, ok := f.cacheLookup(cacheKey, purpose, filepath.Base(path)); ok {
+			if file, ok := f.cacheLookup(cacheKey, purpose, filepath.Base(path), opts.ExpiresSeconds); ok {
 				outfmt.Debug("files cache hit: %s -> %s\n", path, file.ID)
 				return file, nil
 			}
@@ -172,9 +172,16 @@ func (f *FilesAPI) Upload(ctx context.Context, path string, opts UploadOptions) 
 	if err := json.Unmarshal(respBody, &file); err != nil {
 		return nil, fmt.Errorf("解析响应失败: %w", err)
 	}
-	// 上传成功：写入缓存，下次同内容直接复用。
+	// 上传成功：写缓存前复核文件内容未在上传期间变化（TOCTOU），
+	// 否则缓存 key 可能与实际上传内容错配（先 hash 后上传是两次读取）。
 	if cacheKey != "" {
-		f.cacheStore(cacheKey, &file)
+		if info2, statErr := os.Stat(path); statErr == nil {
+			if key2, hashErr := fileCacheKey(path, info2.Size()); hashErr == nil && key2 == cacheKey {
+				f.cacheStore(cacheKey, &file)
+			} else {
+				outfmt.Debug("files cache: 上传期间文件已变化，跳过缓存: %s\n", path)
+			}
+		}
 	}
 	return &file, nil
 }

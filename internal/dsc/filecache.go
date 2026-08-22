@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/dscli/dscli/internal/config"
 	"github.com/dscli/dscli/internal/outfmt"
@@ -18,6 +19,9 @@ type fileCacheEntry struct {
 	Size       int64  `json:"size"`
 	Purpose    string `json:"purpose"`
 	UploadedAt int64  `json:"uploaded_at"`
+	// ExpiresAt 远端文件的到期时间戳（0 表示永久）。
+	// 命中缓存前会检查过期，避免返回已失效的 file_id。
+	ExpiresAt int64 `json:"expires_at,omitzero"`
 }
 
 // fileCache 是 files.json 的完整结构。
@@ -75,8 +79,10 @@ func loadFileCache(path string) *fileCache {
 	return c
 }
 
-// saveFileCache 原子写入 files.json（写临时文件后 rename，
-// 避免并发/中断留下半写文件）。
+// saveFileCache 原子写入 files.json（唯一临时文件 + rename）。
+// 并发写时不会交错写入同一路径（唯一名避免损坏），rename 保证最终
+// 文件要么是旧完整版要么是新完整版。并发 read-modify-write 的丢更新
+// 后果仅是缓存 miss（下次重传），可接受——缓存只是加速手段。
 func saveFileCache(path string, c *fileCache) error {
 	if path == "" {
 		return nil
@@ -85,26 +91,46 @@ func saveFileCache(path string, c *fileCache) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".files.json-*.tmp")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // 成功 rename 后无效果
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
-// cacheLookup 在缓存中查找 key；命中且 purpose 一致时构造 FileObject
-// 直接返回（created_at 用上传时间近似，调用方主要使用 ID）。
-func (f *FilesAPI) cacheLookup(key, purpose, baseName string) (*FileObject, bool) {
+// cacheLookup 在缓存中查找 key；命中且 purpose/有效期一致时构造
+// FileObject 直接返回（created_at 用上传时间近似，调用方主要使用 ID）。
+// expiresSeconds 是新请求期望的有效期秒数（0 表示永久）：命中要求
+// "永久/限时"类别一致；限时文件已过期视为 miss。同类别下具体秒数
+// 差异容忍（复用旧文件生命周期），避免每次上传都因秒数不同而重传。
+func (f *FilesAPI) cacheLookup(key, purpose, baseName string, expiresSeconds int64) (*FileObject, bool) {
 	if key == "" || f.cachePath == "" {
 		return nil, false
 	}
 	c := loadFileCache(f.cachePath)
 	e, ok := c.Files[key]
-	if !ok {
+	if !ok || e.FileID == "" {
 		return nil, false
 	}
 	if purpose != "" && e.Purpose != "" && e.Purpose != purpose {
 		// purpose 不匹配：视为 miss，重新上传并覆盖缓存。
+		return nil, false
+	}
+	if e.ExpiresAt != 0 && time.Now().Unix() > e.ExpiresAt {
+		// 缓存文件已过期：miss，重新上传。
+		return nil, false
+	}
+	if (expiresSeconds == 0) != (e.ExpiresAt == 0) {
+		// 永久/限时类别不一致：miss（例如之前限时上传，现在要永久）。
 		return nil, false
 	}
 	return &FileObject{
@@ -114,6 +140,7 @@ func (f *FilesAPI) cacheLookup(key, purpose, baseName string) (*FileObject, bool
 		CreatedAt: e.UploadedAt,
 		Filename:  baseName,
 		Purpose:   purpose,
+		ExpiresAt: e.ExpiresAt,
 	}, true
 }
 
@@ -128,6 +155,7 @@ func (f *FilesAPI) cacheStore(key string, file *FileObject) {
 		Size:       file.Bytes,
 		Purpose:    file.Purpose,
 		UploadedAt: file.CreatedAt,
+		ExpiresAt:  file.ExpiresAt,
 	}
 	if err := saveFileCache(f.cachePath, c); err != nil {
 		outfmt.Debug("files cache 写入失败（忽略）: %v\n", err)

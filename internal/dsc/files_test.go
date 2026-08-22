@@ -3,11 +3,13 @@ package dsc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -374,6 +376,126 @@ func TestFileCacheKeyDistinguishesContent(t *testing.T) {
 	}
 }
 
+func TestFilesAPIUploadCacheExpiry(t *testing.T) {
+	// 缓存中的文件已过期：视为 miss，必须重新上传。
+	var uploads int
+	_, api := newFilesTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		uploads++
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "file-exp-1", "object": "file", "bytes": 4,
+			"created_at": 1700000000, "filename": "x.png", "purpose": "user_data",
+			"expires_at": 17000003600,
+		})
+	})
+	dir := t.TempDir()
+	imgPath := filepath.Join(dir, "x.png")
+	if err := os.WriteFile(imgPath, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// 首次上传（限时 3600 秒）。
+	if _, err := api.Upload(context.Background(), imgPath, UploadOptions{ExpiresSeconds: 3600}); err != nil {
+		t.Fatal(err)
+	}
+	// 直接把缓存里的过期时间改为过去（模拟已过期）。
+	c := loadFileCache(api.cachePath)
+	for k := range c.Files {
+		e := c.Files[k]
+		e.ExpiresAt = 1 // 1970 年，必然过期
+		c.Files[k] = e
+	}
+	if err := saveFileCache(api.cachePath, c); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := api.Upload(context.Background(), imgPath, UploadOptions{ExpiresSeconds: 3600}); err != nil {
+		t.Fatal(err)
+	}
+	if uploads != 2 {
+		t.Errorf("uploads = %d, want 2 (expired cache must miss)", uploads)
+	}
+}
+
+func TestFilesAPIUploadCacheExpiryCategoryMismatch(t *testing.T) {
+	var uploads int
+	_, api := newFilesTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		uploads++
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "file-cat-1", "object": "file", "bytes": 4,
+			"created_at": 1700000000, "filename": "x.png", "purpose": "user_data",
+		})
+	})
+	dir := t.TempDir()
+	imgPath := filepath.Join(dir, "x.png")
+	if err := os.WriteFile(imgPath, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// 永久上传（expires 0）。
+	if _, err := api.Upload(context.Background(), imgPath, UploadOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	// 请求限时：缓存是永久，类别不一致 → miss。
+	if _, err := api.Upload(context.Background(), imgPath, UploadOptions{ExpiresSeconds: 3600}); err != nil {
+		t.Fatal(err)
+	}
+	if uploads != 2 {
+		t.Errorf("uploads = %d, want 2 (permanent vs timed mismatch)", uploads)
+	}
+}
+
+func TestFilesAPISaveCacheConcurrent(t *testing.T) {
+	// 并发写使用唯一临时文件，不会相互破坏；最终文件必须是合法 JSON。
+	cachePath := filepath.Join(t.TempDir(), "files.json")
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			c := &fileCache{Version: fileCacheVersion, Files: map[string]fileCacheEntry{
+				fmt.Sprintf("%d\x00k", i): {FileID: fmt.Sprintf("f-%d", i)},
+			}}
+			if err := saveFileCache(cachePath, c); err != nil {
+				t.Errorf("saveFileCache: %v", err)
+			}
+		}(i)
+	}
+	wg.Wait()
+	data, err := os.ReadFile(cachePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c fileCache
+	if err := json.Unmarshal(data, &c); err != nil {
+		t.Fatalf("cache file corrupted after concurrent writes: %v\n%s", err, data)
+	}
+}
+
+func TestFilesAPIUploadStoresExpires(t *testing.T) {
+	// 缓存命中返回时带有过期时间，供调用方/后续校验使用。
+	_, api := newFilesTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "file-exp-2", "object": "file", "bytes": 4,
+			"created_at": 1700000000, "filename": "x.png", "purpose": "user_data",
+			"expires_at": 1700003600,
+		})
+	})
+	dir := t.TempDir()
+	imgPath := filepath.Join(dir, "x.png")
+	if err := os.WriteFile(imgPath, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	first, err := api.Upload(context.Background(), imgPath, UploadOptions{ExpiresSeconds: 3600})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := api.Upload(context.Background(), imgPath, UploadOptions{ExpiresSeconds: 3600})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ExpiresAt != 1700003600 || second.ExpiresAt != 1700003600 {
+		t.Errorf("expires_at = %d/%d, want 1700003600 (cache must preserve expiry)",
+			first.ExpiresAt, second.ExpiresAt)
+	}
+}
+
 func TestFileCacheCorruptFallsBack(t *testing.T) {
 	dir := t.TempDir()
 	cachePath := filepath.Join(dir, "files.json")
@@ -388,5 +510,38 @@ func TestFileCacheCorruptFallsBack(t *testing.T) {
 	// 缺文件也一样。
 	if c2 := loadFileCache(filepath.Join(dir, "missing.json")); len(c2.Files) != 0 {
 		t.Errorf("missing cache should load as empty, got %d entries", len(c2.Files))
+	}
+}
+
+func TestFilesAPIUploadTOCTOUSkipsCache(t *testing.T) {
+	// 上传响应返回前修改文件：上传后的复核发现内容变化，
+	// 不得写入缓存（避免 key 与实际内容错配）。
+	dir := t.TempDir()
+	imgPath := filepath.Join(dir, "x.png") // 在闭包使用前声明
+	if err := os.WriteFile(imgPath, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var uploads int
+	_, api := newFilesTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		uploads++
+		if err := r.ParseMultipartForm(10 << 20); err != nil {
+			t.Errorf("parse multipart: %v", err)
+		}
+		// 响应前修改文件内容（模拟上传期间文件被改动）。
+		if err := os.WriteFile(imgPath, []byte("changed!"), 0o600); err != nil {
+			t.Errorf("mutate file: %v", err)
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "file-toc-1", "object": "file", "bytes": 8,
+			"created_at": 1700000000, "filename": "x.png", "purpose": "user_data",
+		})
+	})
+	if _, err := api.Upload(context.Background(), imgPath, UploadOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	// 缓存不应记录 "data"（文件已被改为 changed!）。
+	c := loadFileCache(api.cachePath)
+	if len(c.Files) != 0 {
+		t.Errorf("cache should be empty after TOCTOU, got %d entries", len(c.Files))
 	}
 }
