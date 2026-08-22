@@ -15,6 +15,7 @@ import (
 	_ "github.com/dscli/dscli/internal/toolcall/shell"
 	_ "github.com/dscli/dscli/internal/toolcall/skill"
 	_ "github.com/dscli/dscli/internal/toolcall/sql"
+	_ "github.com/dscli/dscli/internal/toolcall/vision"
 	_ "github.com/dscli/dscli/internal/toolcall/web"
 )
 
