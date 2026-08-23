@@ -155,8 +155,13 @@ func (c *priceCache) priceFor(model string, t time.Time) (Price, bool) {
 }
 
 // inPeakHours reports whether t (already in Beijing time) falls in the
-// peak periods 9:00-12:00 and 14:00-18:00.
+// peak periods. Per the pricing page footnote (2026-08-22 snapshot) the
+// peak windows are Monday-Friday 9:00-12:00 and 14:00-18:00; weekends are
+// always off peak.
 func inPeakHours(t time.Time) bool {
+	if wd := t.Weekday(); wd == time.Saturday || wd == time.Sunday {
+		return false
+	}
 	h := t.Hour()
 	return (h >= 9 && h < 12) || (h >= 14 && h < 18)
 }
@@ -341,6 +346,10 @@ func parsePrice(html string) (price map[string]Price) {
 // in the main price table under a "价格(1)" cell. Both are supported so a
 // page rollback cannot break parsing. The footnote layout is tried first —
 // when both appear (e.g. during a transition period) the footnote wins.
+//
+// Since the 2026-08-22 pricing-page update, footnote (1) is plain prose
+// ("空闲时段价格为高峰时段价格的一半...") with no table; parseNewPricesFootnote
+// simply returns nil for it and the main table is used.
 func parseNewPrices(html string) map[string]peakPrice {
 	if m := parseNewPricesFootnote(html); m != nil {
 		return m

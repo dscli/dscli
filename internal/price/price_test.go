@@ -167,6 +167,69 @@ func TestParseNewPricesMainTableReorderedRows(t *testing.T) {
 	}
 }
 
+// TestParseNewPricesCurrentPage covers the 2026-08-22 pricing-page snapshot:
+// footnote (1) is plain prose with no table ("空闲时段价格为高峰时段价格的一半...
+// 高峰时段为北京时间周一至周五 9:00 - 12:00、14:00 - 18:00"), so the rates
+// must come from the main table alone. The fixture mirrors the live markup.
+func TestParseNewPricesCurrentPage(t *testing.T) {
+	html := `(1) 空闲时段价格为高峰时段价格的一半。高峰时段为北京时间周一至周五 9:00 - 12:00、14:00 - 18:00（其余为空闲时段）。
+(2) 发送给 <code>deepseek-v4-flash-vision-exp</code> 的图片会按其尺寸换算成 token，与文本 token 一并计费。
+<table style="text-align: center;"><tr><td colspan="3" style="text-align: center;">模型</td><td>deepseek-v4-flash</td><td>deepseek-v4-pro</td><td>deepseek-v4-flash-vision-exp</td></tr>
+<tr><td rowspan="6">价格<sup>(1)(2)</sup></td><td rowspan="2">百万tokens输入<br>（缓存命中）</td><td>空闲时段</td><td>0.05元</td><td>0.15元</td><td>0.05元</td></tr><tr><td>高峰时段</td><td>0.10元</td><td>0.30元</td><td>0.10元</td></tr><tr><td rowspan="2">百万tokens输入<br>（缓存未命中）</td><td>空闲时段</td><td>1.5元</td><td>4.5元</td><td>1.5元</td></tr><tr><td>高峰时段</td><td>3.0元</td><td>9.0元</td><td>3.0元</td></tr><tr><td rowspan="2">百万tokens输出</td><td>空闲时段</td><td>4.5元</td><td>13.5元</td><td>4.5元</td></tr><tr><td>高峰时段</td><td>9.0元</td><td>27.0元</td><td>9.0元</td></tr></table>`
+	got := parseNewPrices(normalizePricingHTML(html))
+	if got == nil {
+		t.Fatal("current pricing page (prose footnote, main-table rates) not parsed")
+	}
+	// prose 脚注不得被误解析成脚注表：价格只能来自主表。
+	if m := parseNewPricesFootnote(normalizePricingHTML(html)); m != nil {
+		t.Fatalf("prose footnote should not parse as footnote table: %v", m)
+	}
+	want := map[string]peakPrice{
+		"deepseek-v4-flash": {
+			OffPeak: Price{PromptCacheHit: 0.05, PromptCacheMiss: 1.5, Completion: 4.5},
+			Peak:    Price{PromptCacheHit: 0.10, PromptCacheMiss: 3.0, Completion: 9.0},
+		},
+		"deepseek-v4-pro": {
+			OffPeak: Price{PromptCacheHit: 0.15, PromptCacheMiss: 4.5, Completion: 13.5},
+			Peak:    Price{PromptCacheHit: 0.30, PromptCacheMiss: 9.0, Completion: 27.0},
+		},
+		"deepseek-v4-flash-vision-exp": {
+			OffPeak: Price{PromptCacheHit: 0.05, PromptCacheMiss: 1.5, Completion: 4.5},
+			Peak:    Price{PromptCacheHit: 0.10, PromptCacheMiss: 3.0, Completion: 9.0},
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("current pricing page parsed = %v, want %v", got, want)
+	}
+}
+
+func TestInPeakHours(t *testing.T) {
+	tests := []struct {
+		name string
+		now  time.Time
+		want bool
+	}{
+		// 2026-08-14 周五、2026-08-17 周一；2026-08-15 周六、2026-08-16 周日。
+		{"mon 09:00 peak", time.Date(2026, 8, 17, 9, 0, 0, 0, beijing), true},
+		{"mon 11:59 peak", time.Date(2026, 8, 17, 11, 59, 0, 0, beijing), true},
+		{"mon 12:00 off peak", time.Date(2026, 8, 17, 12, 0, 0, 0, beijing), false},
+		{"mon 14:00 peak", time.Date(2026, 8, 17, 14, 0, 0, 0, beijing), true},
+		{"mon 17:59 peak", time.Date(2026, 8, 17, 17, 59, 0, 0, beijing), true},
+		{"mon 18:00 off peak", time.Date(2026, 8, 17, 18, 0, 0, 0, beijing), false},
+		{"fri 10:00 peak", time.Date(2026, 8, 14, 10, 0, 0, 0, beijing), true},
+		{"sat 10:00 off peak", time.Date(2026, 8, 15, 10, 0, 0, 0, beijing), false},
+		{"sat 09:00 off peak", time.Date(2026, 8, 15, 9, 0, 0, 0, beijing), false},
+		{"sun 15:00 off peak", time.Date(2026, 8, 16, 15, 0, 0, 0, beijing), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := inPeakHours(tt.now); got != tt.want {
+				t.Fatalf("inPeakHours(%v) = %v, want %v", tt.now, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestResolvePrices(t *testing.T) {
 	c := builtinCache()
 	flashOld := Price{PromptCacheHit: 0.02, PromptCacheMiss: 1.0, Completion: 2.0}
@@ -184,13 +247,15 @@ func TestResolvePrices(t *testing.T) {
 		now  time.Time
 		want map[string]Price
 	}{
-		{"before effective date, peak hour keeps listed prices", time.Date(2026, 8, 16, 10, 0, 0, 0, beijing), map[string]Price{"deepseek-v4-flash": flashOld, "deepseek-v4-pro": proOld}},
+		{"before effective date, peak hour keeps listed prices", time.Date(2026, 8, 14, 10, 0, 0, 0, beijing), map[string]Price{"deepseek-v4-flash": flashOld, "deepseek-v4-pro": proOld}},
 		{"effective date midnight is off peak", time.Date(2026, 8, 17, 0, 0, 0, 0, beijing), map[string]Price{"deepseek-v4-flash": flashOff, "deepseek-v4-pro": proOff, "deepseek-v4-flash-vision-exp": visionOff}},
 		{"morning peak 09:00", time.Date(2026, 8, 17, 9, 0, 0, 0, beijing), map[string]Price{"deepseek-v4-flash": flashPeak, "deepseek-v4-pro": proPeak, "deepseek-v4-flash-vision-exp": visionPeak}},
 		{"noon boundary 12:00 is off peak", time.Date(2026, 8, 17, 12, 0, 0, 0, beijing), map[string]Price{"deepseek-v4-flash": flashOff, "deepseek-v4-pro": proOff, "deepseek-v4-flash-vision-exp": visionOff}},
 		{"afternoon peak starts 14:00", time.Date(2026, 8, 17, 14, 0, 0, 0, beijing), map[string]Price{"deepseek-v4-flash": flashPeak, "deepseek-v4-pro": proPeak, "deepseek-v4-flash-vision-exp": visionPeak}},
 		{"afternoon peak ends 18:00", time.Date(2026, 8, 17, 18, 0, 0, 0, beijing), map[string]Price{"deepseek-v4-flash": flashOff, "deepseek-v4-pro": proOff, "deepseek-v4-flash-vision-exp": visionOff}},
 		{"utc input converts to beijing", time.Date(2026, 8, 17, 1, 0, 0, 0, time.UTC), map[string]Price{"deepseek-v4-flash": flashPeak, "deepseek-v4-pro": proPeak, "deepseek-v4-flash-vision-exp": visionPeak}},
+		{"saturday peak hours are off peak", time.Date(2026, 8, 22, 10, 0, 0, 0, beijing), map[string]Price{"deepseek-v4-flash": flashOff, "deepseek-v4-pro": proOff, "deepseek-v4-flash-vision-exp": visionOff}},
+		{"sunday afternoon is off peak", time.Date(2026, 8, 23, 15, 0, 0, 0, beijing), map[string]Price{"deepseek-v4-flash": flashOff, "deepseek-v4-pro": proOff, "deepseek-v4-flash-vision-exp": visionOff}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
