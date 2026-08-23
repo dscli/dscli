@@ -63,16 +63,18 @@ Tests get an isolated database: `context.IsTesting()` → `/tmp/dscli-test-<bina
 
 | Package | Purpose |
 |---------|---------|
-| `internal/prompt/` | System prompts (roles: dev/expert/review/test), message persistence, history, recall/note |
-| `internal/toolcall/` | Tool registration, execution, JSON fix, result truncation |
+| `internal/prompt/` | System prompts (roles: dev/expert/review/test), message persistence, history, recall/note, content blocks (image input), interrupt marking |
+| `internal/toolcall/` | Tool registration (aliases), execution, JSON fix, result truncation, dual-message protocol, interrupt handling |
 | `internal/toolcall/alltools/` | Blank-imports all tool packages; `GetAllTools(ctx)` |
 | `internal/config/` | Config parsing (`~/.dscli/config.dscli` / `~/.dscli/dscli.env`) |
 | `internal/session/` | Session management with per-project SQLite isolation |
 | `internal/skills/` | Skill lifecycle: search, load, validate, auto-inject |
 | `internal/context/` | Extends stdlib `context` with typed KV keys, project root, param bus |
-| `internal/dsc/` | DeepSeek API client (chat, balance, models) |
-| `internal/price/` | Token usage tracking & cost calculation |
+| `internal/dsc/` | DeepSeek API client (chat, balance, models) + Files API (upload/list/info/delete with local content cache) |
+| `internal/price/` | Token usage tracking & cost calculation; time-aware pricing (peak/off-peak after 2026-08-17, daily cache in ~/.dscli/price.json) |
 | `internal/flycheck/` | Static analysis (Go, Python, Emacs) via embedded `dscli-flycheck.sh` |
+| `internal/toolcall/vision/` | Files API vision tools: vision_file_read/list/info/delete (category: vision) |
+| `internal/toolcall/ai/` | AI-conversation tools: wakeup, ainap, aistatus (category: ai) |
 | `internal/emacsutil/` | Emacs client/server detection (emacsclient probe) |
 | `internal/outfmt/` | Output formatting (markdown/org), color, timestamp |
 | `internal/sqlite/` | Declarative, lazy SQLite connection, WAL mode, migration |
@@ -83,7 +85,7 @@ Tests get an isolated database: `context.IsTesting()` → `/tmp/dscli-test-<bina
 | `internal/lockfile/` | Per-project process lock for chat sessions |
 | `internal/editor/` | External editor integration (emacsclient-aware) |
 | `internal/shell/` | Safe shell execution via mvdan/sh |
-| `internal/lp/` | Web page reading via `lightpanda fetch` CLI, DeepSeek web login/chat (chromedp) |
+| `internal/lp/` | Web page reading via `lightpanda fetch` CLI, DeepSeek web login/chat (chromedp) with overload/truncation detection and conversation registry |
 | `internal/mcphub/` | Multi-MCP-server connections; dispatches unknown tools |
 | `internal/memories/` | Persistent cross-session memory with FTS5 |
 | `internal/tokenizer/` | Chinese+English segmentation for FTS5 (gse) |
@@ -96,11 +98,20 @@ Tests get an isolated database: `context.IsTesting()` → `/tmp/dscli-test-<bina
 
 Tools register via `toolcall.RegisterTool(ToolDef{...})` in package `init()`s;
 `internal/toolcall/alltools` blank-imports every tool package. Chat loads them
-through `alltools.GetAllTools(ctx)` (role-filtered — non-dev roles return fewer
-tools). Tool categories: `file`, `shell`, `cwd`, `ask`, `history`, `mail`,
-`memory`, `skill`, `sql`, `web`, `flycheck`, `wakeup`, `ainap`, `aistatus`,
-`system`. Tools not in the registry dispatch to MCP servers via
-`toolcall.DispatchMCP` (set by `mcphub`).
+through `alltools.GetAllTools(ctx)` (role-filtered - non-dev roles return fewer
+tools). Tool categories: `file_ops`, `system` (cwd/shell/sql),
+`communication` (ask), `check` (code_review/flycheck), `history`, `mail`,
+`memory`, `skill`, `ai` (wakeup/ainap/aistatus), `vision` (Files API), `web`.
+`ToolDef.Aliases` maps legacy names (e.g. `vision_file_upload` ->
+`vision_file_read`) without exposing them in the tool list. Tools not in the
+registry dispatch to MCP servers via `toolcall.DispatchMCP` (set by
+`mcphub`).
+
+Handler results may be a `DualMessage` (internal/toolcall/dual.go):
+`HandleToolCalls` splits it into a tool message plus an extra user message
+appended after ALL tool messages - the only path that can inject an image
+block right after a tool call (OpenAI-compatible APIs allow images only in
+user messages).
 
 ### Embedded Assets (`go:embed`)
 
@@ -142,10 +153,12 @@ func init() {
 
 The `chat` command (`chat.go`) is the core of dscli. Its flow:
 
-1. `ChatPreRunE` - validate model, load role, set context values
-2. `ChatRunE` - acquire project lock; if primary, start chat loop; if secondary, inject as chimein
+1. `ChatPreRunE` - validate model (`--model` overrides the default), load role, set context values
+2. `ChatRunE` - acquire project lock; if primary, start chat loop; if secondary, inject as chimein. `--attach` uploads images to the Files API (vision models only, hard error otherwise)
 3. `ChatRound` - assemble messages (prompts → history → inputs), call DeepSeek API, handle tool calls recursively
 4. `readChimein` - check for pending chimein/unread mail between rounds (after tool calls, before recursion)
+5. Image handling - user attachments become `ContentBlock`s (text + file blocks, serialized to `content_blocks` column); `cleanMessagesForModel` strips image blocks for non-vision models to avoid API 400
+6. Interrupt safety - on SIGINT/SIGTERM `MarkInterruptedToolCalls` inserts placeholder tool messages for unexecuted calls, so the next start does not replay user-cancelled operations
 
 ### System Prompt Pipeline
 
@@ -171,6 +184,10 @@ Role name == template file name: `dev` (default), `expert`, `review`, `test`.
 - Use `t.TempDir()` for temporary directories
 - Standard `testing` package: `t.Fatal` for setup errors, `t.Error`/`t.Errorf` for assertions
 - See `go-test` skill: scripts `run.sh`, `lint.sh`, config isolation scaffold
+- **Isolate ambient state** - tests must not touch `~/.dscli/files.json`,
+  `~/.dscli/price.json`, or real `DEEPSEEK_*` env vars: inject
+  `files-cache-path` (or `WithCachePath`), override `price.cachePath`/
+  `fetchPage`, and call `sanitizeDeepSeekEnv` before building a Config.
 
 ### Test Files
 Tests live alongside their code:
@@ -247,6 +264,11 @@ Key skills for development:
 - **History changes** - verify through the reload path (`LoadHistory`), not just
   raw DB rows: `CleanupReverse` runs at load time and can silently drop blocks
   that look correct in the table.
+- **Image blocks are user-message-only** - the OpenAI-compatible protocol
+  rejects images in assistant/system messages. The dual-message protocol
+  (`internal/toolcall/dual.go`) is the only post-tool-call injection path;
+  never re-inject file blocks at the chat layer (`BuildUploadInjection` was
+  removed because it double-injected).
 - **Red CI != your change** - when CI fails on a branch, first check whether the
   failure pre-exists on `main` before debugging your branch.
 

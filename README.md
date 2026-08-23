@@ -24,6 +24,8 @@ Simply put: **dscli = AI assistant + dev tools + session memory + CLI efficiency
 
 ### Version History
 
+- v0.9.1 (2026-08-23) — Vision & Files: DeepSeek Files API client with local upload cache (`dscli file upload|list|info|delete`), vision file tools (vision_file_read/list/info/delete) with dual-message image injection, `chat --attach`/`--model` for image input; time-aware pricing (2026-08-17 peak/off-peak, weekends off-peak, daily cache), `dscli models` shows current token prices; ask_expert `raw` mode + overload/truncation retries + temp-dir sandbox; file tools `insert_before_line` + length-mismatch warning + large-file size hint; interrupted tool calls marked on SIGINT/SIGTERM instead of replayed; macOS test-build regression fixes
+- v0.9.0 (2026-08-05) — `web_fetch` one-shot tool replacing MCP web reading (meta-refresh following, output save/insert); webchat flash/vision modes + file uploads + conversation registry (`keep=<id|last|url|list>`); ask_expert `@file` input, role/system customization, function definitions kept when truncating; drop LightPanda MCP support and `mcp_client` tool; tool re-categorization (`check`/`ai`); wakeup/ainap/aistatus consolidation into `internal/toolcall/ai`
 - v0.8.9 (2026-08-02) — Emacs integration (emacsclient-aware editor & wakeup), wakeup shell injection fix, MCP lenient schema support, Unicode-aware mail recipient lookup, history keyset pagination (`--before-id`), `project list --json`, site-zine skill, CI workflow
 - v0.8.8 (2026-07-04) — Distributed tracing (Jaeger/clogs), cross-project AI communication (wakeup), project management commands, history move, session cleanup with active session protection, MCP integration framework (mcphub), gzip release archives, SQL lock leak fix, write_file CAS safety
 - v0.8.7 (2026-06-13) — LightPanda Cloud MCP support, test role (QA Engineer), code fence language preservation, cloud token validation
@@ -53,6 +55,13 @@ Simply put: **dscli = AI assistant + dev tools + session memory + CLI efficiency
 - **`dscli fim`** — Code completion (Fill-in-the-Middle), boost coding efficiency
 - **`dscli models`** — List AI models with current token prices
 - **`dscli balance`** — Check API balance and usage
+- **`dscli chat --attach <img>`** — Image input with vision models (e.g. `deepseek-v4-flash-vision-exp`), uploaded via the DeepSeek Files API
+
+### 🖼️ Vision & Files
+
+- **`dscli file`** — Manage DeepSeek Files API files (upload / list / info / delete) with a local content cache (`~/.dscli/files.json`): identical content reuses the same `file_id` with zero network requests
+- **Vision model support** — `dscli chat --model deepseek-v4-flash-vision-exp --attach screenshot.png "图中有什么？"`
+- **Vision file tools** — Models can read/upload images themselves: `vision_file_read` (injects the image into the conversation in the same round), `vision_file_list` / `vision_file_info` / `vision_file_delete`
 
 ### 📝 Session Management
 
@@ -106,7 +115,7 @@ go install github.com/dscli/dscli@latest
 # Option 2: Build from source
 git clone https://github.com/dscli/dscli.git
 cd dscli
-git checkout v0.8.9
+git checkout v0.9.1
 make install    # installs to $GOPATH/bin
 
 # Option 3: Download pre-built binary
@@ -135,6 +144,9 @@ echo "Explain the time complexity of this algorithm" | dscli chat --org
 
 # Code completion
 echo "def fibonacci(n):" | dscli fim
+
+# Image input with a vision model (uploads via Files API)
+dscli chat --model deepseek-v4-flash-vision-exp --attach screenshot.png "图中有什么？"
 ```
 
 ### 2. Session Management
@@ -292,7 +304,22 @@ dscli models --format json
 dscli balance --format json
 ```
 
-### 9. Configuration File
+### 9. Vision & Files
+
+```bash
+# Upload a local file (prints file_id; content is cached by SHA-256 + size)
+dscli file upload screenshot.png
+
+# List / inspect / delete uploaded files
+dscli file list
+dscli file info file-api-xxxxxxxxxxxxxxxx
+dscli file delete file-api-xxxxxxxxxxxxxxxx
+
+# Ask a vision model about a local image
+dscli chat --model deepseek-v4-flash-vision-exp --attach screenshot.png "图中有什么？"
+```
+
+### 10. Configuration File
 
 The configuration file defaults to `~/.dscli/config.dscli`, auto-generated on first run via environment variables:
 
@@ -316,6 +343,8 @@ Common configuration options:
 | `max-tokens` | `393216` | Max output tokens per request |
 | `user-balance` | `true` | Show balance consumption after chat |
 | `deepseek-v4` | `true` | Enable V4 model |
+| `files-cache-path` | `~/.dscli/files.json` | Local cache for Files API uploads (content-hash keyed) |
+| `read-file-large-threshold` | `200` | Size (KB) above which a full read of a file appends a size hint |
 
 ## 🔄 Workflow
 
