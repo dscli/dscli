@@ -97,49 +97,6 @@ func TestBlocksRoundTrip(t *testing.T) {
 	}
 }
 
-func TestBuildUploadInjection(t *testing.T) {
-	tcs := []ToolCall{
-		{ID: "call_1", Type: "function", Function: ToolCallFunction{Name: "vision_file_upload", Arguments: `{"file":"a.png"}`}},
-		{ID: "call_2", Type: "function", Function: ToolCallFunction{Name: "web_fetch", Arguments: `{"url":"https://x.com"}`}},
-	}
-	// 真实格式：tool 消息 content 带 "Tool result N (name):\n### Result\n" 前缀
-	toolInputs := []Message{
-		{Role: "tool", ToolCallID: "call_1", Content: "Tool result 1 (vision_file_upload):\n### Result\n{\"id\":\"file-api-111\",\"filename\":\"a.png\",\"bytes\":42,\"object\":\"file\",\"purpose\":\"user_data\"}\n"},
-		{Role: "tool", ToolCallID: "call_2", Content: `web page content`},
-	}
-
-	// 视觉模型：注入 user 消息，含 file 块
-	inj := BuildUploadInjection("deepseek-v4-flash-vision-exp", tcs, toolInputs)
-	if inj == nil {
-		t.Fatal("expected injection for vision model")
-	}
-	if inj.Role != "user" || len(inj.ContentBlocks) != 2 {
-		t.Fatalf("unexpected injection: %+v", inj)
-	}
-	if inj.ContentBlocks[1].Type != "file" || inj.ContentBlocks[1].FileID != "file-api-111" {
-		t.Fatalf("expected file block, got %+v", inj.ContentBlocks[1])
-	}
-
-	// 非视觉模型：不注入
-	if inj := BuildUploadInjection("deepseek-v4-flash", tcs, toolInputs); inj != nil {
-		t.Fatalf("expected no injection for non-vision model, got %+v", inj)
-	}
-
-	// 上传失败（无 id）：不注入
-	bad := []Message{{Role: "tool", ToolCallID: "call_1", Content: `{"error":"boom"}`}}
-	if inj := BuildUploadInjection("deepseek-v4-flash-vision-exp", tcs, bad); inj != nil {
-		t.Fatalf("expected no injection when upload failed, got %+v", inj)
-	}
-
-	// 无 upload 工具调用：不注入
-	if inj := BuildUploadInjection("deepseek-v4-flash-vision-exp", tcs[:1], nil); inj != nil {
-		_ = inj // call_1 有 upload，但没有对应 tool 消息
-	}
-	if inj := BuildUploadInjection("deepseek-v4-flash-vision-exp", tcs[1:], toolInputs); inj != nil {
-		t.Fatalf("expected no injection without upload tool call, got %+v", inj)
-	}
-}
-
 func TestIsVisionModel(t *testing.T) {
 	cases := map[string]bool{
 		"deepseek-v4-flash-vision-exp": true,

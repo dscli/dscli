@@ -13,11 +13,15 @@ type ToolDef struct {
 	Name        string
 	DisplayName string
 	Description string
-	Strict      bool
-	Parameters  map[string]any
-	Category    string
-	Timeout     time.Duration // 工具执行超时时间
-	Handler     func(ctx context.Context, args ToolArgs) (result, warning string, err error)
+	// Aliases 是工具的旧名/别名（如 vision_file_upload → vision_file_read）。
+	// GetToolDef 可按别名解析，但 GetAllTools 只暴露主名：历史记录中的
+	// 旧名调用（中断恢复重放）仍能执行，模型新会话只见新名。
+	Aliases    []string
+	Strict     bool
+	Parameters map[string]any
+	Category   string
+	Timeout    time.Duration // 工具执行超时时间
+	Handler    func(ctx context.Context, args ToolArgs) (result, warning string, err error)
 }
 
 // ToolArgs 参数定义

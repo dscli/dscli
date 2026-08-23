@@ -651,12 +651,10 @@ func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ..
 			roundInputs = append(roundInputs, prompt.Message{Role: "user", Content: c})
 		}
 
-		// 模型自主上传的图片：把 file_id 注入为新的 user 消息（file 块）。
-		// 模型无法在 tool 轮次后自己插入图片引用，必须由运行时注入。
-		if inj := prompt.BuildUploadInjection(model, tcs, toolInputs); inj != nil {
-			roundInputs = append(roundInputs, *inj)
-		}
-
+		// 模型自主上传的图片：vision_file_read 的 handler 通过双消息协议
+		// （DualMessage，见 internal/toolcall/dual.go）在 HandleToolCalls
+		// 层已把 file_id 注入为附加 user 消息并落库/追加到 history，
+		// 模型下一轮请求即可看到图片，无需在此重复注入。
 		return ChatRound(ctx, prompts, history, roundInputs...)
 	}
 	return err
@@ -674,7 +672,7 @@ Image input (vision models, e.g. deepseek-v4-flash-vision-exp):
   dscli chat --model deepseek-v4-flash-vision-exp --attach screenshot.png "图中有什么？"
   Files are uploaded to the DeepSeek Files API and referenced by file_id
   (no base64 blobs in history). Vision file tools are also available to the
-  model: vision_file_upload / vision_file_list / vision_file_info / vision_file_delete.
+  model: vision_file_read / vision_file_list / vision_file_info / vision_file_delete.
 
 Examples:
   echo "Create a main.go file" | dscli chat

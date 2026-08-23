@@ -1,6 +1,6 @@
 # vision_file_list
 
-List files previously uploaded via `vision_file_upload`.
+List files previously uploaded via `vision_file_read`.
 
 **Parameters** (all optional):
 - `after`: pagination cursor — return files after this `file_id`.

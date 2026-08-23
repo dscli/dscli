@@ -67,6 +67,9 @@ var (
 	// toolRegistry 工具注册表
 	toolRegistry = map[string]ToolDef{}
 
+	// toolAliases 别名映射：alias -> 主名（旧名兼容，如 vision_file_upload）。
+	toolAliases = map[string]string{}
+
 	// toolRegistryRWMutex tool registry rwmutex
 	toolRegistryRWMutex = sync.RWMutex{}
 
@@ -140,8 +143,19 @@ func RegisterTool(tool ToolDef) error {
 	if _, ok := toolRegistry[name]; ok {
 		return fmt.Errorf("tool %q already registered", name)
 	}
+	for _, alias := range tool.Aliases {
+		if _, ok := toolRegistry[alias]; ok {
+			return fmt.Errorf("tool alias %q already registered", alias)
+		}
+		if _, ok := toolAliases[alias]; ok {
+			return fmt.Errorf("tool alias %q already registered", alias)
+		}
+	}
 	tool.DisplayName = GetToolDisplayName(name)
 	toolRegistry[name] = tool
+	for _, alias := range tool.Aliases {
+		toolAliases[alias] = name
+	}
 	return nil
 }
 
@@ -151,6 +165,12 @@ func GetToolDef(ctx context.Context, toolName string) (tool ToolDef, ok bool) {
 	toolRegistryRWMutex.RLock()
 	defer toolRegistryRWMutex.RUnlock()
 	tool, ok = toolRegistry[toolName]
+	if !ok {
+		// 别名解析：旧名（如 vision_file_upload）映射到主名。
+		if canonical, has := toolAliases[toolName]; has {
+			tool, ok = toolRegistry[canonical]
+		}
+	}
 	return tool, ok
 }
 
@@ -244,11 +264,25 @@ func HandleToolCalls(ctx context.Context, tcs []prompt.ToolCall) (inputs []promp
 		outfmt.Printf("📋 本轮共 %d 个工具调用\n", len(tcs))
 	}
 
+	// 双消息协议：handler 返回 DualMessage（如 vision_file_read 上传
+	// 成功后附带 file 块的 user 消息）时，拆分为 tool 消息 + 附加
+	// user 消息——模型下一轮请求即可看到图片，无需等 user turn。
+	// 附加 user 消息同样落库，中断恢复后可重放。收集后统一在全部
+	// tool 消息之后追加，保持 OpenAI 协议顺序：一条 assistant 消息的
+	// tool_calls 必须被紧随其后的 tool 消息依次响应，不能夹带 user 消息。
+	var dualUsers []prompt.Message
+
 	// 处理每个工具调用
 	for i, tc := range tcs {
 		id := tc.ID
 		// 使用新的工具调用处理器
 		result, user, err := handleToolCall(ctx, tc.Function.Name, tc.Function.Arguments, i+1, len(tcs))
+
+		toolResult, userMsg, isDual := SplitDualResult(result)
+		if isDual {
+			result = toolResult
+		}
+
 		toolContent := ToolContent{
 			Index:    i + 1,
 			ToolName: tc.Function.Name,
@@ -274,6 +308,17 @@ func HandleToolCalls(ctx context.Context, tcs []prompt.ToolCall) (inputs []promp
 		}
 		inputs = append(inputs, input)
 
+		if isDual && userMsg != nil {
+			dualUsers = append(dualUsers, *userMsg)
+		}
+	}
+
+	// 所有 tool 消息之后统一追加双消息 user 消息（顺序：tool × N → user × N）。
+	for _, m := range dualUsers {
+		if userSaveErr := prompt.SaveMessages(ctx, m); userSaveErr != nil {
+			outfmt.Debug("failed to save dual user message: %v", userSaveErr)
+		}
+		inputs = append(inputs, m)
 	}
 	return inputs
 }

@@ -24,7 +24,7 @@ func init() {
 			"properties": map[string]any{
 				"file_id": map[string]any{
 					"type":        "string",
-					"description": "file_id returned by vision_file_upload (required)",
+					"description": "file_id returned by vision_file_read (required)",
 				},
 			},
 			"required":             []string{"file_id"},
