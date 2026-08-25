@@ -239,10 +239,12 @@ const (
 		return {count: imgs.length};
 	})()`
 
-	// jsGetAssistantText extracts all assistant response text from
+	// jsGetAssistantText extracts all assistant response HTML from
 	// .ds-markdown elements in the MAIN content area (NOT sidebar/navigation).
-	// It concatenates all blocks to handle responses split across multiple
-	// elements (paragraphs, code blocks, lists).
+	// It returns the innerHTML parts (one per element) so the Go side can
+	// convert the rendered DOM back to markdown — innerText loses code
+	// fences, inline-code backticks and list markers, which breaks the
+	// fidelity callers rely on.
 	// NOTE: the result may include pre-existing conversation history (e.g.
 	// continued conversations); webchatWait strips it via mdBaseline.
 	jsGetAssistantText = `(() => {
@@ -260,10 +262,10 @@ const (
 		}
 		return true;
 	});
-	if (els.length === 0) return '';
+	if (els.length === 0) return [];
 	// Concatenate ALL .ds-markdown elements, not just the last one.
 	// Streaming responses may be split across multiple blocks.
-	return els.map(function(el) { return el.innerText || ''; }).join('\n\n').trim();
+	return els.map(function(el) { return el.innerHTML; });
 })()`
 	// jsIsGenerationActive checks whether the AI is still generating a response.
 	// Returns true if a stop/cancel button is visible or the textarea is disabled
@@ -512,6 +514,7 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, opts W
 	}
 
 	var baseline, response, finalURL, mdBaseline string
+	var mdBaselineParts []string
 
 	// Base navigation and page hydration.
 	actions := []chromedp.Action{
@@ -560,11 +563,16 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, opts W
 		// Record baseline text before sending.
 		chromedp.Evaluate("document.body ? document.body.innerText : ''", &baseline),
 
-		// Record the .ds-markdown baseline (all assistant text visible
+		// Record the .ds-markdown baseline (all assistant HTML visible
 		// before sending). webchatWait strips this prefix from the
 		// extracted text so continued conversations don't include
-		// pre-existing history.
-		chromedp.Evaluate(jsGetAssistantText, &mdBaseline),
+		// pre-existing history. The conversion is its own action: action
+		// contexts are only valid inside chromedp.Run.
+		chromedp.Evaluate(jsGetAssistantText, &mdBaselineParts),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			mdBaseline = joinMarkdown(mdBaselineParts)
+			return nil
+		}),
 
 		// Set the textarea value (JS needed for React-controlled inputs).
 		chromedp.ActionFunc(func(ctx context.Context) error {
@@ -948,12 +956,15 @@ func webchatWait(ctx context.Context, baseline, mdBaseline string) (string, erro
 
 				// Preferred: extract from .ds-markdown elements.
 				// This naturally excludes UI chrome (search info,
-				// toggle labels, footer text).
+				// toggle labels, footer text). The rendered DOM is
+				// converted back to markdown (code fences, inline-code
+				// backticks, list markers) — innerText alone would lose
+				// all of that structure.
 				if resp := getAssistantText(ctx); resp != "" {
 					resp = stripBaselinePrefix(resp, mdBaseline)
-					// Drop the code-block toolbar labels (language name,
-					// Copy/Download buttons) that innerText includes before
-					// the code, so the answer handed to callers is clean.
+					// Belt-and-braces: strip body-text fallback artifacts
+					// (code-block toolbar labels) in case the markdown
+					// converter was bypassed. No-op for clean output.
 					resp = stripUIChromePrefix(resp)
 					// A short overload notice must never be returned as an
 					// answer — it would poison the caller's decision-making.
@@ -1065,7 +1076,7 @@ func isGenerationActive(ctx context.Context) bool {
 	return active
 }
 
-// getAssistantText returns the concatenated text of all .ds-markdown
+// getAssistantText returns the concatenated markdown of all .ds-markdown
 // elements in the main content area, or "" if the selector doesn't match
 // (e.g. DeepSeek changed their DOM). The text may include pre-existing
 // conversation history; webchatWait strips it via mdBaseline.
@@ -1073,11 +1084,11 @@ func getAssistantText(ctx context.Context) string {
 	span, ctx := clog.StartSpanFromContext(ctx, "getAssistantText")
 	defer span.Finish()
 
-	var text string
-	if err := chromedp.Evaluate(jsGetAssistantText, &text).Do(ctx); err != nil {
+	var parts []string
+	if err := chromedp.Evaluate(jsGetAssistantText, &parts).Do(ctx); err != nil {
 		return ""
 	}
-	return strings.TrimSpace(text)
+	return joinMarkdown(parts)
 }
 
 // cleanBodyResponse removes DeepSeek UI chrome artifacts from

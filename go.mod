@@ -8,6 +8,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.19
 	github.com/nanjj/clog v0.3.0
 	github.com/spf13/cobra v1.8.0
+	golang.org/x/net v0.35.0
 	golang.org/x/term v0.41.0
 	golang.org/x/text v0.35.0
 	modernc.org/sqlite v1.50.1
