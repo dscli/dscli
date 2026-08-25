@@ -354,10 +354,13 @@ func askExpertWebChat(ctx context.Context, input, role, system, mode, keep strin
 }
 
 // maxDSMLRounds caps the tool-call rounds within one expert consultation.
-// A runaway model that keeps emitting tools would otherwise loop forever;
-// the observed pattern is one to three rounds. A variable so tests can
-// shrink or grow it.
-var maxDSMLRounds = 6
+// The loop naturally exits whenever a reply carries no tool calls — the
+// expert always finishes with prose — so this is only a failsafe against
+// a broken DSML parser (e.g. a reply that keeps matching an unclosed
+// <invoke> block). 6 was too small: real sessions can run many rounds
+// (9 consecutive tool calls were observed in the design case study), so
+// the cap is generous. A variable so tests can shrink it.
+var maxDSMLRounds = 1024
 
 // executeDSMLToolCalls is the DSML executor hook; tests replace it with a
 // recording mock (the real executor runs shells and needs no browser).
