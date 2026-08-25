@@ -34,7 +34,10 @@ type DSMLCall struct {
 var dsmlInvokeRe = regexp.MustCompile(`(?s)<invoke\s+name="([^"]+)"[^>]*>(.*?)</invoke>`)
 
 // dsmlParamRe matches one <parameter> child: name + optional string="true|false".
-var dsmlParamRe = regexp.MustCompile(`(?s)<parameter\s+name="([^"]+)"\s*string="(true|false)"[^>]*>(.*?)</parameter>`)
+// DeepSeek sometimes omits the string attribute entirely; the group then
+// captures "", and decodeDSMLValue's coercion path keeps text text and
+// numbers numeric, so the call is never silently dropped.
+var dsmlParamRe = regexp.MustCompile(`(?s)<parameter\s+name="([^"]+)"(?:\s*string="(true|false)")?[^>]*>(.*?)</parameter>`)
 
 // dsmlEntityReplacer decodes the XML entities DeepSeek may emit inside
 // parameter values. &amp; must be last so other entities are not re-escaped.

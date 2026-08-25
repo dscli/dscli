@@ -83,6 +83,29 @@ func TestParseDSMLToolCallsTypedValues(t *testing.T) {
 	}
 }
 
+// TestParseDSMLToolCallsNoStringAttr covers DeepSeek omitting the string
+// attribute on a parameter. The tag must still be captured: absent means the
+// same coercion as string="false" (numeric stays numeric, text stays text).
+func TestParseDSMLToolCallsNoStringAttr(t *testing.T) {
+	text := `<invoke name="exec_command">
+<parameter name="cmd">git status --short</parameter>
+<parameter name="timeout">10000</parameter>
+</invoke>`
+	calls, err := ParseDSMLToolCalls(text)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls: %v", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("got %d calls, want 1", len(calls))
+	}
+	if cmd, ok := calls[0].Args["cmd"].(string); !ok || cmd != "git status --short" {
+		t.Errorf("cmd = %#v, want text passthrough", calls[0].Args["cmd"])
+	}
+	if to, ok := calls[0].Args["timeout"].(float64); !ok || to != 10000 {
+		t.Errorf("timeout = %#v, want float64(10000)", calls[0].Args["timeout"])
+	}
+}
+
 func TestParseDSMLToolCallsNone(t *testing.T) {
 	for _, text := range []string{"", "plain text", "<invoke>not a real call</invoke>", "see <invoke name= without quotes"} {
 		calls, err := ParseDSMLToolCalls(text)
