@@ -113,6 +113,14 @@ appended after ALL tool messages - the only path that can inject an image
 block right after a tool call (OpenAI-compatible APIs allow images only in
 user messages).
 
+DSML tool calls from WebChat: chat.deepseek.com replies to role-driven
+consultations (e.g. `review` via code_review) may embed DSML markup
+(`<invoke name="exec_command">` with `<parameter>` children). The ask layer
+parses them (internal/toolcall/dsml.go), maps `exec_command` -> `shell`
+(cmd->script, justification->summary, timeout ms->s; whitelist: exec_command,
+shell, read_file only) and feeds results back into the SAME conversation
+(`askExpertToolLoop`). Plain `ask_expert` (role empty) never enters the loop.
+
 ### Embedded Assets (`go:embed`)
 
 | Asset | Location |

@@ -927,3 +927,187 @@ func TestAskExpertWebChatRetryAbortsOnCancel(t *testing.T) {
 		t.Errorf("webChatFunc calls = %d, want 1 (backoff aborted by cancel)", calls)
 	}
 }
+
+// dsmlReply is a realistic DSML tool-call reply from a review expert.
+const dsmlReply = `I need to inspect the amap implementation.
+<tool_calls>
+<invoke name="exec_command">
+<parameter name="cmd" string="true">git show --stat</parameter>
+<parameter name="justification" string="true">See changed files</parameter>
+<parameter name="timeout" string="false">10000</parameter>
+</invoke>
+</tool_calls>`
+
+// captureDSMLExec replaces executeDSMLToolCalls with a recorder and returns
+// the feedback text to emit. The recorded calls are verified per test.
+func captureDSMLExec(t *testing.T, feedback string) *[]toolcall.DSMLCall {
+	t.Helper()
+	orig := executeDSMLToolCalls
+	var seen []toolcall.DSMLCall
+	executeDSMLToolCalls = func(_ context.Context, calls []toolcall.DSMLCall) []string {
+		seen = append(seen, calls...)
+		return []string{feedback}
+	}
+	t.Cleanup(func() { executeDSMLToolCalls = orig })
+	return &seen
+}
+
+func TestAskExpertWebChatToolLoop(t *testing.T) {
+	origFunc := webChatFunc
+	t.Cleanup(func() { webChatFunc = origFunc })
+
+	const (
+		url1        = "https://chat.deepseek.com/a/chat/s/convAAA"
+		url2        = "https://chat.deepseek.com/a/chat/s/convBBB"
+		finalAnswer = "## Overall Assessment\nSolid implementation..."
+	)
+	var calls []lp.WebChatOptions
+	var messages []string
+	webChatFunc = func(_ context.Context, msg string, opts lp.WebChatOptions) (lp.WebChatResult, error) {
+		messages = append(messages, msg)
+		calls = append(calls, opts)
+		switch len(messages) {
+		case 1:
+			return lp.WebChatResult{Text: dsmlReply, URL: url1}, nil
+		case 2:
+			return lp.WebChatResult{Text: finalAnswer, URL: url2}, nil
+		}
+		return lp.WebChatResult{Text: "unexpected extra round", URL: url2}, nil
+	}
+
+	seen := captureDSMLExec(t, "exec_command 工具调用的结果：\n```\nchanged files\n```")
+
+	reply, convURL, err := askExpertWebChat(context.Background(), "input", "review", "", "", "", nil)
+	if err != nil {
+		t.Fatalf("askExpertWebChat: %v", err)
+	}
+	if reply != finalAnswer {
+		t.Errorf("reply = %q, want final answer", reply)
+	}
+	if convURL != url2 {
+		t.Errorf("convURL = %q, want %s", convURL, url2)
+	}
+	if len(*seen) != 1 || (*seen)[0].Name != "exec_command" {
+		t.Errorf("executed calls = %+v, want one exec_command", *seen)
+	}
+	// Round 2 must continue the SAME conversation (Keep = first URL) with
+	// the tool feedback as message — and must NOT re-inject the role prompt.
+	if len(messages) != 2 {
+		t.Fatalf("webChatFunc messages = %d, want 2 (initial + tool follow-up)", len(messages))
+	}
+	if !strings.Contains(messages[1], "工具调用的结果") || strings.Contains(messages[1], "Core Identity") {
+		t.Errorf("round-2 message = %q, want tool feedback without role prompt", messages[1])
+	}
+	if calls[1].Keep != url1 {
+		t.Errorf("round-2 Keep = %q, want %s", calls[1].Keep, url1)
+	}
+	if calls[1].Mode != "" {
+		t.Errorf("round-2 Mode = %q, want empty (preserve conversation mode)", calls[1].Mode)
+	}
+}
+
+func TestAskExpertWebChatToolLoopNoRole(t *testing.T) {
+	// Plain ask_expert (role empty) must never enter the tool loop: the
+	// DSML text is returned verbatim, treating the expert's own words as
+	// content rather than executing commands.
+	origFunc := webChatFunc
+	t.Cleanup(func() { webChatFunc = origFunc })
+	webChatFunc = func(_ context.Context, _ string, _ lp.WebChatOptions) (lp.WebChatResult, error) {
+		return lp.WebChatResult{Text: dsmlReply, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+	}
+	origExec := executeDSMLToolCalls
+	executed := false
+	executeDSMLToolCalls = func(_ context.Context, _ []toolcall.DSMLCall) []string {
+		executed = true
+		return nil
+	}
+	t.Cleanup(func() { executeDSMLToolCalls = origExec })
+
+	reply, _, err := askExpertWebChat(context.Background(), "input", "", "", "", "", nil)
+	if err != nil {
+		t.Fatalf("askExpertWebChat: %v", err)
+	}
+	if executed {
+		t.Error("tool executor called for role-less consultation; loop must not run")
+	}
+	if reply != dsmlReply {
+		t.Errorf("reply = %q, want verbatim DSML text", reply)
+	}
+}
+
+func TestAskExpertWebChatToolLoopRoundCap(t *testing.T) {
+	origFunc, origRounds := webChatFunc, maxDSMLRounds
+	t.Cleanup(func() { webChatFunc, maxDSMLRounds = origFunc, origRounds })
+	maxDSMLRounds = 2
+
+	webChatFunc = func(_ context.Context, _ string, _ lp.WebChatOptions) (lp.WebChatResult, error) {
+		// The expert keeps requesting tools: every round returns DSML.
+		return lp.WebChatResult{Text: dsmlReply, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+	}
+	captureDSMLExec(t, "tool output")
+
+	reply, _, err := askExpertWebChat(context.Background(), "input", "review", "", "", "", nil)
+	if err != nil {
+		t.Fatalf("askExpertWebChat: %v", err)
+	}
+	if strings.Contains(reply, "<invoke") || strings.Contains(reply, "<tool_calls") {
+		t.Errorf("reply still contains DSML markers after cap:\n%s", reply)
+	}
+	if !strings.Contains(reply, "I need to inspect") {
+		t.Errorf("reply lost the prose part:\n%s", reply)
+	}
+}
+
+func TestAskExpertWebChatToolLoopTruncatedDSML(t *testing.T) {
+	origFunc := webChatFunc
+	t.Cleanup(func() { webChatFunc = origFunc })
+	// The first reply begins a tool call but is cut off before </invoke>.
+	cut := `<tool_calls>
+<invoke name="exec_command">
+<parameter name="cmd" string="true">git show`
+	webChatFunc = func(_ context.Context, _ string, _ lp.WebChatOptions) (lp.WebChatResult, error) {
+		return lp.WebChatResult{Text: cut, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+	}
+	origExec := executeDSMLToolCalls
+	executed := false
+	executeDSMLToolCalls = func(_ context.Context, _ []toolcall.DSMLCall) []string {
+		executed = true
+		return nil
+	}
+	t.Cleanup(func() { executeDSMLToolCalls = origExec })
+
+	reply, _, err := askExpertWebChat(context.Background(), "input", "review", "", "", "", nil)
+	if err != nil {
+		t.Fatalf("askExpertWebChat: %v", err)
+	}
+	if executed {
+		t.Error("truncated tool call must not be executed")
+	}
+	if strings.Contains(reply, "<invoke") {
+		t.Errorf("reply still contains truncated DSML:\n%s", reply)
+	}
+}
+
+func TestAskExpertWebChatToolLoopContinueFails(t *testing.T) {
+	origFunc := webChatFunc
+	t.Cleanup(func() { webChatFunc = origFunc })
+	calls := 0
+	var lastErr error
+	webChatFunc = func(_ context.Context, _ string, _ lp.WebChatOptions) (lp.WebChatResult, error) {
+		calls++
+		if calls == 1 {
+			return lp.WebChatResult{Text: dsmlReply, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+		}
+		lastErr = errors.New("browser crashed")
+		return lp.WebChatResult{}, lastErr
+	}
+	captureDSMLExec(t, "tool output")
+
+	_, _, err := askExpertWebChat(context.Background(), "input", "review", "", "", "", nil)
+	if err == nil || !strings.Contains(err.Error(), "continue conversation") {
+		t.Fatalf("err = %v, want continue-conversation error", err)
+	}
+	if calls != 2 {
+		t.Errorf("webChatFunc calls = %d, want 2 (follow-up attempted once)", calls)
+	}
+}

@@ -9,7 +9,11 @@ Uses DeepSeek Web (free V4 Pro) via Chrome browser — no API key needed.
 
 **Parameters**: `summary` (required), `test_command` (optional), `since` (optional, default `-1` — review last commit; use `-2` for last 2, `-3` for last 3, etc., equivalent to `HEAD~N`), `timeout` (optional).
 
-Timeout: default 300s. Set `timeout` (seconds) to override — set longer (e.g. 600) for large projects with many tests.
+Timeout: default 900s (15 min). The expert may run several tool-call rounds
+(exec_command) before producing the final review, so set `timeout` (seconds)
+longer for large projects with many tests. If the input is too large for the
+DeepSeek chat box, the expert inspects the repo via tools — results are fed
+back automatically in the same conversation.
 
 Use before pushing code or to learn better practices.
 

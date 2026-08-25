@@ -334,6 +334,15 @@ func askExpertWebChat(ctx context.Context, input, role, system, mode, keep strin
 
 		res, callErr := webChatFunc(ctx, fullMessage, opts)
 		if callErr == nil {
+			// Role-driven consultations (code_review's review role) may
+			// receive DSML tool calls embedded in the reply: the web expert
+			// cannot execute them locally, so we parse, run the underlying
+			// dscli tools, and feed the results back into the SAME
+			// conversation until the expert produces a final answer.
+			// Plain ask_expert is never role-driven, so it is unaffected.
+			if role != "" && toolcall.HasDSMLToolCalls(res.Text) {
+				return askExpertToolLoop(ctx, res, mode)
+			}
 			return res.Text, res.URL, nil
 		}
 		lastErr = callErr
@@ -342,6 +351,64 @@ func askExpertWebChat(ctx context.Context, input, role, system, mode, keep strin
 		}
 	}
 	return "", "", fmt.Errorf("ask expert: %w (after %d attempts)", lastErr, len(askExpertRetryDelays)+1)
+}
+
+// maxDSMLRounds caps the tool-call rounds within one expert consultation.
+// A runaway model that keeps emitting tools would otherwise loop forever;
+// the observed pattern is one to three rounds. A variable so tests can
+// shrink or grow it.
+var maxDSMLRounds = 6
+
+// executeDSMLToolCalls is the DSML executor hook; tests replace it with a
+// recording mock (the real executor runs shells and needs no browser).
+var executeDSMLToolCalls = toolcall.ExecuteDSMLToolCalls
+
+// askExpertToolLoop continues a role-driven WebChat conversation while the
+// expert emits DSML tool calls: parse the calls, execute them locally, and
+// post the results back into the SAME conversation (Keep=first URL). The
+// role prompt is injected only on the first round — askExpertWebChat already
+// rendered it — so follow-up messages carry tool results verbatim.
+//
+// Exits with the last assistant reply when:
+//   - the reply contains no tool calls (final answer), or
+//   - maxDSMLRounds is exhausted or a tool-call block is truncated; the DSML
+//     is stripped so callers see only prose, plus a warning on stderr.
+//
+// Browser/network errors are fatal: retrying mid-conversation is not safe.
+func askExpertToolLoop(ctx context.Context, first lp.WebChatResult, mode string) (reply, convURL string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "askExpertToolLoop")
+	defer span.Finish()
+
+	message := first.Text
+	convURL = first.URL
+	for round := 1; round <= maxDSMLRounds; round++ {
+		calls, parseErr := toolcall.ParseDSMLToolCalls(message)
+		if parseErr != nil {
+			outfmt.Printf("⚠️ 专家工具调用不完整，已停止循环: %v\n", parseErr)
+			return toolcall.StripDSMLToolCalls(message), convURL, nil
+		}
+		if len(calls) == 0 {
+			return message, convURL, nil
+		}
+
+		outfmt.Printf("🤖 专家请求执行 %d 个工具调用（第 %d/%d 轮）…\n", len(calls), round, maxDSMLRounds)
+		outputs := executeDSMLToolCalls(ctx, calls)
+		feedback := strings.Join(outputs, "\n\n")
+
+		// Continue the SAME conversation: same mode, Keep set to the URL
+		// returned by the previous send. No role injection here.
+		opts := lp.WebChatOptions{Mode: lp.Mode(mode), Keep: convURL}
+		res, callErr := webChatFunc(ctx, feedback, opts)
+		if callErr != nil {
+			return "", "", fmt.Errorf("expert tool loop: continue conversation after %d round(s): %w", round, callErr)
+		}
+		message = res.Text
+		if res.URL != "" {
+			convURL = res.URL
+		}
+	}
+	outfmt.Printf("⚠️ 专家连续工具调用超过 %d 轮上限，已返回中间结果\n", maxDSMLRounds)
+	return toolcall.StripDSMLToolCalls(message), convURL, nil
 }
 
 // maxAttachmentSize is the maximum allowed size for a single attachment (1MB).

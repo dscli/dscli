@@ -39,8 +39,10 @@ func TestCodeReviewToolStructure(t *testing.T) {
 			t.Errorf("Tool description missing required keyword: %s", keyword)
 		}
 	}
-	if codeReviewTool.Timeout != 5*time.Minute {
-		t.Errorf("Expected timeout 5 minutes, got %v", codeReviewTool.Timeout)
+	// 15 min: the expert may run multiple tool-call rounds before the
+	// final review, and each round needs a browser session + model reply.
+	if codeReviewTool.Timeout != 15*time.Minute {
+		t.Errorf("Expected timeout 15 minutes, got %v", codeReviewTool.Timeout)
 	}
 
 	if codeReviewTool.Category != "check" {
