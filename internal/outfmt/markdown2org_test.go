@@ -672,3 +672,44 @@ func TestMarkdownToOrgConverter_BlockQuoteViaConvertLines(t *testing.T) {
 		t.Errorf("ConvertLines:\n got: %q\n want: %q", got, want)
 	}
 }
+
+func TestMarkdownToOrgConverter_LonePipeLineNoPanic(t *testing.T) {
+	// A bare "|" line after table rows must not panic: isMarkdownTableSeparator
+	// used to slice trimmed[1:len-1] on "|" (len 1) and crashed with
+	// "slice bounds out of range [1:0]". ConvertLines processes arbitrary
+	// model output, so malformed table lines must degrade gracefully.
+	input := "| a | b |\n|----|----|\n|\ntail"
+	converter := NewMarkdownToOrgConverter()
+	var out strings.Builder
+	if err := converter.ConvertLines(input, &out); err != nil {
+		t.Fatalf("ConvertLines: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{"| a | b |", "|---+---|", "|\n", "tail"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestMarkdownToOrgConverter_LonePipeLineOnly(t *testing.T) {
+	// A lone "|" alone in the input must pass through as text, not panic.
+	converter := NewMarkdownToOrgConverter()
+	var out strings.Builder
+	if err := converter.ConvertLines("前\n|\n后\n", &out); err != nil {
+		t.Fatalf("ConvertLines: %v", err)
+	}
+	if got := out.String(); got != "前\n|\n后\n" {
+		t.Errorf("unexpected output: %q", got)
+	}
+}
+
+func TestMarkdownToOrgConverter_EmptyPipeLinesNoPanic(t *testing.T) {
+	// "||" (empty cell line) is a valid (empty) table row and must not panic.
+	converter := NewMarkdownToOrgConverter()
+	var out strings.Builder
+	if err := converter.ConvertLines("| a |\n|----|\n||\n|x|\n", &out); err != nil {
+		t.Fatalf("ConvertLines: %v", err)
+	}
+	_ = out.String() // just must not panic
+}

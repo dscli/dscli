@@ -149,3 +149,18 @@ func TestMarkdownFragmentEmptyAndGarbage(t *testing.T) {
 		t.Errorf("simple: got %q", got)
 	}
 }
+
+func TestMarkdownFragmentDegenerateTableRow(t *testing.T) {
+	// A <tr> that loses its th/td content through HTML5 foster parenting
+	// (here <tr><div>text</div> - the div is moved out of the table by the
+	// parser) must not render as a bare "|" line. Such a line is treated as
+	// a table row by downstream markdown table parsers and used to trigger
+	// a panic in the org conversion of chat output. The foster-parented
+	// content still appears as its own paragraph before the table.
+	html := `<table><thead><tr><th>名称</th><th>值</th></tr></thead><tbody><tr><div>text</div></tr><tr><td>x</td><td>1</td></tr></tbody></table>`
+	got := markdownFragment(html)
+	want := "text\n\n| 名称 | 值 |\n| --- | --- |\n| x | 1 |"
+	if got != want {
+		t.Errorf("table mismatch:\ngot:\n%q\nwant:\n%q", got, want)
+	}
+}

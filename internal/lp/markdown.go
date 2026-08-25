@@ -353,32 +353,47 @@ func writeTable(b *strings.Builder, table *html.Node) {
 	if len(rows) == 0 {
 		return
 	}
-	cells := tableCells(rows[0])
+	wroteRow := false
+	wroteHeader := false
 	header := false
-	for _, c := range cells {
-		if c.Data == "th" {
-			header = true
-			break
+	for _, row := range rows {
+		cells := tableCells(row)
+		if len(cells) == 0 {
+			// Degenerate row without th/td (malformed HTML). Skip it instead
+			// of emitting a bare "|" line, which downstream table parsers
+			// treat as a table row.
+			continue
 		}
-	}
-	for i, row := range rows {
+		if !wroteRow {
+			// The first emitted row decides whether the table has a header,
+			// so a degenerate first row cannot suppress the separator.
+			for _, c := range cells {
+				if c.Data == "th" {
+					header = true
+					break
+				}
+			}
+		}
+		if wroteRow {
+			b.WriteString("\n")
+		}
+		wroteRow = true
 		line := "|"
-		for _, cell := range tableCells(row) {
+		for _, cell := range cells {
 			var t strings.Builder
 			writeInline(&t, cell)
 			line += " " + strings.ReplaceAll(strings.TrimSpace(t.String()), "|", `\|`) + " |"
 		}
-		if i > 0 {
-			b.WriteString("\n")
-		}
 		b.WriteString(line)
-		if i == 0 && header {
+		if header && !wroteHeader {
+			// Separator goes right after the header row (first emitted row).
 			b.WriteString("\n")
 			sep := "|"
 			for range cells {
 				sep += " --- |"
 			}
 			b.WriteString(sep)
+			wroteHeader = true
 		}
 	}
 }
