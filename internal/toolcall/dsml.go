@@ -491,8 +491,10 @@ func decodeDSMLValue(raw string, isString bool) any {
 // opaque VALUE content, and any tag-looking text inside it (a raw
 // "<invoke", a "</invoke>", a nested "<parameter>") must not be read as
 // structure.
-var dsmlParamOpenRe = regexp.MustCompile(`(?s)<\s*parameter\b[^>]*>`)
-var dsmlParamCloseRe = regexp.MustCompile(`(?s)</\s*parameter\s*>`)
+var (
+	dsmlParamOpenRe  = regexp.MustCompile(`(?s)<\s*parameter\b[^>]*>`)
+	dsmlParamCloseRe = regexp.MustCompile(`(?s)</\s*parameter\s*>`)
+)
 
 // dsmlToolResultRe matches one complete <tool_result> block - the executor's
 // feedback wrapper (see formatDSMLToolResult). The body is opaque quoted

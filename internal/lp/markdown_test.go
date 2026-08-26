@@ -180,20 +180,28 @@ func TestMarkdownFragmentPreservesDSML(t *testing.T) {
 		in   string
 		want string
 	}{
-		{"inline block-level invoke",
+		{
+			"inline block-level invoke",
 			`Expert 思考后决定搜索：<invoke name="exec_command"><parameter name="cmd" string="true">pwd && git status</parameter></invoke><p>这是后续文字</p>`,
-			"Expert 思考后决定搜索：<invoke name=\"exec_command\"><parameter name=\"cmd\" string=\"true\">pwd && git status</parameter></invoke>\n\n这是后续文字"},
-		{"multi-line tool_calls wrapper",
+			"Expert 思考后决定搜索：<invoke name=\"exec_command\"><parameter name=\"cmd\" string=\"true\">pwd && git status</parameter></invoke>\n\n这是后续文字",
+		},
+		{
+			"multi-line tool_calls wrapper",
 			"<tool_calls>\n<invoke name=\"exec_command\">\n<parameter name=\"cmd\" string=\"true\">ls</parameter>\n</invoke>\n</tool_calls>",
-			"<tool_calls>\n<invoke name=\"exec_command\">\n<parameter name=\"cmd\" string=\"true\">ls</parameter>\n</invoke>\n</tool_calls>"},
-		{"invoke inside a paragraph",
+			"<tool_calls>\n<invoke name=\"exec_command\">\n<parameter name=\"cmd\" string=\"true\">ls</parameter>\n</invoke>\n</tool_calls>",
+		},
+		{
+			"invoke inside a paragraph",
 			`<p>看一下 <invoke name="read_file"><parameter name="path" string="true">a.go</parameter></invoke> 的内容</p>`,
-			"看一下 <invoke name=\"read_file\"><parameter name=\"path\" string=\"true\">a.go</parameter></invoke> 的内容"},
+			"看一下 <invoke name=\"read_file\"><parameter name=\"path\" string=\"true\">a.go</parameter></invoke> 的内容",
+		},
 		// Values needing entity escaping on the way IN are decoded by the
 		// HTML tokenizer (text nodes), so they round-trip verbatim.
-		{"parameter value with quotes and ampersand",
+		{
+			"parameter value with quotes and ampersand",
 			`<invoke name="exec_command"><parameter name="cmd" string="true">echo "a &amp; b" &gt; out &lt; x</parameter></invoke>`,
-			`<invoke name="exec_command"><parameter name="cmd" string="true">echo "a & b" > out < x</parameter></invoke>`},
+			`<invoke name="exec_command"><parameter name="cmd" string="true">echo "a & b" > out < x</parameter></invoke>`,
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
