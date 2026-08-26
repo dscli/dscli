@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/shell"
@@ -220,6 +221,11 @@ func splitPatchByFile(patch string) []namedSection {
 		}
 		if cur != nil {
 			cur.text += line + "\n"
+			// 先记录 --- a/ 的旧路径作为回退名：删除文件时 +++ 为
+			// /dev/null（新增文件则 --- 为 /dev/null、+++ 正常覆盖）。
+			if strings.HasPrefix(line, "--- a/") {
+				cur.name = strings.TrimPrefix(line, "--- a/")
+			}
 			if strings.HasPrefix(line, "+++ b/") {
 				cur.name = strings.TrimPrefix(line, "+++ b/")
 			}
@@ -239,9 +245,19 @@ func splitPatchByFile(patch string) []namedSection {
 // 26000 keeps ~2.5k chars of margin under the combined limit.
 const maxUserInputLen = 26000
 
+// truncNoteBudget 为请求正文末尾的截断提示（被丢弃文件清单）预留的字符空间：
+// 清单随请求发送，专家才能感知覆盖盲区并主动 read_file 补读；该预算从 diff
+// 保留中扣除（牺牲少量 diff 换取盲区可见）。
+const truncNoteBudget = 4096
+
+// maxWarnList 限制 warning 中明细列表的条数，避免极端场景（数百文件）时
+// 本地告警把终端撑爆。
+const maxWarnList = 20
+
 // truncateReviewRequest 检查请求总长并在超限时按文件丢弃 diff 区段（最小优先）。
-// 被丢弃文件的 diff 不再可见，但专家可用 read_file 读取对应文件补全，因此
-// warning 明确列出被丢弃的文件（覆盖盲区）。
+// 被丢弃文件的 diff 不再可见；为保证覆盖盲区可见，截断提示（含被丢弃文件清单）
+// 会拼进请求正文随请求发送，专家据此用 read_file 补读；同一提示也作为 warning
+// 返回给本地用户。
 func truncateReviewRequest(summary, commitLog, patch string) (string, string) {
 	req := buildCodeReviewRequest(summary, commitLog, patch)
 	if len(req) <= maxUserInputLen {
@@ -250,22 +266,60 @@ func truncateReviewRequest(summary, commitLog, patch string) (string, string) {
 	origLen := len(req)
 	var warns []string
 
-	// 按文件丢弃 diff 区段（小文件优先保留，保证覆盖面），专家可补读全文
+	// 按文件丢弃 diff 区段（小文件优先保留，保证覆盖面），并为截断提示预留预算
 	diffSecs := splitPatchByFile(patch)
 	base := buildCodeReviewRequest(summary, commitLog, "")
-	kept, dropped := dropUntilFits(base, diffSecs, maxUserInputLen)
+	kept, dropped := dropUntilFits(base, diffSecs, maxUserInputLen-truncNoteBudget)
 	for _, d := range dropped {
 		warns = append(warns, fmt.Sprintf("diff 过大，已丢弃 %s 的 diff（%d 字符），专家可用 read_file 读取该文件", d.name, len(d.text)))
 	}
-	req = buildCodeReviewRequest(summary, commitLog, joinNamed(kept))
+
+	req = buildCodeReviewRequest(summary, commitLog, joinNamed(kept)) + buildTruncNote(dropped, false)
 	if len(req) <= maxUserInputLen {
 		return req, truncateWarning(origLen, req, warns)
 	}
 
-	// 兜底：summary/commitLog 本身超限的极端情况，硬截断
-	req = req[:maxUserInputLen] + "\n..[输入仍超限，已硬截断]..\n"
+	// 清单超出预留预算（文件过多）：收紧为摘要提示，专家仍能感知截断发生
+	req = buildCodeReviewRequest(summary, commitLog, joinNamed(kept)) + buildTruncNote(nil, true)
+	if len(req) <= maxUserInputLen {
+		return req, truncateWarning(origLen, req, warns)
+	}
+
+	// 兜底：summary/commitLog 本身超限的极端情况，按 rune 边界硬截断
+	req = cutToRuneLen(req, maxUserInputLen) + "\n..[输入仍超限，已硬截断]..\n"
 	warns = append(warns, "输入仍超限，已硬截断")
 	return req, truncateWarning(origLen, req, warns)
+}
+
+// buildTruncNote 生成随请求发送的截断提示：列出被丢弃的文件（覆盖盲区），
+// 让专家知道哪些文件需要 read_file 补读。hard 为 true 时仅给出摘要
+// （dropped 清单超出预算），此时仍保留"已截断"信号。
+func buildTruncNote(dropped []namedSection, hard bool) string {
+	var sb strings.Builder
+	sb.WriteString("\n\n## ⚠️ 审查输入截断\n")
+	if hard {
+		sb.WriteString("输入仍超限，部分文件的 diff 未包含在本请求中；关键文件请用 read_file 补读。\n")
+		return sb.String()
+	}
+	sb.WriteString("以下文件因输入长度限制未包含 diff，请用 read_file 读取补全：\n")
+	for _, d := range dropped {
+		sb.WriteString("- ")
+		sb.WriteString(d.name)
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
+// cutToRuneLen 返回 s 的字节前缀，长度不超过 maxBytes 且不切断 UTF-8 字符。
+func cutToRuneLen(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	b := []byte(s)[:maxBytes]
+	for len(b) > 0 && !utf8.Valid(b) {
+		b = b[:len(b)-1]
+	}
+	return string(b)
 }
 
 // dropUntilFits 按区段大小升序贪心保留（小文件优先，覆盖面最大），
@@ -293,7 +347,8 @@ func joinNamed(secs []namedSection) string {
 	return sb.String()
 }
 
-// truncateWarning 生成截断告警：超限比例 + 截断动作列表。
+// truncateWarning 生成截断告警：超限比例 + 截断动作列表（超出 maxWarnList
+// 条时压缩为前几条 + 总数）。
 func truncateWarning(origLen int, req string, warns []string) string {
 	overLen := origLen - maxUserInputLen
 	if overLen < 0 {
@@ -301,7 +356,13 @@ func truncateWarning(origLen int, req string, warns []string) string {
 	}
 	warning := fmt.Sprintf("⚠️ 审查输入过长（超出约 %d%%），已自动截断至 %d 字符。", overLen*100/maxUserInputLen, len(req))
 	if len(warns) > 0 {
-		warning += " " + strings.Join(warns, "；") + "。"
+		warning += " "
+		if len(warns) > maxWarnList {
+			warning += strings.Join(warns[:maxWarnList], "；") + fmt.Sprintf("；…等共 %d 个", len(warns))
+		} else {
+			warning += strings.Join(warns, "；")
+		}
+		warning += "。"
 	}
 	return warning
 }

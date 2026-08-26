@@ -3,9 +3,11 @@ package ask
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dscli/dscli/internal/toolcall"
 )
@@ -254,6 +256,57 @@ index 333..444 100644
 	}
 }
 
+// TestSplitPatchByFileDeleted verifies that a file deletion (+++ /dev/null)
+// falls back to the --- a/ path as the section name instead of "/dev/null".
+func TestSplitPatchByFileDeleted(t *testing.T) {
+	patch := `diff --git a/old.go b/old.go
+index 111..222 100644
+--- a/old.go
++++ /dev/null
+@@ -1,2 +0,0 @@
+-foo
+-bar
+diff --git a/new.go b/new.go
+index 000..333 100644
+--- /dev/null
++++ b/new.go
+@@ -0,0 +1,2 @@
++x
++y
+`
+	secs := splitPatchByFile(patch)
+	if len(secs) != 2 {
+		t.Fatalf("got %d sections, want 2: %v", len(secs), secs)
+	}
+	if secs[0].name != "old.go" {
+		t.Errorf("deleted file section name = %q, want old.go", secs[0].name)
+	}
+	if secs[1].name != "new.go" {
+		t.Errorf("added file section name = %q, want new.go", secs[1].name)
+	}
+}
+
+// TestCutToRuneLen verifies byte-prefix truncation never splits a UTF-8 rune.
+func TestCutToRuneLen(t *testing.T) {
+	s := "abc中文测试def" // 18 bytes: 3 ASCII + 4*3 multibyte + 3 ASCII
+	for _, n := range []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, len(s)} {
+		got := cutToRuneLen(s, n)
+		if len(got) > n {
+			t.Errorf("len(%q) = %d > %d", got, len(got), n)
+		}
+		if !utf8.ValidString(got) {
+			t.Errorf("cutToRuneLen(s, %d) produced invalid UTF-8: %q", n, got)
+		}
+		if got != s[:len(got)] {
+			t.Errorf("cutToRuneLen(s, %d) = %q, not a prefix", n, got)
+		}
+	}
+	// 第 10 字节落在"测"的 UTF-8 序列中间，必须回退到 9 字节（rune 边界）。
+	if cutToRuneLen(s, 10) != "abc中文" {
+		t.Errorf("10-byte cut = %q, want %q (rune-safe prefix)", cutToRuneLen(s, 10), "abc中文")
+	}
+}
+
 // TestTruncateReviewRequestSmall verifies no truncation when the input fits.
 func TestTruncateReviewRequestSmall(t *testing.T) {
 	req, warning := truncateReviewRequest("summary", "log", "diff --git a/a.go b/a.go\n")
@@ -298,6 +351,21 @@ func TestTruncateReviewRequestDropsDiff(t *testing.T) {
 		!strings.Contains(req, "## Commit Message") {
 		t.Errorf("core sections lost:\n%s", req)
 	}
+	// 覆盖盲区可见：截断提示必须内建在请求正文中，被丢弃的文件名逐一列出，
+	// 专家才能感知盲区并 read_file 补读（仅返回给调用者的 warning 不够）。
+	if !strings.Contains(req, "## ⚠️ 审查输入截断") {
+		t.Errorf("request body missing truncation note:\n%s", req)
+	}
+	dropRe := regexp.MustCompile(`已丢弃 (\S+) 的 diff`)
+	matches := dropRe.FindAllStringSubmatch(warning, -1)
+	if len(matches) == 0 {
+		t.Fatalf("no dropped files in warning: %q", warning)
+	}
+	for _, m := range matches {
+		if !strings.Contains(req, m[1]) {
+			t.Errorf("dropped file %q not listed in request body", m[1])
+		}
+	}
 }
 
 // TestTruncateReviewRequestTail verifies extreme-pressure behavior: even when
@@ -315,6 +383,10 @@ func TestTruncateReviewRequestTail(t *testing.T) {
 	if !strings.Contains(req, "## Commit Background") ||
 		!strings.Contains(req, "## Commit Message") {
 		t.Errorf("core sections lost:\n%s", req)
+	}
+	// 极端压力下截断信号仍必须出现在请求正文（摘要形式也可）。
+	if !strings.Contains(req, "审查输入截断") {
+		t.Errorf("request body missing truncation note:\n%s", req)
 	}
 }
 
