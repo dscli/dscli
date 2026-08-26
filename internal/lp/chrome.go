@@ -76,6 +76,41 @@ func NetworkCheck(rawURL string) error {
 	return nil
 }
 
+// chromiumEnvClear returns chromedp.Env entries that blank out proxy
+// environment variables inherited from the parent process. Chromium
+// builds that honor http_proxy/https_proxy (e.g. CachyOS/Arch) route
+// webchat through an SSH tunnel whose exit IP the CloudFront WAF answers
+// with an empty 202 body, making navigation fail with
+// net::ERR_EMPTY_RESPONSE. Go's os/exec keeps only the LAST value of
+// duplicate env keys and chromedp merges Env() entries after
+// os.Environ(), so the blank entries reliably win. NO_PROXY is kept
+// untouched: it only lists direct-connect exemptions and is safe.
+func chromiumEnvClear() []string {
+	return []string{
+		"http_proxy=",
+		"https_proxy=",
+		"all_proxy=",
+		"HTTP_PROXY=",
+		"HTTPS_PROXY=",
+		"ALL_PROXY=",
+	}
+}
+
+// chromiumExecAllocatorOptions builds the chromedp ExecAllocator options
+// for launching the managed Chrome. Shared by NewChromium and tests.
+func chromiumExecAllocatorOptions(chromePath, userDataDir string) []chromedp.ExecAllocatorOption {
+	return []chromedp.ExecAllocatorOption{
+		chromedp.ExecPath(chromePath),
+		chromedp.UserDataDir(userDataDir),
+		chromedp.Flag("disable-blink-features", "AutomationControlled"),
+		chromedp.Flag("no-first-run", true),
+		chromedp.Flag("no-default-browser-check", true),
+		chromedp.Flag("disable-session-crashed-bubble", true),
+		chromedp.NoSandbox,
+		chromedp.Env(chromiumEnvClear()...),
+	}
+}
+
 // NewChromium creates a new chromedp ExecAllocator backed by a local
 // Chrome/Chromium browser. The caller must call the returned cancel func
 // to shut down the browser when done.
@@ -99,15 +134,6 @@ func NewChromium(ctx context.Context) (context.Context, func(), error) {
 		return nil, nil, err
 	}
 
-	opts := []chromedp.ExecAllocatorOption{
-		chromedp.ExecPath(chromePath),
-		chromedp.UserDataDir(userDataDir),
-		chromedp.Flag("disable-blink-features", "AutomationControlled"),
-		chromedp.Flag("no-first-run", true),
-		chromedp.Flag("no-default-browser-check", true),
-		chromedp.Flag("disable-session-crashed-bubble", true),
-		chromedp.NoSandbox,
-	}
-	allocCtx, allocCancel := chromedp.NewExecAllocator(ctx, opts...)
+	allocCtx, allocCancel := chromedp.NewExecAllocator(ctx, chromiumExecAllocatorOptions(chromePath, userDataDir)...)
 	return allocCtx, allocCancel, nil
 }
