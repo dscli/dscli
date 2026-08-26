@@ -356,7 +356,7 @@ func TestTruncateReviewRequestDropsDiff(t *testing.T) {
 	if !strings.Contains(req, "## ⚠️ 审查输入截断") {
 		t.Errorf("request body missing truncation note:\n%s", req)
 	}
-	dropRe := regexp.MustCompile(`已丢弃 (\S+) 的 diff`)
+	dropRe := regexp.MustCompile(`已丢弃 (.+?) 的 diff`) // 非贪婪：文件名可含空格
 	matches := dropRe.FindAllStringSubmatch(warning, -1)
 	if len(matches) == 0 {
 		t.Fatalf("no dropped files in warning: %q", warning)
@@ -387,6 +387,37 @@ func TestTruncateReviewRequestTail(t *testing.T) {
 	// 极端压力下截断信号仍必须出现在请求正文（摘要形式也可）。
 	if !strings.Contains(req, "审查输入截断") {
 		t.Errorf("request body missing truncation note:\n%s", req)
+	}
+}
+
+// TestTruncateReviewRequestHard exercises the TRUE hard-truncation branch:
+// summary+commitLog alone exceed maxUserInputLen, so no diff at all is kept.
+// The truncation note must survive the byte cut (it is appended AFTER the
+// cut, with budget reserved) and the request must stay within the limit.
+func TestTruncateReviewRequestHard(t *testing.T) {
+	summary := strings.Repeat("s", 20000)
+	commitLog := strings.Repeat("l", 10000)
+	patch := "diff --git a/x.go b/x.go\n--- a/x.go\n+++ b/x.go\n@@ -1,1 +1,1 @@\n-x\n+y\n"
+
+	req, warning := truncateReviewRequest(summary, commitLog, patch)
+
+	if len(req) > maxUserInputLen {
+		t.Errorf("request over limit after hard truncation: %d > %d", len(req), maxUserInputLen)
+	}
+	if warning == "" {
+		t.Error("expected a warning for hard truncation")
+	}
+	if !strings.Contains(req, "审查输入截断") {
+		t.Errorf("hard truncation lost the truncation note:\n%s", req)
+	}
+	if !strings.Contains(req, "已硬截断") {
+		t.Errorf("hard truncation note should carry the truncation signal:\n%s", req)
+	}
+	if !strings.Contains(req, "x.go") {
+		t.Errorf("hard truncation note should still list dropped files:\n%s", req)
+	}
+	if !utf8.ValidString(req) {
+		t.Error("hard-truncated request must be valid UTF-8")
 	}
 }
 

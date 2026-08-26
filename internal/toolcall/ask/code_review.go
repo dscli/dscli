@@ -251,7 +251,7 @@ const maxUserInputLen = 26000
 const truncNoteBudget = 4096
 
 // maxWarnList 限制 warning 中明细列表的条数，避免极端场景（数百文件）时
-// 本地告警把终端撑爆。
+// 本地告警把终端撑爆；buildTruncNote 中用同一上限保证提示本身不超预算。
 const maxWarnList = 20
 
 // truncateReviewRequest 检查请求总长并在超限时按文件丢弃 diff 区段（最小优先）。
@@ -279,33 +279,43 @@ func truncateReviewRequest(summary, commitLog, patch string) (string, string) {
 		return req, truncateWarning(origLen, req, warns)
 	}
 
-	// 清单超出预留预算（文件过多）：收紧为摘要提示，专家仍能感知截断发生
-	req = buildCodeReviewRequest(summary, commitLog, joinNamed(kept)) + buildTruncNote(nil, true)
-	if len(req) <= maxUserInputLen {
-		return req, truncateWarning(origLen, req, warns)
-	}
-
-	// 兜底：summary/commitLog 本身超限的极端情况，按 rune 边界硬截断
-	req = cutToRuneLen(req, maxUserInputLen) + "\n..[输入仍超限，已硬截断]..\n"
+	// 兜底：summary/commitLog 本身超限（或清单超预算）的极端情况，按 rune 边界
+	// 硬截断。先为截断提示预留预算再切正文，提示承载"已硬截断"信号并列出
+	// 被丢弃文件，保证专家在最需要提示的场景仍能看到盲区。
+	hardNote := buildTruncNote(dropped, true)
+	body := buildCodeReviewRequest(summary, commitLog, joinNamed(kept))
+	req = cutToRuneLen(body, maxUserInputLen-len(hardNote)) + hardNote
 	warns = append(warns, "输入仍超限，已硬截断")
 	return req, truncateWarning(origLen, req, warns)
 }
 
 // buildTruncNote 生成随请求发送的截断提示：列出被丢弃的文件（覆盖盲区），
-// 让专家知道哪些文件需要 read_file 补读。hard 为 true 时仅给出摘要
-// （dropped 清单超出预算），此时仍保留"已截断"信号。
-func buildTruncNote(dropped []namedSection, hard bool) string {
+// 让专家知道哪些文件需要 read_file 补读。清单最多列 maxWarnList 条，
+// 超出时压缩为"前 N 条 + …等共 M 个"，保证提示本身不超预算。
+// hardTrunc 为 true 表示走到了硬截断兜底（提示更强调信号）。
+func buildTruncNote(dropped []namedSection, hardTrunc bool) string {
 	var sb strings.Builder
 	sb.WriteString("\n\n## ⚠️ 审查输入截断\n")
-	if hard {
-		sb.WriteString("输入仍超限，部分文件的 diff 未包含在本请求中；关键文件请用 read_file 补读。\n")
+	if hardTrunc {
+		sb.WriteString("输入超限，已硬截断；以下文件的 diff 未包含在本请求中，请用 read_file 读取补全：\n")
+	} else {
+		sb.WriteString("以下文件因输入长度限制未包含 diff，请用 read_file 读取补全：\n")
+	}
+	if len(dropped) == 0 {
+		sb.WriteString("（无 diff 区段可列出）\n")
 		return sb.String()
 	}
-	sb.WriteString("以下文件因输入长度限制未包含 diff，请用 read_file 读取补全：\n")
-	for _, d := range dropped {
+	shown := dropped
+	if len(shown) > maxWarnList {
+		shown = shown[:maxWarnList]
+	}
+	for _, d := range shown {
 		sb.WriteString("- ")
 		sb.WriteString(d.name)
 		sb.WriteString("\n")
+	}
+	if len(dropped) > maxWarnList {
+		fmt.Fprintf(&sb, "…等共 %d 个文件\n", len(dropped))
 	}
 	return sb.String()
 }
