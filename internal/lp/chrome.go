@@ -85,6 +85,9 @@ func NetworkCheck(rawURL string) error {
 // duplicate env keys and chromedp merges Env() entries after
 // os.Environ(), so the blank entries reliably win. NO_PROXY is kept
 // untouched: it only lists direct-connect exemptions and is safe.
+// Intentional trade-off: the managed browser always goes direct, even when
+// the user's shell relies on a corporate proxy; proxy needs must be wired
+// per-launch (e.g. a --proxy-server flag) rather than via env vars.
 func chromiumEnvClear() []string {
 	return []string{
 		"http_proxy=",
@@ -97,7 +100,8 @@ func chromiumEnvClear() []string {
 }
 
 // chromiumExecAllocatorOptions builds the chromedp ExecAllocator options
-// for launching the managed Chrome. Shared by NewChromium and tests.
+// for launching the managed Chrome. Only NewChromium uses it; it is
+// extracted so the flag/env wiring stays in one place.
 func chromiumExecAllocatorOptions(chromePath, userDataDir string) []chromedp.ExecAllocatorOption {
 	return []chromedp.ExecAllocatorOption{
 		chromedp.ExecPath(chromePath),

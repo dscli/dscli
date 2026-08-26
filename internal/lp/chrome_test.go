@@ -2,6 +2,7 @@ package lp
 
 import (
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -58,6 +59,30 @@ func TestChromiumEnvClearOverridesParent(t *testing.T) {
 	for _, key := range []string{"http_proxy", "https_proxy", "HTTPS_PROXY"} {
 		if last[key] != "" {
 			t.Errorf("after merge, %s = %q, want empty", key, last[key])
+		}
+	}
+}
+
+// TestChromiumEnvClearRealExec verifies the same semantics through Go's real
+// os/exec dedup: append(os.Environ(), chromiumEnvClear()...) inside Cmd.Env
+// must yield blank proxy values in cmd.Environ(), mirroring how chromedp
+// assembles the child environment (os.Environ() + initEnv).
+func TestChromiumEnvClearRealExec(t *testing.T) {
+	t.Setenv("http_proxy", "socks5h://localhost:8778")
+	t.Setenv("https_proxy", "socks5h://localhost:8778")
+	t.Setenv("ALL_PROXY", "socks5h://localhost:8778")
+	t.Setenv("HTTPS_PROXY", "socks5h://localhost:8778")
+
+	cmd := exec.Command("true")
+	cmd.Env = append(os.Environ(), chromiumEnvClear()...)
+	got := map[string]string{}
+	for _, kv := range cmd.Environ() {
+		key, value, _ := strings.Cut(kv, "=")
+		got[key] = value
+	}
+	for _, key := range []string{"http_proxy", "https_proxy", "HTTPS_PROXY", "ALL_PROXY"} {
+		if got[key] != "" {
+			t.Errorf("real exec env: %s = %q, want empty", key, got[key])
 		}
 	}
 }
