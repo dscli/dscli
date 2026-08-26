@@ -124,7 +124,7 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 
 	elapsed := time.Since(startTime)
 	outfmt.Printf("📥 收到回复 (%.1fs)\n\n", elapsed.Seconds())
-	fmt.Println(result.Text)
+	fmt.Println(result.Content)
 
 	// Surface the conversation ID on stderr (never stdout, which carries the
 	// reply and may be redirected): keep:<id> is directly usable as --keep.

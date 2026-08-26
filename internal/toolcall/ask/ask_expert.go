@@ -340,10 +340,10 @@ func askExpertWebChat(ctx context.Context, input, role, system, mode, keep strin
 			// dscli tools, and feed the results back into the SAME
 			// conversation until the expert produces a final answer.
 			// Plain ask_expert is never role-driven, so it is unaffected.
-			if role != "" && toolcall.HasDSMLToolCalls(res.Text) {
+			if role != "" && toolcall.HasDSMLToolCalls(res.Content) {
 				return askExpertToolLoop(ctx, res, mode)
 			}
-			return res.Text, res.URL, nil
+			return res.Content, res.URL, nil
 		}
 		lastErr = callErr
 		if !errors.Is(callErr, lp.ErrServerBusy) && !errors.Is(callErr, lp.ErrSendRejected) && !errors.Is(callErr, lp.ErrTruncated) {
@@ -382,7 +382,7 @@ func askExpertToolLoop(ctx context.Context, first lp.WebChatResult, mode string)
 	span, ctx := clog.StartSpanFromContext(ctx, "askExpertToolLoop")
 	defer span.Finish()
 
-	message := first.Text
+	message := first.Content
 	convURL = first.URL
 	for round := 1; round <= maxDSMLRounds; round++ {
 		calls, parseErr := toolcall.ParseDSMLToolCalls(message)
@@ -405,7 +405,7 @@ func askExpertToolLoop(ctx context.Context, first lp.WebChatResult, mode string)
 		if callErr != nil {
 			return "", "", fmt.Errorf("expert tool loop: continue conversation after %d round(s): %w", round, callErr)
 		}
-		message = res.Text
+		message = res.Content
 		if res.URL != "" {
 			convURL = res.URL
 		}

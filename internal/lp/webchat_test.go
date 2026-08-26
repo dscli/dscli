@@ -592,3 +592,29 @@ func TestWebChatPollBudget(t *testing.T) {
 		}
 	})
 }
+
+func TestJsResendFailedFmt(t *testing.T) {
+	// Regression guard on the auto-resend matcher: it must keep BOTH the
+	// failure words (automatic recovery breaks if dropped) and the
+	// exclusion list (losing it would click "重新回答/重新生成" buttons
+	// that sit on COMPLETED answers, corrupting a good round into a
+	// duplicate or a re-generation).
+	for _, want := range []string{
+		"重发", "重试", "再次发送", "重发消息", "resend", "retry",
+		"重新(回答|生成|思考|加载)", "regenerate",
+	} {
+		if !strings.Contains(jsResendFailedFmt, want) {
+			t.Errorf("jsResendFailedFmt must contain %q (word list regression)", want)
+		}
+	}
+}
+
+func TestJsSendEnterAsyncFallback(t *testing.T) {
+	// The send-button fallback MUST be deferred: React 18 batches state
+	// updates, so a synchronous value check after dispatchEvent still sees
+	// the pre-send text and clicks the button on top of the Enter —
+	// observed as two identical user messages in a real session.
+	if !strings.Contains(jsSendEnter, "setTimeout") {
+		t.Error("jsSendEnter must schedule the send-button fallback via setTimeout")
+	}
+}

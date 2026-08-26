@@ -62,6 +62,8 @@ const (
 	webChatMaxPolls         = 300             // max polls before timeout (600s total)
 	webChatConfirmPolls     = 5               // send-ack window: polls to observe send confirmation (10s)
 	webChatEmptyStablePolls = 30              // stable-with-no-content polls (60s) before treating as server busy
+	webChatMaxResends       = 3               // automatic resend attempts before giving up
+	webChatResendCooldown   = 8 * time.Second // minimum gap between auto resends (UI settle time)
 
 	// JS snippet to set a textarea's value via the native setter (triggers
 	// message string.
@@ -389,15 +391,17 @@ const (
 		if (!last) return {found: false, reason: 'no assistant message yet'};
 		const frags = last.fragments || [];
 		const parts = [];
+		const thinkParts = [];
 		for (const f of frags) {
-			if (f && f.type === 'RESPONSE' && typeof f.content === 'string' && f.content.trim() !== '') {
-				parts.push(f.content);
-			}
+			if (f && typeof f.content === 'string' && f.content.trim() === '') continue;
+			if (f && f.type === 'RESPONSE') parts.push(f.content);
+			if (f && f.type === 'THINK') thinkParts.push(f.content);
 		}
 		return {
 			found: true,
 			status: last.status || '',
 			text: parts.join('\n\n'),
+			reason: thinkParts.join('\n\n'),
 			respCount: parts.length,
 			thinkCount: frags.length,
 		};
@@ -469,14 +473,69 @@ const (
 		ta.dispatchEvent(new KeyboardEvent('keydown', opts));
 		ta.dispatchEvent(new KeyboardEvent('keypress', opts));
 		ta.dispatchEvent(new KeyboardEvent('keyup', opts));
-		// Fallback: if the KeyboardEvent dispatch didn't trigger React's
-		// submit handler the textarea still has content — click the send
-		// button as a backup. Only fire when ta.value is non-empty to
-		// avoid double-submission.
-		var sendBtn = document.querySelector('[role="button"].ds-button--primary');
-		if (sendBtn && sendBtn.offsetParent !== null && ta.value.trim() !== '') {
-			sendBtn.click();
+		// Async fallback: React 18 batches state updates, so a synchronous
+		// check right after dispatchEvent still sees the old textarea value
+		// and would click the send button on top of a successfully
+		// submitted Enter — double-sending the message (two identical user
+		// messages observed in a real session). A macrotask window lets
+		// React flush the controlled component first; only then is a stale
+		// value a genuine "Enter was ignored" signal.
+		setTimeout(function() {
+			if (ta.value.trim() !== '') {
+				var sendBtn = document.querySelector('[role="button"].ds-button--primary');
+				if (sendBtn && sendBtn.offsetParent !== null) {
+					sendBtn.click();
+				}
+			}
+		}, 300);
+		return {success: true};
+	})()`
+
+	// jsResendFailedFmt detects the failed-send retry button and clicks it.
+	// When the server rejects a message (overload, network error), the site
+	// keeps the message bubble in an error state with a "重发/重试" button
+	// next to it. Visible text must match exactly (variants enumerated);
+	// aria-label/title match loosely (sites add extra words there). Never
+	// the "重新回答/重新生成" action buttons that sit on COMPLETED answers,
+	// so clicking there cannot corrupt a successful round into a duplicate.
+	jsResendFailedFmt = `(() => {
+		const reExact = /^(重发|重试|重新发送|再次发送|重发消息|重新发送消息|发送失败[^]{0,10}(重发|重试)|resend|retry)$/;
+		const reLoose = /(重发|重试|resend|retry)/;
+		const reExclude = /(重新(回答|生成|思考|加载)|regenerate|re-?answer|reload|refresh)/;
+		const cands = document.querySelectorAll('button, [role="button"]');
+		for (let i = 0; i < cands.length; i++) {
+			const b = cands[i];
+			if (b.offsetParent === null) continue;
+			const t = (b.textContent || '').trim().toLowerCase();
+			const aria = (b.getAttribute('aria-label') || '').trim().toLowerCase();
+			const title = (b.getAttribute('title') || '').trim().toLowerCase();
+			if (!t && !aria && !title) continue;
+			if (reExclude.test(aria) || reExclude.test(title) || reExclude.test(t)) continue;
+			const hit = reExact.test(t) || ((reLoose.test(aria) || reLoose.test(title)) && !reExclude.test(t));
+			if (hit) {
+				b.click();
+				return {found: true, matched: t || aria || title || 'button'};
+			}
 		}
+		return {found: false};
+	})()`
+
+	// jsSendEnterOnly dispatches the Enter sequence without the send-button
+	// fallback. Used by the resend loop when the message is still sitting in
+	// the textarea (submit rejected and the site restored the text): the
+	// async fallback inside jsSendEnter could race the resend state reset.
+	jsSendEnterOnly = `(() => {
+		const ta = document.querySelector('textarea');
+		if (!ta) return {error: 'no textarea'};
+		if (ta.offsetParent === null) return {error: 'textarea not visible'};
+		ta.click();
+		ta.focus({preventScroll: true});
+		if (document.activeElement !== ta) ta.select();
+		var opts = {key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+			bubbles: true, cancelable: true};
+		ta.dispatchEvent(new KeyboardEvent('keydown', opts));
+		ta.dispatchEvent(new KeyboardEvent('keypress', opts));
+		ta.dispatchEvent(new KeyboardEvent('keyup', opts));
 		return {success: true};
 	})()`
 )
@@ -523,13 +582,16 @@ type WebChatOptions struct {
 	Keep string
 }
 
-// WebChatResult is the outcome of a WebChat call: the assistant's text
-// response plus the final conversation URL, which contains the conversation
-// ID usable with WebChatOptions.Keep to continue the same conversation
-// later. URL is "" if it could not be determined.
+// WebChatResult is the outcome of a WebChat call: the assistant's visible
+// answer in original markdown (Content), its deep-think reasoning when the
+// site exposes it (Reasoning, "" if unavailable), plus the final conversation
+// URL, which contains the conversation ID usable with WebChatOptions.Keep to
+// continue the same conversation later. URL is "" if it could not be
+// determined.
 type WebChatResult struct {
-	Text string
-	URL  string
+	Content   string
+	Reasoning string
+	URL       string
 }
 
 // WebChat sends a message to chat.deepseek.com via a local Chrome/Chromium
@@ -550,7 +612,7 @@ func WebChat(ctx context.Context, message string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return res.Text, nil
+	return res.Content, nil
 }
 
 // WebChatWithOptions is WebChat with explicit mode, attachment and
@@ -616,7 +678,7 @@ func webChatWithURL(ctx context.Context, conversationURL, message string, opts W
 	defer cancel()
 	ctx, close := chromedp.NewContext(ctx)
 	defer close()
-	response, finalURL, err := webchatSend(ctx, conversationURL, message, opts, 0)
+	response, reasoning, finalURL, err := webchatSend(ctx, conversationURL, message, opts, 0)
 	if err != nil {
 		return WebChatResult{}, fmt.Errorf("webchat: %w", err)
 	}
@@ -627,18 +689,19 @@ func webChatWithURL(ctx context.Context, conversationURL, message string, opts W
 		_ = registerConversation(finalURL, opts.Mode)
 	}
 
-	return WebChatResult{Text: response, URL: finalURL}, nil
+	return WebChatResult{Content: response, Reasoning: reasoning, URL: finalURL}, nil
 }
 
-// webchatSend sends a message and returns the response plus the final page URL
-// (which contains the conversation ID for continuation). If login is needed,
-// it triggers a manual login flow in the same Chrome session and retries once.
+// webchatSend sends a message and returns the response, the deep-think
+// reasoning (if extractable), and the final page URL (which contains the
+// conversation ID for continuation). If login is needed, it triggers a
+// manual login flow in the same Chrome session and retries once.
 //
 // opts.Mode selects the web chat mode; an empty mode leaves the
 // conversation's current mode untouched (used when continuing a
 // conversation). opts.Attachments are image files uploaded before sending
 // (flash/vision modes only; pro rejects them in validateWebChatOptions).
-func webchatSend(tabCtx context.Context, conversationURL, message string, opts WebChatOptions, retry int) (string, string, error) {
+func webchatSend(tabCtx context.Context, conversationURL, message string, opts WebChatOptions, retry int) (string, string, string, error) {
 	span, ctx := clog.StartSpanFromContext(tabCtx, "webchatSend")
 	defer span.Finish()
 	navURL := conversationURL
@@ -651,7 +714,7 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, opts W
 		fmt.Fprintf(os.Stderr, "📋 继续会话: %s\n", conversationURL)
 	}
 
-	var baseline, response, finalURL, mdBaseline string
+	var baseline, response, reasoning, finalURL, mdBaseline string
 	var mdBaselineParts []string
 
 	// Base navigation and page hydration. The clipboard permission is
@@ -744,6 +807,20 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, opts W
 
 		// Capture the final URL (contains conversation ID).
 		chromedp.Location(&finalURL),
+
+		// Reload and re-read the answer from the site's IndexedDB cache:
+		// the site writes the conversation record once per page load, so
+		// a live poll during the send can never see the new round. After
+		// the reload the record is complete (FINISHED) and carries the
+		// ORIGINAL markdown plus the deep-think THINK fragments. Failures
+		// are non-fatal: the DOM-extracted response stays, reasoning is "".
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			if content, think, ok := webchatExtractReloadedIDB(ctx, finalURL, message); ok {
+				response = content
+				reasoning = think
+			}
+			return nil
+		}),
 	)
 
 	err := chromedp.Run(ctx, actions...)
@@ -753,16 +830,16 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, opts W
 		if errors.Is(err, ErrLoginRequired) && retry == 0 {
 			fmt.Fprintln(os.Stderr, "🔐 未登录，在浏览器窗口中完成登录...")
 			if loginErr := deepseekLogin(ctx, "", nil, true); loginErr != nil {
-				return "", "", fmt.Errorf("webchat login: %w", loginErr)
+				return "", "", "", fmt.Errorf("webchat login: %w", loginErr)
 			}
 			return webchatSend(ctx, conversationURL, message, opts, retry+1)
 		}
-		return "", "", fmt.Errorf("webchat: %w", err)
+		return "", "", "", fmt.Errorf("webchat: %w", err)
 	}
 
 	// Session info (keep:<id>) is surfaced by the caller (CLI / ask_expert),
 	// not here, so the library layer stays silent about presentation.
-	return response, finalURL, nil
+	return response, reasoning, finalURL, nil
 }
 
 // webchatSetValue sets the chat textarea value via JS (triggers React onChange).
@@ -1018,9 +1095,14 @@ func webchatSetUploadFiles(ctx context.Context, files []string) error {
 }
 
 // webchatWait polls until the assistant response stabilizes, then extracts
-// it from the site's own IndexedDB conversation cache (primary: original
-// markdown via jsIDBGetAnswer), the .ds-markdown elements (fallback), or
-// body-text after the sent message (last resort).
+// it from the rendered DOM: the .ds-assistant-message-main-content elements
+// (primary, converted back to markdown), then the bubble-scoped answer
+// block, then body-text after the sent message (last resort).
+//
+// The original markdown + deep-think reasoning come from the site's
+// IndexedDB cache AFTER a reload (see webchatExtractReloadedIDB, called by
+// webchatSend once this wait returns): IndexedDB is written once per page
+// load, so polling it during a live send can only see the pre-send snapshot.
 //
 // mdBaseline is the concatenated .ds-markdown text captured before sending;
 // it is stripped from DOM-extracted text so continued conversations return
@@ -1032,6 +1114,16 @@ func webchatSetUploadFiles(ctx context.Context, files []string) error {
 // whether DeepSeek is still generating (via DOM signals like the stop button).
 // Only extracts when generation appears complete or the extended poll window
 // expires (escape hatch after webChatExtendedPolls additional polls).
+//
+// Failed sends are retried automatically before the wait gives up:
+//
+//   - Retry button: when the server rejects a message, the site renders a
+//     "重发/重试" button next to the failed bubble; webchatWait clicks it
+//     and restarts the round (up to webChatMaxResends attempts).
+//   - Stale textarea: if the text is still sitting in the textarea when the
+//     send-ack window (webChatConfirmPolls) expires and no retry button is
+//     visible, the Enter dispatch itself was ignored — re-dispatch it once
+//     per round instead of failing immediately.
 //
 // Server overload is handled explicitly:
 //
@@ -1062,11 +1154,11 @@ func webchatWait(ctx context.Context, baseline, mdBaseline, sentMessage string) 
 	stableCount := 0
 	emptyStableCount := 0
 	sendAck := false
+	ackPolls := 0
 	polls := 0
 	maxPolls := webChatPollBudget(ctx)
-	// Send time (Unix ms) for the IDB freshness check: the cache record
-	// must be written after the send, or it is a stale pre-send snapshot.
-	sendAt := time.Now()
+	resendCount := 0
+	lastResendAt := time.Time{}
 
 	for i := 0; i < maxPolls; i++ {
 		polls++
@@ -1083,52 +1175,58 @@ func webchatWait(ctx context.Context, baseline, mdBaseline, sentMessage string) 
 			continue // tolerate transient errors
 		}
 
-		// Send-ack window: the message must show evidence of submission
-		// within the confirmation window. Any of new body content, an
-		// active generation, or a cleared textarea counts as ack.
-		// While unconfirmed we skip the normal stability logic so a
-		// rejected submit fails fast with ErrSendRejected (10s) instead
-		// of being misread as an empty stable page (60s) or timing out.
-		if !sendAck {
-			sendAck = current != baseline || isGenerationActive(ctx) || textareaCleared(ctx)
-			if !sendAck {
-				if polls >= webChatConfirmPolls {
-					return "", ErrSendRejected
+		// Failed-send retry: a rejected message renders a "重发" button
+		// next to the failed bubble. A rejected send ALSO changes the
+		// body text (the bubble appears), so the send-ack check below
+		// alone cannot distinguish it from success — the retry button
+		// is the reliable signal. Click it and restart the round state,
+		// since the retry is a fresh send. Cooldown keeps a slow UI
+		// from being clicked twice in a row.
+		if time.Since(lastResendAt) >= webChatResendCooldown {
+			if matched, clicked := resendFailedMessage(ctx); clicked {
+				resendCount++
+				if resendCount > webChatMaxResends {
+					return "", fmt.Errorf("%w: 自动重发 %d 次仍失败（%s）", ErrServerBusy, resendCount-1, matched)
 				}
-				lastText = current
+				lastResendAt = time.Now()
+				fmt.Fprintf(os.Stderr, "🔄 检测到发送失败（%s），自动重发（%d/%d）...\n", matched, resendCount, webChatMaxResends)
+				sendAck, ackPolls = false, 0
+				stableCount, emptyStableCount = 0, 0
+				lastText = ""
 				continue
 			}
 		}
 
-		// Primary: the site's own IndexedDB conversation cache. The
-		// completed answer appears there with the original markdown
-		// (fragments[].type=RESPONSE), keyed by the conversation ID in
-		// the URL — no HTML→markdown reconstruction, no UI-chrome
-		// recovery, no baseline stripping. status=FINISHED marks a
-		// complete reply; while the record streams (or is not persisted
-		// yet) the DOM paths below carry the polling. notBefore ensures a
-		// continued conversation's stale pre-send snapshot is never
-		// returned as this round's answer.
-		if text, status, ok := idbGetAssistant(ctx, sentMessage, sendAt.UnixMilli()); ok && status == "FINISHED" {
-			text = strings.TrimSpace(text)
-			if text != "" {
-				// A short overload notice must never be returned as
-				// an answer — it would poison the caller's
-				// decision-making.
-				if isBusyErrorText(text) {
-					return "", fmt.Errorf("%w: %s", ErrServerBusy, text)
+		// Send-ack window: the message must show evidence of submission
+		// within the confirmation window. Any of new body content, an
+		// active generation, or a cleared textarea counts as ack.
+		// While unconfirmed we skip the normal stability logic so a
+		// rejected submit fails fast instead of being misread as an
+		// empty stable page (60s) or timing out.
+		if !sendAck {
+			sendAck = current != baseline || isGenerationActive(ctx) || textareaCleared(ctx)
+			if !sendAck {
+				ackPolls++
+				// No retry button and the text still sits in the
+				// textarea: the Enter dispatch was ignored entirely.
+				// Re-dispatch once and keep the confirmation window
+				// open — failing immediately would skip the automatic
+				// recovery the caller expects.
+				if ackPolls >= webChatConfirmPolls {
+					if err := resendStaleTextarea(ctx); err != nil {
+						return "", ErrSendRejected
+					}
+					resendCount++
+					if resendCount > webChatMaxResends {
+						return "", fmt.Errorf("%w: 自动重发 %d 次仍失败", ErrSendRejected, resendCount-1)
+					}
+					fmt.Fprintf(os.Stderr, "🔄 消息未被接受，重新发送（%d/%d）...\n", resendCount, webChatMaxResends)
+					ackPolls = 0
+					lastResendAt = time.Now()
+					continue
 				}
-				// A response cut off mid-generation (unclosed code
-				// fence, unterminated JSON) is a distinct, retryable
-				// failure: the answer exists but is unusable, and
-				// polling further will not complete it.
-				if isTruncated(text) {
-					return "", fmt.Errorf("%w (%d chars)", ErrTruncated, utf8.RuneCountInString(text))
-				}
-				if isCompleteResponse(text) {
-					return text, nil
-				}
-				// Fragment: fall through to the DOM paths (keep polling).
+				lastText = current
+				continue
 			}
 		}
 
@@ -1259,6 +1357,40 @@ func textareaCleared(ctx context.Context) bool {
 	return cleared
 }
 
+// resendFailedMessage detects the failed-send retry button that the site
+// renders next to a rejected message bubble and clicks it. The button text
+// is returned for logging; clicked=false means no retry button is visible
+// (nothing was wrong or the failure UI was already handled).
+func resendFailedMessage(ctx context.Context) (matched string, clicked bool) {
+	var result map[string]any
+	if err := chromedp.Evaluate(jsResendFailedFmt, &result).Do(ctx); err != nil {
+		return "", false
+	}
+	found, _ := result["found"].(bool)
+	if !found {
+		return "", false
+	}
+	matched, _ = result["matched"].(string)
+	return matched, true
+}
+
+// resendStaleTextarea re-dispatches the Enter sequence when the message is
+// still sitting in the textarea after the send-ack window closed — the
+// original dispatch was ignored (focus loss, React not listening). Uses
+// jsSendEnterOnly so the send-button fallback cannot race the resend state
+// reset with a second submission.
+func resendStaleTextarea(ctx context.Context) error {
+	var out map[string]any
+	if err := chromedp.Evaluate(jsSendEnterOnly, &out).Do(ctx); err != nil {
+		return err
+	}
+	if ok, _ := out["success"].(bool); !ok {
+		msg, _ := out["error"].(string)
+		return fmt.Errorf("restale textarea resend: %s", msg)
+	}
+	return nil
+}
+
 // isGenerationActive checks whether the assistant is still generating a response
 // by evaluating DOM signals (stop button visibility, textarea disabled state).
 // Returns false if generation appears complete or the DOM state is indeterminate.
@@ -1306,31 +1438,86 @@ func lastAnswerText(ctx context.Context, sentMessage string) string {
 }
 
 // idbGetAssistant reads the assistant's answer for the CURRENT
-// conversation from the site's IndexedDB conversation cache — the primary
-// extraction path of webchatWait. The URL's conversation ID keys the
-// history-message record; the last ASSISTANT message's RESPONSE fragments
-// carry the original markdown of the reply. ok=false means "not readable
-// yet" (still streaming, record not persisted, stale pre-send snapshot, or
-// no conversation ID in the URL); status distinguishes a complete reply
+// conversation from the site's IndexedDB conversation cache. The URL's
+// conversation ID keys the history-message record; the last ASSISTANT
+// message's RESPONSE fragments carry the original markdown of the reply
+// and its THINK fragments the deep-think reasoning. ok=false means "not
+// readable yet" (record not persisted, stale pre-send snapshot, or no
+// conversation ID in the URL); status distinguishes a complete reply
 // ("FINISHED") from an in-flight one.
 //
 // sentMessage and notBeforeMS guard against stale records (a continued
 // conversation's cached record may still show the PREVIOUS round as
 // FINISHED): the record must contain this round's user message and be
 // written after the send.
-func idbGetAssistant(ctx context.Context, sentMessage string, notBeforeMS int64) (text, status string, ok bool) {
+func idbGetAssistant(ctx context.Context, sentMessage string, notBeforeMS int64) (text, reasoning, status string, ok bool) {
 	js := fmt.Sprintf(jsIDBGetAnswerFmt, quoteJS(sentMessage), notBeforeMS)
 	var result map[string]any
 	if err := evaluateAwait(ctx, js, &result); err != nil {
-		return "", "", false
+		return "", "", "", false
 	}
 	found, _ := result["found"].(bool)
 	if !found {
-		return "", "", false
+		return "", "", "", false
 	}
 	status, _ = result["status"].(string)
 	text, _ = result["text"].(string)
-	return text, status, true
+	reasoning, _ = result["reason"].(string)
+	return text, reasoning, status, true
+}
+
+// webchatExtractReloadedIDB reloads the conversation page and reads THIS
+// round's answer from the site's IndexedDB cache — the structured source
+// with the ORIGINAL markdown (RESPONSE fragments) and the deep-think
+// reasoning (THINK fragments).
+//
+// WHY reload: the site persists its conversation record ONCE per page
+// load. During a live send the record is either the pre-send snapshot (a
+// continued conversation) or absent entirely (a new conversation), and it
+// is never updated by polling — only a navigation triggers the write. By
+// the time the caller reaches here the DOM wait has confirmed the reply is
+// FINISHED, so the reloaded record carries the complete round.
+//
+// NOT after a mid-generation reload: the snapshot would be WIP and the
+// site never refreshes it on the same page — hence the strict order
+// (wait first, reload second).
+//
+// Returns ok=false when IDB is not readable (URL missing, login lost,
+// record still absent after the grace polls); the caller then keeps the
+// DOM-extracted text and an empty reasoning.
+func webchatExtractReloadedIDB(ctx context.Context, conversationURL, sentMessage string) (content, reasoning string, ok bool) {
+	if conversationURL == "" {
+		return "", "", false
+	}
+	// Bound the reload itself: a hung navigation must degrade to the
+	// DOM-extracted text, not stall the whole send. WaitReady without a
+	// deadline would wait forever on a broken page.
+	wctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	if err := chromedp.Navigate(conversationURL).Do(wctx); err != nil {
+		return "", "", false
+	}
+	if err := chromedp.WaitReady("textarea", chromedp.ByQuery).Do(wctx); err != nil {
+		return "", "", false
+	}
+	// The record write trails the DOM render slightly; poll briefly for a
+	// FINISHED snapshot that contains this round's user message.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if text, think, status, found := idbGetAssistant(ctx, sentMessage, time.Now().UnixMilli()); found {
+			if status == "FINISHED" && strings.TrimSpace(text) != "" {
+				return text, think, true
+			}
+		}
+		if time.Now().After(deadline) {
+			return "", "", false
+		}
+		select {
+		case <-ctx.Done():
+			return "", "", false
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
 }
 
 // evaluateAwait evaluates a JS expression and awaits the resulting promise.

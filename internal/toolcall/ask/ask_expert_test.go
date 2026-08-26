@@ -818,7 +818,7 @@ func TestAskExpertWebChatRetriesThenSuccess(t *testing.T) {
 		if calls <= 2 {
 			return lp.WebChatResult{}, lp.ErrServerBusy
 		}
-		return lp.WebChatResult{Text: "expert answer"}, nil
+		return lp.WebChatResult{Content: "expert answer"}, nil
 	}
 	askExpertRetryDelays = []time.Duration{0, 0, 0}
 
@@ -888,7 +888,7 @@ func TestAskExpertWebChatTruncatedThenSuccess(t *testing.T) {
 		if calls <= 2 {
 			return lp.WebChatResult{}, lp.ErrTruncated
 		}
-		return lp.WebChatResult{Text: "expert answer"}, nil
+		return lp.WebChatResult{Content: "expert answer"}, nil
 	}
 	askExpertRetryDelays = []time.Duration{0, 0, 0}
 
@@ -968,11 +968,11 @@ func TestAskExpertWebChatToolLoop(t *testing.T) {
 		calls = append(calls, opts)
 		switch len(messages) {
 		case 1:
-			return lp.WebChatResult{Text: dsmlReply, URL: url1}, nil
+			return lp.WebChatResult{Content: dsmlReply, URL: url1}, nil
 		case 2:
-			return lp.WebChatResult{Text: finalAnswer, URL: url2}, nil
+			return lp.WebChatResult{Content: finalAnswer, URL: url2}, nil
 		}
-		return lp.WebChatResult{Text: "unexpected extra round", URL: url2}, nil
+		return lp.WebChatResult{Content: "unexpected extra round", URL: url2}, nil
 	}
 
 	seen := captureDSMLExec(t, "exec_command 工具调用的结果：\n```\nchanged files\n```")
@@ -1013,7 +1013,7 @@ func TestAskExpertWebChatToolLoopNoRole(t *testing.T) {
 	origFunc := webChatFunc
 	t.Cleanup(func() { webChatFunc = origFunc })
 	webChatFunc = func(_ context.Context, _ string, _ lp.WebChatOptions) (lp.WebChatResult, error) {
-		return lp.WebChatResult{Text: dsmlReply, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+		return lp.WebChatResult{Content: dsmlReply, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
 	}
 	origExec := executeDSMLToolCalls
 	executed := false
@@ -1042,7 +1042,7 @@ func TestAskExpertWebChatToolLoopRoundCap(t *testing.T) {
 
 	webChatFunc = func(_ context.Context, _ string, _ lp.WebChatOptions) (lp.WebChatResult, error) {
 		// The expert keeps requesting tools: every round returns DSML.
-		return lp.WebChatResult{Text: dsmlReply, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+		return lp.WebChatResult{Content: dsmlReply, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
 	}
 	captureDSMLExec(t, "tool output")
 
@@ -1066,7 +1066,7 @@ func TestAskExpertWebChatToolLoopTruncatedDSML(t *testing.T) {
 <invoke name="exec_command">
 <parameter name="cmd" string="true">git show`
 	webChatFunc = func(_ context.Context, _ string, _ lp.WebChatOptions) (lp.WebChatResult, error) {
-		return lp.WebChatResult{Text: cut, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+		return lp.WebChatResult{Content: cut, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
 	}
 	origExec := executeDSMLToolCalls
 	executed := false
@@ -1096,7 +1096,7 @@ func TestAskExpertWebChatToolLoopContinueFails(t *testing.T) {
 	webChatFunc = func(_ context.Context, _ string, _ lp.WebChatOptions) (lp.WebChatResult, error) {
 		calls++
 		if calls == 1 {
-			return lp.WebChatResult{Text: dsmlReply, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+			return lp.WebChatResult{Content: dsmlReply, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
 		}
 		lastErr = errors.New("browser crashed")
 		return lp.WebChatResult{}, lastErr
