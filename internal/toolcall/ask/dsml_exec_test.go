@@ -33,14 +33,18 @@ func TestExecuteDSMLToolCalls(t *testing.T) {
 }
 
 func TestExecuteDSMLToolCallsUnsupported(t *testing.T) {
-	calls, err := toolcall.ParseDSMLToolCalls(`<invoke name="write_file">
+	// A non-whitelisted name (a quoted example, not an executable call) is
+	// skipped silently: no execution, no "unsupported tool" feedback block
+	// for the expert to argue with.
+	text := `<invoke name="write_file">
 <parameter name="path" string="true">/tmp/x</parameter>
-</invoke>`)
+</invoke>`
+	calls, err := toolcall.ParseDSMLToolCalls(text)
 	if err != nil {
 		t.Fatalf("ParseDSMLToolCalls: %v", err)
 	}
 	outputs := toolcall.ExecuteDSMLToolCalls(context.Background(), calls)
-	if len(outputs) != 1 || !strings.Contains(outputs[0], "unsupported tool") {
-		t.Errorf("outputs = %v, want unsupported-tool feedback", outputs)
+	if len(outputs) != 0 {
+		t.Errorf("outputs = %v, want none (silently skipped)", outputs)
 	}
 }

@@ -265,34 +265,34 @@ func TestParseDSMLToolCallsRawInvokeInParam(t *testing.T) {
 	}
 }
 
-// TestUnclosedInvokePositionsParamOpaque pins the state-machine contract at
-// the layer that owns it: parameter values are opaque to the structural
-// scan. A raw "<invoke name=...>" AND a literal "</invoke>" inside a value
-// must neither push nor pop (the outer block stays balanced), while a real
+// TestDSMLBlockRangesParamOpaque pins the state-machine contract at the
+// layer that owns it: parameter values are opaque to the structural scan.
+// A raw "<invoke name=...>" AND a literal "</invoke>" inside a value must
+// neither push nor pop (the outer block stays balanced), while a real
 // truncation is still detected. This decouples the scan guarantees from the
-// extraction-layer limitation of the non-greedy dsmlInvokeRe.
-func TestUnclosedInvokePositionsParamOpaque(t *testing.T) {
+// extraction-layer limitation of the old non-greedy dsmlInvokeRe.
+func TestDSMLBlockRangesParamOpaque(t *testing.T) {
 	// Value contains a raw open AND a literal close: both are content.
 	balanced := `<invoke name="a">
 <parameter name="cmd" string="true">show: <invoke name="b"> and </invoke> text</parameter>
 </invoke>`
-	if n, _ := unclosedInvokePositions(balanced); n != 0 {
-		t.Errorf("unclosed = %d, want 0 (param value is opaque)", n)
+	if _, unclosed, _ := dsmlBlockRanges(balanced); unclosed != 0 {
+		t.Errorf("unclosed = %d, want 0 (param value is opaque)", unclosed)
 	}
 	// Same value but the OUTER invoke never closes: still detected.
 	trunc := `<invoke name="a">
 <parameter name="cmd" string="true">show: <invoke name="b"> and </invoke> text</parameter>
 `
-	if n, first := unclosedInvokePositions(trunc); n != 1 || first < 0 {
-		t.Errorf("unclosed = %d (first=%d), want 1 at a real offset", n, first)
+	if _, unclosed, first := dsmlBlockRanges(trunc); unclosed != 1 || first < 0 {
+		t.Errorf("unclosed = %d (first=%d), want 1 at a real offset", unclosed, first)
 	}
 	// Nested parameter-looking text inside a value: depth juggling must not
 	// leak structure.
 	nested := `<invoke name="a">
 <parameter name="cmd" string="true"><parameter name="x">y</parameter> done</parameter>
 </invoke>`
-	if n, _ := unclosedInvokePositions(nested); n != 0 {
-		t.Errorf("nested param text: unclosed = %d, want 0", n)
+	if _, unclosed, _ := dsmlBlockRanges(nested); unclosed != 0 {
+		t.Errorf("nested param text: unclosed = %d, want 0", unclosed)
 	}
 }
 
@@ -696,8 +696,9 @@ func TestFormatDSMLToolResult(t *testing.T) {
 
 // TestExecuteDSMLToolCallsToolResultFormat is the end-to-end check of the
 // DSML executor: valid calls run through the shared executeToolCalls core
-// (stats recorded, results truncated) and each input call — including
-// rejected ones — gets exactly one <tool_result> block in order.
+// (stats recorded, results truncated) and each EXECUTED call gets exactly
+// one <tool_result> block in order. A non-whitelisted name produces no
+// block at all (quoted example, not an executable call).
 func TestExecuteDSMLToolCallsToolResultFormat(t *testing.T) {
 	ctx := withIsolatedDualSession(t)
 
@@ -718,16 +719,15 @@ func TestExecuteDSMLToolCallsToolResultFormat(t *testing.T) {
 
 	calls := []DSMLCall{
 		{Name: "exec_command", Args: map[string]any{"cmd": "echo hi"}},
-		{Name: "write_file", Args: map[string]any{"path": "x"}}, // rejected
+		{Name: "write_file", Args: map[string]any{"path": "x"}}, // non-whitelisted: skipped, no block
 		{Name: "read_file", Args: map[string]any{"path": "main.go"}},
 	}
 	outputs := ExecuteDSMLToolCalls(ctx, calls)
-	if len(outputs) != len(calls) {
-		t.Fatalf("outputs = %d, want %d (1:1 with calls)", len(outputs), len(calls))
+	if len(outputs) != 2 {
+		t.Fatalf("outputs = %d, want 2 (non-whitelisted call produces no block)", len(outputs))
 	}
 	wants := []string{
 		`<tool_result>{"result":"ok","warning":"note"}</tool_result>`,
-		`<tool_result>{"error":"unsupported tool \"write_file\" (available: exec_command, shell, read_file)"}</tool_result>`,
 		`<tool_result>{"result":"(no output)"}</tool_result>`,
 	}
 	for i, want := range wants {
@@ -876,5 +876,105 @@ func TestStripDSMLToolCallsRawCloseInParamValue(t *testing.T) {
 	}
 	if got != "前言 后记" && got != "前言  后记" {
 		t.Errorf("unexpected prose: %q", got)
+	}
+}
+
+// TestParseDSMLToolCallsFencedQuote: DSML inside a fenced code block is
+// QUOTED content - an expert showing how to write a tool call, or quoting
+// the test corpus - never an instruction. Blocks after the fence still
+// parse normally (the fence must not swallow real calls).
+func TestParseDSMLToolCallsFencedQuote(t *testing.T) {
+	quoted := "```\n<invoke name=\"exec_command\"><parameter name=\"cmd\" string=\"true\">ls</parameter></invoke>\n```"
+	calls, err := ParseDSMLToolCalls(quoted)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls(quoted) = %v, want nil", err)
+	}
+	if len(calls) != 0 {
+		t.Errorf("quoted DSML parsed into %d calls, want 0", len(calls))
+	}
+
+	mixed := quoted + "\n\n<invoke name=\"read_file\"><parameter name=\"path\" string=\"true\">main.go</parameter></invoke>"
+	calls, err = ParseDSMLToolCalls(mixed)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls(mixed) = %v, want nil", err)
+	}
+	if len(calls) != 1 || calls[0].Name != "read_file" {
+		t.Errorf("calls = %+v, want one read_file after the fence", calls)
+	}
+
+	// An unclosed fence extends to EOF (CommonMark); quoted content inside
+	// it stays quoted.
+	unclosed := "```\n<invoke name=\"exec_command\"><parameter name=\"cmd\" string=\"true\">ls</parameter></invoke>"
+	if calls, err := ParseDSMLToolCalls(unclosed); err != nil || len(calls) != 0 {
+		t.Errorf("unclosed fence: calls=%v err=%v, want 0 calls", calls, err)
+	}
+}
+
+// TestParseDSMLToolCallsNestedInvoke: an <invoke> directly nested inside
+// another one (outside any <parameter> body) is a structural accident, not
+// a second call: it must not become a call of its own, and its parameters
+// must not leak into the enclosing call's Args.
+func TestParseDSMLToolCallsNestedInvoke(t *testing.T) {
+	text := `<invoke name="a"><invoke name="b"><parameter name="cmd" string="true">ls</parameter></invoke>done</invoke>`
+	calls, err := ParseDSMLToolCalls(text)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls: %v", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("got %d calls, want 1 (inner invoke is not a call)", len(calls))
+	}
+	if calls[0].Name != "a" {
+		t.Errorf("name = %q, want a", calls[0].Name)
+	}
+	if len(calls[0].Args) != 0 {
+		t.Errorf("outer args = %v, want none (inner params must not leak)", calls[0].Args)
+	}
+}
+
+// TestIsPureDSMLToolCalls pins the tool-loop gate: only text that parses to
+// >=1 complete call AND strips to nothing is an executable tool-call reply.
+// Long answers that merely quote an <invoke> example must fail the gate.
+func TestIsPureDSMLToolCalls(t *testing.T) {
+	pure := `<tool_calls>
+<invoke name="exec_command"><parameter name="cmd" string="true">git show --stat</parameter></invoke>
+</tool_calls>`
+	cases := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"pure tool_calls wrapper", pure, true},
+		{"bare invoke block", `<invoke name="read_file"><parameter name="path" string="true">a.go</parameter></invoke>`, true},
+		{"prose before calls", "I need to inspect.\n" + pure, false},
+		{"inline quote in long prose", "Solid work. `<invoke name=\"a\"><parameter name=\"cmd\" string=\"true\">x</parameter></invoke>` pins it.", false},
+		{"fenced quote only", "```\n<invoke name=\"exec_command\"><parameter name=\"cmd\" string=\"true\">ls</parameter></invoke>\n```", false},
+		{"truncated call", "<invoke name=\"exec_command\">\n<parameter name=\"cmd\" string=\"true\">ls</parameter>", false},
+		{"empty text", "", false},
+		{"no call at all", "just prose", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := IsPureDSMLToolCalls(c.in); got != c.want {
+				t.Errorf("IsPureDSMLToolCalls = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+// TestExecuteDSMLToolCallsSkipsNonWhitelisted: a call whose name is outside
+// the whitelist (an inline-quoted example, an unknown tool) is never
+// executed and never produces an "unsupported tool" feedback block - the
+// expert must not be made to argue with itself about a call it never made.
+// (The unit-test environment registers no tools, so a whitelisted call
+// would fail with "unknown tool" anyway; the filter check itself is the
+// contract under test.)
+func TestExecuteDSMLToolCallsSkipsNonWhitelisted(t *testing.T) {
+	outs := ExecuteDSMLToolCalls(t.Context(), []DSMLCall{{Name: "a"}})
+	if len(outs) != 0 {
+		t.Errorf("outputs = %q, want none for a non-whitelisted name", outs)
+	}
+	outs = ExecuteDSMLToolCalls(t.Context(), []DSMLCall{{Name: "write_file"}, {Name: "b"}})
+	if len(outs) != 0 {
+		t.Errorf("outputs = %q, want none for non-whitelisted names", outs)
 	}
 }

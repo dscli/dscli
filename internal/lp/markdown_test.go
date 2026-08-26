@@ -189,6 +189,11 @@ func TestMarkdownFragmentPreservesDSML(t *testing.T) {
 		{"invoke inside a paragraph",
 			`<p>看一下 <invoke name="read_file"><parameter name="path" string="true">a.go</parameter></invoke> 的内容</p>`,
 			"看一下 <invoke name=\"read_file\"><parameter name=\"path\" string=\"true\">a.go</parameter></invoke> 的内容"},
+		// Values needing entity escaping on the way IN are decoded by the
+		// HTML tokenizer (text nodes), so they round-trip verbatim.
+		{"parameter value with quotes and ampersand",
+			`<invoke name="exec_command"><parameter name="cmd" string="true">echo "a &amp; b" &gt; out &lt; x</parameter></invoke>`,
+			`<invoke name="exec_command"><parameter name="cmd" string="true">echo "a & b" > out < x</parameter></invoke>`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

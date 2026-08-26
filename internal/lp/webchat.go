@@ -66,6 +66,14 @@ const (
 	webChatMaxResends       = 3               // automatic resend attempts before giving up
 	webChatResendCooldown   = 8 * time.Second // minimum gap between auto resends (UI settle time)
 
+	// IndexedDB extraction (the authoritative answer source, see
+	// webchatExtractReloadedIDB): the record write trails the DOM render,
+	// and a slow page hydration must not silently degrade the answer to the
+	// DOM-extracted text - retry the reload a few times and give each read
+	// a generous window before falling back.
+	webChatIDBPollWindow   = 15 * time.Second // read window per reload attempt
+	webChatIDBReadAttempts = 3                // reload+read attempts before DOM fallback
+
 	// JS snippet to set a textarea's value via the native setter (triggers
 	// message string.
 	jsSetTextareaFmt = `(() => {
@@ -940,13 +948,27 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, opts W
 		// the site writes the conversation record once per page load, so
 		// a live poll during the send can never see the new round. After
 		// the reload the record is complete (FINISHED) and carries the
-		// ORIGINAL markdown plus the deep-think THINK fragments. Failures
-		// are non-fatal: the DOM-extracted response stays, reasoning is "".
+		// ORIGINAL markdown plus the deep-think THINK fragments. IDB is
+		// the authoritative extraction; DOM text is the degraded fallback,
+		// so a slow hydration retries the reload instead of silently
+		// downgrading the answer. Only after all attempts fail does the
+		// DOM-extracted response stay, with an explicit warning.
 		chromedp.ActionFunc(func(ctx context.Context) error {
-			if content, think, ok := webchatExtractReloadedIDB(ctx, finalURL, message); ok {
-				response = content
-				reasoning = think
+			for attempt := 1; attempt <= webChatIDBReadAttempts; attempt++ {
+				if content, think, ok := webchatExtractReloadedIDB(ctx, finalURL, message); ok {
+					response = content
+					reasoning = think
+					return nil
+				}
+				if attempt < webChatIDBReadAttempts {
+					select {
+					case <-ctx.Done():
+						return nil
+					case <-time.After(time.Second):
+					}
+				}
 			}
+			fmt.Fprintf(os.Stderr, "⚠️ IndexedDB 提取失败（重试 %d 次），使用 DOM 提取文本，可能不完整\n", webChatIDBReadAttempts)
 			return nil
 		}),
 	)
@@ -1638,7 +1660,7 @@ func webchatExtractReloadedIDB(ctx context.Context, conversationURL, sentMessage
 	// (answerUsable): a server-overload notice or a truncated reply the
 	// site stored with status=FINISHED must never replace the already
 	// validated DOM answer with itself.
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(webChatIDBPollWindow)
 	for {
 		if text, think, status, found := idbGetAssistant(ctx, sentMessage, time.Now().UnixMilli()); found {
 			if status == "FINISHED" && answerUsable(text) {

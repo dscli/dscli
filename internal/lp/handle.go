@@ -118,8 +118,16 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 			// dscli tools, and feed the results back into the SAME
 			// conversation until the expert produces a final answer.
 			// Plain webchat (Role empty) is unaffected.
-			if opts.Role != "" && toolcall.HasDSMLToolCalls(res.Content) {
+			//
+			// Only a PURE tool-call reply enters the loop (DeepSeek web
+			// emits tool calls as pure DSML); a long answer that merely
+			// quotes an <invoke> example must not be executed - the DSML
+			// is stripped so callers see clean prose.
+			if opts.Role != "" && toolcall.IsPureDSMLToolCalls(res.Content) {
 				return handleWebChatToolLoop(ctx, res, opts)
+			}
+			if opts.Role != "" && toolcall.HasDSMLToolCalls(res.Content) {
+				res.Content = toolcall.StripDSMLToolCalls(res.Content)
 			}
 			return res, nil
 		}
@@ -151,6 +159,10 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 	message := first.Content
 	convURL := first.URL
 	for round := 1; round <= handleWebChatMaxDSMLRounds; round++ {
+		// Only pure tool-call replies continue the loop (see
+		// IsPureDSMLToolCalls): a reply that mixes prose with DSML - the
+		// expert finished its reasoning, or is quoting an example - ends
+		// the loop with the DSML stripped.
 		calls, parseErr := toolcall.ParseDSMLToolCalls(message)
 		if parseErr != nil {
 			fmt.Fprintf(os.Stderr, "⚠️ 工具调用不完整，已停止循环: %v\n", parseErr)
@@ -159,10 +171,20 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 		if len(calls) == 0 {
 			return WebChatResult{Content: message, URL: convURL}, nil
 		}
+		if !toolcall.IsPureDSMLToolCalls(message) {
+			return WebChatResult{Content: toolcall.StripDSMLToolCalls(message), URL: convURL}, nil
+		}
 
 		fmt.Fprintf(os.Stderr, "🤖 专家请求执行 %d 个工具调用（第 %d/%d 轮）…\n",
 			len(calls), round, handleWebChatMaxDSMLRounds)
 		outputs := handleWebChatExecDSML(ctx, calls)
+		if len(outputs) == 0 {
+			// Every parsed call was outside the whitelist (a quoted
+			// DSML example, not an instruction): do NOT send an empty
+			// feedback message - the expert would be confused by a
+			// blank turn. The reply stands as-is.
+			return WebChatResult{Content: message, URL: convURL}, nil
+		}
 		// Each output is a self-delimiting <tool_result> block, in
 		// tool_calls order — newline separation is enough.
 		feedback := strings.Join(outputs, "\n")

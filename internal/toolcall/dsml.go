@@ -74,6 +74,22 @@ func HasDSMLToolCalls(text string) bool {
 	return dsmlNamedInvokeOpenRe.MatchString(normalizeDSMLText(text))
 }
 
+// IsPureDSMLToolCalls reports whether text consists of NOTHING but DSML tool
+// calls (plus optional <tool_calls>/<tool_result> wrappers): at least one
+// complete call parses, and no prose remains after stripping block markup.
+// DeepSeek web emits tool-call replies as pure DSML, so the handleWebChat
+// tool loop only executes when the reply IS a tool call; a long answer that
+// merely QUOTES an <invoke> example (e.g. a review citing the test corpus)
+// must never be executed nor fed "unsupported tool" feedback. Fenced-code
+// quotes fail the strip check on their own, without parser gymnastics.
+func IsPureDSMLToolCalls(text string) bool {
+	calls, err := ParseDSMLToolCalls(text)
+	if err != nil || len(calls) == 0 {
+		return false // truncated or no call at all: not an executable reply
+	}
+	return StripDSMLToolCalls(text) == ""
+}
+
 // dsmlNamedInvokeOpenRe matches an opening <invoke> tag that carries a name
 // attribute - the only shape that can be a real tool call. It is also the
 // gate for HasDSMLToolCalls and the "no opens" early exit in ParseDSMLToolCalls:
@@ -167,9 +183,28 @@ func ParseDSMLToolCalls(text string) ([]DSMLCall, error) {
 	}
 
 	var calls []DSMLCall
+	covered := -1 // closeEnd of the most recently parsed top-level block
 	for _, b := range blocks {
+		// A block directly nested inside another one (outside any
+		// <parameter> body - those are opaque to the scan) is a structural
+		// accident, not a second call: executing both would double-run the
+		// inner tool. Skip it here just like StripDSMLToolCalls does.
+		if b.openStart < covered {
+			continue
+		}
+		covered = b.closeEnd
+		body := text[b.openEnd:b.closeStart]
+		// Mask nested blocks inside this body so their <parameter> tags are
+		// invisible to the extraction regex: the enclosing call must not
+		// pick up arguments the model meant for the accidental inner call.
+		for _, c := range blocks {
+			if c.openStart > b.openStart && c.closeEnd < b.closeEnd {
+				s, e := c.openStart-b.openEnd, c.closeEnd-b.openEnd
+				body = body[:s] + strings.Repeat(" ", e-s) + body[e:]
+			}
+		}
 		inv := DSMLCall{Name: dsmlBlockName(text[b.openStart:b.openEnd]), Args: map[string]any{}}
-		for _, pm := range dsmlParamRe.FindAllStringSubmatch(text[b.openEnd:b.closeStart], -1) {
+		for _, pm := range dsmlParamRe.FindAllStringSubmatch(body, -1) {
 			key := pm[1]
 			val := decodeDSMLValue(pm[3], pm[2] == "true")
 			// Repeated parameters mean an array (DeepSeek models emit
@@ -214,6 +249,64 @@ func dsmlBlockName(tag string) string {
 	}
 }
 
+// dsmlFenceRanges returns the byte ranges of fenced code blocks (```
+// delimited) in text. DSML inside a fenced block is QUOTED content - a model
+// showing how to write a tool call, or an expert quoting the test corpus -
+// never an instruction to execute. Without this, a reply that merely
+// exhibits '<invoke name="exec_command">...' inside a code block would run
+// the exhibited command.
+//
+// The scan follows CommonMark's fence rules so real tool calls after a
+// fence are never swallowed: a line of at least three backticks (after
+// leading spaces, and not in prose) OPENS a block; the next line of at
+// least the same run of backticks closes it. An unclosed fence extends to
+// the end of the text (also CommonMark).
+func dsmlFenceRanges(text string) [][2]int {
+	var ranges [][2]int
+	off := 0
+	fence := 0
+	start := 0
+	for _, line := range strings.SplitAfter(text, "\n") {
+		trimmed := strings.TrimLeft(line, " \t")
+		ticks := 0
+		for ticks < len(trimmed) && trimmed[ticks] == '`' {
+			ticks++
+		}
+		rest := trimmed[ticks:]
+		if fence == 0 {
+			// Opening fence: >=3 backticks at the start of a line, followed
+			// by nothing or an info string (e.g. "go", "bash"). Deeper runs
+			// (````) open too - they may legally contain ``` inside.
+			if ticks >= 3 && !strings.HasPrefix(rest, "`") {
+				fence = ticks
+				start = off
+			}
+		} else if ticks >= fence && strings.TrimRight(rest, " \t\r\n") == "" {
+			ranges = append(ranges, [2]int{start, off + len(line)})
+			fence = 0
+		}
+		off += len(line)
+	}
+	if fence != 0 {
+		ranges = append(ranges, [2]int{start, len(text)})
+	}
+	return ranges
+}
+
+// inFenceRanges reports whether pos falls inside a fenced code block.
+// ranges is sorted by offset; the walk stops once past pos.
+func inFenceRanges(ranges [][2]int, pos int) bool {
+	for _, r := range ranges {
+		if r[0] > pos {
+			return false
+		}
+		if pos < r[1] {
+			return true
+		}
+	}
+	return false
+}
+
 // dsmlBlockRanges pairs named <invoke> opening tags with </invoke> closes in
 // text order and returns every complete block plus the number of opens left
 // unmatched and the byte offset of the first unmatched open (-1 when none).
@@ -240,24 +333,34 @@ func dsmlBlockName(tag string) string {
 //     body early (indistinguishable from a real close without a full XML
 //     tokenizer); entity-escaped forms (&lt;/parameter&gt;) are safe
 //     because escaping resolution happens after the scan.
+//   - Fenced code blocks (```) are opaque: DSML inside them is quoted
+//     content, not an instruction. See dsmlFenceRanges for the rules.
 func dsmlBlockRanges(text string) (blocks []dsmlBlockRange, unclosed int, firstUnclosed int) {
 	type ev struct {
 		pos  int
 		kind byte // 'o' invoke open, 'c' invoke close, 'p' param open, 'q' param close
 		end  int  // exclusive end of the matched tag
 	}
+	fences := dsmlFenceRanges(text)
 	events := []ev{}
+	// add skips events inside fenced code blocks: DSML there is quoted
+	// content (an example, a test reference), not structure to pair.
+	add := func(m []int, kind byte) {
+		if !inFenceRanges(fences, m[0]) {
+			events = append(events, ev{m[0], kind, m[1]})
+		}
+	}
 	for _, m := range dsmlNamedInvokeOpenRe.FindAllStringIndex(text, -1) {
-		events = append(events, ev{m[0], 'o', m[1]})
+		add(m, 'o')
 	}
 	for _, m := range dsmlInvokeCloseRe.FindAllStringIndex(text, -1) {
-		events = append(events, ev{m[0], 'c', m[1]})
+		add(m, 'c')
 	}
 	for _, m := range dsmlParamOpenRe.FindAllStringIndex(text, -1) {
-		events = append(events, ev{m[0], 'p', m[1]})
+		add(m, 'p')
 	}
 	for _, m := range dsmlParamCloseRe.FindAllStringIndex(text, -1) {
-		events = append(events, ev{m[0], 'q', m[1]})
+		add(m, 'q')
 	}
 	sort.Slice(events, func(i, j int) bool {
 		if events[i].pos != events[j].pos {
@@ -326,19 +429,6 @@ func decodeDSMLValue(raw string, isString bool) any {
 // structure.
 var dsmlParamOpenRe = regexp.MustCompile(`(?s)<\s*parameter\b[^>]*>`)
 var dsmlParamCloseRe = regexp.MustCompile(`(?s)</\s*parameter\s*>`)
-
-// unclosedInvokePositions reports the number of named <invoke> opens left
-// unmatched and the byte offset of the FIRST unmatched open (or -1 when
-// there is none). The matching semantics (parameter bodies opaque, stack
-// pairing) live in dsmlBlockRanges; this is the thin count-only view kept
-// for callers that only need the truncation signal.
-func unclosedInvokePositions(text string) (count int, firstPos int) {
-	_, unclosed, first := dsmlBlockRanges(text)
-	if unclosed == 0 {
-		return 0, -1
-	}
-	return unclosed, first
-}
 
 // StripDSMLToolCalls removes tool-call blocks from text, leaving the
 // surrounding prose. Used to return a clean partial result when the expert
@@ -415,7 +505,10 @@ var dsmlBlockedCmdRe = regexp.MustCompile(`(?i)(^|\s|;|&&|\|\|)(` +
 //   - timeout -> seconds (DSML uses milliseconds)
 //
 // read_file passes its parameters through (path), and any other name is
-// rejected so unvetted tools are never executed.
+// rejected here as a defensive backstop - ExecuteDSMLToolCalls filters
+// non-whitelisted names before this function is ever reached, so normal
+// flow never produces this error; keeping the check means a future direct
+// caller still cannot execute an unvetted tool.
 func normalizeDSMLInvoke(inv DSMLCall) (name string, args ToolArgs, err error) {
 	if !dsmlToolNames[inv.Name] {
 		return "", nil, fmt.Errorf("unsupported tool %q (available: exec_command, shell, read_file)", inv.Name)
@@ -564,8 +657,15 @@ func dsmlCallsToToolCalls(calls []DSMLCall) (tcs []prompt.ToolCall, plan []dsmlE
 // corresponding tool_calls in the preceding assistant message). The JSON
 // payload is the ToolContent shape (result/warning/error), omitzero applied.
 // Blocks are 1:1 with the input calls, in order — a call rejected before
-// execution (unsupported tool, destructive command, missing parameter) still
-// gets its own error block so the expert can adapt its approach.
+// execution (destructive command, missing parameter) still gets its own
+// error block so the expert can adapt its approach.
+//
+// A call whose name is outside the whitelist is never executable and is
+// skipped silently (debug log, no output block): fenced-code quotes never
+// parse (see dsmlBlockRanges), but a bare reference in prose - e.g. an
+// expert quoting the DSML test corpus - still does, and feeding an
+// "unsupported tool" error back into the conversation makes the model
+// argue with itself about a call it never intended.
 //
 // Execution reuses the HandleToolCalls core (usage statistics, result
 // truncation, dual-message split) but does NOT persist tool messages: the
@@ -576,6 +676,19 @@ func dsmlCallsToToolCalls(calls []DSMLCall) (tcs []prompt.ToolCall, plan []dsmlE
 func ExecuteDSMLToolCalls(ctx context.Context, calls []DSMLCall) (outputs []string) {
 	span, ctx := clog.StartSpanFromContext(ctx, "ExecuteDSMLToolCalls")
 	defer span.Finish()
+
+	kept := make([]DSMLCall, 0, len(calls))
+	for _, inv := range calls {
+		if dsmlToolNames[inv.Name] {
+			kept = append(kept, inv)
+		} else {
+			outfmt.Debug("DSML skipped non-whitelisted tool %q (quoted example or unknown name)", inv.Name)
+		}
+	}
+	calls = kept
+	if len(calls) == 0 {
+		return nil
+	}
 
 	tcs, plan := dsmlCallsToToolCalls(calls)
 	outcomes, dualUsers := executeToolCalls(ctx, tcs, false)

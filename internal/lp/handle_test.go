@@ -176,8 +176,9 @@ func TestHandleWebChatRetryAbortsOnCancel(t *testing.T) {
 }
 
 // dsmlReply is a realistic DSML tool-call reply from a review expert.
-const dsmlReply = `I need to inspect the amap implementation.
-<tool_calls>
+// Observed shape: tool-call replies are PURE DSML (no leading prose), which
+// is what IsPureDSMLToolCalls requires before the loop executes anything.
+const dsmlReply = `<tool_calls>
 <invoke name="exec_command">
 <parameter name="cmd" string="true">git show --stat</parameter>
 <parameter name="justification" string="true">See changed files</parameter>
@@ -307,8 +308,8 @@ func TestHandleWebChatToolLoopRoundCap(t *testing.T) {
 	if strings.Contains(res.Content, "<invoke") || strings.Contains(res.Content, "<tool_calls") {
 		t.Errorf("content still contains DSML markers after cap:\n%s", res.Content)
 	}
-	if !strings.Contains(res.Content, "I need to inspect") {
-		t.Errorf("content lost the prose part:\n%s", res.Content)
+	if res.Content != "" {
+		t.Errorf("content = %q, want empty (pure DSML stripped)", res.Content)
 	}
 }
 
@@ -363,6 +364,42 @@ func TestHandleWebChatToolLoopContinueFails(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Errorf("handleWebChatSend calls = %d, want 2 (follow-up attempted once)", calls)
+	}
+}
+
+// TestHandleWebChatQuotedDSMLNotExecuted: a long answer that merely QUOTES an
+// <invoke> example (a review citing the DSML test corpus, either inline or
+// inside a fenced code block) must not enter the tool loop, must not produce
+// "unsupported tool" feedback, and must keep its prose in the returned
+// content.
+func TestHandleWebChatQuotedDSMLNotExecuted(t *testing.T) {
+	origFunc := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = origFunc })
+	executed := false
+	origExec := handleWebChatExecDSML
+	handleWebChatExecDSML = func(_ context.Context, _ []toolcall.DSMLCall) []string {
+		executed = true
+		return []string{`<tool_result>{"error":"unsupported tool ..."}</tool_result>`}
+	}
+	t.Cleanup(func() { handleWebChatExecDSML = origExec })
+
+	quoted := "## Overall\nSolid work.\n\nExample: `<invoke name=\"a\"><parameter name=\"cmd\" string=\"true\">x</parameter></invoke>` pins the behavior.\n```\n<invoke name=\"exec_command\"><parameter name=\"cmd\" string=\"true\">ls</parameter></invoke>\n```\nEnd."
+	handleWebChatSend = func(_ context.Context, _ string, _ WebChatOptions) (WebChatResult, error) {
+		return WebChatResult{Content: quoted, URL: "https://chat.deepseek.com/a/chat/s/convQ"}, nil
+	}
+
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{Role: "review"})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if executed {
+		t.Error("quoted DSML must not be executed")
+	}
+	if strings.Contains(res.Content, "<tool_result") {
+		t.Errorf("content contains tool feedback noise:\n%s", res.Content)
+	}
+	if !strings.Contains(res.Content, "Solid work") || !strings.Contains(res.Content, "End.") {
+		t.Errorf("content lost prose: %q", res.Content)
 	}
 }
 
