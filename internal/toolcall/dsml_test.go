@@ -129,6 +129,112 @@ func TestParseDSMLToolCallsTruncated(t *testing.T) {
 	}
 }
 
+// TestParseDSMLToolCallsLLMJunk covers the markup artifacts that made a
+// well-formed call look truncated in practice ("DSML tool call truncated:
+// 1 unclosed <invoke>"): full-width angle brackets, zero-width characters,
+// and ||DSML||-style separators a model emits right after a tag opener.
+func TestParseDSMLToolCallsLLMJunk(t *testing.T) {
+	text := `<tool_calls>
+＜｜｜
+DSML｜｜invoke name="exec_command"＞
+<parameter name="cmd" string="true">git log --oneline -3</parameter>
+</｜｜
+DSML｜｜invoke＞
+</tool_calls>`
+	calls, err := ParseDSMLToolCalls(text)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls: %v (junk must be normalized, not truncated)", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("got %d calls, want 1", len(calls))
+	}
+	if inv := calls[0]; inv.Name != "exec_command" {
+		t.Errorf("name = %q, want exec_command", inv.Name)
+	} else if cmd, _ := inv.Args["cmd"].(string); cmd != "git log --oneline -3" {
+		t.Errorf("cmd = %q, want git log command", cmd)
+	}
+	// Zero-width characters inside a tag also break exact matching.
+	zw := "<invoke name=\"exec_command\">\n<parameter name=\"cmd\" string=\"true\">ls</parameter>\n</\u200binvoke\u200d>"
+	calls, err = ParseDSMLToolCalls(zw)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls(zero-width): %v", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("zero-width: got %d calls, want 1", len(calls))
+	}
+}
+
+// TestParseDSMLToolCallsCloseTagSpace tolerates whitespace around a closing
+// tag ("</ invoke >", "</parameter >"): the exact-string count used to
+// misread a well-formed call as truncated.
+func TestParseDSMLToolCallsCloseTagSpace(t *testing.T) {
+	text := `</ invoke >
+<invoke name="exec_command">
+<parameter name="cmd" string="true">ls</parameter >
+</invoke >`
+	// Leading "</ invoke >" is prose noise, not a call; the real call below
+	// must still parse without a truncation error.
+	calls, err := ParseDSMLToolCalls(text)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls: %v", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("got %d calls, want 1", len(calls))
+	}
+	if cmd, _ := calls[0].Args["cmd"].(string); cmd != "ls" {
+		t.Errorf("cmd = %q, want ls", cmd)
+	}
+	// A call with whitespace in both closing tags still counts as complete.
+	complete := `<invoke name="exec_command">
+<parameter name="cmd" string="true">ls</parameter >
+</ invoke >`
+	calls, err = ParseDSMLToolCalls(complete)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls(space-y close): %v", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("space-y close: got %d calls, want 1", len(calls))
+	}
+}
+
+// TestNormalizeDSMLText pinpoints the normalization rules individually.
+func TestNormalizeDSMLText(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"full-width angles", `＜invoke name="exec_command"＞`, `<invoke name="exec_command">`},
+		{"full-width close", `＜/invoke＞`, `</invoke>`},
+		{"junk after open", "<｜｜\nDSML｜｜invoke name=\"exec_command\">", `<invoke name="exec_command">`},
+		{"junk after close", "</｜｜\r\nDSML｜｜invoke>", `</invoke>`},
+		{"ascii pipes junk", "</||DSML||invoke>", `</invoke>`},
+		{"junk with whitespace", "</| DSML\n|invoke>", `</invoke>`},
+		{"zero-width chars", "</\u200binvoke\u200d>", `</invoke>`},
+		{"plain text unchanged", "plain < not markup >", "plain < not markup >"},
+		{"bare space after opener untouched", "</ invoke>", `</ invoke>`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := normalizeDSMLText(c.in); got != c.want {
+				t.Errorf("normalizeDSMLText(%q) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+// TestHasDSMLToolCallsLLMJunk ensures junky-but-real calls still route into
+// the tool loop (HasDSMLToolCalls must agree with ParseDSMLToolCalls).
+func TestHasDSMLToolCallsLLMJunk(t *testing.T) {
+	text := "＜｜｜\nDSML｜｜invoke name=\"exec_command\"＞"
+	if !HasDSMLToolCalls(text) {
+		t.Error("HasDSMLToolCalls(junk-open) = false, want true")
+	}
+	if HasDSMLToolCalls("阅读 <invoke name= 的说明") {
+		t.Error("HasDSMLToolCalls(prose) = true, want false")
+	}
+}
+
 func TestParseDSMLToolCallsMultiple(t *testing.T) {
 	text := `<tool_calls>
 <invoke name="read_file">

@@ -21,6 +21,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/prompt"
@@ -36,13 +37,13 @@ type DSMLCall struct {
 // dsmlInvokeRe matches a complete <invoke> block: <invoke name="X">...</invoke>.
 // (?s) lets the body span lines; the body is captured non-greedily so nested
 // parameter tags stay inside a single invoke.
-var dsmlInvokeRe = regexp.MustCompile(`(?s)<invoke\s+name="([^"]+)"[^>]*>(.*?)</invoke>`)
+var dsmlInvokeRe = regexp.MustCompile(`(?s)<\s*invoke\s+name="([^"]+)"[^>]*>(.*?)</\s*invoke\s*>`)
 
 // dsmlParamRe matches one <parameter> child: name + optional string="true|false".
 // DeepSeek sometimes omits the string attribute entirely; the group then
 // captures "", and decodeDSMLValue's coercion path keeps text text and
 // numbers numeric, so the call is never silently dropped.
-var dsmlParamRe = regexp.MustCompile(`(?s)<parameter\s+name="([^"]+)"(?:\s*string="(true|false)")?[^>]*>(.*?)</parameter>`)
+var dsmlParamRe = regexp.MustCompile(`(?s)<\s*parameter\s+name="([^"]+)"(?:\s*string="(true|false)")?[^>]*>(.*?)</\s*parameter\s*>`)
 
 // dsmlEntityReplacer decodes the XML entities DeepSeek may emit inside
 // parameter values. &amp; must be last so other entities are not re-escaped.
@@ -62,24 +63,67 @@ var dsmlEntityReplacer = strings.NewReplacer(
 // the caller. Only an opening tag that is closed with ">" counts, so prose
 // mentioning "<invoke" alone never triggers it.
 func HasDSMLToolCalls(text string) bool {
-	return dsmlInvokeOpenRe.MatchString(text)
+	return dsmlInvokeOpenRe.MatchString(normalizeDSMLText(text))
 }
 
 // dsmlInvokeOpenRe matches an opening <invoke> tag that is actually closed
 // with ">" (a bare "<invoke" in prose without ">" is not a call, and a
 // malformed name attribute must not be counted as a truncated call either).
-var dsmlInvokeOpenRe = regexp.MustCompile(`(?s)<invoke\b[^>]*>`)
+// <\s*invoke tolerates whitespace after the opener: models sometimes emit
+// "< invoke name=..." as a tokenization artifact.
+var dsmlInvokeOpenRe = regexp.MustCompile(`(?s)<\s*invoke\b[^>]*>`)
+
+// dsmlNamedInvokeOpenRe matches an opening <invoke> tag that carries a name
+// attribute - the only shape that can be a real tool call. A bare
+// "<invoke>" in prose has no name and must not count as a truncated call.
+var dsmlNamedInvokeOpenRe = regexp.MustCompile(`(?s)<\s*invoke\b[^>]*name\s*=[^>]*>`)
+
+// normalizeDSMLText repairs markup artifacts LLMs commonly emit around DSML
+// tags before parsing, so a well-formed call is never misread as truncated
+// ("DSML tool call truncated: N unclosed <invoke>"):
+//
+//   - full-width angle brackets ＜＞ -> half-width (Chinese models often
+//     emit them instead of < >)
+//   - Unicode format characters (zero-width space/joiner, BOM, soft hyphen,
+//     direction marks) are dropped - they are invisible but break exact
+//     tag matching
+//   - junk between a tag opener and its name is removed, e.g.
+//     "</｜｜\r\nDSML｜｜invoke>" -> "</invoke>"
+var dsmlFullwidthReplacer = strings.NewReplacer("＜", "<", "＞", ">")
+
+// dsmlTagJunkRe strips separator noise directly after < or </, before the
+// tag name: ASCII/full-width double-pipe markers (||, ｜) and "DSML"
+// literals, with whitespace only between noise tokens. (?i) plus
+// d\s*s\s*m\s*l covers spelling variants a model may emit ("D S M L").
+// Bare whitespace is deliberately NOT noise: "a < b" in prose or in a
+// parameter value must survive normalization untouched.
+var dsmlTagJunkRe = regexp.MustCompile(`(?i)(</?)(?:[|｜]\s*|d\s*s\s*m\s*l\s*)+`)
+
+func normalizeDSMLText(text string) string {
+	text = dsmlFullwidthReplacer.Replace(text)
+	text = strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Cf, r) {
+			return -1
+		}
+		return r
+	}, text)
+	return dsmlTagJunkRe.ReplaceAllString(text, "$1")
+}
 
 // ParseDSMLToolCalls extracts all DSML tool calls from text. It returns an
 // error when an <invoke> block is left unclosed (e.g. the response was cut
 // off mid-emission): a truncated call must never be executed.
 func ParseDSMLToolCalls(text string) ([]DSMLCall, error) {
-	opens := len(dsmlInvokeOpenRe.FindAllString(text, -1))
-	closes := strings.Count(text, "</invoke>")
-	if opens > closes {
-		return nil, fmt.Errorf("DSML tool call truncated: %d unclosed <invoke>", opens-closes)
+	text = normalizeDSMLText(text)
+	// Truncation check by residue: drop the complete <invoke> blocks, then
+	// look for an opening tag left over. Unlike an opens-vs-closes count,
+	// a stray "</invoke>" in prose or a parameter value can never satisfy an
+	// unclosed call (false negative), and junk closes never get counted.
+	remaining := dsmlInvokeRe.ReplaceAllString(text, "")
+	if unclosed := len(dsmlNamedInvokeOpenRe.FindAllString(remaining, -1)); unclosed > 0 {
+		return nil, fmt.Errorf("DSML tool call truncated: %d unclosed <invoke>", unclosed)
 	}
-	if opens == 0 {
+	if opens := len(dsmlInvokeOpenRe.FindAllString(text, -1)); opens == 0 {
 		return nil, nil
 	}
 
@@ -133,8 +177,8 @@ func decodeDSMLValue(raw string, isString bool) any {
 // opening tag that was never closed - chops everything from that tag to the
 // end of the text: the tail is unparseable residue of a cut-off emission.
 func StripDSMLToolCalls(text string) string {
-	out := dsmlInvokeRe.ReplaceAllString(text, "")
-	if loc := dsmlInvokeOpenRe.FindStringIndex(out); loc != nil {
+	out := dsmlInvokeRe.ReplaceAllString(normalizeDSMLText(text), "")
+	if loc := dsmlNamedInvokeOpenRe.FindStringIndex(out); loc != nil {
 		out = out[:loc[0]]
 	}
 	// Collapse leftover empty <tool_calls> wrappers and blank noise.
