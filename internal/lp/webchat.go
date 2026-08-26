@@ -70,7 +70,10 @@ const (
 	// webchatExtractReloadedIDB): the record write trails the DOM render,
 	// and a slow page hydration must not silently degrade the answer to the
 	// DOM-extracted text - retry the reload a few times and give each read
-	// a generous window before falling back.
+	// a generous window before falling back. Worst case this path takes
+	// ~3 x (15s reload + 15s read) + 2s between attempts ~= 92s; that is
+	// deliberate (extraction completeness beats latency here) but any
+	// change to these constants should be mindful of the total.
 	webChatIDBPollWindow   = 15 * time.Second // read window per reload attempt
 	webChatIDBReadAttempts = 3                // reload+read attempts before DOM fallback
 

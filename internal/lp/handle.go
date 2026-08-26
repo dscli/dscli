@@ -183,7 +183,8 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 			// DSML example, not an instruction): do NOT send an empty
 			// feedback message - the expert would be confused by a
 			// blank turn. Strip the quoted markup so the caller sees
-			// clean content.
+			// clean content, and say why the result can be empty.
+			fmt.Fprintf(os.Stderr, "⚠️ 专家回复只包含非白名单工具调用（引用示例？），已跳过执行\n")
 			return WebChatResult{Content: toolcall.StripDSMLToolCalls(message), URL: convURL}, nil
 		}
 		// Each output is a self-delimiting <tool_result> block, in

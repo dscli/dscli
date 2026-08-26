@@ -76,12 +76,13 @@ func HasDSMLToolCalls(text string) bool {
 
 // IsPureDSMLToolCalls reports whether text consists of NOTHING but DSML tool
 // calls (plus optional <tool_calls>/<tool_result> wrappers): at least one
-// complete call parses, and no prose remains after stripping block markup.
-// DeepSeek web emits tool-call replies as pure DSML, so the handleWebChat
-// tool loop only executes when the reply IS a tool call; a long answer that
-// merely QUOTES an <invoke> example (e.g. a review citing the test corpus)
-// must never be executed nor fed "unsupported tool" feedback. Fenced-code
-// quotes fail the strip check on their own, without parser gymnastics.
+// complete call parses, and no prose remains after stripping block markup
+// and wrappers. DeepSeek web emits tool-call replies as pure DSML, so the
+// handleWebChat tool loop only executes when the reply IS a tool call; a
+// long answer that merely QUOTES an <invoke> example (e.g. a review citing
+// the test corpus) must never be executed nor fed "unsupported tool"
+// feedback. Fenced-code and inline-code quotes fail the strip check on
+// their own, without parser gymnastics.
 func IsPureDSMLToolCalls(text string) bool {
 	calls, err := ParseDSMLToolCalls(text)
 	if err != nil || len(calls) == 0 {
@@ -249,24 +250,31 @@ func dsmlBlockName(tag string) string {
 	}
 }
 
-// dsmlCodeRanges returns the byte ranges of QUOTED code in text: fenced
-// blocks (``` or ~~~, per CommonMark) and inline code spans (a matched
-// pair of backticks on one line). DSML inside any of them is quoted
-// content - a model showing how to write a tool call, or an expert quoting
-// the test corpus - never an instruction to execute. Without this, a reply
-// that merely exhibits '<invoke name="exec_command">...' inside a code
-// block would run the exhibited command; and an incomplete quote (an
-// <invoke> inside a code span with no closing tag) would be reported as a
-// truncated call, chopping the surrounding prose away.
+// dsmlCodeRanges returns the byte ranges of QUOTED content in text: fenced
+// blocks (``` or ~~~, per CommonMark), inline code spans (a matched pair
+// of backtick RUNS), and <tool_result> blocks (the executor's own feedback
+// wrapper). DSML inside any of them is quoted content - a model showing
+// how to write a tool call, an expert quoting the test corpus, or a model
+// echoing a tool result it received - never an instruction to execute.
+// Without this, a reply that merely exhibits
+// '<invoke name="exec_command">...' inside a code block would run the
+// exhibited command; an incomplete quote (an <invoke> inside a code span
+// with no closing tag) would be reported as a truncated call, chopping the
+// surrounding prose away; and an echoed <tool_result> block - which may
+// carry tool names in its JSON - would be re-parsed as fresh calls.
 //
 // Fences: a line of at least three backticks or tildes (after leading
 // spaces) OPENS a block; the next line of at least the same run of the
 // SAME character closes it (CommonMark). An unclosed fence extends to the
-// end of the text, also CommonMark.
+// end of the text, also CommonMark. Only ONE repeated marker counts per
+// line: a mixed line like "`~~" is not a fence.
 //
-// Inline spans: on lines outside fences, backticks pair up (1st-2nd,
-// 3rd-4th, ...). An unpaired backtick opens nothing - prose ABOUT backticks
-// ("markdown uses ` for code") must not swallow the rest of the line.
+// Inline spans: on lines outside fences, backtick RUNS pair by length
+// (CommonMark): a run opens a span and the next run of the SAME length
+// closes it, so `a “ b  a` is one span whose inner ticks are content.
+// Runs of a different length are content, not new spans; an unmatched run
+// opens nothing - prose ABOUT backticks ("markdown uses ` for code") must
+// not swallow the rest of the line.
 func dsmlCodeRanges(text string) [][2]int {
 	var ranges [][2]int
 	off := 0
@@ -276,48 +284,74 @@ func dsmlCodeRanges(text string) [][2]int {
 	for _, line := range strings.SplitAfter(text, "\n") {
 		trimmed := strings.TrimLeft(line, " \t")
 		indent := len(line) - len(trimmed)
-		run := 0
-		for run < len(trimmed) && (trimmed[run] == '`' || trimmed[run] == '~') {
-			run++
-		}
+		// A run is ONE character repeated (CommonMark: a fence is a single
+		// repeated marker; counting ` and ~ together would misread a mixed
+		// line like "`~~" as a 3-run fence).
 		ch := byte(0)
-		if run > 0 {
+		if len(trimmed) > 0 && (trimmed[0] == '`' || trimmed[0] == '~') {
 			ch = trimmed[0]
+		}
+		run := 0
+		for run < len(trimmed) && trimmed[run] == ch {
+			run++
 		}
 		rest := trimmed[run:]
 		if fence == 0 {
-			// Opening fence: >=3 backticks/tildes at the start of a line,
+			// Opening fence: >=3 of the same marker at the start of a line,
 			// followed by nothing or an info string (e.g. "go", "bash").
 			if run >= 3 && ch != 0 && !strings.HasPrefix(rest, string(ch)) {
 				fence = run
 				fenceCh = int(ch)
 				start = off
+				off += len(line)
+				continue
 			}
 		} else if run >= fence && int(ch) == fenceCh && strings.TrimRight(rest, " \t\r\n") == "" {
 			ranges = append(ranges, [2]int{start, off + len(line)})
 			fence = 0
+			off += len(line)
+			continue // the closing fence line itself is not inline code
 		}
 		if fence != 0 {
 			off += len(line)
 			continue
 		}
-		// Inline code spans: pair backticks on this line.
-		inlineStart := -1
-		for i := 0; i < len(trimmed); i++ {
-			if trimmed[i] == '`' {
-				if inlineStart < 0 {
-					inlineStart = i
-				} else {
-					ranges = append(ranges, [2]int{off + indent + inlineStart, off + indent + i + 1})
-					inlineStart = -1
-				}
+		// Inline code spans: backtick RUNS pair by CommonMark length - a
+		// run opens a span and the next run of the SAME length closes it,
+		// so `a `` b  a` is one span and its inner ticks are content. Runs
+		// of a different length are content, not spans; an unmatched run
+		// opens nothing, so prose ABOUT backticks must not swallow the
+		// rest of the line.
+		openPos, openLen := -1, 0
+		for i := 0; i < len(trimmed); {
+			if trimmed[i] != '`' {
+				i++
+				continue
 			}
+			j := i
+			for j < len(trimmed) && trimmed[j] == '`' {
+				j++
+			}
+			if openPos < 0 {
+				openPos, openLen = i, j-i
+			} else if j-i == openLen {
+				ranges = append(ranges, [2]int{off + indent + openPos, off + indent + j})
+				openPos = -1
+			}
+			i = j
 		}
 		off += len(line)
 	}
 	if fence != 0 {
 		ranges = append(ranges, [2]int{start, len(text)})
 	}
+	// <tool_result> blocks are opaque: the executor's own feedback wrapper.
+	// When a model echoes one back (tool result recalled in prose), its
+	// JSON may carry tool names - that is echoed content, not fresh calls.
+	for _, m := range dsmlToolResultRe.FindAllStringIndex(text, -1) {
+		ranges = append(ranges, [2]int{m[0], m[1]})
+	}
+	sort.Slice(ranges, func(i, j int) bool { return ranges[i][0] < ranges[j][0] })
 	return ranges
 }
 
@@ -460,6 +494,12 @@ func decodeDSMLValue(raw string, isString bool) any {
 var dsmlParamOpenRe = regexp.MustCompile(`(?s)<\s*parameter\b[^>]*>`)
 var dsmlParamCloseRe = regexp.MustCompile(`(?s)</\s*parameter\s*>`)
 
+// dsmlToolResultRe matches one complete <tool_result> block - the executor's
+// feedback wrapper (see formatDSMLToolResult). The body is opaque quoted
+// content: its JSON may carry tool names and markdown, none of which is a
+// fresh tool call. Non-greedy matching is fine: blocks do not nest.
+var dsmlToolResultRe = regexp.MustCompile(`(?s)<\s*tool_result\b[^>]*>.*?</\s*tool_result\s*>`)
+
 // StripDSMLToolCalls removes tool-call blocks from text, leaving the
 // surrounding prose. Used to return a clean partial result when the expert
 // stops at a tool call (round cap or parse error). A truncated invoke - an
@@ -489,9 +529,13 @@ func StripDSMLToolCalls(text string) string {
 	}
 	b.WriteString(text[last:end])
 	out := b.String()
-	// Collapse leftover empty <tool_calls> wrappers and blank noise.
+	// Collapse leftover empty <tool_calls> / <tool_result> wrappers and
+	// blank noise. <tool_result> is the executor's own feedback wrapper: a
+	// model echoing one back must not leave its protocol markup in the
+	// caller-visible text (and IsPureDSMLToolCalls counts cleaned text).
 	out = strings.ReplaceAll(out, "<tool_calls>", "")
 	out = strings.ReplaceAll(out, "</tool_calls>", "")
+	out = dsmlToolResultRe.ReplaceAllString(out, "")
 	return strings.TrimSpace(out)
 }
 

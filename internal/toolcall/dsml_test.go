@@ -942,6 +942,65 @@ func TestParseDSMLToolCallsInlineCodeQuote(t *testing.T) {
 	if got := StripDSMLToolCalls(incomplete); !strings.Contains(got, "Solid work.") || !strings.Contains(got, "End.") {
 		t.Errorf("incomplete quote chopped prose: %q", got)
 	}
+
+	// CommonMark: a DOUBLE-backtick span is one span whose inner single
+	// ticks are content. The quoted DSML inside must be masked entirely.
+	double := "Use ``<invoke name=\"exec_command\"><parameter name=\"cmd\" string=\"true\">ls</parameter></invoke>`` here."
+	if calls, err := ParseDSMLToolCalls(double); err != nil || len(calls) != 0 {
+		t.Errorf("double-backtick span: calls=%v err=%v, want 0 calls (masked as one span)", calls, err)
+	}
+	if got := StripDSMLToolCalls(double); !strings.Contains(got, "Use") || !strings.Contains(got, "here.") {
+		t.Errorf("double-backtick span lost prose: %q", got)
+	}
+}
+
+// TestDSMLCodeRangesMixedRunLines: a fence needs ONE repeated marker - a
+// mixed line like "`~~" must neither open nor close a fence (CommonMark).
+func TestDSMLCodeRangesMixedRunLines(t *testing.T) {
+	// Mixed opening line: not a fence, so an <invoke> right after it is a
+	// real call (the scanner must not treat "`~~" as a 3-run opener).
+	text := "`~~\n<invoke name=\"read_file\"><parameter name=\"path\" string=\"true\">a.go</parameter></invoke>"
+	calls, err := ParseDSMLToolCalls(text)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls: %v", err)
+	}
+	if len(calls) != 1 || calls[0].Name != "read_file" {
+		t.Errorf("calls = %+v, want one read_file (mixed line is not a fence)", calls)
+	}
+	// Mixed closing line: must not close a real ``` fence - the content
+	// stays quoted and the block continues (unclosed to EOF).
+	fence := "```\n<invoke name=\"exec_command\"><parameter name=\"cmd\" string=\"true\">ls</parameter></invoke>\n`~~"
+	if calls, err := ParseDSMLToolCalls(fence); err != nil || len(calls) != 0 {
+		t.Errorf("mixed closing line: calls=%v err=%v, want 0 calls (fence not closed)", calls, err)
+	}
+}
+
+// TestParseDSMLToolCallsToolResultOpaque: <tool_result> is the executor's own
+// feedback wrapper; when the model echoes one back, its JSON (which may
+// carry tool names) must not be re-parsed as fresh calls.
+func TestParseDSMLToolCallsToolResultOpaque(t *testing.T) {
+	text := "I ran this: <tool_result>{\"error\":\"unsupported tool \\\"a\\\"\"}</tool_result> and it failed."
+	calls, err := ParseDSMLToolCalls(text)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls: %v", err)
+	}
+	if len(calls) != 0 {
+		t.Errorf("echoed tool_result parsed into %d calls, want 0", len(calls))
+	}
+	// Strip removes the wrapper: no protocol markup reaches the caller.
+	if got := StripDSMLToolCalls(text); strings.Contains(got, "tool_result") || !strings.Contains(got, "and it failed.") {
+		t.Errorf("stripped echo = %q, want prose only", got)
+	}
+	// A wrapped reply is NOT a fresh call: the <tool_result> block is
+	// opaque (echoed feedback), so a call inside it never parses and the
+	// gate correctly refuses it. Strip still leaves clean (empty) text.
+	wrapped := "<tool_result><tool_calls><invoke name=\"exec_command\"><parameter name=\"cmd\" string=\"true\">ls</parameter></invoke></tool_calls></tool_result>"
+	if IsPureDSMLToolCalls(wrapped) {
+		t.Error("IsPureDSMLToolCalls(wrapped) = true, want false (echoed calls are not executed)")
+	}
+	if got := StripDSMLToolCalls(wrapped); got != "" {
+		t.Errorf("StripDSMLToolCalls(wrapped) = %q, want empty", got)
+	}
 }
 
 // TestParseDSMLToolCallsNestedInvoke: an <invoke> directly nested inside
