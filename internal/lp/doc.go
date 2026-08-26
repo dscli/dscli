@@ -17,12 +17,14 @@
 // deepseek_login.go automates the DeepSeek sign-in flow, sharing cookies
 // so logins survive across sessions.
 //
-// WebChatWithOptions performs one send; HandleWebChat is the high-level
-// entry point shared by the ask_expert tool and the webchat CLI command:
-// it renders role/system prompts, retries transient server overload and
-// truncation with backoff, and - for role-driven consultations - executes
-// DSML tool calls the expert embeds in its reply, feeding results back into
-// the same conversation until a final answer arrives.
+// WebChatWithOptions performs one send (one browser launch); HandleWebChat
+// is the high-level entry point shared by the ask_expert tool and the
+// webchat CLI command: it renders role/system prompts, retries transient
+// server overload and truncation with backoff, and - for role-driven
+// consultations - executes DSML tool calls the expert embeds in its reply,
+// feeding results back into the same conversation until a final answer
+// arrives. Every send of a HandleWebChat call shares one browser session
+// (booted lazily on the first send, closed when the call returns).
 //
 // # Layering exception
 //

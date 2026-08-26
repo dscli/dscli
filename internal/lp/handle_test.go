@@ -365,3 +365,87 @@ func TestHandleWebChatToolLoopContinueFails(t *testing.T) {
 		t.Errorf("handleWebChatSend calls = %d, want 2 (follow-up attempted once)", calls)
 	}
 }
+
+func TestWebChatSessionLifecycle(t *testing.T) {
+	// Close before any send (nothing was booted) must be safe, and repeated
+	// Close calls must be idempotent: HandleWebChat defers Close even when the
+	// first send fails validation and the browser was never launched.
+	s := newWebChatSession()
+	s.Close()
+	s.Close()
+
+	if webChatSessionFrom(context.Background()) != nil {
+		t.Error("session present in a plain context")
+	}
+}
+
+func TestWebChatSessionCloseAfterBoot(t *testing.T) {
+	// White-box: once booted (tabCtx/stop set), Close must invoke the stop
+	// function exactly once, clear the boot state, and stay idempotent. The
+	// real boot path needs Chrome, so the booted state is simulated.
+	s := newWebChatSession()
+	s.tabCtx = context.Background() // pretend the browser was booted
+	stopped := 0
+	s.stop = func() { stopped++ }
+
+	s.Close()
+	if stopped != 1 {
+		t.Errorf("stop calls = %d, want 1", stopped)
+	}
+	if s.tabCtx != nil || s.stop != nil {
+		t.Error("boot state not cleared after Close")
+	}
+	s.Close() // second Close must be a no-op
+	if stopped != 1 {
+		t.Errorf("stop calls after second Close = %d, want still 1", stopped)
+	}
+}
+
+func TestHandleWebChatSharesBrowserSession(t *testing.T) {
+	// One HandleWebChat call must reuse a SINGLE browser session across the
+	// initial send, backoff retries and DSML tool-loop follow-ups - not
+	// launch a fresh Chrome per round (the dominant cost of a multi-tool
+	// consultation).
+	origFunc, origDelays := handleWebChatSend, handleWebChatRetryDelays
+	t.Cleanup(func() { handleWebChatSend, handleWebChatRetryDelays = origFunc, origDelays })
+	handleWebChatRetryDelays = []time.Duration{0}
+
+	const (
+		convURL     = "https://chat.deepseek.com/a/chat/s/convSHARE"
+		finalAnswer = "## Overall Assessment\nSolid implementation..."
+	)
+	var sessions []*webChatSession
+	calls := 0
+	handleWebChatSend = func(ctx context.Context, _ string, _ WebChatOptions) (WebChatResult, error) {
+		calls++
+		sessions = append(sessions, webChatSessionFrom(ctx))
+		switch calls {
+		case 1:
+			return WebChatResult{}, ErrServerBusy // transient failure -> backoff retry
+		case 2:
+			return WebChatResult{Content: dsmlReply, URL: convURL}, nil // DSML -> tool loop
+		default:
+			return WebChatResult{Content: finalAnswer, URL: convURL}, nil
+		}
+	}
+	captureExecDSML(t, "tool output")
+
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{Role: "review"})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if res.Content != finalAnswer {
+		t.Errorf("content = %q, want final answer", res.Content)
+	}
+	if len(sessions) != 3 {
+		t.Fatalf("send calls = %d, want 3 (initial + retry + tool follow-up)", calls)
+	}
+	for i, sess := range sessions {
+		if sess == nil {
+			t.Fatalf("send %d received no shared session", i+1)
+		}
+		if sess != sessions[0] {
+			t.Errorf("send %d uses a different session than send 1", i+1)
+		}
+	}
+}

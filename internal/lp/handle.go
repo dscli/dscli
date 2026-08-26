@@ -58,6 +58,10 @@ var handleWebChatExecDSML = toolcall.ExecuteDSMLToolCalls
 //     executed locally, and the results fed back into the SAME conversation
 //     until the expert produces a final answer. Plain webchat (Role empty)
 //     never enters the loop, matching the "Web 版不支持函数调用" caveat.
+//   - Shared browser session: every send of one call (initial, backoff
+//     retries, tool follow-ups) reuses a single browser, booted lazily on the
+//     first send and closed when the call returns - a 9-tool-call
+//     consultation launches Chrome once instead of ten times.
 //
 // A retried send targets the same conversation (Keep is preserved): the busy
 // server never acknowledged the send, so re-sending is harmless.
@@ -75,6 +79,13 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 	} else if opts.Role != "" {
 		fullMessage = prompt.RenderPromptForRole(ctx, opts.Role) + "\n\n---\n\n## User Request\n\n" + message
 	}
+
+	// One browser session serves the whole consultation: every send (backoff
+	// retries and tool-loop follow-ups) reuses the same tab, booted lazily on
+	// the first send, and the browser is closed once when the call returns.
+	sess := newWebChatSession()
+	defer sess.Close()
+	ctx = withWebChatSession(ctx, sess)
 
 	var lastErr error
 	for attempt := 0; attempt <= len(handleWebChatRetryDelays); attempt++ {

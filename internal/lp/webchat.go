@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"sync"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -640,6 +641,10 @@ func WebChat(ctx context.Context, message string) (string, error) {
 // input (unknown mode, missing/oversized attachments, unknown keep target)
 // fails fast without starting Chrome.
 //
+// The browser is one-shot: launched for this send and closed afterwards.
+// When called through HandleWebChat the context carries a shared
+// webChatSession and the send reuses that browser instead.
+//
 // See WebChatOptions for the mode and Keep defaults.
 func WebChatWithOptions(ctx context.Context, message string, opts WebChatOptions) (WebChatResult, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "WebChatWithOptions")
@@ -692,30 +697,127 @@ func validateWebChatOptions(opts WebChatOptions) error {
 	return validateWebAttachments(opts.Attachments)
 }
 
-// webChatWithURL is the common implementation shared by new conversations
-// (empty url) and continuation (saved url).
-func webChatWithURL(ctx context.Context, conversationURL, message string, opts WebChatOptions) (WebChatResult, error) {
-	span, ctx := clog.StartSpanFromContext(ctx, "webChatWithURL")
+// --- shared browser session -------------------------------------------------
+
+// webChatSession is the browser instance shared by every send of one
+// HandleWebChat call: the initial message, backoff retries and DSML
+// tool-loop follow-ups all reuse the same tab, and the browser is closed
+// once when the consultation ends. Launching a fresh Chrome per round was
+// the dominant cost of a multi-tool consultation (cold start + profile load;
+// a design case study ran 9 consecutive tool calls).
+//
+// The browser is booted LAZILY on the first send, so argument/validation
+// errors still fail fast without starting Chrome (see WebChatWithOptions).
+// The tab context is pinned to the boot context: every send runs chromedp
+// actions on it, so the boot deadline applies to the whole session (all
+// sends of a consultation share it - identical to the pre-session behavior,
+// where each one-shot browser also derived from the same parent). Tracing
+// consequence: the first round's spans nest correctly under the send
+// callers, while later rounds' work attaches to the boot branch.
+//
+// Retryable failures (ErrServerBusy / ErrSendRejected / ErrTruncated) leave
+// the tab navigable: the next Send re-navigates to the conversation URL and
+// recovers. Non-retryable chromedp errors abort the consultation, so no
+// mid-session browser rebuild is needed.
+//
+// Close is safe concurrently with Send: the mutex protects the boot state.
+// Calling Close makes the session reusable - a later Send boots a fresh
+// browser.
+type webChatSession struct {
+	mu     sync.Mutex
+	tabCtx context.Context // chromedp tab context; nil until booted
+	stop   func()          // closes the tab and the browser; nil until booted
+}
+
+// newWebChatSession returns a session handle. The browser itself is not
+// started until the first Send.
+func newWebChatSession() *webChatSession {
+	return &webChatSession{}
+}
+
+// Send performs one complete exchange on the session's browser, booting the
+// browser on first use: navigate to the conversation, send the message, wait
+// for and extract the response, then register the conversation for later
+// continuation. The exchange semantics are webchatSend's.
+func (s *webChatSession) Send(ctx context.Context, conversationURL, message string, opts WebChatOptions) (WebChatResult, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "webChatSessionSend")
 	defer span.Finish()
-	ctx, cancel, err := NewChromium(ctx)
+	s.mu.Lock()
+	if s.tabCtx == nil {
+		// Boot with THIS send's context so the first round's spans and
+		// deadline propagate through to the browser.
+		allocCtx, cancel, err := NewChromium(ctx)
+		if err != nil {
+			s.mu.Unlock()
+			return WebChatResult{}, err
+		}
+		tabCtx, tabClose := chromedp.NewContext(allocCtx)
+		s.tabCtx = tabCtx
+		s.stop = func() {
+			tabClose()
+			cancel()
+		}
+	}
+	tabCtx := s.tabCtx
+	s.mu.Unlock()
+
+	// webchatSend wraps every error with "webchat:", so no extra prefix here
+	// (a second one would produce "webchat: webchat: ...").
+	response, reasoning, finalURL, err := webchatSend(tabCtx, conversationURL, message, opts, 0)
 	if err != nil {
 		return WebChatResult{}, err
 	}
-	defer cancel()
-	ctx, close := chromedp.NewContext(ctx)
-	defer close()
-	response, reasoning, finalURL, err := webchatSend(ctx, conversationURL, message, opts, 0)
-	if err != nil {
-		return WebChatResult{}, fmt.Errorf("webchat: %w", err)
-	}
-
-	// Every successful exchange registers (or refreshes) the conversation
-	// in the registry so it can be continued later by ID or "last".
 	if finalURL != "" {
 		_ = registerConversation(finalURL, opts.Mode)
 	}
-
 	return WebChatResult{Content: response, Reasoning: reasoning, URL: finalURL}, nil
+}
+
+// Close shuts down the shared browser (tab and process). Safe before the
+// first send - nothing was booted yet - and idempotent; it is the last thing
+// HandleWebChat does.
+func (s *webChatSession) Close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stop != nil {
+		s.stop()
+		s.stop = nil
+		s.tabCtx = nil
+	}
+}
+
+// webChatSessionKey is the internal context key that carries the shared
+// session from HandleWebChat down to the transport.
+type webChatSessionKey struct{}
+
+// withWebChatSession attaches a session to ctx so subsequent transport calls
+// reuse its browser.
+func withWebChatSession(ctx context.Context, s *webChatSession) context.Context {
+	return context.WithValue(ctx, webChatSessionKey{}, s)
+}
+
+// webChatSessionFrom returns the shared session attached to ctx, or nil when
+// the transport is used directly (one-shot browser per send).
+func webChatSessionFrom(ctx context.Context) *webChatSession {
+	s, _ := ctx.Value(webChatSessionKey{}).(*webChatSession)
+	return s
+}
+
+// webChatWithURL is the common implementation shared by new conversations
+// (empty url) and continuation (saved url).
+//
+// When ctx carries a webChatSession (set by HandleWebChat), the send reuses
+// that browser; in a direct transport call the browser is launched for
+// exactly this send and closed afterwards.
+func webChatWithURL(ctx context.Context, conversationURL, message string, opts WebChatOptions) (WebChatResult, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "webChatWithURL")
+	defer span.Finish()
+	sess := webChatSessionFrom(ctx)
+	if sess == nil {
+		sess = newWebChatSession()
+		defer sess.Close()
+	}
+	return sess.Send(ctx, conversationURL, message, opts)
 }
 
 // webchatSend sends a message and returns the response, the deep-think
