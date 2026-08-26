@@ -525,6 +525,33 @@ func TestIsTruncated(t *testing.T) {
 	}
 }
 
+// TestAnswerUsable covers the shared acceptance gate used by BOTH the DOM
+// path (webchatWait) and the IDB path (webchatExtractReloadedIDB): a server
+// overload notice or a truncated reply must never be accepted as an answer.
+func TestAnswerUsable(t *testing.T) {
+	tests := []struct {
+		name string
+		s    string
+		want bool
+	}{
+		{name: "busy notice rejected", s: "服务器繁忙，请稍后再试", want: false},
+		{name: "english busy notice rejected", s: "Service is busy, please try again later.", want: false},
+		{name: "cut-off code fence rejected", s: "```python\nprint('hello'", want: false},
+		{name: "truncated json rejected", s: "{\"question\": \"1\", \"answer\": \"A\"", want: false},
+		{name: "short plain answer accepted", s: "好的", want: true},
+		{name: "long answer accepted", s: "这是一段完整的回答。" + strings.Repeat("内容", 300), want: true},
+		{name: "empty rejected", s: "", want: false},
+		{name: "tool-call opener without result rejected", s: "<read_file src=\"x.go\">", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := answerUsable(tt.s); got != tt.want {
+				t.Errorf("answerUsable(%q) = %v, want %v", tt.s, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestStripUIChromePrefix(t *testing.T) {
 	tests := []struct {
 		name string

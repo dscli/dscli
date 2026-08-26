@@ -347,6 +347,15 @@ const (
 	// race against the captured send time by milliseconds, so the
 	// freshness window must tolerate that creation write while still
 	// rejecting old records.
+	//
+	// chat_messages is NEWEST-FIRST (verified against a live record on
+	// 2026-08-26: the current round's USER/ASSISTANT messages sit at index
+	// 0/1 while the first round ever sits at the tail), and the record's
+	// timestamp is refreshed on every page load, so the freshness window
+	// never rejects a reloaded page. Because of the newest-first order the
+	// "last" USER/ASSISTANT messages are the FIRST matches scanning from
+	// index 0 - scanning from the tail would pick the FIRST round of a
+	// continued conversation and fail the user-message guard.
 	jsIDBGetAnswerFmt = `(async () => {
 	try {
 		const wantMsg = %s;
@@ -370,9 +379,10 @@ const (
 			return {found: false, reason: 'idb record stale (before send)'};
 		}
 		const msgs = (rec.data && rec.data.chat_messages) || [];
+		// Newest-first: this round's messages are at the front.
 		let lastUser = null;
 		let last = null;
-		for (let i = msgs.length - 1; i >= 0; i--) {
+		for (let i = 0; i < msgs.length; i++) {
 			if (msgs[i].role === 'USER' && !lastUser) lastUser = msgs[i];
 			if (msgs[i].role === 'ASSISTANT' && !last) last = msgs[i];
 		}
@@ -403,7 +413,7 @@ const (
 			text: parts.join('\n\n'),
 			reason: thinkParts.join('\n\n'),
 			respCount: parts.length,
-			thinkCount: frags.length,
+			thinkCount: thinkParts.length,
 		};
 	} catch (e) {
 		return {found: false, reason: String((e && e.message) || e)};
@@ -442,19 +452,16 @@ const (
 		return !!ta && ta.value.trim() === '';
 	})()`
 
-	// jsSendEnter dispatches Enter keydown → keypress → keyup on the chat
-	// textarea via JS.  Using KeyboardEvent dispatch instead of chromedp.KeyEvent
-
-	// because the latter may not trigger React's event handling in a remote
-	// allocator (chromium service) context.
-	// The full sequence (keydown → keypress → keyup) matches what a real
-	// keyboard produces, improving compatibility with frameworks that listen
-	// for specific events.
-	// Additionally, click the send button as a fallback to ensure the message
-	// is submitted even if the KeyboardEvent dispatch doesn't trigger React's
-	// submit handler (e.g. when focus is on the left sidebar conversation list
-	// and the textarea isn't the active element).
-	jsSendEnter = `(() => {
+	// jsEnterDispatchBase is the shared Enter keydown → keypress → keyup
+	// dispatch sequence used by both jsSendEnter and jsSendEnterOnly.
+	// KeyboardEvent dispatch is used instead of chromedp.KeyEvent because
+	// the latter may not trigger React's event handling in a remote
+	// allocator (chromium service) context. The full sequence (keydown →
+	// keypress → keyup) matches what a real keyboard produces, improving
+	// compatibility with frameworks that listen for specific events.
+	// The IIFE is closed by each concatenated suffix, which also carries
+	// its own return/fallback tail.
+	jsEnterDispatchBase = `(() => {
 		const ta = document.querySelector('textarea');
 		if (!ta) return {error: 'no textarea'};
 		if (ta.offsetParent === null) return {error: 'textarea not visible'};
@@ -473,6 +480,13 @@ const (
 		ta.dispatchEvent(new KeyboardEvent('keydown', opts));
 		ta.dispatchEvent(new KeyboardEvent('keypress', opts));
 		ta.dispatchEvent(new KeyboardEvent('keyup', opts));
+	`
+	// jsSendEnter additionally clicks the send button as a fallback to
+	// ensure the message is submitted even if the KeyboardEvent dispatch
+	// doesn't trigger React's submit handler (e.g. when focus is on the
+	// left sidebar conversation list and the textarea isn't the active
+	// element).
+	jsSendEnter = jsEnterDispatchBase + `
 		// Async fallback: React 18 batches state updates, so a synchronous
 		// check right after dispatchEvent still sees the old textarea value
 		// and would click the send button on top of a successfully
@@ -524,18 +538,7 @@ const (
 	// fallback. Used by the resend loop when the message is still sitting in
 	// the textarea (submit rejected and the site restored the text): the
 	// async fallback inside jsSendEnter could race the resend state reset.
-	jsSendEnterOnly = `(() => {
-		const ta = document.querySelector('textarea');
-		if (!ta) return {error: 'no textarea'};
-		if (ta.offsetParent === null) return {error: 'textarea not visible'};
-		ta.click();
-		ta.focus({preventScroll: true});
-		if (document.activeElement !== ta) ta.select();
-		var opts = {key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
-			bubbles: true, cancelable: true};
-		ta.dispatchEvent(new KeyboardEvent('keydown', opts));
-		ta.dispatchEvent(new KeyboardEvent('keypress', opts));
-		ta.dispatchEvent(new KeyboardEvent('keyup', opts));
+	jsSendEnterOnly = jsEnterDispatchBase + `
 		return {success: true};
 	})()`
 )
@@ -589,7 +592,12 @@ type WebChatOptions struct {
 // continue the same conversation later. URL is "" if it could not be
 // determined.
 type WebChatResult struct {
-	Content   string
+	Content string
+	// Reasoning is the deep-think reasoning (THINK fragments) when the
+	// site exposes it; "" when unavailable. TODO: no caller consumes it
+	// yet (ask_expert and webchat_cmd return only Content) - expose it
+	// (e.g. a --show-reasoning flag or stderr note) once there is a
+	// user-visible use.
 	Reasoning string
 	URL       string
 }
@@ -1157,6 +1165,10 @@ func webchatWait(ctx context.Context, baseline, mdBaseline, sentMessage string) 
 	ackPolls := 0
 	polls := 0
 	maxPolls := webChatPollBudget(ctx)
+	// resendCount is a SHARED budget across both recovery mechanisms
+	// (retry-button clicks and stale-textarea Enter re-dispatches): a
+	// mixed sequence exhausts webChatMaxResends like a homogeneous one,
+	// so a round can never auto-resend more than the limit in total.
 	resendCount := 0
 	lastResendAt := time.Time{}
 
@@ -1386,7 +1398,7 @@ func resendStaleTextarea(ctx context.Context) error {
 	}
 	if ok, _ := out["success"].(bool); !ok {
 		msg, _ := out["error"].(string)
-		return fmt.Errorf("restale textarea resend: %s", msg)
+		return fmt.Errorf("stale textarea resend: %s", msg)
 	}
 	return nil
 }
@@ -1501,11 +1513,15 @@ func webchatExtractReloadedIDB(ctx context.Context, conversationURL, sentMessage
 		return "", "", false
 	}
 	// The record write trails the DOM render slightly; poll briefly for a
-	// FINISHED snapshot that contains this round's user message.
+	// FINISHED snapshot that contains this round's user message. The text
+	// must also pass the same acceptance checks as the DOM path
+	// (answerUsable): a server-overload notice or a truncated reply the
+	// site stored with status=FINISHED must never replace the already
+	// validated DOM answer with itself.
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		if text, think, status, found := idbGetAssistant(ctx, sentMessage, time.Now().UnixMilli()); found {
-			if status == "FINISHED" && strings.TrimSpace(text) != "" {
+			if status == "FINISHED" && answerUsable(text) {
 				return text, think, true
 			}
 		}
@@ -1707,6 +1723,23 @@ func isCompleteResponse(s string) bool {
 	}
 	t := strings.TrimLeft(s, " \t>")
 	return !(toolCallOpenRE.MatchString(t) && !strings.Contains(t, "<tool_result"))
+}
+
+// answerUsable reports whether an extracted answer passes the shared
+// acceptance checks: it must not be an overload notice, must not be
+// structurally truncated, and must look like a complete response. Both
+// extraction sources funnel their text through it - DOM path in
+// webchatWait and the IndexedDB path in webchatExtractReloadedIDB - so no
+// source can bypass the busy/truncated defenses and poison the caller
+// with a server notice or a cut-off reply.
+func answerUsable(text string) bool {
+	if isBusyErrorText(text) {
+		return false
+	}
+	if isTruncated(text) {
+		return false
+	}
+	return isCompleteResponse(text)
 }
 
 // uiChromeLineRE matches a line of DeepSeek's code-block toolbar that
