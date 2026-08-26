@@ -76,10 +76,13 @@ var dsmlInvokeOpenRe = regexp.MustCompile(`(?s)<\s*invoke\b[^>]*>`)
 // dsmlNamedInvokeOpenRe matches an opening <invoke> tag that carries a name
 // attribute - the only shape that can be a real tool call. A bare
 // "<invoke>" in prose has no name and must not count as a truncated call.
-// <\s*invoke\b then [^>]*\s+name\s*= anchors name to a whitespace attribute
-// boundary: "<invoke filename=...>" or "<invoke data-name=...>" must NOT
-// match (name inside another attribute is not the tag's name attribute).
-var dsmlNamedInvokeOpenRe = regexp.MustCompile(`(?s)<\s*invoke\b[^>]*\s+name\s*=[^>]*>`)
+//
+// The attribute region is consumed as quoted strings ('...' or "...") or
+// single chars, so name must be its own attribute at a whitespace boundary:
+// "name" inside another attribute ("<invoke filename=...>",
+// "<invoke data-name=...>") or INSIDE a quoted attribute value
+// ("<invoke note=\"use name=x here\">") must NOT match.
+var dsmlNamedInvokeOpenRe = regexp.MustCompile(`(?s)<\s*invoke\b(?:'[^']*'|"[^"]*"|[^'">])*\s+name\s*=[^>]*>`)
 
 // dsmlInvokeCloseRe matches a closing </invoke> tag, tolerating the same
 // whitespace variants as dsmlInvokeRe (models emit "</ invoke >").

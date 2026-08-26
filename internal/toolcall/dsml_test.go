@@ -244,19 +244,21 @@ func TestHasDSMLToolCallsLLMJunk(t *testing.T) {
 }
 
 // TestParseDSMLToolCallsNameAttrBoundary: name must be a standalone
-// attribute (preceded by whitespace). "filename=" or "data-name=" are
-// other attributes that merely CONTAIN "name" as a substring - they must
-// not turn a prose <invoke> into a "truncated call" (review regression:
-// [^>]*name\s*= matched filename=).
+// attribute (preceded by whitespace) - not a substring of another
+// attribute name, and not text inside a quoted attribute value.
+// Otherwise a prose <invoke> would be misreported as a truncated call
+// (review regressions: filename=, data-name=, note="use name=x here").
 func TestParseDSMLToolCallsNameAttrBoundary(t *testing.T) {
 	for _, text := range []string{
 		`<invoke filename="foo">`,
 		`<invoke data-name="x">`,
+		`<invoke note="see name=foo">`,
+		`<invoke description="use name=x here">`,
 		"prose mentions <invoke filename=\"y\"> and more",
 	} {
 		calls, err := ParseDSMLToolCalls(text)
 		if err != nil {
-			t.Fatalf("ParseDSMLToolCalls(%q): %v (name substring must not count)", text, err)
+			t.Fatalf("ParseDSMLToolCalls(%q): %v (fake name must not count)", text, err)
 		}
 		if len(calls) != 0 {
 			t.Errorf("ParseDSMLToolCalls(%q) = %d calls, want 0", text, len(calls))
@@ -268,6 +270,16 @@ func TestParseDSMLToolCallsNameAttrBoundary(t *testing.T) {
 		return err
 	}(); err == nil {
 		t.Error("named truncated invoke: want error, got nil")
+	}
+	// name as own attribute amid quoted values and other attrs still counts.
+	for _, text := range []string{
+		`<invoke foo="x" name="y">`,
+		`<invoke name="y" foo="x">`,
+		`<invoke note=" name=b " name="a">`,
+	} {
+		if _, err := ParseDSMLToolCalls(text); err == nil {
+			t.Errorf("ParseDSMLToolCalls(%q): want truncated error", text)
+		}
 	}
 }
 
