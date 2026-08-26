@@ -571,6 +571,8 @@ func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ..
 	// story retains ReasoningContent (for persistence and display),
 	// dsc.Chat() will clean it up when used as input (API requirement)
 	story := resp.Choices[0].Message
+	// API 响应 ID 即会话 ID（与 WebChat 同源），随消息落库可供追溯/关联
+	story.ConversationID = resp.ID
 	// Check if response was truncated
 	if resp.Choices[0].FinishReason == "length" {
 		outfmt.Warn("note: response truncated due to length limit, may be incomplete.")

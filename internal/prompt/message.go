@@ -20,6 +20,7 @@ type Message struct {
 	ID               int64          `json:"-"`
 	SessionID        int64          `json:"-"`
 	ModelID          int64          `json:"-"`
+	ConversationID   string         `json:"-"`       // API 响应 ID（与 WebChat 会话 ID 同源），仅存库不序列化
 	Content          string         `json:"content"` // 纯文本（显示/FTS/存储用），始终输出
 	ContentBlocks    []ContentBlock `json:"-"`       // 图片等块内容（有值时 content 序列化为块数组）
 	Role             string         `json:"role"`
@@ -138,6 +139,7 @@ func init() {
 			model_id INTEGER NOT NULL DEFAULT 0,
 			reasoning_content TEXT,
 			tokens INTEGER NOT NULL DEFAULT 0,
+			conversation_id TEXT,
 			FOREIGN KEY (session_id) REFERENCES sessions(id)
 		)`,
 		// FTS5 全文搜索虚拟表（独立维护，与 memories_fts 模式一致）
@@ -160,6 +162,8 @@ func init() {
 		`ALTER TABLE messages ADD COLUMN tokens INTEGER NOT NULL DEFAULT 0`,
 		// 增加 content blocks（图片等块内容，JSON 数组；为 NULL 表示纯文本消息）
 		`ALTER TABLE messages ADD COLUMN content_blocks TEXT`,
+		// 增加 conversation ID（API 响应 ID，与 WebChat 会话 ID 同源）
+		`ALTER TABLE messages ADD COLUMN conversation_id TEXT`,
 	)
 
 	// 升级迁移：为已有消息重建 FTS 索引（仅当 FTS 表为空且有消息时执行一次）
@@ -246,10 +250,16 @@ func insertMessage(ctx context.Context, sessionID, modelID int64, m Message) (in
 
 	defer db.Close(ctx)
 
+	var conversationID sql.NullString
+	if m.ConversationID != "" {
+		conversationID.String = m.ConversationID
+		conversationID.Valid = true
+	}
+
 	res, err := db.Exec(
-		`INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, model_id, reasoning_content, tokens, content_blocks)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		sessionID, m.Role, m.Content, toolCallID, toolCalls, modelID, m.ReasoningContent, m.tokens, contentBlocks,
+		`INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, model_id, reasoning_content, tokens, content_blocks, conversation_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		sessionID, m.Role, m.Content, toolCallID, toolCalls, modelID, m.ReasoningContent, m.tokens, contentBlocks, conversationID,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("插入消息失败: %w", err)

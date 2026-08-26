@@ -56,6 +56,9 @@ func (c *Deepseek) chatStream(ctx context.Context, req ChatRequest) (*ChatRespon
 	// 处理SSE流
 	reader := bufio.NewReader(resp.Body)
 	var fullContent strings.Builder
+	// 流式 chunk 自带响应 ID（与最终 ChatResponse.ID 一致），取第一个非空值，
+	// 使流式路径也能获得真实的会话 ID（而非时间戳占位）。
+	respID := ""
 
 	for {
 		line, err := reader.ReadString('\n')
@@ -81,6 +84,7 @@ func (c *Deepseek) chatStream(ctx context.Context, req ChatRequest) (*ChatRespon
 
 			// 解析JSON数据
 			var chunk struct {
+				ID      string `json:"id"`
 				Choices []struct {
 					Delta struct {
 						Content string `json:"content"`
@@ -91,6 +95,9 @@ func (c *Deepseek) chatStream(ctx context.Context, req ChatRequest) (*ChatRespon
 			if err := json.Unmarshal([]byte(dataStr), &chunk); err != nil {
 				// 忽略解析错误，继续处理下一个数据块
 				continue
+			}
+			if respID == "" && chunk.ID != "" {
+				respID = chunk.ID
 			}
 
 			// 输出内容
@@ -103,8 +110,11 @@ func (c *Deepseek) chatStream(ctx context.Context, req ChatRequest) (*ChatRespon
 	}
 
 	// 返回一个包含完整内容的响应，用于保存到数据库
+	if respID == "" {
+		respID = "streaming-response-" + time.Now().Format("20060102150405")
+	}
 	return &ChatResponse{
-		ID: "streaming-response-" + time.Now().Format("20060102150405"),
+		ID: respID,
 		Choices: []Choice{
 			{
 				Message: prompt.Message{
