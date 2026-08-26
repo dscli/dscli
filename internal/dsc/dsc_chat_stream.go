@@ -16,6 +16,17 @@ import (
 	"github.com/nanjj/clog"
 )
 
+// chatStreamChunk 是 SSE 流中单个 data 块的 JSON 结构（OpenAI 兼容格式）。
+// 提取为具名类型以便测试复用；目前仅消费 content 与 id 字段。
+type chatStreamChunk struct {
+	ID      string `json:"id"`
+	Choices []struct {
+		Delta struct {
+			Content string `json:"content"`
+		} `json:"delta"`
+	} `json:"choices"`
+}
+
 // chatStream 处理streaming聊天请求
 func (c *Deepseek) chatStream(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "chatStream")
@@ -74,26 +85,21 @@ func (c *Deepseek) chatStream(ctx context.Context, req ChatRequest) (*ChatRespon
 			continue
 		}
 
-		// 解析SSE格式: data: {...}
-		if strings.HasPrefix(line, "data: ") {
-			dataStr := line[6:] // 去掉"data: "前缀
+		// 解析SSE格式: data: {...}（"data:" 后可选空白）
+		if strings.HasPrefix(line, "data:") {
+			dataStr := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			if dataStr == "" {
+				continue
+			}
 
 			if dataStr == "[DONE]" {
 				break
 			}
 
 			// 解析JSON数据
-			var chunk struct {
-				ID      string `json:"id"`
-				Choices []struct {
-					Delta struct {
-						Content string `json:"content"`
-					} `json:"delta"`
-				} `json:"choices"`
-			}
-
+			var chunk chatStreamChunk
 			if err := json.Unmarshal([]byte(dataStr), &chunk); err != nil {
-				// 忽略解析错误，继续处理下一个数据块
+				outfmt.Debug("跳过无法解析的 SSE chunk: %s (%v)\n", dataStr, err)
 				continue
 			}
 			if respID == "" && chunk.ID != "" {

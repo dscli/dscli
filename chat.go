@@ -571,7 +571,9 @@ func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ..
 	// story retains ReasoningContent (for persistence and display),
 	// dsc.Chat() will clean it up when used as input (API requirement)
 	story := resp.Choices[0].Message
-	// API 响应 ID 即会话 ID（与 WebChat 同源），随消息落库可供追溯/关联
+	// API 响应 ID 即会话 ID（与 internal/lp 的 WebChat 会话注册同源），
+	// 随消息落库可供追溯/关联。resp.ID 为空时存 NULL（insertMessage 的
+	// NullString 处理），不做流式路径那样的时间戳回退——非流式响应总有 ID。
 	story.ConversationID = resp.ID
 	// Check if response was truncated
 	if resp.Choices[0].FinishReason == "length" {

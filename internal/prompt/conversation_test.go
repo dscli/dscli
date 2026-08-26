@@ -31,12 +31,16 @@ func TestConversationIDRoundTrip(t *testing.T) {
 	if len(list) != 2 {
 		t.Fatalf("ListHistory len = %d, want 2", len(list))
 	}
-	if list[1].ConversationID != convID {
-		t.Errorf("ListHistory ConversationID = %q, want %q", list[1].ConversationID, convID)
+	assistant := findRole(list, "assistant")
+	if assistant == nil {
+		t.Fatal("ListHistory: assistant message missing")
+	}
+	if assistant.ConversationID != convID {
+		t.Errorf("ListHistory ConversationID = %q, want %q", assistant.ConversationID, convID)
 	}
 
 	// ShowMessage：按实际 id 取回，验证 ConversationID。
-	msg, err := ShowMessage(ctx, list[1].ID)
+	msg, err := ShowMessage(ctx, assistant.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +48,11 @@ func TestConversationIDRoundTrip(t *testing.T) {
 		t.Errorf("ShowMessage ConversationID = %q, want %q", msg.ConversationID, convID)
 	}
 	// 用户消息不应带 ConversationID。
-	userMsg, err := ShowMessage(ctx, list[0].ID)
+	user := findRole(list, "user")
+	if user == nil {
+		t.Fatal("ListHistory: user message missing")
+	}
+	userMsg, err := ShowMessage(ctx, user.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +68,23 @@ func TestConversationIDRoundTrip(t *testing.T) {
 	if len(hist) != 2 {
 		t.Fatalf("LoadHistory len = %d, want 2", len(hist))
 	}
-	if hist[1].ConversationID != convID {
-		t.Errorf("LoadHistory ConversationID = %q, want %q", hist[1].ConversationID, convID)
+	for _, m := range hist {
+		if m.Role == "assistant" {
+			if m.ConversationID != convID {
+				t.Errorf("LoadHistory ConversationID = %q, want %q", m.ConversationID, convID)
+			}
+			return
+		}
 	}
+	t.Error("LoadHistory: assistant message missing")
+}
+
+// findRole 按 role 查找第一条消息，避免依赖插入顺序/下标。
+func findRole(msgs []*Message, role string) *Message {
+	for _, m := range msgs {
+		if m.Role == role {
+			return m
+		}
+	}
+	return nil
 }
