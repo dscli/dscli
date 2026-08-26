@@ -233,9 +233,14 @@ func TestNormalizeDSMLText(t *testing.T) {
 
 // TestParseDSMLToolCallsRawInvokeInParam: a raw "<invoke name=...>" inside
 // a <parameter> VALUE is content, not structure (the model may inline a
-// shell snippet or DSML example without entity-escaping). The truncation
-// scan must mask parameter bodies so it does not count the inner open as a
-// nested invoke and falsely report a truncation (review finding #2).
+// shell snippet or DSML example without entity-escaping). The structural
+// scan must treat parameter bodies as opaque so it does not count the
+// inner open as a nested invoke and falsely report a truncation
+// (review finding #2). Known extraction-layer limitation (pinned in
+// TestUnclosedInvokePositionsParamOpaque): a literal "</invoke>" inside
+// a value would also end the non-greedy block regex early - the model
+// must entity-escape it (&lt;/invoke&gt;) for a value carrying a full
+// example; a bare open tag (the common case) is fine.
 func TestParseDSMLToolCallsRawInvokeInParam(t *testing.T) {
 	text := `<invoke name="a">
 <parameter name="cmd" string="true">show: <invoke name="b"></parameter>
@@ -257,6 +262,48 @@ func TestParseDSMLToolCallsRawInvokeInParam(t *testing.T) {
 `
 	if _, err := ParseDSMLToolCalls(trunc); err == nil {
 		t.Error("truncated outer invoke: want error, got nil")
+	}
+}
+
+// TestUnclosedInvokePositionsParamOpaque pins the state-machine contract at
+// the layer that owns it: parameter values are opaque to the structural
+// scan. A raw "<invoke name=...>" AND a literal "</invoke>" inside a value
+// must neither push nor pop (the outer block stays balanced), while a real
+// truncation is still detected. This decouples the scan guarantees from the
+// extraction-layer limitation of the non-greedy dsmlInvokeRe.
+func TestUnclosedInvokePositionsParamOpaque(t *testing.T) {
+	// Value contains a raw open AND a literal close: both are content.
+	balanced := `<invoke name="a">
+<parameter name="cmd" string="true">show: <invoke name="b"> and </invoke> text</parameter>
+</invoke>`
+	if n, _ := unclosedInvokePositions(balanced); n != 0 {
+		t.Errorf("unclosed = %d, want 0 (param value is opaque)", n)
+	}
+	// Same value but the OUTER invoke never closes: still detected.
+	trunc := `<invoke name="a">
+<parameter name="cmd" string="true">show: <invoke name="b"> and </invoke> text</parameter>
+`
+	if n, first := unclosedInvokePositions(trunc); n != 1 || first < 0 {
+		t.Errorf("unclosed = %d (first=%d), want 1 at a real offset", n, first)
+	}
+	// Nested parameter-looking text inside a value: depth juggling must not
+	// leak structure.
+	nested := `<invoke name="a">
+<parameter name="cmd" string="true"><parameter name="x">y</parameter> done</parameter>
+</invoke>`
+	if n, _ := unclosedInvokePositions(nested); n != 0 {
+		t.Errorf("nested param text: unclosed = %d, want 0", n)
+	}
+}
+
+// TestParseDSMLToolCallsNestedParam: the parser level for the nested-param
+// shape (extraction is fine because the inner text has no invoke tags).
+func TestParseDSMLToolCallsNestedParam(t *testing.T) {
+	text := `<invoke name="a">
+<parameter name="cmd" string="true"><parameter name="x">y</parameter> done</parameter>
+</invoke>`
+	if _, err := ParseDSMLToolCalls(text); err != nil {
+		t.Fatalf("ParseDSMLToolCalls: %v (nested param text is content)", err)
 	}
 }
 

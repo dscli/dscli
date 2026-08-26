@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -70,16 +71,13 @@ func HasDSMLToolCalls(text string) bool {
 	return dsmlNamedInvokeOpenRe.MatchString(normalizeDSMLText(text))
 }
 
-// dsmlInvokeOpenRe matches an opening <invoke> tag that is actually closed
-// with ">" (a bare "<invoke" in prose without ">" is not a call, and a
-// malformed name attribute must not be counted as a truncated call either).
-// <\s*invoke tolerates whitespace after the opener: models sometimes emit
-// "< invoke name=..." as a tokenization artifact.
-var dsmlInvokeOpenRe = regexp.MustCompile(`(?s)<\s*invoke\b[^>]*>`)
-
 // dsmlNamedInvokeOpenRe matches an opening <invoke> tag that carries a name
-// attribute - the only shape that can be a real tool call. A bare
-// "<invoke>" in prose has no name and must not count as a truncated call.
+// attribute - the only shape that can be a real tool call. It is also the
+// gate for HasDSMLToolCalls and the "no opens" early exit in ParseDSMLToolCalls:
+// a bare "<invoke>" in prose carries no tool name (nothing to execute) and
+// must not count as a truncated call either. <\s*invoke tolerates whitespace
+// after the opener: models sometimes emit "< invoke name=..." as a
+// tokenization artifact.
 //
 // The attribute region is consumed as quoted strings ('...' or "...") or
 // single chars, so name must be its own attribute at a whitespace boundary:
@@ -140,19 +138,20 @@ func normalizeDSMLText(text string) string {
 // off mid-emission): a truncated call must never be executed.
 func ParseDSMLToolCalls(text string) ([]DSMLCall, error) {
 	text = normalizeDSMLText(text)
-	// Truncation check by stack scan: match named <invoke> opens against
-	// </invoke> closes in text order, after masking parameter bodies so a
-	// raw "<invoke" inside a parameter value counts as content. A cut-off
+	// Truncation check by state-machine scan: named <invoke> opens are
+	// matched against </invoke> closes in text order, with <parameter>
+	// bodies treated as opaque content (a raw "<invoke" or "</invoke>"
+	// inside a parameter VALUE is content, not structure). A cut-off
 	// emission (an opening tag never closed) must never be executed.
-	// Unlike an opens-vs-closes count, a stray "</invoke>" in prose or a
-	// parameter value can never satisfy an unclosed call (false negative);
-	// unlike stripping complete blocks first, a nested or mis-nested open
-	// (two opens, one close) is still detected instead of being silently
-	// swallowed by the non-greedy block regex.
-	if unclosed, _ := unclosedInvokePositions(maskParameterBodies(text)); unclosed > 0 {
+	// Unlike an opens-vs-closes count, a stray "</invoke>" in prose can
+	// never satisfy an unclosed call (false negative); unlike stripping
+	// complete blocks first, a nested or mis-nested open (two opens, one
+	// close) is still detected instead of being silently swallowed by the
+	// non-greedy block regex.
+	if unclosed, _ := unclosedInvokePositions(text); unclosed > 0 {
 		return nil, fmt.Errorf("DSML tool call truncated: %d unclosed <invoke>", unclosed)
 	}
-	if opens := len(dsmlInvokeOpenRe.FindAllString(text, -1)); opens == 0 {
+	if opens := len(dsmlNamedInvokeOpenRe.FindAllString(text, -1)); opens == 0 {
 		return nil, nil
 	}
 
@@ -200,49 +199,80 @@ func decodeDSMLValue(raw string, isString bool) any {
 	return dsmlEntityReplacer.Replace(raw)
 }
 
-// dsmlParamBlockRe matches one complete <parameter>...</parameter> block.
-// It is less strict than dsmlParamRe (no name/string attribute required)
-// because masking only needs the outer boundary; a malformed parameter tag
-// still deserves shielding from the structural scan.
-var dsmlParamBlockRe = regexp.MustCompile(`(?s)<\s*parameter\b[^>]*>.*?</\s*parameter\s*>`)
-
-// maskParameterBodies replaces the CONTENT of every complete <parameter>
-// block with a placeholder before the truncation stack scan. A raw
-// "<invoke" inside a parameter value (shell snippet, DSML quotation the
-// model did not entity-escape) is CONTENT, not structure - it must never
-// be counted as a nested open. The scan only cares about tag pairing.
-// Note: escaping with &lt;invoke would also work, but dsmlEntityReplacer
-// runs after the scan, so entity-escaped forms are already invisible.
-func maskParameterBodies(text string) string {
-	return dsmlParamBlockRe.ReplaceAllString(text, "<parameter>…</parameter>")
-}
+// dsmlParamOpenRe / dsmlParamCloseRe delimit a <parameter> body. The
+// structural scan needs the outer boundary only (no name/string attribute
+// requirement): everything between a parameter open and its close is
+// opaque VALUE content, and any tag-looking text inside it (a raw
+// "<invoke", a "</invoke>", a nested "<parameter>") must not be read as
+// structure.
+var dsmlParamOpenRe = regexp.MustCompile(`(?s)<\s*parameter\b[^>]*>`)
+var dsmlParamCloseRe = regexp.MustCompile(`(?s)</\s*parameter\s*>`)
 
 // unclosedInvokePositions pairs named <invoke> opening tags with </invoke>
 // closes in text order and returns the number of opens left unmatched and
 // the byte offset of the FIRST unmatched open (or -1 when there is none).
-// A stack gives correct nesting semantics: opens push, closes pop the most
-// recent open; a close with an empty stack is prose noise and is ignored
-// (it neither matches nor cancels anything). Mismatched shapes such as
-// two opens followed by one close leave one unclosed open instead of
-// silently pairing the first open with the first close.
 //
-// Callers should pass text through maskParameterBodies first: a raw
-// "<invoke name=...>" inside a <parameter> value is content, not a nested
-// open, and counting it would falsely report truncation.
+// It is a small state machine, not a bare regex replace, because DSML
+// structure must survive model artifacts:
+//
+//   - A stack gives correct nesting semantics: opens push, closes pop the
+//     most recent open; a close with an empty stack is prose noise and is
+//     ignored (it neither matches nor cancels anything). Mismatched shapes
+//     such as two opens followed by one close leave one unclosed open
+//     instead of silently pairing the first open with the first close.
+//   - Parameter bodies are opaque: inside a <parameter> value, a raw
+//     "<invoke name=...>" (shell snippet or DSML example the model did not
+//     entity-escape) is content — it never pushes. A literal "</invoke>"
+//     in a value likewise never pops. This is what makes a value's text
+//     invisible to the structural scan.
+//   - Param depth is counted (an open increments, a close decrements) so
+//     nested parameter-looking text inside a value cannot leak structure.
+//     Known limitation: a literal "</parameter>" inside a value closes the
+//     body early (indistinguishable from a real close without a full XML
+//     tokenizer); entity-escaped forms (&lt;/parameter&gt;) are safe
+//     because escaping resolution happens after the scan.
 func unclosedInvokePositions(text string) (count int, firstPos int) {
-	opens := dsmlNamedInvokeOpenRe.FindAllStringIndex(text, -1)
-	closes := dsmlInvokeCloseRe.FindAllStringIndex(text, -1)
+	type ev struct {
+		pos  int
+		kind byte // 'o' invoke open, 'c' invoke close, 'p' param open, 'q' param close
+	}
+	events := []ev{}
+	for _, m := range dsmlNamedInvokeOpenRe.FindAllStringIndex(text, -1) {
+		events = append(events, ev{m[0], 'o'})
+	}
+	for _, m := range dsmlInvokeCloseRe.FindAllStringIndex(text, -1) {
+		events = append(events, ev{m[0], 'c'})
+	}
+	for _, m := range dsmlParamOpenRe.FindAllStringIndex(text, -1) {
+		events = append(events, ev{m[0], 'p'})
+	}
+	for _, m := range dsmlParamCloseRe.FindAllStringIndex(text, -1) {
+		events = append(events, ev{m[0], 'q'})
+	}
+	sort.Slice(events, func(i, j int) bool {
+		if events[i].pos != events[j].pos {
+			return events[i].pos < events[j].pos
+		}
+		return events[i].kind < events[j].kind
+	})
 	stack := []int{} // byte offsets of unmatched opens, in text order
-	i, j := 0, 0
-	for i < len(opens) || j < len(closes) {
-		if j >= len(closes) || (i < len(opens) && opens[i][0] < closes[j][0]) {
-			stack = append(stack, opens[i][0])
-			i++
-		} else {
-			if len(stack) > 0 {
+	paramDepth := 0
+	for _, e := range events {
+		switch e.kind {
+		case 'p':
+			paramDepth++
+		case 'q':
+			if paramDepth > 0 {
+				paramDepth--
+			}
+		case 'o':
+			if paramDepth == 0 {
+				stack = append(stack, e.pos)
+			}
+		case 'c':
+			if paramDepth == 0 && len(stack) > 0 {
 				stack = stack[:len(stack)-1]
 			}
-			j++
 		}
 	}
 	if len(stack) == 0 {
@@ -256,11 +286,11 @@ func unclosedInvokePositions(text string) (count int, firstPos int) {
 // stops at a tool call (round cap or parse error). A truncated invoke - an
 // opening tag that was never closed - chops everything from that tag to the
 // end of the text: the tail is unparseable residue of a cut-off emission.
-// Parameter bodies are masked first (their content is inside the blocks that
-// get stripped anyway; masking keeps a raw "<invoke" in a value from being
-// read as structure, so the chop point is authoritative).
+// The chop point comes from unclosedInvokePositions, which already treats
+// parameter VALUES as opaque, so a raw "<invoke" inside a value is never
+// taken for a real truncated call.
 func StripDSMLToolCalls(text string) string {
-	text = maskParameterBodies(normalizeDSMLText(text))
+	text = normalizeDSMLText(text)
 	if _, first := unclosedInvokePositions(text); first >= 0 {
 		text = text[:first]
 	}
