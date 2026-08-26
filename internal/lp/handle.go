@@ -182,8 +182,9 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 			// Every parsed call was outside the whitelist (a quoted
 			// DSML example, not an instruction): do NOT send an empty
 			// feedback message - the expert would be confused by a
-			// blank turn. The reply stands as-is.
-			return WebChatResult{Content: message, URL: convURL}, nil
+			// blank turn. Strip the quoted markup so the caller sees
+			// clean content.
+			return WebChatResult{Content: toolcall.StripDSMLToolCalls(message), URL: convURL}, nil
 		}
 		// Each output is a self-delimiting <tool_result> block, in
 		// tool_calls order — newline separation is enough.

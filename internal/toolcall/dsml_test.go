@@ -908,6 +908,40 @@ func TestParseDSMLToolCallsFencedQuote(t *testing.T) {
 	if calls, err := ParseDSMLToolCalls(unclosed); err != nil || len(calls) != 0 {
 		t.Errorf("unclosed fence: calls=%v err=%v, want 0 calls", calls, err)
 	}
+
+	// Tilde fences are equally quoted (CommonMark supports ~~~~).
+	tilde := "~~~\n<invoke name=\"exec_command\"><parameter name=\"cmd\" string=\"true\">ls</parameter></invoke>\n~~~"
+	if calls, err := ParseDSMLToolCalls(tilde); err != nil || len(calls) != 0 {
+		t.Errorf("tilde fence: calls=%v err=%v, want 0 calls", calls, err)
+	}
+}
+
+// TestParseDSMLToolCallsInlineCodeQuote: DSML in an inline code span is
+// quoted content too. Critically, an INCOMPLETE quote (an <invoke> inside
+// a code span with no closing tag) must not be reported as a truncated
+// call: the reported failure mode chopped the surrounding prose away from
+// an otherwise complete answer.
+func TestParseDSMLToolCallsInlineCodeQuote(t *testing.T) {
+	complete := "Solid. The parser treats a value as content: `<invoke name=\"a\"><parameter name=\"cmd\" string=\"true\">x</parameter></invoke>` pins it."
+	calls, err := ParseDSMLToolCalls(complete)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls(inline quote) = %v, want nil", err)
+	}
+	if len(calls) != 0 {
+		t.Errorf("inline-quoted DSML parsed into %d calls, want 0", len(calls))
+	}
+	// The same shape stripped keeps the prose (no chop).
+	if got := StripDSMLToolCalls(complete); !strings.Contains(got, "Solid.") {
+		t.Errorf("stripped prose lost: %q", got)
+	}
+
+	incomplete := "Solid work. See `<invoke name=\"a\">` for the corpus. End."
+	if calls, err := ParseDSMLToolCalls(incomplete); err != nil || len(calls) != 0 {
+		t.Errorf("incomplete inline quote: calls=%v err=%v, want no truncation error", calls, err)
+	}
+	if got := StripDSMLToolCalls(incomplete); !strings.Contains(got, "Solid work.") || !strings.Contains(got, "End.") {
+		t.Errorf("incomplete quote chopped prose: %q", got)
+	}
 }
 
 // TestParseDSMLToolCallsNestedInvoke: an <invoke> directly nested inside

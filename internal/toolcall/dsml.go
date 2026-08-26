@@ -249,41 +249,69 @@ func dsmlBlockName(tag string) string {
 	}
 }
 
-// dsmlFenceRanges returns the byte ranges of fenced code blocks (```
-// delimited) in text. DSML inside a fenced block is QUOTED content - a model
-// showing how to write a tool call, or an expert quoting the test corpus -
-// never an instruction to execute. Without this, a reply that merely
-// exhibits '<invoke name="exec_command">...' inside a code block would run
-// the exhibited command.
+// dsmlCodeRanges returns the byte ranges of QUOTED code in text: fenced
+// blocks (``` or ~~~, per CommonMark) and inline code spans (a matched
+// pair of backticks on one line). DSML inside any of them is quoted
+// content - a model showing how to write a tool call, or an expert quoting
+// the test corpus - never an instruction to execute. Without this, a reply
+// that merely exhibits '<invoke name="exec_command">...' inside a code
+// block would run the exhibited command; and an incomplete quote (an
+// <invoke> inside a code span with no closing tag) would be reported as a
+// truncated call, chopping the surrounding prose away.
 //
-// The scan follows CommonMark's fence rules so real tool calls after a
-// fence are never swallowed: a line of at least three backticks (after
-// leading spaces, and not in prose) OPENS a block; the next line of at
-// least the same run of backticks closes it. An unclosed fence extends to
-// the end of the text (also CommonMark).
-func dsmlFenceRanges(text string) [][2]int {
+// Fences: a line of at least three backticks or tildes (after leading
+// spaces) OPENS a block; the next line of at least the same run of the
+// SAME character closes it (CommonMark). An unclosed fence extends to the
+// end of the text, also CommonMark.
+//
+// Inline spans: on lines outside fences, backticks pair up (1st-2nd,
+// 3rd-4th, ...). An unpaired backtick opens nothing - prose ABOUT backticks
+// ("markdown uses ` for code") must not swallow the rest of the line.
+func dsmlCodeRanges(text string) [][2]int {
 	var ranges [][2]int
 	off := 0
-	fence := 0
+	fence := 0   // active fence run length
+	fenceCh := 0 // active fence character ('`' or '~')
 	start := 0
 	for _, line := range strings.SplitAfter(text, "\n") {
 		trimmed := strings.TrimLeft(line, " \t")
-		ticks := 0
-		for ticks < len(trimmed) && trimmed[ticks] == '`' {
-			ticks++
+		indent := len(line) - len(trimmed)
+		run := 0
+		for run < len(trimmed) && (trimmed[run] == '`' || trimmed[run] == '~') {
+			run++
 		}
-		rest := trimmed[ticks:]
+		ch := byte(0)
+		if run > 0 {
+			ch = trimmed[0]
+		}
+		rest := trimmed[run:]
 		if fence == 0 {
-			// Opening fence: >=3 backticks at the start of a line, followed
-			// by nothing or an info string (e.g. "go", "bash"). Deeper runs
-			// (````) open too - they may legally contain ``` inside.
-			if ticks >= 3 && !strings.HasPrefix(rest, "`") {
-				fence = ticks
+			// Opening fence: >=3 backticks/tildes at the start of a line,
+			// followed by nothing or an info string (e.g. "go", "bash").
+			if run >= 3 && ch != 0 && !strings.HasPrefix(rest, string(ch)) {
+				fence = run
+				fenceCh = int(ch)
 				start = off
 			}
-		} else if ticks >= fence && strings.TrimRight(rest, " \t\r\n") == "" {
+		} else if run >= fence && int(ch) == fenceCh && strings.TrimRight(rest, " \t\r\n") == "" {
 			ranges = append(ranges, [2]int{start, off + len(line)})
 			fence = 0
+		}
+		if fence != 0 {
+			off += len(line)
+			continue
+		}
+		// Inline code spans: pair backticks on this line.
+		inlineStart := -1
+		for i := 0; i < len(trimmed); i++ {
+			if trimmed[i] == '`' {
+				if inlineStart < 0 {
+					inlineStart = i
+				} else {
+					ranges = append(ranges, [2]int{off + indent + inlineStart, off + indent + i + 1})
+					inlineStart = -1
+				}
+			}
 		}
 		off += len(line)
 	}
@@ -293,9 +321,9 @@ func dsmlFenceRanges(text string) [][2]int {
 	return ranges
 }
 
-// inFenceRanges reports whether pos falls inside a fenced code block.
-// ranges is sorted by offset; the walk stops once past pos.
-func inFenceRanges(ranges [][2]int, pos int) bool {
+// inCodeRanges reports whether pos falls inside quoted code (fence or
+// inline span). ranges is sorted by offset; the walk stops once past pos.
+func inCodeRanges(ranges [][2]int, pos int) bool {
 	for _, r := range ranges {
 		if r[0] > pos {
 			return false
@@ -333,20 +361,22 @@ func inFenceRanges(ranges [][2]int, pos int) bool {
 //     body early (indistinguishable from a real close without a full XML
 //     tokenizer); entity-escaped forms (&lt;/parameter&gt;) are safe
 //     because escaping resolution happens after the scan.
-//   - Fenced code blocks (```) are opaque: DSML inside them is quoted
-//     content, not an instruction. See dsmlFenceRanges for the rules.
+//   - Quoted code (fenced blocks and inline code spans) is opaque: DSML
+//     inside it is quoted content, not an instruction. See dsmlCodeRanges
+//     for the rules.
 func dsmlBlockRanges(text string) (blocks []dsmlBlockRange, unclosed int, firstUnclosed int) {
 	type ev struct {
 		pos  int
 		kind byte // 'o' invoke open, 'c' invoke close, 'p' param open, 'q' param close
 		end  int  // exclusive end of the matched tag
 	}
-	fences := dsmlFenceRanges(text)
+	fences := dsmlCodeRanges(text)
 	events := []ev{}
-	// add skips events inside fenced code blocks: DSML there is quoted
-	// content (an example, a test reference), not structure to pair.
+	// add skips events inside quoted code (fenced block or inline code
+	// span): DSML there is quoted content (an example, a test reference),
+	// not structure to pair.
 	add := func(m []int, kind byte) {
-		if !inFenceRanges(fences, m[0]) {
+		if !inCodeRanges(fences, m[0]) {
 			events = append(events, ev{m[0], kind, m[1]})
 		}
 	}
