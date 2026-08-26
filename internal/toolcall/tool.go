@@ -273,6 +273,9 @@ func HandleToolCalls(ctx context.Context, tcs []prompt.ToolCall) (inputs []promp
 	}
 
 	outcomes, dualUsers := executeToolCalls(ctx, tcs, true)
+	if len(outcomes) == 0 && len(dualUsers) == 0 {
+		return nil // 保持原契约：空输入返回 nil，而非非 nil 空 slice
+	}
 	inputs = make([]prompt.Message, 0, len(outcomes)+len(dualUsers))
 	for _, o := range outcomes {
 		inputs = append(inputs, o.Message)

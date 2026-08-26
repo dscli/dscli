@@ -22,7 +22,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/prompt"
+	"github.com/nanjj/clog"
 )
 
 // DSMLCall is one parsed DSML tool call.
@@ -143,6 +145,9 @@ func StripDSMLToolCalls(text string) string {
 
 // dsmlToolNames is the whitelist of tools a WebChat expert may invoke.
 // Review is a read-only context: write/execute-anything tools stay closed.
+// 不变式：白名单里的工具（shell/read_file）从不返回 DualMessage——它们的
+// handler 结果只可能是文本或错误，不会有附加 user 消息（vision 类才用
+// dual 协议，而视觉工具不在白名单）。DSML 执行内核据此丢弃 dual 消息。
 var dsmlToolNames = map[string]bool{
 	"exec_command": true, // DeepSeek's habitual name for a shell tool
 	"shell":        true,
@@ -170,7 +175,7 @@ var dsmlBlockedCmdRe = regexp.MustCompile(`(?i)(^|\s|;|&&|\|\|)(` +
 // normalizeDSMLInvoke maps a DSML call to a native tool name and arguments.
 //
 // exec_command uses the parameter names DeepSeek was trained on
-// (cmd/justification/timeout-in-ms); the shell tool uses
+// (cmd/justification/timeout); the shell tool uses
 // (script/summary/timeout-in-seconds), so the translation is done here
 // rather than by a bare name alias:
 //   - cmd     -> script
@@ -272,6 +277,8 @@ func dsmlTimeoutSeconds(v any) int64 {
 // ID 字段，而执行内核的 tool 消息需要 ToolCallID；用 name + 规范化参数
 // JSON 的 SHA-256 摘要代替——同一调用（同工具同参数）跨轮次得到同一 ID，
 // 便于识别。工具使用统计按 name 记录（tools/tool_usage 表），不受 ID 影响。
+// 截断为前 8 字节（64-bit 空间）：单次 webchat 会话只有几十个调用，碰撞
+// 概率可忽略；完整摘要会放长日志与消息，收益不成比例。
 func dsmlToolCallID(name, argsJSON string) string {
 	sum := sha256.Sum256([]byte(name + "\x00" + argsJSON))
 	return fmt.Sprintf("dsml_%x", sum[:8])
@@ -335,8 +342,16 @@ func dsmlCallsToToolCalls(calls []DSMLCall) (tcs []prompt.ToolCall, plan []dsmlE
 // that CleanupReverse relies on (the whole ask_expert turn would be dropped
 // from history).
 func ExecuteDSMLToolCalls(ctx context.Context, calls []DSMLCall) (outputs []string) {
+	span, ctx := clog.StartSpanFromContext(ctx, "ExecuteDSMLToolCalls")
+	defer span.Finish()
+
 	tcs, plan := dsmlCallsToToolCalls(calls)
-	outcomes, _ := executeToolCalls(ctx, tcs, false) // dualUsers: 白名单工具不返回 DualMessage
+	outcomes, dualUsers := executeToolCalls(ctx, tcs, false)
+	if len(dualUsers) > 0 {
+		// 不变式被打破（见 dsmlToolNames）：白名单工具不应返回 DualMessage，
+		// 静默丢弃会丢数据，至少留一条 debug 线索。
+		outfmt.Debug("DSML dropped %d dual user message(s); whitelist assumption broken", len(dualUsers))
+	}
 	for _, step := range plan {
 		if step.content != nil {
 			outputs = append(outputs, formatDSMLToolResult(step.content))
@@ -351,11 +366,11 @@ func ExecuteDSMLToolCalls(ctx context.Context, calls []DSMLCall) (outputs []stri
 // block. An all-empty result is normalized to "(no output)" so the model
 // sees an explicit answer instead of an empty payload.
 func formatDSMLToolResult(c *ToolContent) string {
-	copy := *c // never mutate the caller's ToolContent
-	if copy.Result == "" && copy.Error == "" && copy.Warning == "" {
-		copy.Result = "(no output)"
+	dup := *c // never mutate the caller's ToolContent (and avoid shadowing copy)
+	if dup.Result == "" && dup.Error == "" && dup.Warning == "" {
+		dup.Result = "(no output)"
 	}
-	b, err := json.Marshal(&copy)
+	b, err := json.Marshal(&dup)
 	if err != nil { // unreachable: ToolContent fields are strings only
 		return fmt.Sprintf(`<tool_result>{"error":%q}</tool_result>`, err.Error())
 	}
