@@ -76,7 +76,14 @@ var dsmlInvokeOpenRe = regexp.MustCompile(`(?s)<\s*invoke\b[^>]*>`)
 // dsmlNamedInvokeOpenRe matches an opening <invoke> tag that carries a name
 // attribute - the only shape that can be a real tool call. A bare
 // "<invoke>" in prose has no name and must not count as a truncated call.
-var dsmlNamedInvokeOpenRe = regexp.MustCompile(`(?s)<\s*invoke\b[^>]*name\s*=[^>]*>`)
+// <\s*invoke\b then [^>]*\s+name\s*= anchors name to a whitespace attribute
+// boundary: "<invoke filename=...>" or "<invoke data-name=...>" must NOT
+// match (name inside another attribute is not the tag's name attribute).
+var dsmlNamedInvokeOpenRe = regexp.MustCompile(`(?s)<\s*invoke\b[^>]*\s+name\s*=[^>]*>`)
+
+// dsmlInvokeCloseRe matches a closing </invoke> tag, tolerating the same
+// whitespace variants as dsmlInvokeRe (models emit "</ invoke >").
+var dsmlInvokeCloseRe = regexp.MustCompile(`(?s)</\s*invoke\s*>`)
 
 // normalizeDSMLText repairs markup artifacts LLMs commonly emit around DSML
 // tags before parsing, so a well-formed call is never misread as truncated
@@ -86,18 +93,27 @@ var dsmlNamedInvokeOpenRe = regexp.MustCompile(`(?s)<\s*invoke\b[^>]*name\s*=[^>
 //     emit them instead of < >)
 //   - Unicode format characters (zero-width space/joiner, BOM, soft hyphen,
 //     direction marks) are dropped - they are invisible but break exact
-//     tag matching
-//   - junk between a tag opener and its name is removed, e.g.
-//     "</｜｜\r\nDSML｜｜invoke>" -> "</invoke>"
+//     tag matching. This is INTENTIONAL data loss: the same characters
+//     also poison parameter values (shell commands), and pasted content
+//     carrying them is a model artifact, not user intent.
+//   - junk between a tag opener and its name is removed, but ONLY when a
+//     known DSML tag name follows, e.g. "</｜｜\r\nDSML｜｜invoke>" ->
+//     "</invoke>". Content such as "<dsml_config" stays untouched.
 var dsmlFullwidthReplacer = strings.NewReplacer("＜", "<", "＞", ">")
 
 // dsmlTagJunkRe strips separator noise directly after < or </, before the
 // tag name: ASCII/full-width double-pipe markers (||, ｜) and "DSML"
 // literals, with whitespace only between noise tokens. (?i) plus
 // d\s*s\s*m\s*l covers spelling variants a model may emit ("D S M L").
-// Bare whitespace is deliberately NOT noise: "a < b" in prose or in a
-// parameter value must survive normalization untouched.
-var dsmlTagJunkRe = regexp.MustCompile(`(?i)(</?)(?:[|｜]\s*|d\s*s\s*m\s*l\s*)+`)
+//
+// The noise is stripped ONLY when immediately followed by a known DSML tag
+// name (invoke/parameter/tool_calls), which the capture group captures and
+// re-emits ($1$2): a global "dsml" sweep would corrupt real content such as
+// "cat <dsml_config" or prose "a <d s m l b". Go's RE2 has no lookahead, so
+// the "followed by a tag" condition is expressed by capturing the tag name
+// instead. Bare whitespace is deliberately NOT noise: "a < b" in prose or
+// in a parameter value must survive normalization untouched.
+var dsmlTagJunkRe = regexp.MustCompile(`(?i)(</?)(?:[|｜]\s*|d\s*s\s*m\s*l\s*)+((?:invoke|parameter|tool_calls)\b)`)
 
 func normalizeDSMLText(text string) string {
 	text = dsmlFullwidthReplacer.Replace(text)
@@ -107,7 +123,9 @@ func normalizeDSMLText(text string) string {
 		}
 		return r
 	}, text)
-	return dsmlTagJunkRe.ReplaceAllString(text, "$1")
+	// $1 keeps the opener (</?), $2 re-emits the captured tag name so the
+	// junk match can never eat into content that is not a DSML tag.
+	return dsmlTagJunkRe.ReplaceAllString(text, "$1$2")
 }
 
 // ParseDSMLToolCalls extracts all DSML tool calls from text. It returns an
@@ -115,12 +133,14 @@ func normalizeDSMLText(text string) string {
 // off mid-emission): a truncated call must never be executed.
 func ParseDSMLToolCalls(text string) ([]DSMLCall, error) {
 	text = normalizeDSMLText(text)
-	// Truncation check by residue: drop the complete <invoke> blocks, then
-	// look for an opening tag left over. Unlike an opens-vs-closes count,
+	// Truncation check by stack scan: match named <invoke> opens against
+	// </invoke> closes in text order. A cut-off emission (an opening tag
+	// never closed) must never be executed. Unlike an opens-vs-closes count,
 	// a stray "</invoke>" in prose or a parameter value can never satisfy an
-	// unclosed call (false negative), and junk closes never get counted.
-	remaining := dsmlInvokeRe.ReplaceAllString(text, "")
-	if unclosed := len(dsmlNamedInvokeOpenRe.FindAllString(remaining, -1)); unclosed > 0 {
+	// unclosed call (false negative); unlike stripping complete blocks first,
+	// a nested or mis-nested open (two opens, one close) is still detected
+	// instead of being silently swallowed by the non-greedy block regex.
+	if unclosed, _ := unclosedInvokePositions(text); unclosed > 0 {
 		return nil, fmt.Errorf("DSML tool call truncated: %d unclosed <invoke>", unclosed)
 	}
 	if opens := len(dsmlInvokeOpenRe.FindAllString(text, -1)); opens == 0 {
@@ -171,16 +191,47 @@ func decodeDSMLValue(raw string, isString bool) any {
 	return dsmlEntityReplacer.Replace(raw)
 }
 
+// unclosedInvokePositions pairs named <invoke> opening tags with </invoke>
+// closes in text order and returns the number of opens left unmatched and
+// the byte offset of the FIRST unmatched open (or -1 when there is none).
+// A stack gives correct nesting semantics: opens push, closes pop the most
+// recent open; a close with an empty stack is prose noise and is ignored
+// (it neither matches nor cancels anything). Mismatched shapes such as
+// two opens followed by one close leave one unclosed open instead of
+// silently pairing the first open with the first close.
+func unclosedInvokePositions(text string) (count int, firstPos int) {
+	opens := dsmlNamedInvokeOpenRe.FindAllStringIndex(text, -1)
+	closes := dsmlInvokeCloseRe.FindAllStringIndex(text, -1)
+	stack := []int{} // byte offsets of unmatched opens, in text order
+	i, j := 0, 0
+	for i < len(opens) || j < len(closes) {
+		if j >= len(closes) || (i < len(opens) && opens[i][0] < closes[j][0]) {
+			stack = append(stack, opens[i][0])
+			i++
+		} else {
+			if len(stack) > 0 {
+				stack = stack[:len(stack)-1]
+			}
+			j++
+		}
+	}
+	if len(stack) == 0 {
+		return 0, -1
+	}
+	return len(stack), stack[0]
+}
+
 // StripDSMLToolCalls removes tool-call blocks from text, leaving the
 // surrounding prose. Used to return a clean partial result when the expert
 // stops at a tool call (round cap or parse error). A truncated invoke - an
 // opening tag that was never closed - chops everything from that tag to the
 // end of the text: the tail is unparseable residue of a cut-off emission.
 func StripDSMLToolCalls(text string) string {
-	out := dsmlInvokeRe.ReplaceAllString(normalizeDSMLText(text), "")
-	if loc := dsmlNamedInvokeOpenRe.FindStringIndex(out); loc != nil {
-		out = out[:loc[0]]
+	text = normalizeDSMLText(text)
+	if _, first := unclosedInvokePositions(text); first >= 0 {
+		text = text[:first]
 	}
+	out := dsmlInvokeRe.ReplaceAllString(text, "")
 	// Collapse leftover empty <tool_calls> wrappers and blank noise.
 	out = strings.ReplaceAll(out, "<tool_calls>", "")
 	out = strings.ReplaceAll(out, "</tool_calls>", "")

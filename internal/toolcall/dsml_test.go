@@ -213,6 +213,14 @@ func TestNormalizeDSMLText(t *testing.T) {
 		{"zero-width chars", "</\u200binvoke\u200d>", `</invoke>`},
 		{"plain text unchanged", "plain < not markup >", "plain < not markup >"},
 		{"bare space after opener untouched", "</ invoke>", `</ invoke>`},
+		// dsml in prose / parameter values must survive: it is only noise
+		// when a known DSML tag name follows (review regression: a global
+		// "dsml" sweep corrupted cat <dsml_config and a <d s m l b).
+		{"dsml word in shell arg untouched", "cat <dsml_config", "cat <dsml_config"},
+		{"spaced d s m l prose untouched", "a <d s m l b", "a <d s m l b"},
+		{"dsml_version untouched", "grep '<dsml_version'", "grep '<dsml_version'"},
+		{"dsml before real tag still stripped", "<dsml invoke name=\"x\">", `<invoke name="x">`},
+		{"dsml before parameter still stripped", "<｜DSML\n|parameter name=\"cmd\">", `<parameter name="cmd">`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -232,6 +240,78 @@ func TestHasDSMLToolCallsLLMJunk(t *testing.T) {
 	}
 	if HasDSMLToolCalls("阅读 <invoke name= 的说明") {
 		t.Error("HasDSMLToolCalls(prose) = true, want false")
+	}
+}
+
+// TestParseDSMLToolCallsNameAttrBoundary: name must be a standalone
+// attribute (preceded by whitespace). "filename=" or "data-name=" are
+// other attributes that merely CONTAIN "name" as a substring - they must
+// not turn a prose <invoke> into a "truncated call" (review regression:
+// [^>]*name\s*= matched filename=).
+func TestParseDSMLToolCallsNameAttrBoundary(t *testing.T) {
+	for _, text := range []string{
+		`<invoke filename="foo">`,
+		`<invoke data-name="x">`,
+		"prose mentions <invoke filename=\"y\"> and more",
+	} {
+		calls, err := ParseDSMLToolCalls(text)
+		if err != nil {
+			t.Fatalf("ParseDSMLToolCalls(%q): %v (name substring must not count)", text, err)
+		}
+		if len(calls) != 0 {
+			t.Errorf("ParseDSMLToolCalls(%q) = %d calls, want 0", text, len(calls))
+		}
+	}
+	// A real name attribute still counts as the only truncated shape.
+	if err := func() error {
+		_, err := ParseDSMLToolCalls(`<invoke name="exec_command">`)
+		return err
+	}(); err == nil {
+		t.Error("named truncated invoke: want error, got nil")
+	}
+}
+
+// TestParseDSMLToolCallsNestedTruncation: two opens followed by one close.
+// The non-greedy block regex pairs the first open with the first close and
+// would swallow the second open; the stack scan must still report the
+// truncation instead of silently dropping the call (review regression).
+func TestParseDSMLToolCallsNestedTruncation(t *testing.T) {
+	text := `<invoke name="a">
+<invoke name="b">
+</invoke>`
+	if _, err := ParseDSMLToolCalls(text); err == nil {
+		t.Fatal("nested truncation: want error, got nil")
+	}
+	// Fully-nested (both closed) is NOT a truncation: the parser extracts the
+	// bodies it can and the inner open is part of the outer body.
+	complete := `<invoke name="a">
+<invoke name="b">
+</invoke>
+</invoke>`
+	if _, err := ParseDSMLToolCalls(complete); err != nil {
+		t.Fatalf("fully-nested: %v, want nil", err)
+	}
+}
+
+// TestStripDSMLToolCallsLLMJunk: the cleaner must handle the same LLM
+// artifacts as the parser - full-width brackets, zero-width chars, and
+// ||DSML|| junk - and chop a truncated junky invoke at the unclosed open.
+func TestStripDSMLToolCallsLLMJunk(t *testing.T) {
+	complete := "前置 ＜｜｜\nDSML｜｜invoke name=\"exec_command\"＞\n<parameter name=\"cmd\" string=\"true\">ls</parameter>\n</｜｜\r\nDSML｜｜invoke＞ 后置"
+	got := StripDSMLToolCalls(complete)
+	if strings.Contains(got, "<invoke") || strings.Contains(got, "<parameter") || strings.Contains(got, "<tool_calls>") {
+		t.Errorf("junk DSML block not stripped:\n%s", got)
+	}
+	if got != "前置  后置" && got != "前置 后置" {
+		t.Errorf("surrounding prose lost or mangled: %q", got)
+	}
+	truncated := "正文 <invoke name=\"exec_command\">\n<parameter name=\"cmd\" string=\"true\">git show"
+	got = StripDSMLToolCalls(truncated)
+	if strings.Contains(got, "<invoke") {
+		t.Errorf("truncated invoke residue leaked:\n%s", got)
+	}
+	if got != "正文" {
+		t.Errorf("truncated: got %q, want %q", got, "正文")
 	}
 }
 
