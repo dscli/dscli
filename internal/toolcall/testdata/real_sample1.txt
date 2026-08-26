@@ -1,0 +1,17 @@
+<tool_calls>
+<invoke name="exec_command">
+<parameter name="cmd" string="true">python3 - <<'PY'
+import re
+inv = re.compile(r'(?s)<\s*invoke\s+name="([^"]+)"[^>]*>(.*?)</\s*invoke\s*>')
+named = re.compile(r'(?s)<\s*invoke\b[^>]*name\s*=[^>]*>')
+s = '<invoke name="a">\n<invoke name="b">\n</invoke>'
+rem = inv.sub('', s)
+print('text:', repr(s))
+print('remaining after complete-block strip:', repr(rem))
+print('named residue count:', len(named.findall(rem)))
+print('parsed blocks:', inv.findall(s))
+PY</parameter>
+<parameter name="justification" string="true">Show that a truncated two-opens-one-close sequence can be misclassified as complete by the residue check.</parameter>
+<parameter name="timeout" string="false">30000</parameter>
+</invoke>
+</tool_calls>

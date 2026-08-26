@@ -1,0 +1,29 @@
+<tool_calls>
+<invoke name="exec_command">
+<parameter name="cmd" string="true">cat > /tmp/dsml_probe4.go <<'GOEOF'
+package main
+
+import (
+	"fmt"
+	"regexp"
+)
+
+func main() {
+	re := regexp.MustCompile(`(?i)(</?)(?:[|｜]\s*|d\s*s\s*m\s*l\s*)+`)
+	cases := []string{
+		"cat <dsml_config",
+		"cat <dsml_config",
+		"</||DSML||invoke>",
+		"a <d s m l b",
+	}
+	for _, s := range cases {
+		fmt.Printf("in=%q loc=%v replace=%q\n", s, re.FindStringIndex(s), re.ReplaceAllString(s, "$1"))
+	}
+}
+GOEOF
+go run /tmp/dsml_probe4.go</parameter>
+<｜｜DSML｜｜parameter name="justification" string="true">Probe dsmlTagJunkRe over-matching on literal dsml prefixes in shell command parameter values.
+</parameter>
+<parameter name="timeout" string="false">30000</parameter>
+</invoke>
+</tool_calls>
