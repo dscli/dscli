@@ -116,7 +116,10 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 	startTime := time.Now()
 
 	outfmt.Printf("📤 发送到 DeepSeek Web ...\n")
-	result, err = lp.WebChatWithOptions(ctx, message, opts)
+	// HandleWebChat shares the ask_expert entry point: transient server
+	// overload and truncation are retried with backoff (Role empty means
+	// the DSML tool loop never triggers - this command is pure chat).
+	result, err = lp.HandleWebChat(ctx, message, opts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "webchat 失败: %v\n", err)
 		return nil

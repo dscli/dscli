@@ -15,7 +15,6 @@ import (
 	ictx "github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/lp"
 	"github.com/dscli/dscli/internal/outfmt"
-	"github.com/dscli/dscli/internal/prompt"
 	"github.com/dscli/dscli/internal/toolcall"
 	"github.com/nanjj/clog"
 )
@@ -266,152 +265,27 @@ func AskExpertWithRole(ctx context.Context, input, role string) (reply string, e
 	return reply, err
 }
 
-// webChatFunc is the function used to send the message to DeepSeek Web.
-// It is a package-level variable so tests can replace it with a mock.
-var webChatFunc = lp.WebChatWithOptions
-
-// askExpertRetryDelays is the backoff sequence between retry attempts for
-// transient server overload and truncation (lp.ErrServerBusy /
-// lp.ErrSendRejected / lp.ErrTruncated). The
-// official DeepSeek error docs recommend retrying 429/500/503 after a
-// brief wait; each retry starts a fresh conversation, so a duplicate send
-// has no side effects. A package variable so tests can shorten it.
-var askExpertRetryDelays = []time.Duration{5 * time.Second, 15 * time.Second, 30 * time.Second}
-
-// askExpertWebChat is the real implementation: renders the system prompt
-// (either the raw system text or the role template) and sends the combined
-// message via lp.WebChatWithOptions. When both role and system are empty,
-// no persona is injected and the input is sent verbatim (the ask_expert
-// tool relies on the caller's own context; code_review passes a role).
-// keep continues a previous conversation; it is passed through to
-// lp.WebChatOptions.Keep ("" = new, "last", ID, or URL).
+// askExpertWebChat is the real implementation: it maps the expert-call
+// parameters onto lp.HandleWebChat, the high-level WebChat entry point that
+// renders the role/system prompt, retries transient server overload and
+// truncation, and executes DSML tool calls embedded in role-driven replies.
 //
-// Transient server overload and truncated output are retried with
-// exponential backoff (askExpertRetryDelays, one extra attempt per delay).
-// Permanent errors (login, bad arguments) fail immediately — retrying them
-// is pointless.
+// When both role and system are empty, no persona is injected and the input
+// is sent verbatim (the ask_expert tool relies on the caller's own context;
+// code_review passes a role). keep continues a previous conversation; it is
+// passed through to lp.WebChatOptions.Keep ("" = new, "last", ID, or URL).
 func askExpertWebChat(ctx context.Context, input, role, system, mode, keep string, attachments []string) (reply, convURL string, err error) {
-	// WebChat has no system prompt concept, so we prepend it to the user
-	// message. The separator helps the web model distinguish the persona
-	// instructions from the actual task.
-	fullMessage := input
-	if system != "" {
-		fullMessage = system + "\n\n---\n\n## User Request\n\n" + input
-	} else if role != "" {
-		// Render the role-specific template (expert.md / review.md / dev.md
-		// or a custom override via the prompt override chain).
-		fullMessage = prompt.RenderPromptForRole(ctx, role) + "\n\n---\n\n## User Request\n\n" + input
-	}
-
-	// Start a new WebChat conversation (keep="" — the default) or continue
-	// a saved one. Image attachments are uploaded as real files; an empty
-	// mode auto-selects vision (with uploads) or pro. Server overload
-	// (429/500/503 semantics) and truncated output are transient: retry with
-	// backoff up to len(askExpertRetryDelays) extra attempts. Each retry is a
-	// fresh conversation, so re-sending is harmless.
-	opts := lp.WebChatOptions{
+	res, err := lp.HandleWebChat(ctx, input, lp.WebChatOptions{
 		Mode:        lp.Mode(mode),
 		Attachments: attachments,
 		Keep:        keep,
+		Role:        role,
+		System:      system,
+	})
+	if err != nil {
+		return "", "", err
 	}
-	var lastErr error
-	for attempt := 0; attempt <= len(askExpertRetryDelays); attempt++ {
-		if attempt > 0 {
-			delay := askExpertRetryDelays[attempt-1]
-			reason := "服务器繁忙"
-			if errors.Is(lastErr, lp.ErrTruncated) {
-				reason = "输出被截断"
-			}
-			outfmt.Printf("🔄 %s，%.0fs 后重试 (attempt %d/%d)...\n",
-				reason, delay.Seconds(), attempt+1, len(askExpertRetryDelays)+1)
-
-			select {
-			case <-ctx.Done():
-				return "", "", ctx.Err()
-			case <-time.After(delay):
-			}
-		}
-
-		res, callErr := webChatFunc(ctx, fullMessage, opts)
-		if callErr == nil {
-			// Role-driven consultations (code_review's review role) may
-			// receive DSML tool calls embedded in the reply: the web expert
-			// cannot execute them locally, so we parse, run the underlying
-			// dscli tools, and feed the results back into the SAME
-			// conversation until the expert produces a final answer.
-			// Plain ask_expert is never role-driven, so it is unaffected.
-			if role != "" && toolcall.HasDSMLToolCalls(res.Content) {
-				return askExpertToolLoop(ctx, res, mode)
-			}
-			return res.Content, res.URL, nil
-		}
-		lastErr = callErr
-		if !errors.Is(callErr, lp.ErrServerBusy) && !errors.Is(callErr, lp.ErrSendRejected) && !errors.Is(callErr, lp.ErrTruncated) {
-			return "", "", callErr
-		}
-	}
-	return "", "", fmt.Errorf("ask expert: %w (after %d attempts)", lastErr, len(askExpertRetryDelays)+1)
-}
-
-// maxDSMLRounds caps the tool-call rounds within one expert consultation.
-// The loop naturally exits whenever a reply carries no tool calls — the
-// expert always finishes with prose — so this is only a failsafe against
-// a broken DSML parser (e.g. a reply that keeps matching an unclosed
-// <invoke> block). 6 was too small: real sessions can run many rounds
-// (9 consecutive tool calls were observed in the design case study), so
-// the cap is generous. A variable so tests can shrink it.
-var maxDSMLRounds = 1024
-
-// executeDSMLToolCalls is the DSML executor hook; tests replace it with a
-// recording mock (the real executor runs shells and needs no browser).
-var executeDSMLToolCalls = toolcall.ExecuteDSMLToolCalls
-
-// askExpertToolLoop continues a role-driven WebChat conversation while the
-// expert emits DSML tool calls: parse the calls, execute them locally, and
-// post the results back into the SAME conversation (Keep=first URL). The
-// role prompt is injected only on the first round — askExpertWebChat already
-// rendered it — so follow-up messages carry tool results verbatim.
-//
-// Exits with the last assistant reply when:
-//   - the reply contains no tool calls (final answer), or
-//   - maxDSMLRounds is exhausted or a tool-call block is truncated; the DSML
-//     is stripped so callers see only prose, plus a warning on stderr.
-//
-// Browser/network errors are fatal: retrying mid-conversation is not safe.
-func askExpertToolLoop(ctx context.Context, first lp.WebChatResult, mode string) (reply, convURL string, err error) {
-	span, ctx := clog.StartSpanFromContext(ctx, "askExpertToolLoop")
-	defer span.Finish()
-
-	message := first.Content
-	convURL = first.URL
-	for round := 1; round <= maxDSMLRounds; round++ {
-		calls, parseErr := toolcall.ParseDSMLToolCalls(message)
-		if parseErr != nil {
-			outfmt.Printf("⚠️ 专家工具调用不完整，已停止循环: %v\n", parseErr)
-			return toolcall.StripDSMLToolCalls(message), convURL, nil
-		}
-		if len(calls) == 0 {
-			return message, convURL, nil
-		}
-
-		outfmt.Printf("🤖 专家请求执行 %d 个工具调用（第 %d/%d 轮）…\n", len(calls), round, maxDSMLRounds)
-		outputs := executeDSMLToolCalls(ctx, calls)
-		feedback := strings.Join(outputs, "\n\n")
-
-		// Continue the SAME conversation: same mode, Keep set to the URL
-		// returned by the previous send. No role injection here.
-		opts := lp.WebChatOptions{Mode: lp.Mode(mode), Keep: convURL}
-		res, callErr := webChatFunc(ctx, feedback, opts)
-		if callErr != nil {
-			return "", "", fmt.Errorf("expert tool loop: continue conversation after %d round(s): %w", round, callErr)
-		}
-		message = res.Content
-		if res.URL != "" {
-			convURL = res.URL
-		}
-	}
-	outfmt.Printf("⚠️ 专家连续工具调用超过 %d 轮上限，已返回中间结果\n", maxDSMLRounds)
-	return toolcall.StripDSMLToolCalls(message), convURL, nil
+	return res.Content, res.URL, nil
 }
 
 // maxAttachmentSize is the maximum allowed size for a single attachment (1MB).

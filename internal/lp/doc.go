@@ -17,6 +17,24 @@
 // deepseek_login.go automates the DeepSeek sign-in flow, sharing cookies
 // so logins survive across sessions.
 //
+// WebChatWithOptions performs one send; HandleWebChat is the high-level
+// entry point shared by the ask_expert tool and the webchat CLI command:
+// it renders role/system prompts, retries transient server overload and
+// truncation with backoff, and - for role-driven consultations - executes
+// DSML tool calls the expert embeds in its reply, feeding results back into
+// the same conversation until a final answer arrives.
+//
+// # Layering exception
+//
+// HandleWebChat imports internal/toolcall (DSML parsing/execution) and
+// internal/prompt (role rendering), so it transitively pulls in the tool
+// framework. This inverts the usual "transport is below tools" layering, but
+// is accepted deliberately: DSML tool calls are a WebChat-specific wire
+// format produced only by role-driven web consultations, and the executor
+// needs the tool registry (toolcall.ExecuteDSMLToolCalls). There is no
+// import cycle because toolcall never imports lp. If a browser-only binary
+// ever split off, HandleWebChat would move with the DSML layer.
+//
 // # History
 //
 // The package previously talked to LightPanda over MCP (lightpanda mcp

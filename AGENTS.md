@@ -85,7 +85,7 @@ Tests get an isolated database: `context.IsTesting()` → `/tmp/dscli-test-<bina
 | `internal/lockfile/` | Per-project process lock for chat sessions |
 | `internal/editor/` | External editor integration (emacsclient-aware) |
 | `internal/shell/` | Safe shell execution via mvdan/sh |
-| `internal/lp/` | Web page reading via `lightpanda fetch` CLI, DeepSeek web login/chat (chromedp) with overload/truncation detection and conversation registry |
+| `internal/lp/` | Web page reading via `lightpanda fetch` CLI, DeepSeek web login/chat (chromedp) with overload/truncation detection and conversation registry; `HandleWebChat` is the high-level entry point (retry + DSML tool loop) shared by ask_expert and the webchat CLI |
 | `internal/mcphub/` | Multi-MCP-server connections; dispatches unknown tools |
 | `internal/memories/` | Persistent cross-session memory with FTS5 |
 | `internal/tokenizer/` | Chinese+English segmentation for FTS5 (gse) |
@@ -115,11 +115,11 @@ user messages).
 
 DSML tool calls from WebChat: chat.deepseek.com replies to role-driven
 consultations (e.g. `review` via code_review) may embed DSML markup
-(`<invoke name="exec_command">` with `<parameter>` children). The ask layer
+(`<invoke name="exec_command">` with `<parameter>` children). `lp.HandleWebChat`
 parses them (internal/toolcall/dsml.go), maps `exec_command` -> `shell`
 (cmd->script, justification->summary, timeout ms->s; whitelist: exec_command,
 shell, read_file only) and feeds results back into the SAME conversation
-(`askExpertToolLoop`). Plain `ask_expert` (role empty) never enters the loop.
+(handleWebChatToolLoop). Plain webchat (Role empty) never enters the loop.
 
 ### Embedded Assets (`go:embed`)
 

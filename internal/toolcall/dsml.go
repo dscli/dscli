@@ -3,9 +3,9 @@
 // DeepSeek's web model emits tool calls in a DSML-like XML markup instead
 // of the OpenAI tool_calls JSON: the assistant's reply text contains
 // <tool_calls> blocks with <invoke name="..."> and <parameter> children.
-// WebChat cannot execute tools locally, so the ask layer parses these
+// WebChat cannot execute tools locally, so lp.HandleWebChat parses these
 // blocks, executes the underlying dscli tools, and feeds the results back
-// into the same conversation (see askExpertToolLoop in internal/toolcall/ask).
+// into the same conversation (see handleWebChatToolLoop in internal/lp).
 //
 // The mapping is deliberately narrow: only read-only review tools are
 // exposed (exec_command -> shell, read_file). Anything else returns an

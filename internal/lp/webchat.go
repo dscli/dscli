@@ -583,6 +583,17 @@ type WebChatOptions struct {
 	//     from a browser); the conversation is registered for later use.
 	// Use keep="list" with ListConversations to enumerate saved ones.
 	Keep string
+
+	// Role names a role-specific prompt template (expert/review/dev, see
+	// prompt.RenderPromptForRole) that HandleWebChat prepends to the
+	// message. Non-empty Role also enables the DSML tool loop. Only
+	// HandleWebChat consumes it - WebChatWithOptions ignores it.
+	Role string
+
+	// System is raw persona text that HandleWebChat prepends to the message.
+	// It takes precedence over Role. Only HandleWebChat consumes it -
+	// WebChatWithOptions ignores it.
+	System string
 }
 
 // WebChatResult is the outcome of a WebChat call: the assistant's visible
@@ -665,6 +676,13 @@ func normalizeWebChatOptions(opts WebChatOptions) WebChatOptions {
 // validateWebChatOptions checks mode and attachment limits before launching
 // a browser, so bad input fails fast without starting Chrome.
 func validateWebChatOptions(opts WebChatOptions) error {
+	// Role/System are handle-level concerns (prompt rendering + DSML loop).
+	// Rejecting them here (instead of silently ignoring) makes the layering
+	// explicit: a caller that passes them to the transport is using the
+	// wrong entry point.
+	if opts.Role != "" || opts.System != "" {
+		return fmt.Errorf("Role/System are only honored by HandleWebChat")
+	}
 	if opts.Mode != "" && !validModes[opts.Mode] {
 		return fmt.Errorf("unknown webchat mode %q (want flash, pro or vision)", opts.Mode)
 	}
