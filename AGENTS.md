@@ -121,6 +121,13 @@ parses them (internal/toolcall/dsml.go), maps `exec_command` -> `shell`
 shell, read_file only) and feeds results back into the SAME conversation
 (handleWebChatToolLoop). Plain webchat (Role empty) never enters the loop.
 
+code_review sends ONLY commit message + diff on its first message: the review
+expert reads AGENTS.md and full changed-file contents on demand via the DSML
+tool loop (`read_file` / `exec_command`). Do not re-inject file contents or
+AGENTS.md into the request — the 26k web-chat input budget is better spent on
+the diff, and the expert can deep-read any file it needs (see
+internal/prompt/review.md).
+
 ### Embedded Assets (`go:embed`)
 
 | Asset | Location |

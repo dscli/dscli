@@ -17,7 +17,9 @@ back automatically in the same conversation.
 
 Use before pushing code or to learn better practices.
 
-**Context**: includes the repo's AGENTS.md when present, plus full contents of
-changed files (files over 100KB are diff-only). Oversized inputs are condensed
-to hunk-context excerpts with complete enclosing function definitions; any
-files dropped from the review are listed in the tool warning.
+**Context**: the first message carries only the commit message and the diff.
+The expert has tool access (read_file, exec_command) in the same conversation
+and reads AGENTS.md plus full file contents on demand, keeping the request
+under the chat-box input limit. If a diff still exceeds the limit, per-file
+sections are dropped smallest-first and listed in the tool warning — the
+expert can read those files via read_file.
