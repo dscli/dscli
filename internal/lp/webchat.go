@@ -1725,13 +1725,14 @@ func isCompleteResponse(s string) bool {
 	return !(toolCallOpenRE.MatchString(t) && !strings.Contains(t, "<tool_result"))
 }
 
-// answerUsable reports whether an extracted answer passes the shared
-// acceptance checks: it must not be an overload notice, must not be
-// structurally truncated, and must look like a complete response. Both
-// extraction sources funnel their text through it - DOM path in
-// webchatWait and the IndexedDB path in webchatExtractReloadedIDB - so no
-// source can bypass the busy/truncated defenses and poison the caller
-// with a server notice or a cut-off reply.
+// answerUsable reports whether an extracted answer is acceptable: it must
+// not be an overload notice, must not be structurally truncated, and must
+// look like a complete response. It gates the IndexedDB path in
+// webchatExtractReloadedIDB, applying the same checks the DOM path in
+// webchatWait does. webchatWait cannot use this boolean directly: there
+// the checks are classification checks (busy → ErrServerBusy, truncated →
+// ErrTruncated, incomplete → keep polling), distinctions this collapse
+// would lose.
 func answerUsable(text string) bool {
 	if isBusyErrorText(text) {
 		return false

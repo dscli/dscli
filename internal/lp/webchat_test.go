@@ -542,6 +542,9 @@ func TestAnswerUsable(t *testing.T) {
 		{name: "long answer accepted", s: "这是一段完整的回答。" + strings.Repeat("内容", 300), want: true},
 		{name: "empty rejected", s: "", want: false},
 		{name: "tool-call opener without result rejected", s: "<read_file src=\"x.go\">", want: false},
+		// Combined: busy wins on short-circuit regardless of the
+		// truncation signal; the gate must never accept either.
+		{name: "busy plus cut-off fence rejected", s: "服务器繁忙 ```python\nprint('x'", want: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -633,6 +636,25 @@ func TestJsResendFailedFmt(t *testing.T) {
 		if !strings.Contains(jsResendFailedFmt, want) {
 			t.Errorf("jsResendFailedFmt must contain %q (word list regression)", want)
 		}
+	}
+}
+
+func TestJsIDBGetAnswerFmtNewestFirst(t *testing.T) {
+	// Regression guard on the IDB extraction direction. chat_messages is
+	// newest-first (the current round's USER/ASSISTANT messages sit at the
+	// front), so the last-message scan MUST start at index 0: scanning
+	// from the tail would match the FIRST round of a continued
+	// conversation and fail the user-message guard, silently degrading to
+	// DOM extraction (verified live 2026-08-26, then fixed).
+	if !strings.Contains(jsIDBGetAnswerFmt, "for (let i = 0; i < msgs.length; i++)") {
+		t.Error("jsIDBGetAnswerFmt must scan chat_messages from index 0 (newest-first)")
+	}
+	if strings.Contains(jsIDBGetAnswerFmt, "msgs.length - 1; i >= 0") {
+		t.Error("jsIDBGetAnswerFmt must not scan chat_messages from the tail")
+	}
+	// thinkCount must count THINK fragments, not all fragments.
+	if !strings.Contains(jsIDBGetAnswerFmt, "thinkCount: thinkParts.length") {
+		t.Error("jsIDBGetAnswerFmt thinkCount must count thinkParts")
 	}
 }
 
