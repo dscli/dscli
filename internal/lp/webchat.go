@@ -16,8 +16,10 @@ import (
 	"github.com/dscli/dscli/internal/lockfile"
 	"github.com/nanjj/clog"
 
+	"github.com/chromedp/cdproto/browser"
 	"github.com/chromedp/cdproto/dom"
 	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
 
@@ -240,15 +242,25 @@ const (
 	})()`
 
 	// jsGetAssistantText extracts all assistant response HTML from
-	// .ds-markdown elements in the MAIN content area (NOT sidebar/navigation).
-	// It returns the innerHTML parts (one per element) so the Go side can
+	// .ds-assistant-message-main-content elements — the stable, un-hashed
+	// answer container the site marks on each assistant message. It
+	// returns the innerHTML parts (one per element) so the Go side can
 	// convert the rendered DOM back to markdown — innerText loses code
 	// fences, inline-code backticks and list markers, which breaks the
 	// fidelity callers rely on.
-	// NOTE: the result may include pre-existing conversation history (e.g.
-	// continued conversations); webchatWait strips it via mdBaseline.
+	//
+	// WHY not a bare .ds-markdown query: the deep-think reasoning block
+	// ALSO renders as .ds-markdown (the collapsed "已思考" text), so a
+	// bare query would mix the reasoning into the answer. The main-
+	// content class is only on the visible answer; when the class is
+	// gone (site redesign), the fallback query excludes blocks that
+	// contain the "已思考（用时 N 秒）" status span.
+	//
+	// NOTE: the result may include pre-existing conversation history
+	// (continued conversations); webchatWait strips it via mdBaseline.
 	jsGetAssistantText = `(() => {
-	const all = document.querySelectorAll('.ds-markdown');
+	const main = document.querySelectorAll('.ds-assistant-message-main-content');
+	const all = main.length ? main : document.querySelectorAll('.ds-markdown');
 	// Filter out elements that live in the sidebar/navigation panel.
 	const els = Array.from(all).filter(function(el) {
 		var p = el.parentElement;
@@ -260,12 +272,138 @@ const (
 			}
 			p = p.parentElement;
 		}
+		if (!main.length) {
+			// Fallback mode: drop the deep-think block. Its reasoning
+			// text carries the status span "已思考（用时 N 秒）" — a
+			// rendered answer never contains such a span.
+			var spans = el.querySelectorAll('span');
+			for (var i = 0; i < spans.length; i++) {
+				var t = (spans[i].textContent || '').trim();
+				if (/^已思考[（(]?/.test(t) && /[（(]?用时\s*\d+|\d+\s*秒/.test(t)) {
+					return false;
+				}
+			}
+		}
 		return true;
 	});
 	if (els.length === 0) return [];
-	// Concatenate ALL .ds-markdown elements, not just the last one.
-	// Streaming responses may be split across multiple blocks.
+	// Concatenate ALL matched elements, not just the last one: streaming
+	// responses may be split across multiple blocks.
 	return els.map(function(el) { return el.innerHTML; });
+})()`
+	// jsLastAnswerAfterFmt returns the innerText of THIS round's answer
+	// block: the last .ds-assistant-message-main-content that appears in
+	// a message bubble AFTER the bubble containing the sent message %
+	// (the user's text). Scoping on the message bubble (a stable class)
+	// excludes both the deep-think reasoning (a sibling of the answer
+	// block) and previous rounds' history (they sit BEFORE the sent
+	// message). %s is the sent message.
+	jsLastAnswerAfterFmt = `(() => {
+	const want = %s;
+	const bubbles = Array.from(document.querySelectorAll('.ds-message'));
+	const ord = new Map();
+	bubbles.forEach(function(b, i) { ord.set(b, i); });
+	let anchor = -1;
+	for (let i = bubbles.length - 1; i >= 0; i--) {
+		const t = (bubbles[i].innerText || '');
+		const firstLine = t.split('\n')[0].trim();
+		if (firstLine === want || t.trim().indexOf(want) === 0) { anchor = i; break; }
+	}
+	if (anchor < 0) return '';
+	const mains = Array.from(document.querySelectorAll('.ds-message .ds-assistant-message-main-content'));
+	for (let i = mains.length - 1; i >= 0; i--) {
+		const b = mains[i].closest('.ds-message');
+		if (b && (ord.get(b) || 0) > anchor) return mains[i].innerText;
+	}
+	return '';
+})()`
+	// jsIDBGetAnswerFmt reads the assistant's answer from the site's own
+	// IndexedDB conversation cache (database "deepseek-chat", object store
+	// "history-message", keyed by conversation ID). This is the structured
+	// data the web app renders, so it carries the ORIGINAL markdown of the
+	// reply — no HTML→markdown reconstruction, no UI-chrome recovery.
+	//
+	// WHY IndexedDB and not the DOM: the site's message markup uses
+	// deployment-hashed CSS class names (e.g. "_5255ff8" or "fbb737a4")
+	// that change without notice — the historical .ds-markdown selector now
+	// matches nothing — while the IDB schema (chat_messages →
+	// fragments[].type=RESPONSE → content=markdown) is app-internal and
+	// stable across UI redesigns.
+	//
+	// The assistant's fragments also include a THINK fragment (the deep-
+	// think reasoning, hidden behind the "已思考" collapse); only RESPONSE
+	// fragments form the visible answer. status=FINISHED means the reply
+	// completed; before that the record is absent or still streaming, so
+	// the caller keeps polling.
+	//
+	// %s is the sent message and %d the send time (Unix ms). A cached
+	// record can be STALE for a continued conversation (it still shows the
+	// previous round as FINISHED), so extraction is refused unless the
+	// record's last USER message matches the sent message AND the record
+	// was written around the send (within 2 minutes before it): the site
+	// writes the conversation record once at creation, which can win the
+	// race against the captured send time by milliseconds, so the
+	// freshness window must tolerate that creation write while still
+	// rejecting old records.
+	jsIDBGetAnswerFmt = `(async () => {
+	try {
+		const wantMsg = %s;
+		const notBefore = %d;
+		const m = location.pathname.match(/\/a\/chat\/s\/([A-Za-z0-9_-]+)/);
+		if (!m) return {found: false, reason: 'no conversation id in url'};
+		const db = await new Promise(function(res, rej) {
+			const req = indexedDB.open('deepseek-chat');
+			req.onsuccess = function() { res(req.result); };
+			req.onerror = function() { rej(req.error); };
+		});
+		const rec = await new Promise(function(res, rej) {
+			const tx = db.transaction('history-message', 'readonly');
+			const r = tx.objectStore('history-message').get(m[1]);
+			r.onsuccess = function() { res(r.result); };
+			r.onerror = function() { rej(r.error); };
+		});
+		db.close();
+		if (!rec) return {found: false, reason: 'no idb record'};
+		if (typeof rec.timestamp !== 'number' || rec.timestamp < notBefore - 120000) {
+			return {found: false, reason: 'idb record stale (before send)'};
+		}
+		const msgs = (rec.data && rec.data.chat_messages) || [];
+		let lastUser = null;
+		let last = null;
+		for (let i = msgs.length - 1; i >= 0; i--) {
+			if (msgs[i].role === 'USER' && !lastUser) lastUser = msgs[i];
+			if (msgs[i].role === 'ASSISTANT' && !last) last = msgs[i];
+		}
+		// The record must already contain THIS round's user message —
+		// otherwise it is the pre-send snapshot of a continued
+		// conversation and its FINISHED assistant message is stale.
+		const userParts = [];
+		if (lastUser) {
+			for (const f of (lastUser.fragments || [])) {
+				if (f && f.type === 'REQUEST' && typeof f.content === 'string') userParts.push(f.content);
+			}
+		}
+		if (userParts.join('\n\n').trim() !== wantMsg.trim()) {
+			return {found: false, reason: 'idb record predates this round'};
+		}
+		if (!last) return {found: false, reason: 'no assistant message yet'};
+		const frags = last.fragments || [];
+		const parts = [];
+		for (const f of frags) {
+			if (f && f.type === 'RESPONSE' && typeof f.content === 'string' && f.content.trim() !== '') {
+				parts.push(f.content);
+			}
+		}
+		return {
+			found: true,
+			status: last.status || '',
+			text: parts.join('\n\n'),
+			respCount: parts.length,
+			thinkCount: frags.length,
+		};
+	} catch (e) {
+		return {found: false, reason: String((e && e.message) || e)};
+	}
 })()`
 	// jsIsGenerationActive checks whether the AI is still generating a response.
 	// Returns true if a stop/cancel button is visible or the textarea is disabled
@@ -516,20 +654,31 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, opts W
 	var baseline, response, finalURL, mdBaseline string
 	var mdBaselineParts []string
 
-	// Base navigation and page hydration.
+	// Base navigation and page hydration. The clipboard permission is
+	// granted first so the site's copy button (and the readText fallback)
+	// work from the automated session; failure is non-fatal — extraction
+	// falls back to DOM conversion.
 	actions := []chromedp.Action{
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			if err := webchatGrantClipboard(ctx); err != nil {
+				fmt.Fprintf(os.Stderr, "⚠️ 剪贴板权限设置失败: %v\n", err)
+			}
+			return nil
+		}),
 		chromedp.Navigate(navURL),
 		chromedp.WaitReady("body"),
 	}
 
 	// For continuing conversations: wait longer for chat history to load.
+	// The old .ds-markdown selector no longer exists (the site dropped it
+	// in the hashed-class redesign), so wait on the textarea — the last
+	// always-present chat control — plus a settle delay for hydration.
 	if !isNewConv {
 		actions = append(
 			actions,
 			chromedp.Sleep(2*time.Second),
-			// Wait for at least one .ds-markdown element (conversation loaded).
-			chromedp.WaitVisible(".ds-markdown", chromedp.ByQuery),
-			chromedp.Sleep(1*time.Second),
+			chromedp.WaitReady("textarea", chromedp.ByQuery),
+			chromedp.Sleep(3*time.Second),
 		)
 	} else {
 		actions = append(
@@ -589,7 +738,7 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, opts W
 		// Wait for and extract the assistant response.
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			var err error
-			response, err = webchatWait(ctx, baseline, mdBaseline)
+			response, err = webchatWait(ctx, baseline, mdBaseline, message)
 			return err
 		}),
 
@@ -869,11 +1018,14 @@ func webchatSetUploadFiles(ctx context.Context, files []string) error {
 }
 
 // webchatWait polls until the assistant response stabilizes, then extracts
-// it via the .ds-markdown element (preferred) or body-text diff (fallback).
+// it from the site's own IndexedDB conversation cache (primary: original
+// markdown via jsIDBGetAnswer), the .ds-markdown elements (fallback), or
+// body-text after the sent message (last resort).
 //
 // mdBaseline is the concatenated .ds-markdown text captured before sending;
-// it is stripped from the extracted text so continued conversations return
-// only the new response.
+// it is stripped from DOM-extracted text so continued conversations return
+// only the new response. sentMessage is the user's message used to anchor
+// the body-text fallback (see extractAfterMessage).
 //
 // To avoid premature extraction during streaming pauses (>6s), it uses a
 // generation-active check: when stability is first detected, it checks
@@ -903,7 +1055,7 @@ func webchatSetUploadFiles(ctx context.Context, files []string) error {
 // argument), we poll until that deadline instead of the hardcoded
 // webChatMaxPolls — so a caller-passed timeout (e.g. 1200s) genuinely extends
 // the wait for long generations (full 26-question papers can exceed 600s).
-func webchatWait(ctx context.Context, baseline, mdBaseline string) (string, error) {
+func webchatWait(ctx context.Context, baseline, mdBaseline, sentMessage string) (string, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "webchatWait")
 	defer span.Finish()
 	var lastText string
@@ -912,6 +1064,9 @@ func webchatWait(ctx context.Context, baseline, mdBaseline string) (string, erro
 	sendAck := false
 	polls := 0
 	maxPolls := webChatPollBudget(ctx)
+	// Send time (Unix ms) for the IDB freshness check: the cache record
+	// must be written after the send, or it is a stale pre-send snapshot.
+	sendAt := time.Now()
 
 	for i := 0; i < maxPolls; i++ {
 		polls++
@@ -945,6 +1100,38 @@ func webchatWait(ctx context.Context, baseline, mdBaseline string) (string, erro
 			}
 		}
 
+		// Primary: the site's own IndexedDB conversation cache. The
+		// completed answer appears there with the original markdown
+		// (fragments[].type=RESPONSE), keyed by the conversation ID in
+		// the URL — no HTML→markdown reconstruction, no UI-chrome
+		// recovery, no baseline stripping. status=FINISHED marks a
+		// complete reply; while the record streams (or is not persisted
+		// yet) the DOM paths below carry the polling. notBefore ensures a
+		// continued conversation's stale pre-send snapshot is never
+		// returned as this round's answer.
+		if text, status, ok := idbGetAssistant(ctx, sentMessage, sendAt.UnixMilli()); ok && status == "FINISHED" {
+			text = strings.TrimSpace(text)
+			if text != "" {
+				// A short overload notice must never be returned as
+				// an answer — it would poison the caller's
+				// decision-making.
+				if isBusyErrorText(text) {
+					return "", fmt.Errorf("%w: %s", ErrServerBusy, text)
+				}
+				// A response cut off mid-generation (unclosed code
+				// fence, unterminated JSON) is a distinct, retryable
+				// failure: the answer exists but is unusable, and
+				// polling further will not complete it.
+				if isTruncated(text) {
+					return "", fmt.Errorf("%w (%d chars)", ErrTruncated, utf8.RuneCountInString(text))
+				}
+				if isCompleteResponse(text) {
+					return text, nil
+				}
+				// Fragment: fall through to the DOM paths (keep polling).
+			}
+		}
+
 		if current == lastText && lastText != "" {
 			stableCount++
 
@@ -954,12 +1141,14 @@ func webchatWait(ctx context.Context, baseline, mdBaseline string) (string, erro
 				canExtract := !isGenerationActive(ctx) ||
 					stableCount >= webChatStablePolls+webChatExtendedPolls
 
-				// Preferred: extract from .ds-markdown elements.
+				// Fallback: extract from .ds-markdown elements.
 				// This naturally excludes UI chrome (search info,
 				// toggle labels, footer text). The rendered DOM is
 				// converted back to markdown (code fences, inline-code
 				// backticks, list markers) — innerText alone would lose
-				// all of that structure.
+				// all of that structure. NOTE: the current DeepSeek UI
+				// dropped .ds-markdown entirely (hashed classes), so
+				// this path is a compatibility net for other layouts.
 				if resp := getAssistantText(ctx); resp != "" {
 					resp = stripBaselinePrefix(resp, mdBaseline)
 					// Belt-and-braces: strip body-text fallback artifacts
@@ -991,12 +1180,20 @@ func webchatWait(ctx context.Context, baseline, mdBaseline string) (string, erro
 					continue
 				}
 
-				// Fallback: diff body text against baseline, then
-				// clean up known artifact patterns. Only accept clean,
-				// complete text; keep polling on fragments instead of
-				// aborting on a mid-response pause.
-				fallback := cleanBodyResponse(extractResponse(baseline, current))
-				// The body diff also picks up code-block toolbar labels;
+				// Fallback 1: the answer block of this round, scoped by
+				// message bubble (after the sent message) — no history,
+				// no deep-think reasoning, no UI chrome.
+				fallback := cleanBodyResponse(lastAnswerText(ctx, sentMessage))
+				if fallback == "" {
+					// Fallback 2: body text after the sent message
+					// (anchored on the deep-think marker / the message
+					// itself), then clean up known artifact patterns.
+					// Only accept clean, complete text; keep polling on
+					// fragments instead of aborting on a mid-response
+					// pause.
+					fallback = cleanBodyResponse(extractAfterMessage(current, sentMessage))
+				}
+				// The body path also picks up code-block toolbar labels;
 				// strip them like the .ds-markdown path does.
 				fallback = stripUIChromePrefix(fallback)
 				if isBusyErrorText(fallback) {
@@ -1076,10 +1273,11 @@ func isGenerationActive(ctx context.Context) bool {
 	return active
 }
 
-// getAssistantText returns the concatenated markdown of all .ds-markdown
-// elements in the main content area, or "" if the selector doesn't match
-// (e.g. DeepSeek changed their DOM). The text may include pre-existing
-// conversation history; webchatWait strips it via mdBaseline.
+// getAssistantText returns the concatenated markdown of all
+// .ds-assistant-message-main-content elements in the main content area,
+// or "" if the selector doesn't match (e.g. DeepSeek changed their DOM).
+// The text may include pre-existing conversation history; webchatWait
+// strips it via mdBaseline.
 func getAssistantText(ctx context.Context) string {
 	span, ctx := clog.StartSpanFromContext(ctx, "getAssistantText")
 	defer span.Finish()
@@ -1091,9 +1289,90 @@ func getAssistantText(ctx context.Context) string {
 	return joinMarkdown(parts)
 }
 
+// lastAnswerText returns the innerText of THIS round's answer block:
+// the last .ds-assistant-message-main-content after the bubble holding
+// the sent message. Scoped extraction — no history, no deep-think
+// reasoning — so continued conversations return only the new text
+// without any bodyText anchoring. "" when the selector misses.
+func lastAnswerText(ctx context.Context, sentMessage string) string {
+	span, ctx := clog.StartSpanFromContext(ctx, "lastAnswerText")
+	defer span.Finish()
+
+	var text string
+	if err := chromedp.Evaluate(fmt.Sprintf(jsLastAnswerAfterFmt, quoteJS(sentMessage)), &text).Do(ctx); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(text)
+}
+
+// idbGetAssistant reads the assistant's answer for the CURRENT
+// conversation from the site's IndexedDB conversation cache — the primary
+// extraction path of webchatWait. The URL's conversation ID keys the
+// history-message record; the last ASSISTANT message's RESPONSE fragments
+// carry the original markdown of the reply. ok=false means "not readable
+// yet" (still streaming, record not persisted, stale pre-send snapshot, or
+// no conversation ID in the URL); status distinguishes a complete reply
+// ("FINISHED") from an in-flight one.
+//
+// sentMessage and notBeforeMS guard against stale records (a continued
+// conversation's cached record may still show the PREVIOUS round as
+// FINISHED): the record must contain this round's user message and be
+// written after the send.
+func idbGetAssistant(ctx context.Context, sentMessage string, notBeforeMS int64) (text, status string, ok bool) {
+	js := fmt.Sprintf(jsIDBGetAnswerFmt, quoteJS(sentMessage), notBeforeMS)
+	var result map[string]any
+	if err := evaluateAwait(ctx, js, &result); err != nil {
+		return "", "", false
+	}
+	found, _ := result["found"].(bool)
+	if !found {
+		return "", "", false
+	}
+	status, _ = result["status"].(string)
+	text, _ = result["text"].(string)
+	return text, status, true
+}
+
+// evaluateAwait evaluates a JS expression and awaits the resulting promise.
+// chromedp.Evaluate does not await promises, but the copy-button flow is
+// async by nature (hover, click, clipboard), so this helper drives
+// runtime.Evaluate directly.
+func evaluateAwait(ctx context.Context, expression string, out any) error {
+	v, exp, err := runtime.Evaluate(expression).WithAwaitPromise(true).WithReturnByValue(true).Do(ctx)
+	if err != nil {
+		return err
+	}
+	if exp != nil {
+		return fmt.Errorf("js exception: %s", exp.Text)
+	}
+	if v.Value == nil {
+		return fmt.Errorf("js result is null")
+	}
+	return json.Unmarshal(v.Value, out)
+}
+
+// webchatGrantClipboard grants clipboard read/write permission to
+// chat.deepseek.com so navigator.clipboard.readText() works from the
+// automated session. The site's own copy handler usually writes via
+// writeText — captured by the hook in jsCopyLatestAnswerFmt even when the
+// native write is rejected — but the permission also covers the pages
+// where the hook is bypassed.
+func webchatGrantClipboard(ctx context.Context) error {
+	span, ctx := clog.StartSpanFromContext(ctx, "webchatGrantClipboard")
+	defer span.Finish()
+	for _, name := range []string{"clipboard-read", "clipboard-write"} {
+		perm := &browser.PermissionDescriptor{Name: name, AllowWithoutSanitization: true}
+		if err := browser.SetPermission(perm, browser.PermissionSettingGranted).
+			WithOrigin("https://chat.deepseek.com").Do(ctx); err != nil {
+			return fmt.Errorf("grant %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
 // cleanBodyResponse removes DeepSeek UI chrome artifacts from
-// body-text-diff output. These artifacts appear when the .ds-markdown
-// selector fails and we fall back to body.innerText diff.
+// body-text-after-message output. These artifacts appear when the
+// .ds-markdown selector fails and we fall back to body.innerText.
 func cleanBodyResponse(raw string) string {
 	lines := strings.Split(raw, "\n")
 	filtered := lines[:0]
@@ -1118,10 +1397,24 @@ func cleanBodyResponse(raw string) string {
 			continue
 		}
 
+		// The deep-think status line ("已思考（用时 1 秒）") that the new
+		// UI renders right before the answer. It is UI chrome, not model
+		// output — the answer follows it in body text.
+		if thinkingMarkerRE.MatchString(trimmed) {
+			continue
+		}
+
 		filtered = append(filtered, line)
 	}
 	return strings.TrimSpace(strings.Join(filtered, "\n"))
 }
+
+// thinkingMarkerRE matches DeepSeek's deep-think status line rendered
+// before each answer, e.g. "已思考（用时 1 秒）", "已思考（28 秒）" or
+// "已思考 12s". It requires a duration marker (用时 + digits, or bare
+// digits + optional 秒/s) so a real answer line that merely STARTS with
+// "已思考" is never stripped. Line-anchored via (?m).
+var thinkingMarkerRE = regexp.MustCompile(`(?m)^已思考[（(]?(用时\s*\d+[^）)\n]*|\s*\d+\s*(秒|s)?)?[）)]?$`)
 
 // matchCitationLine reports whether s is a standalone citation
 // reference like "- 2" or "-10" or "— 10".
@@ -1131,14 +1424,60 @@ func matchCitationLine(s string) bool {
 	return citationLineRE.MatchString(s)
 }
 
-// extractResponse computes the text added after baseline. current must
-// start with baseline: body.innerText changes during generation (the
-// textarea clears after send, the stop button appears and disappears), so a
-// naive suffix slice at len(baseline) would return garbage from a
-// misaligned offset — e.g. a lone U+FFFD replacement character.
-func extractResponse(baseline, current string) string {
-	if len(current) > len(baseline) && strings.HasPrefix(current, baseline) {
-		return strings.TrimSpace(current[len(baseline):])
+// extractAfterMessage returns the body text that follows the sent message
+// of THIS round. It finds the last deep-think marker ("已思考（用时 N
+// 秒）") that sits strictly AFTER a message occurrence — that occurrence
+// is the chat copy (not a quote inside the answer), and that marker is
+// this round's preamble — then cuts after the marker. Without an
+// applicable marker it cuts after the last occurrence of the message text.
+//
+// The previous baseline-prefix diff is not viable anymore: DeepSeek
+// navigates from the new-chat home to the conversation page after sending,
+// which rebuilds the whole body prefix (sidebar + history), so a suffix at
+// len(baseline) slices garbage (or nothing). The sent message is a stable
+// anchor: it appears verbatim in the chat area before the answer, and its
+// last occurrence is the chat copy (the sidebar title comes earlier in
+// body text).
+func extractAfterMessage(current, message string) string {
+	norm := strings.ReplaceAll(current, "\r\n", "\n")
+	anchor := strings.TrimSpace(strings.ReplaceAll(message, "\r\n", "\n"))
+	if anchor == "" {
+		return ""
+	}
+
+	// All occurrences of the anchor, ascending.
+	var occs []int
+	for start := 0; start < len(norm); {
+		idx := strings.Index(norm[start:], anchor)
+		if idx < 0 {
+			break
+		}
+		occs = append(occs, start+idx)
+		start += idx + len(anchor)
+	}
+
+	// Prefer the LAST message occurrence that is followed by a thinking
+	// marker: that occurrence is the chat copy, not a quote inside the
+	// answer, and the marker is this round's preamble (old rounds' markers
+	// are above the message and are skipped).
+	markers := thinkingMarkerRE.FindAllStringIndex(norm, -1)
+	cut := -1
+	for _, o := range occs {
+		mEnd := -1
+		for _, m := range markers {
+			if m[0] > o+len(anchor) && m[1] > mEnd {
+				mEnd = m[1]
+			}
+		}
+		if mEnd > 0 {
+			cut = mEnd
+		}
+	}
+	if cut > 0 {
+		return strings.TrimSpace(norm[cut:])
+	}
+	if len(occs) > 0 {
+		return strings.TrimSpace(norm[occs[len(occs)-1]+len(anchor):])
 	}
 	return ""
 }
@@ -1184,10 +1523,10 @@ func isCompleteResponse(s string) bool {
 }
 
 // uiChromeLineRE matches a line of DeepSeek's code-block toolbar that
-// innerText includes before the code itself: the language label ("json")
-// and the Copy/Download buttons ("Copy", "Download"). They are UI chrome,
-// not model output.
-var uiChromeLineRE = regexp.MustCompile(`(?i)^(json|copy|download|复制|下载)$`)
+// innerText includes before the code itself: the language label ("go",
+// "json", ...) and the Copy/Download buttons ("Copy", "Download"). They
+// are UI chrome, not model output.
+var uiChromeLineRE = regexp.MustCompile(`(?i)^(json|yaml|yml|xml|html|css|js|javascript|ts|typescript|python|py|go|golang|java|c|cc|cpp|c\+\+|rust|rs|bash|sh|shell|text|plaintext|copy|download|复制|下载)$`)
 
 // stripUIChromePrefix removes leading code-block toolbar lines from s.
 // DeepSeek renders a ```json fence as a toolbar (language label + Copy +

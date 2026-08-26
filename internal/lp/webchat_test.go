@@ -10,25 +10,114 @@ import (
 	"time"
 )
 
-func TestExtractResponse(t *testing.T) {
+func TestExtractAfterMessage(t *testing.T) {
+	msg := "请只回复四个字：在线确认"
 	tests := []struct {
-		name     string
-		baseline string
-		current  string
-		want     string
+		name    string
+		current string
+		message string
+		want    string
 	}{
-		{name: "appended", baseline: "abc", current: "abcd", want: "d"},
-		{name: "unchanged", baseline: "abc", current: "abc", want: ""},
-		{name: "shrunk", baseline: "abcd", current: "abc", want: ""},
-		// The U+FFFD bug: current no longer starts with baseline (textarea
-		// cleared after send), so a suffix slice would return garbage.
-		{name: "prefix mismatch", baseline: "xyz", current: "abcd", want: ""},
-		{name: "empty", baseline: "", current: "", want: ""},
+		{
+			name:    "message followed by marker and answer",
+			current: "在线确认\n快速模式\n" + msg + "\n已思考（用时 1 秒）\n\n我们根据要求只回复四个字。\n\n在线确认\n\n深度思考\n智能搜索\n内容由 AI 生成，请仔细甄别",
+			message: msg,
+			want:    "我们根据要求只回复四个字。\n\n在线确认\n\n深度思考\n智能搜索\n内容由 AI 生成，请仔细甄别",
+		},
+		{
+			name:    "no marker, answer directly after message",
+			current: "sidebar\n" + msg + "\n答案是：你好世界",
+			message: msg,
+			want:    "答案是：你好世界",
+		},
+		{
+			name: "continued conversation: old rounds above must not anchor",
+			current: "old msg\n已思考（用时 3 秒）\n旧答案\n" + msg +
+				"\n已思考（用时 2 秒）\n新答案",
+			message: msg,
+			want:    "新答案",
+		},
+		{
+			name:    "answer quoting the message still extracts from the chat copy",
+			current: "标题\n" + msg + "\n已思考（用时 1 秒）\n你问的是“" + msg + "”，答案是 42",
+			message: msg,
+			want:    "你问的是“" + msg + "”，答案是 42",
+		},
+		{
+			name:    "answer begins with the message text after the marker",
+			current: msg + "\n已思考（用时 1 秒）\n" + msg + "\n答案：42",
+			message: msg,
+			want:    msg + "\n答案：42",
+		},
+		{
+			name:    "no match",
+			current: "completely different page",
+			message: msg,
+			want:    "",
+		},
+		{
+			name:    "empty current",
+			current: "",
+			message: msg,
+			want:    "",
+		},
+		{
+			name:    "crlf normalization",
+			current: "x\r\n" + msg + "\r\n已思考 12s\r\n答案",
+			message: "x\n" + msg,
+			want:    "答案",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := extractResponse(tt.baseline, tt.current); got != tt.want {
-				t.Errorf("extractResponse(%q, %q) = %q, want %q", tt.baseline, tt.current, got, tt.want)
+			if got := extractAfterMessage(tt.current, tt.message); got != tt.want {
+				t.Errorf("extractAfterMessage() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCleanBodyResponse(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "strips footer labels and thinking marker",
+			in:   "已思考（用时 1 秒）\n\n这是答案正文。\n\n深度思考\n智能搜索\n内容由 AI 生成，请仔细甄别",
+			want: "这是答案正文。",
+		},
+		{
+			name: "citation reference line stripped",
+			in:   "答案\n- 2\n继续",
+			want: "答案\n继续",
+		},
+		{
+			name: "no noise",
+			in:   "直接答案，没有任何噪声。",
+			want: "直接答案，没有任何噪声。",
+		},
+		{
+			name: "empty",
+			in:   "",
+			want: "",
+		},
+		{
+			name: "english think label variants",
+			in:   "已思考 12s\nHello world",
+			want: "Hello world",
+		},
+		{
+			name: "quoted marker inside answer is kept",
+			in:   "模型说“已思考（用时 1 秒）”不能省略",
+			want: "模型说“已思考（用时 1 秒）”不能省略",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := cleanBodyResponse(tt.in); got != tt.want {
+				t.Errorf("cleanBodyResponse(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
 	}
@@ -450,6 +539,8 @@ func TestStripUIChromePrefix(t *testing.T) {
 		{"mid-text noise kept", "head\njson\nCopy\n{code", "head\njson\nCopy\n{code"},
 		{"case insensitive", "JSON\nCOPY\nDOWNLOAD\n{code", "{code"},
 		{"chinese labels", "json\n复制\n下载\n{code", "{code"},
+		{"go toolbar stripped", "go\n复制\n下载\nfmt.Println(42)", "fmt.Println(42)"},
+		{"python toolbar stripped", "python\nCopy\nDownload\nprint(1)", "print(1)"},
 		{"empty unchanged", "", ""},
 	}
 	for _, tt := range tests {
