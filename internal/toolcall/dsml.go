@@ -35,10 +35,13 @@ type DSMLCall struct {
 	Args map[string]any
 }
 
-// dsmlInvokeRe matches a complete <invoke> block: <invoke name="X">...</invoke>.
-// (?s) lets the body span lines; the body is captured non-greedily so nested
-// parameter tags stay inside a single invoke.
-var dsmlInvokeRe = regexp.MustCompile(`(?s)<\s*invoke\s+name="([^"]+)"[^>]*>(.*?)</\s*invoke\s*>`)
+// dsmlNameAttrRe extracts the name attribute value from an <invoke ...> open
+// tag, tolerating double quotes, single quotes, or no quotes at all (the
+// named-open gate dsmlNamedInvokeOpenRe is loose about the value's quoting).
+// The \b boundary mirrors dsmlNamedInvokeOpenRe's whitespace-boundary rule:
+// "name" inside another attribute's *value* (note="use name=x here") never
+// matches because the open tag it runs on was already vetted by that regex.
+var dsmlNameAttrRe = regexp.MustCompile(`\bname\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'=<>]+))`)
 
 // dsmlParamRe matches one <parameter> child: name + optional string="true|false".
 // DeepSeek sometimes omits the string attribute entirely; the group then
@@ -136,6 +139,14 @@ func normalizeDSMLText(text string) string {
 // ParseDSMLToolCalls extracts all DSML tool calls from text. It returns an
 // error when an <invoke> block is left unclosed (e.g. the response was cut
 // off mid-emission): a truncated call must never be executed.
+//
+// Block pairing comes from dsmlBlockRanges, whose stack scan treats
+// <parameter> bodies as opaque: a literal "<invoke" or "</invoke>" inside a
+// parameter VALUE is content, not structure. This is what the old non-greedy
+// block regex could not deliver - it stopped at the first </invoke> in text
+// order, so a value embedding a DSML example (e.g. a shell snippet carrying
+// "<invoke name=\"x\">...</invoke>") cut the block early and dropped every
+// parameter after it ("missing parameter cmd" in practice).
 func ParseDSMLToolCalls(text string) ([]DSMLCall, error) {
 	text = normalizeDSMLText(text)
 	// Truncation check by state-machine scan: named <invoke> opens are
@@ -146,19 +157,19 @@ func ParseDSMLToolCalls(text string) ([]DSMLCall, error) {
 	// Unlike an opens-vs-closes count, a stray "</invoke>" in prose can
 	// never satisfy an unclosed call (false negative); unlike stripping
 	// complete blocks first, a nested or mis-nested open (two opens, one
-	// close) is still detected instead of being silently swallowed by the
-	// non-greedy block regex.
-	if unclosed, _ := unclosedInvokePositions(text); unclosed > 0 {
+	// close) is still detected instead of being silently swallowed.
+	blocks, unclosed, _ := dsmlBlockRanges(text)
+	if unclosed > 0 {
 		return nil, fmt.Errorf("DSML tool call truncated: %d unclosed <invoke>", unclosed)
 	}
-	if opens := len(dsmlNamedInvokeOpenRe.FindAllString(text, -1)); opens == 0 {
+	if len(blocks) == 0 {
 		return nil, nil
 	}
 
 	var calls []DSMLCall
-	for _, m := range dsmlInvokeRe.FindAllStringSubmatch(text, -1) {
-		inv := DSMLCall{Name: m[1], Args: map[string]any{}}
-		for _, pm := range dsmlParamRe.FindAllStringSubmatch(m[2], -1) {
+	for _, b := range blocks {
+		inv := DSMLCall{Name: dsmlBlockName(text[b.openStart:b.openEnd]), Args: map[string]any{}}
+		for _, pm := range dsmlParamRe.FindAllStringSubmatch(text[b.openEnd:b.closeStart], -1) {
 			key := pm[1]
 			val := decodeDSMLValue(pm[3], pm[2] == "true")
 			// Repeated parameters mean an array (DeepSeek models emit
@@ -176,6 +187,114 @@ func ParseDSMLToolCalls(text string) ([]DSMLCall, error) {
 		calls = append(calls, inv)
 	}
 	return calls, nil
+}
+
+// dsmlBlockRange is one completely paired <invoke name="...">...</invoke>
+// span in the normalized text, as byte offsets.
+type dsmlBlockRange struct {
+	openStart  int // '<' of the open tag
+	openEnd    int // '>' of the open tag, exclusive
+	closeStart int // '<' of the matching close tag
+	closeEnd   int // '>' of the matching close tag, exclusive
+}
+
+// dsmlBlockName returns the name attribute of an <invoke> open tag.
+func dsmlBlockName(tag string) string {
+	m := dsmlNameAttrRe.FindStringSubmatch(tag)
+	if m == nil {
+		return ""
+	}
+	switch {
+	case m[2] != "":
+		return m[2]
+	case m[3] != "":
+		return m[3]
+	default:
+		return m[4]
+	}
+}
+
+// dsmlBlockRanges pairs named <invoke> opening tags with </invoke> closes in
+// text order and returns every complete block plus the number of opens left
+// unmatched and the byte offset of the first unmatched open (-1 when none).
+// Blocks are sorted by openStart so consumers can walk them without overlap
+// (a fully-nested block is a subset of its enclosing one).
+//
+// It is a small state machine, not a bare regex replace, because DSML
+// structure must survive model artifacts:
+//
+//   - A stack gives correct nesting semantics: opens push, closes pop the
+//     most recent open; a close with an empty stack is prose noise and is
+//     ignored (it neither matches nor cancels anything). Mismatched shapes
+//     such as two opens followed by one close leave one unclosed open
+//     instead of silently pairing the first open with the first close.
+//   - Parameter bodies are opaque: inside a <parameter> value, a raw
+//     "<invoke name=...>" (shell snippet or DSML example the model did not
+//     entity-escape) is content — it never pushes. A literal "</invoke>"
+//     in a value likewise never pops. This is what makes a value's text
+//     invisible to the structural scan, and it is exactly what lets a
+//     parameter value carry a full DSML example without cutting the block.
+//   - Param depth is counted (an open increments, a close decrements) so
+//     nested parameter-looking text inside a value cannot leak structure.
+//     Known limitation: a literal "</parameter>" inside a value closes the
+//     body early (indistinguishable from a real close without a full XML
+//     tokenizer); entity-escaped forms (&lt;/parameter&gt;) are safe
+//     because escaping resolution happens after the scan.
+func dsmlBlockRanges(text string) (blocks []dsmlBlockRange, unclosed int, firstUnclosed int) {
+	type ev struct {
+		pos  int
+		kind byte // 'o' invoke open, 'c' invoke close, 'p' param open, 'q' param close
+		end  int  // exclusive end of the matched tag
+	}
+	events := []ev{}
+	for _, m := range dsmlNamedInvokeOpenRe.FindAllStringIndex(text, -1) {
+		events = append(events, ev{m[0], 'o', m[1]})
+	}
+	for _, m := range dsmlInvokeCloseRe.FindAllStringIndex(text, -1) {
+		events = append(events, ev{m[0], 'c', m[1]})
+	}
+	for _, m := range dsmlParamOpenRe.FindAllStringIndex(text, -1) {
+		events = append(events, ev{m[0], 'p', m[1]})
+	}
+	for _, m := range dsmlParamCloseRe.FindAllStringIndex(text, -1) {
+		events = append(events, ev{m[0], 'q', m[1]})
+	}
+	sort.Slice(events, func(i, j int) bool {
+		if events[i].pos != events[j].pos {
+			return events[i].pos < events[j].pos
+		}
+		return events[i].kind < events[j].kind
+	})
+	type open struct{ start, end int }
+	stack := []open{} // unmatched opens, in text order
+	paramDepth := 0
+	firstUnclosed = -1
+	for _, e := range events {
+		switch e.kind {
+		case 'p':
+			paramDepth++
+		case 'q':
+			if paramDepth > 0 {
+				paramDepth--
+			}
+		case 'o':
+			if paramDepth == 0 {
+				stack = append(stack, open{e.pos, e.end})
+			}
+		case 'c':
+			if paramDepth == 0 && len(stack) > 0 {
+				o := stack[len(stack)-1]
+				stack = stack[:len(stack)-1]
+				blocks = append(blocks, dsmlBlockRange{o.start, o.end, e.pos, e.end})
+			}
+		}
+	}
+	unclosed = len(stack)
+	if unclosed > 0 {
+		firstUnclosed = stack[0].start
+	}
+	sort.Slice(blocks, func(i, j int) bool { return blocks[i].openStart < blocks[j].openStart })
+	return blocks, unclosed, firstUnclosed
 }
 
 // decodeDSMLValue converts a raw parameter value to a Go value. string=true
@@ -208,77 +327,17 @@ func decodeDSMLValue(raw string, isString bool) any {
 var dsmlParamOpenRe = regexp.MustCompile(`(?s)<\s*parameter\b[^>]*>`)
 var dsmlParamCloseRe = regexp.MustCompile(`(?s)</\s*parameter\s*>`)
 
-// unclosedInvokePositions pairs named <invoke> opening tags with </invoke>
-// closes in text order and returns the number of opens left unmatched and
-// the byte offset of the FIRST unmatched open (or -1 when there is none).
-//
-// It is a small state machine, not a bare regex replace, because DSML
-// structure must survive model artifacts:
-//
-//   - A stack gives correct nesting semantics: opens push, closes pop the
-//     most recent open; a close with an empty stack is prose noise and is
-//     ignored (it neither matches nor cancels anything). Mismatched shapes
-//     such as two opens followed by one close leave one unclosed open
-//     instead of silently pairing the first open with the first close.
-//   - Parameter bodies are opaque: inside a <parameter> value, a raw
-//     "<invoke name=...>" (shell snippet or DSML example the model did not
-//     entity-escape) is content — it never pushes. A literal "</invoke>"
-//     in a value likewise never pops. This is what makes a value's text
-//     invisible to the structural scan.
-//   - Param depth is counted (an open increments, a close decrements) so
-//     nested parameter-looking text inside a value cannot leak structure.
-//     Known limitation: a literal "</parameter>" inside a value closes the
-//     body early (indistinguishable from a real close without a full XML
-//     tokenizer); entity-escaped forms (&lt;/parameter&gt;) are safe
-//     because escaping resolution happens after the scan.
+// unclosedInvokePositions reports the number of named <invoke> opens left
+// unmatched and the byte offset of the FIRST unmatched open (or -1 when
+// there is none). The matching semantics (parameter bodies opaque, stack
+// pairing) live in dsmlBlockRanges; this is the thin count-only view kept
+// for callers that only need the truncation signal.
 func unclosedInvokePositions(text string) (count int, firstPos int) {
-	type ev struct {
-		pos  int
-		kind byte // 'o' invoke open, 'c' invoke close, 'p' param open, 'q' param close
-	}
-	events := []ev{}
-	for _, m := range dsmlNamedInvokeOpenRe.FindAllStringIndex(text, -1) {
-		events = append(events, ev{m[0], 'o'})
-	}
-	for _, m := range dsmlInvokeCloseRe.FindAllStringIndex(text, -1) {
-		events = append(events, ev{m[0], 'c'})
-	}
-	for _, m := range dsmlParamOpenRe.FindAllStringIndex(text, -1) {
-		events = append(events, ev{m[0], 'p'})
-	}
-	for _, m := range dsmlParamCloseRe.FindAllStringIndex(text, -1) {
-		events = append(events, ev{m[0], 'q'})
-	}
-	sort.Slice(events, func(i, j int) bool {
-		if events[i].pos != events[j].pos {
-			return events[i].pos < events[j].pos
-		}
-		return events[i].kind < events[j].kind
-	})
-	stack := []int{} // byte offsets of unmatched opens, in text order
-	paramDepth := 0
-	for _, e := range events {
-		switch e.kind {
-		case 'p':
-			paramDepth++
-		case 'q':
-			if paramDepth > 0 {
-				paramDepth--
-			}
-		case 'o':
-			if paramDepth == 0 {
-				stack = append(stack, e.pos)
-			}
-		case 'c':
-			if paramDepth == 0 && len(stack) > 0 {
-				stack = stack[:len(stack)-1]
-			}
-		}
-	}
-	if len(stack) == 0 {
+	_, unclosed, first := dsmlBlockRanges(text)
+	if unclosed == 0 {
 		return 0, -1
 	}
-	return len(stack), stack[0]
+	return unclosed, first
 }
 
 // StripDSMLToolCalls removes tool-call blocks from text, leaving the
@@ -286,15 +345,30 @@ func unclosedInvokePositions(text string) (count int, firstPos int) {
 // stops at a tool call (round cap or parse error). A truncated invoke - an
 // opening tag that was never closed - chops everything from that tag to the
 // end of the text: the tail is unparseable residue of a cut-off emission.
-// The chop point comes from unclosedInvokePositions, which already treats
-// parameter VALUES as opaque, so a raw "<invoke" inside a value is never
-// taken for a real truncated call.
+// The chop point comes from dsmlBlockRanges, which already treats parameter
+// VALUES as opaque, so a raw "<invoke" inside a value is never taken for a
+// real truncated call.
 func StripDSMLToolCalls(text string) string {
 	text = normalizeDSMLText(text)
-	if _, first := unclosedInvokePositions(text); first >= 0 {
-		text = text[:first]
+	blocks, _, first := dsmlBlockRanges(text)
+	end := len(text)
+	if first >= 0 {
+		end = first // cut-off emission: the tail is unparseable residue
 	}
-	out := dsmlInvokeRe.ReplaceAllString(text, "")
+	var b strings.Builder
+	last := 0
+	for _, blk := range blocks {
+		if blk.closeEnd > end {
+			break // block spans the chop point; nothing left to keep
+		}
+		if blk.openStart < last {
+			continue // nested inside an already-removed block
+		}
+		b.WriteString(text[last:blk.openStart])
+		last = blk.closeEnd
+	}
+	b.WriteString(text[last:end])
+	out := b.String()
 	// Collapse leftover empty <tool_calls> wrappers and blank noise.
 	out = strings.ReplaceAll(out, "<tool_calls>", "")
 	out = strings.ReplaceAll(out, "</tool_calls>", "")

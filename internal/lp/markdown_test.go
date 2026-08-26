@@ -3,6 +3,8 @@ package lp
 import (
 	"strings"
 	"testing"
+
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 // Sample HTML fragments mirror the real DeepSeek DOM captured by the probe
@@ -162,5 +164,49 @@ func TestMarkdownFragmentDegenerateTableRow(t *testing.T) {
 	want := "text\n\n| 名称 | 值 |\n| --- | --- |\n| x | 1 |"
 	if got != want {
 		t.Errorf("table mismatch:\ngot:\n%q\nwant:\n%q", got, want)
+	}
+}
+
+// TestMarkdownFragmentPreservesDSML pins the fix for silent content loss in
+// the DOM extraction path: DeepSeek's renderer injects model-emitted DSML as
+// REAL DOM elements, and the generic unknown-element degrade (inlineChildren
+// text only) used to drop <invoke>/<parameter> tags and attributes entirely
+// - so HandleWebChat's tool loop never saw the calls the page displayed.
+// Re-serializing the DSML tags verbatim keeps DOM content equivalent to the
+// IndexedDB path (original markdown).
+func TestMarkdownFragmentPreservesDSML(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"inline block-level invoke",
+			`Expert 思考后决定搜索：<invoke name="exec_command"><parameter name="cmd" string="true">pwd && git status</parameter></invoke><p>这是后续文字</p>`,
+			"Expert 思考后决定搜索：<invoke name=\"exec_command\"><parameter name=\"cmd\" string=\"true\">pwd && git status</parameter></invoke>\n\n这是后续文字"},
+		{"multi-line tool_calls wrapper",
+			"<tool_calls>\n<invoke name=\"exec_command\">\n<parameter name=\"cmd\" string=\"true\">ls</parameter>\n</invoke>\n</tool_calls>",
+			"<tool_calls>\n<invoke name=\"exec_command\">\n<parameter name=\"cmd\" string=\"true\">ls</parameter>\n</invoke>\n</tool_calls>"},
+		{"invoke inside a paragraph",
+			`<p>看一下 <invoke name="read_file"><parameter name="path" string="true">a.go</parameter></invoke> 的内容</p>`,
+			"看一下 <invoke name=\"read_file\"><parameter name=\"path\" string=\"true\">a.go</parameter></invoke> 的内容"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := joinMarkdown([]string{c.in}); got != c.want {
+				t.Errorf("joinMarkdown = %q, want %q", got, c.want)
+			}
+		})
+	}
+	// The preserved DSML must round-trip through the DSML parser: presence and
+	// arguments survive (the tool loop's trigger condition).
+	calls, err := toolcall.ParseDSMLToolCalls(joinMarkdown([]string{`<invoke name="exec_command"><parameter name="cmd" string="true">pwd && git status</parameter></invoke>`}))
+	if err != nil || len(calls) != 1 {
+		t.Fatalf("ParseDSMLToolCalls after conversion: %v, %d calls; want 1", err, len(calls))
+	}
+	if calls[0].Name != "exec_command" {
+		t.Errorf("name = %q, want exec_command", calls[0].Name)
+	}
+	if cmd, _ := calls[0].Args["cmd"].(string); cmd != "pwd && git status" {
+		t.Errorf("cmd = %q, want pwd && git status", cmd)
 	}
 }

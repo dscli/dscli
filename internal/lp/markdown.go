@@ -131,10 +131,36 @@ func writeBlock(b *strings.Builder, n *html.Node) {
 			b.WriteString(strings.Repeat("#", int(n.Data[1]-'0')) + " " + strings.TrimSpace(inline.String()))
 			return
 		}
+		if dsmlFlowTags[n.Data] {
+			writeDSMLTag(b, n)
+			return
+		}
 		var inline strings.Builder
 		writeInline(&inline, n)
 		b.WriteString(strings.TrimSpace(inline.String()))
 	}
+}
+
+// dsmlFlowTags are DSML structure tags that must survive the HTML→markdown
+// conversion verbatim. DeepSeek's renderer injects model-emitted DSML
+// (<invoke name="...">, <parameter>, <tool_calls>) as REAL DOM elements, so
+// the generic unknown-element degrade (text only) would silently drop the
+// whole tool call - and with it the handleWebChatToolLoop trigger. Keeping
+// the tags matches what the IndexedDB path carries (original markdown), so
+// DOM-extracted content and IDB content agree on tool call presence.
+var dsmlFlowTags = map[string]bool{"invoke": true, "parameter": true, "tool_calls": true}
+
+// writeDSMLTag re-serializes a DSML element as its raw markup, preserving
+// attributes (name, string, ...). Children are inlined so nested parameter
+// text stays inside the tag.
+func writeDSMLTag(b *strings.Builder, n *html.Node) {
+	b.WriteString("<" + n.Data)
+	for _, a := range n.Attr {
+		b.WriteString(" " + a.Key + `="` + html.EscapeString(a.Val) + `"`)
+	}
+	b.WriteString(">")
+	inlineChildren(b, n)
+	b.WriteString("</" + n.Data + ">")
 }
 
 // writeInline serializes inline content: text, spans, emphasis, inline code,
@@ -186,6 +212,10 @@ func writeInline(b *strings.Builder, n *html.Node) {
 	case "svg":
 		// decorative fill/square icons around code blocks: drop
 	default:
+		if dsmlFlowTags[n.Data] {
+			writeDSMLTag(b, n)
+			return
+		}
 		inlineChildren(b, n)
 	}
 }

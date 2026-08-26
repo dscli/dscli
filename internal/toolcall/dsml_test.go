@@ -785,3 +785,96 @@ func TestExecuteDSMLToolCallsJSONArgs(t *testing.T) {
 		t.Errorf("marshaled = %s (name=%s), want script + timeout seconds", b, name)
 	}
 }
+
+// TestParseDSMLToolCallsRawCloseInParamValue pins the extraction-layer fix
+// for "missing parameter cmd" in production: a parameter VALUE may embed a
+// full DSML example (a shell snippet carrying "<invoke name=\x">...</invoke>")
+// that the model did not entity-escape. The old non-greedy <invoke> block
+// regex stopped at the value's first </invoke>, so the block body ended
+// before any complete <parameter> and the whole call lost its args. The
+// stack scan (dsmlBlockRanges) treats parameter bodies as opaque: the inner
+// close is content, the outer block stays intact, and every parameter is
+// extracted with its full value.
+func TestParseDSMLToolCallsRawCloseInParamValue(t *testing.T) {
+	text := `<invoke name="exec_command">
+<parameter name="cmd" string="true">grep -rn 'x = "<invoke name="foo">bar</invoke>"' internal/</parameter>
+<parameter name="justification" string="true">Search for the invoke-like string</parameter>
+</invoke>`
+	calls, err := ParseDSMLToolCalls(text)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls: %v", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("got %d calls, want 1", len(calls))
+	}
+	cmd, _ := calls[0].Args["cmd"].(string)
+	want := `grep -rn 'x = "<invoke name="foo">bar</invoke>"' internal/`
+	if cmd != want {
+		t.Errorf("cmd = %q, want %q", cmd, want)
+	}
+	if just, _ := calls[0].Args["justification"].(string); just != "Search for the invoke-like string" {
+		t.Errorf("justification = %q (parameter after the nested close must survive)", just)
+	}
+}
+
+// TestParseDSMLToolCallsJunkCloseInParamValue covers the same shape through
+// the normalize path: "</||DSML||invoke>" inside a value becomes a literal
+// "</invoke>" before parsing, but must still be treated as content.
+func TestParseDSMLToolCallsJunkCloseInParamValue(t *testing.T) {
+	text := `<invoke name="exec_command">
+<parameter name="cmd" string="true">cat </||DSML||invoke> data.txt</parameter>
+</invoke>`
+	calls, err := ParseDSMLToolCalls(text)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls: %v", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("got %d calls, want 1", len(calls))
+	}
+	cmd, _ := calls[0].Args["cmd"].(string)
+	if cmd != "cat </invoke> data.txt" {
+		t.Errorf("cmd = %q, want %q", cmd, "cat </invoke> data.txt")
+	}
+}
+
+// TestParseDSMLToolCallsValueSurvivesInnerClose: a value carrying a bare
+// "</invoke>" must not swallow the outer closing tag, and the calls AFTER
+// the block must still parse with their own arguments (1:1 alignment).
+func TestParseDSMLToolCallsValueSurvivesInnerClose(t *testing.T) {
+	text := `<invoke name="exec_command">
+<parameter name="cmd" string="true">echo "a </invoke> b"</parameter>
+</invoke>
+<invoke name="read_file">
+<parameter name="path" string="true">main.go</parameter>
+</invoke>`
+	calls, err := ParseDSMLToolCalls(text)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls: %v", err)
+	}
+	if len(calls) != 2 {
+		t.Fatalf("got %d calls, want 2", len(calls))
+	}
+	if calls[0].Name != "exec_command" || calls[1].Name != "read_file" {
+		t.Errorf("names = %q, %q", calls[0].Name, calls[1].Name)
+	}
+	if cmd, _ := calls[0].Args["cmd"].(string); cmd != `echo "a </invoke> b"` {
+		t.Errorf("cmd = %q, want %q (value must survive the inner close)", cmd, `echo "a </invoke> b"`)
+	}
+	if path, _ := calls[1].Args["path"].(string); path != "main.go" {
+		t.Errorf("path = %q, want main.go", path)
+	}
+}
+
+// TestStripDSMLToolCallsRawCloseInParamValue: stripping must also survive a
+// parameter value embedding a real </invoke> - the whole block is removed,
+// the prose is kept, and the value's inner close does not leave residue.
+func TestStripDSMLToolCallsRawCloseInParamValue(t *testing.T) {
+	text := "前言 <invoke name=\"exec_command\">\n<parameter name=\"cmd\" string=\"true\">grep '</invoke>' x</parameter>\n</invoke> 后记"
+	got := StripDSMLToolCalls(text)
+	if strings.Contains(got, "<invoke") || strings.Contains(got, "<parameter") {
+		t.Errorf("DSML markers not stripped:\n%s", got)
+	}
+	if got != "前言 后记" && got != "前言  后记" {
+		t.Errorf("unexpected prose: %q", got)
+	}
+}

@@ -90,11 +90,14 @@ type ToolResultTruncator struct {
 
 // DefaultToolResultTruncator 默认工具结果截断器。
 // 1M 上下文时代（1,000K tokens），大幅提升截断阈值。
-// MaxRunes=1,200K（~600K tokens），MaxBytes=1800KB(~600K tokens)，
-// 仅为极端情况（如误输出超大文件）提供安全网。
+// MaxRunes=1,200K（~600K tokens）是实际限制；MaxBytes 必须与之匹配：
+// 中文/emoji 每 rune 3-4 字节，1.2M runes 需要 ~4.8MB，而旧的 1.8MB
+// 会在 ~600K runes（中文）时提前截断——日志里 max 显示的却是 1.2M，
+// 让"为什么没到上限就截断"成为难解之谜。6MB 给足余量，字节检查
+// 只作为防御性安全网，真正的限制是 MaxRunes。
 var DefaultToolResultTruncator = &ToolResultTruncator{
 	MaxRunes:         1200000,
-	MaxBytes:         1800000,
+	MaxBytes:         6000000,
 	KeepBothEnds:     true,
 	TruncationMarker: "\n\n[...内容已截断...]\n\n",
 }
