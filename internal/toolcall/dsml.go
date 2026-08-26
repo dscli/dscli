@@ -60,10 +60,14 @@ var dsmlEntityReplacer = strings.NewReplacer(
 // OR truncated. The open-tag check is deliberate: a cut-off emission (opening
 // tag without </invoke>) must still route into the loop, where ParseDSML
 // reports the truncation and the residue is stripped instead of leaking to
-// the caller. Only an opening tag that is closed with ">" counts, so prose
-// mentioning "<invoke" alone never triggers it.
+// the caller. Only a NAMED opening tag closed with ">" counts: a bare
+// "<invoke>" in prose carries no tool name (nothing to execute) and prose
+// mentioning "<invoke name=" without ">" (including a mid-tag cutoff such as
+// "<invoke name=\"exec_command" - no closing ">") never triggers routing.
+// The latter is a documented limitation: a cut-off tag without ">" is
+// indistinguishable from prose and is passed through untouched.
 func HasDSMLToolCalls(text string) bool {
-	return dsmlInvokeOpenRe.MatchString(normalizeDSMLText(text))
+	return dsmlNamedInvokeOpenRe.MatchString(normalizeDSMLText(text))
 }
 
 // dsmlInvokeOpenRe matches an opening <invoke> tag that is actually closed
@@ -137,13 +141,15 @@ func normalizeDSMLText(text string) string {
 func ParseDSMLToolCalls(text string) ([]DSMLCall, error) {
 	text = normalizeDSMLText(text)
 	// Truncation check by stack scan: match named <invoke> opens against
-	// </invoke> closes in text order. A cut-off emission (an opening tag
-	// never closed) must never be executed. Unlike an opens-vs-closes count,
-	// a stray "</invoke>" in prose or a parameter value can never satisfy an
-	// unclosed call (false negative); unlike stripping complete blocks first,
-	// a nested or mis-nested open (two opens, one close) is still detected
-	// instead of being silently swallowed by the non-greedy block regex.
-	if unclosed, _ := unclosedInvokePositions(text); unclosed > 0 {
+	// </invoke> closes in text order, after masking parameter bodies so a
+	// raw "<invoke" inside a parameter value counts as content. A cut-off
+	// emission (an opening tag never closed) must never be executed.
+	// Unlike an opens-vs-closes count, a stray "</invoke>" in prose or a
+	// parameter value can never satisfy an unclosed call (false negative);
+	// unlike stripping complete blocks first, a nested or mis-nested open
+	// (two opens, one close) is still detected instead of being silently
+	// swallowed by the non-greedy block regex.
+	if unclosed, _ := unclosedInvokePositions(maskParameterBodies(text)); unclosed > 0 {
 		return nil, fmt.Errorf("DSML tool call truncated: %d unclosed <invoke>", unclosed)
 	}
 	if opens := len(dsmlInvokeOpenRe.FindAllString(text, -1)); opens == 0 {
@@ -194,6 +200,23 @@ func decodeDSMLValue(raw string, isString bool) any {
 	return dsmlEntityReplacer.Replace(raw)
 }
 
+// dsmlParamBlockRe matches one complete <parameter>...</parameter> block.
+// It is less strict than dsmlParamRe (no name/string attribute required)
+// because masking only needs the outer boundary; a malformed parameter tag
+// still deserves shielding from the structural scan.
+var dsmlParamBlockRe = regexp.MustCompile(`(?s)<\s*parameter\b[^>]*>.*?</\s*parameter\s*>`)
+
+// maskParameterBodies replaces the CONTENT of every complete <parameter>
+// block with a placeholder before the truncation stack scan. A raw
+// "<invoke" inside a parameter value (shell snippet, DSML quotation the
+// model did not entity-escape) is CONTENT, not structure - it must never
+// be counted as a nested open. The scan only cares about tag pairing.
+// Note: escaping with &lt;invoke would also work, but dsmlEntityReplacer
+// runs after the scan, so entity-escaped forms are already invisible.
+func maskParameterBodies(text string) string {
+	return dsmlParamBlockRe.ReplaceAllString(text, "<parameter>…</parameter>")
+}
+
 // unclosedInvokePositions pairs named <invoke> opening tags with </invoke>
 // closes in text order and returns the number of opens left unmatched and
 // the byte offset of the FIRST unmatched open (or -1 when there is none).
@@ -202,6 +225,10 @@ func decodeDSMLValue(raw string, isString bool) any {
 // (it neither matches nor cancels anything). Mismatched shapes such as
 // two opens followed by one close leave one unclosed open instead of
 // silently pairing the first open with the first close.
+//
+// Callers should pass text through maskParameterBodies first: a raw
+// "<invoke name=...>" inside a <parameter> value is content, not a nested
+// open, and counting it would falsely report truncation.
 func unclosedInvokePositions(text string) (count int, firstPos int) {
 	opens := dsmlNamedInvokeOpenRe.FindAllStringIndex(text, -1)
 	closes := dsmlInvokeCloseRe.FindAllStringIndex(text, -1)
@@ -229,8 +256,11 @@ func unclosedInvokePositions(text string) (count int, firstPos int) {
 // stops at a tool call (round cap or parse error). A truncated invoke - an
 // opening tag that was never closed - chops everything from that tag to the
 // end of the text: the tail is unparseable residue of a cut-off emission.
+// Parameter bodies are masked first (their content is inside the blocks that
+// get stripped anyway; masking keeps a raw "<invoke" in a value from being
+// read as structure, so the chop point is authoritative).
 func StripDSMLToolCalls(text string) string {
-	text = normalizeDSMLText(text)
+	text = maskParameterBodies(normalizeDSMLText(text))
 	if _, first := unclosedInvokePositions(text); first >= 0 {
 		text = text[:first]
 	}

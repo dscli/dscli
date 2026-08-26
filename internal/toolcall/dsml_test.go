@@ -231,6 +231,62 @@ func TestNormalizeDSMLText(t *testing.T) {
 	}
 }
 
+// TestParseDSMLToolCallsRawInvokeInParam: a raw "<invoke name=...>" inside
+// a <parameter> VALUE is content, not structure (the model may inline a
+// shell snippet or DSML example without entity-escaping). The truncation
+// scan must mask parameter bodies so it does not count the inner open as a
+// nested invoke and falsely report a truncation (review finding #2).
+func TestParseDSMLToolCallsRawInvokeInParam(t *testing.T) {
+	text := `<invoke name="a">
+<parameter name="cmd" string="true">show: <invoke name="b"></parameter>
+</invoke>`
+	calls, err := ParseDSMLToolCalls(text)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls: %v (raw invoke in param value is content)", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("got %d calls, want 1", len(calls))
+	}
+	if cmd, _ := calls[0].Args["cmd"].(string); cmd != "show: <invoke name=\"b\">" {
+		t.Errorf("cmd = %q, want raw value preserved", cmd)
+	}
+	// A REAL truncation inside the same shape must still be detected: the
+	// outer invoke is never closed.
+	trunc := `<invoke name="a">
+<parameter name="cmd" string="true">show: <invoke name="b"></parameter>
+`
+	if _, err := ParseDSMLToolCalls(trunc); err == nil {
+		t.Error("truncated outer invoke: want error, got nil")
+	}
+}
+
+// TestStripDSMLToolCallsRawInvokeInParam: stripping must also survive a
+// raw invoke in a parameter value - the block is removed, prose kept.
+func TestStripDSMLToolCallsRawInvokeInParam(t *testing.T) {
+	text := "前言 <invoke name=\"a\">\n<parameter name=\"cmd\" string=\"true\">show: <invoke name=\"b\"></parameter>\n</invoke> 后记"
+	got := StripDSMLToolCalls(text)
+	if strings.Contains(got, "<invoke") || strings.Contains(got, "<parameter") {
+		t.Errorf("DSML markers not stripped:\n%s", got)
+	}
+	if !strings.Contains(got, "前言") || !strings.Contains(got, "后记") {
+		t.Errorf("surrounding prose lost: %q", got)
+	}
+	if got != "前言 后记" && got != "前言  后记" {
+		t.Errorf("unexpected prose: %q", got)
+	}
+}
+
+// TestHasDSMLToolCallsBareInvoke: a bare <invoke> (no name attribute) is
+// prose - nothing to execute - so it must not route into the tool loop.
+// HasDSMLToolCalls and ParseDSMLToolCalls agree: both require a named open.
+func TestHasDSMLToolCallsBareInvoke(t *testing.T) {
+	for _, text := range []string{`<invoke>`, `<invoke>not a real call</invoke>`, `see <invoke>`} {
+		if HasDSMLToolCalls(text) {
+			t.Errorf("HasDSMLToolCalls(%q) = true, want false", text)
+		}
+	}
+}
+
 // TestHasDSMLToolCallsLLMJunk ensures junky-but-real calls still route into
 // the tool loop (HasDSMLToolCalls must agree with ParseDSMLToolCalls).
 func TestHasDSMLToolCallsLLMJunk(t *testing.T) {
