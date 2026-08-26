@@ -15,11 +15,14 @@ package toolcall
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/dscli/dscli/internal/prompt"
 )
 
 // DSMLCall is one parsed DSML tool call.
@@ -265,39 +268,96 @@ func dsmlTimeoutSeconds(v any) int64 {
 	return secs
 }
 
-// ExecuteDSMLToolCalls executes parsed DSML calls in order and returns one
-// feedback block per call, formatted the way WebChat experts expect:
-// "<tool> 工具调用的结果：" followed by the stdout in a code fence (or the
-// error text when the call failed), so the expert can diagnose and continue.
-func ExecuteDSMLToolCalls(ctx context.Context, calls []DSMLCall) (outputs []string) {
+// dsmlToolCallID 为一次 DSML 调用派生稳定的 ToolCall ID。DSML 标记没有
+// ID 字段，而执行内核的 tool 消息需要 ToolCallID；用 name + 规范化参数
+// JSON 的 SHA-256 摘要代替——同一调用（同工具同参数）跨轮次得到同一 ID，
+// 便于识别。工具使用统计按 name 记录（tools/tool_usage 表），不受 ID 影响。
+func dsmlToolCallID(name, argsJSON string) string {
+	sum := sha256.Sum256([]byte(name + "\x00" + argsJSON))
+	return fmt.Sprintf("dsml_%x", sum[:8])
+}
+
+// dsmlExecPlan 记录一个 DSML 调用在 ExecuteDSMLToolCalls 中的去向：
+// content != nil 表示调用在转换阶段就被拒绝（不执行），直接使用该错误
+// 结果；否则 index 是它在可执行列表 tcs（也是 outcomes）中的下标。
+type dsmlExecPlan struct {
+	content *ToolContent
+	index   int
+}
+
+// dsmlCallsToToolCalls 把解析出的 DSML 调用转换为协议 ToolCall，交给
+// executeToolCalls 批量执行。转换失败的调用（工具不在白名单、参数缺失、
+// 危险命令被拦截）不进执行列表，由计划表记录错误结果，保证输出与原始
+// 调用 1:1 对齐——专家按顺序对应它自己发出的 tool_calls。
+func dsmlCallsToToolCalls(calls []DSMLCall) (tcs []prompt.ToolCall, plan []dsmlExecPlan) {
+	plan = make([]dsmlExecPlan, 0, len(calls))
 	for _, inv := range calls {
 		name, args, err := normalizeDSMLInvoke(inv)
 		if err != nil {
-			outputs = append(outputs, formatDSMLToolError(inv.Name, err.Error()))
+			plan = append(plan, dsmlExecPlan{content: &ToolContent{ToolName: inv.Name, Error: err.Error()}})
 			continue
 		}
 		argsJSON, err := json.Marshal(args)
 		if err != nil {
-			outputs = append(outputs, formatDSMLToolError(inv.Name, err.Error()))
+			plan = append(plan, dsmlExecPlan{content: &ToolContent{ToolName: inv.Name, Error: err.Error()}})
 			continue
 		}
-		result, _, execErr := HandleToolCall(ctx, name, string(argsJSON))
-		if execErr != nil {
-			outputs = append(outputs, formatDSMLToolError(inv.Name, execErr.Error()))
+		tcs = append(tcs, prompt.ToolCall{
+			ID:   dsmlToolCallID(name, string(argsJSON)),
+			Type: "function",
+			Function: prompt.ToolCallFunction{
+				Name:      name,
+				Arguments: string(argsJSON),
+			},
+		})
+		plan = append(plan, dsmlExecPlan{index: len(tcs) - 1})
+	}
+	return tcs, plan
+}
+
+// ExecuteDSMLToolCalls executes parsed DSML calls in order and returns one
+// feedback block per call, wrapped the way DeepSeek web models expect:
+//
+//	<tool_result>{"result":...,"warning":...,"error":...}</tool_result>
+//
+// (see the DSML encoding README: tool execution results are wrapped in
+// <tool_result> tags within user messages, sorted by the order of the
+// corresponding tool_calls in the preceding assistant message). The JSON
+// payload is the ToolContent shape (result/warning/error), omitzero applied.
+// Blocks are 1:1 with the input calls, in order — a call rejected before
+// execution (unsupported tool, destructive command, missing parameter) still
+// gets its own error block so the expert can adapt its approach.
+//
+// Execution reuses the HandleToolCalls core (usage statistics, result
+// truncation, dual-message split) but does NOT persist tool messages: the
+// web conversation lives in the browser, and writing results into the
+// current session's messages table would break the assistant↔tool pairing
+// that CleanupReverse relies on (the whole ask_expert turn would be dropped
+// from history).
+func ExecuteDSMLToolCalls(ctx context.Context, calls []DSMLCall) (outputs []string) {
+	tcs, plan := dsmlCallsToToolCalls(calls)
+	outcomes, _ := executeToolCalls(ctx, tcs, false) // dualUsers: 白名单工具不返回 DualMessage
+	for _, step := range plan {
+		if step.content != nil {
+			outputs = append(outputs, formatDSMLToolResult(step.content))
 			continue
 		}
-		if result == "" {
-			result = "(no output)"
-		}
-		outputs = append(outputs, formatDSMLToolResult(inv.Name, result))
+		outputs = append(outputs, formatDSMLToolResult(&outcomes[step.index].Content))
 	}
 	return outputs
 }
 
-func formatDSMLToolResult(name, result string) string {
-	return fmt.Sprintf("%s 工具调用的结果：\n```\n%s\n```", name, result)
-}
-
-func formatDSMLToolError(name, errMsg string) string {
-	return fmt.Sprintf("%s 工具调用失败：%s", name, errMsg)
+// formatDSMLToolResult serializes one tool outcome as a DSML tool_result
+// block. An all-empty result is normalized to "(no output)" so the model
+// sees an explicit answer instead of an empty payload.
+func formatDSMLToolResult(c *ToolContent) string {
+	copy := *c // never mutate the caller's ToolContent
+	if copy.Result == "" && copy.Error == "" && copy.Warning == "" {
+		copy.Result = "(no output)"
+	}
+	b, err := json.Marshal(&copy)
+	if err != nil { // unreachable: ToolContent fields are strings only
+		return fmt.Sprintf(`<tool_result>{"error":%q}</tool_result>`, err.Error())
+	}
+	return "<tool_result>" + string(b) + "</tool_result>"
 }

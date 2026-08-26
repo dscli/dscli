@@ -163,7 +163,9 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 		fmt.Fprintf(os.Stderr, "🤖 专家请求执行 %d 个工具调用（第 %d/%d 轮）…\n",
 			len(calls), round, handleWebChatMaxDSMLRounds)
 		outputs := handleWebChatExecDSML(ctx, calls)
-		feedback := strings.Join(outputs, "\n\n")
+		// Each output is a self-delimiting <tool_result> block, in
+		// tool_calls order — newline separation is enough.
+		feedback := strings.Join(outputs, "\n")
 
 		// Continue the SAME conversation: same mode, Keep set to the URL
 		// returned by the previous send. Explicit construction (not

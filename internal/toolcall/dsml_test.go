@@ -1,6 +1,7 @@
 package toolcall
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -298,6 +299,164 @@ func TestDsmlTimeoutSeconds(t *testing.T) {
 		if got := dsmlTimeoutSeconds(c.in); got != c.want {
 			t.Errorf("dsmlTimeoutSeconds(%#v) = %d, want %d", c.in, got, c.want)
 		}
+	}
+}
+
+// TestDsmlToolCallID verifies the derived ID is deterministic, prefixed, and
+// distinguishes different name/args combos.
+func TestDsmlToolCallID(t *testing.T) {
+	id1 := dsmlToolCallID("shell", `{"script":"ls"}`)
+	id2 := dsmlToolCallID("shell", `{"script":"ls"}`)
+	if id1 != id2 {
+		t.Errorf("same call produced different IDs: %q vs %q", id1, id2)
+	}
+	if !strings.HasPrefix(id1, "dsml_") {
+		t.Errorf("ID = %q, want dsml_ prefix", id1)
+	}
+	if id1 == dsmlToolCallID("shell", `{"script":"ls -la"}`) {
+		t.Error("different args must yield different IDs")
+	}
+	if id1 == dsmlToolCallID("read_file", `{"script":"ls"}`) {
+		t.Error("different names must yield different IDs")
+	}
+	if len(id1) != len("dsml_")+16 { // SHA-256 前 8 字节，hex 16 字符
+		t.Errorf("ID = %q, want 16-hex after prefix", id1)
+	}
+}
+
+// TestDsmlCallsToToolCalls verifies the conversion: exec_command is
+// normalized to shell, rejected calls are recorded in the plan without
+// entering the execution list, and plan indexes keep 1:1 alignment.
+func TestDsmlCallsToToolCalls(t *testing.T) {
+	calls := []DSMLCall{
+		{Name: "exec_command", Args: map[string]any{"cmd": "ls", "timeout": float64(3000)}},
+		{Name: "write_file", Args: map[string]any{"path": "x"}},
+		{Name: "read_file", Args: map[string]any{"path": "a.go"}},
+	}
+	tcs, plan := dsmlCallsToToolCalls(calls)
+	if len(tcs) != 2 {
+		t.Fatalf("tcs = %d, want 2 (rejected call excluded)", len(tcs))
+	}
+	if len(plan) != len(calls) {
+		t.Fatalf("plan = %d, want %d (1:1 with input)", len(plan), len(calls))
+	}
+
+	if tcs[0].Function.Name != "shell" {
+		t.Errorf("tcs[0].name = %q, want shell", tcs[0].Function.Name)
+	}
+	if !strings.Contains(tcs[0].Function.Arguments, `"script":"ls"`) ||
+		!strings.Contains(tcs[0].Function.Arguments, `"timeout":3`) {
+		t.Errorf("tcs[0] args = %s, want script + timeout seconds", tcs[0].Function.Arguments)
+	}
+	if tcs[0].ID != dsmlToolCallID("shell", tcs[0].Function.Arguments) {
+		t.Errorf("tcs[0].ID = %q, want hash of name+args", tcs[0].ID)
+	}
+	if tcs[0].ID == tcs[1].ID {
+		t.Error("distinct calls must not share an ID")
+	}
+
+	if plan[0].content != nil || plan[0].index != 0 {
+		t.Errorf("plan[0] = %+v, want execute index 0", plan[0])
+	}
+	if plan[1].content == nil || !strings.Contains(plan[1].content.Error, "unsupported tool") {
+		t.Errorf("plan[1] = %+v, want unsupported-tool error content", plan[1])
+	}
+	if plan[2].content != nil || plan[2].index != 1 {
+		t.Errorf("plan[2] = %+v, want execute index 1", plan[2])
+	}
+}
+
+// TestFormatDSMLToolResult verifies the <tool_result> JSON payload shape.
+func TestFormatDSMLToolResult(t *testing.T) {
+	cases := []struct {
+		name string
+		in   *ToolContent
+		want string
+	}{
+		{"result only", &ToolContent{Result: "ok\n"}, `<tool_result>{"result":"ok\n"}</tool_result>`},
+		{"result and warning", &ToolContent{Result: "ok", Warning: "note"}, `<tool_result>{"result":"ok","warning":"note"}</tool_result>`},
+		{"error only", &ToolContent{Error: `boom "x"`}, `<tool_result>{"error":"boom \"x\""}</tool_result>`},
+		{"all empty", &ToolContent{}, `<tool_result>{"result":"(no output)"}</tool_result>`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := formatDSMLToolResult(c.in); got != c.want {
+				t.Errorf("formatDSMLToolResult = %q, want %q", got, c.want)
+			}
+		})
+	}
+	// 输入不得被修改（format 内部拷贝）。
+	orig := &ToolContent{Result: "keep"}
+	formatDSMLToolResult(orig)
+	if orig.Result != "keep" {
+		t.Errorf("input mutated: %q", orig.Result)
+	}
+}
+
+// TestExecuteDSMLToolCallsToolResultFormat is the end-to-end check of the
+// DSML executor: valid calls run through the shared executeToolCalls core
+// (stats recorded, results truncated) and each input call — including
+// rejected ones — gets exactly one <tool_result> block in order.
+func TestExecuteDSMLToolCallsToolResultFormat(t *testing.T) {
+	ctx := withIsolatedDualSession(t)
+
+	// 白名单映射后的实际执行名：exec_command→shell，read_file→read_file。
+	for _, def := range []ToolDef{
+		{Name: "shell", Description: "test shell", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
+			return "ok", "note", nil
+		}},
+		{Name: "read_file", Description: "test read_file", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
+			return "", "", nil // empty result → (no output)
+		}},
+	} {
+		if err := RegisterTool(def); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { unregisterToolForTest(def.Name) })
+	}
+
+	calls := []DSMLCall{
+		{Name: "exec_command", Args: map[string]any{"cmd": "echo hi"}},
+		{Name: "write_file", Args: map[string]any{"path": "x"}}, // rejected
+		{Name: "read_file", Args: map[string]any{"path": "main.go"}},
+	}
+	outputs := ExecuteDSMLToolCalls(ctx, calls)
+	if len(outputs) != len(calls) {
+		t.Fatalf("outputs = %d, want %d (1:1 with calls)", len(outputs), len(calls))
+	}
+	wants := []string{
+		`<tool_result>{"result":"ok","warning":"note"}</tool_result>`,
+		`<tool_result>{"error":"unsupported tool \"write_file\" (available: exec_command, shell, read_file)"}</tool_result>`,
+		`<tool_result>{"result":"(no output)"}</tool_result>`,
+	}
+	for i, want := range wants {
+		if outputs[i] != want {
+			t.Errorf("outputs[%d] = %q, want %q", i, outputs[i], want)
+		}
+	}
+
+	// 工具使用统计：shell 被真正执行了 1 次，read_file 也是（结果为空也执行）。
+	stats, err := GetToolUsageStats(ctx, 0)
+	if err != nil {
+		t.Fatalf("GetToolUsageStats: %v", err)
+	}
+	countFor := func(name string) int {
+		for _, s := range stats {
+			if s.Name == name {
+				return s.UsageCount
+			}
+		}
+		return 0
+	}
+	if got := countFor("shell"); got != 1 {
+		t.Errorf("shell usage count = %d, want 1", got)
+	}
+	if got := countFor("read_file"); got != 1 {
+		t.Errorf("read_file usage count = %d, want 1", got)
+	}
+	// 被拒绝的调用绝不能执行（无对应工具注册，避免注册表污染）。
+	if got := countFor("write_file"); got != 0 {
+		t.Errorf("write_file usage count = %d, want 0 (rejected)", got)
 	}
 }
 

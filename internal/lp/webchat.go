@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"sync"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 

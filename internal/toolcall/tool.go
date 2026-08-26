@@ -247,6 +247,14 @@ func GetAllTools(ctx context.Context) []Tool {
 	return tools
 }
 
+// ToolCallOutcome 是一次工具调用的完整结果：供协议使用的 tool 消息，以及
+// 结构化的 result/warning/error 内容。HandleToolCalls 只返回消息（chat 路径），
+// DSML 执行器需要结构化内容来构造 <tool_result> JSON，二者共用执行内核。
+type ToolCallOutcome struct {
+	Message prompt.Message
+	Content ToolContent
+}
+
 // HandleToolCalls 处理工具调用（带统计）。
 // 多个工具调用时先打印汇总行，并为每个调用显示序号。
 // 执行期间注册中断处理：用户主动停止（Ctrl+C/kill）时先标记
@@ -264,13 +272,36 @@ func HandleToolCalls(ctx context.Context, tcs []prompt.ToolCall) (inputs []promp
 		outfmt.Printf("📋 本轮共 %d 个工具调用\n", len(tcs))
 	}
 
-	// 双消息协议：handler 返回 DualMessage（如 vision_file_read 上传
-	// 成功后附带 file 块的 user 消息）时，拆分为 tool 消息 + 附加
-	// user 消息——模型下一轮请求即可看到图片，无需等 user turn。
-	// 附加 user 消息同样落库，中断恢复后可重放。收集后统一在全部
-	// tool 消息之后追加，保持 OpenAI 协议顺序：一条 assistant 消息的
-	// tool_calls 必须被紧随其后的 tool 消息依次响应，不能夹带 user 消息。
-	var dualUsers []prompt.Message
+	outcomes, dualUsers := executeToolCalls(ctx, tcs, true)
+	inputs = make([]prompt.Message, 0, len(outcomes)+len(dualUsers))
+	for _, o := range outcomes {
+		inputs = append(inputs, o.Message)
+	}
+	// 双消息 user 消息统一追加在全部 tool 消息之后（顺序：tool × N → user × N）。
+	inputs = append(inputs, dualUsers...)
+	return inputs
+}
+
+// executeToolCalls 是 HandleToolCalls 的执行内核，DSML 执行器同样复用：
+// 逐条执行工具、记录使用统计、截断结果、拆分双消息，按顺序返回每个调用的
+// 结构化结果（ToolCallOutcome，与 tcs 一一对应）。
+//
+// save 控制是否把 tool 消息写入消息表：
+//   - true（chat 主路径）：落库后中断恢复可判断已完成调用，结果已落库才
+//     推进 toolProgress；
+//   - false（DSML/webchat 路径）：不落库。web 会话发生在浏览器里，把工具
+//     结果写进当前会话的 messages 表会破坏 assistant↔tool 配对——主会话的
+//     CleanupReverse 按 tool_calls 数量与 tool 消息数量配对，多出的 DSML
+//     tool 消息会让整个 ask_expert 轮次（包括其真实结果）从历史中被裁掉。
+//
+// 中断处理不在本函数内安装：DSML 路径运行在 chat 的 HandleToolCalls 内部，
+// 重复注册会收到同一次 Ctrl+C 并各自插入占位消息（同一调用得到两条占位
+// tool 消息，反而破坏配对）；外层 handler 已覆盖整个 ask_expert 调用。
+// 双消息（DualMessage）拆分对 DSML 无意义（白名单工具从不返回 dual），
+// 非落库模式下附加 user 消息被丢弃。
+func executeToolCalls(ctx context.Context, tcs []prompt.ToolCall, save bool) (outcomes []ToolCallOutcome, dualUsers []prompt.Message) {
+	dualUsers = []prompt.Message{}
+	outcomes = make([]ToolCallOutcome, 0, len(tcs))
 
 	// 处理每个工具调用
 	for i, tc := range tcs {
@@ -283,7 +314,7 @@ func HandleToolCalls(ctx context.Context, tcs []prompt.ToolCall) (inputs []promp
 			result = toolResult
 		}
 
-		toolContent := ToolContent{
+		content := ToolContent{
 			Index:    i + 1,
 			ToolName: tc.Function.Name,
 			Result:   result,
@@ -294,33 +325,35 @@ func HandleToolCalls(ctx context.Context, tcs []prompt.ToolCall) (inputs []promp
 		input := prompt.Message{
 			Role:       "tool",
 			ToolCallID: id,
-			Content:    toolContent.String(),
+			Content:    content.String(),
 		}
 
-		saveErr := prompt.SaveMessages(ctx, input)
-
-		if saveErr != nil {
-			outfmt.Debug("failed to save: %v", saveErr)
-		} else {
-			// 结果已落库才算完成：中断标记据此判断未执行的调用，
-			// 插入占位 tool 消息（不裁剪 tool_calls）。
-			toolProgress.Store(int64(i + 1))
+		if save {
+			saveErr := prompt.SaveMessages(ctx, input)
+			if saveErr != nil {
+				outfmt.Debug("failed to save: %v", saveErr)
+			} else {
+				// 结果已落库才算完成：中断标记据此判断未执行的调用，
+				// 插入占位 tool 消息（不裁剪 tool_calls）。
+				toolProgress.Store(int64(i + 1))
+			}
 		}
-		inputs = append(inputs, input)
 
 		if isDual && userMsg != nil {
 			dualUsers = append(dualUsers, *userMsg)
 		}
+		outcomes = append(outcomes, ToolCallOutcome{Message: input, Content: content})
 	}
 
 	// 所有 tool 消息之后统一追加双消息 user 消息（顺序：tool × N → user × N）。
-	for _, m := range dualUsers {
-		if userSaveErr := prompt.SaveMessages(ctx, m); userSaveErr != nil {
-			outfmt.Debug("failed to save dual user message: %v", userSaveErr)
+	if save {
+		for _, m := range dualUsers {
+			if userSaveErr := prompt.SaveMessages(ctx, m); userSaveErr != nil {
+				outfmt.Debug("failed to save dual user message: %v", userSaveErr)
+			}
 		}
-		inputs = append(inputs, m)
 	}
-	return inputs
+	return outcomes, dualUsers
 }
 
 func FixBrokenJSON(broken string) (result string) {
