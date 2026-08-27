@@ -26,13 +26,14 @@ WebChat 指使用 web 版本的 https://chat.deepseek.com 与 LLM 交互：
 #+end_example
 
 以上能力已经由 CodeReview（=code_review= 工具，review 角色）与 expert 角色
-启用：只要角色提示词（review.md / expert.md）注册了工具，且回复为纯 DSML
-工具调用，HandleWebChat 的工具循环就会解析、执行并把结果回填到同一会话。
+启用：只要回复判定为工具调用（≥1 个完整 =<invoke>= 块、残留散文仅为短前言，
+代码块引用与长散文引用除外），HandleWebChat 的工具循环就会解析、执行并把
+结果回填到同一会话。
 
-=dscli webchat= CLI 默认 =--role ""=（纯聊天：不注入角色提示词、不进入
-工具循环，消息原样发送）；指定非空角色（=--role dev|expert|review|test=）
-才前置角色提示词并启用工具循环。角色会话开始前会在 stderr 打印警告：远程
-模型的 DSML 工具调用将在本地执行。
+=dscli webchat= CLI 默认 =--role ""=（纯聊天：不注入角色提示词）；无论是否
+指定角色，DeepSeek Web 回复中的 DSML 工具调用都会参与判定并在本地执行。
+指定非空角色（=--role dev|expert|review|test=）会前置角色提示词。角色会话
+开始前会在 stderr 打印警告：远程模型的 DSML 工具调用将在本地执行。
 
 * WebChat 读写工具集
 

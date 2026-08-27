@@ -176,8 +176,9 @@ func TestHandleWebChatRetryAbortsOnCancel(t *testing.T) {
 }
 
 // dsmlReply is a realistic DSML tool-call reply from a review expert.
-// Observed shape: tool-call replies are PURE DSML (no leading prose), which
-// is what IsPureDSMLToolCalls requires before the loop executes anything.
+// Observed shape: tool-call replies are pure DSML (no leading prose), which
+// IsDSMLToolCallReply accepts (as does a short prose preamble, tested in
+// TestHandleWebChatToolLoopProsePreamble).
 const dsmlReply = `<tool_calls>
 <invoke name="exec_command">
 <parameter name="cmd" string="true">git show --stat</parameter>
@@ -261,14 +262,85 @@ func TestHandleWebChatToolLoop(t *testing.T) {
 	}
 }
 
-func TestHandleWebChatToolLoopNoRole(t *testing.T) {
-	// Plain webchat (role empty) must never enter the tool loop: the DSML
-	// text is returned verbatim, treating the expert's own words as content
-	// rather than executing commands.
+func TestHandleWebChatToolLoopPlainChatExecutesDSML(t *testing.T) {
+	// Plain webchat (role empty) also enters the tool loop when the reply
+	// IS a tool call: chat.deepseek.com's model emits DSML natively, so
+	// the judge (IsDSMLToolCallReply) - not the role flag - decides
+	// execution. A prose reply that merely cites an <invoke> example stays
+	// verbatim (TestHandleWebChatToolLoopPlainChatProseReference).
+	origFunc := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = origFunc })
+
+	var messages []string
+	handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
+		messages = append(messages, msg)
+		if len(messages) == 1 {
+			return WebChatResult{Content: dsmlReply, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+		}
+		return WebChatResult{Content: "final answer", URL: "https://chat.deepseek.com/a/chat/s/convY"}, nil
+	}
+	seen := captureExecDSML(t, "tool feedback")
+
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if len(*seen) == 0 {
+		t.Error("tool executor not called for a tool-call reply in plain chat")
+	}
+	if res.Content != "final answer" {
+		t.Errorf("content = %q, want final answer", res.Content)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("sends = %d, want 2 (initial + tool feedback)", len(messages))
+	}
+	if messages[1] != "tool feedback" {
+		t.Errorf("round-2 message = %q, want tool feedback", messages[1])
+	}
+}
+
+func TestHandleWebChatToolLoopProsePreamble(t *testing.T) {
+	// A reply pairing a short prose preamble with a complete call block is
+	// still a tool call (the model explaining it is re-sending its call):
+	// the calls execute and the preamble is discarded with the round.
+	preamble := "你说得对，我上一条消息的工具调用少了 `<tool_calls>` 包裹标签，格式不完整。不用你补齐，我重新发一遍正确的：\n\n" + dsmlReply
+
+	origFunc := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = origFunc })
+
+	var messages []string
+	handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
+		messages = append(messages, msg)
+		if len(messages) == 1 {
+			return WebChatResult{Content: preamble, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+		}
+		return WebChatResult{Content: "final answer", URL: "https://chat.deepseek.com/a/chat/s/convY"}, nil
+	}
+	seen := captureExecDSML(t, "tool feedback")
+
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if len(*seen) == 0 {
+		t.Error("tool executor not called for a tool-call reply with a prose preamble")
+	}
+	if res.Content != "final answer" {
+		t.Errorf("content = %q, want final answer", res.Content)
+	}
+	if len(messages) != 2 || messages[1] != "tool feedback" {
+		t.Errorf("round-2 message = %q, want tool feedback (preamble not forwarded)", messages[1])
+	}
+}
+
+func TestHandleWebChatToolLoopPlainChatProseReference(t *testing.T) {
+	// A plain-chat reply that merely quotes an <invoke> example inside long
+	// prose is content, not a command: returned verbatim, never executed.
+	longProse := "Solid work. `<invoke name=\"exec_command\"><parameter name=\"cmd\" string=\"true\">ls</parameter></invoke>` pins it. The implementation matches the design and the new tests cover every edge case from the review."
 	origFunc := handleWebChatSend
 	t.Cleanup(func() { handleWebChatSend = origFunc })
 	handleWebChatSend = func(_ context.Context, _ string, _ WebChatOptions) (WebChatResult, error) {
-		return WebChatResult{Content: dsmlReply, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+		return WebChatResult{Content: longProse, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
 	}
 	origExec := handleWebChatExecDSML
 	executed := false
@@ -283,10 +355,10 @@ func TestHandleWebChatToolLoopNoRole(t *testing.T) {
 		t.Fatalf("HandleWebChat: %v", err)
 	}
 	if executed {
-		t.Error("tool executor called for role-less consultation; loop must not run")
+		t.Error("tool executor called for a prose reply citing a quoted example; loop must not run")
 	}
-	if res.Content != dsmlReply {
-		t.Errorf("content = %q, want verbatim DSML text", res.Content)
+	if res.Content != longProse {
+		t.Errorf("content = %q, want verbatim prose (no stripping in plain chat)", res.Content)
 	}
 }
 

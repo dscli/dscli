@@ -113,15 +113,18 @@ appended after ALL tool messages - the only path that can inject an image
 block right after a tool call (OpenAI-compatible APIs allow images only in
 user messages).
 
-DSML tool calls from WebChat: chat.deepseek.com replies to role-driven
-consultations (e.g. `review` via code_review) may embed DSML markup
-(`<invoke name="exec_command">` with `<parameter>` children). `lp.HandleWebChat`
-parses them (internal/toolcall/dsml.go), maps `exec_command` -> `shell`
-(cmd->script, justification->summary, timeout ms->s; whitelist: exec_command,
-shell, read_file, apply_patch) and feeds results back into the SAME conversation
-(handleWebChatToolLoop). Plain webchat (Role empty) never enters the loop;
-the `webchat` CLI defaults to `--role ""` (plain chat: no role injection, no
-tool loop) and prints a stderr warning when a non-empty role is set, since the
+DSML tool calls from WebChat: chat.deepseek.com replies (role-driven
+consultations like `review` via code_review, and plain chat alike) may embed
+DSML markup (`<invoke name="exec_command">` with `<parameter>` children) - it
+is the web model's native tool protocol. `lp.HandleWebChat` judges each reply
+with `toolcall.IsDSMLToolCallReply` (>=1 complete call parses, leftover prose
+at most a short preamble; quoted code and long prose references never
+qualify), parses them (internal/toolcall/dsml.go), maps `exec_command` ->
+`shell` (cmd->script, justification->summary, timeout ms->s; whitelist:
+exec_command, shell, read_file, apply_patch) and feeds results back into the
+SAME conversation (handleWebChatToolLoop). The `webchat` CLI defaults to
+`--role ""` (plain chat: no role injection; DSML tool-call replies are still
+executed) and prints a stderr warning when a non-empty role is set, since the
 remote model's DSML tool calls will then run locally.
 
 Role templates (internal/prompt/*.md) register DSML tools for WebChat via a

@@ -45,13 +45,13 @@ func init() {
   dscli webchat --role review "review 最近的提交"   # code review 角色
   dscli webchat --role expert "分析这个架构问题"     # 领域专家角色
   dscli webchat --role dev "实现一个功能"            # 开发助手
-  dscli webchat "随便聊聊"                           # 默认纯聊天：无角色注入、无工具循环
-非空角色会前置角色提示词，且回复中可嵌入 DSML 工具调用
-（read_file / exec_command / apply_patch）——dscli 本地执行并把结果回填到
-同一会话（同 code_review 工具）。这是远程模型在本地执行命令的会话：开始前
-会打印警告，且仅白名单工具 + 危险命令拦截（rm -rf、sudo、curl/wget 外传
+  dscli webchat "随便聊聊"                           # 默认纯聊天：无角色注入（回复中的 DSML 工具调用仍会执行）
+非空角色会前置角色提示词；无论角色与否，DeepSeek Web 回复中的 DSML 工具调用
+（read_file / exec_command / apply_patch）都由 dscli 本地执行并把结果回填到
+同一会话（同 code_review 工具）。这是远程模型在本地执行命令的会话：角色会话
+开始前会打印警告，且仅白名单工具 + 危险命令拦截（rm -rf、sudo、curl/wget 外传
 等被拒绝）；仍建议在可信工作目录使用。--role=（空值）即纯聊天：不注入角色
-提示词、不进入工具循环（消息原样发送）。
+提示词（回复中的 DSML 工具调用仍会执行）。
 
 附件（--attach，可多次指定，仅 flash/vision 模型支持）：
   dscli webchat --model vision --attach screenshot.png "这张截图说明了什么？"
@@ -81,11 +81,11 @@ func init() {
 	// temp dir (/tmp) instead (verifySafePath), since the model is
 	// untrusted.
 	webchatCmd.Flags().StringSlice("attach", nil, "附件图片路径，可多次指定（仅 flash/vision 模型支持）")
-	// --role defaults to "" = plain chat (no role prompt, no DSML tool loop;
-	// the HandleWebChat Role="" verbatim path). A non-empty value selects the
-	// role prompt template (dev/expert/review/test) and enables the DSML tool
-	// loop, mirroring dscli chat's role semantics for the non-empty case.
-	webchatCmd.Flags().String("role", "", "Role: dev (developer), expert (domain expert), review (code review), test (QA engineer)；空 = 纯聊天（不注入角色、不进入工具循环）")
+	// --role defaults to "" = plain chat (no role prompt injection; DSML
+	// tool calls in replies are still judged and executed - see
+	// toolcall.IsDSMLToolCallReply). A non-empty value selects the role
+	// prompt template (dev/expert/review/test) before the user message.
+	webchatCmd.Flags().String("role", "", "Role: dev (developer), expert (domain expert), review (code review), test (QA engineer)；空 = 纯聊天（不注入角色提示词；回复中的 DSML 工具调用仍会执行）")
 }
 
 // webchatOptionsFromFlags builds the HandleWebChat options from parsed CLI
@@ -93,9 +93,9 @@ func init() {
 // contract: flag names, defaults, and the pass-through mapping into
 // WebChatOptions (Role included).
 //
-// Role semantics: the flag defaults to "" (plain chat - no role prompt, no
-// DSML tool loop; the HandleWebChat Role="" verbatim path). A non-empty value
-// is passed through unchanged.
+// Role semantics: the flag defaults to "" (plain chat - no role prompt
+// injected; DSML tool calls in replies are still judged for execution). A
+// non-empty value is passed through unchanged.
 func webchatOptionsFromFlags(cmd *cobra.Command) (lp.WebChatOptions, error) {
 	keep, err := cmd.Flags().GetString("keep")
 	if err != nil {
@@ -162,7 +162,8 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 	// reply with DSML tool calls that HandleWebChat executes locally with the
 	// user's OS permissions. Say so upfront (stderr, so piped stdout stays
 	// clean) - silent local execution from a remote model is the surprise.
-	// Role "" (the default) is plain chat: verbatim send, no tool loop.
+	// Role "" (the default) is plain chat: no role prompt, but DSML tool
+	// calls in replies are still judged and executed when the reply IS one.
 	if opts.Role != "" {
 		fmt.Fprintf(os.Stderr, "⚠️ 角色 %q 已启用：远程模型回复中的 DSML 工具调用（read_file/exec_command/apply_patch）将在本地执行。\n", opts.Role)
 	}
@@ -170,10 +171,9 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 	outfmt.Printf("📤 发送到 DeepSeek Web ...\n")
 	// HandleWebChat shares the ask_expert entry point: transient server
 	// overload and truncation are retried with backoff. A non-empty Role
-	// prepends the role prompt and enables the DSML tool loop (the web
-	// model replies with <invoke> markup that HandleWebChat executes
-	// locally and feeds back into the same conversation); Role "" is the
-	// plain-chat path - verbatim send, no loop.
+	// prepends the role prompt; regardless of Role, replies that are judged
+	// to be DSML tool calls (<invoke> markup) are executed locally and fed
+	// back into the same conversation until the expert finishes.
 	result, err = lp.HandleWebChat(ctx, message, opts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "webchat 失败: %v\n", err)

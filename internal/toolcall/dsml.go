@@ -93,6 +93,33 @@ func IsPureDSMLToolCalls(text string) bool {
 	return StripDSMLToolCalls(text) == ""
 }
 
+// dsmlMaxReplyPreamble caps how much prose may surround a tool-call block
+// for the text to still count as a tool-call reply. A preamble is a short
+// lead-in the model adds when re-emitting its call ("我重新发一遍正确的："),
+// typically well under 200 bytes; prose-first answers - a long review that
+// merely cites an <invoke> example - stay non-executable by the same cap
+// (and quoted code is already excluded by dsmlBlockRanges).
+const dsmlMaxReplyPreamble = 256
+
+// IsDSMLToolCallReply reports whether text is INTENDED as a tool call: at
+// least one complete call parses, and anything left after stripping the
+// block markup is only a short preamble, not a long answer that quotes an
+// <invoke> example. Unlike IsPureDSMLToolCalls it tolerates that preamble,
+// so a self-corrected re-emission ("my previous call was malformed, let me
+// re-send it correctly:") still routes into the tool loop, where only the
+// parsed calls execute and the preamble is ignored. Quoted code (fenced
+// blocks, inline spans, <tool_result>) is excluded by the parser; long
+// prose stays excluded by the cap; non-whitelisted call names are handled
+// downstream (skipped silently, no feedback block - see
+// ExecuteDSMLToolCalls).
+func IsDSMLToolCallReply(text string) bool {
+	calls, err := ParseDSMLToolCalls(text)
+	if err != nil || len(calls) == 0 {
+		return false // truncated or no call at all: not an executable reply
+	}
+	return len(StripDSMLToolCalls(text)) <= dsmlMaxReplyPreamble
+}
+
 // dsmlNamedInvokeOpenRe matches an opening <invoke> tag that carries a name
 // attribute - the only shape that can be a real tool call. It is also the
 // gate for HasDSMLToolCalls and the "no opens" early exit in ParseDSMLToolCalls:

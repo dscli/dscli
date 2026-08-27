@@ -102,7 +102,7 @@ func newWebchatOptionsCmd() *cobra.Command {
 }
 
 func TestWebchatOptionsFromFlags(t *testing.T) {
-	// Defaults: Role "" = plain chat (no role prompt, no DSML tool loop).
+	// Defaults: Role "" = plain chat (no role prompt; DSML replies still judged).
 	cmd := newWebchatOptionsCmd()
 	opts, err := webchatOptionsFromFlags(cmd)
 	if err != nil {
@@ -124,7 +124,7 @@ func TestWebchatOptionsFromFlags(t *testing.T) {
 		t.Errorf("Role = %q, err = %v; want review", opts.Role, err)
 	}
 
-	// An explicit empty --role= is plain chat: no role prompt, no tool loop.
+	// An explicit empty --role= is plain chat: no role prompt injection.
 	cmd = newWebchatOptionsCmd()
 	if err := cmd.Flags().Set("role", ""); err != nil {
 		t.Fatal(err)

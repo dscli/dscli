@@ -1063,6 +1063,61 @@ func TestIsPureDSMLToolCalls(t *testing.T) {
 	}
 }
 
+// TestIsDSMLToolCallReply pins the tool-loop gate for the WebChat shapes
+// observed in practice: a short prose preamble before a complete call
+// block (the model re-emitting its call) or a bare <invoke> list still
+// counts as a tool call; long prose that merely cites an <invoke> example
+// never does. Quoted code (fenced / inline spans) is excluded by the
+// parser, so those cases still fail the gate.
+func TestIsDSMLToolCallReply(t *testing.T) {
+	const reEmit = "你说得对，我上一条消息的工具调用少了 `<tool_calls>` 包裹标签，格式不完整。不用你补齐，我重新发一遍正确的：\n\n" + `<tool_calls>
+<invoke name="read_file">
+<parameter name="path" string="true">internal/toolcall/ask/code_review.md</parameter>
+<parameter name="justification" string="true">参考 code_review 的工具文档格式</parameter>
+</invoke>
+<invoke name="read_file">
+<parameter name="path" string="true">internal/toolcall/ask/code_review_test.go</parameter>
+<parameter name="justification" string="true">参考测试结构，为新工具补测试</parameter>
+</invoke>
+</tool_calls>`
+	const bareList = `<invoke name="read_file">
+<parameter name="path" string="true">internal/toolcall/ask/code_review.md</parameter>
+</invoke>
+<invoke name="read_file">
+<parameter name="path" string="true">internal/toolcall/ask/code_review_test.go</parameter>
+</invoke>
+</tool_calls>`
+
+	pure := `<tool_calls>
+<invoke name="exec_command"><parameter name="cmd" string="true">git show --stat</parameter></invoke>
+</tool_calls>`
+	longProse := "Solid work. `<invoke name=\"exec_command\"><parameter name=\"cmd\" string=\"true\">ls</parameter></invoke>` pins it. The implementation matches the design and the new tests cover every edge case from the review, with only a few nits left."
+
+	cases := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"prose preamble + wrapped calls (re-emission)", reEmit, true},
+		{"bare invoke list, stray close wrapper", bareList, true},
+		{"pure tool_calls wrapper", pure, true},
+		{"short prose + calls", "I need to inspect.\n" + pure, true},
+		{"inline quote in long prose", longProse, false},
+		{"fenced quote only", "```\n<invoke name=\"exec_command\"><parameter name=\"cmd\" string=\"true\">ls</parameter></invoke>\n```", false},
+		{"truncated call", "<invoke name=\"exec_command\">\n<parameter name=\"cmd\" string=\"true\">ls</parameter>", false},
+		{"long prose + calls", strings.Repeat("context. ", 80) + "\n" + pure, false},
+		{"empty text", "", false},
+		{"no call at all", "just prose", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := IsDSMLToolCallReply(c.in); got != c.want {
+				t.Errorf("IsDSMLToolCallReply = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
 // TestExecuteDSMLToolCallsSkipsNonWhitelisted: a call whose name is outside
 // the whitelist (an inline-quoted example, an unknown tool) is never
 // executed and never produces an "unsupported tool" feedback block - the
