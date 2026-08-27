@@ -30,7 +30,7 @@ func TestCodeReviewToolStructure(t *testing.T) {
 		"review",
 		"uncommitted",
 		"test",
-		"HEAD",
+		"last",
 	}
 	for _, keyword := range requiredKeywords {
 		if !strings.Contains(description, keyword) {
@@ -210,7 +210,7 @@ func TestDocumentationCompleteness(t *testing.T) {
 		"review",
 		"uncommitted",
 		"test",
-		"HEAD",
+		"last",
 	}
 	for _, section := range sections {
 		if !strings.Contains(desc, section) {

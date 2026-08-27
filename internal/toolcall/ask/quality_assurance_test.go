@@ -21,7 +21,7 @@ func TestQualityAssuranceToolStructure(t *testing.T) {
 	}
 
 	description := qualityAssuranceTool.Description
-	for _, keyword := range []string{"quality", "release", "uncommitted", "test", "HEAD"} {
+	for _, keyword := range []string{"quality", "release", "uncommitted", "test", "last"} {
 		if !strings.Contains(description, keyword) {
 			t.Errorf("Tool description missing required keyword: %s", keyword)
 		}
