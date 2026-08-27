@@ -53,7 +53,7 @@ var askExpertTool = toolcall.ToolDef{
 			},
 			"timeout": map[string]any{
 				"type":        "integer",
-				"description": "Timeout in seconds (default 600). Set longer for complex questions.",
+				"description": "Timeout in seconds for the expert exchange (default 0 = no extra bound; the tool-level budget is 10 minutes). Set longer for complex questions.",
 			},
 			"raw": map[string]any{
 				"type":        "boolean",
@@ -96,6 +96,13 @@ func init() {
 func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "handleAskExpert")
 	defer span.Finish()
+	// timeout bounds the expert exchange (default 0 = no extra bound; the
+	// tool-level Timeout stays the ceiling).
+	if secs := toolcall.ToolArgsValue(args, "timeout", 0); secs > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(secs)*time.Second)
+		defer cancel()
+	}
 	input := toolcall.ToolArgsValue(args, "input", "")
 	// required only guarantees the key exists; the LLM may pass an empty string.
 	if strings.TrimSpace(input) == "" {

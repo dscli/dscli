@@ -35,7 +35,7 @@ var qualityAssuranceTool = toolcall.ToolDef{
 			},
 			"timeout": map[string]any{
 				"type":        "integer",
-				"description": "Timeout in seconds (default 1200). The QA engineer may run multiple test rounds; set longer for large projects with many tests.",
+				"description": "Timeout in seconds for the expert phase (default 0 = no extra bound; the tool-level budget is 20 minutes). The QA engineer may run multiple test rounds; set longer for large projects with many tests.",
 			},
 			"keep": map[string]any{
 				"type":        "string",
@@ -67,6 +67,15 @@ func init() {
 func handleQualityAssurance(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "handleQualityAssurance")
 	defer span.Finish()
+
+	// timeout bounds the expert phase (default 0 = no extra bound; the
+	// tool-level Timeout is the ceiling). Wrapping the whole handler is
+	// fine: the git checks finish in seconds.
+	if secs := toolcall.ToolArgsValue(args, "timeout", 0); secs > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(secs)*time.Second)
+		defer cancel()
+	}
 
 	// keep=<conversation_id>: resume a saved QA conversation instead of
 	// starting a new one. The summary/since/git checks are skipped — the

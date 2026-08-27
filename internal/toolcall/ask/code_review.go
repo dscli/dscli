@@ -41,7 +41,7 @@ var codeReviewTool = toolcall.ToolDef{
 			},
 			"timeout": map[string]any{
 				"type":        "integer",
-				"description": "Timeout in seconds (default 1800). The expert may run multiple tool-call rounds; set longer for very large projects with many tests.",
+				"description": "Timeout in seconds for the expert phase (default 0 = no extra bound; the tool-level budget is 30 minutes). Set longer for very large projects with many tests.",
 			},
 		},
 		"required":             []string{"summary"},
@@ -68,6 +68,14 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result, warn
 	summary := toolcall.ToolArgsValue(args, "summary", "")
 	testCommand := toolcall.ToolArgsValue(args, "test_command", "")
 	since := toolcall.ToolArgsValue(args, "since", "-1")
+	// timeout bounds the expert phase (default 0 = no extra bound; the
+	// tool-level Timeout is the ceiling). Wrapping the whole handler keeps
+	// git/test steps fast anyway — they finish in seconds.
+	if secs := toolcall.ToolArgsValue(args, "timeout", 0); secs > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(secs)*time.Second)
+		defer cancel()
+	}
 
 	if summary == "" {
 		outfmt.Println("❌ 必须提供提交摘要")
