@@ -7,9 +7,10 @@ suggestions.  Checks for uncommitted changes first; optionally runs
 tests before review.
 Uses DeepSeek Web (free V4 Pro) via Chrome browser — no API key needed.
 
-**Parameters**: `summary` (required), `test_command` (optional), `since` (optional, default `-1` — review last commit; use `-2` for last 2, `-3` for last 3, etc., equivalent to `HEAD~N`), `timeout` (optional).
+**Parameters**: `summary` (required), `test_command` (optional), `since` (optional, default `-1` — review the last commit; `-2` for the last 2 commits, `-3` for the last 3, etc., i.e. the last N commits), `timeout` (optional).
 
-Timeout: default 900s (15 min). The expert may run several tool-call rounds
+Timeout: tool-level budget 30 min; `timeout` (seconds) optionally lowers it
+for the expert phase. The expert may run several tool-call rounds
 (exec_command) before producing the final review, so set `timeout` (seconds)
 longer for large projects with many tests. If the input is too large for the
 DeepSeek chat box, the expert inspects the repo via tools — results are fed

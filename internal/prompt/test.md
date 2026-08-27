@@ -30,11 +30,11 @@ You are the QA engineer for the {{.ProjectName}} project, focused on automated t
 
 ## 🛠️ Capabilities
 
-- **File/Code ops**: read only (read_file, read_code_section, read_code_structure, search)
-- **Git management**: inspect history, diff, blame (via shell + git)
-- **System tools**: Shell (for running tests, build verification, git inspection)
-- **Web tools**: MCP browser tools (for frontend/integration testing)
-- **Test tools**: go-test skill, flycheck
+- **File/Code ops**: read only (read_file, read_file with start_line/end_line for slices)
+- **Git management**: inspect history, diff, blame (via exec_command + git)
+- **System tools**: exec_command (for running tests, build verification, git inspection)
+- **Web tools**: MCP browser tools if configured (for frontend/integration testing)
+- **Test tools**: go vet / go test via exec_command
 
 {{if .DSMLTools}}
 ## 🛠️ Available Tools: `read_file`, `exec_command`, `apply_patch`
