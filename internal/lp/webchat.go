@@ -1930,12 +1930,25 @@ func (s *webChatSession) ReadLastAssistant(ctx context.Context, conversationURL 
 // conversation has no "this round" yet, so the newest-first FIRST
 // role=ASSISTANT entry IS the continuation point (see
 // jsIDBGetLastAssistantFmt).
+//
+// The IDB poll MUST run inside a chromedp action: cdp.Execute resolves the
+// message executor from the action context that chromedp.Run injects (via
+// cdp.WithExecutor); after Run returns, a bare tab context carries no
+// executor and every evaluateAwait call fails with ErrInvalidContext, so
+// the poll is a second Run with its own deadline rather than a loop after
+// the first one.
+//
+// The FIRST Run must take the LONG-LIVED tab context, never a derived
+// deadline context: chromedp binds the target's CDP connection to the
+// context of the first Run, and cancelling that context later tears the
+// connection down — every later Run (the poll below and every follow-up
+// Send in the tool loop) then fails with "context canceled" even though
+// the tab context is still alive. Per-step timeouts live inside the actions
+// (waitForChatTextarea's 60s bound), mirroring webchatSend.
 func webchatReadLastAssistant(ctx context.Context, conversationURL string) (content, status string, ok bool) {
 	if conversationURL == "" {
 		return "", "", false
 	}
-	wctx, cancel := context.WithTimeout(ctx, webChatTextareaWait+2*time.Second)
-	defer cancel()
 	actions := []chromedp.Action{
 		chromedp.Navigate(conversationURL),
 		chromedp.WaitReady("body"),
@@ -1946,23 +1959,38 @@ func webchatReadLastAssistant(ctx context.Context, conversationURL string) (cont
 		// webchatSend's settle delay.
 		chromedp.Sleep(3 * time.Second),
 	}
-	if err := chromedp.Run(wctx, actions...); err != nil {
+	if err := chromedp.Run(ctx, actions...); err != nil {
 		return "", "", false
 	}
-	deadline := time.Now().Add(webChatIDBPollWindow)
-	for {
-		if text, st, found := idbGetLastAssistant(ctx); found {
-			return text, st, true
+	// Second Run: the poll window gets its own budget so a slow composer can
+	// never eat into it, and this is where the action context supplies the
+	// cdp executor the IDB read needs. The deadline context here only scopes
+	// the actions; the target connection stays bound to the first Run's
+	// long-lived context.
+	pctx, pcancel := context.WithTimeout(ctx, webChatIDBPollWindow+5*time.Second)
+	defer pcancel()
+	var text, st string
+	var found bool
+	if err := chromedp.Run(pctx, chromedp.ActionFunc(func(actCtx context.Context) error {
+		deadline := time.Now().Add(webChatIDBPollWindow)
+		for {
+			if t, s, f := idbGetLastAssistant(actCtx); f {
+				text, st, found = t, s, true
+				return nil
+			}
+			if time.Now().After(deadline) {
+				return nil
+			}
+			select {
+			case <-actCtx.Done():
+				return nil
+			case <-time.After(500 * time.Millisecond):
+			}
 		}
-		if time.Now().After(deadline) {
-			return "", "", false
-		}
-		select {
-		case <-ctx.Done():
-			return "", "", false
-		case <-time.After(500 * time.Millisecond):
-		}
+	})); err != nil {
+		return "", "", false
 	}
+	return text, st, found
 }
 
 // evaluateAwait evaluates a JS expression and awaits the resulting promise.
