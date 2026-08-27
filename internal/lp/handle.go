@@ -202,8 +202,12 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 		}
 		return WebChatResult{Content: content, URL: convURL, Printed: true}, nil
 	}
+	// 每轮回复都打印。Content 原样打印（含 DSML 工具调用块）是刻意为之：
+	// 用户看到的不只是工具结果，还有专家为哪个调用、读哪个文件做了哪些
+	// 思考；token 数是该轮总输出（站点不区分 thinking/content，thinking
+	// 一侧传 0，见 WebChatResult.OutputTokens 注释）。
 	printRound := func(res WebChatResult) {
-		outfmt.PrintContent(ctx, res.Reasoning, res.Content, res.ThinkingTokens, res.ContentTokens)
+		outfmt.PrintContent(ctx, res.Reasoning, res.Content, 0, res.OutputTokens)
 	}
 	// 第一轮回复（进入循环的那份）同样可见：专家为什么发工具调用、思考了什么。
 	printRound(first)

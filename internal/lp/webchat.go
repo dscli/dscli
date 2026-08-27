@@ -697,13 +697,15 @@ type WebChatResult struct {
 	Reasoning string
 	URL       string
 
-	// ThinkingTokens / ContentTokens are this reply's token counts, derived
-	// from the site's IndexedDB accumulated_token_usage (same-round
-	// ASSISTANT minus USER, like the site's own running counter). 0 when
-	// the counts are unavailable (DOM fallback, or a mock transport).
-	// The tool loop passes them to outfmt.PrintContent.
-	ThinkingTokens int
-	ContentTokens  int
+	// OutputTokens is this reply's total output token count (thinking +
+	// content combined), derived from the site's IndexedDB
+	// accumulated_token_usage difference between the round's ASSISTANT and
+	// USER messages (the site's own running counter). The site does NOT
+	// expose the thinking/content split, so the tool loop prints 0
+	// thinking tokens and this total as the content-side count (see
+	// handleWebChatToolLoop). 0 when the counts are unavailable (DOM
+	// fallback, or a mock transport).
+	OutputTokens int
 
 	// Printed reports that the reply (Content and Reasoning) was already
 	// printed by the DSML tool loop via outfmt.PrintContent. Callers that
@@ -868,7 +870,7 @@ func (s *webChatSession) Send(ctx context.Context, conversationURL, message stri
 	if finalURL != "" {
 		_ = registerConversation(finalURL, opts.Mode)
 	}
-	return WebChatResult{Content: response, Reasoning: reasoning, URL: finalURL, ContentTokens: tokens}, nil
+	return WebChatResult{Content: response, Reasoning: reasoning, URL: finalURL, OutputTokens: tokens}, nil
 }
 
 // Close shuts down the shared browser (tab and process). Safe before the

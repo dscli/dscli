@@ -479,9 +479,9 @@ func TestHandleWebChatToolLoopPrintsRounds(t *testing.T) {
 		sends++
 		switch sends {
 		case 1:
-			return WebChatResult{Content: dsmlReply, Reasoning: "先看看改动", URL: "https://chat.deepseek.com/a/chat/s/convX", ContentTokens: 321}, nil
+			return WebChatResult{Content: dsmlReply, Reasoning: "先看看改动", URL: "https://chat.deepseek.com/a/chat/s/convX", OutputTokens: 321}, nil
 		default:
-			return WebChatResult{Content: "final answer", Reasoning: "总结完成", URL: "https://chat.deepseek.com/a/chat/s/convY", ContentTokens: 456}, nil
+			return WebChatResult{Content: "final answer", Reasoning: "总结完成", URL: "https://chat.deepseek.com/a/chat/s/convY", OutputTokens: 456}, nil
 		}
 	}
 	captureExecDSML(t, "tool feedback")
@@ -520,6 +520,39 @@ func TestHandleWebChatOneShotNotPrinted(t *testing.T) {
 	}
 	if res.Content != "plain prose answer" {
 		t.Errorf("content = %q, want plain prose answer", res.Content)
+	}
+}
+
+func TestHandleWebChatToolLoopEmptyWrapperExecutesNothing(t *testing.T) {
+	// gate 通过（以 </tool_calls> 结尾）但包裹内没有任何可解析的 <invoke>
+	//（例如模型只是引用了语法、或只有一个裸闭合标签）→ 解析器返回 0 个
+	// 调用 → 循环退出且不执行任何工具；结果标记 Printed（已在循环内打印）。
+	text := "例如 <tool_calls> 就是工具调用的包裹标签，注意别漏掉结尾：\n<tool_calls>\n</tool_calls>"
+	origFunc := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = origFunc })
+	handleWebChatSend = func(_ context.Context, _ string, _ WebChatOptions) (WebChatResult, error) {
+		return WebChatResult{Content: text, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+	}
+	origExec := handleWebChatExecDSML
+	executed := false
+	handleWebChatExecDSML = func(_ context.Context, _ []toolcall.DSMLCall) []string {
+		executed = true
+		return nil
+	}
+	t.Cleanup(func() { handleWebChatExecDSML = origExec })
+
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if executed {
+		t.Error("empty tool_calls wrapper must not execute anything")
+	}
+	if !res.Printed {
+		t.Error("loop exit must mark the result Printed (it was printed inside the loop)")
+	}
+	if res.Content != text {
+		t.Errorf("content = %q, want verbatim text (plain chat keeps the expert's words)", res.Content)
 	}
 }
 

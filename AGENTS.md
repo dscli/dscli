@@ -117,16 +117,22 @@ DSML tool calls from WebChat: chat.deepseek.com replies (role-driven
 consultations like `review` via code_review, and plain chat alike) may embed
 DSML markup (`<invoke name="exec_command">` with `<parameter>` children) - it
 is the web model's native tool protocol. `lp.HandleWebChat` judges each reply
-with `toolcall.IsDSMLToolCallReply` (>=1 complete call parses, leftover prose
-at most a short preamble; quoted code and long prose references never
-qualify), parses them (internal/toolcall/dsml.go), maps `exec_command` ->
-`shell` (cmd->script, justification->summary, timeout ms->s; whitelist:
+with `toolcall.IsDSMLToolCallEnd` (the reply ENDS with a `</tool_calls>`
+close tag; whatever prose precedes it is discarded with the round; a lone
+close tag without the opening wrapper still qualifies, and a wrapper with no
+parseable `<invoke>` executes nothing - quoted code and prose references that
+merely cite an `<invoke>` example never end with the wrapper close tag and
+never qualify), parses them (internal/toolcall/dsml.go), maps `exec_command`
+-> `shell` (cmd->script, justification->summary, timeout ms->s; whitelist:
 exec_command, shell, read_file, apply_patch) and feeds results back into the
-SAME conversation (handleWebChatToolLoop). The `webchat` CLI defaults to
-`--role ""` (plain chat: no role injection; DSML tool-call replies are still
-executed); a stderr warning fires whenever the tool loop actually runs
-(any mode), and role sessions additionally get a role-specific warning up
-front, since the remote model's DSML tool calls will run locally.
+SAME conversation (handleWebChatToolLoop). The loop prints every round it
+receives (reasoning + content via outfmt.PrintContent, with the output token
+count derived from the site's IndexedDB accumulated_token_usage) and marks
+the final result `Printed` so callers do not re-print it. The `webchat` CLI
+defaults to `--role ""` (plain chat: no role injection; DSML tool-call
+replies are still executed); a stderr warning fires whenever the tool loop
+actually runs (any mode), and role sessions additionally get a role-specific
+warning up front, since the remote model's DSML tool calls will run locally.
 
 Role templates (internal/prompt/*.md) register DSML tools for WebChat via a
 `{{if .DSMLTools}}` block: `RenderPromptForRole` (WebChat path, used by

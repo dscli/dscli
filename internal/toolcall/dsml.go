@@ -93,29 +93,37 @@ func IsPureDSMLToolCalls(text string) bool {
 	return StripDSMLToolCalls(text) == ""
 }
 
-// dsmlToolCallsCloseEndRe matches a complete </tool_calls> close tag at the
-// very end of the text (the match is anchored and tolerates trailing
-// whitespace). Tolerating whitespace inside the tag mirrors
-// dsmlInvokeCloseRe (models emit "</ tool_calls >" tokenization artifacts).
+// dsmlToolCallsCloseEndRe matches a </tool_calls> close tag at the very end
+// of the text (the match is anchored and tolerates trailing whitespace).
+// Tolerating whitespace inside the tag mirrors dsmlInvokeCloseRe (models
+// emit "</ tool_calls >" tokenization artifacts). The OPENING wrapper is
+// deliberately not required (see IsDSMLToolCallEnd).
 var dsmlToolCallsCloseEndRe = regexp.MustCompile(`(?s)</\s*tool_calls\s*>\s*$`)
 
 // IsDSMLToolCallEnd reports whether text is INTENDED as a tool-call
-// emission: it ENDS with a complete </tool_calls> close tag (after
-// normalization and whitespace trim). This is the web expert's own signal -
-// chat.deepseek.com wraps the model's tool-call replies in <tool_calls>
-// ...</tool_calls>, and when the closing tag is present the emission is
-// complete, whatever prose precedes it.
+// emission: it ENDS with a </tool_calls> close tag (after normalization and
+// whitespace trim). This is the web expert's own signal - when the closing
+// tag is present the emission is complete, whatever prose precedes it.
 //
-// It deliberately REPLACES the "only tool calls / short preamble" judgement
-// (IsPureDSMLToolCalls / the old IsDSMLToolCallReply): a reply that ends
-// with </tool_calls> is parsed and executed even when it carries a long
-// preamble ("你说得对，我重新发一遍正确的：" or an explanation of what it
-// is about to run), and the preamble is discarded with the round - the
-// parsed calls inside the wrapper are the instruction, the surrounding text
-// is the model's commentary. Conversely a reply that merely CITES an
-// <invoke> example inside prose never ends with a wrapper close tag, so it
-// stays non-executable; a truncated emission (opening tag without close)
-// fails ParseDSMLToolCalls downstream and is never executed.
+// Deliberately structural and intentional about its looseness:
+//   - The OPENING <tool_calls> tag is NOT required. Models that self-correct
+//     a missed close tag often emit just the trailing wrapper ("...我补上
+//     </tool_calls>"): a lone close still qualifies, and the parser keeps
+//     it harmless - a wrapper with no parseable <invoke> yields zero calls
+//     and the loop exits without executing anything.
+//   - It REPLACES the "only tool calls / short preamble" judgement
+//     (IsPureDSMLToolCalls / the old IsDSMLToolCallReply): a reply that ends
+//     with </tool_calls> is parsed and executed even when it carries a long
+//     preamble ("你说得对，我重新发一遍正确的：" or an explanation of what
+//     it is about to run), and the preamble is discarded with the round -
+//     the parsed calls inside the wrapper are the instruction, the
+//     surrounding text is the model's commentary.
+//   - A reply that merely CITES an <invoke> example inside prose never ends
+//     with the wrapper close tag, so it stays non-executable; a truncated
+//     emission (opening tag without close) fails ParseDSMLToolCalls
+//     downstream and is never executed. The whitelist plus
+//     destructive-command interception (dsmlToolNames / dsmlBlockedCmdRe)
+//     are the hard safety boundary for whatever does execute.
 func IsDSMLToolCallEnd(text string) bool {
 	return dsmlToolCallsCloseEndRe.MatchString(strings.TrimSpace(normalizeDSMLText(text)))
 }
