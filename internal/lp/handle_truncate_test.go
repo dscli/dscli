@@ -95,8 +95,10 @@ func TestBuildWebChatFeedbackShortJoins(t *testing.T) {
 }
 
 func TestBuildWebChatFeedbackTruncatesBlocks(t *testing.T) {
-	// Three blocks of 30k runes each: first block kept whole, second kept
-	// whole, third cut (tags preserved), omission note appended.
+	// Three blocks of 30k runes each with the cap at 50k: the first block is
+	// kept whole (30029 <= 50000); the second does not fit the remaining
+	// budget and is cut in place (tags + body + marker); the third is
+	// omitted and summarized in the trailing note.
 	blk := func(s string) string { return "<tool_result>" + s + "</tool_result>" }
 	a := blk(strings.Repeat("a", 30000))
 	b := blk(strings.Repeat("b", 30000))
@@ -105,21 +107,22 @@ func TestBuildWebChatFeedbackTruncatesBlocks(t *testing.T) {
 	if utf8.RuneCountInString(got) > webChatMaxInputRunes {
 		t.Fatalf("feedback %d runes, want <= %d", utf8.RuneCountInString(got), webChatMaxInputRunes)
 	}
-	if !strings.Contains(got, "aaa") || !strings.Contains(got, "bbb") {
-		t.Errorf("feedback lost complete blocks")
+	if !strings.HasPrefix(got, a) {
+		t.Errorf("first block should be kept whole")
+	}
+	if !strings.Contains(got, "bbb") {
+		t.Errorf("feedback lost the second (truncated) block")
 	}
 	if !strings.Contains(got, "⚠️[工具结果过长，已截断]") {
 		t.Errorf("feedback lacks per-block truncation marker")
 	}
-	if !strings.Contains(got, "已省略 0 个工具结果") && !strings.Contains(got, "输入超过长度限制") {
+	if !strings.Contains(got, "已省略 1 个工具结果") {
 		t.Errorf("feedback lacks omission note")
 	}
 	if !strings.HasSuffix(got, "</tool_result>") {
 		t.Errorf("feedback does not end with a closed block")
 	}
-	// Omitted-block case: A fits (no), B/C dropped. Make A exactly 30k and
-	// B + C big so the loop keeps A then cuts B... verify counts instead:
-	// simpler: two blocks, first small, second huge, plus a third.
+	// Omitted-block case: A fits, B/C dropped. Verify counts instead.
 	small := blk(strings.Repeat("s", 100))
 	huge := blk(strings.Repeat("h", webChatMaxInputRunes))
 	more := blk(strings.Repeat("m", 120000))
@@ -132,6 +135,39 @@ func TestBuildWebChatFeedbackTruncatesBlocks(t *testing.T) {
 	}
 	if !strings.Contains(got2, "已省略 1 个工具结果") {
 		t.Errorf("want '已省略 1 个工具结果' in note: %q", tail(got2, 120))
+	}
+}
+
+// TestBuildWebChatFeedbackNewlineBudget pins the newline accounting: the
+// "\n" separators that strings.Join inserts are part of the sent text and
+// must be charged against the cap. Two blocks totalling exactly the cap
+// would otherwise round-trip as cap+1 runes and trigger the site rejection.
+func TestBuildWebChatFeedbackNewlineBudget(t *testing.T) {
+	blk := func(s string) string { return "<tool_result>" + s + "</tool_result>" }
+
+	// Blocks of exactly 25000 runes each (body padded to absorb tags), two
+	// blocks: raw total == cap, plus one newline -> over the cap.
+	pad := webChatMaxInputRunes/2 - len("<tool_result></tool_result>")
+	a := blk(strings.Repeat("a", pad))
+	b := blk(strings.Repeat("b", pad))
+	if ga, gb := utf8.RuneCountInString(a), utf8.RuneCountInString(b); ga != webChatMaxInputRunes/2 || gb != webChatMaxInputRunes/2 {
+		t.Fatalf("setup: block sizes %d %d, want %d each", ga, gb, webChatMaxInputRunes/2)
+	}
+	got := buildWebChatFeedback([]string{a, b})
+	if utf8.RuneCountInString(got) > webChatMaxInputRunes {
+		t.Fatalf("boundary feedback %d runes, want <= %d", utf8.RuneCountInString(got), webChatMaxInputRunes)
+	}
+	if !strings.HasPrefix(got, a) {
+		t.Errorf("first block should be kept whole at boundary")
+	}
+
+	// Blocks that fit exactly with the newline: raw total == cap-1, one
+	// newline -> exactly cap: must round-trip verbatim (short path).
+	pad2 := webChatMaxInputRunes/2 - len("<tool_result></tool_result>") - 1
+	a2 := blk(strings.Repeat("a", pad2))
+	b2 := blk(strings.Repeat("b", pad2))
+	if got := buildWebChatFeedback([]string{a2, b2}); got != strings.Join([]string{a2, b2}, "\n") {
+		t.Errorf("fitting block pair should pass through unchanged")
 	}
 }
 

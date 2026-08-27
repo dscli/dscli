@@ -20,14 +20,17 @@ import (
 // shows "超出字数限制，请删减后发送或开启新对话" / "你输入的信息过长，请调整后重试"
 // and the send is dropped, which the wait loop then misreads as a send
 // failure and retries in vain. Community measurements put the web input cap
-// around 50k+ 汉字 (50,000+ characters); 50000 runes is the conservative
-// operational ceiling: one rune is one character, exactly how the site counts
-// 字数. A package-level const so tests can pin behavior to the real value.
+// around 50k+ 汉字 (50,000+ characters); 50000 runes is a conservative
+// operational ceiling - one rune is one character, a safe proxy for the
+// site's 字数 metric (whatever its exact code-point accounting is).
 const webChatMaxInputRunes = 50000
 
 // webChatOutputNoteReserve is the rune budget reserved inside a truncated
 // tool-feedback message for the trailing "<tool_result>⚠️ …</tool_result>"
-// omission note, so that note itself never pushes the message over the cap.
+// omission note. The note template is ~27 tag runes plus ~45 prose runes
+// for realistic counts (omitted results <= 1024, omitted runes in the
+// millions), so 96 is a conservative reserve that keeps the total under
+// webChatMaxInputRunes.
 const webChatOutputNoteReserve = 96
 
 // truncateWebChatMessage caps s at webChatMaxInputRunes runes before it is
@@ -56,15 +59,19 @@ func truncateWebChatMessage(s string) string {
 // DSML structure survives: as many complete <tool_result> blocks as fit are
 // kept; the first block that does not fit has its BODY cut (both tags are
 // preserved, the block stays well-formed); the remaining blocks are dropped
-// and replaced by one explicit omission note. Without this an over-long tool
-// result (e.g. a big read_file) would hit the site's "超出字数限制" rejection
-// mid-conversation, where a rejected send is unrecoverable.
+// and replaced by one explicit omission note. Budget accounting includes the
+// "\n" separators that strings.Join inserts - a two-block feed totalling
+// exactly the cap would otherwise come out one rune over. Without this an
+// over-long tool result (e.g. a big read_file) would hit the site's
+// "超出字数限制" rejection mid-conversation, where a rejected send is
+// unrecoverable.
 func buildWebChatFeedback(outputs []string) string {
 	total := 0
 	for _, o := range outputs {
 		total += utf8.RuneCountInString(o)
 	}
-	if total <= webChatMaxInputRunes {
+	// Join inserts len(outputs)-1 newlines; they are part of the sent text.
+	if total+len(outputs)-1 <= webChatMaxInputRunes {
 		return strings.Join(outputs, "\n")
 	}
 
@@ -73,15 +80,18 @@ func buildWebChatFeedback(outputs []string) string {
 	omittedCount, omittedRunes := 0, 0
 	for i, o := range outputs {
 		n := utf8.RuneCountInString(o)
-		if n <= budget {
+		if n+1 <= budget {
+			// +1 pays for the trailing "\n" after this kept block (the last
+			// one is followed by "\n" + note, covered by the note reserve).
 			kept = append(kept, o)
-			budget -= n
+			budget -= n + 1
 			continue
 		}
 		// First block that does not fit: cut its body (tags intact) if the
-		// remaining budget can hold it; otherwise drop the whole block. All
-		// later blocks are omitted and summarized below.
-		if head, ok := truncateToolResultBlock(o, budget); ok {
+		// remaining budget can hold it (budget-1 reserves its trailing
+		// newline); otherwise drop the whole block. All later blocks are
+		// omitted and summarized below.
+		if head, ok := truncateToolResultBlock(o, budget-1); ok {
 			kept = append(kept, head)
 			omittedRunes = n - utf8.RuneCountInString(head)
 		} else {
@@ -97,8 +107,6 @@ func buildWebChatFeedback(outputs []string) string {
 
 	fmt.Fprintf(os.Stderr, "⚠️ 工具结果过长（约 %d 字），已截断至 %d 字再发送（省略 %d 个结果）。\n",
 		total, webChatMaxInputRunes, omittedCount)
-	// The note is a fixed-length template (percent digits are small next to
-	// the 96-rune reserve), so it never breaks the budget or its own tags.
 	var note string
 	if omittedCount > 0 {
 		note = fmt.Sprintf("<tool_result>⚠️ 输入超过长度限制：已省略 %d 个工具结果（约 %d 字），以上结果已截断。</tool_result>",
