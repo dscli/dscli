@@ -240,11 +240,16 @@ func splitPatchByFile(patch string) []namedSection {
 
 // ---------- 截断管线 ----------
 
-// maxUserInputLen is the maximum length for the user portion of a code review
-// request. DeepSeek's chat textarea enforces a total limit (~30k chars including
-// the system prompt of ~2-3k), so we keep the user content under this threshold.
-// 26000 keeps ~2.5k chars of margin under the combined limit.
-const maxUserInputLen = 26000
+// maxUserInputLen is the maximum RUNE count for the user portion of a code
+// review request. The site limit is a character count (~158k runes measured
+// 2026-08-29: ASCII 162k pass, ~165k reject; byte count is NOT the metric —
+// see lp.webChatMaxInputRunes). The role prompt (~7KB ≈ 2-7k runes) is
+// prepended by HandleWebChat, so the user portion keeps a margin below the
+// site cap: 140k runes ≈ 158k cap minus role/system prompt and the DSML
+// feedback that follow-up rounds append. (26000 was the old "~30k chars"
+// era value; the site grew, and a too-small cap silently dropped diff
+// sections the expert could not see.)
+const maxUserInputLen = 140000
 
 // truncNoteBudget 为请求正文末尾的截断提示（被丢弃文件清单）预留的字符空间：
 // 清单随请求发送，专家才能感知覆盖盲区并主动 read_file 补读；该预算从 diff
@@ -261,10 +266,10 @@ const maxWarnList = 20
 // 返回给本地用户。
 func truncateReviewRequest(summary, commitLog, patch string) (string, string) {
 	req := buildCodeReviewRequest(summary, commitLog, patch)
-	if len(req) <= maxUserInputLen {
+	if countRunes(req) <= maxUserInputLen {
 		return req, ""
 	}
-	origLen := len(req)
+	origLen := countRunes(req)
 	var warns []string
 
 	// 按文件丢弃 diff 区段（小文件优先保留，保证覆盖面），并为截断提示预留预算
@@ -272,11 +277,11 @@ func truncateReviewRequest(summary, commitLog, patch string) (string, string) {
 	base := buildCodeReviewRequest(summary, commitLog, "")
 	kept, dropped := dropUntilFits(base, diffSecs, maxUserInputLen-truncNoteBudget)
 	for _, d := range dropped {
-		warns = append(warns, fmt.Sprintf("diff 过大，已丢弃 %s 的 diff（%d 字符），专家可用 read_file 读取该文件", d.name, len(d.text)))
+		warns = append(warns, fmt.Sprintf("diff 过大，已丢弃 %s 的 diff（%d 字符），专家可用 read_file 读取该文件", d.name, countRunes(d.text)))
 	}
 
 	req = buildCodeReviewRequest(summary, commitLog, joinNamed(kept)) + buildTruncNote(dropped, false)
-	if len(req) <= maxUserInputLen {
+	if countRunes(req) <= maxUserInputLen {
 		return req, truncateWarning(origLen, req, warns)
 	}
 
@@ -285,9 +290,15 @@ func truncateReviewRequest(summary, commitLog, patch string) (string, string) {
 	// 被丢弃文件，保证专家在最需要提示的场景仍能看到盲区。
 	hardNote := buildTruncNote(dropped, true)
 	body := buildCodeReviewRequest(summary, commitLog, joinNamed(kept))
-	req = cutToRuneLen(body, maxUserInputLen-len(hardNote)) + hardNote
+	req = cutToRuneLen(body, maxUserInputLen-countRunes(hardNote)) + hardNote
 	warns = append(warns, "输入仍超限，已硬截断")
 	return req, truncateWarning(origLen, req, warns)
+}
+
+// countRunes returns the rune count of s (the site limit is a character
+// count — see lp.webChatMaxInputRunes).
+func countRunes(s string) int {
+	return utf8.RuneCountInString(s)
 }
 
 // buildTruncNote 生成随请求发送的截断提示：列出被丢弃的文件（覆盖盲区），
@@ -321,27 +332,24 @@ func buildTruncNote(dropped []namedSection, hardTrunc bool) string {
 	return sb.String()
 }
 
-// cutToRuneLen 返回 s 的字节前缀，长度不超过 maxBytes 且不切断 UTF-8 字符。
-func cutToRuneLen(s string, maxBytes int) string {
-	if len(s) <= maxBytes {
+// cutToRuneLen 返回 s 的前缀，runes 数不超过 maxRunes（字节预算对 rune
+// 计数不适用：站点限制按字符数，见 maxUserInputLen）。
+func cutToRuneLen(s string, maxRunes int) string {
+	if countRunes(s) <= maxRunes {
 		return s
 	}
-	b := []byte(s)[:maxBytes]
-	for len(b) > 0 && !utf8.Valid(b) {
-		b = b[:len(b)-1]
-	}
-	return string(b)
+	return string([]rune(s)[:maxRunes])
 }
 
-// dropUntilFits 按区段大小升序贪心保留（小文件优先，覆盖面最大），
-// 返回保留与丢弃的区段。base 为必保内容，limit 为总预算。
+// dropUntilFits 按区段 rune 数升序贪心保留（小文件优先，覆盖面最大），
+// 返回保留与丢弃的区段。base 为必保内容，limit 为总预算（rune 数）。
 func dropUntilFits(base string, sections []namedSection, limit int) (kept, dropped []namedSection) {
-	sort.Slice(sections, func(i, j int) bool { return len(sections[i].text) < len(sections[j].text) })
-	budget := limit - len(base)
+	sort.Slice(sections, func(i, j int) bool { return countRunes(sections[i].text) < countRunes(sections[j].text) })
+	budget := limit - countRunes(base)
 	for _, s := range sections {
-		if len(s.text) <= budget {
+		if countRunes(s.text) <= budget {
 			kept = append(kept, s)
-			budget -= len(s.text)
+			budget -= countRunes(s.text)
 		} else {
 			dropped = append(dropped, s)
 		}
@@ -359,13 +367,13 @@ func joinNamed(secs []namedSection) string {
 }
 
 // truncateWarning 生成截断告警：超限比例 + 截断动作列表（超出 maxWarnList
-// 条时压缩为前几条 + 总数）。
+// 条时压缩为前几条 + 总数）。比例与截断后长度均按 rune 数（站点限制语义）。
 func truncateWarning(origLen int, req string, warns []string) string {
 	overLen := origLen - maxUserInputLen
 	if overLen < 0 {
 		overLen = 0
 	}
-	warning := fmt.Sprintf("⚠️ 审查输入过长（超出约 %d%%），已自动截断至 %d 字符。", overLen*100/maxUserInputLen, len(req))
+	warning := fmt.Sprintf("⚠️ 审查输入过长（超出约 %d%%），已自动截断至 %d 字符。", overLen*100/maxUserInputLen, countRunes(req))
 	if len(warns) > 0 {
 		warning += " "
 		if len(warns) > maxWarnList {

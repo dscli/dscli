@@ -113,6 +113,16 @@ func IsPureDSMLToolCalls(text string) bool {
 // exits without executing anything), so the safety boundary is unchanged.
 var dsmlToolCallsCloseEndRe = regexp.MustCompile(`(?s)</\s*(?:tool_calls|_calls)\s*>\s*$`)
 
+// dsmlToolCallsCloseCutRe matches a CUT-OFF wrapper close tag at the very
+// end of the text: the opening "</" exists but the tag was truncated
+// before its ">" (e.g. "</", "</tool_calls", "</_calls") — observed in a
+// real QA round where every <invoke> parsed cleanly but the IDB-stored
+// content ended mid-close-tag. The close tag is the "emission complete"
+// intent signal, and a cut tag does not change that intent: the calls
+// still parse, so the gate opens; execution safety is unchanged (parse
+// success + whitelist + destructive-command interception).
+var dsmlToolCallsCloseCutRe = regexp.MustCompile(`(?s)</\s*(?:tool_calls|_calls)?\s*$`)
+
 // IsDSMLToolCallEnd reports whether text is INTENDED as a tool-call
 // emission: it ENDS with a </tool_calls> close tag (after normalization and
 // whitespace trim). This is the web expert's own signal - when the closing
@@ -139,6 +149,19 @@ var dsmlToolCallsCloseEndRe = regexp.MustCompile(`(?s)</\s*(?:tool_calls|_calls)
 //     are the hard safety boundary for whatever does execute.
 func IsDSMLToolCallEnd(text string) bool {
 	return dsmlToolCallsCloseEndRe.MatchString(strings.TrimSpace(normalizeDSMLText(text)))
+}
+
+// IsDSMLToolCallCut reports whether text is INTENDED as a tool-call emission
+// whose wrapper close tag was CUT OFF at the very end (no closing ">").
+// This is the truncated twin of IsDSMLToolCallEnd: the same intent signal
+// (the expert began closing the wrapper) with the last byte truncated —
+// "…</invoke>\n</" is common when the site's stored content is cut at a
+// boundary. The gate alone does NOT execute: ParseDSMLToolCalls must still
+// succeed (every <invoke> complete) for anything to run, so a cut wrapper
+// around a truncated call stays non-executable, and quoted examples without
+// a cut close stay non-executable too.
+func IsDSMLToolCallCut(text string) bool {
+	return dsmlToolCallsCloseCutRe.MatchString(strings.TrimSpace(normalizeDSMLText(text)))
 }
 
 // dsmlNamedInvokeOpenRe matches an opening <invoke> tag that carries a name
@@ -591,6 +614,12 @@ func StripDSMLToolCalls(text string) string {
 	// variant of the same wrapper: if the emission was executed as a tool
 	// call the residue must not leak into the caller-visible text.
 	out = strings.ReplaceAll(out, "</_calls>", "")
+	// A CUT-OFF close tag (see dsmlToolCallsCloseCutRe: "</", "</tool_calls"
+	// without ">") leaves the wrapper fragment at the TAIL: strip it too, so
+	// an executed round returns clean prose instead of a dangling "</".
+	// The cut regex is anchored at the end ($), so only a trailing cut tag is
+	// removed — "</div>" in prose or "</" mid-text stays untouched.
+	out = dsmlToolCallsCloseCutRe.ReplaceAllString(out, "")
 	out = dsmlToolResultRe.ReplaceAllString(out, "")
 	return strings.TrimSpace(out)
 }

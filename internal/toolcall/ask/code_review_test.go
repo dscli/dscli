@@ -287,13 +287,14 @@ index 000..333 100644
 	}
 }
 
-// TestCutToRuneLen verifies byte-prefix truncation never splits a UTF-8 rune.
+// TestCutToRuneLen verifies rune-count truncation: the prefix is the first
+// maxRunes characters, never splitting a UTF-8 rune or exceeding the count.
 func TestCutToRuneLen(t *testing.T) {
-	s := "abc中文测试def" // 18 bytes: 3 ASCII + 4*3 multibyte + 3 ASCII
-	for _, n := range []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, len(s)} {
+	s := "abc中文测试def" // 10 runes: 3 ASCII + 4 Chinese + 3 ASCII (18 bytes)
+	for _, n := range []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 99} {
 		got := cutToRuneLen(s, n)
-		if len(got) > n {
-			t.Errorf("len(%q) = %d > %d", got, len(got), n)
+		if countRunes(got) > n {
+			t.Errorf("cutToRuneLen(s, %d) = %q has %d runes", n, got, countRunes(got))
 		}
 		if !utf8.ValidString(got) {
 			t.Errorf("cutToRuneLen(s, %d) produced invalid UTF-8: %q", n, got)
@@ -302,9 +303,13 @@ func TestCutToRuneLen(t *testing.T) {
 			t.Errorf("cutToRuneLen(s, %d) = %q, not a prefix", n, got)
 		}
 	}
-	// 第 10 字节落在"测"的 UTF-8 序列中间，必须回退到 9 字节（rune 边界）。
-	if cutToRuneLen(s, 10) != "abc中文" {
-		t.Errorf("10-byte cut = %q, want %q (rune-safe prefix)", cutToRuneLen(s, 10), "abc中文")
+	// 第 5 个 rune 是"中"：rune 边界上的截断。
+	if cutToRuneLen(s, 5) != "abc中文" {
+		t.Errorf("5-rune cut = %q, want %q", cutToRuneLen(s, 5), "abc中文")
+	}
+	// 预算超过输入：原样返回。
+	if cutToRuneLen(s, 99) != s {
+		t.Errorf("oversized budget should return input unchanged")
 	}
 }
 
@@ -335,8 +340,8 @@ func TestTruncateReviewRequestDropsDiff(t *testing.T) {
 
 	req, warning := truncateReviewRequest("summary", "log", patchSB.String())
 
-	if len(req) > maxUserInputLen {
-		t.Errorf("request still over limit: %d > %d", len(req), maxUserInputLen)
+	if countRunes(req) > maxUserInputLen {
+		t.Errorf("request still over limit: %d > %d", countRunes(req), maxUserInputLen)
 	}
 	if warning == "" {
 		t.Fatal("expected a warning for oversized diff")
@@ -375,8 +380,8 @@ func TestTruncateReviewRequestTail(t *testing.T) {
 	patch := strings.Repeat("diff --git a/x.go b/x.go\n--- a/x.go\n+++ b/x.go\n@@ -1,1 +1,1 @@\n", 3000)
 	req, warning := truncateReviewRequest(strings.Repeat("s", 1024), strings.Repeat("l", 4000), patch)
 
-	if len(req) > maxUserInputLen {
-		t.Errorf("request still over limit: %d > %d", len(req), maxUserInputLen)
+	if countRunes(req) > maxUserInputLen {
+		t.Errorf("request still over limit: %d > %d", countRunes(req), maxUserInputLen)
 	}
 	if warning == "" {
 		t.Errorf("expected a warning for extreme input")
@@ -396,14 +401,14 @@ func TestTruncateReviewRequestTail(t *testing.T) {
 // The truncation note must survive the byte cut (it is appended AFTER the
 // cut, with budget reserved) and the request must stay within the limit.
 func TestTruncateReviewRequestHard(t *testing.T) {
-	summary := strings.Repeat("s", 20000)
+	summary := strings.Repeat("s", maxUserInputLen+20000)
 	commitLog := strings.Repeat("l", 10000)
 	patch := "diff --git a/x.go b/x.go\n--- a/x.go\n+++ b/x.go\n@@ -1,1 +1,1 @@\n-x\n+y\n"
 
 	req, warning := truncateReviewRequest(summary, commitLog, patch)
 
-	if len(req) > maxUserInputLen {
-		t.Errorf("request over limit after hard truncation: %d > %d", len(req), maxUserInputLen)
+	if countRunes(req) > maxUserInputLen {
+		t.Errorf("request over limit after hard truncation: %d > %d", countRunes(req), maxUserInputLen)
 	}
 	if warning == "" {
 		t.Error("expected a warning for hard truncation")

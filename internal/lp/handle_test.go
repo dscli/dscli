@@ -900,3 +900,82 @@ func TestHandleWebChatSharesBrowserSession(t *testing.T) {
 		}
 	}
 }
+
+// cutRound is the shape of a real review round whose content ended with a
+// CUT-OFF wrapper close tag (">" never came): every <invoke> is complete,
+// the tail is "</" — the IsDSMLToolCallCut gate must route it into the loop.
+const cutRound = `<tool_calls>
+<invoke name="read_file">
+<parameter name="path" string="true">AGENTS.md</parameter>
+<parameter name="justification" string="true">Read project conventions before reviewing</parameter>
+</invoke>
+<invoke name="exec_command">
+<parameter name="cmd" string="true">git show --stat HEAD</parameter>
+<parameter name="justification" string="true">See full commit stats and files changed</parameter>
+</invoke>
+</tool_calls>`
+
+func TestHandleWebChatToolLoopCutCloseTagExecutes(t *testing.T) {
+	// A live reply whose wrapper close tag was cut off before ">": the gate
+	// IsDSMLToolCallCut opens, the calls parse (all invokes complete), and
+	// the execute-feedback loop runs — never returned verbatim.
+	origFunc := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = origFunc })
+
+	const finalAnswer = "## Overall Assessment\nSolid implementation..."
+	var messages []string
+	handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
+		messages = append(messages, msg)
+		if len(messages) == 1 {
+			return WebChatResult{Content: cutRound, URL: "https://chat.deepseek.com/a/chat/s/convCUT"}, nil
+		}
+		return WebChatResult{Content: finalAnswer, URL: "https://chat.deepseek.com/a/chat/s/convF"}, nil
+	}
+	seen := captureExecDSML(t, "<tool_result>contents</tool_result>")
+
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{Role: "review"})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if len(*seen) != 2 {
+		t.Fatalf("executed calls = %d, want 2 (both invokes complete)", len(*seen))
+	}
+	if res.Content != finalAnswer {
+		t.Errorf("content = %q, want final answer", res.Content)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("sends = %d, want 2 (initial cut round + feedback)", len(messages))
+	}
+}
+
+func TestHandleWebChatResumeCutCloseTag(t *testing.T) {
+	// Resume with a cut close tag: the last assistant message is a pending
+	// tool-call round with a truncated wrapper — must execute, not return
+	// the markup verbatim.
+	origFunc := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = origFunc })
+
+	const finalAnswer = "## Quality Report\nAll checks pass..."
+	var messages []string
+	handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
+		messages = append(messages, msg)
+		return WebChatResult{Content: finalAnswer, URL: "https://chat.deepseek.com/a/chat/s/convRCUT"}, nil
+	}
+	mockResumeResolve(t, "https://chat.deepseek.com/a/chat/s/convRCUT")
+	mockResumeRead(t, cutRound, "FINISHED", true)
+	seen := captureExecDSML(t, "<tool_result>resumed</tool_result>")
+
+	res, err := HandleWebChatResume(context.Background(), WebChatOptions{Keep: "convRCUT", Role: "test"})
+	if err != nil {
+		t.Fatalf("HandleWebChatResume: %v", err)
+	}
+	if len(*seen) != 2 {
+		t.Fatalf("executed calls = %d, want 2", len(*seen))
+	}
+	if res.Content != finalAnswer {
+		t.Errorf("content = %q, want final answer", res.Content)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("sends = %d, want 1 (feedback only)", len(messages))
+	}
+}

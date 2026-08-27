@@ -1307,6 +1307,68 @@ func TestIsDSMLToolCallEndTypoCloseTagWithProse(t *testing.T) {
 	}
 }
 
+// TestIsDSMLToolCallCut is the regression for the truncated close tag: a
+// real review round's stored content ended "…</invoke>\n</" - every <invoke>
+// parsed cleanly but the wrapper close tag was cut off before its ">"
+// (2026-08-29, chat_deepseek IDB content). The emission is still INTENDED
+// as a complete tool call; the gate must open (IsDSMLToolCallCut), the
+// parser must return the calls, and the strip must leave no dangling "</".
+func TestIsDSMLToolCallCut(t *testing.T) {
+	call := `<tool_calls>
+<invoke name="read_file">
+<parameter name="path" string="true">AGENTS.md</parameter>
+<parameter name="justification" string="true">Read project conventions before reviewing</parameter>
+</invoke>
+<invoke name="read_file">
+<parameter name="path" string="true">internal/lp/webchat.go</parameter>
+<parameter name="justification" string="true">See omitted diff for webchat.go and session/ReadLastAssistant implementation</parameter>
+</invoke>
+<invoke name="exec_command">
+<parameter name="cmd" string="true">git show --stat HEAD</parameter>
+<parameter name="justification" string="true">See full commit stats and files changed</parameter>
+</invoke>
+`
+	cases := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"cut bare </", call + "</", true},
+		{"cut tool_calls no >", call + "</tool_calls", true},
+		{"cut typo no >", call + "</_calls", true},
+		{"cut with trailing newline", call + "</\n", true},
+		{"complete close is not a cut", call + "</tool_calls>", false},
+		{"complete typo close is not a cut", call + "</_calls>", false},
+		{"prose without cut", "just some prose", false},
+		{"cut but prose tail", call + "</\nand more", false},
+		{"empty", "", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := IsDSMLToolCallCut(c.in); got != c.want {
+				t.Errorf("IsDSMLToolCallCut = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+// TestIsDSMLToolCallCutBounded: a truncated invoke (open without close)
+// still fails ParseDSMLToolCalls even though the cut gate opens — the gate
+// alone never executes; parse success is the second requirement.
+func TestIsDSMLToolCallCutBounded(t *testing.T) {
+	cut := `<tool_calls>
+<invoke name="exec_command">
+<parameter name="cmd" string="true">echo hi
+</
+`
+	if !IsDSMLToolCallCut(cut) {
+		t.Error("gate should open (cut close present)")
+	}
+	if _, err := ParseDSMLToolCalls(cut); err == nil {
+		t.Error("ParseDSMLToolCalls should fail: invoke is unclosed")
+	}
+}
+
 func TestIsDSMLToolCallEndTypoCloseTagBounded(t *testing.T) {
 	// The leniency is bounded: a bare "</calls>" (even more degraded), a
 	// wrapper that never closes, or a close tag in the middle of the text
