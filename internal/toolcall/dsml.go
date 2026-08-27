@@ -98,7 +98,20 @@ func IsPureDSMLToolCalls(text string) bool {
 // Tolerating whitespace inside the tag mirrors dsmlInvokeCloseRe (models
 // emit "</ tool_calls >" tokenization artifacts). The OPENING wrapper is
 // deliberately not required (see IsDSMLToolCallEnd).
-var dsmlToolCallsCloseEndRe = regexp.MustCompile(`(?s)</\s*tool_calls\s*>\s*$`)
+// dsmlToolCallsCloseEndRe matches a </tool_calls> close tag at the very end
+// of the text (the match is anchored and tolerates trailing whitespace).
+// Tolerating whitespace inside the tag mirrors dsmlInvokeCloseRe (models
+// emit "</ tool_calls >" tokenization artifacts). The OPENING wrapper is
+// deliberately not required (see IsDSMLToolCallEnd).
+//
+// `</_calls>` is accepted as a practical degradation: a real QA-engineer
+// round closed with "</_calls>" (the model dropped "tool" from the tag)
+// while every <invoke> inside parsed cleanly. The close tag is the
+// "emission complete" intent signal, and a typo'd close does not change
+// that intent - a wrapper whose calls all parse still executes, and a
+// wrapper with no parseable <invoke> still yields zero calls (the loop
+// exits without executing anything), so the safety boundary is unchanged.
+var dsmlToolCallsCloseEndRe = regexp.MustCompile(`(?s)</\s*(?:tool_calls|_calls)\s*>\s*$`)
 
 // IsDSMLToolCallEnd reports whether text is INTENDED as a tool-call
 // emission: it ENDS with a </tool_calls> close tag (after normalization and
@@ -574,6 +587,10 @@ func StripDSMLToolCalls(text string) string {
 	// caller-visible text (and IsPureDSMLToolCalls counts cleaned text).
 	out = strings.ReplaceAll(out, "<tool_calls>", "")
 	out = strings.ReplaceAll(out, "</tool_calls>", "")
+	// A typo'd close tag (</_calls>, see dsmlToolCallsCloseEndRe) is a
+	// variant of the same wrapper: if the emission was executed as a tool
+	// call the residue must not leak into the caller-visible text.
+	out = strings.ReplaceAll(out, "</_calls>", "")
 	out = dsmlToolResultRe.ReplaceAllString(out, "")
 	return strings.TrimSpace(out)
 }

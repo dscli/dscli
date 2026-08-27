@@ -1258,3 +1258,74 @@ func TestParseDSMLToolCallsApplyPatchPayload(t *testing.T) {
 		t.Errorf("patch payload mangled:\n got: %q\nwant: %q", got, want)
 	}
 }
+
+// TestIsDSMLToolCallEndTypoCloseTag is the regression for a real
+// quality_assurance round: the QA engineer replied with a complete DSML
+// emission whose closing wrapper was "</_calls>" - the model dropped
+// "tool" from the tag (2026-08-27, chat_deepseek native markdown from
+// the browser IndexedDB). Every <invoke> parsed cleanly and the close
+// tag proves the emission was intended as complete, so the reply must
+// route into the tool loop even though the close spelling is wrong.
+func TestIsDSMLToolCallEndTypoCloseTag(t *testing.T) {
+	text := `<tool_calls>
+<invoke name="exec_command">
+<parameter name="cmd" string="true">grep -rn "func parseSince" internal/toolcall/ask/ && echo '===' && grep -rn "func truncateReviewRequest" internal/toolcall/ask/ && echo '===' && grep -rn "func AskExpertWithRole" internal/toolcall/ask/</parameter>
+<parameter name="justification" string="true">Locate parseSince, truncateReviewRequest, AskExpertWithRole to inspect validation and reuse.</parameter>
+</invoke>
+<invoke name="exec_command">
+<parameter name="cmd" string="true">ls internal/toolcall/ask/</parameter>
+<parameter name="justification" string="true">List ask package files to find code_review and helpers.</parameter>
+</invoke>
+</_calls>`
+	if !IsDSMLToolCallEnd(text) {
+		t.Error("IsDSMLToolCallEnd = false, want true for typo'd </_calls> close tag")
+	}
+	calls, err := ParseDSMLToolCalls(text)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls: %v", err)
+	}
+	if len(calls) != 2 {
+		t.Fatalf("calls = %d, want 2", len(calls))
+	}
+	if calls[0].Name != "exec_command" || calls[1].Name != "exec_command" {
+		t.Errorf("names = %q, %q", calls[0].Name, calls[1].Name)
+	}
+	if got := StripDSMLToolCalls(text); got != "" {
+		t.Errorf("StripDSMLToolCalls = %q, want empty (no leftover residue)", got)
+	}
+}
+
+// A prose preface before the typo'd close still qualifies: the close tag
+// is the intent signal, whatever precedes the wrapper is commentary.
+func TestIsDSMLToolCallEndTypoCloseTagWithProse(t *testing.T) {
+	text := "I will locate the helpers now.\n<tool_calls>\n<invoke name=\"exec_command\">\n<parameter name=\"cmd\" string=\"true\">ls</parameter>\n</invoke>\n</_calls>"
+	if !IsDSMLToolCallEnd(text) {
+		t.Error("IsDSMLToolCallEnd = false, want true")
+	}
+	if got := StripDSMLToolCalls(text); got != "I will locate the helpers now." {
+		t.Errorf("StripDSMLToolCalls = %q", got)
+	}
+}
+
+func TestIsDSMLToolCallEndTypoCloseTagBounded(t *testing.T) {
+	// The leniency is bounded: a bare "</calls>" (even more degraded), a
+	// wrapper that never closes, or a close tag in the middle of the text
+	// must NOT qualify - the emission is ambiguous then, and the loop must
+	// not execute on an unclear signal. An EMPTY wrapper still qualifies
+	// by design (a wrapper with no parseable <invoke> yields zero calls and
+	// the loop exits without executing anything, see IsDSMLToolCallEnd).
+	cases := []struct {
+		name string
+		text string
+	}{
+		{"bare-close", "<tool_calls>\n<invoke name=\"exec_command\">\n<parameter name=\"cmd\" string=\"true\">ls</parameter>\n</invoke>\n</calls>"},
+		{"no-close", "<tool_calls>\n<invoke name=\"exec_command\">\n<parameter name=\"cmd\" string=\"true\">ls</parameter>\n</invoke>"},
+		{"different-word", "<tool_calls>\n<invoke name=\"exec_command\">\n<parameter name=\"cmd\" string=\"true\">ls</parameter>\n</invoke>\n</end_calls>"},
+		{"close-not-at-end", "</_calls>\nplease"},
+	}
+	for _, tc := range cases {
+		if IsDSMLToolCallEnd(tc.text) {
+			t.Errorf("%s: IsDSMLToolCallEnd = true, want false", tc.name)
+		}
+	}
+}
