@@ -118,7 +118,7 @@ they can exfiltrate data) are rejected outright — prefer read-only commands.
 
 - **Code review**: expert review of code quality
 
-- **English commit messages**: all git commit messages must be in English; this project is at `github.com/dscli/dscli` and developers worldwide should understand the history
+- **English commit messages**: all git commit messages must be in English; developers worldwide should understand the history
 
 
 ## 🚀 Execution Guidelines
