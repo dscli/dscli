@@ -764,7 +764,7 @@ func validateWebChatOptions(opts WebChatOptions) error {
 		return fmt.Errorf("Role/System are only honored by HandleWebChat")
 	}
 	if opts.Mode != "" && !validModes[opts.Mode] {
-		return fmt.Errorf("unknown webchat mode %q (want flash, pro or vision)", opts.Mode)
+		return fmt.Errorf("unknown webchat model %q (want flash, pro or vision)", opts.Mode)
 	}
 	if opts.Mode == ModePro && len(opts.Attachments) > 0 {
 		return fmt.Errorf("attachments require flash or vision mode, got %q", opts.Mode)

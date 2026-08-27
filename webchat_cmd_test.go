@@ -88,29 +88,28 @@ func TestGatherWebchatInputStdinEmpty(t *testing.T) {
 }
 
 // newWebchatOptionsCmd builds a webchat command with the flags
-// webchatOptionsFromFlags reads (keep/mode/attach/role), matching the real
+// webchatOptionsFromFlags reads (keep/model/attach/role), matching the real
 // command's defaults - the contract this test locks.
 func newWebchatOptionsCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "webchat"}
 	var keep string
 	keepFlag := cmd.Flags().VarPF(&keepValue{&keep}, "keep", "", "")
 	keepFlag.NoOptDefVal = "last"
-	cmd.Flags().String("mode", "", "")
+	cmd.Flags().String("model", "", "")
 	cmd.Flags().StringSlice("attach", nil, "")
-	cmd.Flags().String("role", "dev", "")
-	cmd.Flags().Bool("plain", false, "")
+	cmd.Flags().String("role", "", "")
 	return cmd
 }
 
 func TestWebchatOptionsFromFlags(t *testing.T) {
-	// Defaults: role "dev" (mirrors dscli chat), everything else empty.
+	// Defaults: Role "" = plain chat (no role prompt, no DSML tool loop).
 	cmd := newWebchatOptionsCmd()
 	opts, err := webchatOptionsFromFlags(cmd)
 	if err != nil {
 		t.Fatalf("webchatOptionsFromFlags(defaults): %v", err)
 	}
-	if opts.Role != "dev" {
-		t.Errorf("default Role = %q, want %q (match dscli chat)", opts.Role, "dev")
+	if opts.Role != "" {
+		t.Errorf("default Role = %q, want \"\" (plain chat)", opts.Role)
 	}
 	if opts.Mode != "" || opts.Keep != "" || len(opts.Attachments) != 0 {
 		t.Errorf("default options should be empty, got %+v", opts)
@@ -125,32 +124,18 @@ func TestWebchatOptionsFromFlags(t *testing.T) {
 		t.Errorf("Role = %q, err = %v; want review", opts.Role, err)
 	}
 
-	// An explicit empty --role= normalizes to "dev", exactly like dscli
-	// chat (chat.go does role == "" -> "dev").
+	// An explicit empty --role= is plain chat: no role prompt, no tool loop.
 	cmd = newWebchatOptionsCmd()
 	if err := cmd.Flags().Set("role", ""); err != nil {
 		t.Fatal(err)
 	}
-	if opts, err := webchatOptionsFromFlags(cmd); err != nil || opts.Role != "dev" {
-		t.Errorf("empty Role = %q, err = %v; want dev (match dscli chat)", opts.Role, err)
-	}
-
-	// --plain is the explicit plain-chat escape hatch: Role "" means
-	// verbatim send, no DSML loop in HandleWebChat. It wins over --role.
-	cmd = newWebchatOptionsCmd()
-	if err := cmd.Flags().Set("plain", "true"); err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.Flags().Set("role", "review"); err != nil {
-		t.Fatal(err)
-	}
 	if opts, err := webchatOptionsFromFlags(cmd); err != nil || opts.Role != "" {
-		t.Errorf("--plain Role = %q, err = %v; want empty (plain chat)", opts.Role, err)
+		t.Errorf("empty Role = %q, err = %v; want \"\" (plain chat)", opts.Role, err)
 	}
 
-	// mode/keep/attach pass through unchanged.
+	// model/keep/attach pass through unchanged.
 	cmd = newWebchatOptionsCmd()
-	if err := cmd.Flags().Set("mode", "vision"); err != nil {
+	if err := cmd.Flags().Set("model", "vision"); err != nil {
 		t.Fatal(err)
 	}
 	if err := cmd.Flags().Set("keep", "abc"); err != nil {
@@ -165,7 +150,7 @@ func TestWebchatOptionsFromFlags(t *testing.T) {
 	}
 	if opts.Mode != lp.Mode("vision") || opts.Keep != "abc" ||
 		len(opts.Attachments) != 1 || opts.Attachments[0] != "shot.png" {
-		t.Errorf("options = %+v, want mode=vision keep=abc attach=[shot.png]", opts)
+		t.Errorf("options = %+v, want model=vision keep=abc attach=[shot.png]", opts)
 	}
 }
 

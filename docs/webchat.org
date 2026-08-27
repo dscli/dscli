@@ -29,10 +29,10 @@ WebChat 指使用 web 版本的 https://chat.deepseek.com 与 LLM 交互：
 启用：只要角色提示词（review.md / expert.md）注册了工具，且回复为纯 DSML
 工具调用，HandleWebChat 的工具循环就会解析、执行并把结果回填到同一会话。
 
-=dscli webchat= CLI 默认 =--role dev=（与 =dscli chat= 一致，且 =--role=
-空值同样归一为 dev），因此默认进入工具循环；=--plain= 显式关闭角色注入并
-保留纯聊天语义（消息原样发送、不进入工具循环）。角色会话开始前会在 stderr
-打印警告：远程模型的 DSML 工具调用将在本地执行。
+=dscli webchat= CLI 默认 =--role ""=（纯聊天：不注入角色提示词、不进入
+工具循环，消息原样发送）；指定非空角色（=--role dev|expert|review|test=）
+才前置角色提示词并启用工具循环。角色会话开始前会在 stderr 打印警告：远程
+模型的 DSML 工具调用将在本地执行。
 
 * WebChat 读写工具集
 
@@ -137,7 +137,7 @@ CWD 无关；cwd 必须是仓库根——git apply 在仓库内子目录运行�
 
 工具实现后在角色提示词中按如下 markdown 注册：
 
-- =internal/prompt/dev.md= —— webchat CLI 默认角色（=--role dev=），已注册
+- =internal/prompt/dev.md= —— webchat CLI 角色之一（=--role dev=），已注册
   三个工具。
 - =internal/prompt/review.md= —— code_review（review 角色）的 webchat
   会话，已注册三个工具（Available Tools 段）。
