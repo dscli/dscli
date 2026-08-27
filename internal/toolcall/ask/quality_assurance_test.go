@@ -27,7 +27,7 @@ func TestQualityAssuranceToolStructure(t *testing.T) {
 		}
 	}
 
-	if qualityAssuranceTool.Timeout != 20*time.Minute {
+	if qualityAssuranceTool.Timeout != 30*time.Minute {
 		t.Errorf("Expected timeout 20 minutes, got %v", qualityAssuranceTool.Timeout)
 	}
 	if qualityAssuranceTool.Category != "check" {

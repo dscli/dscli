@@ -15,7 +15,7 @@ result, e.g. when a round was interrupted mid tool-call; the pending tool
 calls are executed locally and their results fed back to the expert until it
 produces the final report; `summary`/`since` are ignored in this mode).
 
-Timeout: tool-level budget 20 min; `timeout` (seconds) optionally lowers it
+Timeout: tool-level budget 30 min; `timeout` (seconds) optionally lowers it
 for the expert phase. The QA engineer may run several tool-call
 rounds (exec_command: go vet, go test, git inspection) before producing the
 final report, so set `timeout` (seconds) longer for large projects with many

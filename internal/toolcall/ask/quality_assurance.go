@@ -35,7 +35,7 @@ var qualityAssuranceTool = toolcall.ToolDef{
 			},
 			"timeout": map[string]any{
 				"type":        "integer",
-				"description": "Timeout in seconds for the expert phase (default 0 = no extra bound; the tool-level budget is 20 minutes). The QA engineer may run multiple test rounds; set longer for large projects with many tests.",
+				"description": "Timeout in seconds for the expert phase (default 0 = no extra bound; the tool-level budget is 30 minutes). The QA engineer may run multiple test rounds; set longer for large projects with many tests.",
 			},
 			"keep": map[string]any{
 				"type":        "string",
@@ -55,7 +55,7 @@ var qualityAssuranceTool = toolcall.ToolDef{
 	Category: "check",
 	// QA runs go vet / go test, which can take longer than a review pass:
 	// multiple test rounds plus a browser session per round.
-	Timeout: 20 * time.Minute,
+	Timeout: 30 * time.Minute,
 	Handler: handleQualityAssurance,
 }
 
