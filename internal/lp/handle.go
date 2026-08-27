@@ -35,7 +35,9 @@ const webChatOutputNoteReserve = 256
 
 // headBytes returns the largest rune-aligned prefix of s whose byte length
 // is <= maxBytes. Cutting by bytes alone could split a multi-byte rune; the
-// prefix always ends on a UTF-8 sequence boundary.
+// prefix always ends on a UTF-8 sequence boundary (and never on a lone
+// invalid byte: DecodeLastRune reports an error for a partial or illegal
+// trailing byte, and the prefix backs off past it).
 func headBytes(s string, maxBytes int) string {
 	if maxBytes <= 0 {
 		return ""
@@ -44,17 +46,23 @@ func headBytes(s string, maxBytes int) string {
 		return s
 	}
 	end := maxBytes
-	for end > 0 && !utf8.RuneStart(s[end]) {
-		end--
+	for end > 0 {
+		r, size := utf8.DecodeLastRuneInString(s[:end])
+		if r != utf8.RuneError || size > 1 {
+			break // complete rune (incl. the 3-byte U+FFFD) or an ASCII byte
+		}
+		end-- // partial/illegal trailing byte: back off to the rune start
 	}
 	return s[:end]
 }
 
 // truncateWebChatMessage caps s at webChatMaxInputBytes before it is sent:
-// keep the head (the task statement usually leads), append an explicit
-// marker so the remote model knows the text it sees is partial, and print a
-// stderr note for the user. The marker is charged against the budget so the
-// result is guaranteed to fit the site's input limit.
+// keep the head (when HandleWebChat prepends a role/system prompt the user's
+// task sits right after it - templates are a few KB, far under the cap, so
+// the task statement survives the cut), append an explicit marker so the
+// remote model knows the text it sees is partial, and print a stderr note
+// for the user. The marker is charged against the budget so the result is
+// guaranteed to fit the site's input limit.
 func truncateWebChatMessage(s string) string {
 	if len(s) <= webChatMaxInputBytes {
 		return s
@@ -89,13 +97,18 @@ func buildWebChatFeedback(outputs []string) string {
 	}
 
 	var kept []string
-	budget := webChatMaxInputBytes
+	// The omission note is appended on EVERY truncation sub-path (cut and
+	// drop alike), so its budget is reserved up front once. Without this the
+	// drop path - kept blocks may consume the budget down to near-cap before
+	// truncateToolResultBlock gives up - would leak the note bytes and send
+	// over the cap, the exact failure this code exists to prevent.
+	budget := webChatMaxInputBytes - webChatOutputNoteReserve
 	omittedCount, omittedBytes := 0, 0
 	for i, o := range outputs {
 		n := len(o)
 		if n+1 <= budget {
-			// +1 pays for the trailing "\n" after this kept block (the last
-			// one is followed by "\n" + note, covered by the note reserve).
+			// +1 pays for the trailing "\n" after this kept block; the last
+			// kept block's +1 becomes the "\n" before the omission note.
 			kept = append(kept, o)
 			budget -= n + 1
 			continue
@@ -131,11 +144,12 @@ func buildWebChatFeedback(outputs []string) string {
 }
 
 // truncateToolResultBlock cuts the BODY of one "<tool_result>…</tool_result>"
-// block so the whole block fits maxBytes bytes (minus webChatOutputNoteReserve
-// left for the trailing omission note). The tags are preserved and the body
-// gets an inline marker, so the block remains well-formed DSML. ok=false
-// means s is not a well-formed block (defensive: future format change) or
-// cannot fit at all - the caller then treats the whole output as unkept.
+// block so the whole block fits maxBytes bytes (the caller already reserved
+// the omission note separately; maxBytes is the block's own budget). The
+// tags are preserved and the body gets an inline marker, so the block
+// remains well-formed DSML. ok=false means s is not a well-formed block
+// (defensive: future format change) or cannot fit at all - the caller then
+// treats the whole output as unkept.
 func truncateToolResultBlock(s string, maxBytes int) (out string, ok bool) {
 	const (
 		open  = "<tool_result>"
@@ -144,15 +158,15 @@ func truncateToolResultBlock(s string, maxBytes int) (out string, ok bool) {
 	if !strings.HasPrefix(s, open) || !strings.HasSuffix(s, close) {
 		return s, false
 	}
-	bodyBudget := maxBytes - len(open) - len(close) - webChatOutputNoteReserve
-	if bodyBudget <= 0 {
-		return s, false
-	}
-	body := s[len(open) : len(s)-len(close)]
 	mark := "\n⚠️[工具结果过长，已截断]"
+	if len(open)+len(close)+len(mark) > maxBytes {
+		return s, false // even tags+marker do not fit: give up on this block
+	}
+	bodyBudget := maxBytes - len(open) - len(close)
+	body := s[len(open) : len(s)-len(close)]
 	if len(body) <= bodyBudget {
-		// Truncation is a no-op for this block (budget left over shrinks the
-		// later note only slightly); keep the original text.
+		// Direct-call convenience only: buildWebChatFeedback calls this with
+		// maxBytes = budget-1 < n, so there body > bodyBudget always holds.
 		return s, true
 	}
 	keep := bodyBudget - len(mark)

@@ -40,6 +40,19 @@ func TestHeadBytesRuneAligned(t *testing.T) {
 	if got := headBytes(cn, 9999); got != cn {
 		t.Errorf("oversized budget head differs from input")
 	}
+	// Lone invalid byte (0xFF) in the input: the prefix must back off past a
+	// trailing illegal byte instead of cutting into it; never panic.
+	raw := "ab" + "\xff" + "cdef" // 7 bytes
+	if got := headBytes(raw, 3); got != "ab" {
+		t.Errorf("invalid-byte head = %q, want ab", got)
+	}
+	if got := headBytes(raw, 4); got != "ab\xffc" {
+		t.Errorf("mid-string invalid byte head = %q, want ab\\xffc", got)
+	}
+	// Full input (even with the invalid byte inside) passes through.
+	if got := headBytes(raw, len(raw)); got != raw {
+		t.Errorf("full input with invalid byte should pass through")
+	}
 }
 
 func TestTruncateWebChatMessageShortStays(t *testing.T) {
@@ -203,6 +216,76 @@ func TestBuildWebChatFeedbackNewlineBudget(t *testing.T) {
 	b2 := blk(strings.Repeat("b", pad2))
 	if got := buildWebChatFeedback([]string{a2, b2}); got != strings.Join([]string{a2, b2}, "\n") {
 		t.Errorf("fitting block pair should pass through unchanged")
+	}
+}
+
+// TestBuildWebChatFeedbackDropPathReservesNote pins the drop-path invariant:
+// when the first unfitting block cannot even hold its tags (truncateToolResultBlock
+// returns false) the omission note is STILL appended - its budget must have
+// been reserved up front, or kept blocks can push the total over the cap.
+func TestBuildWebChatFeedbackDropPathReservesNote(t *testing.T) {
+	blk := func(s string) string { return "<tool_result>" + s + "</tool_result>" }
+	// First block consumes the budget down to < tag+marker bytes (41), so the
+	// second block can neither be kept nor cut: it is DROPPED, and the
+	// omission note still appended from the up-front reserve.
+	body := webChatMaxInputBytes - webChatOutputNoteReserve - len("<tool_result></tool_result>") - 41
+	a := blk(strings.Repeat("a", body))
+	b := blk(strings.Repeat("b", 100000))
+	got := buildWebChatFeedback([]string{a, b})
+	if len(got) > webChatMaxInputBytes {
+		t.Fatalf("drop-path feedback %d bytes, want <= %d", len(got), webChatMaxInputBytes)
+	}
+	if !strings.HasPrefix(got, a) {
+		t.Errorf("first block should be kept whole")
+	}
+	if !strings.Contains(got, "已省略 1 个工具结果") {
+		t.Errorf("want '已省略 1 个工具结果' in note: %q", tail(got, 120))
+	}
+}
+
+// TestBuildWebChatFeedbackSingleBlockOverCap covers the single-block path: a
+// block of cap+1 bytes must be cut in place (never dropped, never over-cap).
+func TestBuildWebChatFeedbackSingleBlockOverCap(t *testing.T) {
+	blk := func(s string) string { return "<tool_result>" + s + "</tool_result>" }
+	solo := blk(strings.Repeat("s", webChatMaxInputBytes-len("<tool_result></tool_result>")+1))
+	got := buildWebChatFeedback([]string{solo})
+	if len(got) > webChatMaxInputBytes {
+		t.Fatalf("single-block feedback %d bytes, want <= %d", len(got), webChatMaxInputBytes)
+	}
+	if !strings.HasPrefix(got, "<tool_result>") || !strings.HasSuffix(got, "</tool_result>") {
+		t.Errorf("single-block feedback broke tags")
+	}
+	if !strings.Contains(got, "已截断") {
+		t.Errorf("single-block feedback lacks truncation marker")
+	}
+}
+
+// TestBuildWebChatFeedbackProperty sweeps a matrix of block sizes (keep, cut,
+// drop combinations) and asserts the cap invariant on every output.
+func TestBuildWebChatFeedbackProperty(t *testing.T) {
+	blk := func(n int) string { return "<tool_result>" + strings.Repeat("x", n) + "</tool_result>" }
+	sizes := []int{1, 100, webChatMaxInputBytes / 4, webChatMaxInputBytes / 2,
+		webChatMaxInputBytes - webChatOutputNoteReserve - 100, webChatMaxInputBytes + 7,
+		2 * webChatMaxInputBytes}
+	for _, sa := range sizes {
+		for _, sb := range sizes {
+			got := buildWebChatFeedback([]string{blk(sa), blk(sb)})
+			if n := len(got); n > webChatMaxInputBytes {
+				t.Fatalf("sizes %d,%d: feedback %d bytes > cap", sa, sb, n)
+			}
+		}
+	}
+	// Three-block combinations of a few interesting sizes.
+	tri := []int{1, 1000, webChatMaxInputBytes - 300, webChatMaxInputBytes / 2}
+	for _, sa := range tri {
+		for _, sb := range tri {
+			for _, sc := range tri {
+				got := buildWebChatFeedback([]string{blk(sa), blk(sb), blk(sc)})
+				if n := len(got); n > webChatMaxInputBytes {
+					t.Fatalf("sizes %d,%d,%d: feedback %d bytes > cap", sa, sb, sc, n)
+				}
+			}
+		}
 	}
 }
 
