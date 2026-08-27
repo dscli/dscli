@@ -124,8 +124,9 @@ qualify), parses them (internal/toolcall/dsml.go), maps `exec_command` ->
 exec_command, shell, read_file, apply_patch) and feeds results back into the
 SAME conversation (handleWebChatToolLoop). The `webchat` CLI defaults to
 `--role ""` (plain chat: no role injection; DSML tool-call replies are still
-executed) and prints a stderr warning when a non-empty role is set, since the
-remote model's DSML tool calls will then run locally.
+executed); a stderr warning fires whenever the tool loop actually runs
+(any mode), and role sessions additionally get a role-specific warning up
+front, since the remote model's DSML tool calls will run locally.
 
 Role templates (internal/prompt/*.md) register DSML tools for WebChat via a
 `{{if .DSMLTools}}` block: `RenderPromptForRole` (WebChat path, used by

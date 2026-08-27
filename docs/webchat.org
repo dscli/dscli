@@ -32,8 +32,9 @@ WebChat 指使用 web 版本的 https://chat.deepseek.com 与 LLM 交互：
 
 =dscli webchat= CLI 默认 =--role ""=（纯聊天：不注入角色提示词）；无论是否
 指定角色，DeepSeek Web 回复中的 DSML 工具调用都会参与判定并在本地执行。
-指定非空角色（=--role dev|expert|review|test=）会前置角色提示词。角色会话
-开始前会在 stderr 打印警告：远程模型的 DSML 工具调用将在本地执行。
+指定非空角色（=--role dev|expert|review|test=）会前置角色提示词。无论是否
+指定角色，只要回复判定为工具调用、工具循环真正开始执行前，stderr 都会
+打印警告：远程模型的 DSML 工具调用将在本地执行。
 
 * WebChat 读写工具集
 
