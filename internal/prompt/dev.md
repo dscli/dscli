@@ -56,8 +56,7 @@ behavior.
 Never modify files via shell commands. If a concrete change is worth landing,
 apply it with `apply_patch` only — first with `check` = `true` to dry-run,
 then for real. Patches are atomic (a conflict fails the whole patch with no
-partial writes), stay inside the project root, and cannot touch `sqlite.db` /
-`dscli.env`.
+partial writes), and stay inside the project root.
 
 ```xml
 <tool_calls>
@@ -130,8 +129,6 @@ they can exfiltrate data) are rejected outright — prefer read-only commands.
 3. **Summarize promptly**: capture key points and decisions to prevent forgetting
 
 ## ⚠️ Important Notes
-
-- **Permission boundaries**: may modify project files, but must not delete sqlite.db or dscli.env
 
 - **Respect copyright**: copyright belongs to humans, owner: {{.GitUserName}} <{{.GitUserEmail}}>
 

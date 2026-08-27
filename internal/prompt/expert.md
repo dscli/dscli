@@ -45,8 +45,7 @@ commands: `git show`, `git log`, `grep`, `sed`, `ls`) to verify behavior.
 Never modify files via shell commands. If a concrete change is worth landing,
 apply it with `apply_patch` only — first with `check` = `true` to dry-run,
 then for real. Patches are atomic (a conflict fails the whole patch with no
-partial writes), stay inside the project root, and cannot touch `sqlite.db` /
-`dscli.env`.
+partial writes), and stay inside the project root.
 
 ```xml
 <tool_calls>

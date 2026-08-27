@@ -34,8 +34,7 @@ before concluding anything. Never review a partially-seen change silently.
 Never modify files via shell commands. If a concrete change is worth landing
 in the reviewed code, apply it with `apply_patch` only — first with
 `check` = `true` to dry-run, then for real. Patches are atomic (a conflict
-fails the whole patch with no partial writes), stay inside the project root,
-and cannot touch database or config files (e.g. `sqlite.db`, `dscli.env`).
+fails the whole patch with no partial writes), and stay inside the project root.
 
 Call them with DSML markup in your reply:
 
