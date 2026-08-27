@@ -41,7 +41,7 @@ var codeReviewTool = toolcall.ToolDef{
 			},
 			"timeout": map[string]any{
 				"type":        "integer",
-				"description": "Timeout in seconds (default 900). The expert may run multiple tool-call rounds; set longer for very large projects with many tests.",
+				"description": "Timeout in seconds (default 1800). The expert may run multiple tool-call rounds; set longer for very large projects with many tests.",
 			},
 		},
 		"required":             []string{"summary"},
@@ -50,8 +50,9 @@ var codeReviewTool = toolcall.ToolDef{
 	Category: "check",
 	// The expert may run multiple tool-call rounds (each needs a browser
 	// session + a model reply), so the budget must cover a full loop, not
-	// just a single WebChat exchange.
-	Timeout: 15 * time.Minute,
+	// just a single WebChat exchange. 30 minutes: a review of a large diff
+	// can take several rounds, and 15 minutes proved too short.
+	Timeout: 30 * time.Minute,
 	Handler: handleCodeReview,
 }
 
