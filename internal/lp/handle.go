@@ -37,7 +37,9 @@ const webChatOutputNoteReserve = 256
 // is <= maxBytes. Cutting by bytes alone could split a multi-byte rune; the
 // prefix always ends on a UTF-8 sequence boundary (and never on a lone
 // invalid byte: DecodeLastRune reports an error for a partial or illegal
-// trailing byte, and the prefix backs off past it).
+// trailing byte, and the prefix backs off past it). The contract is about
+// the CUT POINT only - a prefix may still contain invalid bytes that were
+// already inside s (binary tool output is not sanitized here).
 func headBytes(s string, maxBytes int) string {
 	if maxBytes <= 0 {
 		return ""
@@ -73,6 +75,18 @@ func truncateWebChatMessage(s string) string {
 	fmt.Fprintf(os.Stderr, "⚠️ 输入过长（%d 字节），已截断至 %d 字节再发送（保留开头）。\n",
 		len(s), webChatMaxInputBytes)
 	return headBytes(s, keep) + mark
+}
+
+// webChatOutputNote builds the trailing <tool_result> omission note of a
+// truncated feedback message. Extracted so the note-length invariant
+// (len(note) <= webChatOutputNoteReserve) can be pinned by a test - the
+// whole cap guarantee of buildWebChatFeedback hangs on it.
+func webChatOutputNote(omittedCount, omittedBytes int) string {
+	if omittedCount > 0 {
+		return fmt.Sprintf("<tool_result>⚠️ 输入超过长度限制：已省略 %d 个工具结果（约 %d 字节），以上结果已截断。</tool_result>",
+			omittedCount, omittedBytes)
+	}
+	return fmt.Sprintf("<tool_result>⚠️ 输入超过长度限制：以上结果已截断（约 %d 字节）。</tool_result>", omittedBytes)
 }
 
 // buildWebChatFeedback joins tool outputs into the message sent back to the
@@ -133,14 +147,7 @@ func buildWebChatFeedback(outputs []string) string {
 
 	fmt.Fprintf(os.Stderr, "⚠️ 工具结果过长（约 %d 字节），已截断至 %d 字节再发送（省略 %d 个结果）。\n",
 		total, webChatMaxInputBytes, omittedCount)
-	var note string
-	if omittedCount > 0 {
-		note = fmt.Sprintf("<tool_result>⚠️ 输入超过长度限制：已省略 %d 个工具结果（约 %d 字节），以上结果已截断。</tool_result>",
-			omittedCount, omittedBytes)
-	} else {
-		note = fmt.Sprintf("<tool_result>⚠️ 输入超过长度限制：以上结果已截断（约 %d 字节）。</tool_result>", omittedBytes)
-	}
-	return strings.Join(kept, "\n") + "\n" + note
+	return strings.Join(kept, "\n") + "\n" + webChatOutputNote(omittedCount, omittedBytes)
 }
 
 // truncateToolResultBlock cuts the BODY of one "<tool_result>…</tool_result>"
@@ -170,6 +177,8 @@ func truncateToolResultBlock(s string, maxBytes int) (out string, ok bool) {
 		return s, true
 	}
 	keep := bodyBudget - len(mark)
+	// After the tags+marker guard above keep >= 0 always holds for the
+	// production caller; the clamp only defends hypothetical direct calls.
 	if keep < 0 {
 		keep = 0
 	}

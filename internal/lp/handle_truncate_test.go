@@ -223,11 +223,39 @@ func TestBuildWebChatFeedbackNewlineBudget(t *testing.T) {
 // when the first unfitting block cannot even hold its tags (truncateToolResultBlock
 // returns false) the omission note is STILL appended - its budget must have
 // been reserved up front, or kept blocks can push the total over the cap.
+// TestWebChatOutputNoteFitsReserve pins the coupling the cap invariant hangs
+// on: buildWebChatFeedback's total reduces to cap - reserve + len(note), so
+// a future note longer than the reserve would silently reintroduce over-cap
+// sends. Worst realistic digits: many results and huge byte counts.
+func TestWebChatOutputNoteFitsReserve(t *testing.T) {
+	tests := []struct {
+		name         string
+		omittedCount int
+		omittedBytes int
+	}{
+		{"typical", 1, 50000},
+		{"many results", 1_000_000, 123},
+		{"huge bytes", 3, 900_000_000_000_000_000}, // int64-scale, 18 digits
+		{"both extreme", 1_000_000, 900_000_000_000_000_000},
+		{"none omitted", 0, 999_999_999},
+	}
+	for _, tt := range tests {
+		note := webChatOutputNote(tt.omittedCount, tt.omittedBytes)
+		if n := len(note); n > webChatOutputNoteReserve {
+			t.Errorf("%s: note %d bytes exceeds reserve %d: %q", tt.name, n, webChatOutputNoteReserve, note)
+		}
+		if !strings.HasPrefix(note, "<tool_result>") || !strings.HasSuffix(note, "</tool_result>") {
+			t.Errorf("%s: note tags broken: %q", tt.name, note)
+		}
+	}
+}
+
 func TestBuildWebChatFeedbackDropPathReservesNote(t *testing.T) {
 	blk := func(s string) string { return "<tool_result>" + s + "</tool_result>" }
-	// First block consumes the budget down to < tag+marker bytes (41), so the
-	// second block can neither be kept nor cut: it is DROPPED, and the
-	// omission note still appended from the up-front reserve.
+	// First block leaves 40 bytes of budget after it; the cut attempt gets
+	// maxBytes = 39 < tags+marker (67), so truncateToolResultBlock gives up
+	// and the second block is DROPPED - the omission note still appended
+	// from the up-front reserve.
 	body := webChatMaxInputBytes - webChatOutputNoteReserve - len("<tool_result></tool_result>") - 41
 	a := blk(strings.Repeat("a", body))
 	b := blk(strings.Repeat("b", 100000))
@@ -240,6 +268,30 @@ func TestBuildWebChatFeedbackDropPathReservesNote(t *testing.T) {
 	}
 	if !strings.Contains(got, "已省略 1 个工具结果") {
 		t.Errorf("want '已省略 1 个工具结果' in note: %q", tail(got, 120))
+	}
+}
+
+// TestBuildWebChatFeedbackDropPathRegression reproduces the pre-fix over-cap
+// send with the OLD budget model (note bytes unreserved): a first block of
+// cap-100 bytes was kept whole (n+1 <= cap), leaving ~99 bytes - less than
+// the note itself - so the second block was dropped and the note pushed the
+// total over the cap. The fixed code cuts the first block instead and stays
+// under cap. This test fails before the up-front reserve fix.
+func TestBuildWebChatFeedbackDropPathRegression(t *testing.T) {
+	blk := func(s string) string { return "<tool_result>" + s + "</tool_result>" }
+	big := blk(strings.Repeat("x", webChatMaxInputBytes-100-len("<tool_result></tool_result>")))
+	if n := len(big); n != webChatMaxInputBytes-100 {
+		t.Fatalf("setup: big block %d bytes, want cap-100", n)
+	}
+	got := buildWebChatFeedback([]string{big, blk(strings.Repeat("y", 1000))})
+	if len(got) > webChatMaxInputBytes {
+		t.Fatalf("regression feedback %d bytes, want <= %d", len(got), webChatMaxInputBytes)
+	}
+	if !strings.Contains(got, "已截断") {
+		t.Errorf("regression feedback lacks truncation marker")
+	}
+	if !strings.HasSuffix(got, "</tool_result>") {
+		t.Errorf("regression feedback does not end with a closed block")
 	}
 }
 
@@ -273,6 +325,9 @@ func TestBuildWebChatFeedbackProperty(t *testing.T) {
 			if n := len(got); n > webChatMaxInputBytes {
 				t.Fatalf("sizes %d,%d: feedback %d bytes > cap", sa, sb, n)
 			}
+			if !strings.HasSuffix(got, "</tool_result>") {
+				t.Errorf("sizes %d,%d: feedback does not end with a closed block", sa, sb)
+			}
 		}
 	}
 	// Three-block combinations of a few interesting sizes.
@@ -283,6 +338,9 @@ func TestBuildWebChatFeedbackProperty(t *testing.T) {
 				got := buildWebChatFeedback([]string{blk(sa), blk(sb), blk(sc)})
 				if n := len(got); n > webChatMaxInputBytes {
 					t.Fatalf("sizes %d,%d,%d: feedback %d bytes > cap", sa, sb, sc, n)
+				}
+				if !strings.HasSuffix(got, "</tool_result>") {
+					t.Errorf("sizes %d,%d,%d: feedback does not end with a closed block", sa, sb, sc)
 				}
 			}
 		}
