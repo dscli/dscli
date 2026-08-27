@@ -24,6 +24,7 @@ Simply put: **dscli = AI assistant + dev tools + session memory + CLI efficiency
 
 ### Version History
 
+- v0.9.2 (2026-08-27) — **Web Chat tool calling & QA**: webchat executes DSML tool calls from DeepSeek Web replies (`--role` dev/expert/review/test, `--mode` renamed to `--model`); over-long inputs truncated by runes before send; one shared Chrome for all sends; auto-resend on failed sends with reload-based answer extraction; `keep` resume for interrupted sessions; `apply_patch` tool (git apply semantics, symlink-cwd escape blocked, repo-root scoped) wired into the webchat DSML loop; DSML parser hardened against LLM markup artifacts (fences, escapes, badge junk, slash-less/cut close tags); toolcall executor refactored to reuse `HandleToolCalls` core with opaque `<tool_result>`; new `quality_assurance` tool for release-gate checks (keep-resume + honored `timeout`); code_review sends commit message + diff only (expert reads files via tools), 30-min default timeout; SSE parsing hardening; ChatResponse ID persisted as conversation ID
 - v0.9.1 (2026-08-23) — Vision & Files: DeepSeek Files API client with local upload cache (`dscli file upload|list|info|delete`), vision file tools (vision_file_read/list/info/delete) with dual-message image injection, `chat --attach`/`--model` for image input; time-aware pricing (2026-08-17 peak/off-peak, weekends off-peak, daily cache), `dscli models` shows current token prices; ask_expert `raw` mode + overload/truncation retries + temp-dir sandbox; file tools `insert_before_line` + length-mismatch warning + large-file size hint; interrupted tool calls marked on SIGINT/SIGTERM instead of replayed; macOS test-build regression fixes
 - v0.9.0 (2026-08-05) — `web_fetch` one-shot tool replacing MCP web reading (meta-refresh following, output save/insert); webchat flash/vision modes + file uploads + conversation registry (`keep=<id|last|url|list>`); ask_expert `@file` input, role/system customization, function definitions kept when truncating; drop LightPanda MCP support and `mcp_client` tool; tool re-categorization (`check`/`ai`); wakeup/ainap/aistatus consolidation into `internal/toolcall/ai`
 - v0.8.9 (2026-08-02) — Emacs integration (emacsclient-aware editor & wakeup), wakeup shell injection fix, MCP lenient schema support, Unicode-aware mail recipient lookup, history keyset pagination (`--before-id`), `project list --json`, site-zine skill, CI workflow
@@ -56,6 +57,7 @@ Simply put: **dscli = AI assistant + dev tools + session memory + CLI efficiency
 - **`dscli models`** — List AI models with current token prices
 - **`dscli balance`** — Check API balance and usage
 - **`dscli chat --attach <img>`** — Image input with vision models (e.g. `deepseek-v4-flash-vision-exp`), uploaded via the DeepSeek Files API
+- **`dscli webchat`** — Free chat through Chrome with chat.deepseek.com: `--model` pro/flash/vision, `--role` dev/expert/review/test personas, `--keep` resumes saved conversations; DSML tool calls inside replies are executed locally (file ops, `apply_patch`, shell, code_review…) with per-round output
 
 ### 🖼️ Vision & Files
 
@@ -115,7 +117,7 @@ go install github.com/dscli/dscli@latest
 # Option 2: Build from source
 git clone https://github.com/dscli/dscli.git
 cd dscli
-git checkout v0.9.1
+git checkout v0.9.2
 make install    # installs to $GOPATH/bin
 
 # Option 3: Download pre-built binary
