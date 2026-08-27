@@ -641,6 +641,11 @@ func TestJsResendFailedFmt(t *testing.T) {
 	// icon-only filled yellow circle (ds-button--warning + SVG, no text,
 	// no aria-label/title — the tooltip is a CSS overlay). The matcher
 	// must keep the icon path: dropping it breaks auto-resend silently.
+	// NOTE: these are substring guards only — they catch a dropped
+	// keyword but not a logic regression (e.g. a disabled check flipped,
+	// or the icon branch moved into a dead path). Matching correctness
+	// is covered by the manual end-to-end check against the real
+	// logged-in page (injected retry button + decoys).
 	for _, want := range []string{
 		"ds-button--warning", "querySelector('svg')", "b.disabled",
 		"重新发送", "发送失败",

@@ -73,8 +73,10 @@ const (
 	// step then failed with a misleading "login required" error. The
 	// bounded poll keeps recovery honest: the sign-in page fails FAST
 	// into the login flow (see waitForChatTextarea), while a logged-in
-	// slow hydration gets a generous window.
-	webChatTextareaWait = 30 * time.Second
+	// slow hydration gets a generous window. The sign-in marker is
+	// debounced (two consecutive samples) so a transient login-form
+	// flash during hydration cannot misroute a logged-in session.
+	webChatTextareaWait = 60 * time.Second
 
 	// IndexedDB extraction (the authoritative answer source, see
 	// webchatExtractReloadedIDB): the record write trails the DOM render,
@@ -103,15 +105,21 @@ const (
 })()`
 
 	// jsChatReadyState classifies the page while the chat composer is
-	// missing: "ok" when a visible textarea exists, "login" on the
-	// sign-in page (its .ds-sign-in-form-wrapper is stable, un-hashed
-	// markup), "waiting" otherwise (hydration still in progress). Used by
+	// missing: "ok" when a textarea exists with layout (offsetParent is
+	// null for position:fixed elements even when visible, so zero-size
+	// rect is the display:none truth), "login" on the sign-in page (its
+	// .ds-sign-in-form-wrapper is stable, un-hashed markup), "waiting"
+	// otherwise (hydration still in progress). Used by
 	// waitForChatTextarea: a plain "textarea missing" cannot be
 	// distinguished from login by the absence alone, so the sign-in
 	// marker gives the fast path while a slow chat page keeps polling.
 	jsChatReadyState = `(() => {
 		const ta = document.querySelector('textarea');
-		if (ta && ta.offsetParent !== null) return 'ok';
+		if (ta) {
+			if (ta.offsetParent !== null) return 'ok';
+			const r = ta.getBoundingClientRect();
+			if (r.width > 0 && r.height > 0) return 'ok';
+		}
 		if (document.querySelector('.ds-sign-in-form-wrapper, .ds-sign-in-form')) return 'login';
 		return 'waiting';
 	})()`
@@ -571,10 +579,13 @@ const (
 		const cands = document.querySelectorAll('button, [role="button"]');
 		for (let i = 0; i < cands.length; i++) {
 			const b = cands[i];
+			// Disabled retries (a generation is running) must never be
+			// clicked, on either path.
+			if (b.disabled) continue;
 			// Position:fixed elements (and popover/portal containers)
 			// report offsetParent === null while being fully visible, so
-			// the rect is the visibility truth; an element with zero size
-			// (display:none etc.) is never a clickable retry.
+			// offsetParent alone is not a visibility truth; the zero-size
+			// rect check catches display:none / not-yet-laid-out.
 			if (b.offsetParent === null) {
 				const r = b.getBoundingClientRect();
 				if (r.width === 0 || r.height === 0) continue;
@@ -591,7 +602,7 @@ const (
 				}
 			}
 			// Icon-only retry (current UI): filled warning circle + SVG.
-			if (!b.disabled && b.classList.contains('ds-button--warning') && b.querySelector('svg')) {
+			if (b.classList.contains('ds-button--warning') && b.querySelector('svg')) {
 				b.click();
 				return {found: true, matched: 'icon retry (ds-button--warning)'};
 			}
@@ -1060,8 +1071,17 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, opts W
 // the login recovery. The bounded poll classifies the page instead:
 // sign-in fails fast into the login flow, a slow chat page waits up to
 // webChatTextareaWait.
+//
+// The login signal is debounced: a SPA can briefly render the sign-in
+// shell before auth state resolves, so a single "login" sample — which
+// would misroute a logged-in session into the login flow — is not enough;
+// the marker must persist for two consecutive polls. A 60s timeout that
+// still lands on ErrLoginRequired is a last resort for a truly broken
+// page: deepseekLogin detects the session is already authenticated and
+// returns immediately, and the subsequent retry re-navigates warm.
 func waitForChatTextarea(ctx context.Context) error {
 	deadline := time.Now().Add(webChatTextareaWait)
+	loginStreak := 0
 	for {
 		var state string
 		if err := chromedp.Evaluate(jsChatReadyState, &state).Do(ctx); err == nil {
@@ -1069,7 +1089,12 @@ func waitForChatTextarea(ctx context.Context) error {
 			case "ok":
 				return nil
 			case "login":
-				return fmt.Errorf("no visible textarea: %w", ErrLoginRequired)
+				loginStreak++
+				if loginStreak >= 2 {
+					return fmt.Errorf("no visible textarea: %w", ErrLoginRequired)
+				}
+			default: // "waiting": hydration in progress, reset the streak
+				loginStreak = 0
 			}
 		}
 		// Evaluation errors (transient CDP hiccups) are tolerated: keep
