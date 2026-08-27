@@ -7,12 +7,139 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/prompt"
 	"github.com/dscli/dscli/internal/toolcall"
 	"github.com/nanjj/clog"
 )
+
+// webChatMaxInputRunes caps every message HandleWebChat sends to
+// chat.deepseek.com. The site rejects inputs beyond its limit - the composer
+// shows "超出字数限制，请删减后发送或开启新对话" / "你输入的信息过长，请调整后重试"
+// and the send is dropped, which the wait loop then misreads as a send
+// failure and retries in vain. Community measurements put the web input cap
+// around 50k+ 汉字 (50,000+ characters); 50000 runes is the conservative
+// operational ceiling: one rune is one character, exactly how the site counts
+// 字数. A package-level const so tests can pin behavior to the real value.
+const webChatMaxInputRunes = 50000
+
+// webChatOutputNoteReserve is the rune budget reserved inside a truncated
+// tool-feedback message for the trailing "<tool_result>⚠️ …</tool_result>"
+// omission note, so that note itself never pushes the message over the cap.
+const webChatOutputNoteReserve = 96
+
+// truncateWebChatMessage caps s at webChatMaxInputRunes runes before it is
+// sent: keep the head (the task statement usually leads), append an explicit
+// marker so the remote model knows the text it sees is partial, and print a
+// stderr note for the user. The marker is charged against the budget so the
+// result is guaranteed to fit the site's input limit.
+func truncateWebChatMessage(s string) string {
+	origRunes := utf8.RuneCountInString(s)
+	if origRunes <= webChatMaxInputRunes {
+		return s
+	}
+	mark := fmt.Sprintf("\n\n[已截断] 输入原文 %d 字，超过长度限制（%d 字），仅保留开头。",
+		origRunes, webChatMaxInputRunes)
+	keep := webChatMaxInputRunes - utf8.RuneCountInString(mark)
+	if keep < 0 {
+		keep = 0
+	}
+	fmt.Fprintf(os.Stderr, "⚠️ 输入过长（%d 字），已截断至 %d 字再发送（保留开头）。\n",
+		origRunes, webChatMaxInputRunes)
+	return toolcall.TruncateHead(s, keep) + mark
+}
+
+// buildWebChatFeedback joins tool outputs into the message sent back to the
+// expert, truncating at the site's input cap. Truncation is block-wise so the
+// DSML structure survives: as many complete <tool_result> blocks as fit are
+// kept; the first block that does not fit has its BODY cut (both tags are
+// preserved, the block stays well-formed); the remaining blocks are dropped
+// and replaced by one explicit omission note. Without this an over-long tool
+// result (e.g. a big read_file) would hit the site's "超出字数限制" rejection
+// mid-conversation, where a rejected send is unrecoverable.
+func buildWebChatFeedback(outputs []string) string {
+	total := 0
+	for _, o := range outputs {
+		total += utf8.RuneCountInString(o)
+	}
+	if total <= webChatMaxInputRunes {
+		return strings.Join(outputs, "\n")
+	}
+
+	var kept []string
+	budget := webChatMaxInputRunes
+	omittedCount, omittedRunes := 0, 0
+	for i, o := range outputs {
+		n := utf8.RuneCountInString(o)
+		if n <= budget {
+			kept = append(kept, o)
+			budget -= n
+			continue
+		}
+		// First block that does not fit: cut its body (tags intact) if the
+		// remaining budget can hold it; otherwise drop the whole block. All
+		// later blocks are omitted and summarized below.
+		if head, ok := truncateToolResultBlock(o, budget); ok {
+			kept = append(kept, head)
+			omittedRunes = n - utf8.RuneCountInString(head)
+		} else {
+			omittedRunes = n
+			omittedCount++
+		}
+		for _, rest := range outputs[i+1:] {
+			omittedRunes += utf8.RuneCountInString(rest)
+			omittedCount++
+		}
+		break
+	}
+
+	fmt.Fprintf(os.Stderr, "⚠️ 工具结果过长（约 %d 字），已截断至 %d 字再发送（省略 %d 个结果）。\n",
+		total, webChatMaxInputRunes, omittedCount)
+	// The note is a fixed-length template (percent digits are small next to
+	// the 96-rune reserve), so it never breaks the budget or its own tags.
+	var note string
+	if omittedCount > 0 {
+		note = fmt.Sprintf("<tool_result>⚠️ 输入超过长度限制：已省略 %d 个工具结果（约 %d 字），以上结果已截断。</tool_result>",
+			omittedCount, omittedRunes)
+	} else {
+		note = fmt.Sprintf("<tool_result>⚠️ 输入超过长度限制：以上结果已截断（约 %d 字）。</tool_result>", omittedRunes)
+	}
+	return strings.Join(kept, "\n") + "\n" + note
+}
+
+// truncateToolResultBlock cuts the BODY of one "<tool_result>…</tool_result>"
+// block so the whole block fits maxRunes runes (minus webChatOutputNoteReserve
+// left for the trailing omission note). The tags are preserved and the body
+// gets an inline marker, so the block remains well-formed DSML. ok=false
+// means s is not a well-formed block (defensive: future format change) or
+// cannot fit at all - the caller then treats the whole output as unkept.
+func truncateToolResultBlock(s string, maxRunes int) (out string, ok bool) {
+	const (
+		open  = "<tool_result>"
+		close = "</tool_result>"
+	)
+	if !strings.HasPrefix(s, open) || !strings.HasSuffix(s, close) {
+		return s, false
+	}
+	bodyBudget := maxRunes - utf8.RuneCountInString(open) - utf8.RuneCountInString(close) - webChatOutputNoteReserve
+	if bodyBudget <= 0 {
+		return s, false
+	}
+	body := s[len(open) : len(s)-len(close)]
+	mark := "\n⚠️[工具结果过长，已截断]"
+	if utf8.RuneCountInString(body) <= bodyBudget {
+		// Truncation is a no-op for this block (budget left over shrinks the
+		// later note only slightly); keep the original text.
+		return s, true
+	}
+	keep := bodyBudget - utf8.RuneCountInString(mark)
+	if keep < 0 {
+		keep = 0
+	}
+	return open + toolcall.TruncateHead(body, keep) + mark + close, true
+}
 
 // handleWebChatRetryDelays is the backoff sequence between retry attempts for
 // transient server overload and truncation (ErrServerBusy / ErrSendRejected /
@@ -75,6 +202,12 @@ var handleWebChatExecDSML = toolcall.ExecuteDSMLToolCalls
 //     retries, tool follow-ups) reuses a single browser, booted lazily on the
 //     first send and closed when the call returns - a 9-tool-call
 //     consultation launches Chrome once instead of ten times.
+//   - Input cap: messages (and tool feedback) are truncated at
+//     webChatMaxInputRunes before sending - the site rejects longer inputs
+//     with "超出字数限制" and the send is dropped, which the wait loop would
+//     misread as a retryable send failure. Tool results are cut block-wise so
+//     <tool_result> blocks stay well-formed; a truncated marker is appended so
+//     the model knows the text is partial.
 //
 // A retried send targets the same conversation (Keep is preserved): the busy
 // server never acknowledged the send, so re-sending is harmless.
@@ -92,6 +225,11 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 	} else if opts.Role != "" {
 		fullMessage = prompt.RenderPromptForRole(ctx, opts.Role) + "\n\n---\n\n## User Request\n\n" + message
 	}
+	// The site rejects inputs past its 字数 limit (composer shows "超出字数
+	// 限制"), dropping the send; truncate BEFORE sending so the wait loop never
+	// sees an unacknowledged submit it would mis-handle. The head is kept and
+	// an explicit marker tells the model the text is partial.
+	fullMessage = truncateWebChatMessage(fullMessage)
 
 	// One browser session serves the whole consultation: every send (backoff
 	// retries and tool-loop follow-ups) reuses the same tab, booted lazily on
@@ -245,8 +383,11 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 			return cleanExit()
 		}
 		// Each output is a self-delimiting <tool_result> block, in
-		// tool_calls order — newline separation is enough.
-		feedback := strings.Join(outputs, "\n")
+		// tool_calls order — newline separation is enough. buildWebChatFeedback
+		// truncates block-wise when the total exceeds the site's input cap, so
+		// an over-long tool result cannot trigger a rejected send mid-loop
+		// (unrecoverable: the round is part of a live conversation).
+		feedback := buildWebChatFeedback(outputs)
 
 		// Continue the SAME conversation: same mode, Keep set to the URL
 		// returned by the previous send. Explicit construction (not
