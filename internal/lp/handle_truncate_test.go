@@ -316,9 +316,11 @@ func TestBuildWebChatFeedbackSingleBlockOverCap(t *testing.T) {
 // drop combinations) and asserts the cap invariant on every output.
 func TestBuildWebChatFeedbackProperty(t *testing.T) {
 	blk := func(n int) string { return "<tool_result>" + strings.Repeat("x", n) + "</tool_result>" }
-	sizes := []int{1, 100, webChatMaxInputBytes / 4, webChatMaxInputBytes / 2,
+	sizes := []int{
+		1, 100, webChatMaxInputBytes / 4, webChatMaxInputBytes / 2,
 		webChatMaxInputBytes - webChatOutputNoteReserve - 100, webChatMaxInputBytes + 7,
-		2 * webChatMaxInputBytes}
+		2 * webChatMaxInputBytes,
+	}
 	for _, sa := range sizes {
 		for _, sb := range sizes {
 			got := buildWebChatFeedback([]string{blk(sa), blk(sb)})
