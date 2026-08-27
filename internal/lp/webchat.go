@@ -66,6 +66,16 @@ const (
 	webChatMaxResends       = 3               // automatic resend attempts before giving up
 	webChatResendCooldown   = 8 * time.Second // minimum gap between auto resends (UI settle time)
 
+	// webChatTextareaWait is how long webchatSend polls for the chat
+	// composer before concluding the page is not a chat page. A new
+	// conversation used to sleep a blind 3s after navigation; a cold
+	// Chrome boot plus React hydration can exceed that, and the set-value
+	// step then failed with a misleading "login required" error. The
+	// bounded poll keeps recovery honest: the sign-in page fails FAST
+	// into the login flow (see waitForChatTextarea), while a logged-in
+	// slow hydration gets a generous window.
+	webChatTextareaWait = 30 * time.Second
+
 	// IndexedDB extraction (the authoritative answer source, see
 	// webchatExtractReloadedIDB): the record write trails the DOM render,
 	// and a slow page hydration must not silently degrade the answer to the
@@ -91,6 +101,20 @@ const (
 	ta.dispatchEvent(new Event('input', {bubbles: true}));
 	return {success: true};
 })()`
+
+	// jsChatReadyState classifies the page while the chat composer is
+	// missing: "ok" when a visible textarea exists, "login" on the
+	// sign-in page (its .ds-sign-in-form-wrapper is stable, un-hashed
+	// markup), "waiting" otherwise (hydration still in progress). Used by
+	// waitForChatTextarea: a plain "textarea missing" cannot be
+	// distinguished from login by the absence alone, so the sign-in
+	// marker gives the fast path while a slow chat page keeps polling.
+	jsChatReadyState = `(() => {
+		const ta = document.querySelector('textarea');
+		if (ta && ta.offsetParent !== null) return 'ok';
+		if (document.querySelector('.ds-sign-in-form-wrapper, .ds-sign-in-form')) return 'login';
+		return 'waiting';
+	})()`
 
 	// jsSelectModeFmt switches the model selector to the requested mode
 	// (flash = 快速模式, pro = 专家模式, vision = 识图模式). %s is the
@@ -520,27 +544,56 @@ const (
 	// jsResendFailedFmt detects the failed-send retry button and clicks it.
 	// When the server rejects a message (overload, network error), the site
 	// keeps the message bubble in an error state with a "重发/重试" button
-	// next to it. Visible text must match exactly (variants enumerated);
-	// aria-label/title match loosely (sites add extra words there). Never
-	// the "重新回答/重新生成" action buttons that sit on COMPLETED answers,
-	// so clicking there cannot corrupt a successful round into a duplicate.
+	// next to it. Two UI generations are handled:
+	//
+	//   - Text/aria path (older builds): visible text must match exactly
+	//     (variants enumerated); aria-label/title match loosely (sites add
+	//     extra words there).
+	//   - Icon path (current build, verified 2026-08-27 against the live
+	//     bundle: main.a006649905.js): the retry renders as a FILLED YELLOW
+	//     CIRCLE with a redo-arrow SVG — no text, no aria-label, no title
+	//     (the "重试" tooltip is a CSS overlay, not a DOM attribute). The
+	//     button is <button class="ds-button ds-button--filled
+	//     ds-button--circle ds-button--warning"> with the resend SVG. The
+	//     ds-button classes are vendor-stable (not hashed), and the
+	//     warning-filled circle is the only ds-button--warning button in
+	//     the chat UI, so the class + SVG child check is a reliable match.
+	//     Disabled is skipped: the button is disabled while a generation is
+	//     running.
+	//
+	// Never the "重新回答/重新生成" action buttons that sit on COMPLETED
+	// answers, so clicking there cannot corrupt a successful round into a
+	// duplicate.
 	jsResendFailedFmt = `(() => {
 		const reExact = /^(重发|重试|重新发送|再次发送|重发消息|重新发送消息|发送失败[^]{0,10}(重发|重试)|resend|retry)$/;
-		const reLoose = /(重发|重试|resend|retry)/;
+		const reLoose = /(重发|重试|重新发送|再次发送|发送失败|resend|retry)/;
 		const reExclude = /(重新(回答|生成|思考|加载)|regenerate|re-?answer|reload|refresh)/;
 		const cands = document.querySelectorAll('button, [role="button"]');
 		for (let i = 0; i < cands.length; i++) {
 			const b = cands[i];
-			if (b.offsetParent === null) continue;
+			// Position:fixed elements (and popover/portal containers)
+			// report offsetParent === null while being fully visible, so
+			// the rect is the visibility truth; an element with zero size
+			// (display:none etc.) is never a clickable retry.
+			if (b.offsetParent === null) {
+				const r = b.getBoundingClientRect();
+				if (r.width === 0 || r.height === 0) continue;
+			}
 			const t = (b.textContent || '').trim().toLowerCase();
 			const aria = (b.getAttribute('aria-label') || '').trim().toLowerCase();
 			const title = (b.getAttribute('title') || '').trim().toLowerCase();
-			if (!t && !aria && !title) continue;
 			if (reExclude.test(aria) || reExclude.test(title) || reExclude.test(t)) continue;
-			const hit = reExact.test(t) || ((reLoose.test(aria) || reLoose.test(title)) && !reExclude.test(t));
-			if (hit) {
+			if (t || aria || title) {
+				const hit = reExact.test(t) || reLoose.test(aria) || reLoose.test(title);
+				if (hit) {
+					b.click();
+					return {found: true, matched: t || aria || title || 'button'};
+				}
+			}
+			// Icon-only retry (current UI): filled warning circle + SVG.
+			if (!b.disabled && b.classList.contains('ds-button--warning') && b.querySelector('svg')) {
 				b.click();
-				return {found: true, matched: t || aria || title || 'button'};
+				return {found: true, matched: 'icon retry (ds-button--warning)'};
 			}
 		}
 		return {found: false};
@@ -871,23 +924,23 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, opts W
 		chromedp.WaitReady("body"),
 	}
 
-	// For continuing conversations: wait longer for chat history to load.
-	// The old .ds-markdown selector no longer exists (the site dropped it
-	// in the hashed-class redesign), so wait on the textarea — the last
-	// always-present chat control — plus a settle delay for hydration.
-	if !isNewConv {
-		actions = append(
-			actions,
-			chromedp.Sleep(2*time.Second),
-			chromedp.WaitReady("textarea", chromedp.ByQuery),
-			chromedp.Sleep(3*time.Second),
-		)
-	} else {
-		actions = append(
-			actions,
-			chromedp.Sleep(3*time.Second),
-		)
-	}
+	// Wait for the chat composer before touching it. The old
+	// .ds-markdown selector no longer exists (the site dropped it in the
+	// hashed-class redesign), so the textarea is the last always-present
+	// chat control. New conversations previously slept a blind 3s, which
+	// failed on a slow cold boot; continuing conversations used
+	// WaitReady, which blocked forever on the sign-in page and masked the
+	// login signal (there is no deadline on the tab context). The bounded
+	// poll handles both: login fails fast into the recovery flow, and a
+	// slow hydration keeps waiting up to webChatTextareaWait. The settle
+	// delay afterwards lets React finish rendering mode chips etc.
+	actions = append(
+		actions,
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			return waitForChatTextarea(ctx)
+		}),
+		chromedp.Sleep(3*time.Second),
+	)
 
 	// Apply the requested mode: model selector radio, deep think for every
 	// mode, smart search for flash. Skipped when mode is "" (continue the
@@ -993,6 +1046,43 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, opts W
 	// Session info (keep:<id>) is surfaced by the caller (CLI / ask_expert),
 	// not here, so the library layer stays silent about presentation.
 	return response, reasoning, finalURL, nil
+}
+
+// waitForChatTextarea polls until the chat composer textarea is visible,
+// then returns nil. It replaces the blind Sleep(3s) after navigation for
+// new conversations: a cold Chrome boot plus React hydration can take
+// longer than 3s, and the later set-value step then failed with a
+// misleading "login required" error even though the user WAS logged in.
+//
+// chromedp.WaitReady cannot be used for this: without a deadline it blocks
+// until the tab context is cancelled, and on the sign-in page (no textarea
+// ever appears) that would mask the ErrLoginRequired signal that drives
+// the login recovery. The bounded poll classifies the page instead:
+// sign-in fails fast into the login flow, a slow chat page waits up to
+// webChatTextareaWait.
+func waitForChatTextarea(ctx context.Context) error {
+	deadline := time.Now().Add(webChatTextareaWait)
+	for {
+		var state string
+		if err := chromedp.Evaluate(jsChatReadyState, &state).Do(ctx); err == nil {
+			switch state {
+			case "ok":
+				return nil
+			case "login":
+				return fmt.Errorf("no visible textarea: %w", ErrLoginRequired)
+			}
+		}
+		// Evaluation errors (transient CDP hiccups) are tolerated: keep
+		// polling, timeout is the only hard exit.
+		if time.Now().After(deadline) {
+			return fmt.Errorf("no visible textarea: %w", ErrLoginRequired)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
 }
 
 // webchatSetValue sets the chat textarea value via JS (triggers React onChange).

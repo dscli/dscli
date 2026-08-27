@@ -637,6 +637,31 @@ func TestJsResendFailedFmt(t *testing.T) {
 			t.Errorf("jsResendFailedFmt must contain %q (word list regression)", want)
 		}
 	}
+	// The current DeepSeek UI renders the failed-send retry as an
+	// icon-only filled yellow circle (ds-button--warning + SVG, no text,
+	// no aria-label/title — the tooltip is a CSS overlay). The matcher
+	// must keep the icon path: dropping it breaks auto-resend silently.
+	for _, want := range []string{
+		"ds-button--warning", "querySelector('svg')", "b.disabled",
+		"重新发送", "发送失败",
+	} {
+		if !strings.Contains(jsResendFailedFmt, want) {
+			t.Errorf("jsResendFailedFmt must contain %q (icon-path regression)", want)
+		}
+	}
+}
+
+func TestJsChatReadyState(t *testing.T) {
+	// Regression guard on the page-classification snippet: it must detect
+	// the sign-in page (fast ErrLoginRequired instead of a 30s poll) and
+	// the visible textarea (the "ok" state waitForChatTextarea needs).
+	for _, want := range []string{
+		"textarea", "offsetParent", "ds-sign-in-form-wrapper", "'ok'", "'login'",
+	} {
+		if !strings.Contains(jsChatReadyState, want) {
+			t.Errorf("jsChatReadyState must contain %q (regression)", want)
+		}
+	}
 }
 
 func TestJsIDBGetAnswerFmtNewestFirst(t *testing.T) {
