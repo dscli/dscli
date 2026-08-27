@@ -456,7 +456,7 @@ func PrintSessionStats(ctx context.Context) {
 		} else {
 			durationStr = fmt.Sprintf("%.1fh", duration.Hours())
 		}
-		stats = append(stats, fmt.Sprintf("⏱️ %s", durationStr))
+		stats = append(stats, fmt.Sprintf("⏳ %s", durationStr))
 	}
 
 	// token 用量
