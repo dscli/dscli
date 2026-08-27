@@ -134,6 +134,7 @@ func TestIsCompleteResponse(t *testing.T) {
 		// The model pauses after emitting a simulated tool call that the
 		// web UI cannot execute; the fragment must not be returned.
 		{name: "tool call fragment", s: "<read_file path=\"AGENTS.md\" />", want: false},
+		{name: "apply_patch fragment", s: "<apply_patch patch=\"x\" />", want: false},
 		{name: "quoted tool call fragment", s: "> <read_file path=\"AGENTS.md\" />", want: false},
 		// A full answer that includes the simulated call plus body is fine.
 		{name: "full review with tool call", s: "> <read_file path=\"AGENTS.md\" />\n\n> <tool_result>\n# AGENTS.md\n\n## Overall Assessment\nSolid.", want: true},

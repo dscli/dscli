@@ -1071,3 +1071,102 @@ func TestExecuteDSMLToolCallsSkipsNonWhitelisted(t *testing.T) {
 		t.Errorf("outputs = %q, want none for non-whitelisted names", outs)
 	}
 }
+
+func TestNormalizeDSMLInvokeApplyPatch(t *testing.T) {
+	inv := DSMLCall{Name: "apply_patch", Args: map[string]any{
+		"patch":   "--- a/a.go\n+++ b/a.go\n@@ -1 +1 @@\n-x\n+y\n",
+		"cwd":     "sub/dir",
+		"check":   true,
+		"reverse": false,
+	}}
+	name, args, err := normalizeDSMLInvoke(inv)
+	if err != nil {
+		t.Fatalf("normalizeDSMLInvoke: %v", err)
+	}
+	if name != "apply_patch" {
+		t.Errorf("name = %q, want apply_patch", name)
+	}
+	if args["check"] != true || args["reverse"] != false {
+		t.Errorf("booleans passthrough broken: %v", args)
+	}
+	if got, _ := args["patch"].(string); got != inv.Args["patch"] {
+		t.Errorf("patch = %q, want verbatim", got)
+	}
+	if args["cwd"] != "sub/dir" {
+		t.Errorf("cwd = %v", args["cwd"])
+	}
+	// 只透传白名单参数：无关参数必须被丢弃。
+	inv.Args = map[string]any{"patch": "x", "junk": "y"}
+	name, args, err = normalizeDSMLInvoke(inv)
+	if err != nil {
+		t.Fatalf("normalizeDSMLInvoke: %v", err)
+	}
+	if _, ok := args["junk"]; ok {
+		t.Errorf("non-whitelisted parameter leaked: %v", args)
+	}
+}
+
+func TestNormalizeDSMLInvokeApplyPatchMissingPatch(t *testing.T) {
+	inv := DSMLCall{Name: "apply_patch", Args: map[string]any{"check": true}}
+	if _, _, err := normalizeDSMLInvoke(inv); err == nil {
+		t.Error("expected error for apply_patch without patch")
+	}
+}
+
+func TestNormalizeDSMLInvokeReadFileLineRange(t *testing.T) {
+	// start_line 或 end_line 任一存在即映射到行区间工具。
+	inv := DSMLCall{Name: "read_file", Args: map[string]any{
+		"path": "big.go", "start_line": float64(100), "end_line": float64(200),
+	}}
+	name, args, err := normalizeDSMLInvoke(inv)
+	if err != nil {
+		t.Fatalf("normalizeDSMLInvoke: %v", err)
+	}
+	if name != "read_file_with_line_range" {
+		t.Errorf("name = %q, want read_file_with_line_range", name)
+	}
+	if args["path"] != "big.go" || args["start_line"] != float64(100) {
+		t.Errorf("args = %v", args)
+	}
+
+	// 只传 end_line（start 默认 1）同样映射。
+	inv = DSMLCall{Name: "read_file", Args: map[string]any{"path": "big.go", "end_line": float64(50)}}
+	name, _, err = normalizeDSMLInvoke(inv)
+	if err != nil {
+		t.Fatalf("normalizeDSMLInvoke: %v", err)
+	}
+	if name != "read_file_with_line_range" {
+		t.Errorf("name = %q, want read_file_with_line_range", name)
+	}
+}
+
+func TestParseDSMLToolCallsApplyPatchPayload(t *testing.T) {
+	// patch 参数为多行 diff，且含尖括号/与号字符：参数值视为不透明，
+	// 解析必须完整还原，且值里的 <invoke 不能被当作新调用。
+	payload := "--- a/a.go\n+++ b/a.go\n@@ -1 +1 @@\n-// <invoke name=\"read_file\">\n+// &lt;tool_calls&gt;\n"
+	doc := `<tool_calls>
+<invoke name="apply_patch">
+<parameter name="patch" string="true">` + payload + `</parameter>
+<parameter name="check" string="false">true</parameter>
+</invoke>
+</tool_calls>`
+	calls, err := ParseDSMLToolCalls(doc)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls: %v", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("calls = %d, want 1", len(calls))
+	}
+	if calls[0].Name != "apply_patch" {
+		t.Errorf("name = %q", calls[0].Name)
+	}
+	if calls[0].Args["check"] != true {
+		t.Errorf("check = %v (%T), want bool true", calls[0].Args["check"], calls[0].Args["check"])
+	}
+	// XML 实体在参数值中解码（&lt; -> <、&gt; -> >），值内的 <invoke 原样
+	// 保留——工具收到的是完整 diff 文本，不是被解析成新调用的结构。
+	want := strings.NewReplacer("&lt;", "<", "&gt;", ">").Replace(payload)
+	if got, _ := calls[0].Args["patch"].(string); got != want {
+		t.Errorf("patch payload mangled:\n got: %q\nwant: %q", got, want)
+	}
+}
