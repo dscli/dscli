@@ -1138,6 +1138,19 @@ func TestNormalizeDSMLInvokeReadFileLineRange(t *testing.T) {
 	if name != "read_file_with_line_range" {
 		t.Errorf("name = %q, want read_file_with_line_range", name)
 	}
+
+	// 装饰性参数（justification）不得泄漏进目标工具：与 apply_patch
+	// 相同的白名单过滤策略。
+	inv = DSMLCall{Name: "read_file", Args: map[string]any{
+		"path": "big.go", "start_line": float64(1), "justification": "why",
+	}}
+	name, args, err = normalizeDSMLInvoke(inv)
+	if err != nil {
+		t.Fatalf("normalizeDSMLInvoke: %v", err)
+	}
+	if _, ok := args["justification"]; ok {
+		t.Errorf("justification leaked into target args: %v", args)
+	}
 }
 
 func TestParseDSMLToolCallsApplyPatchPayload(t *testing.T) {

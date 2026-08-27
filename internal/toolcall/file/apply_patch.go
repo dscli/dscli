@@ -96,14 +96,21 @@ func handleApplyPatch(ctx context.Context, args ToolArgs) (result, warning strin
 	}
 
 	// patch 参数若为单个已存在文件路径（.patch/.diff），读取其内容。
-	// 多行文本必然是 diff 内容本身，不当作路径处理。
+	// 多行文本必然是 diff 内容本身，不当作路径处理。文件路径必须位于
+	// 项目根内（同 cwd 安全姿态：远端模型不能借 patch-as-path 读取
+	// 项目外任意文件）。
 	if !strings.Contains(patch, "\n") {
-		if fi, statErr := os.Stat(patch); statErr == nil && !fi.IsDir() {
+		// 相对路径基于项目根解析（与 file 包其他工具一致，ResolvePath）。
+		fullPath := ResolvePath(ctx, patch)
+		if fi, statErr := os.Stat(fullPath); statErr == nil && !fi.IsDir() {
+			if err = requirePatchFileInsideProject(fullPath); err != nil {
+				return result, warning, err
+			}
 			if fi.Size() > maxPatchFileSize {
 				err = fmt.Errorf("patch file %q too large (%d bytes, max %d)", patch, fi.Size(), maxPatchFileSize)
 				return result, warning, err
 			}
-			data, readErr := os.ReadFile(patch)
+			data, readErr := os.ReadFile(fullPath)
 			if readErr != nil {
 				err = fmt.Errorf("failed to read patch file %q: %w", patch, readErr)
 				return result, warning, err
@@ -219,6 +226,11 @@ func parseBoolLoose(s string) (bool, error) {
 // resolveApplyPatchCWD 解析 cwd 参数：默认项目根；显式 cwd 必须解析后
 // 位于项目根内且是 git 仓库（向上查找），否则拒绝——工具面向不可信
 // 的远程模型，不能允许对项目外的仓库写文件。
+//
+// 安全：项目根与 cwd 都先做 EvalSymlinks（符号链接解析）再校验相对关系，
+// 否则项目根内一个指向外部仓库的软链接（如 proj/link -> /tmp/otherrepo）
+// 就能绕过词法 Rel 检查——exec_command 可先 ln -s 制造该链接。gitTopLevel
+// 返回的仓库顶层同样必须落在项目根内（仅打日志不够，-C 仍会落到外部）。
 func resolveApplyPatchCWD(ctx context.Context, args ToolArgs) (string, error) {
 	root := context.ProjectRoot
 	if root == "" {
@@ -247,20 +259,80 @@ func resolveApplyPatchCWD(ctx context.Context, args ToolArgs) (string, error) {
 		return "", fmt.Errorf("apply_patch: cannot resolve cwd %q: %w", raw, absErr)
 	}
 
-	// 项目根内校验：不允许 .. 逃逸。
-	rel, relErr := filepath.Rel(root, abs)
-	if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("apply_patch: cwd %q is outside the project root %q", abs, root)
+	// 符号链接解析后校验：拒绝任何指向项目根外目录的 cwd（含软链接）。
+	rootReal, realErr := filepath.EvalSymlinks(root)
+	if realErr != nil {
+		// 项目根不存在时 filepath.Rel 也无意义；报可读错误。
+		return "", fmt.Errorf("apply_patch: cannot resolve project root %q: %w", root, realErr)
+	}
+	absReal, realErr := filepath.EvalSymlinks(abs)
+	if realErr != nil {
+		return "", fmt.Errorf("apply_patch: cannot resolve cwd %q: %w", abs, realErr)
+	}
+	if err := requireInsideRoot(absReal, rootReal, "cwd"); err != nil {
+		return "", err
 	}
 
-	// git 仓库校验：git apply 需要仓库上下文；同时产出稳定语义
-	// （patch 路径始终相对仓库根，与进程 CWD 无关）。
-	if top, repoErr := gitTopLevel(ctx, abs); repoErr != nil {
+	// git 仓库校验：git apply 需要仓库上下文。cwd 必须是仓库根——
+	// git apply 在仓库内子目录运行时 patch 路径相对子目录解析（实测
+	// 子目录下 `git apply` 对相对仓库根的路径会"跳过补丁"且 exit 0，
+	// 静默假成功），因此显式拒绝子目录，语义收敛为"cwd=仓库根，patch
+	// 路径相对仓库根"。
+	top, repoErr := gitTopLevel(ctx, abs)
+	if repoErr != nil {
 		return "", fmt.Errorf("apply_patch: %q is not inside a git repository (cwd must be a repo dir): %w", abs, repoErr)
-	} else {
-		outfmt.Debug("apply_patch: cwd=%s repo=%s", abs, top)
 	}
+	topReal, realErr := filepath.EvalSymlinks(top)
+	if realErr != nil {
+		return "", fmt.Errorf("apply_patch: cannot resolve repo root %q: %w", top, realErr)
+	}
+	// 仓库顶层必须位于项目根内（防软链接把仓库根"抬"出项目根后仍以
+	// 外层 cwd 写入）。
+	if err := requireInsideRoot(topReal, rootReal, "repo"); err != nil {
+		return "", err
+	}
+	if absReal != topReal {
+		return "", fmt.Errorf("apply_patch: cwd %q must be the git repository root %q (patch paths resolve against the repo root)", abs, top)
+	}
+	outfmt.Debug("apply_patch: cwd=%s repo=%s", abs, top)
 	return abs, nil
+}
+
+// requireInsideRoot 校验 path 解析后位于 root 内（含根自身），错误信息
+// 携带原始路径便于定位。
+func requireInsideRoot(path, root, what string) error {
+	rel, relErr := filepath.Rel(root, path)
+	if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("apply_patch: %s %q is outside the project root %q", what, path, root)
+	}
+	return nil
+}
+
+// requirePatchFileInsideProject 校验 patch 文件路径位于项目根内
+// （符号链接解析后），与 cwd 的边界一致。
+func requirePatchFileInsideProject(fullPath string) error {
+	root := context.ProjectRoot
+	if root == "" {
+		var cwdErr error
+		if root, cwdErr = os.Getwd(); cwdErr != nil {
+			return fmt.Errorf("apply_patch: cannot determine project root: %w", cwdErr)
+		}
+	}
+	if abs, absErr := filepath.Abs(root); absErr == nil {
+		root = abs
+	}
+	absPath, absErr := filepath.Abs(fullPath)
+	if absErr != nil {
+		return fmt.Errorf("apply_patch: cannot resolve patch file %q: %w", fullPath, absErr)
+	}
+	rootReal, realErr := filepath.EvalSymlinks(root)
+	if realErr != nil {
+		return fmt.Errorf("apply_patch: cannot resolve project root %q: %w", root, realErr)
+	}
+	if pathReal, pathErr := filepath.EvalSymlinks(absPath); pathErr == nil {
+		absPath = pathReal
+	}
+	return requireInsideRoot(absPath, rootReal, "patch file")
 }
 
 // gitTopLevel 返回 git 仓库顶层目录，验证 dir 位于仓库内。
@@ -273,20 +345,25 @@ func gitTopLevel(ctx context.Context, dir string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// checkApplyPatchTargets 预检 patch 的目标文件：拒绝逃逸路径（..、绝对
-// 路径——git apply 本身也拒绝，这里提前给出可读错误）与敏感文件
-// （sqlite.db / dscli.env，项目红线）。
+// checkApplyPatchTargets 预检 patch 的目标文件：拒绝逃逸路径（绝对路径、
+// 任何形式的 .. 段——git apply 本身也拒绝，这里提前给出可读错误）与敏感
+// 文件（sqlite.db / dscli.env，项目红线）。
 func checkApplyPatchTargets(patch string) error {
 	for _, m := range applyPatchPlusRe.FindAllStringSubmatch(patch, -1) {
 		p := strings.TrimSpace(m[1])
 		if p == "" || p == "/dev/null" || p == "dev/null" {
 			continue
 		}
-		if filepath.IsAbs(p) || p == ".." || strings.HasPrefix(p, "../") || strings.HasPrefix(p, ".."+string(filepath.Separator)) {
+		// Clean 后 Rel(".", ...) 检测即覆盖 "../x"、"sub/../../x" 等全部
+		// 逃逸形态；绝对路径先以 IsAbs 单独排除。
+		clean := filepath.Clean(p)
+		if filepath.IsAbs(clean) {
 			return fmt.Errorf("apply_patch: patch target %q escapes the working tree", p)
 		}
-		base := filepath.Base(filepath.Clean(p))
-		if base == "sqlite.db" || base == "dscli.env" {
+		if rel, relErr := filepath.Rel(".", clean); relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("apply_patch: patch target %q escapes the working tree", p)
+		}
+		if base := filepath.Base(clean); base == "sqlite.db" || base == "dscli.env" {
 			return fmt.Errorf("apply_patch: patch target %q is a protected file (sqlite.db / dscli.env)", p)
 		}
 	}

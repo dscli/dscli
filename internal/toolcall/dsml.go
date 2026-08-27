@@ -7,10 +7,12 @@
 // blocks, executes the underlying dscli tools, and feeds the results back
 // into the same conversation (see handleWebChatToolLoop in internal/lp).
 //
-// The mapping is deliberately narrow: only read-only review tools are
-// exposed (exec_command -> shell, read_file). Anything else returns an
+// The mapping is deliberately narrow: structured file read/write
+// (read_file, read_file_with_line_range via mapping, apply_patch) plus
+// command execution (exec_command -> shell). Anything else returns an
 // "unsupported tool" feedback so the expert can adapt, instead of silently
-// executing an unvetted command.
+// executing an unvetted command. The whitelist and its safety invariants
+// are documented at dsmlToolNames.
 package toolcall
 
 import (
@@ -603,14 +605,22 @@ func normalizeDSMLInvoke(inv DSMLCall) (name string, args ToolArgs, err error) {
 	}
 	if inv.Name == "read_file" {
 		// 任一区间参数存在即映射到行区间工具（缺省端由该工具补默认值：
-		// start=1、end=EOF）。
+		// start=1、end=EOF）。与 apply_patch 一致只透传白名单参数，
+		// justification 等装饰性参数不进入目标工具（read_file 工具本体
+		// 与 read_file_with_line_range 的 schema 都不声明它们）。
+		args = ToolArgs{}
+		for _, key := range []string{"path", "start_line", "end_line"} {
+			if v, ok := inv.Args[key]; ok {
+				args[key] = v
+			}
+		}
 		if _, ok := inv.Args["start_line"]; ok {
-			return "read_file_with_line_range", ToolArgs(inv.Args), nil
+			return "read_file_with_line_range", args, nil
 		}
 		if _, ok := inv.Args["end_line"]; ok {
-			return "read_file_with_line_range", ToolArgs(inv.Args), nil
+			return "read_file_with_line_range", args, nil
 		}
-		return "read_file", ToolArgs(inv.Args), nil
+		return "read_file", args, nil
 	}
 	if inv.Name == "apply_patch" {
 		args = ToolArgs{}

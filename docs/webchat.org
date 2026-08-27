@@ -58,12 +58,13 @@ WebChat 指使用 web 版本的 https://chat.deepseek.com 与 LLM 交互：
 | 参数名  | 类型    | 必填 | 描述                                                                       |
 |---------+---------+------+----------------------------------------------------------------------------|
 | =patch=   | string  | 是   | unified diff 文本；若为单个已存在文件路径（如 =.patch= 文件）则读取其内容    |
-| =cwd=     | string  | 否   | 应用补丁的 git 仓库（目录），默认项目根；必须位于项目根内且为 git 仓库       |
+| =cwd=     | string  | 否   | 应用补丁的 git 仓库*根*，默认项目根；必须位于项目根内且为 git 仓库根        |
 | =check=   | boolean | 否   | 若为 =true= ，只验证补丁能否干净应用，不写文件（对应 =git apply --check= ） |
 | =reverse= | boolean | 否   | 若为 =true= ，反向应用（撤销，对应 =git apply -R= ）                         |
 
 注意：patch 中的文件路径始终相对 =git 仓库根=（git apply 语义），与进程
-CWD 无关。
+CWD 无关；cwd 必须是仓库根——git apply 在仓库内子目录运行会对相对仓库根
+的路径“静默跳过”（exit 0 且零修改），工具层因此拒绝子目录 cwd。
 
 *返回值* （JSON）：
 
@@ -77,7 +78,8 @@ CWD 无关。
   }
 #+end_src
 
-- =applied= ：是否成功；失败时为 =false= 。
+- =applied= ：是否成功；失败时为 =false= 。check 模式下 =true= 仅表示
+  “预检通过”（未写入文件），与 =check_only=true= 同时出现。
 - =check_only= ：本次是否只做了预检。
 - =changed_files= ：实际被修改的文件列表（ =check= 模式下为“将修改”的列表）。
 - =summary= ： =git apply --stat= 风格摘要。

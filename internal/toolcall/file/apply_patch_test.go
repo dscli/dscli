@@ -358,3 +358,79 @@ func TestParseApplyStat(t *testing.T) {
 		t.Errorf("files: %v", files)
 	}
 }
+
+func TestHandleApplyPatchCwdSymlinkEscape(t *testing.T) {
+	repo := newApplyPatchRepo(t, map[string]string{"a.txt": "hello\n"})
+	setProjectRoot(t, repo)
+
+	// 项目外的另一个 git 仓库，通过软链接挂在项目根内：
+	// 词法上 cwd 位于根内，但符号链接解析后指向外部——必须拒绝。
+	other := newApplyPatchRepo(t, map[string]string{"x.txt": "x\n"})
+	link := filepath.Join(repo, "link")
+	if err := os.Symlink(other, link); err != nil {
+		t.Skipf("symlink not supported: %v", err)
+	}
+
+	patch := "--- a/x.txt\n+++ b/x.txt\n@@ -1 +1 @@\n-x\n+y\n"
+	_, _, err := handleApplyPatch(context.Background(), ToolArgs{"patch": patch, "cwd": link})
+	if err == nil || !strings.Contains(err.Error(), "outside the project root") {
+		t.Fatalf("symlink cwd escape must be rejected, got: %v", err)
+	}
+	// 外部仓库必须未被写入。
+	if got := mustReadFile(t, filepath.Join(other, "x.txt")); got != "x\n" {
+		t.Errorf("external repo was modified: %q", got)
+	}
+}
+
+func TestHandleApplyPatchCwdSubdirSemantics(t *testing.T) {
+	repo := newApplyPatchRepo(t, map[string]string{"a.txt": "hello\n"})
+	setProjectRoot(t, repo)
+
+	patch := makePatch(t, repo, func() {
+		if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("hello\nworld\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	// cwd 为仓库子目录：git apply 在子目录会对相对仓库根的 patch 路径
+	// "静默跳过"（exit 0 但零修改），必须显式拒绝而不是假成功。
+	sub := filepath.Join(repo, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := handleApplyPatch(context.Background(), ToolArgs{"patch": patch, "cwd": sub})
+	if err == nil || !strings.Contains(err.Error(), "must be the git repository root") {
+		t.Fatalf("subdir cwd must be rejected, got: %v", err)
+	}
+	if got := mustReadFile(t, filepath.Join(repo, "a.txt")); got != "hello\n" {
+		t.Errorf("repo-root file must stay untouched after rejection: %q", got)
+	}
+}
+
+func TestHandleApplyPatchPatchFileOutsideRoot(t *testing.T) {
+	repo := newApplyPatchRepo(t, map[string]string{"a.txt": "hello\n"})
+	setProjectRoot(t, repo)
+
+	// patch 参数指向项目外文件（如 /etc/hosts 或 /tmp 下文件）：
+	// 与 cwd 相同安全姿态，必须拒绝读取。
+	outside := filepath.Join(t.TempDir(), "evil.patch")
+	if err := os.WriteFile(outside, []byte("--- a/x\n+++ b/x\n@@ -1 +1 @@\n-x\n+y\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := handleApplyPatch(context.Background(), ToolArgs{"patch": outside})
+	if err == nil || !strings.Contains(err.Error(), "outside the project root") {
+		t.Fatalf("patch file outside root must be rejected, got: %v", err)
+	}
+}
+
+func TestHandleApplyPatchNestedTraversalTarget(t *testing.T) {
+	repo := newApplyPatchRepo(t, map[string]string{"a.txt": "hello\n"})
+	setProjectRoot(t, repo)
+
+	// 不以 ../ 开头的嵌套逃逸形态（sub/../../outside.txt）。
+	patch := "--- a/sub/../../outside.txt\n+++ b/sub/../../outside.txt\n@@ -1 +1 @@\n-x\n+y\n"
+	_, _, err := handleApplyPatch(context.Background(), ToolArgs{"patch": patch})
+	if err == nil || !strings.Contains(err.Error(), "escapes the working tree") {
+		t.Fatalf("nested traversal must be rejected, got: %v", err)
+	}
+}

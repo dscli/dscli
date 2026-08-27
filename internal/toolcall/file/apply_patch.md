@@ -7,7 +7,7 @@ Atomic: any conflict fails the whole patch with no partial writes
 
 - patch (string, required): unified diff text; or a path to a .patch/.diff
   file (single-line value that names an existing file is read as the patch)
-- cwd (string, optional): git repository directory; default project root;
+- cwd (string, optional): git repository ROOT; default project root;
   must stay inside the project root
 - check (boolean, optional): true = dry-run (`git apply --check`), no writes
 - reverse (boolean, optional): true = reverse-apply (undo, `git apply -R`)
