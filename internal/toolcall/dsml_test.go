@@ -1063,13 +1063,16 @@ func TestIsPureDSMLToolCalls(t *testing.T) {
 	}
 }
 
-// TestIsDSMLToolCallReply pins the tool-loop gate for the WebChat shapes
-// observed in practice: a short prose preamble before a complete call
-// block (the model re-emitting its call) or a bare <invoke> list still
-// counts as a tool call; long prose that merely cites an <invoke> example
-// never does. Quoted code (fenced / inline spans) is excluded by the
-// parser, so those cases still fail the gate.
-func TestIsDSMLToolCallReply(t *testing.T) {
+// TestIsDSMLToolCallEnd pins the tool-loop gate for the WebChat shapes
+// observed in practice: a reply that ENDS with a complete </tool_calls>
+// close tag is a tool-call emission and is executed, whatever prose
+// precedes it (a short re-emission preamble OR a long explanation - both
+// are the model's commentary; the parsed calls inside the wrapper are the
+// instruction, and the preamble is discarded with the round). Without the
+// closing wrapper the reply is not a tool-call emission: an inline-quoted
+// example, a fenced quote, a bare <invoke> list or a truncated call all
+// fail the gate.
+func TestIsDSMLToolCallEnd(t *testing.T) {
 	const reEmit = "你说得对，我上一条消息的工具调用少了 `<tool_calls>` 包裹标签，格式不完整。不用你补齐，我重新发一遍正确的：\n\n" + `<tool_calls>
 <invoke name="read_file">
 <parameter name="path" string="true">internal/toolcall/ask/code_review.md</parameter>
@@ -1092,6 +1095,7 @@ func TestIsDSMLToolCallReply(t *testing.T) {
 <invoke name="exec_command"><parameter name="cmd" string="true">git show --stat</parameter></invoke>
 </tool_calls>`
 	longProse := "Solid work. `<invoke name=\"exec_command\"><parameter name=\"cmd\" string=\"true\">ls</parameter></invoke>` pins it. The implementation matches the design and the new tests cover every edge case from the review, with only a few nits left."
+	longPreamble := strings.Repeat("context. ", 80) + "\n" + pure
 
 	cases := []struct {
 		name string
@@ -1099,20 +1103,27 @@ func TestIsDSMLToolCallReply(t *testing.T) {
 		want bool
 	}{
 		{"prose preamble + wrapped calls (re-emission)", reEmit, true},
-		{"bare invoke list, stray close wrapper", bareList, true},
 		{"pure tool_calls wrapper", pure, true},
 		{"short prose + calls", "I need to inspect.\n" + pure, true},
+		// 需求核心：放弃"只有 tool_calls"约定——只要以 </tool_calls> 结束，
+		// 即使前言很长也解析并执行（前言随该轮丢弃）。
+		{"long prose + wrapped calls", longPreamble, true},
+		{"trailing whitespace after close tag", pure + "\n\n", true},
+		// 全角括号经 normalizeDSMLText 转半角后同样成立。
+		{"full-width close tag", "分析一下：\n" + strings.Replace(pure, "</tool_calls>", "＜/tool_calls＞", 1), true},
+		// 无 </tool_calls> 结尾：引用示例、裸 invoke 列表、截断调用都不执行。
+		{"bare invoke list, no wrapper close", strings.TrimSuffix(bareList, "</tool_calls>"), false},
+		{"bare invoke list ending in wrapper close", bareList, true},
 		{"inline quote in long prose", longProse, false},
 		{"fenced quote only", "```\n<invoke name=\"exec_command\"><parameter name=\"cmd\" string=\"true\">ls</parameter></invoke>\n```", false},
 		{"truncated call", "<invoke name=\"exec_command\">\n<parameter name=\"cmd\" string=\"true\">ls</parameter>", false},
-		{"long prose + calls", strings.Repeat("context. ", 80) + "\n" + pure, false},
 		{"empty text", "", false},
 		{"no call at all", "just prose", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := IsDSMLToolCallReply(c.in); got != c.want {
-				t.Errorf("IsDSMLToolCallReply = %v, want %v", got, c.want)
+			if got := IsDSMLToolCallEnd(c.in); got != c.want {
+				t.Errorf("IsDSMLToolCallEnd = %v, want %v", got, c.want)
 			}
 		})
 	}

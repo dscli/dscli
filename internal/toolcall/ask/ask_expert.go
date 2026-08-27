@@ -73,8 +73,10 @@ var askExpertTool = toolcall.ToolDef{
 // mode selects the web chat mode ("" = auto: pro, or vision with image
 // uploads); keep continues a previous conversation ("" = new, "last" =
 // most recent, or a conversation ID/URL); attachments are image files
-// uploaded to the web chat. It returns the reply text and the conversation
-// URL (empty when unknown) so callers can continue the conversation later.
+// uploaded to the web chat. It returns the reply text, the conversation
+// URL (empty when unknown) so callers can continue the conversation later,
+// and printed - the reply was already printed by the DSML tool loop, so
+// callers must not re-print it (it would duplicate the final answer).
 var askExpertWithRoleFunc = askExpertWebChat
 
 func init() {
@@ -84,8 +86,8 @@ func init() {
 
 	// Test optimization: use mock to skip browser automation.
 	if ictx.IsTesting() {
-		askExpertWithRoleFunc = func(_ context.Context, _, _, _, _, _ string, _ []string) (string, string, error) {
-			return "[MOCK]", "", nil
+		askExpertWithRoleFunc = func(_ context.Context, _, _, _, _, _ string, _ []string) (string, string, bool, error) {
+			return "[MOCK]", "", false, nil
 		}
 	}
 }
@@ -187,7 +189,7 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 	// No persona is injected: role and system are both empty, so
 	// askExpertWebChat sends the request verbatim (the caller's own context
 	// carries the expertise). code_review still passes a role directly.
-	result, convURL, err := askExpertWithRoleFunc(ctx, structuredRequest, "", "", mode, keep, uploads)
+	result, convURL, printed, err := askExpertWithRoleFunc(ctx, structuredRequest, "", "", mode, keep, uploads)
 	if err != nil {
 		outfmt.Println("❌ Expert consultation failed")
 		return result, warning, err
@@ -209,7 +211,14 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 		}
 	}
 
-	outfmt.Printf("✅ Expert consultation completed\n\n%s\n", result)
+	// The DSML tool loop already printed every round (final answer
+	// included) via outfmt.PrintContent; re-printing the reply here would
+	// duplicate it. printed=false (one-shot reply) keeps the old behavior.
+	if printed {
+		outfmt.Println("✅ Expert consultation completed")
+	} else {
+		outfmt.Printf("✅ Expert consultation completed\n\n%s\n", result)
+	}
 	return result, warning, err
 }
 
@@ -261,7 +270,9 @@ func truncateForDisplay(s string, maxLen int) string {
 //	reply: the AI model's response text
 //	err: error during execution
 func AskExpertWithRole(ctx context.Context, input, role string) (reply string, err error) {
-	reply, _, err = askExpertWithRoleFunc(ctx, input, role, "", "", "", nil)
+	// printed is ignored here: the reply is already printed by the DSML
+	// tool loop when the expert used tools (see askExpertWebChat).
+	reply, _, _, err = askExpertWithRoleFunc(ctx, input, role, "", "", "", nil)
 	return reply, err
 }
 
@@ -269,13 +280,13 @@ func AskExpertWithRole(ctx context.Context, input, role string) (reply string, e
 // parameters onto lp.HandleWebChat, the high-level WebChat entry point that
 // renders the role/system prompt, retries transient server overload and
 // truncation, and executes DSML tool calls embedded in replies (role-driven
-// or plain chat alike - see toolcall.IsDSMLToolCallReply).
+// or plain chat alike - see toolcall.IsDSMLToolCallEnd).
 //
 // When both role and system are empty, no persona is injected and the input
 // is sent verbatim (the ask_expert tool relies on the caller's own context;
 // code_review passes a role). keep continues a previous conversation; it is
 // passed through to lp.WebChatOptions.Keep ("" = new, "last", ID, or URL).
-func askExpertWebChat(ctx context.Context, input, role, system, mode, keep string, attachments []string) (reply, convURL string, err error) {
+func askExpertWebChat(ctx context.Context, input, role, system, mode, keep string, attachments []string) (reply, convURL string, printed bool, err error) {
 	res, err := lp.HandleWebChat(ctx, input, lp.WebChatOptions{
 		Mode:        lp.Mode(mode),
 		Attachments: attachments,
@@ -284,9 +295,9 @@ func askExpertWebChat(ctx context.Context, input, role, system, mode, keep strin
 		System:      system,
 	})
 	if err != nil {
-		return "", "", err
+		return "", "", false, err
 	}
-	return res.Content, res.URL, nil
+	return res.Content, res.URL, res.Printed, nil
 }
 
 // maxAttachmentSize is the maximum allowed size for a single attachment (1MB).

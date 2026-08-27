@@ -687,6 +687,15 @@ func TestJsIDBGetAnswerFmtNewestFirst(t *testing.T) {
 	if !strings.Contains(jsIDBGetAnswerFmt, "thinkCount: thinkParts.length") {
 		t.Error("jsIDBGetAnswerFmt thinkCount must count thinkParts")
 	}
+	// tokens must be the accumulated_token_usage difference between the
+	// round's ASSISTANT and USER messages (the site's own running counter),
+	// and never a negative count.
+	if !strings.Contains(jsIDBGetAnswerFmt, "accumulated_token_usage") {
+		t.Error("jsIDBGetAnswerFmt must read accumulated_token_usage for token counts")
+	}
+	if !strings.Contains(jsIDBGetAnswerFmt, "tokens: tokens") {
+		t.Error("jsIDBGetAnswerFmt must return the derived token count")
+	}
 }
 
 func TestJsSendEnterAsyncFallback(t *testing.T) {

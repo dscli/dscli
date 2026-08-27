@@ -451,6 +451,15 @@ const (
 			if (f && f.type === 'RESPONSE') parts.push(f.content);
 			if (f && f.type === 'THINK') thinkParts.push(f.content);
 		}
+		// 本轮回复的 token 数 = 同轮 USER 与 ASSISTANT 消息的累计用量之差
+		// （站点自己的运行计数器，与页面头部显示的数字一致；任一侧缺失
+		// 或差值为负时按 0 处理，绝不伪造计数）。
+		let tokens = 0;
+		const uAtu = lastUser && lastUser.accumulated_token_usage;
+		const aAtu = last && last.accumulated_token_usage;
+		if (typeof uAtu === 'number' && typeof aAtu === 'number' && aAtu >= uAtu) {
+			tokens = aAtu - uAtu;
+		}
 		return {
 			found: true,
 			status: last.status || '',
@@ -458,6 +467,7 @@ const (
 			reason: thinkParts.join('\n\n'),
 			respCount: parts.length,
 			thinkCount: thinkParts.length,
+			tokens: tokens,
 		};
 	} catch (e) {
 		return {found: false, reason: String((e && e.message) || e)};
@@ -681,12 +691,25 @@ type WebChatOptions struct {
 type WebChatResult struct {
 	Content string
 	// Reasoning is the deep-think reasoning (THINK fragments) when the
-	// site exposes it; "" when unavailable. TODO: no caller consumes it
-	// yet (ask_expert and webchat_cmd return only Content) - expose it
-	// (e.g. a --show-reasoning flag or stderr note) once there is a
-	// user-visible use.
+	// site exposes it; "" when unavailable. Consumed by the tool loop's
+	// per-round print (outfmt.PrintContent) and by callers that want the
+	// full reply.
 	Reasoning string
 	URL       string
+
+	// ThinkingTokens / ContentTokens are this reply's token counts, derived
+	// from the site's IndexedDB accumulated_token_usage (same-round
+	// ASSISTANT minus USER, like the site's own running counter). 0 when
+	// the counts are unavailable (DOM fallback, or a mock transport).
+	// The tool loop passes them to outfmt.PrintContent.
+	ThinkingTokens int
+	ContentTokens  int
+
+	// Printed reports that the reply (Content and Reasoning) was already
+	// printed by the DSML tool loop via outfmt.PrintContent. Callers that
+	// display the final answer must skip re-printing Content when set;
+	// false for a one-shot reply with no tool loop.
+	Printed bool
 }
 
 // WebChat sends a message to chat.deepseek.com via a local Chrome/Chromium
@@ -838,14 +861,14 @@ func (s *webChatSession) Send(ctx context.Context, conversationURL, message stri
 
 	// webchatSend wraps every error with "webchat:", so no extra prefix here
 	// (a second one would produce "webchat: webchat: ...").
-	response, reasoning, finalURL, err := webchatSend(tabCtx, conversationURL, message, opts, 0)
+	response, reasoning, finalURL, tokens, err := webchatSend(tabCtx, conversationURL, message, opts, 0)
 	if err != nil {
 		return WebChatResult{}, err
 	}
 	if finalURL != "" {
 		_ = registerConversation(finalURL, opts.Mode)
 	}
-	return WebChatResult{Content: response, Reasoning: reasoning, URL: finalURL}, nil
+	return WebChatResult{Content: response, Reasoning: reasoning, URL: finalURL, ContentTokens: tokens}, nil
 }
 
 // Close shuts down the shared browser (tab and process). Safe before the
@@ -904,7 +927,7 @@ func webChatWithURL(ctx context.Context, conversationURL, message string, opts W
 // conversation's current mode untouched (used when continuing a
 // conversation). opts.Attachments are image files uploaded before sending
 // (flash/vision modes only; pro rejects them in validateWebChatOptions).
-func webchatSend(tabCtx context.Context, conversationURL, message string, opts WebChatOptions, retry int) (string, string, string, error) {
+func webchatSend(tabCtx context.Context, conversationURL, message string, opts WebChatOptions, retry int) (string, string, string, int, error) {
 	span, ctx := clog.StartSpanFromContext(tabCtx, "webchatSend")
 	defer span.Finish()
 	navURL := conversationURL
@@ -919,6 +942,7 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, opts W
 
 	var baseline, response, reasoning, finalURL, mdBaseline string
 	var mdBaselineParts []string
+	var tokens int // this round's token count from IndexedDB (0 when unavailable)
 
 	// Base navigation and page hydration. The clipboard permission is
 	// granted first so the site's copy button (and the readText fallback)
@@ -1022,9 +1046,10 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, opts W
 		// DOM-extracted response stay, with an explicit warning.
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			for attempt := 1; attempt <= webChatIDBReadAttempts; attempt++ {
-				if content, think, ok := webchatExtractReloadedIDB(ctx, finalURL, message); ok {
+				if content, think, tk, ok := webchatExtractReloadedIDB(ctx, finalURL, message); ok {
 					response = content
 					reasoning = think
+					tokens = tk
 					return nil
 				}
 				if attempt < webChatIDBReadAttempts {
@@ -1047,16 +1072,16 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, opts W
 		if errors.Is(err, ErrLoginRequired) && retry == 0 {
 			fmt.Fprintln(os.Stderr, "🔐 未登录，在浏览器窗口中完成登录...")
 			if loginErr := deepseekLogin(ctx, "", nil, true); loginErr != nil {
-				return "", "", "", fmt.Errorf("webchat login: %w", loginErr)
+				return "", "", "", 0, fmt.Errorf("webchat login: %w", loginErr)
 			}
 			return webchatSend(ctx, conversationURL, message, opts, retry+1)
 		}
-		return "", "", "", fmt.Errorf("webchat: %w", err)
+		return "", "", "", 0, fmt.Errorf("webchat: %w", err)
 	}
 
 	// Session info (keep:<id>) is surfaced by the caller (CLI / ask_expert),
 	// not here, so the library layer stays silent about presentation.
-	return response, reasoning, finalURL, nil
+	return response, reasoning, finalURL, tokens, nil
 }
 
 // waitForChatTextarea polls until the chat composer textarea is visible,
@@ -1722,26 +1747,33 @@ func lastAnswerText(ctx context.Context, sentMessage string) string {
 // conversation's cached record may still show the PREVIOUS round as
 // FINISHED): the record must contain this round's user message and be
 // written after the send.
-func idbGetAssistant(ctx context.Context, sentMessage string, notBeforeMS int64) (text, reasoning, status string, ok bool) {
+func idbGetAssistant(ctx context.Context, sentMessage string, notBeforeMS int64) (text, reasoning, status string, tokens int, ok bool) {
 	js := fmt.Sprintf(jsIDBGetAnswerFmt, quoteJS(sentMessage), notBeforeMS)
 	var result map[string]any
 	if err := evaluateAwait(ctx, js, &result); err != nil {
-		return "", "", "", false
+		return "", "", "", 0, false
 	}
 	found, _ := result["found"].(bool)
 	if !found {
-		return "", "", "", false
+		return "", "", "", 0, false
 	}
 	status, _ = result["status"].(string)
 	text, _ = result["text"].(string)
 	reasoning, _ = result["reason"].(string)
-	return text, reasoning, status, true
+	// tokens is a JSON number (float64 after unmarshal); the site never
+	// emits fractional counts, so a plain int64 conversion is exact.
+	if t, ok := result["tokens"].(float64); ok && t > 0 {
+		tokens = int(t)
+	}
+	return text, reasoning, status, tokens, true
 }
 
 // webchatExtractReloadedIDB reloads the conversation page and reads THIS
 // round's answer from the site's IndexedDB cache — the structured source
-// with the ORIGINAL markdown (RESPONSE fragments) and the deep-think
-// reasoning (THINK fragments).
+// with the ORIGINAL markdown (RESPONSE fragments), the deep-think
+// reasoning (THINK fragments) and this round's token count (the
+// accumulated_token_usage difference between the round's ASSISTANT and USER
+// messages, 0 when unavailable).
 //
 // WHY reload: the site persists its conversation record ONCE per page
 // load. During a live send the record is either the pre-send snapshot (a
@@ -1756,10 +1788,10 @@ func idbGetAssistant(ctx context.Context, sentMessage string, notBeforeMS int64)
 //
 // Returns ok=false when IDB is not readable (URL missing, login lost,
 // record still absent after the grace polls); the caller then keeps the
-// DOM-extracted text and an empty reasoning.
-func webchatExtractReloadedIDB(ctx context.Context, conversationURL, sentMessage string) (content, reasoning string, ok bool) {
+// DOM-extracted text, an empty reasoning and a zero token count.
+func webchatExtractReloadedIDB(ctx context.Context, conversationURL, sentMessage string) (content, reasoning string, tokens int, ok bool) {
 	if conversationURL == "" {
-		return "", "", false
+		return "", "", 0, false
 	}
 	// Bound the reload itself: a hung navigation must degrade to the
 	// DOM-extracted text, not stall the whole send. WaitReady without a
@@ -1767,10 +1799,10 @@ func webchatExtractReloadedIDB(ctx context.Context, conversationURL, sentMessage
 	wctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	if err := chromedp.Navigate(conversationURL).Do(wctx); err != nil {
-		return "", "", false
+		return "", "", 0, false
 	}
 	if err := chromedp.WaitReady("textarea", chromedp.ByQuery).Do(wctx); err != nil {
-		return "", "", false
+		return "", "", 0, false
 	}
 	// The record write trails the DOM render slightly; poll briefly for a
 	// FINISHED snapshot that contains this round's user message. The text
@@ -1780,17 +1812,17 @@ func webchatExtractReloadedIDB(ctx context.Context, conversationURL, sentMessage
 	// validated DOM answer with itself.
 	deadline := time.Now().Add(webChatIDBPollWindow)
 	for {
-		if text, think, status, found := idbGetAssistant(ctx, sentMessage, time.Now().UnixMilli()); found {
+		if text, think, status, tk, found := idbGetAssistant(ctx, sentMessage, time.Now().UnixMilli()); found {
 			if status == "FINISHED" && answerUsable(text) {
-				return text, think, true
+				return text, think, tk, true
 			}
 		}
 		if time.Now().After(deadline) {
-			return "", "", false
+			return "", "", 0, false
 		}
 		select {
 		case <-ctx.Done():
-			return "", "", false
+			return "", "", 0, false
 		case <-time.After(500 * time.Millisecond):
 		}
 	}

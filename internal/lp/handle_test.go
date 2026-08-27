@@ -1,12 +1,15 @@
 package lp
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/toolcall"
 )
 
@@ -176,9 +179,11 @@ func TestHandleWebChatRetryAbortsOnCancel(t *testing.T) {
 }
 
 // dsmlReply is a realistic DSML tool-call reply from a review expert.
-// Observed shape: tool-call replies are pure DSML (no leading prose), which
-// IsDSMLToolCallReply accepts (as does a short prose preamble, tested in
-// TestHandleWebChatToolLoopProsePreamble).
+// Observed shape: tool-call replies are wrapped (or end) with
+// </tool_calls>, which IsDSMLToolCallEnd accepts (as does a prose
+// preamble before the wrapper, tested in
+// TestHandleWebChatToolLoopProsePreamble and
+// TestHandleWebChatToolLoopLongPreambleExecutes).
 const dsmlReply = `<tool_calls>
 <invoke name="exec_command">
 <parameter name="cmd" string="true">git show --stat</parameter>
@@ -265,7 +270,7 @@ func TestHandleWebChatToolLoop(t *testing.T) {
 func TestHandleWebChatToolLoopPlainChatExecutesDSML(t *testing.T) {
 	// Plain webchat (role empty) also enters the tool loop when the reply
 	// IS a tool call: chat.deepseek.com's model emits DSML natively, so
-	// the judge (IsDSMLToolCallReply) - not the role flag - decides
+	// the judge (IsDSMLToolCallEnd) - not the role flag - decides
 	// execution. A prose reply that merely cites an <invoke> example stays
 	// verbatim (TestHandleWebChatToolLoopPlainChatProseReference).
 	origFunc := handleWebChatSend
@@ -363,13 +368,16 @@ func TestHandleWebChatToolLoopPlainChatProseReference(t *testing.T) {
 }
 
 func TestHandleWebChatToolLoopPlainChatNonWhitelisted(t *testing.T) {
-	// Plain chat + short preamble + a complete NON-whitelisted call passes
-	// the gate (IsDSMLToolCallReply checks parse + preamble, not the
-	// whitelist) but produces no executable output: the reply is returned
-	// verbatim - it is content, not a command - and nothing is stripped.
-	text := "我给你一个示例：\n" + `<invoke name="write_file">
+	// Plain chat + short preamble + a complete NON-whitelisted call inside a
+	// <tool_calls> wrapper passes the gate (IsDSMLToolCallEnd checks the
+	// wrapper close, not the whitelist) but produces no executable output:
+	// the reply is returned verbatim - it is content, not a command - and
+	// nothing is stripped.
+	text := "我给你一个示例：\n" + `<tool_calls>
+<invoke name="write_file">
 <parameter name="path" string="true">a.txt</parameter>
-</invoke>`
+</invoke>
+</tool_calls>`
 	origFunc := handleWebChatSend
 	t.Cleanup(func() { handleWebChatSend = origFunc })
 	handleWebChatSend = func(_ context.Context, _ string, _ WebChatOptions) (WebChatResult, error) {
@@ -418,6 +426,100 @@ func TestHandleWebChatToolLoopPlainChatRound2Reference(t *testing.T) {
 	}
 	if res.Content != round2 {
 		t.Errorf("content = %q, want verbatim round-2 prose (no stripping in plain chat)", res.Content)
+	}
+}
+
+func TestHandleWebChatToolLoopLongPreambleExecutes(t *testing.T) {
+	// 需求（2026-08）：放弃"Content 中只有 <tool_calls>"的约定——只要
+	// Content 以 </tool_calls> 结束就解析并执行其中的 tool_calls，即使
+	// 前面有很长一段散文（模型解释它要做什么）；前言随该轮丢弃，不回填。
+	longPreamble := strings.Repeat("我来说明一下为什么要先读这两个文件：", 5) + "\n\n" + dsmlReply
+
+	origFunc := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = origFunc })
+	var messages []string
+	handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
+		messages = append(messages, msg)
+		if len(messages) == 1 {
+			return WebChatResult{Content: longPreamble, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+		}
+		return WebChatResult{Content: "final answer", URL: "https://chat.deepseek.com/a/chat/s/convY"}, nil
+	}
+	seen := captureExecDSML(t, "tool feedback")
+
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if len(*seen) == 0 {
+		t.Error("tool executor not called for a long-preamble reply ending in </tool_calls>")
+	}
+	if res.Content != "final answer" {
+		t.Errorf("content = %q, want final answer", res.Content)
+	}
+	if len(messages) != 2 || messages[1] != "tool feedback" {
+		t.Errorf("round-2 message = %q, want tool feedback (preamble not forwarded)", messages[1])
+	}
+	if !res.Printed {
+		t.Error("loop result must be marked Printed (final answer shown per round)")
+	}
+}
+
+func TestHandleWebChatToolLoopPrintsRounds(t *testing.T) {
+	// 工具循环每一轮（reasoning + content + token）都通过 outfmt.PrintContent
+	// 打印；结果标记 Printed 让调用方不要再打印一次。
+	origFunc := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = origFunc })
+	var buf bytes.Buffer
+	outfmt.SetOutputWriter(&buf)
+	t.Cleanup(func() { outfmt.SetOutputWriter(os.Stdout) })
+
+	var sends int
+	handleWebChatSend = func(_ context.Context, _ string, _ WebChatOptions) (WebChatResult, error) {
+		sends++
+		switch sends {
+		case 1:
+			return WebChatResult{Content: dsmlReply, Reasoning: "先看看改动", URL: "https://chat.deepseek.com/a/chat/s/convX", ContentTokens: 321}, nil
+		default:
+			return WebChatResult{Content: "final answer", Reasoning: "总结完成", URL: "https://chat.deepseek.com/a/chat/s/convY", ContentTokens: 456}, nil
+		}
+	}
+	captureExecDSML(t, "tool feedback")
+
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{Role: "review"})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if !res.Printed {
+		t.Error("loop result must be marked Printed")
+	}
+	out := buf.String()
+	// 每一轮的 reasoning 与 content 都打印（首轮 + 末轮）。
+	for _, want := range []string{"先看看改动", "总结完成", "final answer", "T:321", "T:456"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("printed output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestHandleWebChatOneShotNotPrinted(t *testing.T) {
+	// 非工具循环的一次性散文回复不标记 Printed：调用方（CLI/ask_expert）
+	// 负责打印 content，行为与之前一致。
+	origFunc := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = origFunc })
+	handleWebChatSend = func(_ context.Context, _ string, _ WebChatOptions) (WebChatResult, error) {
+		return WebChatResult{Content: "plain prose answer", URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+	}
+
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if res.Printed {
+		t.Error("one-shot reply must not be marked Printed")
+	}
+	if res.Content != "plain prose answer" {
+		t.Errorf("content = %q, want plain prose answer", res.Content)
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/prompt"
 	"github.com/dscli/dscli/internal/toolcall"
 	"github.com/nanjj/clog"
@@ -53,15 +54,23 @@ var handleWebChatExecDSML = toolcall.ExecuteDSMLToolCalls
 //   - Backoff retry on transient server overload and truncation
 //     (ErrServerBusy / ErrSendRejected / ErrTruncated). Permanent errors
 //     (login, bad arguments) fail immediately - retrying them is pointless.
-//   - DSML tool loop: a reply (role-driven or plain chat alike) that is
-//     judged to be a tool call - at least one complete <invoke name="...">
-//     block parses, with leftover prose only a short preamble - has its
-//     underlying dscli tools executed locally, and the results fed back
-//     into the SAME conversation until the expert produces a final answer.
-//     The judge (toolcall.IsDSMLToolCallReply) is deliberately strict, so
-//     a long answer that merely cites an <invoke> example is never
-//     executed; role consultations still strip such quotes so callers see
-//     clean prose, while plain chat keeps them verbatim.
+//   - DSML tool loop: a reply (role-driven or plain chat alike) that ENDS
+//     with a </tool_calls> close tag - the web expert's own signal that the
+//     emission is complete, whatever prose precedes it - has its underlying
+//     dscli tools executed locally, and the results fed back into the SAME
+//     conversation until the expert produces a final answer. The judge
+//     (toolcall.IsDSMLToolCallEnd) is deliberately structural, and the
+//     whitelist plus destructive-command interception (see dsmlToolNames /
+//     dsmlBlockedCmdRe) are the safety boundary: a long answer that merely
+//     cites an <invoke> example does not end with the wrapper close tag and
+//     is never executed; role consultations still strip such quotes so
+//     callers see clean prose, while plain chat keeps them verbatim.
+//   - Round visibility: every reply the loop receives (reasoning + content,
+//     with token counts from the site's IndexedDB when available) is
+//     printed via outfmt.PrintContent, so a multi-tool consultation shows
+//     what the expert said in each round instead of only the tool results.
+//     The returned result is marked Printed so callers skip re-printing
+//     the final answer.
 //   - Shared browser session: every send of one call (initial, backoff
 //     retries, tool follow-ups) reuses a single browser, booted lazily on the
 //     first send and closed when the call returns - a 9-tool-call
@@ -123,14 +132,15 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 			// and feed the results back into the SAME conversation until
 			// the expert produces a final answer.
 			//
-			// IsDSMLToolCallReply is the gate: at least one complete call
-			// must parse, and leftover prose must be only a short preamble
-			// ("我重新发一遍正确的：") - a long answer that merely quotes an
-			// <invoke> example must never be executed. Non-executable DSML
-			// in role consultations is stripped so callers see clean prose;
-			// plain chat keeps it verbatim (the expert's words are content
-			// there, not a command).
-			if toolcall.IsDSMLToolCallReply(res.Content) {
+			// IsDSMLToolCallEnd is the gate: the reply must END with a
+			// complete </tool_calls> close tag - the web expert's signal
+			// that the emission is complete. A long answer that merely
+			// quotes an <invoke> example does not end with the wrapper
+			// close tag and must never be executed. Non-executable DSML
+			// in role consultations is stripped so callers see clean
+			// prose; plain chat keeps it verbatim (the expert's words are
+			// content there, not a command).
+			if toolcall.IsDSMLToolCallEnd(res.Content) {
 				return handleWebChatToolLoop(ctx, res, opts)
 			}
 			if opts.Role != "" && toolcall.HasDSMLToolCalls(res.Content) {
@@ -147,11 +157,18 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 }
 
 // handleWebChatToolLoop continues a WebChat conversation (role-driven or
-// plain chat; the gate toolcall.IsDSMLToolCallReply decided entry) while the
+// plain chat; the gate toolcall.IsDSMLToolCallEnd decided entry) while the
 // expert emits DSML tool calls: parse the calls, execute them locally, and
 // post the results back into the SAME conversation (Keep=first URL). The
 // role prompt is injected only on the first round - HandleWebChat already
 // rendered it - so follow-up messages carry tool results verbatim.
+//
+// Every reply received (the first one and each follow-up) is printed via
+// outfmt.PrintContent - reasoning and content, with the token counts the
+// transport extracted from the site's IndexedDB (0 when unavailable) - so
+// the user sees what the expert said in each round, not just the tool
+// results. The returned result is marked Printed: the final answer was
+// already printed inside the loop, so callers must not re-print it.
 //
 // The local-execution warning is printed here, not at the caller: this is
 // the exact moment a remote model's markup becomes a local command, and it
@@ -177,20 +194,27 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 	convURL := first.URL
 	// cleanExit 收尾：角色会话剥离 DSML 标记，露出干净散文；纯聊天原样返回
 	// （专家的话是内容，不是命令）——与第一轮的非执行契约保持一致。
+	// Printed 表示最后一轮内容已经在循环内打印过，调用方不要重复打印。
 	cleanExit := func() (WebChatResult, error) {
 		content := message
 		if opts.Role != "" {
 			content = toolcall.StripDSMLToolCalls(message)
 		}
-		return WebChatResult{Content: content, URL: convURL}, nil
+		return WebChatResult{Content: content, URL: convURL, Printed: true}, nil
 	}
+	printRound := func(res WebChatResult) {
+		outfmt.PrintContent(ctx, res.Reasoning, res.Content, res.ThinkingTokens, res.ContentTokens)
+	}
+	// 第一轮回复（进入循环的那份）同样可见：专家为什么发工具调用、思考了什么。
+	printRound(first)
 	for round := 1; round <= handleWebChatMaxDSMLRounds; round++ {
-		// Only tool-call replies continue the loop (see
-		// IsDSMLToolCallReply): a reply that mixes long prose with DSML -
-		// the expert finished its reasoning, or is quoting an example -
-		// ends the loop (stripped for role consultations). A short
-		// preamble ("I'll re-send that correctly:") is tolerated: the
-		// calls execute and the preamble is discarded with the round.
+		// Only tool-call replies continue the loop (see IsDSMLToolCallEnd):
+		// a reply that does not end with a wrapper close tag - the expert
+		// finished its reasoning, or is quoting an example - ends the loop
+		// (stripped for role consultations). Prose BEFORE the wrapper is
+		// tolerated: when the closing tag is present the emission is
+		// complete, the calls execute and the preamble is discarded with
+		// the round.
 		calls, parseErr := toolcall.ParseDSMLToolCalls(message)
 		if parseErr != nil {
 			fmt.Fprintf(os.Stderr, "⚠️ 工具调用不完整，已停止循环: %v\n", parseErr)
@@ -199,7 +223,7 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 		if len(calls) == 0 {
 			return cleanExit()
 		}
-		if !toolcall.IsDSMLToolCallReply(message) {
+		if !toolcall.IsDSMLToolCallEnd(message) {
 			return cleanExit()
 		}
 
@@ -234,6 +258,9 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 		if res.URL != "" {
 			convURL = res.URL
 		}
+		// 每轮回复都打印（含 reasoning 与 token 用量）：多轮咨询里用户
+		// 看到的不是只有工具结果，还有专家每一轮说什么。
+		printRound(res)
 	}
 	fmt.Fprintf(os.Stderr, "⚠️ 专家连续工具调用超过 %d 轮上限，已返回中间结果\n", handleWebChatMaxDSMLRounds)
 	return cleanExit()

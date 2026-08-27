@@ -603,6 +603,9 @@ func PrintContent(ctx context.Context, reasoning, content string, thinkingTokens
 	if reasoning != "" {
 		reasoning = codeFenceRe.ReplaceAllString(reasoning, "\n$0\n")
 		tStr := ""
+		if thinkingTokens > 0 {
+			tStr = fmt.Sprintf("T:%d", thinkingTokens)
+		}
 		if nameCN != "" && email != "" {
 			Printf("\n%s\n\n", formatChatHeader("💭", nameCN, email, now, tStr))
 			Println(FillParagraph(reasoning, DefaultFillWidth))
@@ -616,6 +619,9 @@ func PrintContent(ctx context.Context, reasoning, content string, thinkingTokens
 	if content != "" {
 		content = codeFenceRe.ReplaceAllString(content, "\n$0\n")
 		cStr := ""
+		if contentTokens > 0 {
+			cStr = fmt.Sprintf("T:%d", contentTokens)
+		}
 		// 在streaming模式下，内容已经在streaming过程中输出，这里不需要再次输出
 		if !stream {
 			if nameCN != "" && email != "" {

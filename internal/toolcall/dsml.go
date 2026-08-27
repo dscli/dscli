@@ -93,38 +93,31 @@ func IsPureDSMLToolCalls(text string) bool {
 	return StripDSMLToolCalls(text) == ""
 }
 
-// dsmlMaxReplyPreamble caps how much prose may surround a tool-call block
-// for the text to still count as a tool-call reply. A preamble is a short
-// lead-in the model adds when re-emitting its call ("我重新发一遍正确的："),
-// typically well under 200 bytes; prose-first answers - a long review that
-// merely cites an <invoke> example - stay non-executable by the same cap
-// (and quoted code is already excluded by dsmlBlockRanges).
-const dsmlMaxReplyPreamble = 256
+// dsmlToolCallsCloseEndRe matches a complete </tool_calls> close tag at the
+// very end of the text (the match is anchored and tolerates trailing
+// whitespace). Tolerating whitespace inside the tag mirrors
+// dsmlInvokeCloseRe (models emit "</ tool_calls >" tokenization artifacts).
+var dsmlToolCallsCloseEndRe = regexp.MustCompile(`(?s)</\s*tool_calls\s*>\s*$`)
 
-// IsDSMLToolCallReply reports whether text is INTENDED as a tool call: at
-// least one complete call parses, and anything left after stripping the
-// block markup is only a short preamble, not a long answer that quotes an
-// <invoke> example. Unlike IsPureDSMLToolCalls it tolerates that preamble,
-// so a self-corrected re-emission ("my previous call was malformed, let me
-// re-send it correctly:") still routes into the tool loop, where only the
-// parsed calls execute and the preamble is ignored. Quoted code (fenced
-// blocks, inline spans, <tool_result>) is excluded by the parser; long
-// prose stays excluded by the cap; non-whitelisted call names are handled
-// downstream (skipped silently, no feedback block - see
-// ExecuteDSMLToolCalls).
+// IsDSMLToolCallEnd reports whether text is INTENDED as a tool-call
+// emission: it ENDS with a complete </tool_calls> close tag (after
+// normalization and whitespace trim). This is the web expert's own signal -
+// chat.deepseek.com wraps the model's tool-call replies in <tool_calls>
+// ...</tool_calls>, and when the closing tag is present the emission is
+// complete, whatever prose precedes it.
 //
-// The function is intentionally self-contained (it re-parses the text it
-// was passed) rather than exposing an internal "already parsed" variant:
-// callers - including the tool loop, which calls ParseDSMLToolCalls again -
-// pay a few extra scans of a chat-sized reply for a simple, stable contract.
-// The cap is measured in UTF-8 bytes, not runes: a CJK preamble of ~85
-// characters (255 bytes) still passes, and real preambles are far shorter.
-func IsDSMLToolCallReply(text string) bool {
-	calls, err := ParseDSMLToolCalls(text)
-	if err != nil || len(calls) == 0 {
-		return false // truncated or no call at all: not an executable reply
-	}
-	return len(StripDSMLToolCalls(text)) <= dsmlMaxReplyPreamble
+// It deliberately REPLACES the "only tool calls / short preamble" judgement
+// (IsPureDSMLToolCalls / the old IsDSMLToolCallReply): a reply that ends
+// with </tool_calls> is parsed and executed even when it carries a long
+// preamble ("你说得对，我重新发一遍正确的：" or an explanation of what it
+// is about to run), and the preamble is discarded with the round - the
+// parsed calls inside the wrapper are the instruction, the surrounding text
+// is the model's commentary. Conversely a reply that merely CITES an
+// <invoke> example inside prose never ends with a wrapper close tag, so it
+// stays non-executable; a truncated emission (opening tag without close)
+// fails ParseDSMLToolCalls downstream and is never executed.
+func IsDSMLToolCallEnd(text string) bool {
+	return dsmlToolCallsCloseEndRe.MatchString(strings.TrimSpace(normalizeDSMLText(text)))
 }
 
 // dsmlNamedInvokeOpenRe matches an opening <invoke> tag that carries a name

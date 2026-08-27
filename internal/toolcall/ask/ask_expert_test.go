@@ -27,14 +27,14 @@ func captureAskExpert(t *testing.T) *capturedCall {
 	t.Helper()
 	orig := askExpertWithRoleFunc
 	calls := &capturedCall{}
-	askExpertWithRoleFunc = func(_ context.Context, input, role, system, mode, keep string, attachments []string) (string, string, error) {
+	askExpertWithRoleFunc = func(_ context.Context, input, role, system, mode, keep string, attachments []string) (string, string, bool, error) {
 		calls.input = input
 		calls.role = role
 		calls.system = system
 		calls.mode = mode
 		calls.keep = keep
 		calls.attachments = attachments
-		return "[MOCK]", "", nil
+		return "[MOCK]", "", false, nil
 	}
 	t.Cleanup(func() { askExpertWithRoleFunc = orig })
 	return calls
@@ -495,8 +495,8 @@ func TestHandleAskExpertLastPassedThrough(t *testing.T) {
 func TestHandleAskExpertConversationIDInResult(t *testing.T) {
 	orig := askExpertWithRoleFunc
 	t.Cleanup(func() { askExpertWithRoleFunc = orig })
-	askExpertWithRoleFunc = func(_ context.Context, _, _, _, _, _ string, _ []string) (string, string, error) {
-		return "专家回答", "https://chat.deepseek.com/a/chat/s/conv12345", nil
+	askExpertWithRoleFunc = func(_ context.Context, _, _, _, _, _ string, _ []string) (string, string, bool, error) {
+		return "专家回答", "https://chat.deepseek.com/a/chat/s/conv12345", false, nil
 	}
 
 	result, _, err := handleAskExpert(context.Background(), toolcall.ToolArgs{"input": "Question"})
@@ -512,8 +512,8 @@ func TestHandleAskExpertNoConversationURL(t *testing.T) {
 	// When the conversation URL is unknown, the result must not claim an ID.
 	orig := askExpertWithRoleFunc
 	t.Cleanup(func() { askExpertWithRoleFunc = orig })
-	askExpertWithRoleFunc = func(_ context.Context, _, _, _, _, _ string, _ []string) (string, string, error) {
-		return "[MOCK]", "", nil
+	askExpertWithRoleFunc = func(_ context.Context, _, _, _, _, _ string, _ []string) (string, string, bool, error) {
+		return "[MOCK]", "", false, nil
 	}
 
 	result, _, err := handleAskExpert(context.Background(), toolcall.ToolArgs{"input": "Question"})

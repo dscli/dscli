@@ -51,7 +51,8 @@ func init() {
 同一会话（同 code_review 工具）。这是远程模型在本地执行命令的会话：角色会话
 开始前会打印警告，且仅白名单工具 + 危险命令拦截（rm -rf、sudo、curl/wget 外传
 等被拒绝）；仍建议在可信工作目录使用。--role=（空值）即纯聊天：不注入角色
-提示词（回复中的 DSML 工具调用仍会执行）。
+提示词（回复中的 DSML 工具调用仍会执行）。判定规则：回复以 </tool_calls> 结束
+即解析并执行其中的 tool_calls（见 toolcall.IsDSMLToolCallEnd）。
 
 附件（--attach，可多次指定，仅 flash/vision 模型支持）：
   dscli webchat --model vision --attach screenshot.png "这张截图说明了什么？"
@@ -82,9 +83,10 @@ func init() {
 	// untrusted.
 	webchatCmd.Flags().StringSlice("attach", nil, "附件图片路径，可多次指定（仅 flash/vision 模型支持）")
 	// --role defaults to "" = plain chat (no role prompt injection; DSML
-	// tool calls in replies are still judged and executed - see
-	// toolcall.IsDSMLToolCallReply). A non-empty value selects the role
-	// prompt template (dev/expert/review/test) before the user message.
+	// tool calls in replies are still judged and executed when the reply
+	// ends with </tool_calls> - see toolcall.IsDSMLToolCallEnd). A
+	// non-empty value selects the role prompt template
+	// (dev/expert/review/test) before the user message.
 	webchatCmd.Flags().String("role", "", "Role: dev (developer), expert (domain expert), review (code review), test (QA engineer)；空 = 纯聊天（不注入角色提示词；回复中的 DSML 工具调用仍会执行）")
 }
 
@@ -182,7 +184,12 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 
 	elapsed := time.Since(startTime)
 	outfmt.Printf("📥 收到回复 (%.1fs)\n\n", elapsed.Seconds())
-	fmt.Println(result.Content)
+	// 工具循环场景下，每一轮（含最终答复）已由 HandleWebChat 通过
+	// outfmt.PrintContent 打印（含 reasoning 与 token）；这里只打印收尾
+	// 的纯 content——非循环场景（一次性的散文回复）才需要。
+	if !result.Printed {
+		fmt.Println(result.Content)
+	}
 
 	// Surface the conversation ID on stderr (never stdout, which carries the
 	// reply and may be redirected): keep:<id> is directly usable as --keep.
