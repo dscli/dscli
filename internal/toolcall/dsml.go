@@ -156,10 +156,14 @@ func IsDSMLToolCallEnd(text string) bool {
 // This is the truncated twin of IsDSMLToolCallEnd: the same intent signal
 // (the expert began closing the wrapper) with the last byte truncated —
 // "…</invoke>\n</" is common when the site's stored content is cut at a
-// boundary. The gate alone does NOT execute: ParseDSMLToolCalls must still
-// succeed (every <invoke> complete) for anything to run, so a cut wrapper
-// around a truncated call stays non-executable, and quoted examples without
-// a cut close stay non-executable too.
+// boundary, and "</tool_calls" / "</_calls" (name present, ">" missing) are
+// the same cut. NOTE: a trailing bare "</" also matches — it is the
+// motivating live shape (a real review round ended exactly there), and the
+// regex accepts it by design. The gate alone does NOT execute:
+// ParseDSMLToolCalls must still succeed (every <invoke> complete) for
+// anything to run, so a cut wrapper around a truncated call stays
+// non-executable, and quoted examples without a cut close stay
+// non-executable too.
 func IsDSMLToolCallCut(text string) bool {
 	return dsmlToolCallsCloseCutRe.MatchString(strings.TrimSpace(normalizeDSMLText(text)))
 }
@@ -618,8 +622,11 @@ func StripDSMLToolCalls(text string) string {
 	// without ">") leaves the wrapper fragment at the TAIL: strip it too, so
 	// an executed round returns clean prose instead of a dangling "</".
 	// The cut regex is anchored at the end ($), so only a trailing cut tag is
-	// removed — "</div>" in prose or "</" mid-text stays untouched.
-	out = dsmlToolCallsCloseCutRe.ReplaceAllString(out, "")
+	// removed — "</div>" in prose or "</" mid-text stays untouched. It must
+	// run on the NORMALIZED tail (the gate that let this round in normalized
+	// first; a fullwidth "</" or format-char variant would otherwise open the
+	// gate but survive the strip mismatch).
+	out = dsmlToolCallsCloseCutRe.ReplaceAllString(normalizeDSMLText(out), "")
 	out = dsmlToolResultRe.ReplaceAllString(out, "")
 	return strings.TrimSpace(out)
 }

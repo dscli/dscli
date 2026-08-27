@@ -333,8 +333,12 @@ func buildTruncNote(dropped []namedSection, hardTrunc bool) string {
 }
 
 // cutToRuneLen 返回 s 的前缀，runes 数不超过 maxRunes（字节预算对 rune
-// 计数不适用：站点限制按字符数，见 maxUserInputLen）。
+// 计数不适用：站点限制按字符数，见 maxUserInputLen）。负预算（硬截断时
+// 截断提示本身超预算的防御场景）返回空，绝不 panic。
 func cutToRuneLen(s string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
 	if countRunes(s) <= maxRunes {
 		return s
 	}

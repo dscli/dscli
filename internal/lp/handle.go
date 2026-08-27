@@ -118,7 +118,7 @@ func buildWebChatFeedback(outputs []string) string {
 	// truncateToolResultBlock gives up - would leak the note runes and send
 	// over the cap, the exact failure this code exists to prevent.
 	budget := webChatMaxInputRunes - webChatOutputNoteReserve
-	omittedCount, omittedBytes := 0, 0
+	omittedCount, omittedRunes := 0, 0
 	for i, o := range outputs {
 		n := countRunes(o)
 		if n+1 <= budget {
@@ -134,13 +134,13 @@ func buildWebChatFeedback(outputs []string) string {
 		// omitted and summarized below.
 		if head, ok := truncateToolResultBlock(o, budget-1); ok {
 			kept = append(kept, head)
-			omittedBytes = n - countRunes(head)
+			omittedRunes = n - countRunes(head)
 		} else {
-			omittedBytes = n
+			omittedRunes = n
 			omittedCount++
 		}
 		for _, rest := range outputs[i+1:] {
-			omittedBytes += countRunes(rest)
+			omittedRunes += countRunes(rest)
 			omittedCount++
 		}
 		break
@@ -148,7 +148,7 @@ func buildWebChatFeedback(outputs []string) string {
 
 	fmt.Fprintf(os.Stderr, "⚠️ 工具结果过长（约 %d 字符），已截断至 %d 字符再发送（省略 %d 个结果）。\n",
 		total, webChatMaxInputRunes, omittedCount)
-	return strings.Join(kept, "\n") + "\n" + webChatOutputNote(omittedCount, omittedBytes)
+	return strings.Join(kept, "\n") + "\n" + webChatOutputNote(omittedCount, omittedRunes)
 }
 
 // truncateToolResultBlock cuts the BODY of one "<tool_result>…</tool_result>"
@@ -405,14 +405,22 @@ func HandleWebChatResume(ctx context.Context, opts WebChatOptions) (WebChatResul
 	if !ok {
 		return WebChatResult{}, fmt.Errorf("webchat resume: cannot read last assistant message (status %q); the conversation may be expired or its IndexedDB record unavailable", status)
 	}
-	fmt.Fprintf(os.Stderr, "🔁 恢复会话: %s（最后一条消息 %d 字节，status=%s）\n", convURL, len(content), status)
+	fmt.Fprintf(os.Stderr, "🔁 恢复会话: %s（最后一条消息 %d 字符，status=%s）\n", convURL, countRunes(content), status)
 
 	if !toolcall.IsDSMLToolCallEnd(content) && !toolcall.IsDSMLToolCallCut(content) {
 		// Multi-turn conversation: the expert already gave a normal reply —
 		// nothing pending, hand the last content to the caller verbatim.
+		// A reply that is still streaming (status != FINISHED) is NOT a
+		// final answer: surfacing it as the report would hand the caller a
+		// half-written conclusion. Refuse with a clear error instead.
+		if status != "" && status != "FINISHED" {
+			return WebChatResult{}, fmt.Errorf("webchat resume: last assistant message is still %s (not finished); nothing to resume until the reply completes", status)
+		}
 		return WebChatResult{Content: content, URL: convURL}, nil
 	}
 	// Pending tool-call round: execute and continue until the final answer.
+	// The interrupted round may legitimately be stored non-FINISHED (the
+	// cut close tag IS the pending signal) — the loop resolves it.
 	return handleWebChatToolLoop(ctx, WebChatResult{Content: content, URL: convURL}, opts)
 }
 

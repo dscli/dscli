@@ -42,7 +42,14 @@ var qualityAssuranceTool = toolcall.ToolDef{
 				"description": "Continue a saved QA conversation (default new). Pass the conversation_id from a previous result, e.g. to resume a round interrupted mid tool-call: the pending tool calls are executed locally and their results fed back to the expert until it produces the final report.",
 			},
 		},
-		"required":             []string{"summary"},
+		// summary and keep are mutually exclusive modes: a new assessment
+		// needs summary; resuming a saved conversation needs keep. Express
+		// the conditional requirement with anyOf so a schema-validating
+		// caller can pass one or the other (never both required).
+		"anyOf": []any{
+			map[string]any{"required": []string{"summary"}},
+			map[string]any{"required": []string{"keep"}},
+		},
 		"additionalProperties": false,
 	},
 	Category: "check",
@@ -135,10 +142,18 @@ func handleQualityAssurance(ctx context.Context, args toolcall.ToolArgs) (result
 	// demand via the DSML tool loop, and runs go vet / go test itself.
 	structuredRequest, warning := truncateReviewRequest(summary, fullLog, patch)
 	outfmt.Printf("📤 发送质量保障请求到 DeepSeek Web（免费 V4 Pro）...\n%s\n", structuredRequest)
-	result, err = AskExpertWithRole(ctx, structuredRequest, "test")
+	var convURL string
+	result, convURL, err = AskExpertWithRoleConv(ctx, structuredRequest, "test")
 	if err != nil {
 		err = fmt.Errorf("质量保障失败: %w", err)
 		return result, warning, err
+	}
+
+	// Surface the conversation ID so the caller can resume this exact QA
+	// round later (keep=<id>) — e.g. after an interrupted tool-call round.
+	if convID := lp.ConversationIDFromURL(convURL); convID != "" {
+		outfmt.Printf("📋 keep:%s (继续此 QA 会话请传 keep=%s)\n", convID, convID)
+		result += "\n\n---\nconversation_id: " + convID
 	}
 
 	outfmt.Printf("✅ 质量保障报告\n%s\n", result)

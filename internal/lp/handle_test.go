@@ -979,3 +979,29 @@ func TestHandleWebChatResumeCutCloseTag(t *testing.T) {
 		t.Fatalf("sends = %d, want 1 (feedback only)", len(messages))
 	}
 }
+
+func TestHandleWebChatResumeStreamingReplyRejected(t *testing.T) {
+	// The last message is still streaming (status != FINISHED): surfacing it
+	// as the resume result would hand the caller a half-written conclusion.
+	// Refuse with a clear error instead of pretending it is final.
+	mockResumeResolve(t, "https://chat.deepseek.com/a/chat/s/convS")
+	mockResumeRead(t, "Partial report...", "STREAMING", true)
+	_, err := HandleWebChatResume(context.Background(), WebChatOptions{Keep: "convS", Role: "test"})
+	if err == nil || !strings.Contains(err.Error(), "not finished") {
+		t.Fatalf("err = %v, want not-finished error", err)
+	}
+}
+
+func TestHandleWebChatResumeUnknownStatusAccepted(t *testing.T) {
+	// status == "" (IDB does not always record a status): a plain reply is
+	// still returned verbatim — blank status is not treated as streaming.
+	mockResumeResolve(t, "https://chat.deepseek.com/a/chat/s/convU")
+	mockResumeRead(t, "Final conclusion", "", true)
+	res, err := HandleWebChatResume(context.Background(), WebChatOptions{Keep: "convU", Role: "test"})
+	if err != nil {
+		t.Fatalf("HandleWebChatResume: %v", err)
+	}
+	if res.Content != "Final conclusion" {
+		t.Errorf("content = %q, want verbatim last reply", res.Content)
+	}
+}

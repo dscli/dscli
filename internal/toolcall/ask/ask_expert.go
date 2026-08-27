@@ -276,6 +276,15 @@ func AskExpertWithRole(ctx context.Context, input, role string) (reply string, e
 	return reply, err
 }
 
+// AskExpertWithRoleConv is AskExpertWithRole plus the conversation URL, so
+// callers that need the conversation_id for a later keep-resume (e.g. the
+// quality_assurance tool's keep parameter) can surface it. The URL is ""
+// when it could not be determined; the reply text semantics are identical.
+func AskExpertWithRoleConv(ctx context.Context, input, role string) (reply, convURL string, err error) {
+	reply, convURL, _, err = askExpertWithRoleFunc(ctx, input, role, "", "", "", nil)
+	return reply, convURL, err
+}
+
 // askExpertWebChat is the real implementation: it maps the expert-call
 // parameters onto lp.HandleWebChat, the high-level WebChat entry point that
 // renders the role/system prompt, retries transient server overload and

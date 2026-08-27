@@ -143,7 +143,7 @@ not. Add new DSML tool registrations inside that block, never outside it.
 code_review sends ONLY commit message + diff on its first message: the review
 expert reads AGENTS.md and full changed-file contents on demand via the DSML
 tool loop (`read_file` / `exec_command`). Do not re-inject file contents or
-AGENTS.md into the request — the 26k web-chat input budget is better spent on
+AGENTS.md into the request — the web-chat input budget (140k runes, see code_review.go) is better spent on
 the diff, and the expert can deep-read any file it needs (see
 internal/prompt/review.md).
 

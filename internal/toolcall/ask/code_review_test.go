@@ -453,3 +453,15 @@ func TestDropUntilFits(t *testing.T) {
 		}
 	}
 }
+
+// TestCutToRuneLenNegativeBudget: a negative (or zero) budget (defensive
+// scenario where the truncation note itself exceeds the limit) must return
+// "" without panicking, mirroring headRunes' guard.
+func TestCutToRuneLenNegativeBudget(t *testing.T) {
+	for _, n := range []int{-1, -100, 0} {
+		got := cutToRuneLen("abc中文", n)
+		if got != "" {
+			t.Errorf("cutToRuneLen(s, %d) = %q, want empty", n, got)
+		}
+	}
+}
