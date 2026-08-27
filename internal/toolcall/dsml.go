@@ -98,11 +98,6 @@ func IsPureDSMLToolCalls(text string) bool {
 // Tolerating whitespace inside the tag mirrors dsmlInvokeCloseRe (models
 // emit "</ tool_calls >" tokenization artifacts). The OPENING wrapper is
 // deliberately not required (see IsDSMLToolCallEnd).
-// dsmlToolCallsCloseEndRe matches a </tool_calls> close tag at the very end
-// of the text (the match is anchored and tolerates trailing whitespace).
-// Tolerating whitespace inside the tag mirrors dsmlInvokeCloseRe (models
-// emit "</ tool_calls >" tokenization artifacts). The OPENING wrapper is
-// deliberately not required (see IsDSMLToolCallEnd).
 //
 // `</_calls>` is accepted as a practical degradation: a real QA-engineer
 // round closed with "</_calls>" (the model dropped "tool" from the tag)
@@ -111,7 +106,15 @@ func IsPureDSMLToolCalls(text string) bool {
 // that intent - a wrapper whose calls all parse still executes, and a
 // wrapper with no parseable <invoke> still yields zero calls (the loop
 // exits without executing anything), so the safety boundary is unchanged.
-var dsmlToolCallsCloseEndRe = regexp.MustCompile(`(?s)</\s*(?:tool_calls|_calls)\s*>\s*$`)
+//
+// `<_calls>` (and `<tool_calls>` with the slash missing) is accepted as
+// the same degradation one step further: the model closed the round with
+// the OPENING-tag spelling ("<_calls>" instead of "</_calls>"), observed in
+// a real QA follow-up round on chat.deepseek.com. The intent signal is the
+// same - a wrapper close attempt at the very end after complete <invoke>
+// blocks - and execution is still gated by parse success, so a dangling
+// opening tag with no parseable calls executes nothing.
+var dsmlToolCallsCloseEndRe = regexp.MustCompile(`(?s)</?\s*(?:tool_calls|_calls)\s*>\s*$`)
 
 // dsmlToolCallsCloseCutRe matches a CUT-OFF wrapper close tag at the very
 // end of the text: the opening "</" exists but the tag was truncated
@@ -209,13 +212,24 @@ var dsmlFullwidthReplacer = strings.NewReplacer("＜", "<", "＞", ">")
 // d\s*s\s*m\s*l covers spelling variants a model may emit ("D S M L").
 //
 // The noise is stripped ONLY when immediately followed by a known DSML tag
-// name (invoke/parameter/tool_calls), which the capture group captures and
-// re-emits ($1$2): a global "dsml" sweep would corrupt real content such as
-// "cat <dsml_config" or prose "a <d s m l b". Go's RE2 has no lookahead, so
-// the "followed by a tag" condition is expressed by capturing the tag name
-// instead. Bare whitespace is deliberately NOT noise: "a < b" in prose or
-// in a parameter value must survive normalization untouched.
-var dsmlTagJunkRe = regexp.MustCompile(`(?i)(</?)(?:[|｜]\s*|d\s*s\s*m\s*l\s*)+((?:invoke|parameter|tool_calls)\b)`)
+// name (invoke/parameter/tool_calls/_calls), which the capture group
+// captures and re-emits ($1$2): a global "dsml" sweep would corrupt real
+// content such as "cat <dsml_config" or prose "a <d s m l b". Go's RE2 has
+// no lookahead, so the "followed by a tag" condition is expressed by
+// capturing the tag name instead. Bare whitespace is deliberately NOT
+// noise: "a < b" in prose or in a parameter value must survive
+// normalization untouched.
+//
+// _calls is the typo'd twin of tool_calls (a real QA round closed with
+// "</_calls>"). It is listed here because the site's stored copy of that
+// close comes back with the DSML badge markers inside the tag: the wrapper
+// is persisted as "</" + full-width pipe markers + the literal "DSML" +
+// "_calls>" (observed shape: "</｜｜｜｜_calls>" — two full-width pipes, the
+// DSML badge markers, two more pipes, then the tag name; the site renders
+// the wrapper as a special UI object and stores the rendered form).
+// Normalizing it back to "</_calls>" is what lets IsDSMLToolCallEnd and
+// ParseDSMLToolCalls see the close at all.
+var dsmlTagJunkRe = regexp.MustCompile(`(?i)(</?)(?:[|｜]\s*|d\s*s\s*m\s*l\s*)+((?:invoke|parameter|tool_calls|_calls)\b)`)
 
 func normalizeDSMLText(text string) string {
 	text = dsmlFullwidthReplacer.Replace(text)
@@ -616,8 +630,11 @@ func StripDSMLToolCalls(text string) string {
 	out = strings.ReplaceAll(out, "</tool_calls>", "")
 	// A typo'd close tag (</_calls>, see dsmlToolCallsCloseEndRe) is a
 	// variant of the same wrapper: if the emission was executed as a tool
-	// call the residue must not leak into the caller-visible text.
+	// call the residue must not leak into the caller-visible text. The
+	// slash-less "_calls" (a close spelled like the opening tag, also
+	// accepted by dsmlToolCallsCloseEndRe) is cleaned the same way.
 	out = strings.ReplaceAll(out, "</_calls>", "")
+	out = strings.ReplaceAll(out, "<_calls>", "")
 	// A CUT-OFF close tag (see dsmlToolCallsCloseCutRe: "</", "</tool_calls"
 	// without ">") leaves the wrapper fragment at the TAIL: strip it too, so
 	// an executed round returns clean prose instead of a dangling "</".

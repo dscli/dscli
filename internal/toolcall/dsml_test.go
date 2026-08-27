@@ -1295,6 +1295,91 @@ func TestIsDSMLToolCallEndTypoCloseTag(t *testing.T) {
 	}
 }
 
+// TestIsDSMLToolCallEndStoredBadgeJunk is the regression for the site's
+// stored copy of a typo'd </_calls> close: the wrapper is persisted with
+// the DSML UI badge markers inside the tag — "</" + two full-width pipes
+// (U+FF5C) + "DSML" + two full-width pipes + "_calls>" (observed
+// 2026-08-27 in the chat.deepseek.com IndexedDB history cache for a QA
+// round). normalizeDSMLText must repair it so the gate sees the close and
+// the parser returns the calls.
+func TestIsDSMLToolCallEndStoredBadgeJunk(t *testing.T) {
+	pollutedClose := "</" + string(rune(0xFF5C)) + string(rune(0xFF5C)) + "DSML" +
+		string(rune(0xFF5C)) + string(rune(0xFF5C)) + "_calls>"
+	text := `<tool_calls>
+<invoke name="exec_command">
+<parameter name="cmd" string="true">grep -rn "func parseSince" internal/toolcall/ask/</parameter>
+<parameter name="justification" string="true">Locate parseSince helpers.</parameter>
+</invoke>
+<invoke name="exec_command">
+<parameter name="cmd" string="true">ls internal/toolcall/ask/</parameter>
+<parameter name="justification" string="true">List ask package files.</parameter>
+</invoke>
+` + pollutedClose
+	if !IsDSMLToolCallEnd(text) {
+		t.Error("IsDSMLToolCallEnd = false, want true for badge-junk close tag")
+	}
+	calls, err := ParseDSMLToolCalls(text)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls: %v", err)
+	}
+	if len(calls) != 2 {
+		t.Fatalf("calls = %d, want 2", len(calls))
+	}
+	if got := StripDSMLToolCalls(text); got != "" {
+		t.Errorf("StripDSMLToolCalls = %q, want empty", got)
+	}
+	// The cut-off twin (no ">") stays non-executable unless the gate's cut
+	// path decides it: End false, Cut true — the parse still succeeds.
+	cut := text[:len(text)-1]
+	if IsDSMLToolCallEnd(cut) {
+		t.Error("IsDSMLToolCallEnd(cut) = true, want false")
+	}
+	if !IsDSMLToolCallCut(cut) {
+		t.Error("IsDSMLToolCallCut(cut) = false, want true")
+	}
+	if _, err := ParseDSMLToolCalls(cut); err != nil {
+		t.Errorf("ParseDSMLToolCalls(cut): %v, want success", err)
+	}
+}
+
+// TestIsDSMLToolCallEndSlashlessTypoClose is the regression for a QA
+// follow-up round on chat.deepseek.com where the model closed the wrapper
+// with the OPENING-tag spelling: "<_calls>" (no slash) after complete
+// <invoke> blocks. The intent signal (wrapper close at the very end after
+// parseable calls) is the same as </_calls>; parse success still gates
+// execution.
+func TestIsDSMLToolCallEndSlashlessTypoClose(t *testing.T) {
+	text := `<tool_calls>
+<invoke name="exec_command">
+<parameter name="cmd" string="true">ls internal/toolcall/alltools/</parameter>
+<parameter name="justification" string="true">Inspect alltools registration mechanism.</parameter>
+</invoke>
+<_calls>`
+	if !IsDSMLToolCallEnd(text) {
+		t.Error("IsDSMLToolCallEnd = false, want true for slash-less <_calls> close")
+	}
+	calls, err := ParseDSMLToolCalls(text)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls: %v", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("calls = %d, want 1", len(calls))
+	}
+	// The strip must leave only the prose before the call (no wrapper
+	// residue): the slash-less close is cleaned like </_calls>.
+	prose := "I need to inspect alltools now.\n" + text
+	if got := StripDSMLToolCalls(prose); got != "I need to inspect alltools now." {
+		t.Errorf("StripDSMLToolCalls = %q, want clean prose", got)
+	}
+	// A bare dangling opening tag with no calls is still non-executable:
+	// the gate may look like an end signal (same as a lone </_calls>), but
+	// the loop's parse gate (len(calls)==0) prevents any execution.
+	dangling := "<_calls>"
+	if n, err := ParseDSMLToolCalls(dangling); len(n) != 0 || err != nil {
+		t.Errorf("ParseDSMLToolCalls(dangling) = %d, %v; want 0, nil", len(n), err)
+	}
+}
+
 // A prose preface before the typo'd close still qualifies: the close tag
 // is the intent signal, whatever precedes the wrapper is commentary.
 func TestIsDSMLToolCallEndTypoCloseTagWithProse(t *testing.T) {
