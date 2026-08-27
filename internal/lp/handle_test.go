@@ -362,6 +362,65 @@ func TestHandleWebChatToolLoopPlainChatProseReference(t *testing.T) {
 	}
 }
 
+func TestHandleWebChatToolLoopPlainChatNonWhitelisted(t *testing.T) {
+	// Plain chat + short preamble + a complete NON-whitelisted call passes
+	// the gate (IsDSMLToolCallReply checks parse + preamble, not the
+	// whitelist) but produces no executable output: the reply is returned
+	// verbatim - it is content, not a command - and nothing is stripped.
+	text := "我给你一个示例：\n" + `<invoke name="write_file">
+<parameter name="path" string="true">a.txt</parameter>
+</invoke>`
+	origFunc := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = origFunc })
+	handleWebChatSend = func(_ context.Context, _ string, _ WebChatOptions) (WebChatResult, error) {
+		return WebChatResult{Content: text, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+	}
+	origExec := handleWebChatExecDSML
+	executed := false
+	handleWebChatExecDSML = func(_ context.Context, _ []toolcall.DSMLCall) []string {
+		executed = true
+		return nil // non-whitelisted call: native executor also returns nothing
+	}
+	t.Cleanup(func() { handleWebChatExecDSML = origExec })
+
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if !executed {
+		t.Error("tool executor should be called (the gate passed), so the non-whitelisted skip path is exercised")
+	}
+	if res.Content != text {
+		t.Errorf("content = %q, want verbatim text (no stripping in plain chat)", res.Content)
+	}
+}
+
+func TestHandleWebChatToolLoopPlainChatRound2Reference(t *testing.T) {
+	// A round-2 plain-chat reply that merely quotes an <invoke> example
+	// inside long prose exits the loop verbatim - plain chat never strips
+	// the expert's words, unlike role consultations.
+	round2 := "Solid work. `<invoke name=\"exec_command\"><parameter name=\"cmd\" string=\"true\">ls</parameter></invoke>` pins it. The implementation matches the design and the tests cover every edge case."
+	origFunc := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = origFunc })
+	var sends int
+	handleWebChatSend = func(_ context.Context, _ string, _ WebChatOptions) (WebChatResult, error) {
+		sends++
+		if sends == 1 {
+			return WebChatResult{Content: dsmlReply, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+		}
+		return WebChatResult{Content: round2, URL: "https://chat.deepseek.com/a/chat/s/convY"}, nil
+	}
+	captureExecDSML(t, "tool feedback")
+
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if res.Content != round2 {
+		t.Errorf("content = %q, want verbatim round-2 prose (no stripping in plain chat)", res.Content)
+	}
+}
+
 func TestHandleWebChatToolLoopRoundCap(t *testing.T) {
 	origFunc, origRounds := handleWebChatSend, handleWebChatMaxDSMLRounds
 	t.Cleanup(func() { handleWebChatSend, handleWebChatMaxDSMLRounds = origFunc, origRounds })

@@ -39,8 +39,8 @@ var handleWebChatMaxDSMLRounds = 1024
 var handleWebChatExecDSML = toolcall.ExecuteDSMLToolCalls
 
 // HandleWebChat sends message to chat.deepseek.com and returns the assistant
-// reply, retrying transient failures and - for role-driven consultations -
-// executing DSML tool calls the expert embeds in its reply.
+// reply, retrying transient failures and - when the reply is judged to be a
+// DSML tool call - executing the tools the expert embeds in its reply.
 //
 // It is the high-level entry point shared by the ask_expert tool and the
 // webchat CLI command: low-level transport (WebChatWithOptions) performs
@@ -146,11 +146,16 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 	return WebChatResult{}, fmt.Errorf("webchat: %w (after %d attempts)", lastErr, len(handleWebChatRetryDelays)+1)
 }
 
-// handleWebChatToolLoop continues a role-driven WebChat conversation while the
+// handleWebChatToolLoop continues a WebChat conversation (role-driven or
+// plain chat; the gate toolcall.IsDSMLToolCallReply decided entry) while the
 // expert emits DSML tool calls: parse the calls, execute them locally, and
 // post the results back into the SAME conversation (Keep=first URL). The
 // role prompt is injected only on the first round - HandleWebChat already
 // rendered it - so follow-up messages carry tool results verbatim.
+//
+// The local-execution warning is printed here, not at the caller: this is
+// the exact moment a remote model's markup becomes a local command, and it
+// applies to plain chat just as much as to role consultations.
 //
 // Exits with the last assistant reply when:
 //   - the reply contains no tool calls (final answer), or
@@ -163,25 +168,39 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 	span, ctx := clog.StartSpanFromContext(ctx, "HandleWebChatToolLoop")
 	defer span.Finish()
 
+	// The remote model's DSML markup is about to run locally with the user's
+	// OS permissions; say so before the first execution (stderr, so piped
+	// stdout stays clean) - silent local execution is the surprise.
+	fmt.Fprintf(os.Stderr, "⚠️ 远程模型回复中的 DSML 工具调用（read_file/exec_command/apply_patch）将在本地执行。\n")
+
 	message := first.Content
 	convURL := first.URL
+	// cleanExit 收尾：角色会话剥离 DSML 标记，露出干净散文；纯聊天原样返回
+	// （专家的话是内容，不是命令）——与第一轮的非执行契约保持一致。
+	cleanExit := func() (WebChatResult, error) {
+		content := message
+		if opts.Role != "" {
+			content = toolcall.StripDSMLToolCalls(message)
+		}
+		return WebChatResult{Content: content, URL: convURL}, nil
+	}
 	for round := 1; round <= handleWebChatMaxDSMLRounds; round++ {
 		// Only tool-call replies continue the loop (see
 		// IsDSMLToolCallReply): a reply that mixes long prose with DSML -
 		// the expert finished its reasoning, or is quoting an example -
-		// ends the loop with the DSML stripped. A short preamble ("I'll
-		// re-send that correctly:") is tolerated: the calls execute and
-		// the preamble is discarded with the round.
+		// ends the loop (stripped for role consultations). A short
+		// preamble ("I'll re-send that correctly:") is tolerated: the
+		// calls execute and the preamble is discarded with the round.
 		calls, parseErr := toolcall.ParseDSMLToolCalls(message)
 		if parseErr != nil {
 			fmt.Fprintf(os.Stderr, "⚠️ 工具调用不完整，已停止循环: %v\n", parseErr)
-			return WebChatResult{Content: toolcall.StripDSMLToolCalls(message), URL: convURL}, nil
+			return cleanExit()
 		}
 		if len(calls) == 0 {
-			return WebChatResult{Content: message, URL: convURL}, nil
+			return cleanExit()
 		}
 		if !toolcall.IsDSMLToolCallReply(message) {
-			return WebChatResult{Content: toolcall.StripDSMLToolCalls(message), URL: convURL}, nil
+			return cleanExit()
 		}
 
 		fmt.Fprintf(os.Stderr, "🤖 专家请求执行 %d 个工具调用（第 %d/%d 轮）…\n",
@@ -191,10 +210,11 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 			// Every parsed call was outside the whitelist (a quoted
 			// DSML example, not an instruction): do NOT send an empty
 			// feedback message - the expert would be confused by a
-			// blank turn. Strip the quoted markup so the caller sees
-			// clean content, and say why the result can be empty.
+			// blank turn. Strip the quoted markup for role consultations
+			// so the caller sees clean content; plain chat keeps the
+			// original text (it is content, not a command).
 			fmt.Fprintf(os.Stderr, "⚠️ 专家回复只包含非白名单工具调用（引用示例？），已跳过执行\n")
-			return WebChatResult{Content: toolcall.StripDSMLToolCalls(message), URL: convURL}, nil
+			return cleanExit()
 		}
 		// Each output is a self-delimiting <tool_result> block, in
 		// tool_calls order — newline separation is enough.
@@ -216,5 +236,5 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 		}
 	}
 	fmt.Fprintf(os.Stderr, "⚠️ 专家连续工具调用超过 %d 轮上限，已返回中间结果\n", handleWebChatMaxDSMLRounds)
-	return WebChatResult{Content: toolcall.StripDSMLToolCalls(message), URL: convURL}, nil
+	return cleanExit()
 }

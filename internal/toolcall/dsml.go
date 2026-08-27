@@ -112,6 +112,13 @@ const dsmlMaxReplyPreamble = 256
 // prose stays excluded by the cap; non-whitelisted call names are handled
 // downstream (skipped silently, no feedback block - see
 // ExecuteDSMLToolCalls).
+//
+// The function is intentionally self-contained (it re-parses the text it
+// was passed) rather than exposing an internal "already parsed" variant:
+// callers - including the tool loop, which calls ParseDSMLToolCalls again -
+// pay a few extra scans of a chat-sized reply for a simple, stable contract.
+// The cap is measured in UTF-8 bytes, not runes: a CJK preamble of ~85
+// characters (255 bytes) still passes, and real preambles are far shorter.
 func IsDSMLToolCallReply(text string) bool {
 	calls, err := ParseDSMLToolCalls(text)
 	if err != nil || len(calls) == 0 {
