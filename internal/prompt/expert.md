@@ -32,6 +32,7 @@ You are the domain expert for the {{.ProjectName}} project.
 
 - Project: {{.ProjectName}} ({{.ProjectType}})
 
+{{if .DSMLTools}}
 ## 🛠️ Available Tools: `read_file`, `exec_command`, `apply_patch`
 
 You may call the following tools via DSML markup. Independent calls may be
@@ -87,6 +88,7 @@ partial writes), stay inside the project root, and cannot touch `sqlite.db` /
 - `apply_patch`: `patch` (string, required) — unified diff text, or a path to a `.patch` file; `cwd` (string, optional, default project root, must stay inside it); `check` (boolean, optional, true = dry-run, no writes); `reverse` (boolean, optional, true = undo). Returns `{applied, check_only, changed_files, summary, error}`.
 
 Tools run automatically and their output will be returned to you. Read the result, then continue — do not re-request the same information. If a call fails, diagnose from the error output and retry with a corrected call.
+{{end}}
 
 ---
 Please provide deep insights based on the above principles.

@@ -65,6 +65,13 @@ type promptConfig struct {
 	// 角色（dev/expert/review）
 	Role string
 
+	// DSMLTools 控制模板是否渲染 DSML 工具注册段（<tool_calls>/<invoke>
+	// 示例）。仅在 WebChat 场景为 true：chat.deepseek.com 没有原生工具
+	// 协议，角色提示词是唯一注册通道，lp.HandleWebChat 解析并本地执行；
+	// dscli chat 通过 API 的 tools 参数注册工具，此段必须保持关闭，
+	// 否则模型会误用 DSML 标记而非原生 tool_calls。
+	DSMLTools bool
+
 	// 模型特定配置
 	ModelID int64
 
@@ -424,12 +431,20 @@ func GetSystemPrompt(ctx context.Context) string {
 // This is useful for tool call handlers that need a one-shot prompt for
 // a given role, such as ask_expert (role="expert") and code_review
 // (role="review").
+//
+// It currently serves the WebChat rendering path (internal/lp calls it to
+// prepend a role prompt to a chat.deepseek.com message), so the DSML tool
+// registration section is turned on: WebChat has no native tool protocol -
+// the prompt is the only channel that can register tools for the
+// HandleWebChat loop. Plain Chat (GetSystemPrompt) leaves it off. If a
+// non-WebChat caller appears, move the DSMLTools=true decision to the caller.
 func RenderPromptForRole(ctx context.Context, role string) string {
 	span, ctx := clog.StartSpanFromContext(ctx, "RenderPromptForRole")
 	defer span.Finish()
 
 	config := newPromptConfig(ctx)
 	config.Role = role
+	config.DSMLTools = true
 	return config.GeneratePromptWithTemplate(ctx)
 }
 

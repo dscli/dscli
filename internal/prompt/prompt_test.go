@@ -67,10 +67,36 @@ func TestLoadPrompts(t *testing.T) {
 	}
 }
 
-// TestNewPromptTemplate_NilSafety 验证未知 modelID 不返回 nil
-// TestNewPromptTemplate_NilSafety 验证未知角色不返回 nil
-// TestNewPromptTemplate_NilSafety 验证未知 modelID 不返回 nil
-// TestNewPromptTemplate_NilSafety 验证未知角色不返回 nil
+// TestDSMLToolsSectionScopedToWebChat 验证 DSML 工具注册段只出现在
+// WebChat 渲染路径：chat.deepseek.com 没有原生工具协议，角色提示词是
+// 注册通道（RenderPromptForRole -> DSMLTools=true）；dscli chat 通过 API
+// 的 tools 参数注册工具（GetSystemPrompt -> DSMLTools=false），模板中
+// 的 <invoke> 手写示例不得泄漏进去，否则模型会误用 DSML 而非原生
+// tool_calls。
+func TestDSMLToolsSectionScopedToWebChat(t *testing.T) {
+	chatPrompt := GetSystemPrompt(t.Context())
+	if strings.Contains(chatPrompt, "<invoke name=") || strings.Contains(chatPrompt, "Available Tools") {
+		t.Errorf("chat system prompt must not contain the DSML tool section:\n%s", chatPrompt)
+	}
+
+	for _, role := range []string{"dev", "expert", "review", "test"} {
+		t.Run(role, func(t *testing.T) {
+			content := RenderPromptForRole(t.Context(), role)
+			if !strings.Contains(content, "<invoke name=\"read_file\">") {
+				t.Errorf("%s webchat prompt missing DSML read_file registration:\n%s", role, content)
+			}
+			if !strings.Contains(content, "Available Tools") {
+				t.Errorf("%s webchat prompt missing Available Tools heading", role)
+			}
+			if strings.Contains(content, "{{") {
+				t.Errorf("%s webchat prompt leaks template placeholders", role)
+			}
+		})
+	}
+}
+
+// TestNewPromptTemplate_NilSafety 验证未知 modelID / 角色不返回 nil
+// （回退到 dev 模板）。
 func TestNewPromptTemplate_NilSafety(t *testing.T) {
 	ctx := context.Background()
 	invalidRoles := []string{"invalid", "unknown", ""}

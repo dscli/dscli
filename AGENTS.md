@@ -118,8 +118,18 @@ consultations (e.g. `review` via code_review) may embed DSML markup
 (`<invoke name="exec_command">` with `<parameter>` children). `lp.HandleWebChat`
 parses them (internal/toolcall/dsml.go), maps `exec_command` -> `shell`
 (cmd->script, justification->summary, timeout ms->s; whitelist: exec_command,
-shell, read_file only) and feeds results back into the SAME conversation
-(handleWebChatToolLoop). Plain webchat (Role empty) never enters the loop.
+shell, read_file, apply_patch) and feeds results back into the SAME conversation
+(handleWebChatToolLoop). Plain webchat (Role empty) never enters the loop;
+the `webchat` CLI defaults to `--role dev` (mirroring `chat`, including the
+empty-value normalization to dev) and prints a stderr warning that the remote
+model's DSML tool calls will run locally. `webchat --plain` opts out: no role
+injection, no tool loop.
+
+Role templates (internal/prompt/*.md) register DSML tools for WebChat via a
+`{{if .DSMLTools}}` block: `RenderPromptForRole` (WebChat path, used by
+HandleWebChat and the webchat CLI) renders it, `GetSystemPrompt` (dscli chat
+path, which registers tools through the API `tools` parameter instead) does
+not. Add new DSML tool registrations inside that block, never outside it.
 
 code_review sends ONLY commit message + diff on its first message: the review
 expert reads AGENTS.md and full changed-file contents on demand via the DSML

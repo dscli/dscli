@@ -29,7 +29,10 @@ WebChat 指使用 web 版本的 https://chat.deepseek.com 与 LLM 交互：
 启用：只要角色提示词（review.md / expert.md）注册了工具，且回复为纯 DSML
 工具调用，HandleWebChat 的工具循环就会解析、执行并把结果回填到同一会话。
 
-=dscli webchat= CLI 命令本身（无角色注入）不进入工具循环——它保留纯聊天语义。
+=dscli webchat= CLI 默认 =--role dev=（与 =dscli chat= 一致，且 =--role=
+空值同样归一为 dev），因此默认进入工具循环；=--plain= 显式关闭角色注入并
+保留纯聊天语义（消息原样发送、不进入工具循环）。角色会话开始前会在 stderr
+打印警告：远程模型的 DSML 工具调用将在本地执行。
 
 * WebChat 读写工具集
 
@@ -134,15 +137,19 @@ CWD 无关；cwd 必须是仓库根——git apply 在仓库内子目录运行�
 
 工具实现后在角色提示词中按如下 markdown 注册：
 
+- =internal/prompt/dev.md= —— webchat CLI 默认角色（=--role dev=），已注册
+  三个工具。
 - =internal/prompt/review.md= —— code_review（review 角色）的 webchat
   会话，已注册三个工具（Available Tools 段）。
 - =internal/prompt/expert.md= —— expert 角色（AskExpertWithRole）的
   webchat 会话，已注册三个工具。
+- =internal/prompt/test.md= —— test 角色（=--role test=），已注册三个工具。
 
-*dont* 把工具段写进 =dev.md= ：=dev.md= 是 =dscli chat=（API 路径）的
-默认系统提示词，注入整个会话；chat 通过 tools 参数注册工具，无需（也不应）
-出现 DSML 手写示例。webchat 需要的角色提示词是上两者。
-
+工具段必须包在 ={{if .DSMLTools}}= ... ={{end}}= 条件块内：
+=RenderPromptForRole=（webchat 路径：HandleWebChat / webchat CLI）渲染它为
+true，=GetSystemPrompt=（=dscli chat= 路径，通过 API tools 参数注册工具）
+渲染它为 false。若不包条件块，=dscli chat= 的模型会看到 DSML 手写示例并
+误用 DSML 标记而非原生 tool_calls。webchat 需要的角色提示词是上述四个。
 #+begin_src markdown
   ## 🛠️ Available Tools: `read_file`, `exec_command`, `apply_patch`
 
@@ -182,4 +189,5 @@ diff 文本即可，参数值支持多行；值内 =<invoke= 等标签被解析�
 且人类不可读。
 
 注意区分 =dscli webchat= 和 =dscli chat= ，对 =dscli chat= 无需注册，因为
-=dscli chat= 调用API，可以通过 tools 参数注册。
+=dscli chat= 调用API，可以通过 tools 参数注册；=dscli webchat= 没有原生
+工具协议，只能通过角色提示词的 DSML 段注册（见上文 ={{if .DSMLTools}}=）。
