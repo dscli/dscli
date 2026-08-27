@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dscli/dscli/internal/lp"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/shell"
 	"github.com/dscli/dscli/internal/toolcall"
@@ -36,6 +37,10 @@ var qualityAssuranceTool = toolcall.ToolDef{
 				"type":        "integer",
 				"description": "Timeout in seconds (default 1200). The QA engineer may run multiple test rounds; set longer for large projects with many tests.",
 			},
+			"keep": map[string]any{
+				"type":        "string",
+				"description": "Continue a saved QA conversation (default new). Pass the conversation_id from a previous result, e.g. to resume a round interrupted mid tool-call: the pending tool calls are executed locally and their results fed back to the expert until it produces the final report.",
+			},
 		},
 		"required":             []string{"summary"},
 		"additionalProperties": false,
@@ -55,6 +60,14 @@ func init() {
 func handleQualityAssurance(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "handleQualityAssurance")
 	defer span.Finish()
+
+	// keep=<conversation_id>: resume a saved QA conversation instead of
+	// starting a new one. The summary/since/git checks are skipped — the
+	// context the engineer needs is already in the conversation.
+	if keep := toolcall.ToolArgsValue(args, "keep", ""); keep != "" {
+		return resumeQualityAssurance(ctx, keep)
+	}
+
 	summary := toolcall.ToolArgsValue(args, "summary", "")
 	since := toolcall.ToolArgsValue(args, "since", "-1")
 
@@ -130,4 +143,36 @@ func handleQualityAssurance(ctx context.Context, args toolcall.ToolArgs) (result
 
 	outfmt.Printf("✅ 质量保障报告\n%s\n", result)
 	return result, warning, err
+}
+
+// qaResumeFunc resumes a saved QA conversation. A package-level variable so
+// tests can replace it with a mock (the real implementation drives Chrome via
+// lp.HandleWebChatResume).
+var qaResumeFunc = lp.HandleWebChatResume
+
+// resumeQualityAssurance continues a saved QA conversation from its last
+// assistant message — the web-chat twin of dscli chat's resume semantics.
+// If that message ends with a tool-call block (the round was interrupted
+// mid tool-call, e.g. a broken close tag that the old parser rejected), the
+// pending calls are executed locally and their results fed back into the
+// SAME conversation until the expert produces the final report. If the last
+// message is a normal reply (multi-turn conversation), it is returned
+// as-is — the caller decides whether a follow-up is needed.
+func resumeQualityAssurance(ctx context.Context, keep string) (result, warning string, err error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "resumeQualityAssurance")
+	defer span.Finish()
+
+	outfmt.Printf("🔁 恢复 QA 会话（keep=%s）...\n", keep)
+	res, resumeErr := qaResumeFunc(ctx, lp.WebChatOptions{Keep: keep, Role: "test"})
+	if resumeErr != nil {
+		err = fmt.Errorf("质量保障恢复失败: %w", resumeErr)
+		return result, warning, err
+	}
+	if res.Printed {
+		// 工具循环已经逐轮打印过（含最终答案），调用方不要重复打印。
+		outfmt.Println("✅ QA 会话恢复完成")
+	} else {
+		outfmt.Printf("✅ QA 会话恢复完成\n%s\n", res.Content)
+	}
+	return res.Content, "", nil
 }

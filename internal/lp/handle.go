@@ -338,6 +338,83 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 	return WebChatResult{}, fmt.Errorf("webchat: %w (after %d attempts)", lastErr, len(handleWebChatRetryDelays)+1)
 }
 
+// handleWebChatResolveConversation resolves a Keep value to a conversation
+// URL. A package variable so tests can replace it (the real resolver reads
+// the file-backed registry; tests want deterministic URLs without touching
+// the user's Chrome profile directory).
+var handleWebChatResolveConversation = resolveConversation
+
+// handleWebChatResumeRead reads the conversation's last assistant message
+// via the shared session attached to ctx. A package variable so tests can
+// replace it with a mock (skip browser automation).
+var handleWebChatResumeRead = func(ctx context.Context, conversationURL string) (content, status string, ok bool) {
+	sess := webChatSessionFrom(ctx)
+	if sess == nil {
+		return "", "", false
+	}
+	return sess.ReadLastAssistant(ctx, conversationURL)
+}
+
+// HandleWebChatResume continues a saved conversation that ended with a
+// pending DSML tool-call round — the web-chat twin of dscli chat's resume
+// semantics ("last message has tool calls → execute and feed the results
+// back; otherwise it's a normal multi-turn conversation"):
+//
+//   - The conversation's LAST assistant message is read from the site's
+//     IndexedDB cache (the continuation point; nothing is sent yet).
+//   - When it ends with a </tool_calls>-style close tag (IsDSMLToolCallEnd),
+//     the pending calls are executed locally and their results fed back into
+//     the SAME conversation (Keep = the conversation URL) until the expert
+//     produces a final answer — exactly handleWebChatToolLoop, with the
+//     interrupted round as its first message. This is how the QA engineer's
+//     round that died mid tool-call (a broken close tag, a killed process)
+//     resumes without re-asking the whole assessment.
+//   - Otherwise the last message is a normal reply: the conversation is a
+//     multi-turn one with nothing pending — the last content is returned
+//     as-is (Printed=false) and the caller decides whether to continue with
+//     a follow-up send.
+//
+// opts.Keep selects the conversation (conversation ID, "last", or a full
+// URL). opts.Role/System are honored for the tool loop's DSML stripping but
+// are NOT injected here: the conversation already carries its own context,
+// and re-injecting a role prompt would duplicate it.
+func HandleWebChatResume(ctx context.Context, opts WebChatOptions) (WebChatResult, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "HandleWebChatResume")
+	defer span.Finish()
+
+	if opts.Keep == "" {
+		return WebChatResult{}, fmt.Errorf("webchat resume requires Keep (conversation ID, \"last\", or URL)")
+	}
+	convURL, err := handleWebChatResolveConversation(opts.Keep)
+	if err != nil {
+		return WebChatResult{}, err
+	}
+	if convURL == "" {
+		return WebChatResult{}, fmt.Errorf("webchat resume: empty conversation URL for Keep %q", opts.Keep)
+	}
+
+	// One browser session serves the whole resume: the read probe and every
+	// tool-loop follow-up reuse the same tab, closed once when the call
+	// returns (mirrors HandleWebChat).
+	sess := newWebChatSession()
+	defer sess.Close()
+	ctx = withWebChatSession(ctx, sess)
+
+	content, status, ok := handleWebChatResumeRead(ctx, convURL)
+	if !ok {
+		return WebChatResult{}, fmt.Errorf("webchat resume: cannot read last assistant message (status %q); the conversation may be expired or its IndexedDB record unavailable", status)
+	}
+	fmt.Fprintf(os.Stderr, "🔁 恢复会话: %s（最后一条消息 %d 字节，status=%s）\n", convURL, len(content), status)
+
+	if !toolcall.IsDSMLToolCallEnd(content) {
+		// Multi-turn conversation: the expert already gave a normal reply —
+		// nothing pending, hand the last content to the caller verbatim.
+		return WebChatResult{Content: content, URL: convURL}, nil
+	}
+	// Pending tool-call round: execute and continue until the final answer.
+	return handleWebChatToolLoop(ctx, WebChatResult{Content: content, URL: convURL}, opts)
+}
+
 // handleWebChatToolLoop continues a WebChat conversation (role-driven or
 // plain chat; the gate toolcall.IsDSMLToolCallEnd decided entry) while the
 // expert emits DSML tool calls: parse the calls, execute them locally, and

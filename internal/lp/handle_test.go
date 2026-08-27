@@ -13,6 +13,154 @@ import (
 	"github.com/dscli/dscli/internal/toolcall"
 )
 
+// interruptedRound is the exact last-message content of a real QA round that
+// died mid tool-call: every <invoke> parses but the close tag is the typo'd
+// "</_calls>" (the model dropped "tool"). This is the resume target.
+const interruptedRound = `<tool_calls>
+<invoke name="exec_command">
+<parameter name="cmd" string="true">grep -rn "func parseSince" internal/toolcall/ask/ && echo '===' && grep -rn "func truncateReviewRequest" internal/toolcall/ask/ && echo '===' && grep -rn "func AskExpertWithRole" internal/toolcall/ask/</parameter>
+<parameter name="justification" string="true">Locate parseSince, truncateReviewRequest, AskExpertWithRole to inspect validation and reuse.</parameter>
+</invoke>
+<invoke name="exec_command">
+<parameter name="cmd" string="true">ls internal/toolcall/ask/</parameter>
+<parameter name="justification" string="true">List ask package files to find code_review and helpers.</parameter>
+</invoke>
+</tool_calls>`
+
+// resumeReadReply returns a mock read for handleWebChatResumeRead and a
+// cleanup that restores it. The content is the "last assistant message" the
+// resumed conversation was interrupted on.
+func mockResumeRead(t *testing.T, content, status string, ok bool) {
+	t.Helper()
+	orig := handleWebChatResumeRead
+	handleWebChatResumeRead = func(_ context.Context, _ string) (string, string, bool) {
+		return content, status, ok
+	}
+	t.Cleanup(func() { handleWebChatResumeRead = orig })
+}
+
+// mockResumeResolve makes Keep resolve to a fixed URL and returns a cleanup.
+func mockResumeResolve(t *testing.T, url string) {
+	t.Helper()
+	orig := handleWebChatResolveConversation
+	handleWebChatResolveConversation = func(keep string) (string, error) {
+		if keep == "" {
+			return "", nil
+		}
+		return url, nil
+	}
+	t.Cleanup(func() { handleWebChatResolveConversation = orig })
+}
+
+func TestHandleWebChatResumeEmptyKeep(t *testing.T) {
+	_, err := HandleWebChatResume(context.Background(), WebChatOptions{})
+	if err == nil || !strings.Contains(err.Error(), "Keep") {
+		t.Fatalf("err = %v, want Keep-required error", err)
+	}
+}
+
+func TestHandleWebChatResumeReadFailure(t *testing.T) {
+	mockResumeResolve(t, "https://chat.deepseek.com/a/chat/s/conv123")
+	mockResumeRead(t, "", "no-idb", false)
+	_, err := HandleWebChatResume(context.Background(), WebChatOptions{Keep: "conv123"})
+	if err == nil || !strings.Contains(err.Error(), "cannot read last assistant message") {
+		t.Fatalf("err = %v, want read-failure error", err)
+	}
+}
+
+func TestHandleWebChatResumePendingToolCalls(t *testing.T) {
+	// The last message is an interrupted tool-call round (broken close tag):
+	// HandleWebChatResume must execute the pending calls locally and feed the
+	// results back into the SAME conversation until the final answer.
+	origFunc := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = origFunc })
+
+	const (
+		convURL     = "https://chat.deepseek.com/a/chat/s/convRESUME"
+		finalAnswer = "## Quality Report\nAll checks pass..."
+	)
+	var messages []string
+	var callsOpts []WebChatOptions
+	handleWebChatSend = func(_ context.Context, msg string, opts WebChatOptions) (WebChatResult, error) {
+		messages = append(messages, msg)
+		callsOpts = append(callsOpts, opts)
+		return WebChatResult{Content: finalAnswer, URL: convURL}, nil
+	}
+
+	mockResumeResolve(t, convURL)
+	mockResumeRead(t, interruptedRound, "FINISHED", true)
+	seen := captureExecDSML(t, "<tool_result>grep output</tool_result>")
+
+	res, err := HandleWebChatResume(context.Background(), WebChatOptions{Keep: "convRESUME", Role: "test"})
+	if err != nil {
+		t.Fatalf("HandleWebChatResume: %v", err)
+	}
+	if res.Content != finalAnswer {
+		t.Errorf("content = %q, want final answer", res.Content)
+	}
+	if !res.Printed {
+		t.Error("loop result must be marked Printed (final answer shown per round)")
+	}
+	// Both calls of the interrupted round executed.
+	if len(*seen) != 2 {
+		t.Fatalf("executed calls = %d, want 2 (both pending invokes)", len(*seen))
+	}
+	if (*seen)[0].Name != "exec_command" || (*seen)[1].Name != "exec_command" {
+		t.Errorf("executed calls = %+v, want two exec_command", *seen)
+	}
+	// The follow-up must continue the SAME conversation with tool feedback.
+	if len(messages) != 1 {
+		t.Fatalf("sends = %d, want 1 (tool feedback only; nothing new asked)", len(messages))
+	}
+	if !strings.Contains(messages[0], "<tool_result>") {
+		t.Errorf("feedback message = %q, want tool_result block", messages[0])
+	}
+	if callsOpts[0].Keep != convURL {
+		t.Errorf("follow-up Keep = %q, want %s", callsOpts[0].Keep, convURL)
+	}
+	if callsOpts[0].Role != "" {
+		t.Errorf("follow-up Role = %q, want empty (no role re-injection)", callsOpts[0].Role)
+	}
+}
+
+func TestHandleWebChatResumeMultiTurnReply(t *testing.T) {
+	// The last message is a normal reply (multi-turn conversation, nothing
+	// pending): the content is returned verbatim, nothing executes, nothing
+	// is sent.
+	origFunc := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = origFunc })
+
+	reply := "This conversation already reached its conclusion."
+	handleWebChatSend = func(_ context.Context, _ string, _ WebChatOptions) (WebChatResult, error) {
+		t.Fatal("handleWebChatSend must not be called for a multi-turn resume")
+		return WebChatResult{}, nil
+	}
+
+	origExec := handleWebChatExecDSML
+	executed := false
+	handleWebChatExecDSML = func(_ context.Context, _ []toolcall.DSMLCall) []string {
+		executed = true
+		return nil
+	}
+	t.Cleanup(func() { handleWebChatExecDSML = origExec })
+
+	mockResumeResolve(t, "https://chat.deepseek.com/a/chat/s/conv123")
+	mockResumeRead(t, reply, "FINISHED", true)
+	res, err := HandleWebChatResume(context.Background(), WebChatOptions{Keep: "conv123", Role: "test"})
+	if err != nil {
+		t.Fatalf("HandleWebChatResume: %v", err)
+	}
+	if executed {
+		t.Error("tool executor must not run for a multi-turn reply")
+	}
+	if res.Content != reply {
+		t.Errorf("content = %q, want verbatim last reply", res.Content)
+	}
+	if res.Printed {
+		t.Error("multi-turn reply must not be marked Printed (caller prints it)")
+	}
+}
+
 func TestWebChatWithOptionsRejectsHandleFields(t *testing.T) {
 	// Role/System are HandleWebChat-only: the transport must fail loudly
 	// instead of silently ignoring them (a caller using the wrong entry

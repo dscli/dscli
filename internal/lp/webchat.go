@@ -473,6 +473,50 @@ const (
 		return {found: false, reason: String((e && e.message) || e)};
 	}
 })()`
+	// jsIDBGetLastAssistantFmt reads the LAST assistant message of the
+	// CURRENT conversation from the site's IndexedDB conversation cache —
+	// the continuation point of a resumed conversation (HandleWebChatResume).
+	//
+	// Unlike jsIDBGetAnswerFmt it does NOT need a sent-message anchor or a
+	// freshness window: there is no "this round" — the caller wants whatever
+	// the expert last said, whether it is a final answer (multi-turn resume)
+	// or a pending tool-call block (interrupted round, chat_messages is
+	// newest-first so the last assistant message is the FIRST role=ASSISTANT
+	// entry scanning from index 0).
+	jsIDBGetLastAssistantFmt = `(async () => {
+	try {
+		const m = location.pathname.match(/\/a\/chat\/s\/([A-Za-z0-9_-]+)/);
+		if (!m) return {found: false, reason: 'no conversation id in url'};
+		const db = await new Promise(function(res, rej) {
+			const req = indexedDB.open('deepseek-chat');
+			req.onsuccess = function() { res(req.result); };
+			req.onerror = function() { rej(req.error); };
+		});
+		const rec = await new Promise(function(res, rej) {
+			const tx = db.transaction('history-message', 'readonly');
+			const r = tx.objectStore('history-message').get(m[1]);
+			r.onsuccess = function() { res(r.result); };
+			r.onerror = function() { rej(r.error); };
+		});
+		db.close();
+		if (!rec) return {found: false, reason: 'no idb record'};
+		const msgs = (rec.data && rec.data.chat_messages) || [];
+		let last = null;
+		for (let i = 0; i < msgs.length; i++) {
+			if (msgs[i].role === 'ASSISTANT') { last = msgs[i]; break; }
+		}
+		if (!last) return {found: false, reason: 'no assistant message'};
+		const frags = last.fragments || [];
+		const parts = [];
+		for (const f of frags) {
+			if (f && typeof f.content === 'string' && f.content.trim() === '') continue;
+			if (f && f.type === 'RESPONSE') parts.push(f.content);
+		}
+		return {found: true, status: last.status || '', text: parts.join('\n\n')};
+	} catch (e) {
+		return {found: false, reason: String((e && e.message) || e)};
+	}
+})()`
 	// jsIsGenerationActive checks whether the AI is still generating a response.
 	// Returns true if a stop/cancel button is visible or the textarea is disabled
 	// (both signals that generation is in progress). Used to distinguish between
@@ -835,21 +879,19 @@ func newWebChatSession() *webChatSession {
 	return &webChatSession{}
 }
 
-// Send performs one complete exchange on the session's browser, booting the
-// browser on first use: navigate to the conversation, send the message, wait
-// for and extract the response, then register the conversation for later
-// continuation. The exchange semantics are webchatSend's.
-func (s *webChatSession) Send(ctx context.Context, conversationURL, message string, opts WebChatOptions) (WebChatResult, error) {
-	span, ctx := clog.StartSpanFromContext(ctx, "webChatSessionSend")
-	defer span.Finish()
+// ensureTab boots the shared browser on first use and returns the tab
+// context. The context is pinned to the boot context: every action (send or
+// read) runs chromedp actions on it, so the boot deadline applies to the
+// whole session. Safe to call concurrently: the mutex serializes the boot.
+func (s *webChatSession) ensureTab(ctx context.Context) (context.Context, error) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.tabCtx == nil {
-		// Boot with THIS send's context so the first round's spans and
+		// Boot with THIS call's context so the first round's spans and
 		// deadline propagate through to the browser.
 		allocCtx, cancel, err := NewChromium(ctx)
 		if err != nil {
-			s.mu.Unlock()
-			return WebChatResult{}, err
+			return nil, err
 		}
 		tabCtx, tabClose := chromedp.NewContext(allocCtx)
 		s.tabCtx = tabCtx
@@ -858,8 +900,20 @@ func (s *webChatSession) Send(ctx context.Context, conversationURL, message stri
 			cancel()
 		}
 	}
-	tabCtx := s.tabCtx
-	s.mu.Unlock()
+	return s.tabCtx, nil
+}
+
+// Send performs one complete exchange on the session's browser, booting the
+// browser on first use: navigate to the conversation, send the message, wait
+// for and extract the response, then register the conversation for later
+// continuation. The exchange semantics are webchatSend's.
+func (s *webChatSession) Send(ctx context.Context, conversationURL, message string, opts WebChatOptions) (WebChatResult, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "webChatSessionSend")
+	defer span.Finish()
+	tabCtx, err := s.ensureTab(ctx)
+	if err != nil {
+		return WebChatResult{}, err
+	}
 
 	// webchatSend wraps every error with "webchat:", so no extra prefix here
 	// (a second one would produce "webchat: webchat: ...").
@@ -1770,6 +1824,27 @@ func idbGetAssistant(ctx context.Context, sentMessage string, notBeforeMS int64)
 	return text, reasoning, status, tokens, true
 }
 
+// idbGetLastAssistant reads the LAST assistant message of the CURRENT
+// conversation from the site's IndexedDB conversation cache — the
+// continuation point of a resumed conversation (HandleWebChatResume). No
+// sent-message anchor and no freshness window: there is no "this round", the
+// caller wants whatever the expert last said. Returns the original markdown
+// (RESPONSE fragments) plus the message status; ok=false when the record is
+// unreadable yet or no assistant message exists.
+func idbGetLastAssistant(ctx context.Context) (text, status string, ok bool) {
+	var result map[string]any
+	if err := evaluateAwait(ctx, jsIDBGetLastAssistantFmt, &result); err != nil {
+		return "", "", false
+	}
+	found, _ := result["found"].(bool)
+	if !found {
+		return "", "", false
+	}
+	status, _ = result["status"].(string)
+	text, _ = result["text"].(string)
+	return text, status, true
+}
+
 // webchatExtractReloadedIDB reloads the conversation page and reads THIS
 // round's answer from the site's IndexedDB cache — the structured source
 // with the ORIGINAL markdown (RESPONSE fragments), the deep-think
@@ -1825,6 +1900,66 @@ func webchatExtractReloadedIDB(ctx context.Context, conversationURL, sentMessage
 		select {
 		case <-ctx.Done():
 			return "", "", 0, false
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+}
+
+// ReadLastAssistant navigates the session's browser to the conversation and
+// reads the LAST assistant message's original markdown from the site's
+// IndexedDB cache — the continuation point of a resumed conversation. Unlike
+// Send it sends nothing: this is a read-only probe (HandleWebChatResume).
+// ok=false means the record is unreadable (URL missing, login lost, no
+// assistant message yet, or the record write never landed within the poll
+// window).
+func (s *webChatSession) ReadLastAssistant(ctx context.Context, conversationURL string) (content, status string, ok bool) {
+	span, ctx := clog.StartSpanFromContext(ctx, "webChatSessionReadLast")
+	defer span.Finish()
+	tabCtx, err := s.ensureTab(ctx)
+	if err != nil {
+		return "", "", false
+	}
+	return webchatReadLastAssistant(tabCtx, conversationURL)
+}
+
+// webchatReadLastAssistant is the transport-level read of the last assistant
+// message: navigate to the conversation, wait for the composer, then poll the
+// IDB record for a FINISHED assistant message (the record write trails the
+// navigation, so a single immediate read can miss it — same window as
+// webchatExtractReloadedIDB). No sent-message anchoring: a resumed
+// conversation has no "this round" yet, so the newest-first FIRST
+// role=ASSISTANT entry IS the continuation point (see
+// jsIDBGetLastAssistantFmt).
+func webchatReadLastAssistant(ctx context.Context, conversationURL string) (content, status string, ok bool) {
+	if conversationURL == "" {
+		return "", "", false
+	}
+	wctx, cancel := context.WithTimeout(ctx, webChatTextareaWait+2*time.Second)
+	defer cancel()
+	actions := []chromedp.Action{
+		chromedp.Navigate(conversationURL),
+		chromedp.WaitReady("body"),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			return waitForChatTextarea(ctx)
+		}),
+		// Let React finish rendering before poking IndexedDB; mirrors
+		// webchatSend's settle delay.
+		chromedp.Sleep(3 * time.Second),
+	}
+	if err := chromedp.Run(wctx, actions...); err != nil {
+		return "", "", false
+	}
+	deadline := time.Now().Add(webChatIDBPollWindow)
+	for {
+		if text, st, found := idbGetLastAssistant(ctx); found {
+			return text, st, true
+		}
+		if time.Now().After(deadline) {
+			return "", "", false
+		}
+		select {
+		case <-ctx.Done():
+			return "", "", false
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
