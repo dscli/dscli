@@ -173,7 +173,7 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result, warn
 
 	// 首次请求只带提交信息 + diff：review 专家在 WebChat 工具循环里按
 	// review 角色的工具配置（role_configs / roles.DefaultFor，默认无工具）
-	// 注册 read_file/exec_command 等 DSML 工具（见 internal/prompt/review.md
+	// 注册 read_file/shell 等 DSML 工具（见 internal/prompt/review.md
 	// 与 toolcall.BuildDSMLToolDoc），需要改动文件全文或项目指南
 	// （AGENTS.md）时会自己读取，不再预先注入 - 避免输入预算被全文挤占，
 	// 也让专家按需深读任意上下文。未配置工具时审查只能依赖 diff 本身，

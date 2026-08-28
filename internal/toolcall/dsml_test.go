@@ -668,11 +668,11 @@ func TestDsmlToolCallID(t *testing.T) {
 func TestDsmlCallsToToolCalls(t *testing.T) {
 	calls := []DSMLCall{
 		{Name: "exec_command", Args: map[string]any{"cmd": "ls", "timeout": float64(3000)}},
-		// apply_patch without its required patch is rejected at the
-		// DSML layer (no execution, error block) - the remaining
-		// conversion-level rejections (exec_command missing cmd,
-		// destructive commands) are covered by their own tests.
-		{Name: "apply_patch", Args: map[string]any{"check": true}},
+		// exec_command without its cmd is rejected at the DSML layer
+		// (no execution, error block); parameter validation for the
+		// native schema (e.g. apply_patch without patch) is the local
+		// handler's job now, not a conversion-level rejection.
+		{Name: "exec_command", Args: map[string]any{}},
 		{Name: "read_file", Args: map[string]any{"path": "a.go"}},
 	}
 	tcs, plan := dsmlCallsToToolCalls(calls)
@@ -700,8 +700,8 @@ func TestDsmlCallsToToolCalls(t *testing.T) {
 	if plan[0].content != nil || plan[0].index != 0 {
 		t.Errorf("plan[0] = %+v, want execute index 0", plan[0])
 	}
-	if plan[1].content == nil || !strings.Contains(plan[1].content.Error, "missing parameter patch") {
-		t.Errorf("plan[1] = %+v, want missing-patch error content", plan[1])
+	if plan[1].content == nil || !strings.Contains(plan[1].content.Error, "missing parameter cmd") {
+		t.Errorf("plan[1] = %+v, want missing-cmd error content", plan[1])
 	}
 	if plan[2].content != nil || plan[2].index != 1 {
 		t.Errorf("plan[2] = %+v, want execute index 1", plan[2])
@@ -743,9 +743,9 @@ func TestFormatDSMLToolResult(t *testing.T) {
 func TestExecuteDSMLToolCallsToolResultFormat(t *testing.T) {
 	ctx := withIsolatedDualSession(t)
 
-	// 映射后的实际执行名：exec_command→shell，read_file→read_file。
+	// 映射后的实际执行名：exec_command→shell（注册表别名），read_file→read_file。
 	for _, def := range []ToolDef{
-		{Name: "shell", Description: "test shell", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
+		{Name: "shell", Aliases: []string{"exec_command"}, Description: "test shell", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
 			return "ok", "note", nil
 		}},
 		{Name: "read_file", Description: "test read_file", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
@@ -820,7 +820,7 @@ func TestExecuteDSMLToolCallsRoleGate(t *testing.T) {
 	})
 
 	for _, def := range []ToolDef{
-		{Name: "shell", Description: "test shell", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
+		{Name: "shell", Aliases: []string{"exec_command"}, Description: "test shell", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
 			return "shell-ok", "", nil
 		}},
 		{Name: "read_file", Description: "test read_file", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
@@ -854,9 +854,9 @@ func TestExecuteDSMLToolCallsRoleGate(t *testing.T) {
 }
 
 // TestExecuteDSMLToolCallsExecCommandConfig: a role configured with the
-// literal DSML name "exec_command" (not "shell") must still execute: the
-// doc layer registers it via filterNames and the executor accepts either
-// the raw spelling or its native name in the allow-set.
+// literal legacy name "exec_command" (not "shell") must still execute: the
+// registry alias resolves it to the shell tool, and the allow-set check
+// accepts either the raw spelling or the canonical name.
 func TestExecuteDSMLToolCallsExecCommandConfig(t *testing.T) {
 	ctx := withIsolatedDualSession(t)
 	ctx = dsctx.WithValue(ctx, dsctx.CurrentRoleKey, "review")
@@ -870,7 +870,7 @@ func TestExecuteDSMLToolCallsExecCommandConfig(t *testing.T) {
 		}
 	})
 
-	if err := RegisterTool(ToolDef{Name: "shell", Description: "test shell", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
+	if err := RegisterTool(ToolDef{Name: "shell", Aliases: []string{"exec_command"}, Description: "test shell", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
 		return "shell-ok", "", nil
 	}}); err != nil {
 		t.Fatal(err)
@@ -1282,21 +1282,34 @@ func TestNormalizeDSMLInvokeApplyPatch(t *testing.T) {
 	if args["cwd"] != "sub/dir" {
 		t.Errorf("cwd = %v", args["cwd"])
 	}
-	// 只透传声明参数：无关参数必须被丢弃。
-	inv.Args = map[string]any{"patch": "x", "junk": "y"}
+	// 通用透传：仅剥离 DSML 装饰参数 justification，其余参数一律转发，
+	// 参数校验交给本地 handler（apply_patch 自己检查 patch 缺失）。
+	inv.Args = map[string]any{"patch": "x", "junk": "y", "justification": "why"}
 	name, args, err = normalizeDSMLInvoke(inv)
 	if err != nil {
 		t.Fatalf("normalizeDSMLInvoke: %v", err)
 	}
-	if _, ok := args["junk"]; ok {
-		t.Errorf("undeclared parameter leaked: %v", args)
+	if _, ok := args["justification"]; ok {
+		t.Errorf("justification leaked into target args: %v", args)
+	}
+	if args["patch"] != "x" || args["junk"] != "y" {
+		t.Errorf("passthrough broken: %v", args)
 	}
 }
 
 func TestNormalizeDSMLInvokeApplyPatchMissingPatch(t *testing.T) {
+	// normalize 不再提前校验：无 patch 的调用照样透传，由 apply_patch
+	// handler 自身拒绝（"parameter error: no patch specified"）。
 	inv := DSMLCall{Name: "apply_patch", Args: map[string]any{"check": true}}
-	if _, _, err := normalizeDSMLInvoke(inv); err == nil {
-		t.Error("expected error for apply_patch without patch")
+	name, args, err := normalizeDSMLInvoke(inv)
+	if err != nil {
+		t.Fatalf("normalizeDSMLInvoke: %v", err)
+	}
+	if name != "apply_patch" {
+		t.Errorf("name = %q, want apply_patch", name)
+	}
+	if _, ok := args["patch"]; ok {
+		t.Errorf("unexpected patch: %v", args)
 	}
 }
 

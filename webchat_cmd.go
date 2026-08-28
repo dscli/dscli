@@ -47,7 +47,7 @@ func init() {
   dscli webchat --role dev "实现一个功能"            # 开发助手
   dscli webchat "随便聊聊"                           # 默认纯聊天：无角色注入（回复中的 DSML 工具调用仍会执行）
 非空角色会前置角色提示词；无论角色与否，DeepSeek Web 回复中的 DSML 工具调用
-（read_file / exec_command / apply_patch）都由 dscli 本地执行并把结果回填到
+（read_file / shell / apply_patch）都由 dscli 本地执行并把结果回填到
 同一会话（同 code_review 工具）。这是远程模型在本地执行命令的会话：角色会话
 开始前会打印警告，且只执行角色配置允许的工具 + 危险命令拦截（rm -rf、
 sudo、curl/wget 外传等被拒绝）；仍建议在可信工作目录使用。--role=（空值）即纯聊天：不注入角色

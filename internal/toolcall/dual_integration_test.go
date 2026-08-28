@@ -31,6 +31,13 @@ func unregisterToolForTest(name string) {
 	toolRegistryRWMutex.Lock()
 	defer toolRegistryRWMutex.Unlock()
 	delete(toolRegistry, name)
+	// Aliases must go with their tool, or a later test registering the
+	// same alias (e.g. shell's exec_command) fails with "already registered".
+	for alias, canonical := range toolAliases {
+		if canonical == name {
+			delete(toolAliases, alias)
+		}
+	}
 }
 
 // TestHandleToolCallsDualInjection 端到端验证：注册一个返回 DualMessage

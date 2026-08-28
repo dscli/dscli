@@ -115,22 +115,25 @@ user messages).
 
 DSML tool calls from WebChat: chat.deepseek.com replies (role-driven
 consultations like `review` via code_review, and plain chat alike) may embed
-DSML markup (`<invoke name="exec_command">` with `<parameter>` children) - it
-is the web model's native tool protocol. `lp.HandleWebChat` judges each reply
+DSML markup (`<invoke name="shell">` with `<parameter>` children) - it is the
+web model's native tool protocol. `lp.HandleWebChat` judges each reply
 with `toolcall.IsDSMLToolCallEnd` (the reply ENDS with a `</tool_calls>`
 close tag; whatever prose precedes it is discarded with the round; a lone
 close tag without the opening wrapper still qualifies, and a wrapper with no
 parseable `<invoke>` executes nothing - quoted code and prose references that
 merely cite an `<invoke>` example never end with the wrapper close tag and
-never qualify), parses them (internal/toolcall/dsml.go), maps `exec_command`
--> `shell` (cmd->script, justification->summary, timeout ms->s) and feeds
+never qualify), parses them (internal/toolcall/dsml.go) and feeds
 results back into the SAME conversation (handleWebChatToolLoop). Which tools
 are executable is decided by the role's tools config (role_configs /
 roles.DefaultFor) - the SAME source that gates GetAllTools, so `dscli role
 update --tools` is the single place that decides it; there is NO separate
-DSML whitelist. Registered tools without a hand-written DSML entry are
-documented straight from their ToolDef (dsmlGeneratedDocEntry); only
-exec_command keeps DSML-layer naming (cmd/justification/timeout-ms). The
+DSML whitelist. DSML tool entries are generated straight from the registered
+ToolDef (dsmlGeneratedDocEntry), so the model sees native names and parameter
+schemas - no name translation in the normal path. The one legacy spelling is
+`exec_command` (DeepSeek's old habit for the shell tool): the registry
+resolves the name via shell.Aliases, and normalizeDSMLInvoke still translates
+its old parameter protocol (cmd->script, justification->summary,
+timeout ms->s). The
 loop prints every round it receives (reasoning + content via
 outfmt.PrintContent, with the output token count derived from the site's
 IndexedDB accumulated_token_usage) and marks the final result `Printed` so
@@ -152,7 +155,7 @@ tools (expert/review/test by default) gets no DSML section at all.
 
 code_review sends ONLY commit message + diff on its first message: the review
 expert reads AGENTS.md and full changed-file contents on demand via the DSML
-tool loop (`read_file` / `exec_command`). Do not re-inject file contents or
+tool loop (`read_file` / `shell`). Do not re-inject file contents or
 AGENTS.md into the request — the web-chat input budget (140k runes, see code_review.go) is better spent on
 the diff, and the expert can deep-read any file it needs (see
 internal/prompt/review.md).

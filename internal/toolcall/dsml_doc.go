@@ -9,12 +9,13 @@
 // dscli chat. No separate DSML whitelist: `dscli role update --tools` is the
 // single place that decides which tools a role may use.
 //
-// The documentation metadata below describes the DSML layer (parameter names
-// the model writes, e.g. cmd/justification/timeout-in-milliseconds), which is
-// deliberately NOT the native tool schema (script/summary/timeout-in-seconds
-// for the shell tool). Keeping the two apart is what makes the rendered
-// examples executable: normalizeDSMLInvoke translates from DSML names to the
-// native ones, and anything documented here must round-trip through it.
+// There is NO hand-written DSML naming layer anymore: every entry is
+// generated straight from the registered ToolDef (dsmlGeneratedDocEntry), so
+// the model sees the native tool names and parameter schemas - what the model
+// writes is what the executor accepts, no translation. The only legacy
+// spelling is exec_command, which the registry resolves to the shell tool via
+// shell.Aliases; normalizeDSMLInvoke keeps the old parameter protocol working
+// for it (see the comment there).
 package toolcall
 
 import (
@@ -32,160 +33,20 @@ import (
 // dsmlDocTool is one tool entry in the DSML registration section.
 type dsmlDocTool struct {
 	// dsmlName is the name the model writes in <invoke name="...">.
-	// exec_command is DeepSeek's habitual name for the shell tool.
 	dsmlName string
-	// filterNames are the role-config names that enable this entry
-	// ("exec_command" and "shell" are synonyms: both map to the same
-	// local tool, and normalizeDSMLInvoke accepts both spellings).
-	filterNames []string
-	// example is one XML invocation sample (DSML parameter names).
+	// example is one XML invocation sample.
 	example string
-	// paramsLine summarizes the DSML-layer parameters in one line.
+	// paramsLine summarizes the parameters in one line.
 	paramsLine string
-	// schema is the DSML-layer JSON schema (see the package comment).
+	// schema is the JSON schema (the tool's own Parameters).
 	schema map[string]any
 }
 
-// dsmlDocToolsAll is the hand-written DSML documentation, in stable display
-// order. It covers the tools whose DSML layer differs from the native one
-// (exec_command's cmd/justification/timeout-ms naming vs shell's
-// script/summary/timeout-s). Tools without an entry here are documented by
-// dsmlGeneratedDocEntry straight from their registered ToolDef, so a role
-// configured via `dscli role update --tools` is always registered for the
-// web model with no code change.
-var dsmlDocToolsAll = []dsmlDocTool{
-	{
-		dsmlName:    "exec_command",
-		filterNames: []string{"exec_command", "shell"},
-		example: `<tool_calls>
-<invoke name="exec_command">
-<parameter name="cmd" string="true">go test ./internal/...</parameter>
-<parameter name="justification" string="true">Verify the behavior being discussed</parameter>
-<parameter name="timeout" string="false">120000</parameter>
-</invoke>
-</tool_calls>`,
-		paramsLine: "`exec_command`: `cmd` (string, required) — shell command; `justification` (string, optional); `timeout` (integer, optional, **milliseconds**, e.g. 10000 = 10s; omit for the default 120s).",
-		schema: dsmlFunctionSchema("exec_command",
-			"Run a shell command on the local project host. Prefer read-only commands (go test, git show, git log, grep, sed, ls).",
-			map[string]any{
-				"cmd":           dsmlStringProp("Shell command to run."),
-				"justification": dsmlStringProp("Why this command answers the question (display only)."),
-				"timeout": map[string]any{
-					"type":        "integer",
-					"description": "Timeout in milliseconds, e.g. 10000 = 10s. Omit for the default 120s.",
-				},
-			},
-			[]string{"cmd"}),
-	},
-	{
-		dsmlName:    "read_file",
-		filterNames: []string{"read_file"},
-		example: `<tool_calls>
-<invoke name="read_file">
-<parameter name="path" string="true">internal/foo/bar.go</parameter>
-<parameter name="justification" string="true">Why this file answers the question</parameter>
-</invoke>
-</tool_calls>`,
-		paramsLine: "`read_file`: `path` (string, required) — file to read; `justification` (string, optional). Optional `start_line`/`end_line` (integer, 1-based inclusive) read only a slice — prefer them for large files.",
-		schema: dsmlFunctionSchema("read_file",
-			"Read a file, or a 1-based inclusive line range of it. Path is relative to the repo root.",
-			map[string]any{
-				"path":          dsmlStringProp("File path, e.g. main.go"),
-				"start_line":    dsmlIntProp("Start line (1-based), optional, default 1"),
-				"end_line":      dsmlIntProp("End line, optional, default end of file"),
-				"justification": dsmlStringProp("Why this file answers the question (display only)."),
-			},
-			[]string{"path"}),
-	},
-	{
-		dsmlName:    "apply_patch",
-		filterNames: []string{"apply_patch"},
-		example: `<tool_calls>
-<invoke name="apply_patch">
-<parameter name="patch" string="true">--- a/internal/foo/bar.go
-+++ b/internal/foo/bar.go
-@@ -10,3 +10,5 @@
- func Foo() {
-+    return 1
-+}
-+</parameter>
-<parameter name="check" string="false">true</parameter>
-<parameter name="justification" string="true">Dry-run the suggested fix before applying it</parameter>
-</invoke>
-</tool_calls>`,
-		paramsLine: "`apply_patch`: `patch` (string, required) — unified diff text, or a path to a `.patch` file; `cwd` (string, optional, default project root, must stay inside it); `check` (boolean, optional, true = dry-run, no writes); `reverse` (boolean, optional, true = undo). Returns `{applied, check_only, changed_files, summary, error}`.",
-		schema: dsmlFunctionSchema("apply_patch",
-			"Apply a unified diff patch. Atomic: a conflict fails the whole patch with no partial writes.",
-			map[string]any{
-				"patch":         dsmlStringProp("Unified diff text, or a path to a .patch file."),
-				"cwd":           dsmlStringProp("Git repo root, default project root; must stay inside it."),
-				"check":         dsmlBoolProp("true = dry-run, no writes."),
-				"reverse":       dsmlBoolProp("true = reverse-apply (undo)."),
-				"justification": dsmlStringProp("Why this tool call is needed (display only)."),
-			},
-			[]string{"patch"}),
-	},
-}
-
-func dsmlStringProp(desc string) map[string]any {
-	return map[string]any{"type": "string", "description": desc}
-}
-
-func dsmlIntProp(desc string) map[string]any {
-	return map[string]any{"type": "integer", "description": desc}
-}
-
-func dsmlBoolProp(desc string) map[string]any {
-	return map[string]any{"type": "boolean", "description": desc}
-}
-
-// dsmlFunctionSchema builds one OpenAI-style function schema for a DSML tool.
-func dsmlFunctionSchema(name, desc string, props map[string]any, required []string) map[string]any {
-	return map[string]any{
-		"type": "function",
-		"function": map[string]any{
-			"name":        name,
-			"description": desc,
-			"parameters": map[string]any{
-				"type":                 "object",
-				"properties":           props,
-				"required":             required,
-				"additionalProperties": false,
-			},
-		},
-	}
-}
-
-// dsmlDocForSpec resolves a stored tools spec ("all", "", "a,b") into the
-// hand-written DSML documentation entries it matches. Names without a
-// hand-written entry are not dropped - BuildDSMLToolDoc adds them via
-// dsmlGeneratedDocEntry from the registered ToolDef.
-func dsmlDocForSpec(spec string) []dsmlDocTool {
-	allow := allowSetFromSpec(spec)
-	if allow != nil && len(allow) == 0 {
-		return nil // explicitly nothing
-	}
-	var out []dsmlDocTool
-	for _, t := range dsmlDocToolsAll {
-		if allow == nil { // "all"
-			out = append(out, t)
-			continue
-		}
-		for _, n := range t.filterNames {
-			if allow[n] {
-				out = append(out, t)
-				break
-			}
-		}
-	}
-	return out
-}
-
 // dsmlGeneratedDocEntry builds a DSML documentation entry straight from a
-// registered ToolDef: the DSML layer uses the native parameter names, so the
-// schema is the tool's own schema and the example/params line are derived
-// from it. Used for every role-configured tool that has no hand-written
-// entry in dsmlDocToolsAll.
+// registered ToolDef: the DSML layer uses the native tool name and parameter
+// schema, so the schema is the tool's own schema and the example/params line
+// are derived from it. This is the only doc source - the role's tools spec
+// decides what gets registered, with no code change needed per tool.
 func dsmlGeneratedDocEntry(def ToolDef) dsmlDocTool {
 	name := def.Name
 	props, _ := def.Parameters["properties"].(map[string]any)
@@ -247,10 +108,9 @@ func dsmlGeneratedDocEntry(def ToolDef) dsmlDocTool {
 	}
 
 	return dsmlDocTool{
-		dsmlName:    name,
-		filterNames: []string{name},
-		example:     b.String(),
-		paramsLine:  paramsLine,
+		dsmlName:   name,
+		example:    b.String(),
+		paramsLine: paramsLine,
 		schema: map[string]any{
 			"type": "function",
 			"function": map[string]any{
@@ -273,22 +133,17 @@ func sortedSchemaKeys(props map[string]any) []string {
 	return keys
 }
 
-// dsmlGeneratedEntries adds auto-generated DSML doc entries for every
-// role-configured tool without a hand-written entry. "all" covers every
-// registered tool - the role's tools spec is the only gate (same source as
-// GetAllTools), so a role configured via `dscli role update --tools` gets
-// its tool registered for the web model with no code change. Unregistered
-// names in an explicit list are skipped with a debug log: they would fail
-// at execution anyway, and registering them only misleads the model into
-// failed calls.
-func dsmlGeneratedEntries(ctx context.Context, spec string, existing []dsmlDocTool) []dsmlDocTool {
+// dsmlGeneratedEntries builds DSML doc entries for every role-configured tool,
+// straight from its registered ToolDef. "all" covers every registered tool -
+// the role's tools spec is the only gate (same source as GetAllTools), so a
+// role configured via `dscli role update --tools` gets its tool registered for
+// the web model with no code change. Unregistered names in an explicit list
+// are skipped with a debug log: they would fail at execution anyway, and
+// registering them only misleads the model into failed calls. Names that are
+// registry aliases (e.g. exec_command) resolve to their canonical ToolDef and
+// are registered under the canonical name.
+func dsmlGeneratedEntries(ctx context.Context, spec string) []dsmlDocTool {
 	allow := allowSetFromSpec(spec)
-	covered := map[string]bool{}
-	for _, e := range existing {
-		for _, n := range e.filterNames {
-			covered[n] = true
-		}
-	}
 	var names []string
 	if allow == nil { // "all"
 		names = KnownToolNames()
@@ -299,15 +154,17 @@ func dsmlGeneratedEntries(ctx context.Context, spec string, existing []dsmlDocTo
 		sort.Strings(names)
 	}
 	var out []dsmlDocTool
+	seen := map[string]bool{}
 	for _, n := range names {
-		if covered[n] {
-			continue // hand-written entry already registered
-		}
 		def, ok := GetToolDef(ctx, n)
 		if !ok {
 			outfmt.Debug("dsml doc: role tool %q is not a registered tool and will not be registered\n", n)
 			continue
 		}
+		if seen[def.Name] {
+			continue // alias and canonical name in the same spec: register once
+		}
+		seen[def.Name] = true
 		out = append(out, dsmlGeneratedDocEntry(def))
 	}
 	return out
@@ -315,18 +172,16 @@ func dsmlGeneratedEntries(ctx context.Context, spec string, existing []dsmlDocTo
 
 // BuildDSMLToolDoc renders the DSML tool registration section for a role,
 // driven by the role's tool configuration (role_configs row, falling back to
-// roles.DefaultFor) - the same spec that gates GetAllTools. Hand-written
-// entries cover the DSML-layer naming (exec_command etc.); every other
-// role-configured tool is documented straight from its ToolDef. An empty
-// result means the role has no executable tools and the prompt templates
-// drop the section entirely.
+// roles.DefaultFor) - the same spec that gates GetAllTools. Every entry is
+// generated from the registered ToolDef, so the DSML layer and the local
+// executor share one schema. An empty result means the role has no
+// executable tools and the prompt templates drop the section entirely.
 func BuildDSMLToolDoc(ctx context.Context, role string) prompt.DSMLToolDoc {
 	span, ctx := clog.StartSpanFromContext(ctx, "BuildDSMLToolDoc")
 	defer span.Finish()
 
 	spec := roleToolsSpec(ctx, role)
-	entries := dsmlDocForSpec(spec)
-	entries = append(entries, dsmlGeneratedEntries(ctx, spec, entries)...)
+	entries := dsmlGeneratedEntries(ctx, spec)
 	if len(entries) == 0 {
 		return prompt.DSMLToolDoc{}
 	}
@@ -361,7 +216,7 @@ func BuildDSMLToolDoc(ctx context.Context, role string) prompt.DSMLToolDoc {
 	for _, e := range entries {
 		raw, err := json.MarshalIndent(e.schema, "", "  ")
 		if err != nil {
-			// Schema maps are hand-built constants; a marshal failure here
+			// Schema maps come from the registry; a marshal failure here
 			// is a programming error, so the doc must not silently drop a
 			// registered tool - surface it loudly.
 			raw = []byte(fmt.Sprintf("{/* schema error: %v */}", err))

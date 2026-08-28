@@ -9,13 +9,14 @@
 //
 // Which tools may be executed is decided by the role's tools config
 // (`dscli role update --tools`), the SAME source that gates dscli chat's
-// GetAllTools - there is no separate DSML whitelist. exec_command maps to
-// the shell tool (DeepSeek's habitual name, with cmd/justification/timeout
-// parameter translation); read_file and apply_patch pass their parameters
-// through; any other role-configured tool executes verbatim. The only
-// DSML-layer checks that remain are the destructive-command interception
-// for shell calls (dsmlBlockedCmdRe) and parameter validation in
-// normalizeDSMLInvoke.
+// GetAllTools - there is no separate DSML whitelist. Role-configured tools
+// are registered with their NATIVE names and parameter schemas (see
+// dsml_doc.go), so a call maps 1:1 to the local tool; exec_command is
+// accepted as the legacy spelling of the shell tool (registry alias) with
+// its old cmd/justification/timeout-ms parameter protocol translated in
+// normalizeDSMLInvoke. The only DSML-layer checks that remain are the
+// destructive-command interception for shell calls (dsmlBlockedCmdRe) and
+// parameter validation in normalizeDSMLInvoke.
 package toolcall
 
 import (
@@ -653,17 +654,6 @@ func StripDSMLToolCalls(text string) string {
 	return strings.TrimSpace(out)
 }
 
-// dsmlNativeName maps a DSML tool name to the local tool it executes as.
-// exec_command is DeepSeek's habitual name for the shell tool; every other
-// name passes through verbatim (the role's tool config is the only gate for
-// what may be called, and it uses local tool names).
-func dsmlNativeName(name string) string {
-	if name == "exec_command" {
-		return "shell"
-	}
-	return name
-}
-
 // dsmlRoleAllowSet returns the tool names the current role may invoke via
 // DSML: the role's tools spec (role_configs, falling back to DefaultFor) -
 // the SAME source GetAllTools uses for dscli chat. There is no separate
@@ -703,88 +693,64 @@ var dsmlBlockedCmdRe = regexp.MustCompile(`(?i)(^|\s|;|&&|\|\|)(` +
 
 // normalizeDSMLInvoke maps a DSML call to a native tool name and arguments.
 //
-// exec_command uses the parameter names DeepSeek was trained on
-// (cmd/justification/timeout); the shell tool uses
-// (script/summary/timeout-in-seconds), so the translation is done here
-// rather than by a bare name alias:
-//   - cmd     -> script
-//   - justification -> summary (first non-empty element, display only)
-//   - timeout -> seconds (DSML uses milliseconds)
+// Role-configured tools are registered with their native names and parameter
+// schemas (dsml_doc.go), so the model writes what the executor accepts: the
+// general path below is a verbatim passthrough that only strips the DSML
+// decorative parameter justification (DeepSeek's habit of adding it to every
+// call) - the local handler validates everything else.
 //
-// read_file passes its parameters through (path, start_line, end_line):
-// the local tool accepts all three, so any DSML read_file call maps 1:1
-// to the native read_file (no slice-mapping needed since the 2026-08
-// tool merge absorbed read_file_with_line_range into read_file).
-// apply_patch passes patch/cwd/check/reverse through.
+// Two exceptions remain, neither avoidable:
 //
-// Any name not matched by the branches below is passed through verbatim
-// with its arguments: the role's tool config (dsmlRoleAllowSet) is the
-// gate, and the local tool's own handler validates the arguments. The
-// DSML decorative parameter justification (DeepSeek's habit) is stripped
-// so it never reaches a handler that expects only its schema's keys.
+//   - exec_command is the legacy spelling of the shell tool (DeepSeek's
+//     training habit; the registry resolves the name via shell.Aliases).
+//     Sessions that started before the rename may still emit its OLD
+//     parameter protocol, translated here: cmd -> script,
+//     justification -> summary (first non-empty element, display only),
+//     timeout -> seconds (the DSML layer used milliseconds).
+//
+//   - destructive-command interception for any call targeting the shell
+//     tool, whichever spelling the model used (dsmlBlockedCmdRe): a remote
+//     web model is not a trusted local agent.
 func normalizeDSMLInvoke(inv DSMLCall) (name string, args ToolArgs, err error) {
-	if inv.Name == "read_file" {
-		// 与 apply_patch 一致只透传白名单参数，justification 等装饰性参数
-		// 不进入目标工具。start_line/end_line 由本地 read_file 直接消费
-		// （缺省端由工具补默认值：start=1、end=EOF）；不再映射旧名
-		// read_file_with_line_range（2026-08 工具合并后已并入 read_file）。
-		args = ToolArgs{}
-		for _, key := range []string{"path", "start_line", "end_line"} {
-			if v, ok := inv.Args[key]; ok {
-				args[key] = v
-			}
-		}
-		return "read_file", args, nil
-	}
-	if inv.Name == "apply_patch" {
-		args = ToolArgs{}
-		for _, key := range []string{"patch", "cwd", "check", "reverse"} {
-			if v, ok := inv.Args[key]; ok {
-				args[key] = v
-			}
-		}
-		if p, ok := args["patch"].(string); !ok || strings.TrimSpace(p) == "" {
-			return "", nil, fmt.Errorf("apply_patch missing parameter patch")
-		}
-		return "apply_patch", args, nil
-	}
-	if inv.Name == "exec_command" || inv.Name == "shell" {
-		name = "shell"
-		args = ToolArgs{}
-		if script, ok := inv.Args["script"]; ok && script != "" {
-			args["script"] = script
-		} else if cmd, ok := inv.Args["cmd"]; ok {
-			args["script"] = cmd
-		}
-		if _, ok := args["script"]; !ok {
-			return "", nil, fmt.Errorf("exec_command missing parameter cmd")
-		}
-		if scriptStr, ok := args["script"].(string); ok && dsmlBlockedCmdRe.MatchString(scriptStr) {
-			return "", nil, fmt.Errorf("destructive command rejected (review is read-only): %q", truncateDSMLSummary(scriptStr))
-		}
-		if _, ok := inv.Args["summary"]; !ok {
-			if sum, ok := firstNonEmptyDSMLEntry(inv.Args["justification"]); ok {
-				args["summary"] = truncateDSMLSummary(sum)
-			}
-		}
-		if t, ok := inv.Args["timeout"]; ok {
-			if secs := dsmlTimeoutSeconds(t); secs > 0 {
-				args["timeout"] = secs
-			}
-		}
-		return name, args, nil
-	}
-
-	// Generic passthrough: the role config decides which tools may be
-	// called, and the local handler validates the parameters. Only the
-	// DSML decorative layer is stripped, never forwarded.
-	name = inv.Name
 	args = ToolArgs{}
 	for k, v := range inv.Args {
 		if k == "justification" {
 			continue
 		}
 		args[k] = v
+	}
+
+	name = inv.Name
+	if inv.Name == "exec_command" {
+		// Legacy parameter protocol: if the model mixed both spellings,
+		// an explicit script/summary/timeout wins over the old ones.
+		if _, ok := args["script"]; !ok {
+			if cmd, ok := args["cmd"]; ok {
+				args["script"] = cmd
+			}
+		}
+		delete(args, "cmd")
+		if _, ok := args["summary"]; !ok {
+			if sum, ok := firstNonEmptyDSMLEntry(inv.Args["justification"]); ok {
+				args["summary"] = truncateDSMLSummary(sum)
+			}
+		}
+		if t, ok := args["timeout"]; ok {
+			delete(args, "timeout")
+			if secs := dsmlTimeoutSeconds(t); secs > 0 {
+				args["timeout"] = secs
+			}
+		}
+		if script, _ := args["script"].(string); strings.TrimSpace(script) == "" {
+			return "", nil, fmt.Errorf("exec_command missing parameter cmd")
+		}
+		name = "shell"
+	}
+
+	if name == "shell" {
+		if script, ok := args["script"].(string); ok && dsmlBlockedCmdRe.MatchString(script) {
+			return "", nil, fmt.Errorf("destructive command rejected (review is read-only): %q", truncateDSMLSummary(script))
+		}
 	}
 	return name, args, nil
 }
@@ -935,16 +901,15 @@ func ExecuteDSMLToolCalls(ctx context.Context, calls []DSMLCall) (outputs []stri
 	allowed := dsmlRoleAllowSet(ctx)
 	kept := make([]DSMLCall, 0, len(calls))
 	for _, inv := range calls {
-		native := dsmlNativeName(inv.Name)
-		// Accept the raw DSML spelling OR its native name: a role may
-		// configure "exec_command" as the tool name (the doc layer
-		// registers it via filterNames), while the executor normalizes
-		// to "shell" before the allow-set check.
-		if allowed != nil && !allowed[native] && !allowed[inv.Name] {
+		// Accept the raw DSML spelling or its canonical name: the registry
+		// resolves aliases (exec_command -> shell), so both the role spec
+		// ("shell" or "exec_command") and either spelling are honored.
+		def, defOK := GetToolDef(ctx, inv.Name)
+		if allowed != nil && !allowed[inv.Name] && !(defOK && allowed[def.Name]) {
 			outfmt.Debug("DSML skipped tool %q: not in role's tools config", inv.Name)
 			continue
 		}
-		if _, ok := GetToolDef(ctx, native); !ok {
+		if !defOK {
 			outfmt.Debug("DSML skipped unregistered tool %q (quoted example or unknown name)", inv.Name)
 			continue
 		}

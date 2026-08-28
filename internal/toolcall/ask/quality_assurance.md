@@ -17,7 +17,7 @@ produces the final report; `summary`/`since` are ignored in this mode).
 
 Timeout: tool-level budget 30 min; `timeout` (seconds) optionally lowers it
 for the expert phase. The QA engineer may run several tool-call
-rounds (exec_command: go vet, go test, git inspection) before producing the
+rounds (shell: go vet, go test, git inspection) before producing the
 final report, so set `timeout` (seconds) longer for large projects with many
 tests. If the input is too large for the DeepSeek chat box, the QA engineer
 inspects the repo via tools — results are fed back automatically in the same

@@ -11,7 +11,7 @@ Uses DeepSeek Web (free V4 Pro) via Chrome browser — no API key needed.
 
 Timeout: tool-level budget 30 min; `timeout` (seconds) optionally lowers it
 for the expert phase. The expert may run several tool-call rounds
-(exec_command) before producing the final review, so set `timeout` (seconds)
+(shell) before producing the final review, so set `timeout` (seconds)
 longer for large projects with many tests. If the input is too large for the
 DeepSeek chat box, the expert inspects the repo via tools — results are fed
 back automatically in the same conversation.
@@ -19,7 +19,7 @@ back automatically in the same conversation.
 Use before pushing code or to learn better practices.
 
 **Context**: the first message carries only the commit message and the diff.
-The expert has tool access (read_file, exec_command) in the same conversation
+The expert has tool access (read_file, shell) in the same conversation
 and reads AGENTS.md plus full file contents on demand, keeping the request
 under the chat-box input limit. If a diff still exceeds the limit, per-file
 sections are dropped smallest-first and listed in the tool warning — the
