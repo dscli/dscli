@@ -109,7 +109,7 @@ CWD 无关；cwd 必须是仓库根——git apply 在仓库内子目录运行�
 | =start_line= | integer | 否   | 起始行号（1-based，含）；缺省从第 1 行开始 |
 | =end_line=   | integer | 否   | 结束行号（含）；缺省读到文件末尾           |
 
-*返回值* （文本格式，与 read_file_with_line_range 一致）：
+*返回值* （文本格式）：
 
 #+begin_example
   📄 internal/foo/bar.go: lines 270-325 of 730
@@ -118,15 +118,15 @@ CWD 无关；cwd 必须是仓库根——git apply 在仓库内子目录运行�
 #+end_example
 
 - 每行带 4 字符 CAS 校验标签（=NR:[TAG] content= 格式），可安全回传给
-  =write_file_with_line_range= 的 =line_tag= / =line_tags= 防竞态写入。
+  =write_file= 的 =line_tag= / =line_tags= 防竞态写入。
 - 头部行给出实际行区间与总行数。
 - 大文件（默认 >200KB，可配置 =read-file-large-threshold= ）完整读取时
   附带大小提示，建议改用行区间。
 
-*实现说明* ：webchat 的 DSML 归一化层把带 =start_line= / =end_line= 的
-=read_file= 调用映射到 =read_file_with_line_range=；两者返回格式相同。
-全局的 =read_file= 工具（仅 =path= 参数）保持原样，以不破坏 chat 主路径
-的 CAS 标签约定。
+*实现说明* ：=read_file= 工具本体即支持 =start_line= / =end_line= 行区间
+参数（2026-08 合并 read_file / read_file_with_line_range 后参数集不变），
+webchat 的 DSML 归一化层直接透传，无需映射；=read_file_with_line_range=
+保留为该工具的旧名别名，历史调用不中断。
 
 ** 工具 3： =exec_command= （已有）
 

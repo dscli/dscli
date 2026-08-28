@@ -462,9 +462,11 @@ func handleToolCall(ctx context.Context, toolName, argsRaw string, index, total 
 --------IMPORTANT-------NOTICE-----IMPORTANT----------
 Looks you are using write_file tool to write large file
 (around %d characters), you can seperate the file into several parts,
- keep each part around 300 lines, after write the first part, 
-use append = true to append the left parts one by one IN ORDER. 
-DO NOT MISORDER! THIS UNMARSHAL CONTENT WILL BE DISCARD!
+keep each part around 300 lines. After write the first part,
+use write_file with insert_before_line=<total+1> to append the left
+parts one by one IN ORDER (read_file first to get the total, or use
+the returned context window). DO NOT MISORDER! THIS UNMARSHAL
+CONTENT WILL BE DISCARD!
 -------------------------NOTICE------------------------`, n)
 			err = fmt.Errorf(`failed to unmarshal arguments: %w, below `+
 				`is the details about raw argument tool %q received`+

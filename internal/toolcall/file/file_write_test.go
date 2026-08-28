@@ -1042,3 +1042,123 @@ func TestHandleWriteFileWithLineRange_TrailingNewlineReplace(t *testing.T) {
 		t.Errorf("文件内容不正确\n期望:\n%q\n实际:\n%q", expected, string(b))
 	}
 }
+
+// ---- 2026-08 工具合并: write_file 全文件模式（旧 write_file 行为）----
+
+// TestHandleWriteFileFull 验证无行参数时的全文件覆盖语义:
+// 覆盖已有文件、创建新文件（含父目录）、内容末尾换行。
+func TestHandleWriteFileFull(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	t.Run("overwrite existing file", func(t *testing.T) {
+		filePath := filepath.Join(tmpDir, "full.txt")
+		if err := os.WriteFile(filePath, []byte("old\ncontent\n"), 0o644); err != nil {
+			t.Fatalf("创建测试文件失败: %v", err)
+		}
+		ctx := t.Context()
+		args := toolcall.ToolArgs{"path": filePath, "content": "new line 1\nnew line 2"}
+		res, _, err := handleWriteFile(ctx, args)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(res, "成功写入文件") {
+			t.Errorf("result = %q", res)
+		}
+		b, err := os.ReadFile(filePath)
+		if err != nil {
+			t.Fatalf("读取文件失败: %v", err)
+		}
+		if string(b) != "new line 1\nnew line 2\n" {
+			t.Errorf("文件内容不正确: %q", string(b))
+		}
+	})
+
+	t.Run("create file with parent dirs", func(t *testing.T) {
+		filePath := filepath.Join(tmpDir, "a", "b", "new.txt")
+		ctx := t.Context()
+		_, _, err := handleWriteFile(ctx, toolcall.ToolArgs{"path": filePath, "content": "hello"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		b, err := os.ReadFile(filePath)
+		if err != nil {
+			t.Fatalf("读取文件失败: %v", err)
+		}
+		if string(b) != "hello\n" {
+			t.Errorf("文件内容不正确: %q", string(b))
+		}
+	})
+
+	t.Run("empty content truncates", func(t *testing.T) {
+		filePath := filepath.Join(tmpDir, "trunc.txt")
+		if err := os.WriteFile(filePath, []byte("some\ncontent\n"), 0o644); err != nil {
+			t.Fatalf("创建测试文件失败: %v", err)
+		}
+		ctx := t.Context()
+		if _, _, err := handleWriteFile(ctx, toolcall.ToolArgs{"path": filePath, "content": ""}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		b, err := os.ReadFile(filePath)
+		if err != nil {
+			t.Fatalf("读取文件失败: %v", err)
+		}
+		if len(b) != 0 {
+			t.Errorf("文件应为空, 实际: %q", string(b))
+		}
+	})
+
+	t.Run("missing path errors", func(t *testing.T) {
+		ctx := t.Context()
+		if _, _, err := handleWriteFile(ctx, toolcall.ToolArgs{"content": "x"}); err == nil {
+			t.Error("expected error for missing path")
+		}
+	})
+
+	t.Run("cas tag pollution rejected", func(t *testing.T) {
+		filePath := filepath.Join(tmpDir, "cas.txt")
+		ctx := t.Context()
+		// 内容含 5 行 CAS tag 前缀（阈值 casTagThreshold）
+		content := "1:[Q8fA] line\n2:[ABCD] line\n3:[EFGH] line\n4:[IJKL] line\n5:[MNOP] line\n"
+		if _, _, err := handleWriteFile(ctx, toolcall.ToolArgs{"path": filePath, "content": content}); err == nil {
+			t.Error("expected CAS tag pollution error")
+		}
+		if _, err := os.Stat(filePath); os.IsNotExist(err) == false {
+			t.Errorf("file should not be created on pollution, err=%v", err)
+		}
+	})
+}
+
+// TestHandleWriteFileDispatch 验证分派逻辑:
+// 无行参数 → 全文件模式; 有行参数 → 行编辑模式。
+func TestHandleWriteFileDispatch(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "dispatch.txt")
+	if err := os.WriteFile(filePath, []byte("Line 1\nLine 2\nLine 3\n"), 0o644); err != nil {
+		t.Fatalf("创建测试文件失败: %v", err)
+	}
+	ctx := t.Context()
+
+	// 有 start_line → 行编辑模式: 只替换该行, 其他行保留
+	_, _, err := handleWriteFile(ctx, toolcall.ToolArgs{
+		"path": filePath, "start_line": int64(2), "content": "New 2",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	b, _ := os.ReadFile(filePath)
+	if string(b) != "Line 1\nNew 2\nLine 3\n" {
+		t.Errorf("line-range dispatch failed: %q", string(b))
+	}
+
+	// 无行参数 → 全文件覆盖
+	_, _, err = handleWriteFile(ctx, toolcall.ToolArgs{
+		"path": filePath, "content": "whole\nnew\nfile",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	b, _ = os.ReadFile(filePath)
+	if string(b) != "whole\nnew\nfile\n" {
+		t.Errorf("full dispatch failed: %q", string(b))
+	}
+}

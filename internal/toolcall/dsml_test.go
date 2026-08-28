@@ -1189,7 +1189,8 @@ func TestNormalizeDSMLInvokeApplyPatchMissingPatch(t *testing.T) {
 }
 
 func TestNormalizeDSMLInvokeReadFileLineRange(t *testing.T) {
-	// start_line 或 end_line 任一存在即映射到行区间工具。
+	// start_line/end_line 直接透传给本地 read_file（2026-08 工具合并后
+	// read_file_with_line_range 已并入 read_file，不再有行区间映射）。
 	inv := DSMLCall{Name: "read_file", Args: map[string]any{
 		"path": "big.go", "start_line": float64(100), "end_line": float64(200),
 	}}
@@ -1197,8 +1198,8 @@ func TestNormalizeDSMLInvokeReadFileLineRange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalizeDSMLInvoke: %v", err)
 	}
-	if name != "read_file_with_line_range" {
-		t.Errorf("name = %q, want read_file_with_line_range", name)
+	if name != "read_file" {
+		t.Errorf("name = %q, want read_file", name)
 	}
 	if args["path"] != "big.go" || args["start_line"] != float64(100) {
 		t.Errorf("args = %v", args)
@@ -1210,8 +1211,8 @@ func TestNormalizeDSMLInvokeReadFileLineRange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalizeDSMLInvoke: %v", err)
 	}
-	if name != "read_file_with_line_range" {
-		t.Errorf("name = %q, want read_file_with_line_range", name)
+	if name != "read_file" {
+		t.Errorf("name = %q, want read_file", name)
 	}
 
 	// 装饰性参数（justification）不得泄漏进目标工具：与 apply_patch

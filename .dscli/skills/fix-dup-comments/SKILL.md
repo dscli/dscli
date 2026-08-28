@@ -91,7 +91,7 @@ Code-separated identical comments (in different functions) are intentionally
 
 For each duplicate at `file:line`:
 
-1. Delete one occurrence via `write_file_with_line_range`:
+1. Delete one occurrence via `write_file`:
    - `start_line=N, end_line=N, content=""` — deletes line N
    - For multi-line blocks, delete each line of the duplicate block.
 
@@ -104,7 +104,7 @@ For each duplicate at `file:line`:
 
 For each `file:line:double-blank`:
 
-1. Delete one blank line: `write_file_with_line_range(start_line=N, end_line=N, content="")`
+1. Delete one blank line: `write_file(start_line=N, end_line=N, content="")`
 2. Process bottom-to-top, re-running `find.sh` between fixes.
 
 **Prefer fixing duplicates first, then re-run `find.sh` to catch any double

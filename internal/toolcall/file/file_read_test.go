@@ -30,7 +30,7 @@ func TestHandleReadFileWithLineRange_LargeFileHint(t *testing.T) {
 	ctx := t.Context()
 
 	t.Run("full read of large file hints size", func(t *testing.T) {
-		result, _, err := handleReadFileWithLineRange(ctx, toolcall.ToolArgs{"path": filePath})
+		result, _, err := handleReadFile(ctx, toolcall.ToolArgs{"path": filePath})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -43,7 +43,7 @@ func TestHandleReadFileWithLineRange_LargeFileHint(t *testing.T) {
 	})
 
 	t.Run("line-range read does not hint", func(t *testing.T) {
-		result, _, err := handleReadFileWithLineRange(ctx, toolcall.ToolArgs{
+		result, _, err := handleReadFile(ctx, toolcall.ToolArgs{
 			"path":       filePath,
 			"start_line": int64(1),
 			"end_line":   int64(5),
@@ -61,7 +61,7 @@ func TestHandleReadFileWithLineRange_LargeFileHint(t *testing.T) {
 		if err := os.WriteFile(smallPath, []byte("tiny\n"), 0o644); err != nil {
 			t.Fatalf("创建小文件失败: %v", err)
 		}
-		result, _, err := handleReadFileWithLineRange(ctx, toolcall.ToolArgs{"path": smallPath})
+		result, _, err := handleReadFile(ctx, toolcall.ToolArgs{"path": smallPath})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -71,7 +71,7 @@ func TestHandleReadFileWithLineRange_LargeFileHint(t *testing.T) {
 	})
 
 	t.Run("explicit full range still hints", func(t *testing.T) {
-		result, _, err := handleReadFileWithLineRange(ctx, toolcall.ToolArgs{
+		result, _, err := handleReadFile(ctx, toolcall.ToolArgs{
 			"path":       filePath,
 			"start_line": int64(1),
 			"end_line":   int64(-1),

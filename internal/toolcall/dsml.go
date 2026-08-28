@@ -8,7 +8,7 @@
 // into the same conversation (see handleWebChatToolLoop in internal/lp).
 //
 // The mapping is deliberately narrow: structured file read/write
-// (read_file, read_file_with_line_range via mapping, apply_patch) plus
+// (read_file, apply_patch) plus
 // command execution (exec_command -> shell). Anything else returns an
 // "unsupported tool" feedback so the expert can adapt, instead of silently
 // executing an unvetted command. The whitelist and its safety invariants
@@ -651,7 +651,7 @@ func StripDSMLToolCalls(text string) string {
 // dsmlToolNames is the whitelist of tools a WebChat expert may invoke.
 //
 // 约束说明：webchat 的模型是远端不可信模型，白名单是硬边界——只允许
-// 结构化读写工具（read_file / read_file_with_line_range / apply_patch）
+// 结构化读写工具（read_file / apply_patch）
 // 与命令执行（shell / exec_command）。apply_patch 虽为写工具，但比 shell
 // 重定向更收敛（只能应用补丁，目标路径被限制在项目根内且保护
 // sqlite.db / dscli.env），且 exec_command 本就可写文件，白名单不因此
@@ -704,10 +704,11 @@ var dsmlBlockedCmdRe = regexp.MustCompile(`(?i)(^|\s|;|&&|\|\|)(` +
 //   - justification -> summary (first non-empty element, display only)
 //   - timeout -> seconds (DSML uses milliseconds)
 //
-// read_file passes its parameters through (path); with start_line/end_line
-// it maps to read_file_with_line_range so the web expert can read a slice
-// without pulling huge files into the loop (the plain read_file tool only
-// accepts path). apply_patch passes patch/cwd/check/reverse through.
+// read_file passes its parameters through (path, start_line, end_line):
+// the local tool accepts all three, so any DSML read_file call maps 1:1
+// to the native read_file (no slice-mapping needed since the 2026-08
+// tool merge absorbed read_file_with_line_range into read_file).
+// apply_patch passes patch/cwd/check/reverse through.
 //
 // Any other name is rejected here as a defensive backstop -
 // ExecuteDSMLToolCalls filters non-whitelisted names before this function
@@ -718,21 +719,15 @@ func normalizeDSMLInvoke(inv DSMLCall) (name string, args ToolArgs, err error) {
 		return "", nil, fmt.Errorf("unsupported tool %q (available: exec_command, shell, read_file, apply_patch)", inv.Name)
 	}
 	if inv.Name == "read_file" {
-		// 任一区间参数存在即映射到行区间工具（缺省端由该工具补默认值：
-		// start=1、end=EOF）。与 apply_patch 一致只透传白名单参数，
-		// justification 等装饰性参数不进入目标工具（read_file 工具本体
-		// 与 read_file_with_line_range 的 schema 都不声明它们）。
+		// 与 apply_patch 一致只透传白名单参数，justification 等装饰性参数
+		// 不进入目标工具。start_line/end_line 由本地 read_file 直接消费
+		// （缺省端由工具补默认值：start=1、end=EOF）；不再映射旧名
+		// read_file_with_line_range（2026-08 工具合并后已并入 read_file）。
 		args = ToolArgs{}
 		for _, key := range []string{"path", "start_line", "end_line"} {
 			if v, ok := inv.Args[key]; ok {
 				args[key] = v
 			}
-		}
-		if _, ok := inv.Args["start_line"]; ok {
-			return "read_file_with_line_range", args, nil
-		}
-		if _, ok := inv.Args["end_line"]; ok {
-			return "read_file_with_line_range", args, nil
 		}
 		return "read_file", args, nil
 	}
