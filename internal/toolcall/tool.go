@@ -251,22 +251,11 @@ func GetAllTools(ctx context.Context) []Tool {
 		if !ok {
 			continue
 		}
-		if allowSet != nil {
-			// Accept the canonical name or a legacy spelling in the spec
-			// (e.g. "exec_command" for the shell tool), mirroring the DSML
-			// executor's allow-set check - one spec, one meaning.
-			matched := allowSet[name]
-			if !matched {
-				for legacy, native := range dsmlLegacyNames {
-					if native == name && allowSet[legacy] {
-						matched = true
-						break
-					}
-				}
-			}
-			if !matched {
-				continue
-			}
+		// Accept the canonical name or a legacy spelling in the spec
+		// (e.g. "exec_command" for the shell tool): the SAME allow-set
+		// check the DSML executor performs - one spec, one meaning.
+		if allowSet != nil && !dsmlSpecAllows(allowSet, name, name) {
+			continue
 		}
 		tools = append(tools, Tool{
 			Type: "function",

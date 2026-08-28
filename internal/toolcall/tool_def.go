@@ -9,6 +9,10 @@ import (
 )
 
 // ToolDef 工具定义
+//
+// 注意（DSML 层约定）：DSML 调用经过 normalizeDSMLInvoke 时会剥离装饰参数
+// justification（DeepSeek 模型的习惯性附注，仅供展示）。因此工具不得把
+// justification 声明为真实参数——DSML 调用路径会吞掉它，而 chat 路径不会。
 type ToolDef struct {
 	Name        string
 	DisplayName string

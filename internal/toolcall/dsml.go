@@ -758,7 +758,7 @@ func normalizeDSMLInvoke(inv DSMLCall) (name string, args ToolArgs, err error) {
 	}
 
 	name = inv.Name
-	if inv.Name == "exec_command" {
+	if _, legacy := dsmlLegacyNames[inv.Name]; legacy {
 		// Legacy parameter protocol: if the model mixed both spellings,
 		// an explicit script/summary/timeout wins over the old ones.
 		if _, ok := args["script"]; !ok {
@@ -781,7 +781,7 @@ func normalizeDSMLInvoke(inv DSMLCall) (name string, args ToolArgs, err error) {
 		if script, _ := args["script"].(string); strings.TrimSpace(script) == "" {
 			return "", nil, fmt.Errorf("exec_command missing parameter cmd")
 		}
-		name = "shell"
+		name = dsmlNativeName(inv.Name)
 	}
 
 	if name == "shell" {
