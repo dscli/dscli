@@ -78,13 +78,15 @@ func init() {
 	})
 }
 
-// fileLineParamKeys 是行编辑模式的参数集合：任一存在即走行编辑语义。
+// fileLineRangeKeys 是行编辑模式的"位置"参数：任一存在即走行编辑语义。
 // 全部缺失则走全文件覆盖语义（旧 write_file 行为）。
-var fileLineParamKeys = []string{"start_line", "end_line", "insert_before_line", "line_tag", "line_tags"}
+// 注意 line_tag/line_tags 单独存在时不算位置参数——它们必须配合
+// start_line/end_line/insert_before_line 才有意义（见 handleWriteFile）。
+var fileLineRangeKeys = []string{"start_line", "end_line", "insert_before_line"}
 
-// hasLineParams 判断调用是否为行编辑模式。
-func hasLineParams(args ToolArgs) bool {
-	for _, k := range fileLineParamKeys {
+// hasLineRangeParams 判断调用是否为行编辑模式（依据位置行参数）。
+func hasLineRangeParams(args ToolArgs) bool {
+	for _, k := range fileLineRangeKeys {
 		if _, ok := args[k]; ok {
 			return true
 		}
@@ -95,16 +97,52 @@ func hasLineParams(args ToolArgs) bool {
 // handleWriteFile 写入文件。
 //
 // 2026-08 合并 write_file / write_file_with_line_range 两个工具：
-//   - 提供任一 line 参数（start_line/end_line/insert_before_line/line_tag/line_tags）
+//   - 提供任一位置行参数（start_line/end_line/insert_before_line）
 //     → 行编辑语义（旧 write_file_with_line_range）；
 //   - 否则 → 全文件覆盖语义（旧 write_file：覆盖整个文件、自动创建父目录）。
 //
-// 参数集与旧 write_file_with_line_range 完全一致（无 append 参数）；
+// 参数集与旧 write_file_with_line_range 完全一致（无 append 参数）：
 // 追加内容请用 insert_before_line=N+1（N=文件总行数）或先 read_file 再行编辑。
+// 历史调用中的 append 参数被明确拒绝（见下），防止静默截断文件。
 func handleWriteFile(ctx context.Context, args ToolArgs) (result, warning string, err error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "handleWriteFile")
 	defer span.Finish()
-	if hasLineParams(args) {
+
+	// 历史 append 参数保护：旧 write_file 的 append=true 合并时已移除，
+	// 若静默落入全文件覆盖会用 O_TRUNC 截断文件——数据损坏。显式拒绝并
+	// 指引等效操作（insert_before_line=total+1），绝不静默执行。
+	if v, ok := args["append"]; ok {
+		if b, isBool := v.(bool); isBool && b {
+			return "", "", fmt.Errorf(
+				"write_file no longer supports append=true (removed in the 2026-08 tool merge); " +
+					"use insert_before_line=<total+1> to append, read_file first to get the total")
+		}
+		// append=false 等价于全文件覆盖：丢弃即可。
+		delete(args, "append")
+	}
+
+	// CAS tag 污染检查是两种模式共同的硬性前置（content 必须是纯文件内容），
+	// 统一在分派前执行，保证两种模式行为一致且错误文案相同。
+	if n := detectCASTags(toolcall.ToolArgsValue(args, "content", "")); n >= casTagThreshold {
+		return "", "", fmt.Errorf(
+			"内容包含疑似 read_file CAS tag（检测到 %d 行含有 CAS tag 前缀）。\n"+
+				"write_file 接收的是文件内容，不应包含 read_file 输出的行首 4 字符 TAG（如 \"Q8fA\" 或 \"[Q8fA]\"）。\n"+
+				"请去除这些 CAS tag 前缀后重试。",
+			n,
+		)
+	}
+
+	// line_tag/line_tags 必须配合位置行参数：单独使用时无法确定目标行，
+	// 静默回退会错误地编辑第 1 行。显式报错让调用方补齐参数。
+	for _, tagKey := range []string{"line_tag", "line_tags"} {
+		if _, ok := args[tagKey]; ok && !hasLineRangeParams(args) {
+			return "", "", fmt.Errorf(
+				"%s requires start_line/end_line (or insert_before_line) to select the target range; "+
+					"it cannot be used alone", tagKey)
+		}
+	}
+
+	if hasLineRangeParams(args) {
 		return handleWriteFileWithLineRange(ctx, args)
 	}
 	return handleWriteFileFull(ctx, args)
@@ -132,17 +170,6 @@ func handleWriteFileFull(ctx context.Context, args ToolArgs) (result, warning st
 		if truncated {
 			warning = fmt.Sprintf("内容截断，因为内容长度 %d 超过了最大输出 Tokens 要求 %d，请严格遵守 write_file 要求，严格控制输出。", len(content), maxOutputTokens)
 		}
-		return result, warning, err
-	}
-
-	// CAS tag 污染检测：write_file 接收的是文件内容，不应含有 read_file 输出的行首 CAS tag
-	if n := detectCASTags(content); n >= casTagThreshold {
-		err = fmt.Errorf(
-			"内容包含疑似 read_file CAS tag（检测到 %d 行含有 CAS tag 前缀）。\n"+
-				"write_file 接收的是文件内容，不应包含 read_file 输出的行首 4 字符 TAG（如 \"Q8fA\"）。\n"+
-				"请去除这些 CAS tag 前缀后重试。",
-			n,
-		)
 		return result, warning, err
 	}
 
@@ -237,17 +264,6 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 
 	content := toolcall.ToolArgsValue(args, "content", "")
 	showContext := toolcall.ToolArgsValue(args, "context", true)
-
-	// CAS tag 污染检测：content 参数也不应含有 CAS tag
-	if n := detectCASTags(content); n >= casTagThreshold {
-		err = fmt.Errorf(
-			"内容包含疑似 read_file CAS tag（检测到 %d 行含有 CAS tag 前缀）。\n"+
-				"write_file 的 content 参数不应包含 read_file 输出的行首 TAG（如 \"[Q8fA]\"）。\n"+
-				"请去除这些 CAS tag 前缀后重试。",
-			n,
-		)
-		return result, warning, err
-	}
 
 	// content 可以为空字符串，表示删除
 

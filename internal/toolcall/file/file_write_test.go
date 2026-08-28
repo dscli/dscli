@@ -1162,3 +1162,84 @@ func TestHandleWriteFileDispatch(t *testing.T) {
 		t.Errorf("full dispatch failed: %q", string(b))
 	}
 }
+
+// ---- 2026-08 工具合并: 旧参数边界保护 ----
+
+// TestHandleWriteFileLegacyAppend 回归测试：合并前 write_file 支持 append=true
+// （历史会话 197 次调用）。合并后 append 参数已移除，若静默落入全文件覆盖
+// 会用 O_TRUNC 截断文件——必须显式拒绝并给出等效操作指引。
+func TestHandleWriteFileLegacyAppend(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "legacy.txt")
+	if err := os.WriteFile(filePath, []byte("keep\nme\n"), 0o644); err != nil {
+		t.Fatalf("创建测试文件失败: %v", err)
+	}
+	ctx := t.Context()
+
+	// append=true 必须报错，且不得截断文件
+	_, _, err := handleWriteFile(ctx, toolcall.ToolArgs{
+		"path": filePath, "content": "new content", "append": true,
+	})
+	if err == nil {
+		t.Fatal("append=true must be rejected")
+	}
+	if !strings.Contains(err.Error(), "insert_before_line") {
+		t.Errorf("error should guide to insert_before_line, got: %v", err)
+	}
+	b, _ := os.ReadFile(filePath)
+	if string(b) != "keep\nme\n" {
+		t.Errorf("file must not be truncated by append=true, got: %q", string(b))
+	}
+
+	// append=false 等价于全文件覆盖：丢弃即可，正常执行
+	_, _, err = handleWriteFile(ctx, toolcall.ToolArgs{
+		"path": filePath, "content": "overwrite", "append": false,
+	})
+	if err != nil {
+		t.Fatalf("append=false should be accepted: %v", err)
+	}
+	b, _ = os.ReadFile(filePath)
+	if string(b) != "overwrite\n" {
+		t.Errorf("append=false should overwrite, got: %q", string(b))
+	}
+}
+
+// TestHandleWriteFileLoneLineTag 回归测试：line_tag/line_tags 单独出现
+// （无 start_line/end_line/insert_before_line）时无法确定目标行，
+// 必须显式报错，而不是静默编辑第 1 行。
+func TestHandleWriteFileLoneLineTag(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "tag.txt")
+	if err := os.WriteFile(filePath, []byte("Line 1\nLine 2\n"), 0o644); err != nil {
+		t.Fatalf("创建测试文件失败: %v", err)
+	}
+	ctx := t.Context()
+
+	for _, tagKey := range []string{"line_tag", "line_tags"} {
+		_, _, err := handleWriteFile(ctx, toolcall.ToolArgs{
+			"path": filePath, "content": "x", tagKey: "Q8fA",
+		})
+		if err == nil {
+			t.Errorf("%s alone must be rejected", tagKey)
+		}
+		if !strings.Contains(err.Error(), "requires") {
+			t.Errorf("%s error should explain requirement, got: %v", tagKey, err)
+		}
+	}
+	b, _ := os.ReadFile(filePath)
+	if string(b) != "Line 1\nLine 2\n" {
+		t.Errorf("file must not be edited by lone tag, got: %q", string(b))
+	}
+
+	// 配合 start_line 则正常执行 CAS 校验（tag 必须是该行真实校验和）
+	tag := computeLineTag("Line 1")
+	_, _, err := handleWriteFile(ctx, toolcall.ToolArgs{
+		"path": filePath, "start_line": int64(1), "content": "new", "line_tag": tag,
+	})
+	if err != nil {
+		t.Fatalf("line_tag with start_line should work: %v", err)
+	}
+	if b, _ := os.ReadFile(filePath); string(b) != "new\nLine 2\n" {
+		t.Errorf("line 1 should be replaced, got: %q", string(b))
+	}
+}
