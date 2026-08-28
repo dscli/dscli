@@ -102,6 +102,16 @@ func TestDSMLToolsSectionScopedToWebChat(t *testing.T) {
 			if strings.Contains(content, "{{") {
 				t.Errorf("%s webchat prompt leaks template placeholders", role)
 			}
+			// All role templates render a Capabilities section ONLY without
+			// tools: with tools the DSML intro IS the capability section
+			// (mutually exclusive, never both — a hand-written tool list
+			// would go stale against the role's actual tool config).
+			if !strings.Contains(plain, "## 🛠️ Capabilities") {
+				t.Errorf("%s prompt without tools must state the Capabilities limitation", role)
+			}
+			if strings.Contains(content, "## 🛠️ Capabilities") {
+				t.Errorf("%s prompt with tools must not render the Capabilities heading (DSML intro replaces it)", role)
+			}
 		})
 	}
 }
