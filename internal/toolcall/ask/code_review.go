@@ -2,13 +2,15 @@ package ask
 
 import (
 	"context"
-	_ "embed"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	_ "embed"
 
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/shell"
@@ -169,10 +171,16 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result, warn
 		return result, warning, err
 	}
 
-	// 首次请求只带提交信息 + diff：review 专家在 WebChat 工具循环里有
-	// read_file/exec_command（见 internal/prompt/review.md），需要改动文件
-	// 全文或项目指南（AGENTS.md）时会自己读取，不再预先注入 - 避免输入
-	// 预算被全文挤占，也让专家按需深读任意上下文。
+	// 首次请求只带提交信息 + diff：review 专家在 WebChat 工具循环里按
+	// review 角色的工具配置（role_configs / roles.DefaultFor，默认无工具）
+	// 注册 read_file/exec_command 等 DSML 工具（见 internal/prompt/review.md
+	// 与 toolcall.BuildDSMLToolDoc），需要改动文件全文或项目指南
+	// （AGENTS.md）时会自己读取，不再预先注入 - 避免输入预算被全文挤占，
+	// 也让专家按需深读任意上下文。未配置工具时审查只能依赖 diff 本身，
+	// 明确提示配置方法，避免静默退化。
+	if doc := toolcall.BuildDSMLToolDoc(ctx, "review"); doc.Intro == "" {
+		fmt.Fprintf(os.Stderr, "⚠️ review 角色未配置 DSML 工具（默认无工具）：专家将无法读取文件/执行命令，审查限于提交内容。可运行 `dscli role update review --tools shell,read_file` 启用。\n")
+	}
 	structuredRequest, warning := truncateReviewRequest(summary, fullLog, patch)
 	outfmt.Printf("📤 发送代码审查请求到 DeepSeek Web（免费 V4 Pro）...\n%s\n", structuredRequest)
 	result, err = AskExpertWithRole(ctx, structuredRequest, "review")

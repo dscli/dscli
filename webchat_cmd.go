@@ -166,8 +166,10 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 	// clean) - silent local execution from a remote model is the surprise.
 	// Role "" (the default) is plain chat: no role prompt, but DSML tool
 	// calls in replies are still judged and executed when the reply IS one.
+	// The exact tool set comes from the role config (role_configs /
+	// roles.DefaultFor) intersected with the DSML whitelist.
 	if opts.Role != "" {
-		fmt.Fprintf(os.Stderr, "⚠️ 角色 %q 已启用：远程模型回复中的 DSML 工具调用（read_file/exec_command/apply_patch）将在本地执行。\n", opts.Role)
+		fmt.Fprintf(os.Stderr, "⚠️ 角色 %q 已启用：远程模型回复中的 DSML 工具调用（按角色配置的本地工具）将在本地执行。\n", opts.Role)
 	}
 
 	outfmt.Printf("📤 发送到 DeepSeek Web ...\n")

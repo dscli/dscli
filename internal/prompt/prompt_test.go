@@ -69,19 +69,30 @@ func TestLoadPrompts(t *testing.T) {
 
 // TestDSMLToolsSectionScopedToWebChat 验证 DSML 工具注册段只出现在
 // WebChat 渲染路径：chat.deepseek.com 没有原生工具协议，角色提示词是
-// 注册通道（RenderPromptForRole -> DSMLTools=true）；dscli chat 通过 API
-// 的 tools 参数注册工具（GetSystemPrompt -> DSMLTools=false），模板中
-// 的 <invoke> 手写示例不得泄漏进去，否则模型会误用 DSML 而非原生
-// tool_calls。
+// 注册通道（RenderPromptForRoleWithTools + 非空 DSMLToolDoc）；dscli
+// chat 通过 API 的 tools 参数注册工具（GetSystemPrompt），模板中的
+// <invoke> 示例不得泄漏进去，否则模型会误用 DSML 而非原生 tool_calls。
+// RenderPromptForRole（无 doc）也不得渲染该段：工具集合由角色配置
+// 驱动（toolcall.BuildDSMLToolDoc），无配置时 expert/review 无工具。
 func TestDSMLToolsSectionScopedToWebChat(t *testing.T) {
 	chatPrompt := GetSystemPrompt(t.Context())
 	if strings.Contains(chatPrompt, "<invoke name=") || strings.Contains(chatPrompt, "Available Tools") {
 		t.Errorf("chat system prompt must not contain the DSML tool section:\n%s", chatPrompt)
 	}
 
+	doc := DSMLToolDoc{
+		Intro:   "## 🛠️ Available Tools: `read_file`\n\n<tool_calls>\n<invoke name=\"read_file\">\n<parameter name=\"path\" string=\"true\">AGENTS.md</parameter>\n</invoke>\n</tool_calls>",
+		Schemas: "### Available Tool Schemas\n\n```json\n{\"type\":\"function\"}\n```\n\nYou MUST strictly follow the above defined tool name and parameter schemas to invoke tool calls.",
+	}
 	for _, role := range []string{"dev", "expert", "review", "test"} {
 		t.Run(role, func(t *testing.T) {
-			content := RenderPromptForRole(t.Context(), role)
+			// Without doc: the section must be absent (role may have no tools).
+			plain := RenderPromptForRole(t.Context(), role)
+			if strings.Contains(plain, "<invoke name=") || strings.Contains(plain, "Available Tools") {
+				t.Errorf("%s prompt must not contain the DSML tool section without doc:\n%s", role, plain)
+			}
+			// With doc: the section appears and no placeholder leaks.
+			content := RenderPromptForRoleWithTools(t.Context(), role, doc)
 			if !strings.Contains(content, "<invoke name=\"read_file\">") {
 				t.Errorf("%s webchat prompt missing DSML read_file registration:\n%s", role, content)
 			}

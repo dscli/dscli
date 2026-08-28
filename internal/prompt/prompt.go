@@ -41,6 +41,18 @@ type promptTemplate struct {
 	Name string
 }
 
+// DSMLToolDoc 是 DSML 工具注册段的两个部分，供角色模板注入：
+//
+//   - Intro: 可用工具标题、调用骨架示例、string= 编码规则与参数说明
+//   - Schemas: Available Tool Schemas（JSON）与严格遵循提示
+//
+// 两者由 toolcall.BuildDSMLToolDoc 按角色配置生成；Intro 为空时模板
+// 不渲染整段（该角色没有可用的 DSML 工具），Schemas 必须配套出现。
+type DSMLToolDoc struct {
+	Intro   string
+	Schemas string
+}
+
 // promptConfig 模板数据
 type promptConfig struct {
 	// 基础信息
@@ -65,12 +77,14 @@ type promptConfig struct {
 	// 角色（dev/expert/review）
 	Role string
 
-	// DSMLTools 控制模板是否渲染 DSML 工具注册段（<tool_calls>/<invoke>
-	// 示例）。仅在 WebChat 场景为 true：chat.deepseek.com 没有原生工具
-	// 协议，角色提示词是唯一注册通道，lp.HandleWebChat 解析并本地执行；
-	// dscli chat 通过 API 的 tools 参数注册工具，此段必须保持关闭，
-	// 否则模型会误用 DSML 标记而非原生 tool_calls。
-	DSMLTools bool
+	// DSMLToolDoc 是 DSML 工具注册段的动态内容（<tool_calls>/<invoke>
+	// 示例、string= 编码规则、参数说明与 JSON schemas）。仅在 WebChat
+	// 场景非空：chat.deepseek.com 没有原生工具协议，角色提示词是唯一
+	// 注册通道，lp.HandleWebChat 解析并本地执行；dscli chat 通过 API 的
+	// tools 参数注册工具，此段必须保持为空，否则模型会误用 DSML 标记
+	// 而非原生 tool_calls。内容由 toolcall.BuildDSMLToolDoc 按角色工具
+	// 配置（roles.DefaultFor + role_configs）生成，见 dsml_doc.go。
+	DSMLToolDoc DSMLToolDoc
 
 	// 模型特定配置
 	ModelID int64
@@ -432,19 +446,27 @@ func GetSystemPrompt(ctx context.Context) string {
 // a given role, such as ask_expert (role="expert") and code_review
 // (role="review").
 //
-// It currently serves the WebChat rendering path (internal/lp calls it to
-// prepend a role prompt to a chat.deepseek.com message), so the DSML tool
-// registration section is turned on: WebChat has no native tool protocol -
-// the prompt is the only channel that can register tools for the
-// HandleWebChat loop. Plain Chat (GetSystemPrompt) leaves it off. If a
-// non-WebChat caller appears, move the DSMLTools=true decision to the caller.
+// It renders WITHOUT the DSML tool registration section - the section is
+// role-config-driven and must be injected by the WebChat caller via
+// RenderPromptForRoleWithTools (see toolcall.BuildDSMLToolDoc). Plain Chat
+// (GetSystemPrompt) never gets the section either: dscli chat registers
+// tools through the API's tools parameter.
 func RenderPromptForRole(ctx context.Context, role string) string {
-	span, ctx := clog.StartSpanFromContext(ctx, "RenderPromptForRole")
+	return RenderPromptForRoleWithTools(ctx, role, DSMLToolDoc{})
+}
+
+// RenderPromptForRoleWithTools renders the role prompt with the DSML tool
+// registration section (doc) injected. doc comes from
+// toolcall.BuildDSMLToolDoc, which derives the tool set from the role
+// config; an empty doc makes the templates drop the whole section, so a
+// tool-less role (expert/review by default) gets no tool registrations.
+func RenderPromptForRoleWithTools(ctx context.Context, role string, doc DSMLToolDoc) string {
+	span, ctx := clog.StartSpanFromContext(ctx, "RenderPromptForRoleWithTools")
 	defer span.Finish()
 
 	config := newPromptConfig(ctx)
 	config.Role = role
-	config.DSMLTools = true
+	config.DSMLToolDoc = doc
 	return config.GeneratePromptWithTemplate(ctx)
 }
 

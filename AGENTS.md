@@ -134,11 +134,18 @@ replies are still executed); a stderr warning fires whenever the tool loop
 actually runs (any mode), and role sessions additionally get a role-specific
 warning up front, since the remote model's DSML tool calls will run locally.
 
-Role templates (internal/prompt/*.md) register DSML tools for WebChat via a
-`{{if .DSMLTools}}` block: `RenderPromptForRole` (WebChat path, used by
-HandleWebChat and the webchat CLI) renders it, `GetSystemPrompt` (dscli chat
-path, which registers tools through the API `tools` parameter instead) does
-not. Add new DSML tool registrations inside that block, never outside it.
+Role templates (internal/prompt/*.md) render a DSML tool section for WebChat
+via a `{{if .DSMLToolDoc.Intro}}` block: the section content
+(`toolcall.BuildDSMLToolDoc`, see internal/toolcall/dsml_doc.go) is derived
+from the role's tool config (role_configs / roles.DefaultFor) intersected
+with the DSML whitelist (dsmlToolNames), formatting aligned with DeepSeek
+V4's tool template (string= attribute rules, `### Available Tool Schemas`).
+`HandleWebChat` injects it via `prompt.RenderPromptForRoleWithTools`;
+`RenderPromptForRole` and `GetSystemPrompt` (dscli chat path, which registers
+tools through the API `tools` parameter instead) leave it out entirely. A
+role without executable tools (expert/review by default) gets no DSML
+section at all. Add new whitelisted tools to BOTH `dsmlToolNames` and
+`dsmlDocToolsAll` - they must stay in sync.
 
 code_review sends ONLY commit message + diff on its first message: the review
 expert reads AGENTS.md and full changed-file contents on demand via the DSML

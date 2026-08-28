@@ -268,7 +268,12 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 	if opts.System != "" {
 		fullMessage = opts.System + "\n\n---\n\n## User Request\n\n" + message
 	} else if opts.Role != "" {
-		fullMessage = prompt.RenderPromptForRole(ctx, opts.Role) + "\n\n---\n\n## User Request\n\n" + message
+		// The DSML tool section is derived from the role's tool config
+		// (role_configs / roles.DefaultFor) at send time: a role without
+		// executable tools (expert/review by default) gets no registration,
+		// a configured role gets exactly its whitelisted tools.
+		doc := toolcall.BuildDSMLToolDoc(ctx, opts.Role)
+		fullMessage = prompt.RenderPromptForRoleWithTools(ctx, opts.Role, doc) + "\n\n---\n\n## User Request\n\n" + message
 	}
 	// The site rejects inputs past its 字数 limit (composer shows "超出字数
 	// 限制"), dropping the send; truncate BEFORE sending so the wait loop never
@@ -456,7 +461,7 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 	// The remote model's DSML markup is about to run locally with the user's
 	// OS permissions; say so before the first execution (stderr, so piped
 	// stdout stays clean) - silent local execution is the surprise.
-	fmt.Fprintf(os.Stderr, "⚠️ 远程模型回复中的 DSML 工具调用（read_file/exec_command/apply_patch）将在本地执行。\n")
+	fmt.Fprintf(os.Stderr, "⚠️ 远程模型回复中的 DSML 工具调用（白名单内的本地工具）将在本地执行。\n")
 
 	message := first.Content
 	convURL := first.URL
