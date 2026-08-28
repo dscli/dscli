@@ -57,7 +57,7 @@ Simply put: **dscli = AI assistant + dev tools + session memory + CLI efficiency
 - **`dscli models`** — List AI models with current token prices
 - **`dscli balance`** — Check API balance and usage
 - **`dscli chat --attach <img>`** — Image input with vision models (e.g. `deepseek-v4-flash-vision-exp`), uploaded via the DeepSeek Files API
-- **`dscli webchat`** — Free chat through Chrome with chat.deepseek.com: `--model` pro/flash/vision, `--role` dev/expert/review/test personas, `--keep` resumes saved conversations; DSML tool calls inside replies are executed locally (file ops, `apply_patch`, shell, code_review…) with per-round output
+- **`dscli webchat`** — Free chat through Chrome with chat.deepseek.com: `--model` pro/flash/vision, `--role` dev/expert/review/test personas, `--keep` resumes saved conversations; DSML tool calls inside replies are executed locally (file ops, shell, code_review…) with per-round output
 
 ### 🖼️ Vision & Files
 

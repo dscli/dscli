@@ -2160,7 +2160,7 @@ func stripBaselinePrefix(resp, mdBaseline string) string {
 // return a useless fragment. Only known tool names followed by an argument
 // list match, so a legitimate short answer like "<b>bold</b>" is not
 // rejected.
-var toolCallOpenRE = regexp.MustCompile(`^<(read_file|write_file|shell|code_edit|code_search|search_file_with_pattern|flycheck|sql|apply_patch)\s`)
+var toolCallOpenRE = regexp.MustCompile(`^<(read_file|write_file|shell|code_edit|code_search|search_file_with_pattern|flycheck|sql)\s`)
 
 // minCompleteResponseLen is the minimum rune length below which an
 // extraction result may still be an incomplete fragment (e.g. a simulated

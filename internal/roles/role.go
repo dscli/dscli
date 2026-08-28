@@ -61,7 +61,7 @@ type DefaultConfig struct {
 //   - dev:    all skills, all tools
 //   - expert: none (a pure domain expert consults; it does not execute)
 //   - review: none (configure tools per project, e.g. shell,read_file)
-//   - test:   none (configure tools per project, e.g. shell,read_file,apply_patch)
+//   - test:   none (configure tools per project, e.g. shell,read_file,write_file)
 //
 // An unknown role falls back to the dev profile (the default template).
 func DefaultFor(role string) DefaultConfig {

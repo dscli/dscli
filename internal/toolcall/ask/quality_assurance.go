@@ -155,7 +155,7 @@ func handleQualityAssurance(ctx context.Context, args toolcall.ToolArgs) (result
 	// limited to the diff itself; warn explicitly instead of degrading
 	// silently (mirrors code_review).
 	if doc := toolcall.BuildDSMLToolDoc(ctx, "test"); doc.Intro == "" {
-		fmt.Fprintf(os.Stderr, "⚠️ test 角色未配置 DSML 工具（默认无工具）：QA 工程师将无法读取文件/运行 go vet/go test，报告限于提交内容。可运行 `dscli role update test --tools shell,read_file,apply_patch` 启用。\n")
+		fmt.Fprintf(os.Stderr, "⚠️ test 角色未配置 DSML 工具（默认无工具）：QA 工程师将无法读取文件/运行 go vet/go test，报告限于提交内容。可运行 `dscli role update test --tools shell,read_file,write_file` 启用。\n")
 	}
 	structuredRequest, warning := truncateReviewRequest(summary, fullLog, patch)
 	outfmt.Printf("📤 发送质量保障请求到 DeepSeek Web（免费 V4 Pro）...\n%s\n", structuredRequest)
