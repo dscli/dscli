@@ -56,15 +56,15 @@ func entryNames(entries []dsmlDocTool) []string {
 }
 
 // TestBuildDSMLToolDocDefaults 验证无角色配置时的默认行为与 DefaultFor
-// 一致：dev/test 得到全部工具（手写条目 + 从注册表生成的条目），
-// expert/review 得到空文档（模板整段消失）。
+// 一致：dev 得到全部工具（手写条目 + 从注册表生成的条目），
+// expert/review/test 得到空文档（模板整段消失）。
 func TestBuildDSMLToolDocDefaults(t *testing.T) {
 	tests := []struct {
 		role      string
 		wantTools bool
 	}{
 		{"dev", true},
-		{"test", true},
+		{"test", false},
 		{"expert", false},
 		{"review", false},
 	}

@@ -232,7 +232,7 @@ func GetAllTools(ctx context.Context) []Tool {
 	defer span.Finish()
 
 	role := context.ContextValue(ctx, context.CurrentRoleKey, "dev")
-	// dev/test are capable by default; expert/review execute nothing until
+	// dev is capable by default; expert/review/test execute nothing until
 	// configured. This mirrors the role list display, which shows the very
 	// same defaults (roleToolsSpec).
 	allowSet := roleToolAllowSet(ctx, role)

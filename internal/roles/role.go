@@ -61,7 +61,7 @@ type DefaultConfig struct {
 //   - dev:    all skills, all tools
 //   - expert: none (a pure domain expert consults; it does not execute)
 //   - review: none (configure tools per project, e.g. shell,read_file)
-//   - test:   all skills, all tools (the QA engineer runs tests and patches)
+//   - test:   none (configure tools per project, e.g. shell,read_file,apply_patch)
 //
 // An unknown role falls back to the dev profile (the default template).
 func DefaultFor(role string) DefaultConfig {
@@ -71,7 +71,7 @@ func DefaultFor(role string) DefaultConfig {
 	case "review":
 		return DefaultConfig{Skills: "", Tools: "", Prompt: "review"}
 	case "test":
-		return DefaultConfig{Skills: "all", Tools: "all", Prompt: "test"}
+		return DefaultConfig{Skills: "", Tools: "", Prompt: "test"}
 	default: // "dev", "" and unknown roles
 		return DefaultConfig{Skills: "all", Tools: "all", Prompt: "dev"}
 	}
@@ -260,9 +260,9 @@ func invalidateRoleCache() {
 // incident fix): a partial update like "role update review --tools
 // shell,read_file" on a fresh project must NOT grant review all skills just
 // because skills was not passed — DefaultFor("review").Skills is "", so the
-// row stores none, matching what role list already displayed. dev/test keep
-// the incident protection: their defaults are all/all, so an unspecified
-// field never turns a fully-capable role into a tool-less one.
+// row stores none, matching what role list already displayed. dev keeps the
+// incident protection: its default is all/all, so an unspecified field never
+// turns the fully-capable role into a tool-less one.
 func UpsertRoleConfig(ctx context.Context, role string, sessionID int64, skills, tools, prompt *string) error {
 	span, ctx := clog.StartSpanFromContext(ctx, "UpsertRoleConfig")
 	defer span.Finish()

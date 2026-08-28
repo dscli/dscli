@@ -55,7 +55,7 @@ func init() {
 		Short: "更新或创建角色的配置",
 		Long: `更新或创建指定角色的配置。通过 --skills、--tools、--prompt 标志指定对应值。
 仅显式传入的标志会被修改；其余字段保持不变。新建配置时未指定的字段使用
-该角色的默认配置（dev/test：all；expert/review：none）。
+该角色的默认配置（dev：all；expert/review/test：none）。
 
 技能与工具接受三个取值：
   all  全部（默认）
@@ -65,7 +65,7 @@ func init() {
 示例：
   dscli role update review --skills "go-fix,gofumpt" --tools "shell,file_read"
   dscli role update expert --tools none --prompt editor
-  dscli role update test --tools "" --skills all
+  dscli role update test --tools "shell,read_file,apply_patch"
   dscli role update dev --skills all --tools "shell,file_read,markdown"`,
 		Args: cobra.ExactArgs(1),
 		RunE: roleUpdateRunE,

@@ -459,7 +459,7 @@ func RenderPromptForRole(ctx context.Context, role string) string {
 // registration section (doc) injected. doc comes from
 // toolcall.BuildDSMLToolDoc, which derives the tool set from the role
 // config; an empty doc makes the templates drop the whole section, so a
-// tool-less role (expert/review by default) gets no tool registrations.
+// tool-less role (expert/review/test by default) gets no tool registrations.
 func RenderPromptForRoleWithTools(ctx context.Context, role string, doc DSMLToolDoc) string {
 	span, ctx := clog.StartSpanFromContext(ctx, "RenderPromptForRoleWithTools")
 	defer span.Finish()
@@ -606,8 +606,8 @@ func LoadPrompts(ctx context.Context) ([]Message, error) {
 
 	var skillPrompt string
 	if cfg == nil {
-		// Fallback: role defaults (roles.DefaultFor) — dev/test get all
-		// skills, expert/review get none, mirroring role list display.
+		// Fallback: role defaults (roles.DefaultFor) — dev gets all skills,
+		// expert/review/test get none, mirroring role list display.
 		if roles.DefaultFor(role).Skills != "" {
 			skillPrompt = skills.BuildSkillPrompt(ctx)
 		}

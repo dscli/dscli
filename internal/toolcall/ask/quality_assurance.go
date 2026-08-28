@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -148,7 +149,14 @@ func handleQualityAssurance(ctx context.Context, args toolcall.ToolArgs) (result
 
 	// The first message carries only the summary, commit message, and diff.
 	// The QA engineer (role "test") reads AGENTS.md and file contents on
-	// demand via the DSML tool loop, and runs go vet / go test itself.
+	// demand via the DSML tool loop, and runs go vet / go test itself —
+	// provided the test role has tools configured (role_configs /
+	// roles.DefaultFor: none by default). Without them the report is
+	// limited to the diff itself; warn explicitly instead of degrading
+	// silently (mirrors code_review).
+	if doc := toolcall.BuildDSMLToolDoc(ctx, "test"); doc.Intro == "" {
+		fmt.Fprintf(os.Stderr, "⚠️ test 角色未配置 DSML 工具（默认无工具）：QA 工程师将无法读取文件/运行 go vet/go test，报告限于提交内容。可运行 `dscli role update test --tools shell,read_file,apply_patch` 启用。\n")
+	}
 	structuredRequest, warning := truncateReviewRequest(summary, fullLog, patch)
 	outfmt.Printf("📤 发送质量保障请求到 DeepSeek Web（免费 V4 Pro）...\n%s\n", structuredRequest)
 	var convURL string
