@@ -63,7 +63,7 @@ Tests get an isolated database: `context.IsTesting()` → `/tmp/dscli-test-<bina
 
 | Package | Purpose |
 |---------|---------|
-| `internal/prompt/` | System prompts (roles: dev/expert/review/test), message persistence, history, recall/note, content blocks (image input), interrupt marking |
+| `internal/prompt/` | System prompts (roles: dev/expert/review/test/architect), message persistence, history, recall/note, content blocks (image input), interrupt marking |
 | `internal/toolcall/` | Tool registration (aliases), execution, JSON fix, result truncation, dual-message protocol, interrupt handling |
 | `internal/toolcall/alltools/` | Blank-imports all tool packages; `GetAllTools(ctx)` |
 | `internal/config/` | Config parsing (`~/.dscli/config.dscli` / `~/.dscli/dscli.env`) |
@@ -100,7 +100,7 @@ Tools register via `toolcall.RegisterTool(ToolDef{...})` in package `init()`s;
 `internal/toolcall/alltools` blank-imports every tool package. Chat loads them
 through `alltools.GetAllTools(ctx)` (role-filtered - non-dev roles return fewer
 tools). Tool categories: `file_ops`, `system` (cwd/shell/sql),
-`communication` (ask), `check` (code_review/flycheck), `history`, `mail`,
+`communication` (ask), `check` (code_review/code_dev/quality_assurance/flycheck), `history`, `mail`,
 `memory`, `skill`, `ai` (wakeup/ainap/aistatus), `vision` (Files API), `web`.
 `ToolDef.Aliases` maps legacy names (e.g. `vision_file_upload` ->
 `vision_file_read`) without exposing them in the tool list. Tools not in the
@@ -151,7 +151,7 @@ aligned with DeepSeek V4's tool template (string= attribute rules,
 `prompt.RenderPromptForRoleWithTools`; `RenderPromptForRole` and
 `GetSystemPrompt` (dscli chat path, which registers tools through the API
 `tools` parameter instead) leave it out entirely. A role without executable
-tools (expert/review/test by default) gets no DSML section at all.
+tools (expert/review/test/architect by default) gets no DSML section at all.
 
 code_review sends ONLY commit message + diff on its first message: the review
 expert reads AGENTS.md and full changed-file contents on demand via the DSML
@@ -165,7 +165,7 @@ internal/prompt/review.md).
 | Asset | Location |
 |-------|----------|
 | `dscli-flycheck.sh` | `internal/flycheck/` — Emacs syntax check runner |
-| Prompt templates | `internal/prompt/{dev,expert,review,test}.md` |
+| Prompt templates | `internal/prompt/{dev,expert,review,test,architect}.md` |
 | Tool docs | `internal/toolcall/*/*.md` (one per tool) |
 | Skill docs | `internal/skills/*.md` |
 | Dictionaries | `internal/tokenizer/stopwords/*.txt`, `internal/gse/data/` |
@@ -331,7 +331,7 @@ Key skills for development:
 ## AI Assistant Context
 
 AI assistants: your tool set and behavior contract are defined in `internal/prompt/`
-templates (dev/expert/review/test). This AGENTS.md is the **project-specific
+templates (dev/expert/review/test/architect). This AGENTS.md is the **project-specific
 supplement**: read it before writing code to understand build commands,
 architecture, and conventions unique to dscli.
 

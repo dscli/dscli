@@ -33,6 +33,9 @@ var reviewTemplate string
 //go:embed test.md
 var testTemplate string
 
+//go:embed architect.md
+var architectTemplate string
+
 // promptTemplate 系统提示词模板
 type promptTemplate struct {
 	// 模板内容
@@ -372,14 +375,15 @@ func GetPromptTemplate(ctx context.Context, role string) string {
 
 // roleTemplateMap 角色到内嵌模板的映射
 var roleTemplateMap = map[string]string{
-	"dev":    devTemplate,
-	"expert": expertTemplate,
-	"review": reviewTemplate,
-	"test":   testTemplate,
+	"dev":       devTemplate,
+	"expert":    expertTemplate,
+	"review":    reviewTemplate,
+	"test":      testTemplate,
+	"architect": architectTemplate,
 }
 
 // GetDefaultPromptTemplate 获取内嵌的默认提示词模板
-// role: dev, expert, review, test
+// role: dev, expert, review, test, architect, architect
 func GetDefaultPromptTemplate(role string) string {
 	if tmpl, ok := roleTemplateMap[role]; ok {
 		return tmpl

@@ -57,7 +57,7 @@ Simply put: **dscli = AI assistant + dev tools + session memory + CLI efficiency
 - **`dscli models`** — List AI models with current token prices
 - **`dscli balance`** — Check API balance and usage
 - **`dscli chat --attach <img>`** — Image input with vision models (e.g. `deepseek-v4-flash-vision-exp`), uploaded via the DeepSeek Files API
-- **`dscli webchat`** — Free chat through Chrome with chat.deepseek.com: `--model` pro/flash/vision, `--role` dev/expert/review/test personas, `--keep` resumes saved conversations; DSML tool calls inside replies are executed locally (file ops, shell, code_review…) with per-round output
+- **`dscli webchat`** — Free chat through Chrome with chat.deepseek.com: `--model` pro/flash/vision, `--role` dev/expert/review/test/architect personas, `--keep` resumes saved conversations; DSML tool calls inside replies are executed locally (file ops, shell, code_review…) with per-round output
 
 ### 🖼️ Vision & Files
 
@@ -233,10 +233,12 @@ dscli project update 2 /new/path/to/project
 
 ### 6. Role Customization
 
-dscli has three built-in AI roles: **dev** (development assistant, full tools/skills),
+dscli has five built-in AI roles: **dev** (development assistant, full tools/skills),
 **expert** (domain expert, no tools/skills), **review** (code review,
-shell+file_read/no skills). Each role has independently configurable system prompts,
-available tools, and skill lists.
+shell+file_read/no skills), **test** (QA engineer), **architect** (software
+architect: clarifies requirements, designs architecture, and orchestrates the
+pipeline via `code_dev` / `code_review` / `quality_assurance`). Each role has
+independently configurable system prompts, available tools, and skill lists.
 
 **Browse tools:**
 

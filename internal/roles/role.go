@@ -1,6 +1,6 @@
 // Package roles manages role-to-skills/tools/prompt mappings stored in SQLite.
 //
-// Each role (dev/expert/review/test) can have per-session configuration.
+// Each role (dev/expert/review/test/architect) can have per-session configuration.
 // The table is keyed by (role, session_id), not (role, project_path). This is
 // intentional: session_id is a stable identifier that survives project relocation.
 // When a user copies a project to a new directory, they only need to update
@@ -58,10 +58,13 @@ type DefaultConfig struct {
 // tool registry (GetAllTools), prompt loading (LoadPrompts) and the WebChat
 // DSML section — a role without a DB row behaves exactly as role list shows.
 //
-//   - dev:    all skills, all tools
-//   - expert: none (a pure domain expert consults; it does not execute)
-//   - review: none (configure tools per project, e.g. shell,read_file)
-//   - test:   none (configure tools per project, e.g. shell,read_file,write_file)
+//   - dev:       all skills, all tools
+//   - expert:    none (a pure domain expert consults; it does not execute)
+//   - review:    none (configure tools per project, e.g. shell,read_file)
+//   - test:      none (configure tools per project, e.g. shell,read_file,write_file)
+//   - architect: none (an orchestrator: it designs and delegates via the
+//     code_dev / code_review / quality_assurance tools, which are registered
+//     by the session protocol; it does not execute local tools by default)
 //
 // An unknown role falls back to the dev profile (the default template).
 func DefaultFor(role string) DefaultConfig {
@@ -72,6 +75,8 @@ func DefaultFor(role string) DefaultConfig {
 		return DefaultConfig{Skills: "", Tools: "", Prompt: "review"}
 	case "test":
 		return DefaultConfig{Skills: "", Tools: "", Prompt: "test"}
+	case "architect":
+		return DefaultConfig{Skills: "", Tools: "", Prompt: "architect"}
 	default: // "dev", "" and unknown roles
 		return DefaultConfig{Skills: "all", Tools: "all", Prompt: "dev"}
 	}

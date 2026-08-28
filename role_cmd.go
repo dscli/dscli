@@ -21,8 +21,8 @@ func init() {
 		Short: "角色配置管理 - 管理角色与技能、工具、提示词的映射",
 		Long: `role 命令用于管理角色的技能、工具和提示词映射配置。
 
-当前支持 4 个角色（dev / expert / review / test），每个角色可以针对当前项目
-配置其可用的技能列表、工具列表以及对应的系统提示词模板。
+当前支持 5 个角色（dev / expert / review / test / architect），每个角色可以
+针对当前项目配置其可用的技能列表、工具列表以及对应的系统提示词模板。
 
 示例：
   dscli role list                      列出当前项目所有角色配置
@@ -55,7 +55,7 @@ func init() {
 		Short: "更新或创建角色的配置",
 		Long: `更新或创建指定角色的配置。通过 --skills、--tools、--prompt 标志指定对应值。
 仅显式传入的标志会被修改；其余字段保持不变。新建配置时未指定的字段使用
-该角色的默认配置（dev：all；expert/review/test：none）。
+该角色的默认配置（dev：all；expert/review/test/architect：none）。
 
 技能与工具接受三个取值：
   all  全部（默认）
@@ -85,8 +85,8 @@ func init() {
 	})
 }
 
-// roleNames 是 role 系统支持的四个内置角色（顺序即显示顺序）。
-var roleNames = []string{"dev", "expert", "review", "test"}
+// roleNames 是 role 系统支持的内置角色（顺序即显示顺序）。
+var roleNames = []string{"dev", "expert", "review", "test", "architect"}
 
 // displaySpec converts a stored skills/tools value to its display form:
 // "" (none) renders as "none", everything else verbatim.

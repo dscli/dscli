@@ -89,7 +89,7 @@ func TestDSMLToolsSectionScopedToWebChat(t *testing.T) {
 		Intro:   "## 🛠️ Available Tools: `read_file`\n\n<tool_calls>\n<invoke name=\"read_file\">\n<parameter name=\"path\" string=\"true\">AGENTS.md</parameter>\n</invoke>\n</tool_calls>",
 		Schemas: "### Available Tool Schemas\n\n```json\n{\"type\":\"function\"}\n```\n\nYou MUST strictly follow the above defined tool name and parameter schemas to invoke tool calls.",
 	}
-	for _, role := range []string{"dev", "expert", "review", "test"} {
+	for _, role := range []string{"dev", "expert", "review", "test", "architect"} {
 		t.Run(role, func(t *testing.T) {
 			// Without doc: the section must be absent (role may have no tools).
 			plain := RenderPromptForRole(t.Context(), role)
@@ -122,10 +122,11 @@ func TestDSMLToolsSectionScopedToWebChat(t *testing.T) {
 			// via the API tools parameter), while expert/review/test have
 			// none by default and must say so.
 			want := map[string]string{
-				"dev":    "registered by the session protocol",
-				"expert": "no execution tools",
-				"review": "no execution tools",
-				"test":   "no execution tools",
+				"dev":       "registered by the session protocol",
+				"expert":    "no execution tools",
+				"review":    "no execution tools",
+				"test":      "no execution tools",
+				"architect": "no execution tools",
 			}[role]
 			if !strings.Contains(plain, want) {
 				t.Errorf("%s no-tools prompt missing role-specific limitation %q", role, want)
@@ -145,7 +146,7 @@ func TestNewPromptTemplate_NilSafety(t *testing.T) {
 			t.Errorf("newPromptTemplate(%q) 返回 nil，期望非 nil", role)
 		}
 	}
-	// dev, expert, review 也应返回非 nil
+	// dev, expert, review, architect 也应返回非 nil
 	if tmpl := newPromptTemplate(ctx, "dev"); tmpl == nil {
 		t.Error("newPromptTemplate(dev) 返回 nil")
 	}
@@ -154,5 +155,8 @@ func TestNewPromptTemplate_NilSafety(t *testing.T) {
 	}
 	if tmpl := newPromptTemplate(ctx, "review"); tmpl == nil {
 		t.Error("newPromptTemplate(review) 返回 nil")
+	}
+	if tmpl := newPromptTemplate(ctx, "architect"); tmpl == nil {
+		t.Error("newPromptTemplate(architect) 返回 nil")
 	}
 }

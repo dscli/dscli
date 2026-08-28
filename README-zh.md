@@ -184,10 +184,11 @@ dscli memory stats
 
 ### 5. 角色定制
 
-dscli 内置三个 AI 角色：**dev**（开发助手，全工具/全技能）、
+dscli 内置五个 AI 角色：**dev**（开发助手，全工具/全技能）、
 **expert**（领域专家，无工具/无技能）、**review**（代码审查，
-shell+file_read/无技能）。每个角色可独立配置系统提示词、可用工具
-和技能列表。
+shell+file_read/无技能）、**test**（QA 工程师）、**architect**（软件架构师：
+澄清需求、设计架构，并通过 `code_dev` / `code_review` / `quality_assurance`
+编排实现流水线）。每个角色可独立配置系统提示词、可用工具和技能列表。
 
 **浏览工具：**
 

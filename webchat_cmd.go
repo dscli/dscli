@@ -42,9 +42,10 @@ func init() {
 --keep 且未指定 --model 时保留原会话模型。
 
 角色（--role，与 dscli chat 一致；默认空 = 纯聊天）：
-  dscli webchat --role review "review 最近的提交"   # code review 角色
-  dscli webchat --role expert "分析这个架构问题"     # 领域专家角色
-  dscli webchat --role dev "实现一个功能"            # 开发助手
+  dscli webchat --role review "review 最近的提交"     # code review 角色
+  dscli webchat --role expert "分析这个架构问题"       # 领域专家角色
+  dscli webchat --role dev "实现一个功能"              # 开发助手
+  dscli webchat --role architect "设计并编排实现"      # 架构师角色
   dscli webchat "随便聊聊"                           # 默认纯聊天：无角色注入（回复中的 DSML 工具调用仍会执行）
 非空角色会前置角色提示词；无论角色与否，DeepSeek Web 回复中的 DSML 工具调用
 （read_file / shell / write_file 等）都由 dscli 本地执行并把结果回填到
@@ -86,8 +87,8 @@ sudo、curl/wget 外传等被拒绝）；仍建议在可信工作目录使用。
 	// tool calls in replies are still judged and executed when the reply
 	// ends with </tool_calls> - see toolcall.IsDSMLToolCallEnd). A
 	// non-empty value selects the role prompt template
-	// (dev/expert/review/test) before the user message.
-	webchatCmd.Flags().String("role", "", "Role: dev (developer), expert (domain expert), review (code review), test (QA engineer)；空 = 纯聊天（不注入角色提示词；回复中的 DSML 工具调用仍会执行）")
+	// (dev/expert/review/test/architect) before the user message.
+	webchatCmd.Flags().String("role", "", "Role: dev (developer), expert (domain expert), review (code review), test (QA engineer), architect (software architect)；空 = 纯聊天（不注入角色提示词；回复中的 DSML 工具调用仍会执行）")
 }
 
 // webchatOptionsFromFlags builds the HandleWebChat options from parsed CLI

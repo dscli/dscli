@@ -295,6 +295,7 @@ func TestDefaultFor(t *testing.T) {
 		{"expert", "", "", "expert"},
 		{"review", "", "", "review"},
 		{"test", "", "", "test"},
+		{"architect", "", "", "architect"},
 		{"", "all", "all", "dev"}, // empty role = dev behavior
 		{"unknown", "all", "all", "dev"},
 	}
