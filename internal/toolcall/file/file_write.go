@@ -115,7 +115,8 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result, warning string
 		if b, isBool := v.(bool); isBool && b {
 			return "", "", fmt.Errorf(
 				"write_file no longer supports append=true (removed in the 2026-08 tool merge); " +
-					"use insert_before_line=<total+1> to append, read_file first to get the total")
+					"use insert_before_line=<total+1> to append, read_file first to get the total",
+			)
 		}
 		// append=false 等价于全文件覆盖：丢弃即可。
 		delete(args, "append")
@@ -138,7 +139,8 @@ func handleWriteFile(ctx context.Context, args ToolArgs) (result, warning string
 		if _, ok := args[tagKey]; ok && !hasLineRangeParams(args) {
 			return "", "", fmt.Errorf(
 				"%s requires start_line/end_line (or insert_before_line) to select the target range; "+
-					"it cannot be used alone", tagKey)
+					"it cannot be used alone", tagKey,
+			)
 		}
 	}
 
