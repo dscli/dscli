@@ -67,6 +67,11 @@ func TestLoadPrompts(t *testing.T) {
 	}
 }
 
+// capabilitiesHeading 是四个角色模板 no-tools 分支（Capabilities 段）的
+// 统一标题。模板与测试共享这一字节序列（含 VS16 变体选择符），避免某处
+// 规范化 emoji 后出现静默不匹配。
+const capabilitiesHeading = "## 🛠️ Capabilities"
+
 // TestDSMLToolsSectionScopedToWebChat 验证 DSML 工具注册段只出现在
 // WebChat 渲染路径：chat.deepseek.com 没有原生工具协议，角色提示词是
 // 注册通道（RenderPromptForRoleWithTools + 非空 DSMLToolDoc）；dscli
@@ -106,11 +111,24 @@ func TestDSMLToolsSectionScopedToWebChat(t *testing.T) {
 			// tools: with tools the DSML intro IS the capability section
 			// (mutually exclusive, never both — a hand-written tool list
 			// would go stale against the role's actual tool config).
-			if !strings.Contains(plain, "## 🛠️ Capabilities") {
+			if !strings.Contains(plain, capabilitiesHeading) {
 				t.Errorf("%s prompt without tools must state the Capabilities limitation", role)
 			}
-			if strings.Contains(content, "## 🛠️ Capabilities") {
+			if strings.Contains(content, capabilitiesHeading) {
 				t.Errorf("%s prompt with tools must not render the Capabilities heading (DSML intro replaces it)", role)
+			}
+			// The no-tools branch wording is role-specific: dev tools are
+			// registered by the session protocol (chat path registers them
+			// via the API tools parameter), while expert/review/test have
+			// none by default and must say so.
+			want := map[string]string{
+				"dev":    "registered by the session protocol",
+				"expert": "no execution tools",
+				"review": "no execution tools",
+				"test":   "no execution tools",
+			}[role]
+			if !strings.Contains(plain, want) {
+				t.Errorf("%s no-tools prompt missing role-specific limitation %q", role, want)
 			}
 		})
 	}
