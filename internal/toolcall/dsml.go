@@ -9,7 +9,7 @@
 //
 // Which tools may be executed is decided by the role's tools config
 // (`dscli role update --tools`), the SAME source that gates dscli chat's
-// GetAllTools - there is no separate DSML whitelist. Role-configured tools
+// GetAllTools - there is no separate DSML allow-set. Role-configured tools
 // are registered with their NATIVE names and parameter schemas (see
 // dsml_doc.go), so a call maps 1:1 to the local tool: what the model writes
 // is what the executor accepts, no translation. The only DSML-layer check
@@ -151,9 +151,9 @@ var dsmlToolCallsCloseCutRe = regexp.MustCompile(`(?s)</\s*(?:tool_calls|_calls)
 //   - A reply that merely CITES an <invoke> example inside prose never ends
 //     with the wrapper close tag, so it stays non-executable; a truncated
 //     emission (opening tag without close) fails ParseDSMLToolCalls
-//     downstream and is never executed. The whitelist plus
-//     destructive-command interception (dsmlToolNames / dsmlBlockedCmdRe)
-//     are the hard safety boundary for whatever does execute.
+//     downstream and is never executed. The role's tool allow-set plus
+//     destructive-command interception (dsmlBlockedCmdRe) are the hard
+//     safety boundary for whatever does execute.
 func IsDSMLToolCallEnd(text string) bool {
 	return dsmlToolCallsCloseEndRe.MatchString(strings.TrimSpace(normalizeDSMLText(text)))
 }
@@ -655,7 +655,7 @@ func StripDSMLToolCalls(text string) string {
 // dsmlRoleAllowSet returns the tool names the current role may invoke via
 // DSML: the role's tools spec (role_configs, falling back to DefaultFor) -
 // the SAME source GetAllTools uses for dscli chat. There is no separate
-// DSML whitelist: `dscli role update --tools` decides what the web model
+// DSML allow-set: `dscli role update --tools` decides what the web model
 // may call, exactly as it decides for the local agent.
 func dsmlRoleAllowSet(ctx context.Context) map[string]bool {
 	role := dsctx.ContextValue(ctx, dsctx.CurrentRoleKey, "dev")
