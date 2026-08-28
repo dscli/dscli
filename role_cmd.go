@@ -27,7 +27,7 @@ func init() {
 示例：
   dscli role list                      列出当前项目所有角色配置
   dscli role show dev                  查看 dev 角色的配置
-  dscli role update review --skills all --tools "shell,file_read" --prompt editor
+  dscli role update review --skills all --tools "shell,read_file" --prompt editor
   dscli role reset review              重置 review 角色的自定义配置`,
 	})
 
@@ -63,10 +63,10 @@ func init() {
   a,b  逗号分隔的名称列表
 
 示例：
-  dscli role update review --skills "go-fix,gofumpt" --tools "shell,file_read"
+  dscli role update review --skills "go-fix,gofumpt" --tools "shell,read_file"
   dscli role update expert --tools none --prompt editor
   dscli role update test --tools "shell,read_file,apply_patch"
-  dscli role update dev --skills all --tools "shell,file_read,markdown"`,
+  dscli role update dev --skills all --tools "shell,read_file,markdown"`,
 		Args: cobra.ExactArgs(1),
 		RunE: roleUpdateRunE,
 	}
