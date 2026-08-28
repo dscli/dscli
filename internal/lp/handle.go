@@ -263,11 +263,11 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 
 	// Carry the role in ctx so the DSML executor (ExecuteDSMLToolCalls)
 	// gates tool execution by the SAME role config as the doc registration
-	// and GetAllTools. Plain chat (Role "") keeps the default "dev" profile -
-	// the web model may then call whatever dev's tool config allows.
-	if opts.Role != "" {
-		ctx = context.WithValue(ctx, dsctx.CurrentRoleKey, opts.Role)
-	}
+	// and GetAllTools. Always set it, even for plain chat (Role ""): a
+	// caller may pass a ctx that already carries CurrentRoleKey from an
+	// outer chat session, and the executor must not inherit that ambient
+	// role - "" resolves to DefaultFor("") = dev, the documented default.
+	ctx = context.WithValue(ctx, dsctx.CurrentRoleKey, opts.Role)
 
 	// WebChat has no system prompt concept, so persona text is prepended to
 	// the user message. The separator helps the web model distinguish the

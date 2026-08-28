@@ -865,7 +865,8 @@ type dsmlExecPlan struct {
 }
 
 // dsmlCallsToToolCalls 把解析出的 DSML 调用转换为协议 ToolCall，交给
-// executeToolCalls 批量执行。转换失败的调用（工具不在白名单、参数缺失、
+// executeToolCalls 批量执行。转换失败的调用（工具不在角色配置或未注册、
+// 参数缺失、
 // 危险命令被拦截）不进执行列表，由计划表记录错误结果，保证输出与原始
 // 调用 1:1 对齐——专家按顺序对应它自己发出的 tool_calls。
 func dsmlCallsToToolCalls(calls []DSMLCall) (tcs []prompt.ToolCall, plan []dsmlExecPlan) {
@@ -935,7 +936,11 @@ func ExecuteDSMLToolCalls(ctx context.Context, calls []DSMLCall) (outputs []stri
 	kept := make([]DSMLCall, 0, len(calls))
 	for _, inv := range calls {
 		native := dsmlNativeName(inv.Name)
-		if allowed != nil && !allowed[native] {
+		// Accept the raw DSML spelling OR its native name: a role may
+		// configure "exec_command" as the tool name (the doc layer
+		// registers it via filterNames), while the executor normalizes
+		// to "shell" before the allow-set check.
+		if allowed != nil && !allowed[native] && !allowed[inv.Name] {
 			outfmt.Debug("DSML skipped tool %q: not in role's tools config", inv.Name)
 			continue
 		}

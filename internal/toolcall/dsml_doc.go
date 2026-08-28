@@ -240,6 +240,11 @@ func dsmlGeneratedDocEntry(def ToolDef) dsmlDocTool {
 		parts = append(parts, fmt.Sprintf("`%s` (%s, %s) — %s", k, typ, opt, desc))
 	}
 	paramsLine := "`" + name + "`: " + strings.Join(parts, "; ")
+	if len(parts) == 0 {
+		// A schema without properties (no required params) still gets a
+		// useful registration line; the empty example body is parseable.
+		paramsLine = "`" + name + "`: (no parameters)"
+	}
 
 	return dsmlDocTool{
 		dsmlName:    name,

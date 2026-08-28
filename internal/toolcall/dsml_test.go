@@ -853,6 +853,36 @@ func TestExecuteDSMLToolCallsRoleGate(t *testing.T) {
 	}
 }
 
+// TestExecuteDSMLToolCallsExecCommandConfig: a role configured with the
+// literal DSML name "exec_command" (not "shell") must still execute: the
+// doc layer registers it via filterNames and the executor accepts either
+// the raw spelling or its native name in the allow-set.
+func TestExecuteDSMLToolCallsExecCommandConfig(t *testing.T) {
+	ctx := withIsolatedDualSession(t)
+	ctx = dsctx.WithValue(ctx, dsctx.CurrentRoleKey, "review")
+	sid := session.GetCurrentSessionID(ctx)
+	if err := roles.UpsertRoleConfig(ctx, "review", sid, nil, strPtrHelper("exec_command"), nil); err != nil {
+		t.Fatalf("UpsertRoleConfig: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := roles.DeleteRoleConfig(ctx, "review", sid); err != nil {
+			t.Logf("DeleteRoleConfig: %v", err)
+		}
+	})
+
+	if err := RegisterTool(ToolDef{Name: "shell", Description: "test shell", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
+		return "shell-ok", "", nil
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { unregisterToolForTest("shell") })
+
+	outputs := ExecuteDSMLToolCalls(ctx, []DSMLCall{{Name: "exec_command", Args: map[string]any{"cmd": "echo hi"}}})
+	if len(outputs) != 1 || outputs[0] != `<tool_result>{"result":"shell-ok"}</tool_result>` {
+		t.Fatalf("outputs = %v, want shell-ok (exec_command configured literally)", outputs)
+	}
+}
+
 // TestExecuteDSMLToolCallsJSONArgs verifies the marshaled ToolArgs carry the
 // translated keys (script + timeout in seconds) expected by the shell tool.
 func TestExecuteDSMLToolCallsJSONArgs(t *testing.T) {
