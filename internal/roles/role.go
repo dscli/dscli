@@ -42,6 +42,41 @@ type RoleConfig struct {
 	UpdatedAt time.Time
 }
 
+// DefaultConfig is the built-in default for a role without a custom row.
+// Skills/Tools use the storage convention: "all", "" (nothing), or a
+// comma-separated list. Prompt is the template name used for display; the
+// runtime resolves an empty prompt field to the role-named template anyway,
+// so DefaultConfig.Prompt always equals the role name.
+type DefaultConfig struct {
+	Skills string
+	Tools  string
+	Prompt string
+}
+
+// DefaultFor returns the built-in defaults for the given role. It is the
+// single source of truth consumed by the CLI display (role list/show), the
+// tool registry (GetAllTools), prompt loading (LoadPrompts) and the WebChat
+// DSML section — a role without a DB row behaves exactly as role list shows.
+//
+//   - dev:    all skills, all tools
+//   - expert: none (a pure domain expert consults; it does not execute)
+//   - review: none (configure tools per project, e.g. shell,read_file)
+//   - test:   all skills, all tools (the QA engineer runs tests and patches)
+//
+// An unknown role falls back to the dev profile (the default template).
+func DefaultFor(role string) DefaultConfig {
+	switch role {
+	case "expert":
+		return DefaultConfig{Skills: "", Tools: "", Prompt: "expert"}
+	case "review":
+		return DefaultConfig{Skills: "", Tools: "", Prompt: "review"}
+	case "test":
+		return DefaultConfig{Skills: "all", Tools: "all", Prompt: "test"}
+	default: // "dev", "" and unknown roles
+		return DefaultConfig{Skills: "all", Tools: "all", Prompt: "dev"}
+	}
+}
+
 var (
 	roleCache   map[string]*RoleConfig // role name → config, nil until loaded
 	roleCacheMu sync.RWMutex
@@ -209,9 +244,35 @@ func invalidateRoleCache() {
 }
 
 // UpsertRoleConfig inserts or updates a role config.
-func UpsertRoleConfig(ctx context.Context, role string, sessionID int64, skills, tools, prompt string) error {
+//
+// skills/tools/prompt are tri-state via pointers so the caller can express
+// "not specified" (nil) distinctly from "explicitly set to nothing" (empty
+// string). The CLI's "--flag" sets a field only when the user passed it:
+//
+//   - nil    → not specified: INSERT falls back to the role default
+//     (DefaultFor), UPDATE keeps the existing value
+//   - ""     → explicitly nothing ("none"): stored verbatim, parsed as an
+//     empty allowlist
+//   - "all"  → everything
+//   - "a,b"  → filtered allowlist
+//
+// INSERT's role-default fallback replaces the old blanket "all" (2026-07-31
+// incident fix): a partial update like "role update review --tools
+// shell,read_file" on a fresh project must NOT grant review all skills just
+// because skills was not passed — DefaultFor("review").Skills is "", so the
+// row stores none, matching what role list already displayed. dev/test keep
+// the incident protection: their defaults are all/all, so an unspecified
+// field never turns a fully-capable role into a tool-less one.
+func UpsertRoleConfig(ctx context.Context, role string, sessionID int64, skills, tools, prompt *string) error {
 	span, ctx := clog.StartSpanFromContext(ctx, "UpsertRoleConfig")
 	defer span.Finish()
+
+	// Normalize the "none" spelling to the canonical empty string at the API
+	// boundary: the DB stores only "all", "" (nothing) or comma-separated
+	// names. parseList tolerates a literal "none" for rows written earlier,
+	// but new writes keep one canonical form.
+	skills = normalizeNone(skills)
+	tools = normalizeNone(tools)
 
 	db, err := sqlite.OpenDB(ctx)
 	if err != nil {
@@ -226,22 +287,25 @@ func UpsertRoleConfig(ctx context.Context, role string, sessionID int64, skills,
 	).Scan(&id)
 
 	if err == sql.ErrNoRows {
-		// INSERT 语义与 UPDATE 保持一致："" 表示未指定。
-		// skills/tools 未指定时回落 "all"（与表 DEFAULT 'all' 及文档承诺
-		// "新建时未指定的标志默认为 all" 一致）。此前直接写入 '' 会把
-		// tools='' 落库 → ParseToolsList 返回空 → GetAllTools 无工具可给模型，
-		// 曾导致角色工具调用完全失效（2026-07-31 事故，见 role_cmd.go 帮助）。
-		// prompt 的 '' 是合法语义（表示使用角色同名默认模板），保持原样。
-		if skills == "" {
-			skills = "all"
+		// INSERT: unspecified fields fall back to the role default
+		// (DefaultFor), NOT blanket "all". skills/tools empty string is a
+		// legal explicit value (none); prompt "" means "use the role-named
+		// default template" and is stored as-is.
+		def := DefaultFor(role)
+		sk, tl, pm := def.Skills, def.Tools, ""
+		if skills != nil {
+			sk = *skills
 		}
-		if tools == "" {
-			tools = "all"
+		if tools != nil {
+			tl = *tools
+		}
+		if prompt != nil {
+			pm = *prompt
 		}
 		_, err = db.Exec(
 			`INSERT INTO role_configs (role, skills, tools, prompt, session_id)
 			 VALUES (?, ?, ?, ?, ?)`,
-			role, skills, tools, prompt, sessionID,
+			role, sk, tl, pm, sessionID,
 		)
 		if err != nil {
 			return fmt.Errorf("插入角色配置失败: %w", err)
@@ -253,16 +317,17 @@ func UpsertRoleConfig(ctx context.Context, role string, sessionID int64, skills,
 		return fmt.Errorf("查询角色配置失败: %w", err)
 	}
 
+	// UPDATE: nil keeps the existing value; non-nil overwrites ("" included).
 	_, err = db.Exec(
 		`UPDATE role_configs
-		 SET skills = CASE WHEN ? != '' THEN ? ELSE skills END,
-		     tools = CASE WHEN ? != '' THEN ? ELSE tools END,
-		     prompt = CASE WHEN ? != '' THEN ? ELSE prompt END,
+		 SET skills = CASE WHEN ? THEN ? ELSE skills END,
+		     tools = CASE WHEN ? THEN ? ELSE tools END,
+		     prompt = CASE WHEN ? THEN ? ELSE prompt END,
 		     updated_at = CURRENT_TIMESTAMP
 		 WHERE id = ?`,
-		skills, skills,
-		tools, tools,
-		prompt, prompt,
+		skills != nil, derefOrZero(skills),
+		tools != nil, derefOrZero(tools),
+		prompt != nil, derefOrZero(prompt),
 		id,
 	)
 	if err != nil {
@@ -270,6 +335,29 @@ func UpsertRoleConfig(ctx context.Context, role string, sessionID int64, skills,
 	}
 	invalidateRoleCache()
 	return nil
+}
+
+// normalizeNone maps a pointer holding the "none" spelling (case-insensitive,
+// trimmed) to a pointer to "". A nil pointer stays nil (not specified).
+// Any other value is returned unchanged (the caller's string is not mutated).
+func normalizeNone(p *string) *string {
+	if p == nil {
+		return nil
+	}
+	v := strings.TrimSpace(*p)
+	if strings.EqualFold(v, "none") {
+		v = ""
+	}
+	return &v
+}
+
+// derefOrZero returns the pointed value, or "" for a nil pointer. Only used
+// in the UPDATE branch next to the corresponding non-nil guard.
+func derefOrZero(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 // DeleteRoleConfig deletes a role config.
@@ -312,6 +400,12 @@ func parseList(s string) []string {
 	}
 	if s == "all" {
 		return nil
+	}
+	// "none" is the readable spelling for an empty allowlist. The CLI's
+	// update layer normalizes it to "" before storing, but rows written by
+	// older tooling (or tests) may hold the literal — treat it the same.
+	if s == "none" {
+		return []string{}
 	}
 	parts := strings.Split(s, ",")
 	result := make([]string, 0, len(parts))

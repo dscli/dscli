@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/dscli/dscli/internal/context"
@@ -53,19 +54,25 @@ func init() {
 		Use:   "update <role>",
 		Short: "更新或创建角色的配置",
 		Long: `更新或创建指定角色的配置。通过 --skills、--tools、--prompt 标志指定对应值。
+仅显式传入的标志会被修改；其余字段保持不变。新建配置时未指定的字段使用
+该角色的默认配置（dev/test：all；expert/review：none）。
 
-未指定的标志保持原值不变；新建时未指定的标志默认为 "all"。
+技能与工具接受三个取值：
+  all  全部（默认）
+  none 无（等价于空字符串）
+  a,b  逗号分隔的名称列表
 
 示例：
   dscli role update review --skills "go-fix,gofumpt" --tools "shell,file_read"
-  dscli role update expert --tools "" --prompt editor
+  dscli role update expert --tools none --prompt editor
+  dscli role update test --tools "" --skills all
   dscli role update dev --skills all --tools "shell,file_read,markdown"`,
 		Args: cobra.ExactArgs(1),
 		RunE: roleUpdateRunE,
 	}
-	updateCmd.Flags().String("skills", "", "技能列表：all（全部）或逗号分隔的技能名；空表示不修改（新建时默认为 all）")
-	updateCmd.Flags().String("tools", "", "工具列表：all（全部）或逗号分隔的工具名；空表示不修改（新建时默认为 all）")
-	updateCmd.Flags().String("prompt", "", "提示词模板名称（空表示与角色同名）")
+	updateCmd.Flags().String("skills", "", "技能列表：all（全部）、none（无）或逗号分隔的技能名；省略表示不修改（新建时按角色默认）")
+	updateCmd.Flags().String("tools", "", "工具列表：all（全部）、none（无）或逗号分隔的工具名；省略表示不修改（新建时按角色默认）")
+	updateCmd.Flags().String("prompt", "", "提示词模板名称；空表示使用与角色同名的默认模板")
 	roleCmd.AddCommand(updateCmd)
 
 	// reset 子命令
@@ -78,17 +85,16 @@ func init() {
 	})
 }
 
-// roleDefaults 定义四个内置角色的默认配置。
-var roleDefaults = []struct {
-	Role   string
-	Skills string
-	Tools  string
-	Prompt string
-}{
-	{"dev", "all", "all", "dev"},
-	{"expert", "none", "none", "expert"},
-	{"review", "none", "none", "expert"},
-	{"test", "all", "all", "test"},
+// roleNames 是 role 系统支持的四个内置角色（顺序即显示顺序）。
+var roleNames = []string{"dev", "expert", "review", "test"}
+
+// displaySpec converts a stored skills/tools value to its display form:
+// "" (none) renders as "none", everything else verbatim.
+func displaySpec(v string) string {
+	if v == "" {
+		return "none"
+	}
+	return v
 }
 
 func roleListRunE(cmd *cobra.Command, _ []string) error {
@@ -114,25 +120,20 @@ func roleListRunE(cmd *cobra.Command, _ []string) error {
 		Prompt string
 	}
 	var rows []row
-	for _, d := range roleDefaults {
-		skills := d.Skills
-		tools := d.Tools
-		prompt := d.Prompt
-		if cfg, ok := custom[d.Role]; ok {
-			skills = cfg.Skills
-			if skills == "" {
-				skills = "none"
-			}
-			tools = cfg.Tools
-			if tools == "" {
-				tools = "none"
-			}
+	for _, name := range roleNames {
+		d := roles.DefaultFor(name)
+		skills, tools, prompt := displaySpec(d.Skills), displaySpec(d.Tools), d.Prompt
+		if cfg, ok := custom[name]; ok {
+			skills = displaySpec(cfg.Skills)
+			tools = displaySpec(cfg.Tools)
 			prompt = cfg.Prompt
 			if prompt == "" {
-				prompt = d.Prompt + "（默认）"
+				// 未指定 → 使用与角色同名的默认模板。直接显示模板名，
+				// 不带“（默认）”后缀，避免自定义配置被误读为回退默认。
+				prompt = d.Prompt
 			}
 		}
-		rows = append(rows, row{Role: d.Role, Skills: skills, Tools: tools, Prompt: prompt})
+		rows = append(rows, row{Role: name, Skills: skills, Tools: tools, Prompt: prompt})
 	}
 
 	headers := []string{"角色", "技能", "工具", "提示词"}
@@ -160,33 +161,30 @@ func roleShowRunE(cmd *cobra.Command, args []string) error {
 	}
 
 	if cfg == nil {
-		for _, d := range roleDefaults {
-			if d.Role == roleName {
+		valid := false
+		for _, name := range roleNames {
+			if name == roleName {
+				def := roles.DefaultFor(roleName)
 				fmt.Printf("角色 %q 在当前项目没有自定义配置，使用默认行为。\n", roleName)
 				fmt.Println()
-				fmt.Printf("默认配置：skills=%s, tools=%s, prompt=%s\n", d.Skills, d.Tools, d.Prompt)
-				return nil
+				fmt.Printf("默认配置：skills=%s, tools=%s, prompt=%s\n", displaySpec(def.Skills), displaySpec(def.Tools), def.Prompt)
+				valid = true
+				break
 			}
 		}
-		fmt.Printf("角色 %q 未识别。支持的角色：dev, expert, review, test\n", roleName)
+		if !valid {
+			fmt.Printf("角色 %q 未识别。支持的角色：%s\n", roleName, strings.Join(roleNames, ", "))
+		}
 		return nil
 	}
 
 	prompt := cfg.Prompt
 	if prompt == "" {
-		defaultPrompt := roleName
-		for _, d := range roleDefaults {
-			if d.Role == roleName {
-				defaultPrompt = d.Prompt
-				break
-			}
-		}
-		prompt = defaultPrompt + "（默认）"
+		prompt = roleName + "（默认模板）"
 	}
-
 	fmt.Printf("角色:     %s\n", cfg.Role)
-	fmt.Printf("技能:     %s\n", cfg.Skills)
-	fmt.Printf("工具:     %s\n", cfg.Tools)
+	fmt.Printf("技能:     %s\n", displaySpec(cfg.Skills))
+	fmt.Printf("工具:     %s\n", displaySpec(cfg.Tools))
 	fmt.Printf("提示词:   %s\n", prompt)
 	fmt.Printf("会话ID:   %d\n", cfg.SessionID)
 	return nil
@@ -199,32 +197,46 @@ func roleUpdateRunE(cmd *cobra.Command, args []string) error {
 	roleName := args[0]
 
 	// Validate role name
-	validRoles := map[string]bool{"dev": true, "expert": true, "review": true, "test": true}
-	if !validRoles[roleName] {
-		return fmt.Errorf("无效的角色名 %q，支持的角色：dev, expert, review, test", roleName)
+	if !slices.Contains(roleNames, roleName) {
+		return fmt.Errorf("无效的角色名 %q，支持的角色：%s", roleName, strings.Join(roleNames, ", "))
 	}
 
-	skills, _ := cmd.Flags().GetString("skills")
-	tools, _ := cmd.Flags().GetString("tools")
-	prompt, _ := cmd.Flags().GetString("prompt")
+	// Changed() distinguishes "flag not passed" (keep) from "flag passed as
+	// empty/none" (explicitly clear): `--tools ""` and `--tools none` both
+	// mean "set to no tools", while omitting --tools keeps the old value.
+	skillsFlag, _ := cmd.Flags().GetString("skills")
+	toolsFlag, _ := cmd.Flags().GetString("tools")
+	promptFlag, _ := cmd.Flags().GetString("prompt")
+	skillsSet := cmd.Flags().Changed("skills")
+	toolsSet := cmd.Flags().Changed("tools")
+	promptSet := cmd.Flags().Changed("prompt")
 
-	// Validate: at least one flag must be set
-	if skills == "" && tools == "" && prompt == "" {
+	if !skillsSet && !toolsSet && !promptSet {
 		return fmt.Errorf("至少需要指定 --skills、--tools 或 --prompt 之一")
 	}
 
-	// Validate tools
-	if tools != "" && tools != "all" {
-		if err := validateTools(tools); err != nil {
-			return err
+	var skills, tools, prompt *string
+	if skillsSet {
+		v := normalizeRoleSpec(skillsFlag)
+		if v != "" && v != "all" {
+			if err := validateSkills(ctx, v); err != nil {
+				return err
+			}
 		}
+		skills = &v
 	}
-
-	// Validate skills
-	if skills != "" && skills != "all" {
-		if err := validateSkills(ctx, skills); err != nil {
-			return err
+	if toolsSet {
+		v := normalizeRoleSpec(toolsFlag)
+		if v != "" && v != "all" {
+			if err := validateTools(v); err != nil {
+				return err
+			}
 		}
+		tools = &v
+	}
+	if promptSet {
+		v := strings.TrimSpace(promptFlag)
+		prompt = &v
 	}
 
 	sessionID := session.GetCurrentSessionID(ctx)
@@ -234,19 +246,29 @@ func roleUpdateRunE(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("已更新角色 %q 的配置。\n", roleName)
-	if skills != "" {
-		fmt.Printf("  技能: %s\n", skills)
+	if skillsSet {
+		fmt.Printf("  技能: %s\n", displaySpec(*skills))
 	}
-	if tools != "" {
-		fmt.Printf("  工具: %s\n", tools)
+	if toolsSet {
+		fmt.Printf("  工具: %s\n", displaySpec(*tools))
 	}
-	if prompt != "" {
-		fmt.Printf("  提示词: %s\n", prompt)
+	if promptSet {
+		fmt.Printf("  提示词: %s\n", *prompt)
 	}
 	return nil
 }
 
-// validateTools checks that all tool names in the comma-separated list are known.
+// normalizeRoleSpec maps a user-supplied --skills/--tools value to storage
+// form: "none" (case-insensitive) or "" → "" (explicitly nothing), "all"
+// stays "all", anything else is kept verbatim for name validation.
+func normalizeRoleSpec(v string) string {
+	v = strings.TrimSpace(v)
+	if strings.EqualFold(v, "none") {
+		return ""
+	}
+	return v
+}
+
 func validateTools(tools string) error {
 	known := toolcall.KnownToolNames()
 	knownSet := make(map[string]bool, len(known))
@@ -292,9 +314,8 @@ func roleResetRunE(cmd *cobra.Command, args []string) error {
 	roleName := args[0]
 
 	// Validate role name
-	validRoles := map[string]bool{"dev": true, "expert": true, "review": true, "test": true}
-	if !validRoles[roleName] {
-		return fmt.Errorf("无效的角色名 %q，支持的角色：dev, expert, review, test", roleName)
+	if !slices.Contains(roleNames, roleName) {
+		return fmt.Errorf("无效的角色名 %q，支持的角色：%s", roleName, strings.Join(roleNames, ", "))
 	}
 
 	sessionID := session.GetCurrentSessionID(ctx)

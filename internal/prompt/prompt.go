@@ -584,8 +584,9 @@ func LoadPrompts(ctx context.Context) ([]Message, error) {
 
 	var skillPrompt string
 	if cfg == nil {
-		// Fallback: 只有 dev 角色获得 skill prompt
-		if role == "dev" || role == "" {
+		// Fallback: role defaults (roles.DefaultFor) — dev/test get all
+		// skills, expert/review get none, mirroring role list display.
+		if roles.DefaultFor(role).Skills != "" {
 			skillPrompt = skills.BuildSkillPrompt(ctx)
 		}
 	} else {

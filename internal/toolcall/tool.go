@@ -186,9 +186,28 @@ func KnownToolNames() []string {
 	return names
 }
 
+// allowSetFromSpec converts a stored spec ("all", "", "a,b") into an
+// allow-set: nil = everything ("all"), empty non-nil map = explicitly
+// nothing, non-empty map = only those names. Shared by the tools allowlist;
+// skills filtering uses roles.ParseSkillsList directly (same shape).
+func allowSetFromSpec(spec string) map[string]bool {
+	names := roles.ParseToolsList(spec)
+	if names == nil {
+		return nil // "all"
+	}
+	if len(names) == 0 {
+		return map[string]bool{} // none
+	}
+	allowSet := make(map[string]bool, len(names))
+	for _, t := range names {
+		allowSet[t] = true
+	}
+	return allowSet
+}
+
 // GetAllTools returns tools available for the current role.
-// Filters tools by role config from DB; falls back to hardcoded:
-// dev gets all, others get none.
+// Filters tools by role config from DB; falls back to role defaults
+// (roles.DefaultFor) when no config row exists.
 func GetAllTools(ctx context.Context) []Tool {
 	span, ctx := clog.StartSpanFromContext(ctx, "GetAllTools")
 	defer span.Finish()
@@ -199,24 +218,16 @@ func GetAllTools(ctx context.Context) []Tool {
 
 	sessionID := session.GetCurrentSessionID(ctx)
 	cfg, _ := roles.GetRoleConfig(ctx, role, sessionID)
-	if cfg == nil {
-		// Fallback: only dev gets tools
-		if role != "dev" {
-			return nil
-		}
-		// allowSet remains nil → return all
+	if cfg != nil {
+		allowSet = allowSetFromSpec(cfg.Tools)
 	} else {
-		allowedTools := roles.ParseToolsList(cfg.Tools)
-		if allowedTools != nil {
-			if len(allowedTools) == 0 {
-				return nil // explicit empty = no tools
-			}
-			allowSet = make(map[string]bool, len(allowedTools))
-			for _, t := range allowedTools {
-				allowSet[t] = true
-			}
-		}
-		// allowSet stays nil for "all"
+		// Fallback: role defaults (roles.DefaultFor). dev/test are capable
+		// by default; expert/review execute nothing until configured. This
+		// mirrors the role list display, which shows the very same defaults.
+		allowSet = allowSetFromSpec(roles.DefaultFor(role).Tools)
+	}
+	if allowSet != nil && len(allowSet) == 0 {
+		return nil // explicit empty = no tools
 	}
 
 	toolRegistryRWMutex.RLock()

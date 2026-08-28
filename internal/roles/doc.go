@@ -16,15 +16,25 @@
 // # Fallback chain
 //
 //	DB row exists? → use it
-//	No row        → hardcoded: dev=all, expert=none, review=none, test=none
+//	No row        → DefaultFor(role): dev=all/all, expert=none/none,
+//	               review=none/none, test=all/all
+//
+//	DefaultFor is the single source of truth for built-in defaults: the CLI
+//	display (role list/show), GetAllTools, LoadPrompts and the WebChat DSML
+//	section all resolve fallback through it, so what role list shows is what
+//	the runtime actually does.
 //
 // # "all" vs ""
 //
 // In the skills/tools columns:
 //   - "all" → ParseXxxList returns nil (no filtering; include everything)
 //   - ""    → ParseXxxList returns []string{} (explicitly nothing)
+//   - "none" → same as "" (accepted spelling for readability; normalized at
+//     the parse boundary so a literal "none" stored by older tools still
+//     resolves to nothing)
 //   - "a,b" → ParseXxxList returns ["a","b"]
 //
 // This convention lets callers do a single nil-check instead of comparing
-// against both "all" and a full list.
+// against both "all" and a full list. The flag layer (role update) maps
+// "none" → "" before storing; "none" is not a valid tool/skill name.
 package roles
