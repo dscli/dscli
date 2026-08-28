@@ -27,7 +27,6 @@ func docShellDef() ToolDef {
 	return ToolDef{
 		Name:        "shell",
 		Description: "Run a shell script.",
-		Aliases:     []string{"exec_command"},
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

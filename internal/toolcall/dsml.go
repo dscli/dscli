@@ -12,11 +12,11 @@
 // GetAllTools - there is no separate DSML whitelist. Role-configured tools
 // are registered with their NATIVE names and parameter schemas (see
 // dsml_doc.go), so a call maps 1:1 to the local tool; exec_command is
-// accepted as the legacy spelling of the shell tool (registry alias) with
-// its old cmd/justification/timeout-ms parameter protocol translated in
-// normalizeDSMLInvoke. The only DSML-layer checks that remain are the
-// destructive-command interception for shell calls (dsmlBlockedCmdRe) and
-// parameter validation in normalizeDSMLInvoke.
+// accepted as the legacy spelling of the shell tool (resolved here in the
+// DSML layer, dsmlNativeName) with its old cmd/justification/timeout-ms
+// parameter protocol translated in normalizeDSMLInvoke. The only DSML-layer
+// checks that remain are the destructive-command interception for shell
+// calls (dsmlBlockedCmdRe) and parameter validation in normalizeDSMLInvoke.
 package toolcall
 
 import (
@@ -654,6 +654,43 @@ func StripDSMLToolCalls(text string) string {
 	return strings.TrimSpace(out)
 }
 
+// dsmlLegacyNames maps legacy DSML spellings to the local tool they execute
+// as. exec_command is DeepSeek's old name for the shell tool; the map is the
+// single source for the spelling, so the doc registration (dsml_doc.go), the
+// executor allow-set check and normalizeDSMLInvoke all agree on the synonym.
+var dsmlLegacyNames = map[string]string{"exec_command": "shell"}
+
+// dsmlNativeName maps a DSML tool name to the local tool it executes as.
+// exec_command is DeepSeek's legacy spelling for the shell tool; every other
+// name passes through verbatim (the role's tool config is the only gate for
+// what may be called, and it uses local tool names). Deliberately NOT a
+// registry alias: the spelling is resolved only here, in the DSML layer,
+// together with its old parameter protocol (normalizeDSMLInvoke) - a global
+// alias would let chat/API callers reach the shell handler with untranslated
+// cmd/timeout-ms arguments.
+func dsmlNativeName(name string) string {
+	if native, ok := dsmlLegacyNames[name]; ok {
+		return native
+	}
+	return name
+}
+
+// dsmlSpecAllows reports whether the role's tools spec allows a call: the
+// canonical native name (shell), the raw spelling (exec_command), or a legacy
+// spelling that resolves to the same native tool. One spec, one meaning
+// across the doc registration, the executor and GetAllTools.
+func dsmlSpecAllows(allowed map[string]bool, native, raw string) bool {
+	if allowed[native] || allowed[raw] {
+		return true
+	}
+	for legacy, target := range dsmlLegacyNames {
+		if target == native && allowed[legacy] {
+			return true
+		}
+	}
+	return false
+}
+
 // dsmlRoleAllowSet returns the tool names the current role may invoke via
 // DSML: the role's tools spec (role_configs, falling back to DefaultFor) -
 // the SAME source GetAllTools uses for dscli chat. There is no separate
@@ -702,7 +739,7 @@ var dsmlBlockedCmdRe = regexp.MustCompile(`(?i)(^|\s|;|&&|\|\|)(` +
 // Two exceptions remain, neither avoidable:
 //
 //   - exec_command is the legacy spelling of the shell tool (DeepSeek's
-//     training habit; the registry resolves the name via shell.Aliases).
+//     training habit; dsmlNativeName resolves the name in the DSML layer).
 //     Sessions that started before the rename may still emit its OLD
 //     parameter protocol, translated here: cmd -> script,
 //     justification -> summary (first non-empty element, display only),
@@ -901,15 +938,16 @@ func ExecuteDSMLToolCalls(ctx context.Context, calls []DSMLCall) (outputs []stri
 	allowed := dsmlRoleAllowSet(ctx)
 	kept := make([]DSMLCall, 0, len(calls))
 	for _, inv := range calls {
-		// Accept the raw DSML spelling or its canonical name: the registry
-		// resolves aliases (exec_command -> shell), so both the role spec
-		// ("shell" or "exec_command") and either spelling are honored.
-		def, defOK := GetToolDef(ctx, inv.Name)
-		if allowed != nil && !allowed[inv.Name] && !(defOK && allowed[def.Name]) {
+		// Accept the raw DSML spelling or its canonical name: the DSML
+		// layer resolves the legacy exec_command spelling (dsmlNativeName),
+		// so both the role spec ("shell" or "exec_command") and either
+		// spelling are honored.
+		native := dsmlNativeName(inv.Name)
+		if allowed != nil && !dsmlSpecAllows(allowed, native, inv.Name) {
 			outfmt.Debug("DSML skipped tool %q: not in role's tools config", inv.Name)
 			continue
 		}
-		if !defOK {
+		if _, defOK := GetToolDef(ctx, native); !defOK {
 			outfmt.Debug("DSML skipped unregistered tool %q (quoted example or unknown name)", inv.Name)
 			continue
 		}

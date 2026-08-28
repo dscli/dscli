@@ -743,9 +743,9 @@ func TestFormatDSMLToolResult(t *testing.T) {
 func TestExecuteDSMLToolCallsToolResultFormat(t *testing.T) {
 	ctx := withIsolatedDualSession(t)
 
-	// 映射后的实际执行名：exec_command→shell（注册表别名），read_file→read_file。
+	// 映射后的实际执行名：exec_command→shell（DSML 层解析），read_file→read_file。
 	for _, def := range []ToolDef{
-		{Name: "shell", Aliases: []string{"exec_command"}, Description: "test shell", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
+		{Name: "shell", Description: "test shell", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
 			return "ok", "note", nil
 		}},
 		{Name: "read_file", Description: "test read_file", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
@@ -820,7 +820,7 @@ func TestExecuteDSMLToolCallsRoleGate(t *testing.T) {
 	})
 
 	for _, def := range []ToolDef{
-		{Name: "shell", Aliases: []string{"exec_command"}, Description: "test shell", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
+		{Name: "shell", Description: "test shell", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
 			return "shell-ok", "", nil
 		}},
 		{Name: "read_file", Description: "test read_file", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
@@ -870,16 +870,62 @@ func TestExecuteDSMLToolCallsExecCommandConfig(t *testing.T) {
 		}
 	})
 
-	if err := RegisterTool(ToolDef{Name: "shell", Aliases: []string{"exec_command"}, Description: "test shell", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
+	if err := RegisterTool(ToolDef{Name: "shell", Description: "test shell", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
 		return "shell-ok", "", nil
 	}}); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { unregisterToolForTest("shell") })
 
-	outputs := ExecuteDSMLToolCalls(ctx, []DSMLCall{{Name: "exec_command", Args: map[string]any{"cmd": "echo hi"}}})
-	if len(outputs) != 1 || outputs[0] != `<tool_result>{"result":"shell-ok"}</tool_result>` {
-		t.Fatalf("outputs = %v, want shell-ok (exec_command configured literally)", outputs)
+	// 配置写 legacy 拼写时，两种调用拼写都必须可执行（同义词语义）：
+	// exec_command（旧拼写 + 旧参数协议）与 shell（规范拼写 + 原生参数）。
+	outputs := ExecuteDSMLToolCalls(ctx, []DSMLCall{
+		{Name: "exec_command", Args: map[string]any{"cmd": "echo hi"}},
+		{Name: "shell", Args: map[string]any{"script": "echo hi", "summary": "say hi"}},
+	})
+	if len(outputs) != 2 || outputs[0] != `<tool_result>{"result":"shell-ok"}</tool_result>` ||
+		outputs[1] != `<tool_result>{"result":"shell-ok"}</tool_result>` {
+		t.Fatalf("outputs = %v, want shell-ok for both spellings (exec_command configured literally)", outputs)
+	}
+}
+
+// TestGetAllToolsLegacySpec: a role spec that names the legacy spelling
+// ("exec_command") must register the canonical shell tool via GetAllTools -
+// the same spec, the same meaning as the DSML executor, so chat and webchat
+// never disagree about which tools a role gets.
+func TestGetAllToolsLegacySpec(t *testing.T) {
+	ctx := withIsolatedDualSession(t)
+	ctx = dsctx.WithValue(ctx, dsctx.CurrentRoleKey, "review")
+	sid := session.GetCurrentSessionID(ctx)
+	if err := roles.UpsertRoleConfig(ctx, "review", sid, nil, strPtrHelper("exec_command"), nil); err != nil {
+		t.Fatalf("UpsertRoleConfig: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := roles.DeleteRoleConfig(ctx, "review", sid); err != nil {
+			t.Logf("DeleteRoleConfig: %v", err)
+		}
+	})
+
+	if err := RegisterTool(ToolDef{Name: "shell", Description: "test shell", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
+		return "", "", nil
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { unregisterToolForTest("shell") })
+
+	tools := GetAllTools(ctx)
+	found := false
+	for _, tool := range tools {
+		if tool.Function.Name == "shell" {
+			found = true
+		}
+	}
+	if !found {
+		names := make([]string, 0, len(tools))
+		for _, tool := range tools {
+			names = append(names, tool.Function.Name)
+		}
+		t.Fatalf("GetAllTools with spec exec_command must register shell, got %v", names)
 	}
 }
 

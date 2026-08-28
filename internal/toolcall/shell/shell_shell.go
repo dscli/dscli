@@ -27,12 +27,12 @@ func init() { // 注册shell工具
 	RegisterTool(ToolDef{
 		Name:        "shell",
 		Description: desc,
-		// exec_command is DeepSeek's legacy spelling for the shell tool
-		// (the old DSML registration layer used it). The registry resolves
-		// the alias to this ToolDef; normalizeDSMLInvoke translates the old
-		// cmd/justification/timeout-ms parameter protocol on top.
-		Aliases: []string{"exec_command"},
-		Strict:  true,
+		// exec_command is NOT a registry alias: the legacy spelling is
+		// resolved only in the DSML layer (dsmlNativeName in dsml.go),
+		// together with its old parameter protocol. A global alias would
+		// let non-DSML callers hit the shell handler with untranslated
+		// cmd/timeout-ms arguments.
+		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

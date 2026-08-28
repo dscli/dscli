@@ -130,11 +130,10 @@ update --tools` is the single place that decides it; there is NO separate
 DSML whitelist. DSML tool entries are generated straight from the registered
 ToolDef (dsmlGeneratedDocEntry), so the model sees native names and parameter
 schemas - no name translation in the normal path. The one legacy spelling is
-`exec_command` (DeepSeek's old habit for the shell tool): the registry
-resolves the name via shell.Aliases, and normalizeDSMLInvoke still translates
+`exec_command` (DeepSeek's old habit for the shell tool): it is resolved in
+the DSML layer only (dsmlNativeName), and normalizeDSMLInvoke still translates
 its old parameter protocol (cmd->script, justification->summary,
-timeout ms->s). The
-loop prints every round it receives (reasoning + content via
+timeout ms->s). The loop prints every round it receives (reasoning + content via
 outfmt.PrintContent, with the output token count derived from the site's
 IndexedDB accumulated_token_usage) and marks the final result `Printed` so
 callers do not re-print it. The `webchat` CLI defaults to `--role ""` (plain
