@@ -5,6 +5,10 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	dsctx "github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/roles"
+	"github.com/dscli/dscli/internal/session"
 )
 
 // docSample is the exact DSML shape observed from chat.deepseek.com during a
@@ -530,11 +534,35 @@ func TestNormalizeDSMLInvokeReadFile(t *testing.T) {
 	}
 }
 
-func TestNormalizeDSMLInvokeUnsupported(t *testing.T) {
-	for _, name := range []string{"write_file", "code_edit", "rm_rf", "web_search"} {
+// TestNormalizeDSMLInvokePassthrough: any role-configured tool executes
+// verbatim - the role's tools spec is the only gate (there is no DSML
+// whitelist anymore). Only the DSML decorative parameter justification is
+// stripped; everything else is forwarded as-is.
+func TestNormalizeDSMLInvokePassthrough(t *testing.T) {
+	inv := DSMLCall{Name: "sql", Args: map[string]any{
+		"query":         "SELECT 1",
+		"justification": "why",
+		"timeout":       float64(15),
+	}}
+	name, args, err := normalizeDSMLInvoke(inv)
+	if err != nil {
+		t.Fatalf("normalizeDSMLInvoke: %v", err)
+	}
+	if name != "sql" {
+		t.Errorf("name = %q, want sql", name)
+	}
+	if args["query"] != "SELECT 1" {
+		t.Errorf("query = %v", args["query"])
+	}
+	if _, ok := args["justification"]; ok {
+		t.Errorf("justification leaked into target args: %v", args)
+	}
+	// Non-string names pass through too: the executor's role allow-set,
+	// not a name list, is the gate.
+	for _, name := range []string{"write_file", "code_edit", "web_search"} {
 		inv := DSMLCall{Name: name, Args: map[string]any{}}
-		if _, _, err := normalizeDSMLInvoke(inv); err == nil {
-			t.Errorf("normalizeDSMLInvoke(%q) = nil error, want rejection", name)
+		if _, _, err := normalizeDSMLInvoke(inv); err != nil {
+			t.Errorf("normalizeDSMLInvoke(%q) = %v, want passthrough", name, err)
 		}
 	}
 }
@@ -640,7 +668,11 @@ func TestDsmlToolCallID(t *testing.T) {
 func TestDsmlCallsToToolCalls(t *testing.T) {
 	calls := []DSMLCall{
 		{Name: "exec_command", Args: map[string]any{"cmd": "ls", "timeout": float64(3000)}},
-		{Name: "write_file", Args: map[string]any{"path": "x"}},
+		// apply_patch without its required patch is rejected at the
+		// DSML layer (no execution, error block) - the remaining
+		// conversion-level rejections (exec_command missing cmd,
+		// destructive commands) are covered by their own tests.
+		{Name: "apply_patch", Args: map[string]any{"check": true}},
 		{Name: "read_file", Args: map[string]any{"path": "a.go"}},
 	}
 	tcs, plan := dsmlCallsToToolCalls(calls)
@@ -668,8 +700,8 @@ func TestDsmlCallsToToolCalls(t *testing.T) {
 	if plan[0].content != nil || plan[0].index != 0 {
 		t.Errorf("plan[0] = %+v, want execute index 0", plan[0])
 	}
-	if plan[1].content == nil || !strings.Contains(plan[1].content.Error, "unsupported tool") {
-		t.Errorf("plan[1] = %+v, want unsupported-tool error content", plan[1])
+	if plan[1].content == nil || !strings.Contains(plan[1].content.Error, "missing parameter patch") {
+		t.Errorf("plan[1] = %+v, want missing-patch error content", plan[1])
 	}
 	if plan[2].content != nil || plan[2].index != 1 {
 		t.Errorf("plan[2] = %+v, want execute index 1", plan[2])
@@ -706,12 +738,12 @@ func TestFormatDSMLToolResult(t *testing.T) {
 // TestExecuteDSMLToolCallsToolResultFormat is the end-to-end check of the
 // DSML executor: valid calls run through the shared executeToolCalls core
 // (stats recorded, results truncated) and each EXECUTED call gets exactly
-// one <tool_result> block in order. A non-whitelisted name produces no
+// one <tool_result> block in order. An unregistered name produces no
 // block at all (quoted example, not an executable call).
 func TestExecuteDSMLToolCallsToolResultFormat(t *testing.T) {
 	ctx := withIsolatedDualSession(t)
 
-	// 白名单映射后的实际执行名：exec_command→shell，read_file→read_file。
+	// 映射后的实际执行名：exec_command→shell，read_file→read_file。
 	for _, def := range []ToolDef{
 		{Name: "shell", Description: "test shell", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
 			return "ok", "note", nil
@@ -728,12 +760,12 @@ func TestExecuteDSMLToolCallsToolResultFormat(t *testing.T) {
 
 	calls := []DSMLCall{
 		{Name: "exec_command", Args: map[string]any{"cmd": "echo hi"}},
-		{Name: "write_file", Args: map[string]any{"path": "x"}}, // non-whitelisted: skipped, no block
+		{Name: "write_file", Args: map[string]any{"path": "x"}}, // unregistered: skipped, no block
 		{Name: "read_file", Args: map[string]any{"path": "main.go"}},
 	}
 	outputs := ExecuteDSMLToolCalls(ctx, calls)
 	if len(outputs) != 2 {
-		t.Fatalf("outputs = %d, want 2 (non-whitelisted call produces no block)", len(outputs))
+		t.Fatalf("outputs = %d, want 2 (unregistered call produces no block)", len(outputs))
 	}
 	wants := []string{
 		`<tool_result>{"result":"ok","warning":"note"}</tool_result>`,
@@ -767,6 +799,57 @@ func TestExecuteDSMLToolCallsToolResultFormat(t *testing.T) {
 	// 被拒绝的调用绝不能执行（无对应工具注册，避免注册表污染）。
 	if got := countFor("write_file"); got != 0 {
 		t.Errorf("write_file usage count = %d, want 0 (rejected)", got)
+	}
+}
+
+// TestExecuteDSMLToolCallsRoleGate: the role's tools config is the ONLY
+// gate - a registered tool that the role is NOT configured with is skipped
+// (no block), and exec_command (aliased to shell) executes because "shell"
+// is in the role config.
+func TestExecuteDSMLToolCallsRoleGate(t *testing.T) {
+	ctx := withIsolatedDualSession(t)
+	ctx = dsctx.WithValue(ctx, dsctx.CurrentRoleKey, "review")
+	sid := session.GetCurrentSessionID(ctx)
+	if err := roles.UpsertRoleConfig(ctx, "review", sid, nil, strPtrHelper("shell,read_file"), nil); err != nil {
+		t.Fatalf("UpsertRoleConfig: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := roles.DeleteRoleConfig(ctx, "review", sid); err != nil {
+			t.Logf("DeleteRoleConfig: %v", err)
+		}
+	})
+
+	for _, def := range []ToolDef{
+		{Name: "shell", Description: "test shell", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
+			return "shell-ok", "", nil
+		}},
+		{Name: "read_file", Description: "test read_file", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
+			return "file-ok", "", nil
+		}},
+		// sql is REGISTERED but NOT in the role's tools config.
+		{Name: "sql", Description: "test sql", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
+			return "sql-ok", "", nil
+		}},
+	} {
+		if err := RegisterTool(def); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { unregisterToolForTest(def.Name) })
+	}
+
+	outputs := ExecuteDSMLToolCalls(ctx, []DSMLCall{
+		{Name: "exec_command", Args: map[string]any{"cmd": "echo hi"}},
+		{Name: "sql", Args: map[string]any{"query": "SELECT 1"}}, // outside role tools: skipped
+		{Name: "read_file", Args: map[string]any{"path": "a.go"}},
+	})
+	if len(outputs) != 2 {
+		t.Fatalf("outputs = %d, want 2 (sql excluded by role config)", len(outputs))
+	}
+	if outputs[0] != `<tool_result>{"result":"shell-ok"}</tool_result>` {
+		t.Errorf("outputs[0] = %q", outputs[0])
+	}
+	if outputs[1] != `<tool_result>{"result":"file-ok"}</tool_result>` {
+		t.Errorf("outputs[1] = %q", outputs[1])
 	}
 }
 
@@ -1129,21 +1212,20 @@ func TestIsDSMLToolCallEnd(t *testing.T) {
 	}
 }
 
-// TestExecuteDSMLToolCallsSkipsNonWhitelisted: a call whose name is outside
-// the whitelist (an inline-quoted example, an unknown tool) is never
-// executed and never produces an "unsupported tool" feedback block - the
-// expert must not be made to argue with itself about a call it never made.
-// (The unit-test environment registers no tools, so a whitelisted call
-// would fail with "unknown tool" anyway; the filter check itself is the
-// contract under test.)
-func TestExecuteDSMLToolCallsSkipsNonWhitelisted(t *testing.T) {
+// TestExecuteDSMLToolCallsSkipsUnknown: an unregistered name (an
+// inline-quoted example, an unknown tool) is never executed and never
+// produces an "unknown tool" feedback block - the expert must not be made
+// to argue with itself about a call it never made. (The unit-test
+// environment registers no tools by default, so the filter check itself is
+// the contract under test.)
+func TestExecuteDSMLToolCallsSkipsUnknown(t *testing.T) {
 	outs := ExecuteDSMLToolCalls(t.Context(), []DSMLCall{{Name: "a"}})
 	if len(outs) != 0 {
-		t.Errorf("outputs = %q, want none for a non-whitelisted name", outs)
+		t.Errorf("outputs = %q, want none for an unregistered name", outs)
 	}
 	outs = ExecuteDSMLToolCalls(t.Context(), []DSMLCall{{Name: "write_file"}, {Name: "b"}})
 	if len(outs) != 0 {
-		t.Errorf("outputs = %q, want none for non-whitelisted names", outs)
+		t.Errorf("outputs = %q, want none for unregistered names", outs)
 	}
 }
 
@@ -1170,14 +1252,14 @@ func TestNormalizeDSMLInvokeApplyPatch(t *testing.T) {
 	if args["cwd"] != "sub/dir" {
 		t.Errorf("cwd = %v", args["cwd"])
 	}
-	// 只透传白名单参数：无关参数必须被丢弃。
+	// 只透传声明参数：无关参数必须被丢弃。
 	inv.Args = map[string]any{"patch": "x", "junk": "y"}
 	name, args, err = normalizeDSMLInvoke(inv)
 	if err != nil {
 		t.Fatalf("normalizeDSMLInvoke: %v", err)
 	}
 	if _, ok := args["junk"]; ok {
-		t.Errorf("non-whitelisted parameter leaked: %v", args)
+		t.Errorf("undeclared parameter leaked: %v", args)
 	}
 }
 
@@ -1216,7 +1298,7 @@ func TestNormalizeDSMLInvokeReadFileLineRange(t *testing.T) {
 	}
 
 	// 装饰性参数（justification）不得泄漏进目标工具：与 apply_patch
-	// 相同的白名单过滤策略。
+	// 相同的参数过滤策略。
 	inv = DSMLCall{Name: "read_file", Args: map[string]any{
 		"path": "big.go", "start_line": float64(1), "justification": "why",
 	}}

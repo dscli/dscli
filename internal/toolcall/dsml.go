@@ -7,12 +7,15 @@
 // blocks, executes the underlying dscli tools, and feeds the results back
 // into the same conversation (see handleWebChatToolLoop in internal/lp).
 //
-// The mapping is deliberately narrow: structured file read/write
-// (read_file, apply_patch) plus
-// command execution (exec_command -> shell). Anything else returns an
-// "unsupported tool" feedback so the expert can adapt, instead of silently
-// executing an unvetted command. The whitelist and its safety invariants
-// are documented at dsmlToolNames.
+// Which tools may be executed is decided by the role's tools config
+// (`dscli role update --tools`), the SAME source that gates dscli chat's
+// GetAllTools - there is no separate DSML whitelist. exec_command maps to
+// the shell tool (DeepSeek's habitual name, with cmd/justification/timeout
+// parameter translation); read_file and apply_patch pass their parameters
+// through; any other role-configured tool executes verbatim. The only
+// DSML-layer checks that remain are the destructive-command interception
+// for shell calls (dsmlBlockedCmdRe) and parameter validation in
+// normalizeDSMLInvoke.
 package toolcall
 
 import (
@@ -20,12 +23,14 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"unicode"
 
+	dsctx "github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/prompt"
 	"github.com/nanjj/clog"
@@ -123,7 +128,7 @@ var dsmlToolCallsCloseEndRe = regexp.MustCompile(`(?s)</?\s*(?:tool_calls|_calls
 // content ended mid-close-tag. The close tag is the "emission complete"
 // intent signal, and a cut tag does not change that intent: the calls
 // still parse, so the gate opens; execution safety is unchanged (parse
-// success + whitelist + destructive-command interception).
+// success + role tool set + destructive-command interception).
 var dsmlToolCallsCloseCutRe = regexp.MustCompile(`(?s)</\s*(?:tool_calls|_calls)?\s*$`)
 
 // IsDSMLToolCallEnd reports whether text is INTENDED as a tool-call
@@ -648,23 +653,25 @@ func StripDSMLToolCalls(text string) string {
 	return strings.TrimSpace(out)
 }
 
-// dsmlToolNames is the whitelist of tools a WebChat expert may invoke.
-//
-// 约束说明：webchat 的模型是远端不可信模型，白名单是硬边界——只允许
-// 结构化读写工具（read_file / apply_patch）
-// 与命令执行（shell / exec_command）。apply_patch 虽为写工具，但比 shell
-// 重定向更收敛（只能应用补丁，目标路径被限制在项目根内且保护
-// sqlite.db / dscli.env），且 exec_command 本就可写文件，白名单不因此
-// 扩大攻击面。
-//
-// 不变式：白名单里的工具从不返回 DualMessage——它们的 handler 结果只
-// 可能是文本或错误，不会有附加 user 消息（vision 类才用 dual 协议，而
-// 视觉工具不在白名单）。DSML 执行内核据此丢弃 dual 消息。
-var dsmlToolNames = map[string]bool{
-	"exec_command": true, // DeepSeek's habitual name for a shell tool
-	"shell":        true,
-	"read_file":    true,
-	"apply_patch":  true,
+// dsmlNativeName maps a DSML tool name to the local tool it executes as.
+// exec_command is DeepSeek's habitual name for the shell tool; every other
+// name passes through verbatim (the role's tool config is the only gate for
+// what may be called, and it uses local tool names).
+func dsmlNativeName(name string) string {
+	if name == "exec_command" {
+		return "shell"
+	}
+	return name
+}
+
+// dsmlRoleAllowSet returns the tool names the current role may invoke via
+// DSML: the role's tools spec (role_configs, falling back to DefaultFor) -
+// the SAME source GetAllTools uses for dscli chat. There is no separate
+// DSML whitelist: `dscli role update --tools` decides what the web model
+// may call, exactly as it decides for the local agent.
+func dsmlRoleAllowSet(ctx context.Context) map[string]bool {
+	role := dsctx.ContextValue(ctx, dsctx.CurrentRoleKey, "dev")
+	return roleToolAllowSet(ctx, role)
 }
 
 // dsmlBlockedCmdRe rejects destructive shell commands the web model could
@@ -710,14 +717,12 @@ var dsmlBlockedCmdRe = regexp.MustCompile(`(?i)(^|\s|;|&&|\|\|)(` +
 // tool merge absorbed read_file_with_line_range into read_file).
 // apply_patch passes patch/cwd/check/reverse through.
 //
-// Any other name is rejected here as a defensive backstop -
-// ExecuteDSMLToolCalls filters non-whitelisted names before this function
-// is ever reached, so normal flow never produces this error; keeping the
-// check means a future direct caller still cannot execute an unvetted tool.
+// Any name not matched by the branches below is passed through verbatim
+// with its arguments: the role's tool config (dsmlRoleAllowSet) is the
+// gate, and the local tool's own handler validates the arguments. The
+// DSML decorative parameter justification (DeepSeek's habit) is stripped
+// so it never reaches a handler that expects only its schema's keys.
 func normalizeDSMLInvoke(inv DSMLCall) (name string, args ToolArgs, err error) {
-	if !dsmlToolNames[inv.Name] {
-		return "", nil, fmt.Errorf("unsupported tool %q (available: exec_command, shell, read_file, apply_patch)", inv.Name)
-	}
 	if inv.Name == "read_file" {
 		// 与 apply_patch 一致只透传白名单参数，justification 等装饰性参数
 		// 不进入目标工具。start_line/end_line 由本地 read_file 直接消费
@@ -743,28 +748,43 @@ func normalizeDSMLInvoke(inv DSMLCall) (name string, args ToolArgs, err error) {
 		}
 		return "apply_patch", args, nil
 	}
-	name = "shell"
+	if inv.Name == "exec_command" || inv.Name == "shell" {
+		name = "shell"
+		args = ToolArgs{}
+		if script, ok := inv.Args["script"]; ok && script != "" {
+			args["script"] = script
+		} else if cmd, ok := inv.Args["cmd"]; ok {
+			args["script"] = cmd
+		}
+		if _, ok := args["script"]; !ok {
+			return "", nil, fmt.Errorf("exec_command missing parameter cmd")
+		}
+		if scriptStr, ok := args["script"].(string); ok && dsmlBlockedCmdRe.MatchString(scriptStr) {
+			return "", nil, fmt.Errorf("destructive command rejected (review is read-only): %q", truncateDSMLSummary(scriptStr))
+		}
+		if _, ok := inv.Args["summary"]; !ok {
+			if sum, ok := firstNonEmptyDSMLEntry(inv.Args["justification"]); ok {
+				args["summary"] = truncateDSMLSummary(sum)
+			}
+		}
+		if t, ok := inv.Args["timeout"]; ok {
+			if secs := dsmlTimeoutSeconds(t); secs > 0 {
+				args["timeout"] = secs
+			}
+		}
+		return name, args, nil
+	}
+
+	// Generic passthrough: the role config decides which tools may be
+	// called, and the local handler validates the parameters. Only the
+	// DSML decorative layer is stripped, never forwarded.
+	name = inv.Name
 	args = ToolArgs{}
-	if script, ok := inv.Args["script"]; ok && script != "" {
-		args["script"] = script
-	} else if cmd, ok := inv.Args["cmd"]; ok {
-		args["script"] = cmd
-	}
-	if _, ok := args["script"]; !ok {
-		return "", nil, fmt.Errorf("exec_command missing parameter cmd")
-	}
-	if scriptStr, ok := args["script"].(string); ok && dsmlBlockedCmdRe.MatchString(scriptStr) {
-		return "", nil, fmt.Errorf("destructive command rejected (review is read-only): %q", truncateDSMLSummary(scriptStr))
-	}
-	if _, ok := inv.Args["summary"]; !ok {
-		if sum, ok := firstNonEmptyDSMLEntry(inv.Args["justification"]); ok {
-			args["summary"] = truncateDSMLSummary(sum)
+	for k, v := range inv.Args {
+		if k == "justification" {
+			continue
 		}
-	}
-	if t, ok := inv.Args["timeout"]; ok {
-		if secs := dsmlTimeoutSeconds(t); secs > 0 {
-			args["timeout"] = secs
-		}
+		args[k] = v
 	}
 	return name, args, nil
 }
@@ -887,12 +907,13 @@ func dsmlCallsToToolCalls(calls []DSMLCall) (tcs []prompt.ToolCall, plan []dsmlE
 // execution (destructive command, missing parameter) still gets its own
 // error block so the expert can adapt its approach.
 //
-// A call whose name is outside the whitelist is never executable and is
-// skipped silently (debug log, no output block): fenced-code quotes never
-// parse (see dsmlBlockRanges), but a bare reference in prose - e.g. an
-// expert quoting the DSML test corpus - still does, and feeding an
-// "unsupported tool" error back into the conversation makes the model
-// argue with itself about a call it never intended.
+// A call whose name is outside the role's tools config (or not a
+// registered tool) is never executable and is skipped silently (debug log,
+// no output block): fenced-code quotes never parse (see dsmlBlockRanges),
+// but a bare reference in prose - e.g. an expert quoting the DSML test
+// corpus - still does, and feeding an "unknown tool" error back into the
+// conversation makes the model argue with itself about a call it never
+// intended.
 //
 // Execution reuses the HandleToolCalls core (usage statistics, result
 // truncation, dual-message split) but does NOT persist tool messages: the
@@ -904,13 +925,25 @@ func ExecuteDSMLToolCalls(ctx context.Context, calls []DSMLCall) (outputs []stri
 	span, ctx := clog.StartSpanFromContext(ctx, "ExecuteDSMLToolCalls")
 	defer span.Finish()
 
+	// The role's tools spec decides what may be executed - the same source
+	// GetAllTools uses, so the web model can only call what the role is
+	// configured for. An unregistered name (a quoted example, or a role
+	// that names an unknown tool) is skipped silently: feeding back an
+	// "unknown tool" error would make the expert argue with itself about a
+	// call it never intended.
+	allowed := dsmlRoleAllowSet(ctx)
 	kept := make([]DSMLCall, 0, len(calls))
 	for _, inv := range calls {
-		if dsmlToolNames[inv.Name] {
-			kept = append(kept, inv)
-		} else {
-			outfmt.Debug("DSML skipped non-whitelisted tool %q (quoted example or unknown name)", inv.Name)
+		native := dsmlNativeName(inv.Name)
+		if allowed != nil && !allowed[native] {
+			outfmt.Debug("DSML skipped tool %q: not in role's tools config", inv.Name)
+			continue
 		}
+		if _, ok := GetToolDef(ctx, native); !ok {
+			outfmt.Debug("DSML skipped unregistered tool %q (quoted example or unknown name)", inv.Name)
+			continue
+		}
+		kept = append(kept, inv)
 	}
 	calls = kept
 	if len(calls) == 0 {
@@ -920,9 +953,12 @@ func ExecuteDSMLToolCalls(ctx context.Context, calls []DSMLCall) (outputs []stri
 	tcs, plan := dsmlCallsToToolCalls(calls)
 	outcomes, dualUsers := executeToolCalls(ctx, tcs, false)
 	if len(dualUsers) > 0 {
-		// 不变式被打破（见 dsmlToolNames）：白名单工具不应返回 DualMessage，
-		// 静默丢弃会丢数据，至少留一条 debug 线索。
-		outfmt.Debug("DSML dropped %d dual user message(s); whitelist assumption broken", len(dualUsers))
+		// A role-configured tool may return a DualMessage (e.g. a vision
+		// tool attaching image blocks). The DSML wire format cannot carry
+		// extra user messages, so they are dropped - but loudly, since the
+		// web model will not see the data and may misread the result.
+		outfmt.Debug("DSML dropped %d dual user message(s); tool returned extra user message", len(dualUsers))
+		fmt.Fprintf(os.Stderr, "⚠️ DSML: %d tool result(s) included an extra user message (e.g. image) that cannot be forwarded to webchat\n", len(dualUsers))
 	}
 	for _, step := range plan {
 		if step.content != nil {

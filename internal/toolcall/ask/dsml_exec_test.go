@@ -33,8 +33,8 @@ func TestExecuteDSMLToolCalls(t *testing.T) {
 }
 
 func TestExecuteDSMLToolCallsUnsupported(t *testing.T) {
-	// A non-whitelisted name (a quoted example, not an executable call) is
-	// skipped silently: no execution, no "unsupported tool" feedback block
+	// An unregistered name (a quoted example, not an executable call) is
+	// skipped silently: no execution, no "unknown tool" feedback block
 	// for the expert to argue with.
 	text := `<invoke name="write_file">
 <parameter name="path" string="true">/tmp/x</parameter>

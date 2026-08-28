@@ -1,6 +1,7 @@
 package toolcall
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -8,8 +9,10 @@ import (
 	"github.com/dscli/dscli/internal/session"
 )
 
-// TestDSMLDocForSpec 验证 spec → DSML 工具条目的过滤语义：白名单外的
-// 名字会被丢弃（执行器会拒绝它们，注册只会误导模型），shell 与
+// TestDSMLDocForSpec 验证 spec → 手写 DSML 工具条目的匹配语义：只有
+// 手写条目（exec_command/read_file/apply_patch）会出现在这里；其余角色
+// 配置的工具由 BuildDSMLToolDoc 通过 dsmlGeneratedEntries 从注册表生成，
+// 不存在"白名单外丢弃"——角色工具配置是唯一决定处。shell 与
 // exec_command 是同义入口。
 func TestDSMLDocForSpec(t *testing.T) {
 	tests := []struct {
@@ -17,7 +20,7 @@ func TestDSMLDocForSpec(t *testing.T) {
 		spec string
 		want []string // dsmlName 列表，按显示顺序
 	}{
-		{"all registers the whole whitelist", "all", []string{"exec_command", "read_file", "apply_patch"}},
+		{"all registers all hand-written entries", "all", []string{"exec_command", "read_file", "apply_patch"}},
 		{"empty means nothing", "", nil},
 		{"none spelling also means nothing", "none", nil},
 		{"shell and read_file", "shell,read_file", []string{"exec_command", "read_file"}},
@@ -25,9 +28,9 @@ func TestDSMLDocForSpec(t *testing.T) {
 		{"shell synonym", "shell", []string{"exec_command"}},
 		{"read_file only", "read_file", []string{"read_file"}},
 		{"apply_patch only", "apply_patch", []string{"apply_patch"}},
-		{"mixed order follows whitelist order", "apply_patch,shell", []string{"exec_command", "apply_patch"}},
-		{"non-whitelisted names are dropped", "read_file,sql,vision_file_read", []string{"read_file"}},
-		{"whitelisted plus unknown keeps whitelisted", "shell,read_file,mcp_foo", []string{"exec_command", "read_file"}},
+		{"mixed order follows doc order", "apply_patch,shell", []string{"exec_command", "apply_patch"}},
+		{"names without hand-written entry are left to the generator", "read_file,sql,vision_file_read", []string{"read_file"}},
+		{"hand-written plus unknown keeps hand-written", "shell,read_file,mcp_foo", []string{"exec_command", "read_file"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -53,8 +56,8 @@ func entryNames(entries []dsmlDocTool) []string {
 }
 
 // TestBuildDSMLToolDocDefaults 验证无角色配置时的默认行为与 DefaultFor
-// 一致：dev/test 得到全部白名单工具，expert/review 得到空文档（模板
-// 整段消失）。
+// 一致：dev/test 得到全部工具（手写条目 + 从注册表生成的条目），
+// expert/review 得到空文档（模板整段消失）。
 func TestBuildDSMLToolDocDefaults(t *testing.T) {
 	tests := []struct {
 		role      string
@@ -139,6 +142,62 @@ func TestBuildDSMLToolDocRoleConfig(t *testing.T) {
 	// DefaultFor path (expert/review = none) still holds.
 	if err := roles.DeleteRoleConfig(ctx, "review", sessionID); err != nil {
 		t.Fatalf("DeleteRoleConfig: %v", err)
+	}
+}
+
+// TestBuildDSMLToolDocGenerated: a role-configured tool without a
+// hand-written DSML entry is registered from its ToolDef - `dscli role
+// update --tools` is the single place that decides what the web model may
+// call, with no code change needed per tool.
+func TestBuildDSMLToolDocGenerated(t *testing.T) {
+	ctx := t.Context()
+	sessionID := session.GetCurrentSessionID(ctx)
+
+	const probeName = "probe_tool"
+	if err := RegisterTool(ToolDef{
+		Name:        probeName,
+		Description: "probe description",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"query": map[string]any{"type": "string", "description": "SQL query"},
+				"limit": map[string]any{"type": "integer", "description": "Row cap"},
+			},
+			"required":             []string{"query"},
+			"additionalProperties": false,
+		},
+		Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
+			return "", "", nil
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { unregisterToolForTest(probeName) })
+
+	if err := roles.UpsertRoleConfig(ctx, "review", sessionID, nil, strPtrHelper("probe_tool"), nil); err != nil {
+		t.Fatalf("UpsertRoleConfig: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := roles.DeleteRoleConfig(ctx, "review", sessionID); err != nil {
+			t.Fatalf("DeleteRoleConfig: %v", err)
+		}
+	})
+
+	doc := BuildDSMLToolDoc(ctx, "review")
+	if !strings.Contains(doc.Intro, "`probe_tool`") {
+		t.Fatalf("review doc must register the generated probe_tool entry:\n%s", doc.Intro)
+	}
+	for _, want := range []string{
+		"<invoke name=\"probe_tool\">",
+		`<parameter name="query" string="true">...</parameter>`,
+		`<parameter name="limit" string="false">0</parameter>`,
+		"`query` (string, required) — SQL query",
+		"`limit` (integer, optional) — Row cap",
+		"\"name\": \"probe_tool\"",
+	} {
+		if !strings.Contains(doc.Intro, want) && !strings.Contains(doc.Schemas, want) {
+			t.Errorf("generated doc missing %q\nIntro:\n%s\nSchemas:\n%s", want, doc.Intro, doc.Schemas)
+		}
 	}
 }
 

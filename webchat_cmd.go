@@ -49,8 +49,8 @@ func init() {
 非空角色会前置角色提示词；无论角色与否，DeepSeek Web 回复中的 DSML 工具调用
 （read_file / exec_command / apply_patch）都由 dscli 本地执行并把结果回填到
 同一会话（同 code_review 工具）。这是远程模型在本地执行命令的会话：角色会话
-开始前会打印警告，且仅白名单工具 + 危险命令拦截（rm -rf、sudo、curl/wget 外传
-等被拒绝）；仍建议在可信工作目录使用。--role=（空值）即纯聊天：不注入角色
+开始前会打印警告，且只执行角色配置允许的工具 + 危险命令拦截（rm -rf、
+sudo、curl/wget 外传等被拒绝）；仍建议在可信工作目录使用。--role=（空值）即纯聊天：不注入角色
 提示词（回复中的 DSML 工具调用仍会执行）。判定规则：回复以 </tool_calls> 结束
 即解析并执行其中的 tool_calls（见 toolcall.IsDSMLToolCallEnd）。
 
@@ -167,7 +167,8 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 	// Role "" (the default) is plain chat: no role prompt, but DSML tool
 	// calls in replies are still judged and executed when the reply IS one.
 	// The exact tool set comes from the role config (role_configs /
-	// roles.DefaultFor) intersected with the DSML whitelist.
+	// roles.DefaultFor) - the same source that gates GetAllTools, so
+	// `dscli role update --tools` is the single place that decides it.
 	if opts.Role != "" {
 		fmt.Fprintf(os.Stderr, "⚠️ 角色 %q 已启用：远程模型回复中的 DSML 工具调用（按角色配置的本地工具）将在本地执行。\n", opts.Role)
 	}

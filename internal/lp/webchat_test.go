@@ -140,7 +140,7 @@ func TestIsCompleteResponse(t *testing.T) {
 		{name: "full review with tool call", s: "> <read_file path=\"AGENTS.md\" />\n\n> <tool_result>\n# AGENTS.md\n\n## Overall Assessment\nSolid.", want: true},
 		{name: "short with tool result", s: "<read_file />\n<tool_result>ok</tool_result>", want: true},
 		// A genuine short answer with an XML-like tag must not be rejected
-		// as a tool-call fragment (regression guard for the whitelist).
+		// as a tool-call fragment (regression guard for the gate).
 		{name: "short answer with html tag", s: "<b>bold</b> is fine", want: true},
 		{name: "plain answer", s: "The change looks correct.", want: true},
 	}

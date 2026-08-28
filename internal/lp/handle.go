@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	dsctx "github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/prompt"
 	"github.com/dscli/dscli/internal/toolcall"
@@ -232,7 +233,7 @@ var handleWebChatExecDSML = toolcall.ExecuteDSMLToolCalls
 //     dscli tools executed locally, and the results fed back into the SAME
 //     conversation until the expert produces a final answer. The judge
 //     (toolcall.IsDSMLToolCallEnd) is deliberately structural, and the
-//     whitelist plus destructive-command interception (see dsmlToolNames /
+//     role tool set plus destructive-command interception (see
 //     dsmlBlockedCmdRe) are the safety boundary: a long answer that merely
 //     cites an <invoke> example does not end with the wrapper close tag and
 //     is never executed; role consultations still strip such quotes so
@@ -260,6 +261,14 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 	span, ctx := clog.StartSpanFromContext(ctx, "HandleWebChat")
 	defer span.Finish()
 
+	// Carry the role in ctx so the DSML executor (ExecuteDSMLToolCalls)
+	// gates tool execution by the SAME role config as the doc registration
+	// and GetAllTools. Plain chat (Role "") keeps the default "dev" profile -
+	// the web model may then call whatever dev's tool config allows.
+	if opts.Role != "" {
+		ctx = context.WithValue(ctx, dsctx.CurrentRoleKey, opts.Role)
+	}
+
 	// WebChat has no system prompt concept, so persona text is prepended to
 	// the user message. The separator helps the web model distinguish the
 	// instructions from the actual task. System wins over Role, matching the
@@ -269,9 +278,10 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 		fullMessage = opts.System + "\n\n---\n\n## User Request\n\n" + message
 	} else if opts.Role != "" {
 		// The DSML tool section is derived from the role's tool config
-		// (role_configs / roles.DefaultFor) at send time: a role without
-		// executable tools (expert/review by default) gets no registration,
-		// a configured role gets exactly its whitelisted tools.
+		// (role_configs / roles.DefaultFor) at send time - the same source
+		// as GetAllTools. A role without executable tools (expert/review by
+		// default) gets no registration; a configured role gets exactly the
+		// tools its config allows.
 		doc := toolcall.BuildDSMLToolDoc(ctx, opts.Role)
 		fullMessage = prompt.RenderPromptForRoleWithTools(ctx, opts.Role, doc) + "\n\n---\n\n## User Request\n\n" + message
 	}
@@ -461,7 +471,7 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 	// The remote model's DSML markup is about to run locally with the user's
 	// OS permissions; say so before the first execution (stderr, so piped
 	// stdout stays clean) - silent local execution is the surprise.
-	fmt.Fprintf(os.Stderr, "⚠️ 远程模型回复中的 DSML 工具调用（白名单内的本地工具）将在本地执行。\n")
+	fmt.Fprintf(os.Stderr, "⚠️ 远程模型回复中的 DSML 工具调用（角色配置允许的本地工具）将在本地执行。\n")
 
 	message := first.Content
 	convURL := first.URL
@@ -508,13 +518,14 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 			len(calls), round, handleWebChatMaxDSMLRounds)
 		outputs := handleWebChatExecDSML(ctx, calls)
 		if len(outputs) == 0 {
-			// Every parsed call was outside the whitelist (a quoted
-			// DSML example, not an instruction): do NOT send an empty
+			// Every parsed call was not executable (outside the role's
+			// tool config, or an unregistered name - a quoted DSML
+			// example, not an instruction): do NOT send an empty
 			// feedback message - the expert would be confused by a
 			// blank turn. Strip the quoted markup for role consultations
 			// so the caller sees clean content; plain chat keeps the
 			// original text (it is content, not a command).
-			fmt.Fprintf(os.Stderr, "⚠️ 专家回复只包含非白名单工具调用（引用示例？），已跳过执行\n")
+			fmt.Fprintf(os.Stderr, "⚠️ 专家回复只包含非可执行工具调用（未在角色工具配置中或引用示例？），已跳过执行\n")
 			return cleanExit()
 		}
 		// Each output is a self-delimiting <tool_result> block, in

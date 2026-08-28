@@ -515,10 +515,10 @@ func TestHandleWebChatToolLoopPlainChatProseReference(t *testing.T) {
 	}
 }
 
-func TestHandleWebChatToolLoopPlainChatNonWhitelisted(t *testing.T) {
-	// Plain chat + short preamble + a complete NON-whitelisted call inside a
+func TestHandleWebChatToolLoopPlainChatNonRegistered(t *testing.T) {
+	// Plain chat + short preamble + a complete non-registered call inside a
 	// <tool_calls> wrapper passes the gate (IsDSMLToolCallEnd checks the
-	// wrapper close, not the whitelist) but produces no executable output:
+	// wrapper close, not the tool set) but produces no executable output:
 	// the reply is returned verbatim - it is content, not a command - and
 	// nothing is stripped.
 	text := "我给你一个示例：\n" + `<tool_calls>
@@ -535,7 +535,7 @@ func TestHandleWebChatToolLoopPlainChatNonWhitelisted(t *testing.T) {
 	executed := false
 	handleWebChatExecDSML = func(_ context.Context, _ []toolcall.DSMLCall) []string {
 		executed = true
-		return nil // non-whitelisted call: native executor also returns nothing
+		return nil // non-registered call: native executor also returns nothing
 	}
 	t.Cleanup(func() { handleWebChatExecDSML = origExec })
 
@@ -544,7 +544,7 @@ func TestHandleWebChatToolLoopPlainChatNonWhitelisted(t *testing.T) {
 		t.Fatalf("HandleWebChat: %v", err)
 	}
 	if !executed {
-		t.Error("tool executor should be called (the gate passed), so the non-whitelisted skip path is exercised")
+		t.Error("tool executor should be called (the gate passed), so the unregistered skip path is exercised")
 	}
 	if res.Content != text {
 		t.Errorf("content = %q, want verbatim text (no stripping in plain chat)", res.Content)

@@ -186,6 +186,25 @@ func KnownToolNames() []string {
 	return names
 }
 
+// roleToolsSpec returns the role's tools spec ("all", "", or "a,b") from
+// role_configs, falling back to roles.DefaultFor. It is the single source
+// of truth for "which tools this role may use": GetAllTools (dscli chat /
+// ask) and the DSML executor (webchat) both derive their tool set from it,
+// so the web model can only ever call what the role is configured for.
+func roleToolsSpec(ctx context.Context, role string) string {
+	sessionID := session.GetCurrentSessionID(ctx)
+	if cfg, err := roles.GetRoleConfig(ctx, role, sessionID); err == nil && cfg != nil {
+		return cfg.Tools
+	}
+	return roles.DefaultFor(role).Tools
+}
+
+// roleToolAllowSet converts the role's tools spec into an allow-set:
+// nil = everything ("all"), empty map = nothing, non-empty map = those names.
+func roleToolAllowSet(ctx context.Context, role string) map[string]bool {
+	return allowSetFromSpec(roleToolsSpec(ctx, role))
+}
+
 // allowSetFromSpec converts a stored spec ("all", "", "a,b") into an
 // allow-set: nil = everything ("all"), empty non-nil map = explicitly
 // nothing, non-empty map = only those names. Shared by the tools allowlist;
@@ -213,19 +232,10 @@ func GetAllTools(ctx context.Context) []Tool {
 	defer span.Finish()
 
 	role := context.ContextValue(ctx, context.CurrentRoleKey, "dev")
-	// Determine which tools to include
-	var allowSet map[string]bool // nil = all, non-nil = filter
-
-	sessionID := session.GetCurrentSessionID(ctx)
-	cfg, _ := roles.GetRoleConfig(ctx, role, sessionID)
-	if cfg != nil {
-		allowSet = allowSetFromSpec(cfg.Tools)
-	} else {
-		// Fallback: role defaults (roles.DefaultFor). dev/test are capable
-		// by default; expert/review execute nothing until configured. This
-		// mirrors the role list display, which shows the very same defaults.
-		allowSet = allowSetFromSpec(roles.DefaultFor(role).Tools)
-	}
+	// dev/test are capable by default; expert/review execute nothing until
+	// configured. This mirrors the role list display, which shows the very
+	// same defaults (roleToolsSpec).
+	allowSet := roleToolAllowSet(ctx, role)
 	if allowSet != nil && len(allowSet) == 0 {
 		return nil // explicit empty = no tools
 	}
@@ -311,8 +321,9 @@ func HandleToolCalls(ctx context.Context, tcs []prompt.ToolCall) (inputs []promp
 // 中断处理不在本函数内安装：DSML 路径运行在 chat 的 HandleToolCalls 内部，
 // 重复注册会收到同一次 Ctrl+C 并各自插入占位消息（同一调用得到两条占位
 // tool 消息，反而破坏配对）；外层 handler 已覆盖整个 ask_expert 调用。
-// 双消息（DualMessage）拆分对 DSML 无意义（白名单工具从不返回 dual），
-// 非落库模式下附加 user 消息被丢弃。
+// 双消息（DualMessage）拆分对 DSML 无意义：DSML 的 <tool_result> 封装
+// 无法携带附加 user 消息（且 webchat 模型看不到图像块），非落库模式下
+// 附加 user 消息由调用方丢弃并告警（见 ExecuteDSMLToolCalls）。
 func executeToolCalls(ctx context.Context, tcs []prompt.ToolCall, save bool) (outcomes []ToolCallOutcome, dualUsers []prompt.Message) {
 	dualUsers = []prompt.Message{}
 	outcomes = make([]ToolCallOutcome, 0, len(tcs))

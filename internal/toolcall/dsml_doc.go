@@ -6,7 +6,8 @@
 // section dynamically from the role's tool configuration (roles.DefaultFor +
 // role_configs), so `dscli webchat --role X` registers exactly the tools the
 // local engine will actually execute - the same set GetAllTools exposes to
-// dscli chat - intersected with the DSML whitelist.
+// dscli chat. No separate DSML whitelist: `dscli role update --tools` is the
+// single place that decides which tools a role may use.
 //
 // The documentation metadata below describes the DSML layer (parameter names
 // the model writes, e.g. cmd/justification/timeout-in-milliseconds), which is
@@ -20,12 +21,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/prompt"
-	"github.com/dscli/dscli/internal/roles"
-	"github.com/dscli/dscli/internal/session"
 	"github.com/nanjj/clog"
 )
 
@@ -46,10 +46,13 @@ type dsmlDocTool struct {
 	schema map[string]any
 }
 
-// dsmlDocToolsAll is the fixed whitelist documentation, in stable display
-// order. It mirrors dsmlToolNames: adding a whitelisted tool without an
-// entry here (or vice versa) leaves the registration section inconsistent
-// with the executor - keep the two in sync.
+// dsmlDocToolsAll is the hand-written DSML documentation, in stable display
+// order. It covers the tools whose DSML layer differs from the native one
+// (exec_command's cmd/justification/timeout-ms naming vs shell's
+// script/summary/timeout-s). Tools without an entry here are documented by
+// dsmlGeneratedDocEntry straight from their registered ToolDef, so a role
+// configured via `dscli role update --tools` is always registered for the
+// web model with no code change.
 var dsmlDocToolsAll = []dsmlDocTool{
 	{
 		dsmlName:    "exec_command",
@@ -154,9 +157,9 @@ func dsmlFunctionSchema(name, desc string, props map[string]any, required []stri
 }
 
 // dsmlDocForSpec resolves a stored tools spec ("all", "", "a,b") into the
-// DSML documentation entries the role may use. Names outside the whitelist
-// (e.g. "sql", "vision_file_read") are dropped: the executor would reject
-// them, so registering them only misleads the model into failed calls.
+// hand-written DSML documentation entries it matches. Names without a
+// hand-written entry are not dropped - BuildDSMLToolDoc adds them via
+// dsmlGeneratedDocEntry from the registered ToolDef.
 func dsmlDocForSpec(spec string) []dsmlDocTool {
 	allow := allowSetFromSpec(spec)
 	if allow != nil && len(allow) == 0 {
@@ -178,33 +181,147 @@ func dsmlDocForSpec(spec string) []dsmlDocTool {
 	return out
 }
 
-// BuildDSMLToolDoc renders the DSML tool registration section for a role,
-// driven by the role's tool configuration (role_configs row, falling back to
-// roles.DefaultFor) intersected with the DSML whitelist. An empty result
-// means the role has no executable DSML tools and the prompt templates drop
-// the section entirely.
-func BuildDSMLToolDoc(ctx context.Context, role string) prompt.DSMLToolDoc {
-	span, ctx := clog.StartSpanFromContext(ctx, "BuildDSMLToolDoc")
-	defer span.Finish()
-
-	spec := roles.DefaultFor(role).Tools
-	sessionID := session.GetCurrentSessionID(ctx)
-	if cfg, err := roles.GetRoleConfig(ctx, role, sessionID); err == nil && cfg != nil {
-		spec = cfg.Tools
-		if allow := allowSetFromSpec(spec); allow != nil {
-			for name := range allow {
-				if !dsmlToolNames[name] {
-					// The configured tool would be rejected by the executor
-					// (normalizeDSMLInvoke's whitelist), so it is silently
-					// dropped here too - never register what cannot run.
-					// Log so the config mistake is observable.
-					outfmt.Debug("dsml doc: role %q tool %q is outside the DSML whitelist and will not be registered\n", role, name)
-				}
+// dsmlGeneratedDocEntry builds a DSML documentation entry straight from a
+// registered ToolDef: the DSML layer uses the native parameter names, so the
+// schema is the tool's own schema and the example/params line are derived
+// from it. Used for every role-configured tool that has no hand-written
+// entry in dsmlDocToolsAll.
+func dsmlGeneratedDocEntry(def ToolDef) dsmlDocTool {
+	name := def.Name
+	props, _ := def.Parameters["properties"].(map[string]any)
+	keys := sortedSchemaKeys(props)
+	requiredSet := map[string]bool{}
+	switch req := def.Parameters["required"].(type) {
+	case []string:
+		for _, r := range req {
+			requiredSet[r] = true
+		}
+	case []any:
+		for _, r := range req {
+			if s, ok := r.(string); ok {
+				requiredSet[s] = true
 			}
 		}
 	}
 
+	var b strings.Builder
+	b.WriteString("<tool_calls>\n")
+	b.WriteString("<invoke name=\"")
+	b.WriteString(name)
+	b.WriteString("\">\n")
+	for _, k := range keys {
+		p, _ := props[k].(map[string]any)
+		typ, _ := p["type"].(string)
+		switch typ {
+		case "integer", "number":
+			fmt.Fprintf(&b, "<parameter name=%q string=\"false\">0</parameter>\n", k)
+		case "boolean":
+			fmt.Fprintf(&b, "<parameter name=%q string=\"false\">true</parameter>\n", k)
+		case "array":
+			fmt.Fprintf(&b, "<parameter name=%q string=\"false\">[]</parameter>\n", k)
+		case "object":
+			fmt.Fprintf(&b, "<parameter name=%q string=\"false\">{}</parameter>\n", k)
+		default:
+			fmt.Fprintf(&b, "<parameter name=%q string=\"true\">...</parameter>\n", k)
+		}
+	}
+	b.WriteString("</invoke>\n")
+	b.WriteString("</tool_calls>")
+
+	var parts []string
+	for _, k := range keys {
+		p, _ := props[k].(map[string]any)
+		typ, _ := p["type"].(string)
+		desc, _ := p["description"].(string)
+		opt := "optional"
+		if requiredSet[k] {
+			opt = "required"
+		}
+		parts = append(parts, fmt.Sprintf("`%s` (%s, %s) — %s", k, typ, opt, desc))
+	}
+	paramsLine := "`" + name + "`: " + strings.Join(parts, "; ")
+
+	return dsmlDocTool{
+		dsmlName:    name,
+		filterNames: []string{name},
+		example:     b.String(),
+		paramsLine:  paramsLine,
+		schema: map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        name,
+				"description": def.Description,
+				"parameters":  def.Parameters, // the tool's own JSON schema
+			},
+		},
+	}
+}
+
+// sortedSchemaKeys returns the property keys of a JSON-schema properties
+// object, sorted for stable output (map iteration order is not stable).
+func sortedSchemaKeys(props map[string]any) []string {
+	keys := make([]string, 0, len(props))
+	for k := range props {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// dsmlGeneratedEntries adds auto-generated DSML doc entries for every
+// role-configured tool without a hand-written entry. "all" covers every
+// registered tool - the role's tools spec is the only gate (same source as
+// GetAllTools), so a role configured via `dscli role update --tools` gets
+// its tool registered for the web model with no code change. Unregistered
+// names in an explicit list are skipped with a debug log: they would fail
+// at execution anyway, and registering them only misleads the model into
+// failed calls.
+func dsmlGeneratedEntries(ctx context.Context, spec string, existing []dsmlDocTool) []dsmlDocTool {
+	allow := allowSetFromSpec(spec)
+	covered := map[string]bool{}
+	for _, e := range existing {
+		for _, n := range e.filterNames {
+			covered[n] = true
+		}
+	}
+	var names []string
+	if allow == nil { // "all"
+		names = KnownToolNames()
+	} else {
+		for n := range allow {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+	}
+	var out []dsmlDocTool
+	for _, n := range names {
+		if covered[n] {
+			continue // hand-written entry already registered
+		}
+		def, ok := GetToolDef(ctx, n)
+		if !ok {
+			outfmt.Debug("dsml doc: role tool %q is not a registered tool and will not be registered\n", n)
+			continue
+		}
+		out = append(out, dsmlGeneratedDocEntry(def))
+	}
+	return out
+}
+
+// BuildDSMLToolDoc renders the DSML tool registration section for a role,
+// driven by the role's tool configuration (role_configs row, falling back to
+// roles.DefaultFor) - the same spec that gates GetAllTools. Hand-written
+// entries cover the DSML-layer naming (exec_command etc.); every other
+// role-configured tool is documented straight from its ToolDef. An empty
+// result means the role has no executable tools and the prompt templates
+// drop the section entirely.
+func BuildDSMLToolDoc(ctx context.Context, role string) prompt.DSMLToolDoc {
+	span, ctx := clog.StartSpanFromContext(ctx, "BuildDSMLToolDoc")
+	defer span.Finish()
+
+	spec := roleToolsSpec(ctx, role)
 	entries := dsmlDocForSpec(spec)
+	entries = append(entries, dsmlGeneratedEntries(ctx, spec, entries)...)
 	if len(entries) == 0 {
 		return prompt.DSMLToolDoc{}
 	}

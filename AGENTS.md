@@ -123,29 +123,32 @@ close tag without the opening wrapper still qualifies, and a wrapper with no
 parseable `<invoke>` executes nothing - quoted code and prose references that
 merely cite an `<invoke>` example never end with the wrapper close tag and
 never qualify), parses them (internal/toolcall/dsml.go), maps `exec_command`
--> `shell` (cmd->script, justification->summary, timeout ms->s; whitelist:
-exec_command, shell, read_file, apply_patch) and feeds results back into the
-SAME conversation (handleWebChatToolLoop). The loop prints every round it
-receives (reasoning + content via outfmt.PrintContent, with the output token
-count derived from the site's IndexedDB accumulated_token_usage) and marks
-the final result `Printed` so callers do not re-print it. The `webchat` CLI
-defaults to `--role ""` (plain chat: no role injection; DSML tool-call
-replies are still executed); a stderr warning fires whenever the tool loop
+-> `shell` (cmd->script, justification->summary, timeout ms->s) and feeds
+results back into the SAME conversation (handleWebChatToolLoop). Which tools
+are executable is decided by the role's tools config (role_configs /
+roles.DefaultFor) - the SAME source that gates GetAllTools, so `dscli role
+update --tools` is the single place that decides it; there is NO separate
+DSML whitelist. Registered tools without a hand-written DSML entry are
+documented straight from their ToolDef (dsmlGeneratedDocEntry); only
+exec_command keeps DSML-layer naming (cmd/justification/timeout-ms). The
+loop prints every round it receives (reasoning + content via
+outfmt.PrintContent, with the output token count derived from the site's
+IndexedDB accumulated_token_usage) and marks the final result `Printed` so
+callers do not re-print it. The `webchat` CLI defaults to `--role ""` (plain
+chat: no role injection; DSML tool-call replies are still executed - default
+dev profile, i.e. all tools); a stderr warning fires whenever the tool loop
 actually runs (any mode), and role sessions additionally get a role-specific
-warning up front, since the remote model's DSML tool calls will run locally.
-
-Role templates (internal/prompt/*.md) render a DSML tool section for WebChat
-via a `{{if .DSMLToolDoc.Intro}}` block: the section content
+warning up front, since the remote model's DSML tool calls will run
+locally. Role templates (internal/prompt/*.md) render a DSML tool section
+for WebChat via a `{{if .DSMLToolDoc.Intro}}` block: the section content
 (`toolcall.BuildDSMLToolDoc`, see internal/toolcall/dsml_doc.go) is derived
-from the role's tool config (role_configs / roles.DefaultFor) intersected
-with the DSML whitelist (dsmlToolNames), formatting aligned with DeepSeek
-V4's tool template (string= attribute rules, `### Available Tool Schemas`).
-`HandleWebChat` injects it via `prompt.RenderPromptForRoleWithTools`;
-`RenderPromptForRole` and `GetSystemPrompt` (dscli chat path, which registers
-tools through the API `tools` parameter instead) leave it out entirely. A
-role without executable tools (expert/review by default) gets no DSML
-section at all. Add new whitelisted tools to BOTH `dsmlToolNames` and
-`dsmlDocToolsAll` - they must stay in sync.
+from the role's tool config (roles.DefaultFor + role_configs), formatting
+aligned with DeepSeek V4's tool template (string= attribute rules,
+`### Available Tool Schemas`). `HandleWebChat` injects it via
+`prompt.RenderPromptForRoleWithTools`; `RenderPromptForRole` and
+`GetSystemPrompt` (dscli chat path, which registers tools through the API
+`tools` parameter instead) leave it out entirely. A role without executable
+tools (expert/review by default) gets no DSML section at all.
 
 code_review sends ONLY commit message + diff on its first message: the review
 expert reads AGENTS.md and full changed-file contents on demand via the DSML
