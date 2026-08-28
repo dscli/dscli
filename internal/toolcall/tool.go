@@ -251,10 +251,9 @@ func GetAllTools(ctx context.Context) []Tool {
 		if !ok {
 			continue
 		}
-		// Accept the canonical name or a legacy spelling in the spec
-		// (e.g. "exec_command" for the shell tool): the SAME allow-set
-		// check the DSML executor performs - one spec, one meaning.
-		if allowSet != nil && !dsmlSpecAllows(allowSet, name, name) {
+		// The role's allow-set gates by the registered name, nothing else:
+		// one spec, one meaning for GetAllTools and the DSML executor.
+		if allowSet != nil && !allowSet[name] {
 			continue
 		}
 		tools = append(tools, Tool{

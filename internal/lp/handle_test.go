@@ -17,12 +17,12 @@ import (
 // died mid tool-call: every <invoke> parses but the close tag is the typo'd
 // "</_calls>" (the model dropped "tool"). This is the resume target.
 const interruptedRound = `<tool_calls>
-<invoke name="exec_command">
-<parameter name="cmd" string="true">grep -rn "func parseSince" internal/toolcall/ask/ && echo '===' && grep -rn "func truncateReviewRequest" internal/toolcall/ask/ && echo '===' && grep -rn "func AskExpertWithRole" internal/toolcall/ask/</parameter>
+<invoke name="shell">
+<parameter name="script" string="true">grep -rn "func parseSince" internal/toolcall/ask/ && echo '===' && grep -rn "func truncateReviewRequest" internal/toolcall/ask/ && echo '===' && grep -rn "func AskExpertWithRole" internal/toolcall/ask/</parameter>
 <parameter name="justification" string="true">Locate parseSince, truncateReviewRequest, AskExpertWithRole to inspect validation and reuse.</parameter>
 </invoke>
-<invoke name="exec_command">
-<parameter name="cmd" string="true">ls internal/toolcall/ask/</parameter>
+<invoke name="shell">
+<parameter name="script" string="true">ls internal/toolcall/ask/</parameter>
 <parameter name="justification" string="true">List ask package files to find code_review and helpers.</parameter>
 </invoke>
 </tool_calls>`
@@ -105,8 +105,8 @@ func TestHandleWebChatResumePendingToolCalls(t *testing.T) {
 	if len(*seen) != 2 {
 		t.Fatalf("executed calls = %d, want 2 (both pending invokes)", len(*seen))
 	}
-	if (*seen)[0].Name != "exec_command" || (*seen)[1].Name != "exec_command" {
-		t.Errorf("executed calls = %+v, want two exec_command", *seen)
+	if (*seen)[0].Name != "shell" || (*seen)[1].Name != "shell" {
+		t.Errorf("executed calls = %+v, want two shell", *seen)
 	}
 	// The follow-up must continue the SAME conversation with tool feedback.
 	if len(messages) != 1 {
@@ -333,8 +333,8 @@ func TestHandleWebChatRetryAbortsOnCancel(t *testing.T) {
 // TestHandleWebChatToolLoopProsePreamble and
 // TestHandleWebChatToolLoopLongPreambleExecutes).
 const dsmlReply = `<tool_calls>
-<invoke name="exec_command">
-<parameter name="cmd" string="true">git show --stat</parameter>
+<invoke name="shell">
+<parameter name="script" string="true">git show --stat</parameter>
 <parameter name="justification" string="true">See changed files</parameter>
 <parameter name="timeout" string="false">10000</parameter>
 </invoke>
@@ -377,7 +377,7 @@ func TestHandleWebChatToolLoop(t *testing.T) {
 		return WebChatResult{Content: "unexpected extra round", URL: url2}, nil
 	}
 
-	seen := captureExecDSML(t, "exec_command 工具调用的结果：\n```\nchanged files\n```")
+	seen := captureExecDSML(t, "shell 工具调用的结果：\n```\nchanged files\n```")
 
 	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{Role: "review"})
 	if err != nil {
@@ -389,8 +389,8 @@ func TestHandleWebChatToolLoop(t *testing.T) {
 	if res.URL != url2 {
 		t.Errorf("URL = %q, want %s", res.URL, url2)
 	}
-	if len(*seen) != 1 || (*seen)[0].Name != "exec_command" {
-		t.Errorf("executed calls = %+v, want one exec_command", *seen)
+	if len(*seen) != 1 || (*seen)[0].Name != "shell" {
+		t.Errorf("executed calls = %+v, want one shell", *seen)
 	}
 	// Round 2 must continue the SAME conversation (Keep = first URL) with
 	// the tool feedback as message - and must NOT re-inject the role prompt
@@ -489,7 +489,7 @@ func TestHandleWebChatToolLoopProsePreamble(t *testing.T) {
 func TestHandleWebChatToolLoopPlainChatProseReference(t *testing.T) {
 	// A plain-chat reply that merely quotes an <invoke> example inside long
 	// prose is content, not a command: returned verbatim, never executed.
-	longProse := "Solid work. `<invoke name=\"exec_command\"><parameter name=\"cmd\" string=\"true\">ls</parameter></invoke>` pins it. The implementation matches the design and the new tests cover every edge case from the review."
+	longProse := "Solid work. `<invoke name=\"shell\"><parameter name=\"cmd\" string=\"true\">ls</parameter></invoke>` pins it. The implementation matches the design and the new tests cover every edge case from the review."
 	origFunc := handleWebChatSend
 	t.Cleanup(func() { handleWebChatSend = origFunc })
 	handleWebChatSend = func(_ context.Context, _ string, _ WebChatOptions) (WebChatResult, error) {
@@ -555,7 +555,7 @@ func TestHandleWebChatToolLoopPlainChatRound2Reference(t *testing.T) {
 	// A round-2 plain-chat reply that merely quotes an <invoke> example
 	// inside long prose exits the loop verbatim - plain chat never strips
 	// the expert's words, unlike role consultations.
-	round2 := "Solid work. `<invoke name=\"exec_command\"><parameter name=\"cmd\" string=\"true\">ls</parameter></invoke>` pins it. The implementation matches the design and the tests cover every edge case."
+	round2 := "Solid work. `<invoke name=\"shell\"><parameter name=\"cmd\" string=\"true\">ls</parameter></invoke>` pins it. The implementation matches the design and the tests cover every edge case."
 	origFunc := handleWebChatSend
 	t.Cleanup(func() { handleWebChatSend = origFunc })
 	var sends int
@@ -732,8 +732,8 @@ func TestHandleWebChatToolLoopTruncatedDSML(t *testing.T) {
 	t.Cleanup(func() { handleWebChatSend = origFunc })
 	// The first reply begins a tool call but is cut off before </invoke>.
 	cut := `<tool_calls>
-<invoke name="exec_command">
-<parameter name="cmd" string="true">git show`
+<invoke name="shell">
+<parameter name="script" string="true">git show`
 	handleWebChatSend = func(_ context.Context, _ string, _ WebChatOptions) (WebChatResult, error) {
 		return WebChatResult{Content: cut, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
 	}
@@ -797,7 +797,7 @@ func TestHandleWebChatQuotedDSMLNotExecuted(t *testing.T) {
 	}
 	t.Cleanup(func() { handleWebChatExecDSML = origExec })
 
-	quoted := "## Overall\nSolid work.\n\nExample: `<invoke name=\"a\"><parameter name=\"cmd\" string=\"true\">x</parameter></invoke>` pins the behavior.\n```\n<invoke name=\"exec_command\"><parameter name=\"cmd\" string=\"true\">ls</parameter></invoke>\n```\nEnd."
+	quoted := "## Overall\nSolid work.\n\nExample: `<invoke name=\"a\"><parameter name=\"cmd\" string=\"true\">x</parameter></invoke>` pins the behavior.\n```\n<invoke name=\"shell\"><parameter name=\"cmd\" string=\"true\">ls</parameter></invoke>\n```\nEnd."
 	handleWebChatSend = func(_ context.Context, _ string, _ WebChatOptions) (WebChatResult, error) {
 		return WebChatResult{Content: quoted, URL: "https://chat.deepseek.com/a/chat/s/convQ"}, nil
 	}
@@ -909,8 +909,8 @@ const cutRound = `<tool_calls>
 <parameter name="path" string="true">AGENTS.md</parameter>
 <parameter name="justification" string="true">Read project conventions before reviewing</parameter>
 </invoke>
-<invoke name="exec_command">
-<parameter name="cmd" string="true">git show --stat HEAD</parameter>
+<invoke name="shell">
+<parameter name="script" string="true">git show --stat HEAD</parameter>
 <parameter name="justification" string="true">See full commit stats and files changed</parameter>
 </invoke>
 </tool_calls>`

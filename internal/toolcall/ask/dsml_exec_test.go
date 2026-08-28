@@ -16,8 +16,8 @@ import (
 // TestExecuteDSMLToolCalls runs a real harmless shell command through the
 // framework end to end: parse DSML -> normalize -> HandleToolCall -> feedback.
 func TestExecuteDSMLToolCalls(t *testing.T) {
-	calls, err := toolcall.ParseDSMLToolCalls(`<invoke name="exec_command">
-<parameter name="cmd" string="true">printf 'hello dsml'</parameter>
+	calls, err := toolcall.ParseDSMLToolCalls(`<invoke name="shell">
+<parameter name="script" string="true">printf 'hello dsml'</parameter>
 <parameter name="timeout" string="false">5000</parameter>
 </invoke>`)
 	if err != nil {

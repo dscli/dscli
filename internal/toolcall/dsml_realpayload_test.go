@@ -8,20 +8,24 @@ import (
 )
 
 // TestParseDSMLToolCallsRealPayloads pins the two production payloads that
-// triggered "exec_command missing parameter cmd" (21:10 report). Both embed
-// DSML-looking text inside the cmd VALUE:
+// historically triggered "missing parameter cmd" (21:10 report); they
+// carry the pre-rename spelling (exec_command + cmd + justification). Both
+// embed DSML-looking text inside the cmd VALUE:
 //
 //   - real_sample1.txt: a Python heredoc carrying '<invoke name="a">' and
 //     '<invoke name="b">' fragments. The old non-greedy <invoke> block regex
-//     stopped at the value's first '</invoke>', so the block body ended before
-//     any complete <parameter> and the call lost its cmd ("missing parameter
-//     cmd" in practice).
+//     stopped at the value's first '</invoke>', so the block body ended
+//     before any complete <parameter> and the call lost its cmd ("missing
+//     parameter cmd" in practice).
 //   - real_sample2.txt: a shell snippet with '</||DSML||invoke>' (normalized
 //     to '</invoke>' before parsing) plus "cat <dsml_config" - it must survive
 //     as literal content inside the command.
 //
 // The stack scan (dsmlBlockRanges) treats <parameter> bodies as opaque, so
 // both calls parse with their full cmd and every parameter after it.
+// normalizeDSMLInvoke is a verbatim passthrough here (name and args keep
+// their raw keys; only the decorative justification is stripped) - the
+// executor's role allow-set decides executability, not the DSML layer.
 func TestParseDSMLToolCallsRealPayloads(t *testing.T) {
 	for _, name := range []string{"real_sample1.txt", "real_sample2.txt"} {
 		text, err := os.ReadFile(filepath.Join("testdata", name))
@@ -39,20 +43,22 @@ func TestParseDSMLToolCallsRealPayloads(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: normalizeDSMLInvoke: %v", name, err)
 		}
-		if tool != "shell" {
-			t.Fatalf("%s: tool = %q, want shell", name, tool)
+		// No mapping anymore: the DSML layer passes the raw spelling
+		// through; the role allow-set is the only gate.
+		if tool != calls[0].Name {
+			t.Fatalf("%s: tool = %q, want passthrough %q", name, tool, calls[0].Name)
 		}
-		script, ok := args["script"].(string)
-		if !ok || strings.TrimSpace(script) == "" {
-			t.Fatalf("%s: args[script] missing/empty (args=%v)", name, args)
+		cmd, ok := args["cmd"].(string)
+		if !ok || strings.TrimSpace(cmd) == "" {
+			t.Fatalf("%s: args[cmd] missing/empty (args=%v)", name, args)
 		}
 		// The full heredoc must survive: the sample marker is the last line
 		// of the command.
-		if !strings.Contains(script, "GOEOF") && !strings.Contains(script, "PY'") {
-			t.Fatalf("%s: script looks truncated: %q...", name, script[:min(60, len(script))])
+		if !strings.Contains(cmd, "GOEOF") && !strings.Contains(cmd, "PY'") {
+			t.Fatalf("%s: cmd looks truncated: %q...", name, cmd[:min(60, len(cmd))])
 		}
-		if _, ok := args["summary"].(string); !ok {
-			t.Errorf("%s: summary missing (justification must survive)", name)
+		if _, ok := args["justification"]; ok {
+			t.Errorf("%s: justification must be stripped, got %v", name, args)
 		}
 	}
 }

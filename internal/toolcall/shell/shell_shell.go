@@ -27,11 +27,10 @@ func init() { // 注册shell工具
 	RegisterTool(ToolDef{
 		Name:        "shell",
 		Description: desc,
-		// exec_command is NOT a registry alias: the legacy spelling is
-		// resolved only in the DSML layer (dsmlNativeName in dsml.go),
-		// together with its old parameter protocol. A global alias would
-		// let non-DSML callers hit the shell handler with untranslated
-		// cmd/timeout-ms arguments.
+		// No aliases: the DSML layer registers this tool under its native
+		// name and schema, so the web model writes what the executor
+		// accepts. A global alias would let non-DSML callers hit this
+		// handler with a foreign parameter protocol.
 		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",

@@ -38,61 +38,7 @@ WebChat 指使用 web 版本的 https://chat.deepseek.com 与 LLM 交互：
 
 * WebChat 读写工具集
 
-** 工具 1： =apply_patch=
-
-*工具名* ： =apply_patch=
-
-*行为描述* ：
-
-将一段 unified diff 应用到当前工作区的文件上。支持多文件、单文件 patch；
-应用前恒做预检（=git apply --check= ，不写盘）。应用是原子的：任何文件
-冲突都会导致整个 patch 失败回滚，不会留下半应用状态（=git apply= 语义，
-不带 =--reject=）。与 =git apply= 等价，但作为独立工具可规避 shell 转义
-问题（patch 经 stdin 传入），并返回结构化的冲突信息。
-
-*安全约束* （远端模型不可信，工具层强制）：
-
-- =cwd= 必须解析后位于项目根内且是 git 仓库；拒绝项目外目录（防写入
-  其他仓库）。
-- patch 目标路径不得逃逸工作区（=../= 、绝对路径），git apply 也会拒绝，
-  工具层提前给出可读错误。
-- 目标为 =sqlite.db= / =dscli.env= 的 patch 一律拒绝（项目红线）。
-
-*输入参数* ：
-
-| 参数名  | 类型    | 必填 | 描述                                                                       |
-|---------+---------+------+----------------------------------------------------------------------------|
-| =patch=   | string  | 是   | unified diff 文本；若为单个已存在文件路径（如 =.patch= 文件）则读取其内容    |
-| =cwd=     | string  | 否   | 应用补丁的 git 仓库*根*，默认项目根；必须位于项目根内且为 git 仓库根        |
-| =check=   | boolean | 否   | 若为 =true= ，只验证补丁能否干净应用，不写文件（对应 =git apply --check= ） |
-| =reverse= | boolean | 否   | 若为 =true= ，反向应用（撤销，对应 =git apply -R= ）                         |
-
-注意：patch 中的文件路径始终相对 =git 仓库根=（git apply 语义），与进程
-CWD 无关；cwd 必须是仓库根——git apply 在仓库内子目录运行会对相对仓库根
-的路径“静默跳过”（exit 0 且零修改），工具层因此拒绝子目录 cwd。
-
-*返回值* （JSON）：
-
-#+begin_src json
-  {
-    "applied": true,
-    "check_only": false,
-    "changed_files": ["internal/toolcall/dsml.go", "internal/toolcall/dsml_test.go"],
-    "summary": "2 files changed, 34 insertions(+), 8 deletions(-)",
-    "error": ""
-  }
-#+end_src
-
-- =applied= ：是否成功；失败时为 =false= 。check 模式下 =true= 仅表示
-  “预检通过”（未写入文件），与 =check_only=true= 同时出现。
-- =check_only= ：本次是否只做了预检。
-- =changed_files= ：实际被修改的文件列表（ =check= 模式下为“将修改”的列表）。
-- =summary= ： =git apply --stat= 风格摘要。
-- =error= ：失败时描述冲突文件与行号；成功时为空字符串。
-
-实现位置：internal/toolcall/file/apply_patch.go 。
-
-** 工具 2： =read_file=
+** 工具 1： =read_file=
 
 *工具名* ： =read_file=
 
@@ -128,10 +74,10 @@ CWD 无关；cwd 必须是仓库根——git apply 在仓库内子目录运行�
 webchat 的 DSML 归一化层直接透传，无需映射；=read_file_with_line_range=
 保留为该工具的旧名别名，历史调用不中断。
 
-** 工具 3： =exec_command= （已有）
+** 工具 2： =shell= （已有）
 
-执行只读 shell 命令：=cmd= （string，必需）、=justification= （可选）、
-=timeout= （整数，可选，毫秒，默认 120000）。危险命令（=rm -rf /=、
+执行只读 shell 命令：=script= （string，必需）、=summary= （可选，≤40
+字符）、=timeout= （整数，可选，秒，默认 120）。危险命令（=rm -rf /=、
 =mkfs= 、=dd of=/dev/=、=sudo= 、=shutdown= 、=git push -f= 等）由
 =dsmlBlockedCmdRe= 拒绝。当前由 CodeReview 使用，未改动。
 
@@ -139,13 +85,12 @@ webchat 的 DSML 归一化层直接透传，无需映射；=read_file_with_line_
 
 工具实现后在角色提示词中按如下 markdown 注册：
 
-- =internal/prompt/dev.md= —— webchat CLI 角色之一（=--role dev=），已注册
-  三个工具。
+- =internal/prompt/dev.md= —— webchat CLI 角色之一（=--role dev=），已注册工具。
 - =internal/prompt/review.md= —— code_review（review 角色）的 webchat
-  会话，已注册三个工具（Available Tools 段）。
+  会话，已注册工具（Available Tools 段）。
 - =internal/prompt/expert.md= —— expert 角色（AskExpertWithRole）的
-  webchat 会话，已注册三个工具。
-- =internal/prompt/test.md= —— test 角色（=--role test=），已注册三个工具。
+  webchat 会话，已注册工具。
+- =internal/prompt/test.md= —— test 角色（=--role test=），已注册工具。
 
 工具段必须包在 ={{if .DSMLTools}}= ... ={{end}}= 条件块内：
 =RenderPromptForRole=（webchat 路径：HandleWebChat / webchat CLI）渲染它为
@@ -153,7 +98,7 @@ true，=GetSystemPrompt=（=dscli chat= 路径，通过 API tools 参数注册�
 渲染它为 false。若不包条件块，=dscli chat= 的模型会看到 DSML 手写示例并
 误用 DSML 标记而非原生 tool_calls。webchat 需要的角色提示词是上述四个。
 #+begin_src markdown
-  ## 🛠️ Available Tools: `read_file`, `exec_command`, `apply_patch`
+  ## 🛠️ Available Tools: `shell`, `read_file`
 
   You may call the following tools via DSML markup. Independent calls may be
   issued in one reply; dependent calls must wait for previous results.
@@ -165,30 +110,14 @@ true，=GetSystemPrompt=（=dscli chat= 路径，通过 API tools 参数注册�
   - end_line (integer, optional, inclusive)
   Returns: 📄-prefixed text with CAS tags (NR:[TAG] content) + header.
 
-  ### exec_command
-  Run a shell command; prefer read-only. Treat cmd as XML-escaped text.
-  - cmd (string, required)
-  - justification (string, optional)
-  - timeout (integer, optional, ms, default 120000)
+  ### shell
+  Run a shell command; prefer read-only. Treat script as XML-escaped text.
+  - script (string, required)
+  - summary (string, optional)
+  - timeout (integer, optional, seconds, default 120)
   Returns: { stdout: string, stderr: string, exit_code: int }
 
-  ### apply_patch
-  Apply a unified diff to the working tree. Creates/modifies/deletes files.
-  Atomic: any conflict fails the whole patch with no partial writes.
-  - patch (string, required): unified diff text; or a path to a .patch file
-  - cwd (string, optional): git repo dir, default project root; must stay
-    inside the project root
-  - check (boolean, optional): true = dry-run (`git apply --check`), no writes
-  - reverse (boolean, optional): true = reverse-apply (undo)
-  Returns: { applied: bool, check_only: bool, changed_files: [],
-            summary: string, error: string }
 #+end_src
-
-*patch 参数传输说明* ：直接以 =<parameter name="patch" string="true">= 包裹
-diff 文本即可，参数值支持多行；值内 =<invoke= 等标签被解析器视为不透明
-内容不会误触发。若 diff 文本含字面 =&lt;parameter= 序列，用 XML 实体转义
-（=&amp;lt;= ）或改为传文件路径。无需 base64——base64 增加模型出错概率，
-且人类不可读。
 
 注意区分 =dscli webchat= 和 =dscli chat= ，对 =dscli chat= 无需注册，因为
 =dscli chat= 调用API，可以通过 tools 参数注册；=dscli webchat= 没有原生

@@ -182,13 +182,13 @@ func TestMarkdownFragmentPreservesDSML(t *testing.T) {
 	}{
 		{
 			"inline block-level invoke",
-			`Expert 思考后决定搜索：<invoke name="exec_command"><parameter name="cmd" string="true">pwd && git status</parameter></invoke><p>这是后续文字</p>`,
-			"Expert 思考后决定搜索：<invoke name=\"exec_command\"><parameter name=\"cmd\" string=\"true\">pwd && git status</parameter></invoke>\n\n这是后续文字",
+			`Expert 思考后决定搜索：<invoke name="shell"><parameter name="script" string="true">pwd && git status</parameter></invoke><p>这是后续文字</p>`,
+			"Expert 思考后决定搜索：<invoke name=\"shell\"><parameter name=\"script\" string=\"true\">pwd && git status</parameter></invoke>\n\n这是后续文字",
 		},
 		{
 			"multi-line tool_calls wrapper",
-			"<tool_calls>\n<invoke name=\"exec_command\">\n<parameter name=\"cmd\" string=\"true\">ls</parameter>\n</invoke>\n</tool_calls>",
-			"<tool_calls>\n<invoke name=\"exec_command\">\n<parameter name=\"cmd\" string=\"true\">ls</parameter>\n</invoke>\n</tool_calls>",
+			"<tool_calls>\n<invoke name=\"shell\">\n<parameter name=\"script\" string=\"true\">ls</parameter>\n</invoke>\n</tool_calls>",
+			"<tool_calls>\n<invoke name=\"shell\">\n<parameter name=\"script\" string=\"true\">ls</parameter>\n</invoke>\n</tool_calls>",
 		},
 		{
 			"invoke inside a paragraph",
@@ -199,8 +199,8 @@ func TestMarkdownFragmentPreservesDSML(t *testing.T) {
 		// HTML tokenizer (text nodes), so they round-trip verbatim.
 		{
 			"parameter value with quotes and ampersand",
-			`<invoke name="exec_command"><parameter name="cmd" string="true">echo "a &amp; b" &gt; out &lt; x</parameter></invoke>`,
-			`<invoke name="exec_command"><parameter name="cmd" string="true">echo "a & b" > out < x</parameter></invoke>`,
+			`<invoke name="shell"><parameter name="script" string="true">echo "a &amp; b" &gt; out &lt; x</parameter></invoke>`,
+			`<invoke name="shell"><parameter name="script" string="true">echo "a & b" > out < x</parameter></invoke>`,
 		},
 	}
 	for _, c := range cases {
@@ -212,14 +212,14 @@ func TestMarkdownFragmentPreservesDSML(t *testing.T) {
 	}
 	// The preserved DSML must round-trip through the DSML parser: presence and
 	// arguments survive (the tool loop's trigger condition).
-	calls, err := toolcall.ParseDSMLToolCalls(joinMarkdown([]string{`<invoke name="exec_command"><parameter name="cmd" string="true">pwd && git status</parameter></invoke>`}))
+	calls, err := toolcall.ParseDSMLToolCalls(joinMarkdown([]string{`<invoke name="shell"><parameter name="script" string="true">pwd && git status</parameter></invoke>`}))
 	if err != nil || len(calls) != 1 {
 		t.Fatalf("ParseDSMLToolCalls after conversion: %v, %d calls; want 1", err, len(calls))
 	}
-	if calls[0].Name != "exec_command" {
-		t.Errorf("name = %q, want exec_command", calls[0].Name)
+	if calls[0].Name != "shell" {
+		t.Errorf("name = %q, want shell", calls[0].Name)
 	}
-	if cmd, _ := calls[0].Args["cmd"].(string); cmd != "pwd && git status" {
+	if cmd, _ := calls[0].Args["script"].(string); cmd != "pwd && git status" {
 		t.Errorf("cmd = %q, want pwd && git status", cmd)
 	}
 }

@@ -9,13 +9,10 @@
 // dscli chat. No separate DSML whitelist: `dscli role update --tools` is the
 // single place that decides which tools a role may use.
 //
-// There is NO hand-written DSML naming layer anymore: every entry is
-// generated straight from the registered ToolDef (dsmlGeneratedDocEntry), so
-// the model sees the native tool names and parameter schemas - what the model
-// writes is what the executor accepts, no translation. The only legacy
-// spelling is exec_command, resolved in the DSML layer (dsmlNativeName and
-// normalizeDSMLInvoke) with its old parameter protocol - it is deliberately
-// not a registry alias, so chat/API callers never see it.
+// There is NO hand-written DSML naming layer: every entry is generated
+// straight from the registered ToolDef (dsmlGeneratedDocEntry), so the
+// model sees the native tool names and parameter schemas - what the model
+// writes is what the executor accepts, no translation.
 package toolcall
 
 import (
@@ -139,9 +136,7 @@ func sortedSchemaKeys(props map[string]any) []string {
 // role configured via `dscli role update --tools` gets its tool registered for
 // the web model with no code change. Unregistered names in an explicit list
 // are skipped with a debug log: they would fail at execution anyway, and
-// registering them only misleads the model into failed calls. The legacy
-// exec_command spelling resolves to the shell tool (dsmlNativeName) and is
-// registered under the canonical name.
+// registering them only misleads the model into failed calls.
 func dsmlGeneratedEntries(ctx context.Context, spec string) []dsmlDocTool {
 	allow := allowSetFromSpec(spec)
 	var names []string
@@ -156,13 +151,13 @@ func dsmlGeneratedEntries(ctx context.Context, spec string) []dsmlDocTool {
 	var out []dsmlDocTool
 	seen := map[string]bool{}
 	for _, n := range names {
-		def, ok := GetToolDef(ctx, dsmlNativeName(n))
+		def, ok := GetToolDef(ctx, n)
 		if !ok {
 			outfmt.Debug("dsml doc: role tool %q is not a registered tool and will not be registered\n", n)
 			continue
 		}
 		if seen[def.Name] {
-			continue // legacy spelling and canonical name in the same spec: register once
+			continue // alias and canonical name in the same spec: register once
 		}
 		seen[def.Name] = true
 		out = append(out, dsmlGeneratedDocEntry(def))

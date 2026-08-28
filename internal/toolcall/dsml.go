@@ -11,12 +11,10 @@
 // (`dscli role update --tools`), the SAME source that gates dscli chat's
 // GetAllTools - there is no separate DSML whitelist. Role-configured tools
 // are registered with their NATIVE names and parameter schemas (see
-// dsml_doc.go), so a call maps 1:1 to the local tool; exec_command is
-// accepted as the legacy spelling of the shell tool (resolved here in the
-// DSML layer, dsmlNativeName) with its old cmd/justification/timeout-ms
-// parameter protocol translated in normalizeDSMLInvoke. The only DSML-layer
-// checks that remain are the destructive-command interception for shell
-// calls (dsmlBlockedCmdRe) and parameter validation in normalizeDSMLInvoke.
+// dsml_doc.go), so a call maps 1:1 to the local tool: what the model writes
+// is what the executor accepts, no translation. The only DSML-layer check
+// that remains is the destructive-command interception for shell calls
+// (dsmlBlockedCmdRe) in normalizeDSMLInvoke.
 package toolcall
 
 import (
@@ -75,7 +73,7 @@ var dsmlEntityReplacer = strings.NewReplacer(
 // the caller. Only a NAMED opening tag closed with ">" counts: a bare
 // "<invoke>" in prose carries no tool name (nothing to execute) and prose
 // mentioning "<invoke name=" without ">" (including a mid-tag cutoff such as
-// "<invoke name=\"exec_command" - no closing ">") never triggers routing.
+// "<invoke name=\"shell" - no closing ">") never triggers routing.
 // The latter is a documented limitation: a cut-off tag without ">" is
 // indistinguishable from prose and is passed through untouched.
 func HasDSMLToolCalls(text string) bool {
@@ -354,7 +352,7 @@ func dsmlBlockName(tag string) string {
 // how to write a tool call, an expert quoting the test corpus, or a model
 // echoing a tool result it received - never an instruction to execute.
 // Without this, a reply that merely exhibits
-// '<invoke name="exec_command">...' inside a code block would run the
+// '<invoke name="shell">...' inside a code block would run the
 // exhibited command; an incomplete quote (an <invoke> inside a code span
 // with no closing tag) would be reported as a truncated call, chopping the
 // surrounding prose away; and an echoed <tool_result> block - which may
@@ -654,43 +652,6 @@ func StripDSMLToolCalls(text string) string {
 	return strings.TrimSpace(out)
 }
 
-// dsmlLegacyNames maps legacy DSML spellings to the local tool they execute
-// as. exec_command is DeepSeek's old name for the shell tool; the map is the
-// single source for the spelling, so the doc registration (dsml_doc.go), the
-// executor allow-set check and normalizeDSMLInvoke all agree on the synonym.
-var dsmlLegacyNames = map[string]string{"exec_command": "shell"}
-
-// dsmlNativeName maps a DSML tool name to the local tool it executes as.
-// exec_command is DeepSeek's legacy spelling for the shell tool; every other
-// name passes through verbatim (the role's tool config is the only gate for
-// what may be called, and it uses local tool names). Deliberately NOT a
-// registry alias: the spelling is resolved only here, in the DSML layer,
-// together with its old parameter protocol (normalizeDSMLInvoke) - a global
-// alias would let chat/API callers reach the shell handler with untranslated
-// cmd/timeout-ms arguments.
-func dsmlNativeName(name string) string {
-	if native, ok := dsmlLegacyNames[name]; ok {
-		return native
-	}
-	return name
-}
-
-// dsmlSpecAllows reports whether the role's tools spec allows a call: the
-// canonical native name (shell), the raw spelling (exec_command), or a legacy
-// spelling that resolves to the same native tool. One spec, one meaning
-// across the doc registration, the executor and GetAllTools.
-func dsmlSpecAllows(allowed map[string]bool, native, raw string) bool {
-	if allowed[native] || allowed[raw] {
-		return true
-	}
-	for legacy, target := range dsmlLegacyNames {
-		if target == native && allowed[legacy] {
-			return true
-		}
-	}
-	return false
-}
-
 // dsmlRoleAllowSet returns the tool names the current role may invoke via
 // DSML: the role's tools spec (role_configs, falling back to DefaultFor) -
 // the SAME source GetAllTools uses for dscli chat. There is no separate
@@ -731,23 +692,14 @@ var dsmlBlockedCmdRe = regexp.MustCompile(`(?i)(^|\s|;|&&|\|\|)(` +
 // normalizeDSMLInvoke maps a DSML call to a native tool name and arguments.
 //
 // Role-configured tools are registered with their native names and parameter
-// schemas (dsml_doc.go), so the model writes what the executor accepts: the
-// general path below is a verbatim passthrough that only strips the DSML
-// decorative parameter justification (DeepSeek's habit of adding it to every
-// call) - the local handler validates everything else.
+// schemas (dsml_doc.go), so the model writes what the executor accepts: this
+// is a verbatim passthrough that only strips the DSML decorative parameter
+// justification (DeepSeek's habit of adding it to every call) - the local
+// handler validates everything else.
 //
-// Two exceptions remain, neither avoidable:
-//
-//   - exec_command is the legacy spelling of the shell tool (DeepSeek's
-//     training habit; dsmlNativeName resolves the name in the DSML layer).
-//     Sessions that started before the rename may still emit its OLD
-//     parameter protocol, translated here: cmd -> script,
-//     justification -> summary (first non-empty element, display only),
-//     timeout -> seconds (the DSML layer used milliseconds).
-//
-//   - destructive-command interception for any call targeting the shell
-//     tool, whichever spelling the model used (dsmlBlockedCmdRe): a remote
-//     web model is not a trusted local agent.
+// One DSML-layer check remains, not avoidable: destructive-command
+// interception for calls targeting the shell tool (dsmlBlockedCmdRe) - a
+// remote web model is not a trusted local agent.
 func normalizeDSMLInvoke(inv DSMLCall) (name string, args ToolArgs, err error) {
 	args = ToolArgs{}
 	for k, v := range inv.Args {
@@ -758,59 +710,12 @@ func normalizeDSMLInvoke(inv DSMLCall) (name string, args ToolArgs, err error) {
 	}
 
 	name = inv.Name
-	if _, legacy := dsmlLegacyNames[inv.Name]; legacy {
-		// Legacy parameter protocol: if the model mixed both spellings,
-		// an explicit script/summary/timeout wins over the old ones.
-		if _, ok := args["script"]; !ok {
-			if cmd, ok := args["cmd"]; ok {
-				args["script"] = cmd
-			}
-		}
-		delete(args, "cmd")
-		if _, ok := args["summary"]; !ok {
-			if sum, ok := firstNonEmptyDSMLEntry(inv.Args["justification"]); ok {
-				args["summary"] = truncateDSMLSummary(sum)
-			}
-		}
-		if t, ok := args["timeout"]; ok {
-			delete(args, "timeout")
-			if secs := dsmlTimeoutSeconds(t); secs > 0 {
-				args["timeout"] = secs
-			}
-		}
-		if script, _ := args["script"].(string); strings.TrimSpace(script) == "" {
-			return "", nil, fmt.Errorf("exec_command missing parameter cmd")
-		}
-		name = dsmlNativeName(inv.Name)
-	}
-
 	if name == "shell" {
 		if script, ok := args["script"].(string); ok && dsmlBlockedCmdRe.MatchString(script) {
 			return "", nil, fmt.Errorf("destructive command rejected (review is read-only): %q", truncateDSMLSummary(script))
 		}
 	}
 	return name, args, nil
-}
-
-// firstNonEmptyDSMLEntry returns the first non-empty string of a value that
-// may be a string, []any (repeated parameter), or absent.
-func firstNonEmptyDSMLEntry(v any) (string, bool) {
-	seen := []any{}
-	switch x := v.(type) {
-	case string:
-		seen = []any{x}
-	case []any:
-		seen = x
-	default:
-		return "", false
-	}
-	for _, e := range seen {
-		s, ok := e.(string)
-		if ok && strings.TrimSpace(s) != "" {
-			return strings.TrimSpace(s), true
-		}
-	}
-	return "", false
 }
 
 // truncateDSMLSummary caps the display summary at the shell tool's 40-char
@@ -820,32 +725,6 @@ func truncateDSMLSummary(s string) string {
 		return s
 	}
 	return s[:37] + "..."
-}
-
-// dsmlTimeoutSeconds converts a DSML timeout value (milliseconds) to whole
-// seconds, the unit the tool framework expects.
-func dsmlTimeoutSeconds(v any) int64 {
-	var ms float64
-	switch x := v.(type) {
-	case float64:
-		ms = x
-	case int:
-		ms = float64(x)
-	case int64:
-		ms = float64(x)
-	case string:
-		ms, _ = strconv.ParseFloat(strings.TrimSpace(x), 64)
-	default:
-		return 0
-	}
-	if ms <= 0 {
-		return 0
-	}
-	secs := int64(ms / 1000)
-	if secs < 1 {
-		secs = 1
-	}
-	return secs
 }
 
 // dsmlToolCallID 为一次 DSML 调用派生稳定的 ToolCall ID。DSML 标记没有
@@ -938,16 +817,17 @@ func ExecuteDSMLToolCalls(ctx context.Context, calls []DSMLCall) (outputs []stri
 	allowed := dsmlRoleAllowSet(ctx)
 	kept := make([]DSMLCall, 0, len(calls))
 	for _, inv := range calls {
-		// Accept the raw DSML spelling or its canonical name: the DSML
-		// layer resolves the legacy exec_command spelling (dsmlNativeName),
-		// so both the role spec ("shell" or "exec_command") and either
-		// spelling are honored.
-		native := dsmlNativeName(inv.Name)
-		if allowed != nil && !dsmlSpecAllows(allowed, native, inv.Name) {
+		// The role's tools spec gates execution by the call's native name -
+		// the same source GetAllTools uses, so the web model can only call
+		// what the role is configured for. A call under any other name (a
+		// legacy spelling, a quoted example, an unknown tool) is skipped
+		// silently: feeding back an "unknown tool" error would make the
+		// expert argue with itself about a call it never intended.
+		if allowed != nil && !allowed[inv.Name] {
 			outfmt.Debug("DSML skipped tool %q: not in role's tools config", inv.Name)
 			continue
 		}
-		if _, defOK := GetToolDef(ctx, native); !defOK {
+		if _, defOK := GetToolDef(ctx, inv.Name); !defOK {
 			outfmt.Debug("DSML skipped unregistered tool %q (quoted example or unknown name)", inv.Name)
 			continue
 		}

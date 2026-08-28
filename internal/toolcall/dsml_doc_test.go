@@ -59,27 +59,11 @@ func docReadFileDef() ToolDef {
 	}
 }
 
-func docApplyPatchDef() ToolDef {
-	return ToolDef{
-		Name:        "apply_patch",
-		Description: "Apply a unified diff patch.",
-		Parameters: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"patch": map[string]any{"type": "string", "description": "Unified diff text."},
-			},
-			"required":             []string{"patch"},
-			"additionalProperties": false,
-		},
-		Handler: func(_ context.Context, _ ToolArgs) (string, string, error) { return "", "", nil },
-	}
-}
-
 // TestBuildDSMLToolDocDefaults 验证无角色配置时的默认行为与 DefaultFor
 // 一致：dev 得到全部工具（从注册表生成的条目），
 // expert/review/test 得到空文档（模板整段消失）。
 func TestBuildDSMLToolDocDefaults(t *testing.T) {
-	registerDocProbeTools(t, docShellDef(), docReadFileDef(), docApplyPatchDef())
+	registerDocProbeTools(t, docShellDef(), docReadFileDef())
 	tests := []struct {
 		role      string
 		wantTools bool
@@ -113,13 +97,12 @@ func TestBuildDSMLToolDocDefaults(t *testing.T) {
 // 与 "strictly follow" 闭合句。条目一律从注册的 ToolDef 生成，所以
 // 模型看到的名字/参数就是本地工具的原生 schema（shell 而非 exec_command）。
 func TestBuildDSMLToolDocContent(t *testing.T) {
-	registerDocProbeTools(t, docShellDef(), docReadFileDef(), docApplyPatchDef())
+	registerDocProbeTools(t, docShellDef(), docReadFileDef())
 	doc := BuildDSMLToolDoc(t.Context(), "dev")
 	for _, want := range []string{
 		"## 🛠️ Available Tools:",
 		"`shell`",
 		"`read_file`",
-		"`apply_patch`",
 		"<tool_calls>",
 		"<invoke name=\"shell\">",
 		"<parameter name=\"script\" string=\"true\">",
@@ -128,21 +111,19 @@ func TestBuildDSMLToolDocContent(t *testing.T) {
 		"- `shell`: `script`",
 		"- `read_file`:",
 		"`path` (string, required) — File path.",
-		"- `apply_patch`: `patch`",
 		"### Available Tool Schemas",
 		"\"name\": \"shell\"",
 		"\"name\": \"read_file\"",
-		"\"name\": \"apply_patch\"",
 		"You MUST strictly follow the above defined tool name and parameter schemas to invoke tool calls.",
 	} {
 		if !strings.Contains(doc.Intro, want) && !strings.Contains(doc.Schemas, want) {
 			t.Errorf("doc missing %q\nIntro:\n%s\nSchemas:\n%s", want, doc.Intro, doc.Schemas)
 		}
 	}
-	// exec_command 不再作为注册名出现：它是 shell 的旧拼写，仅由注册表
-	// 别名解析（normalizeDSMLInvoke 兼容），不得误导模型生成它。
+	// exec_command 不在文档中出现：文档只从注册的 ToolDef 生成，任何
+	// 未注册/旧拼写都不会被广告，避免误导模型生成无法执行的调用。
 	if strings.Contains(doc.Intro, "exec_command") || strings.Contains(doc.Schemas, "exec_command") {
-		t.Errorf("doc must not advertise the legacy exec_command spelling\nIntro:\n%s", doc.Intro)
+		t.Errorf("doc must not advertise the unknown exec_command spelling\nIntro:\n%s", doc.Intro)
 	}
 	if strings.Contains(doc.Intro, "{{") || strings.Contains(doc.Schemas, "{{") {
 		t.Error("doc leaks template placeholders")
@@ -150,9 +131,8 @@ func TestBuildDSMLToolDocContent(t *testing.T) {
 }
 
 // TestBuildDSMLToolDocRoleConfig 验证角色配置（role_configs）驱动文档：
-// 配置 shell,read_file 只注册这两个工具（按规范名注册；exec_command 是
-// 旧拼写，由注册表别名解析，不再作为注册名出现），配置为空字符串则
-// 整段消失。
+// 配置 shell,read_file 只注册这两个工具（按注册名一一对应；未知名字不
+// 产生条目），配置为空字符串则整段消失。
 func TestBuildDSMLToolDocRoleConfig(t *testing.T) {
 	ctx := t.Context()
 	sessionID := session.GetCurrentSessionID(ctx)
