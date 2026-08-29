@@ -31,9 +31,13 @@ func TestChatRoleFlagDefaultsToArchitect(t *testing.T) {
 
 	// Restore the shared command's role flag after the test so mutations do
 	// not leak into other top-level tests in the package (order-dependent
-	// under -shuffle=on).
-	orig := flag.Value.String()
-	t.Cleanup(func() { _ = cmd.Flags().Set("role", orig) })
+	// under -shuffle=on). Restore to the canonical DefValue, not the captured
+	// current value, so even a pre-polluted flag is reset.
+	t.Cleanup(func() {
+		if err := cmd.Flags().Set("role", flag.DefValue); err != nil {
+			t.Errorf("restore --role in cleanup: %v", err)
+		}
+	})
 
 	tests := []struct {
 		name    string
