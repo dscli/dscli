@@ -183,25 +183,19 @@ func TestWebChatWithOptionsRejectsHandleFields(t *testing.T) {
 }
 
 // TestHandleWebChatKeepSkipsPromptInjection verifies that a resumed web
-// conversation (Keep != "") does not re-inject the role/system persona into
-// the sent message: the prompt was already part of the first round's history,
-// so the sent message must equal the input verbatim. The first-round cases
-// (Keep == "") assert the contrast - the persona IS injected, visible via
-// the "## User Request" separator, with the user message preserved after it.
-//
-// Role "dev" simply relies on roles.DefaultFor("dev") falling back to the dev
-// template; the separator's presence (or absence) is the sufficient, stable
-// signal of injection, and the resume cases need only verbatim equality -
-// no assumptions about the tool registry.
+// conversation (Keep != "") does not re-inject the persona: the sent message
+// must equal the input verbatim. First-round cases (Keep == "") assert the
+// contrast - the persona IS injected, detectable via the "## User Request"
+// separator, with the user message preserved after it.
 func TestHandleWebChatKeepSkipsPromptInjection(t *testing.T) {
 	const message = "continue the discussion"
 
 	tests := []struct {
-		name      string
-		keep      string
-		role      string
-		system    string
-		wantInjec bool // true = persona injected (first round), false = verbatim
+		name         string
+		keep         string
+		role         string
+		system       string
+		wantInjected bool // true = persona injected (first round), false = verbatim
 	}{
 		{"first round role injected", "", "dev", "", true},
 		{"first round system wins over role", "", "dev", "persona-x", true},
@@ -230,20 +224,18 @@ func TestHandleWebChatKeepSkipsPromptInjection(t *testing.T) {
 				t.Fatalf("HandleWebChat: %v", err)
 			}
 
-			if tc.wantInjec {
+			if tc.wantInjected {
 				if !strings.Contains(sent, "## User Request") {
-					t.Fatalf("sent message lacks ## User Request separator (prompt not injected):\n%q", sent)
+					t.Errorf("first-round message lacks ## User Request separator (persona not injected), got %q", sent)
 				}
 				if !strings.HasSuffix(sent, message) {
-					t.Fatalf("injected message must preserve the user message verbatim at the end, got:\n%q", sent)
+					t.Errorf("first-round message must preserve the user message verbatim, got %q", sent)
 				}
 				if tc.system != "" && !strings.Contains(sent, tc.system) {
-					t.Fatalf("injected message must contain the system persona %q (System wins over Role), got:\n%q", tc.system, sent)
+					t.Errorf("first-round message must contain the system persona %q (System wins over Role), got %q", tc.system, sent)
 				}
-				return
-			}
-			if sent != message {
-				t.Fatalf("resumed send must equal input verbatim, got:\n%q", sent)
+			} else if sent != message {
+				t.Errorf("resumed message must equal input verbatim, got %q", sent)
 			}
 		})
 	}
