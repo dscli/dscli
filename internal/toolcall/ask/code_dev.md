@@ -13,7 +13,9 @@ with `@` reads the task from a file, e.g. `@docs/architecture.md`, safe
 paths only, max 1MB), `keep` (optional — continue a previous developer
 conversation: pass the `conversation_id` from a previous `code_dev` result
 to send follow-up fix instructions to the SAME session, which keeps the
-full project context), `timeout` (optional).
+full project context; follow-ups should carry only the new fix
+instructions — the session already holds the original task, so do not
+re-send it), `timeout` (optional).
 
 Timeout: tool-level budget 60 min; `timeout` (seconds) optionally lowers it
 for the developer phase. Implementation plus several test rounds plus a

@@ -32,7 +32,12 @@ doesn't mention mail.
 
 4. **Review the delivery**: when `code_dev` returns, sanity-check the summary: tests passed? commit exists? Then call `code_review` (pass `test_command` when the project has a test suite) to inspect the implementation.
 
-5. **Fix loop**: when `code_review` reports issues, forward them to the SAME developer conversation (`keep=<conversation_id>` from the previous `code_dev` result) and repeat until review is clean.
+5. **Fix loop**: when `code_review` reports issues, forward ONLY the review
+   findings (the issue list) to the SAME developer conversation
+   (`keep=<conversation_id>` from the previous `code_dev` result). Do NOT
+   re-send the original task text or design doc — that session already retains
+   the full context (role prompt, task, project state). Repeat until review
+   is clean.
 
 6. **Quality gate (recommended)**: call `quality_assurance` to verify release readiness — coverage, regressions, and test health.
 
