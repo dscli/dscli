@@ -338,7 +338,7 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 			// in role consultations is stripped so callers see clean
 			// prose; plain chat keeps it verbatim (the expert's words are
 			// content there, not a command).
-			if toolcall.IsDSMLToolCallEnd(res.Content) || toolcall.IsDSMLToolCallCut(res.Content) {
+			if toolcall.IsDSMLToolCallReply(res.Content) {
 				return handleWebChatToolLoop(ctx, res, opts)
 			}
 			if opts.Role != "" && toolcall.HasDSMLToolCalls(res.Content) {
@@ -422,7 +422,7 @@ func HandleWebChatResume(ctx context.Context, opts WebChatOptions) (WebChatResul
 	}
 	fmt.Fprintf(os.Stderr, "🔁 恢复会话: %s（最后一条消息 %d 字符，status=%s）\n", convURL, countRunes(content), status)
 
-	if !toolcall.IsDSMLToolCallEnd(content) && !toolcall.IsDSMLToolCallCut(content) {
+	if !toolcall.IsDSMLToolCallReply(content) {
 		// Multi-turn conversation: the expert already gave a normal reply —
 		// nothing pending, hand the last content to the caller verbatim.
 		// A reply that is still streaming (status != FINISHED) is NOT a
@@ -510,7 +510,7 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 		if len(calls) == 0 {
 			return cleanExit()
 		}
-		if !toolcall.IsDSMLToolCallEnd(message) && !toolcall.IsDSMLToolCallCut(message) {
+		if !toolcall.IsDSMLToolCallReply(message) {
 			return cleanExit()
 		}
 

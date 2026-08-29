@@ -415,6 +415,48 @@ func TestHandleWebChatToolLoop(t *testing.T) {
 	}
 }
 
+func TestHandleWebChatToolLoopBareInvoke(t *testing.T) {
+	// The developer model (code_dev round, 2026-08-29) replied with a BARE
+	// <invoke> block - no <tool_calls> wrapper, no wrapper close - which the
+	// End/Cut signals alone would not route into the loop. The reply is a
+	// complete executable emission (IsDSMLToolCallReply via
+	// IsPureDSMLToolCalls), so the loop must execute it and continue until a
+	// final answer, exactly as for a wrapped call.
+	origFunc := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = origFunc })
+
+	bare := `<invoke name="read_file">
+<parameter name="path" string="true">AGENTS.md</parameter>
+</invoke>`
+	finalAnswer := "## Overall Assessment\nEverything looks good."
+	var messages []string
+	handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
+		messages = append(messages, msg)
+		if len(messages) == 1 {
+			return WebChatResult{Content: bare, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+		}
+		return WebChatResult{Content: finalAnswer, URL: "https://chat.deepseek.com/a/chat/s/convY"}, nil
+	}
+	seen := captureExecDSML(t, "file read result")
+
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{Role: "dev"})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if len(*seen) != 1 || (*seen)[0].Name != "read_file" {
+		t.Errorf("executed calls = %+v, want one read_file", *seen)
+	}
+	if res.Content != finalAnswer {
+		t.Errorf("content = %q, want final answer", res.Content)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("sends = %d, want 2 (initial + tool feedback)", len(messages))
+	}
+	if messages[1] != "file read result" {
+		t.Errorf("round-2 message = %q, want tool feedback", messages[1])
+	}
+}
+
 func TestHandleWebChatToolLoopPlainChatExecutesDSML(t *testing.T) {
 	// Plain webchat (role empty) also enters the tool loop when the reply
 	// IS a tool call: chat.deepseek.com's model emits DSML natively, so

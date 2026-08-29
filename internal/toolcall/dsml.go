@@ -175,6 +175,32 @@ func IsDSMLToolCallCut(text string) bool {
 	return dsmlToolCallsCloseCutRe.MatchString(strings.TrimSpace(normalizeDSMLText(text)))
 }
 
+// IsDSMLToolCallReply reports whether text is INTENDED as a tool-call
+// emission and should route into the tool loop. It is the union of the
+// three shapes the web model actually emits:
+//
+//   - IsDSMLToolCallEnd — the reply ends with a wrapper close tag (even the
+//     typo'd </_calls> / <_calls> variants): the model's "emission
+//     complete" signal, whatever prose precedes it, and the shape that
+//     authorizes the implicit close of a missing </invoke> in
+//     dsmlBlockRanges.
+//   - IsDSMLToolCallCut — the wrapper close tag was cut off at the very end
+//     ("…</" or "</tool_calls" without ">"): the emission is complete in
+//     intent but the stored content was truncated at a boundary.
+//   - IsPureDSMLToolCalls — the reply is a BARE sequence of complete
+//     <invoke> blocks with no wrapper and nothing else (observed 2026-08-29
+//     for a code_dev round: the model emitted "<invoke name=\"read_file\">
+//     <parameter ...>…</invoke>" alone, no <tool_calls> wrapper at all).
+//
+// Non-executable shapes stay outside the union by construction: a reply
+// that CITES an <invoke> example (in prose, a fenced block, or an inline
+// code span) leaves non-empty stripped text, so IsPureDSMLToolCalls says
+// false; a truncated emission (an open without close, or a parameter never
+// closed) fails ParseDSMLToolCalls, so every branch stays false.
+func IsDSMLToolCallReply(text string) bool {
+	return IsDSMLToolCallEnd(text) || IsDSMLToolCallCut(text) || IsPureDSMLToolCalls(text)
+}
+
 // dsmlNamedInvokeOpenRe matches an opening <invoke> tag that carries a name
 // attribute - the only shape that can be a real tool call. It is also the
 // gate for HasDSMLToolCalls and the "no opens" early exit in ParseDSMLToolCalls:
@@ -493,6 +519,11 @@ func inCodeRanges(ranges [][2]int, pos int) bool {
 //   - Quoted code (fenced blocks and inline code spans) is opaque: DSML
 //     inside it is quoted content, not an instruction. See dsmlCodeRanges
 //     for the rules.
+//   - A wrapper close tag at the very end (see dsmlToolCallsCloseEndRe)
+//     authorizes an IMPLICIT close for opens whose </invoke> the model
+//     dropped: the wrapper close is the model's own "emission complete"
+//     signal, and complete parameters plus that signal mean the call is
+//     finished, not truncated (details in the function body).
 func dsmlBlockRanges(text string) (blocks []dsmlBlockRange, unclosed int, firstUnclosed int) {
 	type ev struct {
 		pos  int
@@ -527,7 +558,13 @@ func dsmlBlockRanges(text string) (blocks []dsmlBlockRange, unclosed int, firstU
 		}
 		return events[i].kind < events[j].kind
 	})
-	type open struct{ start, end int }
+	// open tracks one <invoke> open whose </invoke> may be missing. bodyEnd
+	// records where its parameter block ended (the last </parameter>, or the
+	// open tag's own end when the call has no parameters), so an implicit
+	// close lands at the call's own content end: sibling calls keep distinct
+	// close positions and the covered-skip in ParseDSMLToolCalls never drops
+	// them.
+	type open struct{ start, end, bodyEnd int }
 	stack := []open{} // unmatched opens, in text order
 	paramDepth := 0
 	firstUnclosed = -1
@@ -538,10 +575,18 @@ func dsmlBlockRanges(text string) (blocks []dsmlBlockRange, unclosed int, firstU
 		case 'q':
 			if paramDepth > 0 {
 				paramDepth--
+				// The parameter that just closed belongs to the innermost
+				// open; record its end for a later implicit close. A literal
+				// "</parameter>" inside a value still balances the count -
+				// the known best-effort boundary of the scan (see the
+				// function docs), unchanged for the strict path.
+				if paramDepth == 0 && len(stack) > 0 {
+					stack[len(stack)-1].bodyEnd = e.end
+				}
 			}
 		case 'o':
 			if paramDepth == 0 {
-				stack = append(stack, open{e.pos, e.end})
+				stack = append(stack, open{e.pos, e.end, e.end})
 			}
 		case 'c':
 			if paramDepth == 0 && len(stack) > 0 {
@@ -550,6 +595,26 @@ func dsmlBlockRanges(text string) (blocks []dsmlBlockRange, unclosed int, firstU
 				blocks = append(blocks, dsmlBlockRange{o.start, o.end, e.pos, e.end})
 			}
 		}
+	}
+	// Implicit close: a wrapper close tag at the very end (</tool_calls>,
+	// or its typo'd cousins </_calls> / <_calls>, see
+	// dsmlToolCallsCloseEndRe) is the model's own "emission complete"
+	// signal - the same intent IsDSMLToolCallEnd gates the tool loop on.
+	// When every <parameter> was closed (paramDepth == 0) but the model
+	// dropped the trailing </invoke> (observed 2026-08-29: a code_review
+	// round stored as "...</parameter>\n</_calls>" in the chat.deepseek.com
+	// IndexedDB - the close tag of both the call and the wrapper collapsed
+	// into one typo'd fragment), the remaining opens are complete calls
+	// missing only their close tag: closing them implicitly at their own
+	// bodyEnd keeps a finished emission executable instead of misreading it
+	// as truncated. A missing wrapper close, or an unclosed <parameter>
+	// (paramDepth > 0), stays a truncation: the emission is genuinely cut
+	// off then and must never run.
+	if m := dsmlToolCallsCloseEndRe.FindStringIndex(text); m != nil && paramDepth == 0 && len(stack) > 0 {
+		for _, o := range stack {
+			blocks = append(blocks, dsmlBlockRange{o.start, o.end, o.bodyEnd, o.bodyEnd})
+		}
+		stack = stack[:0]
 	}
 	unclosed = len(stack)
 	if unclosed > 0 {
