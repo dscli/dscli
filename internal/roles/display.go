@@ -3,24 +3,24 @@ package roles
 // Display 是角色在终端输出中的显示元数据。
 type Display struct {
 	Icon  string // emoji 图标
-	Name  string // 英文 role 名（dev/expert/review/test/architect）
+	Role  string // 英文 role 名（dev/expert/review/test/architect）
 	Label string // 中文显示名
 }
 
-// String 返回 "review·代码审查" 形式；Name 为空时返回 ""。
+// String 返回 "review·代码审查" 形式；Role 为空时返回 ""。
 func (d Display) String() string {
-	if d.Name == "" {
+	if d.Role == "" {
 		return ""
 	}
-	return d.Name + "·" + d.Label
+	return d.Role + "·" + d.Label
 }
 
 var (
-	devDisplay       = Display{Icon: "💻", Name: "dev", Label: "开发助手"}
-	expertDisplay    = Display{Icon: "🧠", Name: "expert", Label: "领域专家"}
-	reviewDisplay    = Display{Icon: "🔍", Name: "review", Label: "代码审查"}
-	testDisplay      = Display{Icon: "🧪", Name: "test", Label: "QA 工程师"}
-	architectDisplay = Display{Icon: "🏗️", Name: "architect", Label: "软件架构师"}
+	devDisplay       = Display{Icon: "💻", Role: "dev", Label: "开发助手"}
+	expertDisplay    = Display{Icon: "🧠", Role: "expert", Label: "领域专家"}
+	reviewDisplay    = Display{Icon: "🔍", Role: "review", Label: "代码审查"}
+	testDisplay      = Display{Icon: "🧪", Role: "test", Label: "QA 工程师"}
+	architectDisplay = Display{Icon: "🏗️", Role: "architect", Label: "软件架构师"}
 )
 
 // DisplayFor 返回角色的显示元数据。""（纯聊天）返回零值 Display{}，

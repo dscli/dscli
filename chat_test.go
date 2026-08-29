@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -79,6 +80,7 @@ func TestPrintContent(t *testing.T) {
 	ctx = context.WithValue(ctx, context.CurrentModelIDKey, context.ModelDeepseekChat)
 	buf := bytes.NewBuffer([]byte{})
 	outfmt.SetOutputWriter(buf)
+	t.Cleanup(func() { outfmt.SetOutputWriter(os.Stdout) })
 	outfmt.PrintContent(ctx, "reasoning", "content")
 	s := buf.String()
 
@@ -97,48 +99,72 @@ func TestPrintContent(t *testing.T) {
 func TestPrintContentRoleHeader(t *testing.T) {
 	buf := bytes.NewBuffer([]byte{})
 	outfmt.SetOutputWriter(buf)
+	t.Cleanup(func() { outfmt.SetOutputWriter(os.Stdout) })
 
-	// 带 role：头部显示角色身份，不显示 T:。
-	ctx := t.Context()
-	ctx = context.WithValue(ctx, context.StartTimeKey, time.Now())
-	ctx = context.WithValue(ctx, context.CurrentRoleKey, "review")
-	outfmt.PrintContent(ctx, "thinking", "answer")
-	s := buf.String()
-	if !strings.Contains(s, "review·代码审查") {
-		t.Errorf("role header missing, got:\n%s", s)
-	}
-	if strings.Contains(s, "T:") {
-		t.Errorf("role header should not contain T:, got:\n%s", s)
+	tests := []struct {
+		name      string
+		role      string
+		cn        string
+		email     string
+		birdFrog  string
+		reasoning string
+		content   string
+		want      string
+	}{
+		{
+			name:      "review role",
+			role:      "review",
+			reasoning: "thinking",
+			content:   "answer",
+			want:      "review·代码审查",
+		},
+		{
+			name:      "architect default role, reasoning only",
+			role:      "architect",
+			reasoning: "thinking",
+			want:      "architect·软件架构师",
+		},
+		{
+			name:      "unknown role falls back to dev",
+			role:      "bogus",
+			reasoning: "thinking",
+			content:   "answer",
+			want:      "dev·开发助手",
+		},
+		{
+			name:      "no role uses AI name",
+			cn:        "玻尔",
+			email:     "bohr@dscli.io",
+			birdFrog:  "bird",
+			reasoning: "thinking",
+			content:   "answer",
+			want:      "玻尔",
+		},
 	}
 
-	// 默认角色（architect，chat 命令的默认值）：头部显示角色身份。
-	buf.Reset()
-	ctx = t.Context()
-	ctx = context.WithValue(ctx, context.StartTimeKey, time.Now())
-	ctx = context.WithValue(ctx, context.CurrentRoleKey, "architect")
-	outfmt.PrintContent(ctx, "thinking", "answer")
-	s = buf.String()
-	if !strings.Contains(s, "🏗️ architect·软件架构师") {
-		t.Errorf("architect role header missing, got:\n%s", s)
-	}
-	if strings.Contains(s, "T:") {
-		t.Errorf("architect role header should not contain T:, got:\n%s", s)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf.Reset()
+			ctx := t.Context()
+			ctx = context.WithValue(ctx, context.StartTimeKey, time.Now())
+			if tt.role != "" {
+				ctx = context.WithValue(ctx, context.CurrentRoleKey, tt.role)
+			}
+			if tt.cn != "" {
+				ctx = context.WithValue(ctx, context.AINameCNKey, tt.cn)
+				ctx = context.WithValue(ctx, context.AINameEmailKey, tt.email)
+				ctx = context.WithValue(ctx, context.AINameBirdFrogKey, tt.birdFrog)
+			}
+			outfmt.PrintContent(ctx, tt.reasoning, tt.content)
+			s := buf.String()
 
-	// 不带 role：显示 AI 名，同样不显示 T:。
-	buf.Reset()
-	ctx = t.Context()
-	ctx = context.WithValue(ctx, context.StartTimeKey, time.Now())
-	ctx = context.WithValue(ctx, context.AINameCNKey, "玻尔")
-	ctx = context.WithValue(ctx, context.AINameEmailKey, "bohr@dscli.io")
-	ctx = context.WithValue(ctx, context.AINameBirdFrogKey, "bird")
-	outfmt.PrintContent(ctx, "thinking", "answer")
-	s = buf.String()
-	if !strings.Contains(s, "玻尔") || !strings.Contains(s, "bohr@dscli.io") {
-		t.Errorf("AI name header missing, got:\n%s", s)
-	}
-	if strings.Contains(s, "T:") {
-		t.Errorf("AI name header should not contain T:, got:\n%s", s)
+			if !strings.Contains(s, tt.want) {
+				t.Errorf("header missing %q, got:\n%s", tt.want, s)
+			}
+			if strings.Contains(s, "T:") {
+				t.Errorf("header should not contain T:, got:\n%s", s)
+			}
+		})
 	}
 }
 

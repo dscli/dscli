@@ -120,7 +120,7 @@ func initDatabase(ctx context.Context, db *DB) error {
 	// 3. 执行升级脚本
 	for _, query := range upgradeSchemas {
 		if _, err := db.Exec(query); err == nil {
-			clog.Debug(ctx, "升级完成: "+query)
+			clog.Debug(ctx, "升级完成", "query", query)
 		}
 	}
 

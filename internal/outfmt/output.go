@@ -496,6 +496,7 @@ const headerLineWidth = 80
 // and right-aligned timestamp, using middle dots as filler.
 //
 // Example: "   🐦 玻尔 <bohr@dscli.io> ········· 17:12:21 🕐"
+// Without email: "   🔍 review·代码审查 ········· 17:12:21 🕐"
 func formatChatHeader(icon, nameCN, email, now string) string {
 	left := icon + " " + nameCN
 	if email != "" {
@@ -588,7 +589,7 @@ func PrintContent(ctx context.Context, reasoning, content string) {
 	// 角色头：--role dev/expert/review/test/architect 时用角色身份替代 AI 名。
 	role := context.ContextValue(ctx, context.CurrentRoleKey, "")
 	disp := roles.DisplayFor(role)
-	useRoleHeader := role != "" && disp.Name != ""
+	useRoleHeader := role != ""
 
 	// AI name for header
 	nameCN := context.ContextValue(ctx, context.AINameCNKey, "")
