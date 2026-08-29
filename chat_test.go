@@ -29,6 +29,12 @@ func TestChatRoleFlagDefaultsToArchitect(t *testing.T) {
 		t.Errorf("default --role = %q, want %q", flag.DefValue, defaultChatRole)
 	}
 
+	// Restore the shared command's role flag after the test so mutations do
+	// not leak into other top-level tests in the package (order-dependent
+	// under -shuffle=on).
+	orig := flag.Value.String()
+	t.Cleanup(func() { _ = cmd.Flags().Set("role", orig) })
+
 	tests := []struct {
 		name    string
 		set     bool
@@ -41,9 +47,8 @@ func TestChatRoleFlagDefaultsToArchitect(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Reset the shared command's role flag deterministically so
-			// subtests stay order-independent (no leakage under shuffle or
-			// future t.Parallel).
+			// Reset the shared command's role flag to a deterministic value
+			// so each subtest starts from a known state regardless of order.
 			roleArg := flag.DefValue
 			if tt.set {
 				roleArg = tt.roleArg
