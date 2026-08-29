@@ -116,3 +116,50 @@ func TestParseDSMLMissingInvokeCloseBounded(t *testing.T) {
 		t.Error("ParseDSMLToolCalls(unclosed parameter) = nil error, want truncation error")
 	}
 }
+
+// TestParseDSMLMissingInvokeCloseMisNested pins the implicit-close boundary:
+// it fires ONLY when exactly one open is left unclosed at the end. A
+// mis-nested shape (a second invoke opened before the first was closed, then
+// the wrapper close) leaves TWO opens - that is a genuine truncation or a
+// model mishap, and the calls must never execute. The two positive cases are
+// controls: the single unclosed open (with and without parameters) still
+// parses, so the tightening did not regress the observed 2026-08-29 shape.
+func TestParseDSMLMissingInvokeCloseMisNested(t *testing.T) {
+	tests := []struct {
+		name    string
+		text    string
+		wantErr bool
+	}{
+		{
+			name:    "two unclosed opens and wrapper close",
+			text:    "<tool_calls>\n<invoke name=\"a\">\n<parameter name=\"x\">v</parameter>\n<invoke name=\"b\">\n</tool_calls>",
+			wantErr: true,
+		},
+		{
+			name:    "two unclosed opens and typo close",
+			text:    "<invoke name=\"a\">\n<parameter name=\"x\">v</parameter>\n<invoke name=\"b\">\n</_calls>",
+			wantErr: true,
+		},
+		{
+			name:    "single unclosed open with params and typo close",
+			text:    "<invoke name=\"a\">\n<parameter name=\"x\">v</parameter>\n</_calls>",
+			wantErr: false,
+		},
+		{
+			name:    "single parmeterless unclosed open and typo close",
+			text:    "<invoke name=\"pwd\">\n</_calls>",
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseDSMLToolCalls(tt.text)
+			if tt.wantErr && err == nil {
+				t.Fatal("ParseDSMLToolCalls = nil error, want truncation error")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("ParseDSMLToolCalls: %v, want success", err)
+			}
+		})
+	}
+}

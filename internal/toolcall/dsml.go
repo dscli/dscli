@@ -179,18 +179,20 @@ func IsDSMLToolCallCut(text string) bool {
 // emission and should route into the tool loop. It is the union of the
 // three shapes the web model actually emits:
 //
-//   - IsDSMLToolCallEnd — the reply ends with a wrapper close tag (even the
+//   - IsDSMLToolCallEnd - the reply ends with a wrapper close tag (even the
 //     typo'd </_calls> / <_calls> variants): the model's "emission
 //     complete" signal, whatever prose precedes it, and the shape that
 //     authorizes the implicit close of a missing </invoke> in
 //     dsmlBlockRanges.
-//   - IsDSMLToolCallCut — the wrapper close tag was cut off at the very end
+//   - IsDSMLToolCallCut - the wrapper close tag was cut off at the very end
 //     ("…</" or "</tool_calls" without ">"): the emission is complete in
 //     intent but the stored content was truncated at a boundary.
-//   - IsPureDSMLToolCalls — the reply is a BARE sequence of complete
-//     <invoke> blocks with no wrapper and nothing else (observed 2026-08-29
-//     for a code_dev round: the model emitted "<invoke name=\"read_file\">
-//     <parameter ...>…</invoke>" alone, no <tool_calls> wrapper at all).
+//   - IsPureDSMLToolCalls - the reply is a BARE sequence of complete
+//     <invoke> blocks with no wrapper at all: after stripping block markup,
+//     no prose survives (an optional <tool_calls>/<tool_result> wrapper is
+//     tolerated; observed 2026-08-29 for a code_dev round: the model emitted
+//     "<invoke name=\"read_file\"><parameter ...>…</invoke>" alone, no
+//     <tool_calls> wrapper at all).
 //
 // Non-executable shapes stay outside the union by construction: a reply
 // that CITES an <invoke> example (in prose, a fenced block, or an inline
@@ -561,9 +563,8 @@ func dsmlBlockRanges(text string) (blocks []dsmlBlockRange, unclosed int, firstU
 	// open tracks one <invoke> open whose </invoke> may be missing. bodyEnd
 	// records where its parameter block ended (the last </parameter>, or the
 	// open tag's own end when the call has no parameters), so an implicit
-	// close lands at the call's own content end: sibling calls keep distinct
-	// close positions and the covered-skip in ParseDSMLToolCalls never drops
-	// them.
+	// close lands at the call's own content end instead of swallowing the
+	// wrapper close tag.
 	type open struct{ start, end, bodyEnd int }
 	stack := []open{} // unmatched opens, in text order
 	paramDepth := 0
@@ -604,16 +605,19 @@ func dsmlBlockRanges(text string) (blocks []dsmlBlockRange, unclosed int, firstU
 	// dropped the trailing </invoke> (observed 2026-08-29: a code_review
 	// round stored as "...</parameter>\n</_calls>" in the chat.deepseek.com
 	// IndexedDB - the close tag of both the call and the wrapper collapsed
-	// into one typo'd fragment), the remaining opens are complete calls
-	// missing only their close tag: closing them implicitly at their own
-	// bodyEnd keeps a finished emission executable instead of misreading it
-	// as truncated. A missing wrapper close, or an unclosed <parameter>
-	// (paramDepth > 0), stays a truncation: the emission is genuinely cut
-	// off then and must never run.
-	if m := dsmlToolCallsCloseEndRe.FindStringIndex(text); m != nil && paramDepth == 0 && len(stack) > 0 {
-		for _, o := range stack {
-			blocks = append(blocks, dsmlBlockRange{o.start, o.end, o.bodyEnd, o.bodyEnd})
-		}
+	// into one typo'd fragment), the one remaining open is a complete call
+	// missing only its close tag: closing it implicitly at its own bodyEnd
+	// keeps a finished emission executable instead of misreading it as
+	// truncated. Exactly ONE open is required: with back-to-back siblings
+	// each preceding invoke is closed by its own </invoke> and pops, so the
+	// stack holds only the final open whose close tag was dropped. Several
+	// opens at once (mis-nested shapes, e.g. a second invoke opened before
+	// the first was closed) are a genuine truncation and must never run - a
+	// missing wrapper close, or an unclosed <parameter> (paramDepth > 0),
+	// stays a truncation too.
+	if m := dsmlToolCallsCloseEndRe.FindStringIndex(text); m != nil && paramDepth == 0 && len(stack) == 1 {
+		o := stack[0]
+		blocks = append(blocks, dsmlBlockRange{o.start, o.end, o.bodyEnd, o.bodyEnd})
 		stack = stack[:0]
 	}
 	unclosed = len(stack)
