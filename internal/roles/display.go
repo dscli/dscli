@@ -23,8 +23,9 @@ var (
 	architectDisplay = Display{Icon: "🏗️", Name: "architect", Label: "软件架构师"}
 )
 
-// DisplayFor 返回角色的显示元数据。"" 返回零值 Display{}（调用方应走
-// 默认 AI 名路径）；未知角色 fallback dev（与 DefaultFor 的未知角色策略一致）。
+// DisplayFor 返回角色的显示元数据。""（纯聊天）返回零值 Display{}，
+// 调用方应走默认 AI 名路径；未知/未识别角色 fallback dev——这是刻意
+// 镜像 roles.DefaultFor 的未知角色策略，与工具/技能门控行为完全一致。
 func DisplayFor(role string) Display {
 	switch role {
 	case "dev":

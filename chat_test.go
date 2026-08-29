@@ -111,6 +111,20 @@ func TestPrintContentRoleHeader(t *testing.T) {
 		t.Errorf("role header should not contain T:, got:\n%s", s)
 	}
 
+	// 默认角色（architect，chat 命令的默认值）：头部显示角色身份。
+	buf.Reset()
+	ctx = t.Context()
+	ctx = context.WithValue(ctx, context.StartTimeKey, time.Now())
+	ctx = context.WithValue(ctx, context.CurrentRoleKey, "architect")
+	outfmt.PrintContent(ctx, "thinking", "answer")
+	s = buf.String()
+	if !strings.Contains(s, "🏗️ architect·软件架构师") {
+		t.Errorf("architect role header missing, got:\n%s", s)
+	}
+	if strings.Contains(s, "T:") {
+		t.Errorf("architect role header should not contain T:, got:\n%s", s)
+	}
+
 	// 不带 role：显示 AI 名，同样不显示 T:。
 	buf.Reset()
 	ctx = t.Context()

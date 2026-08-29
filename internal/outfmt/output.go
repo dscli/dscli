@@ -496,15 +496,12 @@ const headerLineWidth = 80
 // and right-aligned timestamp, using middle dots as filler.
 //
 // Example: "   🐦 玻尔 <bohr@dscli.io> ········· 17:12:21 🕐"
-func formatChatHeader(icon, nameCN, email, now, suffix string) string {
+func formatChatHeader(icon, nameCN, email, now string) string {
 	left := icon + " " + nameCN
 	if email != "" {
 		left += " <" + email + ">"
 	}
 	right := now + " 🕐"
-	if suffix != "" {
-		right += " " + suffix
-	}
 
 	leftW := runewidth.StringWidth(left)
 	rightW := runewidth.StringWidth(right)
@@ -531,7 +528,7 @@ func PrintClimeinContent(ctx context.Context, content string) {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		if userName != "" && userEmail != "" && userName != "未知" {
-			Printf("\n%s\n\n", formatChatHeader("🔔", userName, userEmail, now, ""))
+			Printf("\n%s\n\n", formatChatHeader("🔔", userName, userEmail, now))
 			Println("CONTINUE...")
 			Println()
 		} else {
@@ -539,7 +536,7 @@ func PrintClimeinContent(ctx context.Context, content string) {
 		}
 	} else {
 		if userName != "" && userEmail != "" && userName != "未知" {
-			Printf("\n%s\n\n", formatChatHeader("🔔", userName, userEmail, now, ""))
+			Printf("\n%s\n\n", formatChatHeader("🔔", userName, userEmail, now))
 			Println(content)
 			Println()
 		} else {
@@ -559,7 +556,7 @@ func PrintUserContent(ctx context.Context, content string) {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		if userName != "" && userEmail != "" && userName != "未知" {
-			Printf("\n%s\n\n", formatChatHeader("👤", userName, userEmail, now, ""))
+			Printf("\n%s\n\n", formatChatHeader("👤", userName, userEmail, now))
 			Println("CONTINUE...")
 			Println()
 		} else {
@@ -567,7 +564,7 @@ func PrintUserContent(ctx context.Context, content string) {
 		}
 	} else {
 		if userName != "" && userEmail != "" && userName != "未知" {
-			Printf("\n%s\n\n", formatChatHeader("👤", userName, userEmail, now, ""))
+			Printf("\n%s\n\n", formatChatHeader("👤", userName, userEmail, now))
 			Println(content)
 			Println()
 		} else {
@@ -613,9 +610,9 @@ func PrintContent(ctx context.Context, reasoning, content string) {
 		reasoning = codeFenceRe.ReplaceAllString(reasoning, "\n$0\n")
 		switch {
 		case useRoleHeader:
-			Printf("\n%s\n\n", formatChatHeader("💭", disp.String(), "", now, ""))
+			Printf("\n%s\n\n", formatChatHeader("💭", disp.String(), "", now))
 		case nameCN != "" && email != "":
-			Printf("\n%s\n\n", formatChatHeader("💭", nameCN, email, now, ""))
+			Printf("\n%s\n\n", formatChatHeader("💭", nameCN, email, now))
 		default:
 			Printf("\n🕐%s  💭 %s\n\n", now, FillParagraph(reasoning, DefaultFillWidth))
 		}
@@ -632,11 +629,11 @@ func PrintContent(ctx context.Context, reasoning, content string) {
 		if !stream {
 			switch {
 			case useRoleHeader:
-				Printf("\n%s\n\n", formatChatHeader(disp.Icon, disp.String(), "", now, ""))
+				Printf("\n%s\n\n", formatChatHeader(disp.Icon, disp.String(), "", now))
 				Println(content)
 				Println()
 			case nameCN != "" && email != "":
-				Printf("\n%s\n\n", formatChatHeader(icon, nameCN, email, now, ""))
+				Printf("\n%s\n\n", formatChatHeader(icon, nameCN, email, now))
 				Println(content)
 				Println()
 			default:

@@ -38,4 +38,8 @@ func TestDisplayName(t *testing.T) {
 	if got := DisplayName("review"); got != "review·代码审查" {
 		t.Errorf("DisplayName(\"review\") = %q, want review·代码审查", got)
 	}
+	// 未知/未识别角色回退 dev 的组合名（与 DefaultFor 策略一致）。
+	if got := DisplayName("bogus"); got != "dev·开发助手" {
+		t.Errorf("DisplayName(\"bogus\") = %q, want dev·开发助手", got)
+	}
 }

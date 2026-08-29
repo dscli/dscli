@@ -397,3 +397,22 @@ func TestJSONMarshal(t *testing.T) {
 		t.Errorf("verbose=true时JSON应该格式化:\n期望: %s\n实际: %s", expectedFormatted, string(formattedJSON))
 	}
 }
+
+// TestFormatChatHeader 测试头部构建：email 为空时不输出 <> 包裹。
+func TestFormatChatHeader(t *testing.T) {
+	withEmail := formatChatHeader("🔍", "review·代码审查", "a@b.c", "22:15:31")
+	if strings.Contains(withEmail, "<>") {
+		t.Errorf("header should not contain empty angle brackets: %q", withEmail)
+	}
+	if !strings.Contains(withEmail, "a@b.c") {
+		t.Errorf("header should contain email: %q", withEmail)
+	}
+
+	noEmail := formatChatHeader("🔍", "review·代码审查", "", "22:15:31")
+	if strings.Contains(noEmail, "<") || strings.Contains(noEmail, ">") {
+		t.Errorf("header without email should not contain angle brackets: %q", noEmail)
+	}
+	if !strings.Contains(noEmail, "review·代码审查") {
+		t.Errorf("header should contain name: %q", noEmail)
+	}
+}
