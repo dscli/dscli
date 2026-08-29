@@ -81,10 +81,15 @@ type promptConfig struct {
 	Role string
 
 	// CheckMail controls the dev template's opening "check unread mail"
-	// step. Chat sessions set it true so the assistant reads mail before
-	// starting work. WebChat role sessions set it false: those are
+	// step. The gate currently applies to dev.md only: architect.md keeps
+	// its own mail-check step deliberately, since the read-mail motivation
+	// was scoped to the dev role and the architect template was left
+	// untouched by design.
+	//
+	// The zero value is false (opt-in): WebChat role sessions are
 	// task-scoped, one-shot consultations where a mail probe wastes the
-	// first round and has no relevant inbox anyway.
+	// first round and has no relevant inbox anyway. Chat sessions opt in
+	// via GetSystemPrompt, which sets it true.
 	CheckMail bool
 
 	// DSMLToolDoc 是 DSML 工具注册段的动态内容（<tool_calls>/<invoke>
@@ -448,6 +453,13 @@ func GetSystemPrompt(ctx context.Context) string {
 	span, ctx := clog.StartSpanFromContext(ctx, "GetSystemPrompt")
 	defer span.Finish()
 	config := newPromptConfig(ctx)
+	// Chat sessions keep the mail-check opening step. LoadPrompts funnels
+	// through GetSystemPrompt, and ChatRunE additionally injects an
+	// unread-mail notification as a user message, so even if a future
+	// caller forgets to set this, chat is not left without any mail
+	// reminder. WebChat has no such fallback, which is why the zero value
+	// stays false to prevent accidental leakage of the read-mail motive.
+	config.CheckMail = true
 	return config.GeneratePromptWithTemplate(ctx)
 }
 
@@ -494,11 +506,6 @@ func newPromptConfig(ctx context.Context) *promptConfig {
 	role := context.ContextValue(ctx, context.CurrentRoleKey, "dev")
 	config := &promptConfig{
 		CurrentDate: time.Now().Format("2006年01月"),
-
-		// Chat sessions read mail at startup (chat.go also injects an
-		// unread-mail notification in LoadPrompts); the template step stays
-		// on for GetSystemPrompt.
-		CheckMail: true,
 
 		ProjectRoot:      projectRoot,
 		ConfigDir:        config.ConfigDir,

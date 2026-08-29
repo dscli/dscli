@@ -149,10 +149,22 @@ func TestMailCheckStepScopedToChatPath(t *testing.T) {
 	if !strings.Contains(chatPrompt, "Check for unread mail") {
 		t.Errorf("chat system prompt must contain the mail-check step:\n%s", chatPrompt)
 	}
+	if !strings.Contains(chatPrompt, "0b. **Read AGENTS.md**") {
+		t.Errorf("chat system prompt must retain the AGENTS.md step:\n%s", chatPrompt)
+	}
 
 	plain := RenderPromptForRole(t.Context(), "dev")
-	if strings.Contains(plain, "Check for unread mail") {
-		t.Errorf("webchat prompt (no tools) must not contain the mail-check step:\n%s", plain)
+	assertMailCheckStripped(t, "webchat prompt (no tools)", plain)
+	// Stripping step 0 must not disturb the remaining workflow steps.
+	for _, want := range []string{
+		"0b. **Read AGENTS.md**",
+		"1. **Fully understand the problem**",
+		"2. **Think and analyze deeply**",
+		"3. **Provide deep insights**",
+	} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("webchat prompt (no tools) missing %q:\n%s", want, plain)
+		}
 	}
 
 	doc := DSMLToolDoc{
@@ -160,11 +172,35 @@ func TestMailCheckStepScopedToChatPath(t *testing.T) {
 		Schemas: "### Available Tool Schemas\n\n```json\n{\"type\":\"function\"}\n```\n\nYou MUST strictly follow the above defined tool name and parameter schemas to invoke tool calls.",
 	}
 	content := RenderPromptForRoleWithTools(t.Context(), "dev", doc)
-	if strings.Contains(content, "Check for unread mail") {
-		t.Errorf("webchat prompt (with tools) must not contain the mail-check step:\n%s", content)
+	assertMailCheckStripped(t, "webchat prompt (with tools)", content)
+	for _, want := range []string{
+		"0b. **Read AGENTS.md**",
+		"1. **Fully understand the problem**",
+		"2. **Think and analyze deeply**",
+		"3. **Provide deep insights**",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("webchat prompt (with tools) missing %q:\n%s", want, content)
+		}
 	}
 	if !strings.Contains(content, "\u003cinvoke name=\"read_file\"\u003e") {
 		t.Errorf("webchat prompt missing DSML read_file registration:\n%s", content)
+	}
+}
+
+// assertMailCheckStripped checks the shared invariants for a WebChat-rendered
+// dev prompt (CheckMail=false): the mail-check step is absent and the
+// Workflow heading flows directly into 0b with exactly one blank line.
+func assertMailCheckStripped(t *testing.T, label, content string) {
+	t.Helper()
+	if strings.Contains(content, "Check for unread mail") {
+		t.Errorf("%s must not contain the mail-check step:\n%s", label, content)
+	}
+	if !strings.Contains(content, "## 🔄 Workflow\n\n0b.") {
+		t.Errorf("%s must render Workflow followed by 0b with exactly one blank line:\n%s", label, content)
+	}
+	if strings.Contains(content, "## 🔄 Workflow\n\n\n") {
+		t.Errorf("%s must not leave a double blank line after Workflow:\n%s", label, content)
 	}
 }
 
