@@ -237,6 +237,9 @@ func TestHandleWebChatKeepSkipsPromptInjection(t *testing.T) {
 				if !strings.HasSuffix(sent, message) {
 					t.Fatalf("injected message must preserve the user message verbatim at the end, got:\n%q", sent)
 				}
+				if tc.system != "" && !strings.Contains(sent, tc.system) {
+					t.Fatalf("injected message must contain the system persona %q (System wins over Role), got:\n%q", tc.system, sent)
+				}
 				return
 			}
 			if sent != message {

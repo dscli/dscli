@@ -223,11 +223,12 @@ var handleWebChatExecDSML = toolcall.ExecuteDSMLToolCalls
 //   - Role/system prompt rendering: when opts.Role is non-empty, the
 //     role-specific prompt template (see prompt.RenderPromptForRole) is
 //     prepended; opts.System (raw text) takes precedence over Role. Neither
-//     is injected when both are empty - the message is sent verbatim. The
-//     persona/tool doc is injected only on the FIRST round of a
-//     conversation: a non-empty Keep (resume) skips injection because the
-//     session history already carries it from round one - put any tone or
-//     instructions for a resumed session in message instead.
+//     is injected when both are empty - the message is sent verbatim. In all
+//     cases, injection happens only on the FIRST round of a conversation:
+//     a non-empty Keep (resume) skips injection because the session history
+//     already carries the persona/tool doc from round one - put any tone or
+//     instructions for a resumed session in message instead (that message is
+//     subject to the same webChatMaxInputRunes input cap as the first round).
 //   - Backoff retry on transient server overload and truncation
 //     (ErrServerBusy / ErrSendRejected / ErrTruncated). Permanent errors
 //     (login, bad arguments) fail immediately - retrying them is pointless.
@@ -281,8 +282,8 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 	// round (see the doc comment above): a resumed session already carries
 	// the persona/tool doc in its history. Within that first round, System
 	// wins over Role, matching the ask layer's previous precedence.
-	firstRound := opts.Keep == ""
 	fullMessage := message
+	firstRound := opts.Keep == ""
 	if firstRound && opts.System != "" {
 		fullMessage = opts.System + "\n\n---\n\n## User Request\n\n" + message
 	} else if firstRound && opts.Role != "" {
