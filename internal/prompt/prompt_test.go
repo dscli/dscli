@@ -166,6 +166,12 @@ func TestMailCheckStepScopedToChatPath(t *testing.T) {
 			t.Errorf("webchat prompt (no tools) missing %q:\n%s", want, plain)
 		}
 	}
+	// Lock the documented invariant: architect.md keeps its own ungated
+	// mail step, so an architect WebChat render still reads mail.
+	archPlain := RenderPromptForRole(t.Context(), "architect")
+	if !strings.Contains(archPlain, "Check for unread mail") {
+		t.Errorf("architect WebChat prompt must keep its own mail-check step:\n%s", archPlain)
+	}
 
 	doc := DSMLToolDoc{
 		Intro:   "## 🛠️ Available Tools: `read_file`\n\n\u003ctool_calls\u003e\n\u003cinvoke name=\"read_file\"\u003e\n\u003cparameter name=\"path\" string=\"true\"\u003eAGENTS.md\u003c/parameter\u003e\n\u003c/invoke\u003e\n\u003c/tool_calls\u003e",

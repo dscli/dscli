@@ -448,17 +448,20 @@ func (c *promptConfig) GeneratePromptWithTemplate(ctx context.Context) string {
 	return prompt
 }
 
-// GetSystemPrompt 获取增强的系统提示词
+// GetSystemPrompt renders the enhanced system prompt for the chat path.
+// This is the chat entry point: LoadPrompts funnels through it, and it opts
+// into the template's mail-check step by setting CheckMail to true. The
+// WebChat path goes through RenderPromptForRoleWithTools instead, which
+// leaves CheckMail at its false zero value.
 func GetSystemPrompt(ctx context.Context) string {
 	span, ctx := clog.StartSpanFromContext(ctx, "GetSystemPrompt")
 	defer span.Finish()
 	config := newPromptConfig(ctx)
-	// Chat sessions keep the mail-check opening step. LoadPrompts funnels
-	// through GetSystemPrompt, and ChatRunE additionally injects an
-	// unread-mail notification as a user message, so even if a future
-	// caller forgets to set this, chat is not left without any mail
-	// reminder. WebChat has no such fallback, which is why the zero value
-	// stays false to prevent accidental leakage of the read-mail motive.
+	// Chat path: LoadPrompts goes through GetSystemPrompt, and ChatRunE
+	// additionally injects an unread-mail notification as a user message,
+	// so chat keeps a mail reminder independent of this template step.
+	// WebChat has no such injection, so the zero value stays false to keep
+	// the mail step out of WebChat prompts by default.
 	config.CheckMail = true
 	return config.GeneratePromptWithTemplate(ctx)
 }
@@ -490,9 +493,10 @@ func RenderPromptForRoleWithTools(ctx context.Context, role string, doc DSMLTool
 	config := newPromptConfig(ctx)
 	config.Role = role
 	config.DSMLToolDoc = doc
-	// WebChat role sessions are task-scoped one-shot consultations; the
-	// template's mail-check opening step is chat-session behavior and would
-	// waste the first round here.
+	// WebChat sessions are task-scoped one-shot consultations, so the dev
+	// mail-check step is dropped here. This only affects dev: architect.md
+	// keeps its own ungated mail step by design. See the CheckMail field
+	// comment for the full rationale.
 	config.CheckMail = false
 	return config.GeneratePromptWithTemplate(ctx)
 }
