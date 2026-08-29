@@ -185,15 +185,14 @@ func TestWebChatWithOptionsRejectsHandleFields(t *testing.T) {
 // TestHandleWebChatKeepSkipsPromptInjection verifies that a resumed web
 // conversation (Keep != "") does not re-inject the role/system persona into
 // the sent message: the prompt was already part of the first round's history,
-// so the sent message must equal the input verbatim. The first-round case
-// (Keep == "") asserts the contrast - the persona IS injected, visible via
-// the "## User Request" separator.
+// so the sent message must equal the input verbatim. The first-round cases
+// (Keep == "") assert the contrast - the persona IS injected, visible via
+// the "## User Request" separator, with the user message preserved after it.
 //
-// Role "dev" is used because roles.DefaultFor("dev") falls back to the dev
-// template for unknown/empty roles and the DSML tool doc is empty when no
-// tools are registered (the lp test package does not blank-import alltools),
-// which is exactly the safe shape for asserting separator presence without
-// depending on the tool registry.
+// Role "dev" simply relies on roles.DefaultFor("dev") falling back to the dev
+// template; the separator's presence (or absence) is the sufficient, stable
+// signal of injection, and the resume cases need only verbatim equality -
+// no assumptions about the tool registry.
 func TestHandleWebChatKeepSkipsPromptInjection(t *testing.T) {
 	const message = "continue the discussion"
 
@@ -205,6 +204,7 @@ func TestHandleWebChatKeepSkipsPromptInjection(t *testing.T) {
 		wantInjec bool // true = persona injected (first round), false = verbatim
 	}{
 		{"first round role injected", "", "dev", "", true},
+		{"first round system wins over role", "", "dev", "persona-x", true},
 		{"resume role skipped", "conv123", "dev", "", false},
 		{"resume system skipped", "conv123", "", "persona", false},
 		{"resume last role skipped", "last", "dev", "", false},
@@ -233,6 +233,9 @@ func TestHandleWebChatKeepSkipsPromptInjection(t *testing.T) {
 			if tc.wantInjec {
 				if !strings.Contains(sent, "## User Request") {
 					t.Fatalf("sent message lacks ## User Request separator (prompt not injected):\n%q", sent)
+				}
+				if !strings.HasSuffix(sent, message) {
+					t.Fatalf("injected message must preserve the user message verbatim at the end, got:\n%q", sent)
 				}
 				return
 			}

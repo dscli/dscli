@@ -277,22 +277,15 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 
 	// WebChat has no system prompt concept, so persona text is prepended to
 	// the user message. The separator helps the web model distinguish the
-	// instructions from the actual task. System wins over Role, matching the
-	// ask layer's previous precedence.
-	//
-	// Injection happens ONLY on the first round of a conversation
-	// (opts.Keep == ""): a non-empty Keep resumes an existing web session
-	// whose history already carries the persona/tool doc from round one, so
-	// re-injecting would waste input tokens and risk contradictory
-	// instructions. This mirrors the tool loop's follow-up principle (see
-	// handleWebChatToolLoop): follow-ups construct WebChatOptions without
-	// Role/System. Note a browser-copied URL conversation may never have
-	// seen a persona - if a role is wanted for such a resumed session, put
-	// the instructions in message instead.
+	// instructions from the actual task. Injection happens ONLY on the first
+	// round (see the doc comment above): a resumed session already carries
+	// the persona/tool doc in its history. Within that first round, System
+	// wins over Role, matching the ask layer's previous precedence.
+	firstRound := opts.Keep == ""
 	fullMessage := message
-	if opts.Keep == "" && opts.System != "" {
+	if firstRound && opts.System != "" {
 		fullMessage = opts.System + "\n\n---\n\n## User Request\n\n" + message
-	} else if opts.Keep == "" && opts.Role != "" {
+	} else if firstRound && opts.Role != "" {
 		// The DSML tool section is derived from the role's tool config
 		// (role_configs / roles.DefaultFor) at send time - the same source
 		// as GetAllTools. A role without executable tools (expert/review by
