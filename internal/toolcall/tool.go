@@ -231,6 +231,9 @@ func GetAllTools(ctx context.Context) []Tool {
 	span, ctx := clog.StartSpanFromContext(ctx, "GetAllTools")
 	defer span.Finish()
 
+	// "dev" here is the role-less ContextValue fallback, matching
+	// DefaultFor's unknown-role profile. It is unrelated to the chat
+	// CLI's --role default (defaultChatRole = "architect" in chat.go).
 	role := context.ContextValue(ctx, context.CurrentRoleKey, "dev")
 	// dev is capable by default; expert/review/test execute nothing until
 	// configured. This mirrors the role list display, which shows the very

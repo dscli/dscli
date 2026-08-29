@@ -726,6 +726,9 @@ func StripDSMLToolCalls(text string) string {
 // DSML allow-set: `dscli role update --tools` decides what the web model
 // may call, exactly as it decides for the local agent.
 func dsmlRoleAllowSet(ctx context.Context) map[string]bool {
+	// "dev" here is the role-less ContextValue fallback, matching
+	// DefaultFor's unknown-role profile - unrelated to the chat CLI's
+	// --role default (defaultChatRole = "architect" in chat.go).
 	role := dsctx.ContextValue(ctx, dsctx.CurrentRoleKey, "dev")
 	return roleToolAllowSet(ctx, role)
 }

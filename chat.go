@@ -30,6 +30,11 @@ import (
 
 const (
 	DeepseekChat = int64(0)
+
+	// defaultChatRole is the chat command's default persona when --role is
+	// not specified. It is distinct from roles.DefaultFor(""), which falls
+	// back to the dev profile for empty/unknown roles (webchat plain chat).
+	defaultChatRole = "architect"
 )
 
 func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
@@ -50,7 +55,7 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	if role == "" {
-		role = "architect"
+		role = defaultChatRole
 	}
 
 	ctx = context.WithValue(ctx, context.CurrentRoleKey, role)
@@ -685,7 +690,7 @@ Examples:
 		PreRunE: ChatPreRunE,
 		RunE:    ChatRunE,
 	})
-	chatCmd.Flags().String("role", "architect", "Role: dev (developer), expert (domain expert), review (code review), test (QA engineer), architect (software architect)")
+	chatCmd.Flags().String("role", defaultChatRole, "Role: dev (developer), expert (domain expert), review (code review), test (QA engineer), architect (software architect, default)")
 	chatCmd.Flags().Int("histsize", 8, "history size loaded")
 	chatCmd.Flags().String("input", "", "read content from input file or read content from stdin if input file empty")
 	chatCmd.Flags().Bool("stream", false, "Enable streaming output (SSE)")

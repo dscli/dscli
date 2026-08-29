@@ -18,12 +18,43 @@ func TestChatRoleFlagDefaultsToArchitect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("find chat command: %v", err)
 	}
+	if cmd == nil {
+		t.Fatal("chat command not found")
+	}
 	flag := cmd.Flags().Lookup("role")
 	if flag == nil {
 		t.Fatal("--role flag not registered")
 	}
-	if flag.DefValue != "architect" {
-		t.Errorf("default --role = %q, want %q", flag.DefValue, "architect")
+	if flag.DefValue != defaultChatRole {
+		t.Errorf("default --role = %q, want %q", flag.DefValue, defaultChatRole)
+	}
+
+	tests := []struct {
+		name    string
+		set     bool
+		roleArg string
+		want    string
+	}{
+		{name: "no role uses flag default", want: defaultChatRole},
+		{name: "empty role falls back to default", set: true, roleArg: "", want: defaultChatRole},
+		{name: "explicit role is not overridden", set: true, roleArg: "expert", want: "expert"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.set {
+				if err := cmd.Flags().Set("role", tt.roleArg); err != nil {
+					t.Fatalf("set --role: %v", err)
+				}
+			}
+			cmd.SetContext(t.Context())
+			if err := ChatPreRunE(cmd, nil); err != nil {
+				t.Fatalf("ChatPreRunE: %v", err)
+			}
+			got := context.ContextValue(cmd.Context(), context.CurrentRoleKey, "")
+			if got != tt.want {
+				t.Errorf("role = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

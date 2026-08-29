@@ -266,7 +266,9 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 	// and GetAllTools. Always set it, even for plain chat (Role ""): a
 	// caller may pass a ctx that already carries CurrentRoleKey from an
 	// outer chat session, and the executor must not inherit that ambient
-	// role - "" resolves to DefaultFor("") = dev, the documented default.
+	// role - "" resolves to DefaultFor("") = dev, the unknown/empty-role
+	// template fallback. This is DISTINCT from the chat CLI's --role
+	// default, which is architect (defaultChatRole in chat.go).
 	ctx = context.WithValue(ctx, dsctx.CurrentRoleKey, opts.Role)
 
 	// WebChat has no system prompt concept, so persona text is prepended to

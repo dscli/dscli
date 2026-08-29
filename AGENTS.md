@@ -228,6 +228,11 @@ embedded template ({role}.md) → project override (.dscli/prompt/) → global o
 ```
 Role name == template file name: `dev`, `expert`, `review`, `test`, `architect` (default).
 
+Note: the `chat` CLI's `--role` flag defaults to `architect` (`defaultChatRole`
+in chat.go), while `roles.DefaultFor("")` still falls back to the `dev` profile
+for empty/unknown roles (webchat plain chat, role-less code paths) - do not
+"fix" the fallback to match the CLI default; they are intentionally distinct.
+
 ## Testing
 
 ### Patterns
