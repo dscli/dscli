@@ -718,11 +718,16 @@ type WebChatOptions struct {
 	// prompt.RenderPromptForRole) that HandleWebChat prepends to the
 	// message. Non-empty Role also enables the DSML tool loop. Only
 	// HandleWebChat consumes it - WebChatWithOptions ignores it.
+	// HandleWebChat injects it only when Keep == "" (a new conversation);
+	// a resumed conversation does not re-inject the prompt (it was already
+	// in the first round's history).
 	Role string
 
 	// System is raw persona text that HandleWebChat prepends to the message.
 	// It takes precedence over Role. Only HandleWebChat consumes it -
-	// WebChatWithOptions ignores it.
+	// WebChatWithOptions ignores it. HandleWebChat injects it only when
+	// Keep == "" (a new conversation); a resumed conversation does not
+	// re-inject it.
 	System string
 }
 

@@ -32,6 +32,7 @@ func init() {
   dscli webchat --keep=<会话ID> "继续讨论..."   # 继续指定会话
   dscli webchat --keep=<会话URL> "继续讨论..."  # 继续浏览器中打开的会话
   dscli webchat --keep=list                     # 列出所有已保存会话
+续会话不会再次注入角色提示词（第一轮已注入）。
 每次回复都会把会话 ID 打印到 stderr（格式 keep:<id>），可直接作为 --keep 参数使用。
 
 模型（--model）：

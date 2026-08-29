@@ -182,6 +182,67 @@ func TestWebChatWithOptionsRejectsHandleFields(t *testing.T) {
 	}
 }
 
+// TestHandleWebChatKeepSkipsPromptInjection verifies that a resumed web
+// conversation (Keep != "") does not re-inject the role/system persona into
+// the sent message: the prompt was already part of the first round's history,
+// so the sent message must equal the input verbatim. The first-round case
+// (Keep == "") asserts the contrast - the persona IS injected, visible via
+// the "## User Request" separator.
+//
+// Role "dev" is used because roles.DefaultFor("dev") falls back to the dev
+// template for unknown/empty roles and the DSML tool doc is empty when no
+// tools are registered (the lp test package does not blank-import alltools),
+// which is exactly the safe shape for asserting separator presence without
+// depending on the tool registry.
+func TestHandleWebChatKeepSkipsPromptInjection(t *testing.T) {
+	const message = "continue the discussion"
+
+	tests := []struct {
+		name      string
+		keep      string
+		role      string
+		system    string
+		wantInjec bool // true = persona injected (first round), false = verbatim
+	}{
+		{"first round role injected", "", "dev", "", true},
+		{"resume role skipped", "conv123", "dev", "", false},
+		{"resume system skipped", "conv123", "", "persona", false},
+		{"resume last role skipped", "last", "dev", "", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			orig := handleWebChatSend
+			t.Cleanup(func() { handleWebChatSend = orig })
+
+			var sent string
+			handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
+				sent = msg
+				return WebChatResult{Content: "ok", URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+			}
+
+			_, err := HandleWebChat(context.Background(), message, WebChatOptions{
+				Keep:   tc.keep,
+				Role:   tc.role,
+				System: tc.system,
+			})
+			if err != nil {
+				t.Fatalf("HandleWebChat: %v", err)
+			}
+
+			if tc.wantInjec {
+				if !strings.Contains(sent, "## User Request") {
+					t.Fatalf("sent message lacks ## User Request separator (prompt not injected):\n%q", sent)
+				}
+				return
+			}
+			if sent != message {
+				t.Fatalf("resumed send must equal input verbatim, got:\n%q", sent)
+			}
+		})
+	}
+}
+
 func TestHandleWebChatRetriesOnBusy(t *testing.T) {
 	origFunc, origDelays := handleWebChatSend, handleWebChatRetryDelays
 	t.Cleanup(func() { handleWebChatSend, handleWebChatRetryDelays = origFunc, origDelays })
