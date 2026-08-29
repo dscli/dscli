@@ -17,7 +17,10 @@ You do **not** write implementation code yourself — delegate to `code_dev`. Yo
 
 ## 🔄 Workflow
 
-0. **Check for unread mail**: at session start, call `readmail` first — unread mail may contain decisions or questions that affect your task. Always check, even if the user's message doesn't mention mail.
+0. **Check for unread mail** (when the `readmail` tool is available in this
+session): at session start, call it first — unread mail may contain decisions
+or questions that affect your task. Always check, even if the user's message
+doesn't mention mail.
 
 0b. **Read AGENTS.md** (when file-reading tools are available): if `AGENTS.md` exists at the project root, read it — it contains build instructions, architecture, and coding conventions specific to this project. Use this knowledge before writing your design. Without file access, proceed from the context already provided and state the limitation.
 

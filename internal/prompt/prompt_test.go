@@ -117,10 +117,12 @@ func TestDSMLToolsSectionScopedToWebChat(t *testing.T) {
 			if strings.Contains(content, capabilitiesHeading) {
 				t.Errorf("%s prompt with tools must not render the Capabilities heading (DSML intro replaces it)", role)
 			}
-			// The no-tools branch wording is role-specific: dev tools are
-			// registered by the session protocol (chat path registers them
-			// via the API tools parameter), while expert/review/test have
-			// none by default and must say so.
+			// The no-tools branch wording is role-specific: dev/architect
+			// tools are registered by the session protocol (chat path
+			// registers them via the API tools parameter), while
+			// expert/review/test have none by default and must say so.
+			// architect keeps the no-tools branch as a defensive fallback
+			// for sessions where a project narrowed its toolset.
 			want := map[string]string{
 				"dev":       "registered by the session protocol",
 				"expert":    "no execution tools",

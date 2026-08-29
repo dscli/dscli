@@ -383,7 +383,7 @@ var roleTemplateMap = map[string]string{
 }
 
 // GetDefaultPromptTemplate 获取内嵌的默认提示词模板
-// role: dev, expert, review, test, architect, architect
+// role: dev, expert, review, test, architect
 func GetDefaultPromptTemplate(role string) string {
 	if tmpl, ok := roleTemplateMap[role]; ok {
 		return tmpl
@@ -392,7 +392,7 @@ func GetDefaultPromptTemplate(role string) string {
 }
 
 // newPromptTemplate 根据角色获取模板
-// role: dev/expert/review/test
+// role: dev/expert/review/test/architect
 func newPromptTemplate(ctx context.Context, role string) *promptTemplate {
 	tmpl := GetPromptTemplate(ctx, role)
 	return &promptTemplate{

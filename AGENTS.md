@@ -151,7 +151,8 @@ aligned with DeepSeek V4's tool template (string= attribute rules,
 `prompt.RenderPromptForRoleWithTools`; `RenderPromptForRole` and
 `GetSystemPrompt` (dscli chat path, which registers tools through the API
 `tools` parameter instead) leave it out entirely. A role without executable
-tools (expert/review/test/architect by default) gets no DSML section at all.
+tools (expert/review/test by default; dev and architect have all tools, so
+they do get a section) gets no DSML section at all.
 
 code_review sends ONLY commit message + diff on its first message: the review
 expert reads AGENTS.md and full changed-file contents on demand via the DSML
@@ -221,7 +222,7 @@ embedded template ({role}.md) → project override (.dscli/prompt/) → global o
     ↓
 + persona (ainame: NameEN / PersonalityEN / DescEN)
 ```
-Role name == template file name: `dev` (default), `expert`, `review`, `test`.
+Role name == template file name: `dev` (default), `expert`, `review`, `test`, `architect`.
 
 ## Testing
 

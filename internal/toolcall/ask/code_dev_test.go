@@ -2,11 +2,13 @@ package ask
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/dscli/dscli/internal/lp"
+	"github.com/dscli/dscli/internal/shell"
 	"github.com/dscli/dscli/internal/toolcall"
 )
 
@@ -125,5 +127,71 @@ func TestTruncateCodeDevRequest(t *testing.T) {
 	}
 	if !strings.Contains(req, "short task") {
 		t.Error("small task content not preserved")
+	}
+}
+
+// TestCheckWorkingTree covers the git-status interpretation: grep -v '^??'
+// exits 1 when there are no tracked changes (clean tree or untracked only),
+// and that must NOT be treated as a check failure (regression: the clean
+// tree used to print "无法检查 git 状态").
+func TestCheckWorkingTree(t *testing.T) {
+	dir := t.TempDir()
+	mustGit(t, dir, "init")
+	mustGit(t, dir, "config", "user.email", "test@example.com")
+	mustGit(t, dir, "config", "user.name", "tester")
+	if err := os.WriteFile(dir+"/a.txt", []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, dir, "add", "a.txt")
+	mustGit(t, dir, "commit", "-m", "init")
+
+	t.Run("clean", func(t *testing.T) {
+		t.Chdir(dir)
+		dirty, note := checkWorkingTree(context.Background())
+		if dirty {
+			t.Errorf("clean tree reported dirty: %s", note)
+		}
+		if !strings.Contains(note, "干净") {
+			t.Errorf("clean tree note = %q, want 干净", note)
+		}
+	})
+
+	t.Run("untracked only", func(t *testing.T) {
+		t.Chdir(dir)
+		if err := os.WriteFile(dir+"/b.txt", []byte("new"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		dirty, _ := checkWorkingTree(context.Background())
+		if dirty {
+			t.Error("untracked-only tree reported dirty (should be ignored)")
+		}
+	})
+
+	t.Run("tracked modified", func(t *testing.T) {
+		t.Chdir(dir)
+		if err := os.WriteFile(dir+"/a.txt", []byte("changed"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		dirty, note := checkWorkingTree(context.Background())
+		if !dirty {
+			t.Errorf("modified tree reported clean: %s", note)
+		}
+	})
+
+	t.Run("not a git repository", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		dirty, _ := checkWorkingTree(context.Background())
+		if dirty {
+			t.Error("non-git directory reported dirty")
+		}
+	})
+}
+
+// mustGit runs a git command in dir and fails the test on error.
+func mustGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	script := "git -C " + dir + " " + strings.Join(args, " ")
+	if _, err := shell.SimpleExecute(context.Background(), script); err != nil {
+		t.Fatalf("git %v failed: %v", args, err)
 	}
 }

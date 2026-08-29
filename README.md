@@ -237,8 +237,9 @@ dscli has five built-in AI roles: **dev** (development assistant, full tools/ski
 **expert** (domain expert, no tools/skills), **review** (code review,
 shell+file_read/no skills), **test** (QA engineer), **architect** (software
 architect: clarifies requirements, designs architecture, and orchestrates the
-pipeline via `code_dev` / `code_review` / `quality_assurance`). Each role has
-independently configurable system prompts, available tools, and skill lists.
+pipeline via `code_dev` / `code_review` / `quality_assurance` — full
+tools/skills like dev). Each role has independently configurable system
+prompts, available tools, and skill lists.
 
 **Browse tools:**
 

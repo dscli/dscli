@@ -62,9 +62,9 @@ type DefaultConfig struct {
 //   - expert:    none (a pure domain expert consults; it does not execute)
 //   - review:    none (configure tools per project, e.g. shell,read_file)
 //   - test:      none (configure tools per project, e.g. shell,read_file,write_file)
-//   - architect: none (an orchestrator: it designs and delegates via the
-//     code_dev / code_review / quality_assurance tools, which are registered
-//     by the session protocol; it does not execute local tools by default)
+//   - architect: all skills, all tools (the orchestrator needs the full
+//     toolset to design, write the architecture doc to disk, delegate via
+//     code_dev/code_review/quality_assurance, and verify delivery)
 //
 // An unknown role falls back to the dev profile (the default template).
 func DefaultFor(role string) DefaultConfig {
@@ -76,7 +76,7 @@ func DefaultFor(role string) DefaultConfig {
 	case "test":
 		return DefaultConfig{Skills: "", Tools: "", Prompt: "test"}
 	case "architect":
-		return DefaultConfig{Skills: "", Tools: "", Prompt: "architect"}
+		return DefaultConfig{Skills: "all", Tools: "all", Prompt: "architect"}
 	default: // "dev", "" and unknown roles
 		return DefaultConfig{Skills: "all", Tools: "all", Prompt: "dev"}
 	}

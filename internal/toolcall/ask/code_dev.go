@@ -123,15 +123,10 @@ func handleCodeDev(ctx context.Context, args toolcall.ToolArgs) (result, warning
 	// top of a half-finished tree (that is legitimate), but the caller must
 	// know the starting point — the delivery contract requires a clean tree
 	// on return so code_review can see the new commit alone.
-	statusScript := `git status --porcelain | grep -v '^??'`
-	status, shellErr := shell.SimpleExecute(ctx, statusScript)
-	switch {
-	case shellErr != nil:
-		outfmt.Println("⚠️  无法检查 git 状态（可能不在 git 仓库中）")
-	case status != "":
-		outfmt.Println("⚠️  工作区存在未提交更改，开发者将在其上继续工作；完成后所有更改都必须提交（code_review 需要干净工作区）。")
-	default:
-		outfmt.Println("✅ 工作区干净（或仅有未跟踪文件）")
+	dirty, note := checkWorkingTree(ctx)
+	outfmt.Println(note)
+	if dirty {
+		outfmt.Println("⚠️  完成后所有更改都必须提交（code_review 需要干净工作区）。")
 	}
 
 	// The dev role defaults to all tools (roles.DefaultFor), but a project
@@ -240,6 +235,31 @@ func truncateCodeDevRequest(task string) (string, string) {
 	origLen := countRunes(req)
 	hardNote := "\n\n## ⚠️ 任务输入截断\n任务超出输入上限，已按字符边界截断；缺失部分请用 read_file 读取任务引用文件补全（如架构文档）。\n"
 	req = cutToRuneLen(req, maxUserInputLen-countRunes(hardNote)) + hardNote
-	warning := fmt.Sprintf("⚠️ 任务输入过长（超出约 %d%%），已自动截断至 %d 字符。", origLen*100/maxUserInputLen, countRunes(req))
+	// 超出比例按"超出量/上限"计算（与 code_review 的 truncateWarning 一致），
+	// 而非总量占上限的比例——文案语义是"超出约 N%"。
+	overLen := origLen - maxUserInputLen
+	warning := fmt.Sprintf("⚠️ 任务输入过长（超出约 %d%%），已自动截断至 %d 字符。", overLen*100/maxUserInputLen, countRunes(req))
 	return req, warning
+}
+
+// checkWorkingTree 检查工作区是否存在"已跟踪"的未提交更改（staged +
+// unstaged；忽略 untracked，与 code_review / quality_assurance 的判定
+// 一致）。返回 (dirty, note)：note 是供终端显示的提示文本。
+//
+// grep -v '^??' 在没有匹配行（干净树或仅有未跟踪文件）时退出码为 1，
+// shell.SimpleExecute 会把它当错误——这不是错误，而是"无变化"信号，
+// 所以 shellErr 非空时按无更改处理（code_review.go / quality_assurance.go
+// 的既有语义）。
+func checkWorkingTree(ctx context.Context) (dirty bool, note string) {
+	statusScript := `git status --porcelain | grep -v '^??'`
+	status, shellErr := shell.SimpleExecute(ctx, statusScript)
+	if shellErr != nil {
+		// grep 返回非零退出码表示没有匹配，这是正常情况（干净树或
+		// 仅有未跟踪文件），不是检查失败。
+		status = ""
+	}
+	if status != "" {
+		return true, "⚠️  工作区存在未提交更改，开发者将在其上继续工作。"
+	}
+	return false, "✅ 工作区干净（或仅有未跟踪文件）"
 }

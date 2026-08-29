@@ -295,7 +295,10 @@ func TestDefaultFor(t *testing.T) {
 		{"expert", "", "", "expert"},
 		{"review", "", "", "review"},
 		{"test", "", "", "test"},
-		{"architect", "", "", "architect"},
+		// The architect ships with the full toolset (like dev): it must be
+		// able to design, persist the architecture doc, delegate via
+		// code_dev/code_review/quality_assurance, and verify delivery.
+		{"architect", "all", "all", "architect"},
 		{"", "all", "all", "dev"}, // empty role = dev behavior
 		{"unknown", "all", "all", "dev"},
 	}
