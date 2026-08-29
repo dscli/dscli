@@ -50,7 +50,7 @@ func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	if role == "" {
-		role = "dev"
+		role = "architect"
 	}
 
 	ctx = context.WithValue(ctx, context.CurrentRoleKey, role)
@@ -685,7 +685,7 @@ Examples:
 		PreRunE: ChatPreRunE,
 		RunE:    ChatRunE,
 	})
-	chatCmd.Flags().String("role", "dev", "Role: dev (developer), expert (domain expert), review (code review), test (QA engineer), architect (software architect)")
+	chatCmd.Flags().String("role", "architect", "Role: dev (developer), expert (domain expert), review (code review), test (QA engineer), architect (software architect)")
 	chatCmd.Flags().Int("histsize", 8, "history size loaded")
 	chatCmd.Flags().String("input", "", "read content from input file or read content from stdin if input file empty")
 	chatCmd.Flags().Bool("stream", false, "Enable streaming output (SSE)")

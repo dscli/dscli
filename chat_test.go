@@ -13,6 +13,20 @@ import (
 	"github.com/dscli/dscli/internal/toolcall"
 )
 
+func TestChatRoleFlagDefaultsToArchitect(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"chat"})
+	if err != nil {
+		t.Fatalf("find chat command: %v", err)
+	}
+	flag := cmd.Flags().Lookup("role")
+	if flag == nil {
+		t.Fatal("--role flag not registered")
+	}
+	if flag.DefValue != "architect" {
+		t.Errorf("default --role = %q, want %q", flag.DefValue, "architect")
+	}
+}
+
 func TestPrintContent(t *testing.T) {
 	ctx := t.Context()
 	ctx = context.WithValue(ctx, context.StartTimeKey, time.Now())

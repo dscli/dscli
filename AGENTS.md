@@ -226,7 +226,7 @@ embedded template ({role}.md) → project override (.dscli/prompt/) → global o
     ↓
 + persona (ainame: NameEN / PersonalityEN / DescEN)
 ```
-Role name == template file name: `dev` (default), `expert`, `review`, `test`, `architect`.
+Role name == template file name: `dev`, `expert`, `review`, `test`, `architect` (default).
 
 ## Testing
 
