@@ -137,6 +137,37 @@ func TestDSMLToolsSectionScopedToWebChat(t *testing.T) {
 	}
 }
 
+// TestMailCheckStepScopedToChatPath verifies the dev template's "check
+// unread mail" opening step appears on the chat path (GetSystemPrompt) but
+// is stripped from WebChat role renders (RenderPromptForRole and
+// RenderPromptForRoleWithTools). WebChat sessions are task-scoped one-shot
+// consultations where a mail probe wastes the first round.
+func TestMailCheckStepScopedToChatPath(t *testing.T) {
+	ctx := t.Context()
+	ctx = context.WithValue(ctx, context.CurrentRoleKey, "dev")
+	chatPrompt := GetSystemPrompt(ctx)
+	if !strings.Contains(chatPrompt, "Check for unread mail") {
+		t.Errorf("chat system prompt must contain the mail-check step:\n%s", chatPrompt)
+	}
+
+	plain := RenderPromptForRole(t.Context(), "dev")
+	if strings.Contains(plain, "Check for unread mail") {
+		t.Errorf("webchat prompt (no tools) must not contain the mail-check step:\n%s", plain)
+	}
+
+	doc := DSMLToolDoc{
+		Intro:   "## 🛠️ Available Tools: `read_file`\n\n\u003ctool_calls\u003e\n\u003cinvoke name=\"read_file\"\u003e\n\u003cparameter name=\"path\" string=\"true\"\u003eAGENTS.md\u003c/parameter\u003e\n\u003c/invoke\u003e\n\u003c/tool_calls\u003e",
+		Schemas: "### Available Tool Schemas\n\n```json\n{\"type\":\"function\"}\n```\n\nYou MUST strictly follow the above defined tool name and parameter schemas to invoke tool calls.",
+	}
+	content := RenderPromptForRoleWithTools(t.Context(), "dev", doc)
+	if strings.Contains(content, "Check for unread mail") {
+		t.Errorf("webchat prompt (with tools) must not contain the mail-check step:\n%s", content)
+	}
+	if !strings.Contains(content, "\u003cinvoke name=\"read_file\"\u003e") {
+		t.Errorf("webchat prompt missing DSML read_file registration:\n%s", content)
+	}
+}
+
 // TestNewPromptTemplate_NilSafety 验证未知 modelID / 角色不返回 nil
 // （回退到 dev 模板）。
 func TestNewPromptTemplate_NilSafety(t *testing.T) {

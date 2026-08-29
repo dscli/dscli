@@ -80,6 +80,13 @@ type promptConfig struct {
 	// 角色（dev/expert/review）
 	Role string
 
+	// CheckMail controls the dev template's opening "check unread mail"
+	// step. Chat sessions set it true so the assistant reads mail before
+	// starting work. WebChat role sessions set it false: those are
+	// task-scoped, one-shot consultations where a mail probe wastes the
+	// first round and has no relevant inbox anyway.
+	CheckMail bool
+
 	// DSMLToolDoc 是 DSML 工具注册段的动态内容（<tool_calls>/<invoke>
 	// 示例、string= 编码规则、参数说明与 JSON schemas）。仅在 WebChat
 	// 场景非空：chat.deepseek.com 没有原生工具协议，角色提示词是唯一
@@ -471,6 +478,10 @@ func RenderPromptForRoleWithTools(ctx context.Context, role string, doc DSMLTool
 	config := newPromptConfig(ctx)
 	config.Role = role
 	config.DSMLToolDoc = doc
+	// WebChat role sessions are task-scoped one-shot consultations; the
+	// template's mail-check opening step is chat-session behavior and would
+	// waste the first round here.
+	config.CheckMail = false
 	return config.GeneratePromptWithTemplate(ctx)
 }
 
@@ -483,6 +494,11 @@ func newPromptConfig(ctx context.Context) *promptConfig {
 	role := context.ContextValue(ctx, context.CurrentRoleKey, "dev")
 	config := &promptConfig{
 		CurrentDate: time.Now().Format("2006年01月"),
+
+		// Chat sessions read mail at startup (chat.go also injects an
+		// unread-mail notification in LoadPrompts); the template step stays
+		// on for GetSystemPrompt.
+		CheckMail: true,
 
 		ProjectRoot:      projectRoot,
 		ConfigDir:        config.ConfigDir,
