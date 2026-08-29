@@ -186,7 +186,9 @@ func TestWebChatWithOptionsRejectsHandleFields(t *testing.T) {
 // conversation (Keep != "") does not re-inject the persona: the sent message
 // must equal the input verbatim. First-round cases (Keep == "") assert the
 // contrast - the persona IS injected, detectable via the "## User Request"
-// separator, with the user message preserved after it.
+// separator, with the user message preserved after it. Role "dev" relies on
+// roles.DefaultFor("dev") falling back to the dev template, so the separator's
+// presence/absence is the sufficient, stable signal of injection.
 func TestHandleWebChatKeepSkipsPromptInjection(t *testing.T) {
 	const message = "continue the discussion"
 
@@ -195,7 +197,7 @@ func TestHandleWebChatKeepSkipsPromptInjection(t *testing.T) {
 		keep         string
 		role         string
 		system       string
-		wantInjected bool // true = persona injected (first round), false = verbatim
+		wantInjected bool // true = persona injected (first round), false = verbatim (resumed, Keep != "")
 	}{
 		{"first round role injected", "", "dev", "", true},
 		{"first round system wins over role", "", "dev", "persona-x", true},
