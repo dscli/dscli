@@ -126,9 +126,10 @@ func TestParseDSMLMissingInvokeCloseBounded(t *testing.T) {
 // parses, so the tightening did not regress the observed 2026-08-29 shape.
 func TestParseDSMLMissingInvokeCloseMisNested(t *testing.T) {
 	tests := []struct {
-		name    string
-		text    string
-		wantErr bool
+		name     string
+		text     string
+		wantErr  bool
+		wantName string
 	}{
 		{
 			name:    "two unclosed opens and wrapper close",
@@ -141,24 +142,29 @@ func TestParseDSMLMissingInvokeCloseMisNested(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "single unclosed open with params and typo close",
-			text:    "<invoke name=\"a\">\n<parameter name=\"x\">v</parameter>\n</_calls>",
-			wantErr: false,
+			name:     "single unclosed open with params and typo close",
+			text:     "<invoke name=\"a\">\n<parameter name=\"x\">v</parameter>\n</_calls>",
+			wantName: "a",
 		},
 		{
-			name:    "single parmeterless unclosed open and typo close",
-			text:    "<invoke name=\"pwd\">\n</_calls>",
-			wantErr: false,
+			name:     "single parameterless unclosed open and typo close",
+			text:     "<invoke name=\"pwd\">\n</_calls>",
+			wantName: "pwd",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := ParseDSMLToolCalls(tt.text)
+			calls, err := ParseDSMLToolCalls(tt.text)
 			if tt.wantErr && err == nil {
 				t.Fatal("ParseDSMLToolCalls = nil error, want truncation error")
 			}
-			if !tt.wantErr && err != nil {
-				t.Fatalf("ParseDSMLToolCalls: %v, want success", err)
+			if !tt.wantErr {
+				if err != nil {
+					t.Fatalf("ParseDSMLToolCalls: %v, want success", err)
+				}
+				if len(calls) != 1 || calls[0].Name != tt.wantName {
+					t.Fatalf("calls = %d (%+v), want 1 %q call", len(calls), calls, tt.wantName)
+				}
 			}
 		})
 	}

@@ -117,13 +117,17 @@ DSML tool calls from WebChat: chat.deepseek.com replies (role-driven
 consultations like `review` via code_review, and plain chat alike) may embed
 DSML markup (`<invoke name="shell">` with `<parameter>` children) - it is the
 web model's native tool protocol. `lp.HandleWebChat` judges each reply
-with `toolcall.IsDSMLToolCallEnd` (the reply ENDS with a `</tool_calls>`
-close tag; whatever prose precedes it is discarded with the round; a lone
-close tag without the opening wrapper still qualifies, and a wrapper with no
-parseable `<invoke>` executes nothing - quoted code and prose references that
-merely cite an `<invoke>` example never end with the wrapper close tag and
-never qualify), parses them (internal/toolcall/dsml.go) and feeds
-results back into the SAME conversation (handleWebChatToolLoop). Which tools
+with `toolcall.IsDSMLToolCallReply`, the union of three admission shapes:
+the reply ENDS with a `</tool_calls>` close tag (or its typo'd `</_calls>` /
+`<_calls>` cousins; whatever prose precedes it is discarded with the round;
+a lone close tag without the opening wrapper still qualifies, and a wrapper
+with no parseable `<invoke>` executes nothing - quoted code and prose
+references that merely cite an `<invoke>` example never end with the wrapper
+close tag and never qualify); the close tag was cut off at the very end
+(`"…</"` or `"</tool_calls"` without `>`); or the reply is a bare sequence
+of complete `<invoke>` blocks with no wrapper at all. It parses the calls
+(internal/toolcall/dsml.go) and feeds results back into the SAME conversation
+(handleWebChatToolLoop). Which tools
 are executable is decided by the role's tools config (role_configs /
 roles.DefaultFor) - the SAME source that gates GetAllTools, so `dscli role
 update --tools` is the single place that decides it; there is NO separate

@@ -501,11 +501,18 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 		// continue the loop - a final answer, prose quoting an <invoke>
 		// example, or a bare sequence that is not complete calls all end
 		// the loop here (stripped for role consultations, verbatim for
-		// plain chat). The gate is cheap for the common non-tool reply
-		// (two anchored regexes), so the full parse below runs only for
-		// actual tool-call rounds. Prose BEFORE a wrapper is tolerated:
-		// when the closing tag is present the emission is complete, the
-		// calls execute and the preamble is discarded with the round.
+		// plain chat). Replies ending with a wrapper close/cut tag
+		// short-circuit on two anchored regexes; a bare-invoke reply (or
+		// a non-tool reply) additionally runs a full parse inside
+		// IsPureDSMLToolCalls, and actual tool-call rounds run the body
+		// parse below once more - the gate prefers correctness over
+		// saving parse work. A truncated emission that fails the gate
+		// (open or parameter never closed) exits without a per-round
+		// truncation diagnostic by design: the first round already gated
+		// entry, and cleanExit's strip still chops the unclosed DSML.
+		// Prose BEFORE a wrapper is tolerated: when the closing tag is
+		// present the emission is complete, the calls execute and the
+		// preamble is discarded with the round.
 		if !toolcall.IsDSMLToolCallReply(message) {
 			return cleanExit()
 		}

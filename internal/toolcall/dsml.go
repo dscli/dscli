@@ -187,12 +187,11 @@ func IsDSMLToolCallCut(text string) bool {
 //   - IsDSMLToolCallCut - the wrapper close tag was cut off at the very end
 //     ("…</" or "</tool_calls" without ">"): the emission is complete in
 //     intent but the stored content was truncated at a boundary.
-//   - IsPureDSMLToolCalls - the reply is a BARE sequence of complete
-//     <invoke> blocks with no wrapper at all: after stripping block markup,
-//     no prose survives (an optional <tool_calls>/<tool_result> wrapper is
-//     tolerated; observed 2026-08-29 for a code_dev round: the model emitted
-//     "<invoke name=\"read_file\"><parameter ...>…</invoke>" alone, no
-//     <tool_calls> wrapper at all).
+//   - IsPureDSMLToolCalls - the reply is a sequence of complete <invoke>
+//     blocks (possibly inside a <tool_calls>/<tool_result> wrapper) with no
+//     prose surviving after stripping block markup; observed 2026-08-29 for
+//     a code_dev round: the model emitted "<invoke name=\"read_file\">
+//     <parameter ...>…</invoke>" alone, with no <tool_calls> wrapper at all.
 //
 // Non-executable shapes stay outside the union by construction: a reply
 // that CITES an <invoke> example (in prose, a fenced block, or an inline
@@ -609,8 +608,8 @@ func dsmlBlockRanges(text string) (blocks []dsmlBlockRange, unclosed int, firstU
 	// missing only its close tag: closing it implicitly at its own bodyEnd
 	// keeps a finished emission executable instead of misreading it as
 	// truncated. Exactly ONE open is required: with back-to-back siblings
-	// each preceding invoke is closed by its own </invoke> and pops, so the
-	// stack holds only the final open whose close tag was dropped. Several
+	// each preceding invoke is closed by its own </invoke> and pops, so at
+	// most one open remains, and only that one is implicitly closed. Several
 	// opens at once (mis-nested shapes, e.g. a second invoke opened before
 	// the first was closed) are a genuine truncation and must never run - a
 	// missing wrapper close, or an unclosed <parameter> (paramDepth > 0),
