@@ -60,7 +60,7 @@ var codeDevTool = toolcall.ToolDef{
 }
 
 func init() {
-	// WebChat is always available (free DeepSeek V4 Pro) — no API key needed.
+	// WebChat is always available (free DeepSeek V4 Pro) - no API key needed.
 	toolcall.RegisterTool(codeDevTool)
 }
 
@@ -121,7 +121,7 @@ func handleCodeDev(ctx context.Context, args toolcall.ToolArgs) (result, warning
 
 	// Never silently fail on uncommitted changes: the developer may work on
 	// top of a half-finished tree (that is legitimate), but the caller must
-	// know the starting point — the delivery contract requires a clean tree
+	// know the starting point - the delivery contract requires a clean tree
 	// on return so code_review can see the new commit alone.
 	dirty, note := checkWorkingTree(ctx)
 	outfmt.Println(note)
@@ -138,7 +138,7 @@ func handleCodeDev(ctx context.Context, args toolcall.ToolArgs) (result, warning
 	}
 
 	// Compose the request: the task plus the delivery contract. AGENTS.md
-	// and file contents are NOT injected — the developer reads them on
+	// and file contents are NOT injected - the developer reads them on
 	// demand via read_file, keeping the request under the web-chat input
 	// budget (the dev role prompt already carries project context).
 	structuredRequest, warning := truncateCodeDevRequest(content)
@@ -180,12 +180,12 @@ func handleCodeDev(ctx context.Context, args toolcall.ToolArgs) (result, warning
 var devResumeFunc = lp.HandleWebChatResume
 
 // resumeCodeDev continues a saved developer conversation from its last
-// assistant message — the web-chat twin of dscli chat's resume semantics.
+// assistant message - the web-chat twin of dscli chat's resume semantics.
 // If that message ends with a tool-call block (the round was interrupted
 // mid tool-call), the pending calls are executed locally and their results
 // fed back into the SAME conversation until the developer produces a final
 // report. If the last message is a normal reply (multi-turn conversation),
-// it is returned as-is — the caller decides whether a follow-up is needed.
+// it is returned as-is - the caller decides whether a follow-up is needed.
 func resumeCodeDev(ctx context.Context, keep string) (result, warning string, err error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "resumeCodeDev")
 	defer span.Finish()
