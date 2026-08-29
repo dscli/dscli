@@ -35,16 +35,21 @@ func TestChatRoleFlagDefaultsToArchitect(t *testing.T) {
 		roleArg string
 		want    string
 	}{
-		{name: "no role uses flag default", want: defaultChatRole},
+		{name: "unset flag returns registered default", want: defaultChatRole},
 		{name: "empty role falls back to default", set: true, roleArg: "", want: defaultChatRole},
 		{name: "explicit role is not overridden", set: true, roleArg: "expert", want: "expert"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Reset the shared command's role flag deterministically so
+			// subtests stay order-independent (no leakage under shuffle or
+			// future t.Parallel).
+			roleArg := flag.DefValue
 			if tt.set {
-				if err := cmd.Flags().Set("role", tt.roleArg); err != nil {
-					t.Fatalf("set --role: %v", err)
-				}
+				roleArg = tt.roleArg
+			}
+			if err := cmd.Flags().Set("role", roleArg); err != nil {
+				t.Fatalf("set --role: %v", err)
 			}
 			cmd.SetContext(t.Context())
 			if err := ChatPreRunE(cmd, nil); err != nil {

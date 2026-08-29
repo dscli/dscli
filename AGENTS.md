@@ -226,7 +226,7 @@ embedded template ({role}.md) → project override (.dscli/prompt/) → global o
     ↓
 + persona (ainame: NameEN / PersonalityEN / DescEN)
 ```
-Role name == template file name: `dev`, `expert`, `review`, `test`, `architect` (default).
+Role name == template file name: `dev`, `expert`, `review`, `test`, `architect` (chat CLI default).
 
 Note: the `chat` CLI's `--role` flag defaults to `architect` (`defaultChatRole`
 in chat.go), while `roles.DefaultFor("")` still falls back to the `dev` profile
