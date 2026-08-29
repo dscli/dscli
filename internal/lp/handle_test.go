@@ -717,8 +717,9 @@ func TestHandleWebChatToolLoopLongPreambleExecutes(t *testing.T) {
 }
 
 func TestHandleWebChatToolLoopPrintsRounds(t *testing.T) {
-	// 工具循环每一轮（reasoning + content + token）都通过 outfmt.PrintContent
-	// 打印；结果标记 Printed 让调用方不要再打印一次。
+	// 工具循环每一轮（reasoning + content）都通过 outfmt.PrintContent
+	// 打印（头部按角色显示，不打印 token 计数）；结果标记 Printed 让
+	// 调用方不要再打印一次。
 	origFunc := handleWebChatSend
 	t.Cleanup(func() { handleWebChatSend = origFunc })
 	var buf bytes.Buffer
@@ -745,10 +746,16 @@ func TestHandleWebChatToolLoopPrintsRounds(t *testing.T) {
 		t.Error("loop result must be marked Printed")
 	}
 	out := buf.String()
-	// 每一轮的 reasoning 与 content 都打印（首轮 + 末轮）。
-	for _, want := range []string{"先看看改动", "总结完成", "final answer", "T:321", "T:456"} {
+	// 每一轮的 reasoning 与 content 都打印（首轮 + 末轮）；头部按角色
+	// 显示（review·代码审查），不再打印 T: 计数。
+	for _, want := range []string{"先看看改动", "总结完成", "final answer", "review·代码审查"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("printed output missing %q:\n%s", want, out)
+		}
+	}
+	for _, notWant := range []string{"T:321", "T:456"} {
+		if strings.Contains(out, notWant) {
+			t.Errorf("printed output should not contain %q:\n%s", notWant, out)
 		}
 	}
 }

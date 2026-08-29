@@ -13,6 +13,7 @@ import (
 	"github.com/nanjj/clog"
 
 	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/roles"
 )
 
 // LogLevel 定义日志级别（保留类型但不再使用多级过滤）
@@ -494,9 +495,12 @@ const headerLineWidth = 80
 // formatChatHeader builds a chat header with left-aligned identity
 // and right-aligned timestamp, using middle dots as filler.
 //
-// Example: "   🐦 玻尔 <bohr@dscli.io> ········· 17:12:21 🕐 T:1234"
+// Example: "   🐦 玻尔 <bohr@dscli.io> ········· 17:12:21 🕐"
 func formatChatHeader(icon, nameCN, email, now, suffix string) string {
-	left := fmt.Sprintf("%s %s <%s>", icon, nameCN, email)
+	left := icon + " " + nameCN
+	if email != "" {
+		left += " <" + email + ">"
+	}
 	right := now + " 🕐"
 	if suffix != "" {
 		right += " " + suffix
@@ -578,11 +582,16 @@ func PrintUserContent(ctx context.Context, content string) {
 // newlines around the fence, preventing FillParagraph from inlining code blocks.
 var codeFenceRe = regexp.MustCompile("```[a-zA-Z0-9_+.#-]*")
 
-func PrintContent(ctx context.Context, reasoning, content string, thinkingTokens, contentTokens int) {
+func PrintContent(ctx context.Context, reasoning, content string) {
 	span, ctx := clog.StartSpanFromContext(ctx, "PrintContent")
 	defer span.Finish()
 	// 检查是否是streaming模式
 	stream := context.ContextValue(ctx, context.StreamKey, false)
+
+	// 角色头：--role dev/expert/review/test/architect 时用角色身份替代 AI 名。
+	role := context.ContextValue(ctx, context.CurrentRoleKey, "")
+	disp := roles.DisplayFor(role)
+	useRoleHeader := role != "" && disp.Name != ""
 
 	// AI name for header
 	nameCN := context.ContextValue(ctx, context.AINameCNKey, "")
@@ -602,34 +611,36 @@ func PrintContent(ctx context.Context, reasoning, content string, thinkingTokens
 	reasoning = strings.TrimSpace(reasoning)
 	if reasoning != "" {
 		reasoning = codeFenceRe.ReplaceAllString(reasoning, "\n$0\n")
-		tStr := ""
-		if thinkingTokens > 0 {
-			tStr = fmt.Sprintf("T:%d", thinkingTokens)
+		switch {
+		case useRoleHeader:
+			Printf("\n%s\n\n", formatChatHeader("💭", disp.String(), "", now, ""))
+		case nameCN != "" && email != "":
+			Printf("\n%s\n\n", formatChatHeader("💭", nameCN, email, now, ""))
+		default:
+			Printf("\n🕐%s  💭 %s\n\n", now, FillParagraph(reasoning, DefaultFillWidth))
 		}
-		if nameCN != "" && email != "" {
-			Printf("\n%s\n\n", formatChatHeader("💭", nameCN, email, now, tStr))
+		if useRoleHeader || (nameCN != "" && email != "") {
 			Println(FillParagraph(reasoning, DefaultFillWidth))
 			Println()
-		} else {
-			Printf("\n🕐%s  💭 %s%s\n\n", now, FillParagraph(reasoning, DefaultFillWidth), tStr)
 		}
 	}
 
 	content = strings.TrimSpace(content)
 	if content != "" {
 		content = codeFenceRe.ReplaceAllString(content, "\n$0\n")
-		cStr := ""
-		if contentTokens > 0 {
-			cStr = fmt.Sprintf("T:%d", contentTokens)
-		}
 		// 在streaming模式下，内容已经在streaming过程中输出，这里不需要再次输出
 		if !stream {
-			if nameCN != "" && email != "" {
-				Printf("\n%s\n\n", formatChatHeader(icon, nameCN, email, now, cStr))
+			switch {
+			case useRoleHeader:
+				Printf("\n%s\n\n", formatChatHeader(disp.Icon, disp.String(), "", now, ""))
 				Println(content)
 				Println()
-			} else {
-				Printf("\n🕐%s  %s %s%s\n\n", now, icon, content, cStr)
+			case nameCN != "" && email != "":
+				Printf("\n%s\n\n", formatChatHeader(icon, nameCN, email, now, ""))
+				Println(content)
+				Println()
+			default:
+				Printf("\n🕐%s  %s %s\n\n", now, icon, content)
 			}
 		}
 	}

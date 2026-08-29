@@ -79,7 +79,7 @@ func TestPrintContent(t *testing.T) {
 	ctx = context.WithValue(ctx, context.CurrentModelIDKey, context.ModelDeepseekChat)
 	buf := bytes.NewBuffer([]byte{})
 	outfmt.SetOutputWriter(buf)
-	outfmt.PrintContent(ctx, "reasoning", "content", 0, 0)
+	outfmt.PrintContent(ctx, "reasoning", "content")
 	s := buf.String()
 
 	// 检查输出是否包含 reasoning 和 content
@@ -92,6 +92,40 @@ func TestPrintContent(t *testing.T) {
 	// 注意：PrintContent 函数本身不输出执行时间
 	// 执行时间是在 PrintSessionStats 中输出的
 	// 所以这里不应该检查执行时间
+}
+
+func TestPrintContentRoleHeader(t *testing.T) {
+	buf := bytes.NewBuffer([]byte{})
+	outfmt.SetOutputWriter(buf)
+
+	// 带 role：头部显示角色身份，不显示 T:。
+	ctx := t.Context()
+	ctx = context.WithValue(ctx, context.StartTimeKey, time.Now())
+	ctx = context.WithValue(ctx, context.CurrentRoleKey, "review")
+	outfmt.PrintContent(ctx, "thinking", "answer")
+	s := buf.String()
+	if !strings.Contains(s, "review·代码审查") {
+		t.Errorf("role header missing, got:\n%s", s)
+	}
+	if strings.Contains(s, "T:") {
+		t.Errorf("role header should not contain T:, got:\n%s", s)
+	}
+
+	// 不带 role：显示 AI 名，同样不显示 T:。
+	buf.Reset()
+	ctx = t.Context()
+	ctx = context.WithValue(ctx, context.StartTimeKey, time.Now())
+	ctx = context.WithValue(ctx, context.AINameCNKey, "玻尔")
+	ctx = context.WithValue(ctx, context.AINameEmailKey, "bohr@dscli.io")
+	ctx = context.WithValue(ctx, context.AINameBirdFrogKey, "bird")
+	outfmt.PrintContent(ctx, "thinking", "answer")
+	s = buf.String()
+	if !strings.Contains(s, "玻尔") || !strings.Contains(s, "bohr@dscli.io") {
+		t.Errorf("AI name header missing, got:\n%s", s)
+	}
+	if strings.Contains(s, "T:") {
+		t.Errorf("AI name header should not contain T:, got:\n%s", s)
+	}
 }
 
 func TestPrintToolCalls(t *testing.T) {

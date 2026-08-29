@@ -12,6 +12,7 @@ import (
 	dsctx "github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/prompt"
+	"github.com/dscli/dscli/internal/roles"
 	"github.com/dscli/dscli/internal/toolcall"
 	"github.com/nanjj/clog"
 )
@@ -243,9 +244,9 @@ var handleWebChatExecDSML = toolcall.ExecuteDSMLToolCalls
 //     cites an <invoke> example does not end with the wrapper close tag and
 //     is never executed; role consultations still strip such quotes so
 //     callers see clean prose, while plain chat keeps them verbatim.
-//   - Round visibility: every reply the loop receives (reasoning + content,
-//     with token counts from the site's IndexedDB when available) is
-//     printed via outfmt.PrintContent, so a multi-tool consultation shows
+//   - Round visibility: every reply the loop receives (reasoning + content)
+//     is printed via outfmt.PrintContent with the header shown per role
+//     (icon + role·label, no token count), so a multi-tool consultation shows
 //     what the expert said in each round instead of only the tool results.
 //     The returned result is marked Printed so callers skip re-printing
 //     the final answer.
@@ -459,8 +460,8 @@ func HandleWebChatResume(ctx context.Context, opts WebChatOptions) (WebChatResul
 // rendered it - so follow-up messages carry tool results verbatim.
 //
 // Every reply received (the first one and each follow-up) is printed via
-// outfmt.PrintContent - reasoning and content, with the token counts the
-// transport extracted from the site's IndexedDB (0 when unavailable) - so
+// outfmt.PrintContent - reasoning and content, with the header shown per
+// role (icon + role·label) instead of an AI name, and no token count - so
 // the user sees what the expert said in each round, not just the tool
 // results. The returned result is marked Printed: the final answer was
 // already printed inside the loop, so callers must not re-print it.
@@ -479,6 +480,9 @@ func HandleWebChatResume(ctx context.Context, opts WebChatOptions) (WebChatResul
 func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebChatOptions) (WebChatResult, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "HandleWebChatToolLoop")
 	defer span.Finish()
+
+	// 角色称谓用于 stderr 提示：无角色（纯聊天）回退 "专家"。
+	roleName := roles.DisplayName(opts.Role)
 
 	// The remote model's DSML markup is about to run locally with the user's
 	// OS permissions; say so before the first execution (stderr, so piped
@@ -499,10 +503,10 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 	}
 	// 每轮回复都打印。Content 原样打印（含 DSML 工具调用块）是刻意为之：
 	// 用户看到的不只是工具结果，还有专家为哪个调用、读哪个文件做了哪些
-	// 思考；token 数是该轮总输出（站点不区分 thinking/content，thinking
-	// 一侧传 0，见 WebChatResult.OutputTokens 注释）。
+	// 思考；头部按角色显示，不再打印 token 计数（WebChatResult.OutputTokens
+	// 字段保留，供诊断/未来复用）。
 	printRound := func(res WebChatResult) {
-		outfmt.PrintContent(ctx, res.Reasoning, res.Content, 0, res.OutputTokens)
+		outfmt.PrintContent(ctx, res.Reasoning, res.Content)
 	}
 	// 第一轮回复（进入循环的那份）同样可见：专家为什么发工具调用、思考了什么。
 	printRound(first)
@@ -534,8 +538,8 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 		if len(calls) == 0 {
 			return cleanExit()
 		}
-		fmt.Fprintf(os.Stderr, "🤖 专家请求执行 %d 个工具调用（第 %d/%d 轮）…\n",
-			len(calls), round, handleWebChatMaxDSMLRounds)
+		fmt.Fprintf(os.Stderr, "🤖 %s 请求执行 %d 个工具调用（第 %d/%d 轮）…\n",
+			roleName, len(calls), round, handleWebChatMaxDSMLRounds)
 		outputs := handleWebChatExecDSML(ctx, calls)
 		if len(outputs) == 0 {
 			// Every parsed call was not executable (outside the role's
@@ -545,7 +549,7 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 			// blank turn. Strip the quoted markup for role consultations
 			// so the caller sees clean content; plain chat keeps the
 			// original text (it is content, not a command).
-			fmt.Fprintf(os.Stderr, "⚠️ 专家回复只包含非可执行工具调用（未在角色工具配置中或引用示例？），已跳过执行\n")
+			fmt.Fprintf(os.Stderr, "⚠️ %s 回复只包含非可执行工具调用（未在角色工具配置中或引用示例？），已跳过执行\n", roleName)
 			return cleanExit()
 		}
 		// Each output is a self-delimiting <tool_result> block, in
@@ -569,10 +573,10 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 		if res.URL != "" {
 			convURL = res.URL
 		}
-		// 每轮回复都打印（含 reasoning 与 token 用量）：多轮咨询里用户
-		// 看到的不是只有工具结果，还有专家每一轮说什么。
+		// 每轮回复都打印（reasoning + content，头部按角色显示）：多轮咨询
+		// 里用户看到的不是只有工具结果，还有专家每一轮说什么。
 		printRound(res)
 	}
-	fmt.Fprintf(os.Stderr, "⚠️ 专家连续工具调用超过 %d 轮上限，已返回中间结果\n", handleWebChatMaxDSMLRounds)
+	fmt.Fprintf(os.Stderr, "⚠️ %s 连续工具调用超过 %d 轮上限，已返回中间结果\n", roleName, handleWebChatMaxDSMLRounds)
 	return cleanExit()
 }

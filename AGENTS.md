@@ -139,9 +139,9 @@ spelling like `exec_command`, or any unknown name, is skipped). The only
 DSML-layer check is the destructive-command interception for shell calls
 (dsmlBlockedCmdRe) in normalizeDSMLInvoke, plus stripping the decorative
 `justification` parameter. The loop prints every round it receives (reasoning + content via
-outfmt.PrintContent, with the output token count derived from the site's
-IndexedDB accumulated_token_usage) and marks the final result `Printed` so
-callers do not re-print it. The `webchat` CLI defaults to `--role ""` (plain
+outfmt.PrintContent, with the header shown per role — icon + role·label —
+and no token count) and marks the final result `Printed` so callers do not
+re-print it. The `webchat` CLI defaults to `--role ""` (plain
 chat: no role injection; DSML tool-call replies are still executed - default
 dev profile, i.e. all tools); a stderr warning fires whenever the tool loop
 actually runs (any mode), and role sessions additionally get a role-specific

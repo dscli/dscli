@@ -249,7 +249,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 			// 不可捕获信号仍会重放，提示用户可 Ctrl+C 中断。
 			outfmt.Warn("⚠️ 检测到 %d 个上次中断遗留的工具调用，正在恢复执行（Ctrl+C 可中断）", len(tcs))
 			// Print reasoning content or content
-			outfmt.PrintContent(ctx, lastHist.ReasoningContent, lastHist.Content, 0, 0)
+			outfmt.PrintContent(ctx, lastHist.ReasoningContent, lastHist.Content)
 			toolInputs := toolcall.HandleToolCalls(ctx, tcs)
 
 			// Scene A/C: Execute tools first, THEN read chimein. This ensures
@@ -590,16 +590,11 @@ func ChatRound(ctx context.Context, prompts, history []prompt.Message, inputs ..
 		}
 	}
 
-	var thinkingTokens, contentTokens int
 	if resp.Usage != nil {
 		story.SetTokens(resp.Usage.CompletionTokens)
-		if resp.Usage.CompletionTokensDetails != nil {
-			thinkingTokens = resp.Usage.CompletionTokensDetails.ReasoningTokens
-		}
-		contentTokens = resp.Usage.CompletionTokens - thinkingTokens
 	}
 
-	outfmt.PrintContent(ctx, story.ReasoningContent, story.Content, thinkingTokens, contentTokens)
+	outfmt.PrintContent(ctx, story.ReasoningContent, story.Content)
 	// Print usage/cache stats for this round
 	if resp.Usage != nil {
 		u := resp.Usage

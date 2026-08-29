@@ -10,7 +10,6 @@ import (
 	"github.com/dscli/dscli/internal/config"
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/lockfile"
-	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/nanjj/clog"
 )
 
@@ -121,21 +120,21 @@ func initDatabase(ctx context.Context, db *DB) error {
 	// 3. 执行升级脚本
 	for _, query := range upgradeSchemas {
 		if _, err := db.Exec(query); err == nil {
-			outfmt.Debug("升级完成: %s\n", query)
+			clog.Debug(ctx, "升级完成: "+query)
 		}
 	}
 
 	// 4. 执行后初始化钩子
 	for _, hook := range postInitHooks {
 		if err := hook(db); err != nil {
-			outfmt.Debug("后初始化钩子失败: %v\n", err)
+			clog.Debug(ctx, "后初始化钩子失败", "err", err)
 		}
 	}
 
 	// 全部完成后记录当前版本（仅当 BuildTime 已注入）
 	if currentVersion != "" {
 		if _, err := db.Exec(`INSERT OR REPLACE INTO db_metadata (key, value) VALUES ('version', ?)`, currentVersion); err != nil {
-			outfmt.Debug("记录版本失败: %v\n", err)
+			clog.Debug(ctx, "记录版本失败", "err", err)
 		}
 	}
 

@@ -749,11 +749,10 @@ type WebChatResult struct {
 	// OutputTokens is this reply's total output token count (thinking +
 	// content combined), derived from the site's IndexedDB
 	// accumulated_token_usage difference between the round's ASSISTANT and
-	// USER messages (the site's own running counter). The site does NOT
-	// expose the thinking/content split, so the tool loop prints 0
-	// thinking tokens and this total as the content-side count (see
-	// handleWebChatToolLoop). 0 when the counts are unavailable (DOM
-	// fallback, or a mock transport).
+	// USER messages (the site's own running counter). The count is no
+	// longer printed in the reply header (the header now shows the role);
+	// the field is kept for diagnostics and future reuse. 0 when the counts
+	// are unavailable (DOM fallback, or a mock transport).
 	OutputTokens int
 
 	// Printed reports that the reply (Content and Reasoning) was already
