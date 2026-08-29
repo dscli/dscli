@@ -33,7 +33,7 @@ var codeDevTool = toolcall.ToolDef{
 			},
 			"keep": map[string]any{
 				"type":        "string",
-				"description": "Continue a previous developer conversation (default new). Pass the conversation_id from a previous result to send follow-up fix instructions to the SAME session (it keeps the full project context — follow-ups need only the new instructions, not the original task); keep-only resumes an interrupted round — pending tool calls are executed locally and results fed back.",
+				"description": "Continue a previous developer conversation (default new). Pass the conversation_id from a previous result to send follow-up fix instructions to the SAME session (it keeps the full project context; fix instructions should cover only the new changes - not the original task); keep-only resumes an interrupted round - pending tool calls are executed locally and results fed back.",
 			},
 			"timeout": map[string]any{
 				"type":        "integer",
