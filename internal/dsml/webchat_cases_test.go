@@ -163,3 +163,49 @@ func TestWebchatCase6BareShortClose(t *testing.T) {
 		t.Error("IsPureDSMLToolCalls = false, want true (only the call plus wrapper residue)")
 	}
 }
+
+func TestWebchatCaseEmptyNameCloseShapes(t *testing.T) {
+	// The empty-name form admit is the bare slash close only; plain angle
+	// brackets in prose must NOT open the gate.
+	lt := string(rune(60))
+	gts := string(rune(62))
+	if !IsDSMLToolCallEnd(lt + "/" + gts) {
+		t.Error("bare </> must qualify as an emission-complete signal")
+	}
+	if IsDSMLToolCallEnd("use " + lt + gts + " for not equal") {
+		t.Error("prose ending in <> must NOT qualify")
+	}
+	if IsDSMLToolCallEnd(lt + gts) {
+		t.Error("bare <> must NOT qualify (need the slash)")
+	}
+	if IsDSMLToolCallEnd(lt + gts + "  ") {
+		t.Error("spaced <> must NOT qualify")
+	}
+	// slash-less <_calls> stays admitted (QA regression, kept by design).
+	if !IsDSMLToolCallEnd("x\n" + lt + "_calls" + gts) {
+		t.Error("slash-less <_calls> close must still qualify")
+	}
+}
+
+func TestWebchatCaseMisNestedUnclosedParam(t *testing.T) {
+	// A wrapper close after an unclosed parameter whose value embeds a nested
+	// unclosed invoke: the outer call executes (tolerance), the value runs to
+	// the wrapper close and keeps the embedded text verbatim.
+	lt := string(rune(60))
+	gts := string(rune(62))
+	text := toolCallsBlock(
+		lt + "invoke name=\"a\"" + gts + "\n" +
+			lt + "parameter name=\"p\" string=\"true\">v\n" +
+			lt + "invoke name=\"b\"" + gts + "\n",
+	)
+	calls, err := ParseDSMLToolCalls(text)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls: %v", err)
+	}
+	if len(calls) != 1 || calls[0].Name != "a" {
+		t.Fatalf("calls = %d (%+v), want one a call", len(calls), calls)
+	}
+	if got, _ := calls[0].Args["p"].(string); !strings.Contains(got, "v\n"+lt+"invoke name=\"b\"") {
+		t.Errorf("p value = %q, want the value running to the wrapper close", got)
+	}
+}

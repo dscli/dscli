@@ -51,9 +51,13 @@ type DSMLCall struct {
 var dsmlNameAttrRe = regexp.MustCompile(`\bname\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'=<>]+))`)
 
 // dsmlParamNameRe / dsmlParamStringRe extract the name and the optional
-// string attribute from one parameter open tag. DeepSeek sometimes omits
-// the string attribute entirely; decodeDSMLValue's coercion path then keeps
-// text text and numbers numeric, so the call is never silently dropped.
+// string attribute from one parameter open tag. Both require double
+// quotes on purpose: the web model emits them, and single-quoted or
+// unquoted names are kept as content (the pre-strict parser dropped
+// them the same way), so the strictness does not regress. DeepSeek
+// sometimes omits the string attribute entirely; decodeDSMLValue's
+// coercion path then keeps text text and numbers numeric, so the call
+// is never silently dropped.
 var (
 	dsmlParamNameRe   = regexp.MustCompile(`\bname\s*=\s*"([^"]+)"`)
 	dsmlParamStringRe = regexp.MustCompile(`\bstring\s*=\s*"(true|false)"`)
@@ -125,7 +129,7 @@ func IsPureDSMLToolCalls(text string) bool {
 // same - a wrapper close attempt at the very end after complete <invoke>
 // blocks - and execution is still gated by parse success, so a dangling
 // opening tag with no parseable calls executes nothing.
-var dsmlToolCallsCloseEndRe = regexp.MustCompile(`(?s)</?\s*(?:tool_calls|_calls)?\s*>\s*$`)
+var dsmlToolCallsCloseEndRe = regexp.MustCompile(`(?s)(?:</\s*(?:tool_calls|_calls)?\s*>|<\s*_calls\s*>)\s*$`)
 
 // dsmlToolCallsCloseCutRe matches a CUT-OFF wrapper close tag at the very
 // end of the text: the opening "</" exists but the tag was truncated
@@ -1168,6 +1172,11 @@ func extractDSMLCalls(text string, blocks []dsmlBlockRange) (calls []DSMLCall, s
 	return calls, strict
 }
 
+// CallSource returns the execution source for a reasoning/content pair:
+// content first; when content carries no call, reasoning is the fallback
+// (DeepSeek may draft calls in its thinking). This is the SAME selection
+// ParseDSMLMessage performs, exported so the webchat loop and its entry
+// gates cannot drift from the parser.
 func CallSource(reasoning, content string) string {
 	if !HasDSMLToolCalls(content) && HasDSMLToolCalls(reasoning) {
 		return reasoning
