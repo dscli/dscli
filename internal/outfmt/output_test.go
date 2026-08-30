@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/mattn/go-runewidth"
 )
 
 func TestNoticeMessageLength(t *testing.T) {
@@ -415,4 +417,46 @@ func TestFormatChatHeader(t *testing.T) {
 	if !strings.Contains(noEmail, "review·代码审查") {
 		t.Errorf("header should contain name: %q", noEmail)
 	}
+}
+
+// TestFormatChatHeaderWithRole 测试带角色标签的头部构建。
+func TestFormatChatHeaderWithRole(t *testing.T) {
+	t.Run("with role label", func(t *testing.T) {
+		got := formatChatHeaderWithRole("🐦", "玻尔", "bohr@dscli.io", "🏗️ architect·软件架构师", "12:43:10")
+		if !strings.Contains(got, "architect·软件架构师") {
+			t.Errorf("header should contain role label: %q", got)
+		}
+		if !strings.Contains(got, "bohr@dscli.io") {
+			t.Errorf("header should contain email: %q", got)
+		}
+		if strings.Contains(got, "<>") {
+			t.Errorf("header should not contain empty angle brackets: %q", got)
+		}
+	})
+
+	t.Run("empty role label matches base", func(t *testing.T) {
+		base := formatChatHeader("🐦", "玻尔", "bohr@dscli.io", "12:43:10")
+		withEmpty := formatChatHeaderWithRole("🐦", "玻尔", "bohr@dscli.io", "", "12:43:10")
+		if base != withEmpty {
+			t.Errorf("empty roleLabel should match base:\nbase:  %q\nwith:  %q", base, withEmpty)
+		}
+	})
+
+	t.Run("truncation with long identity", func(t *testing.T) {
+		longName := strings.Repeat("很长的名字", 20)
+		got := formatChatHeaderWithRole("🐦", longName, "bohr@dscli.io", "🏗️ architect·软件架构师", "12:43:10")
+		// 截断只作用于左侧身份部分；pad 用的 · 在 runewidth 里占 2 格，
+		// 整行必然超宽，所以这里拆出身份前缀单独断言。
+		identity, _, ok := strings.Cut(got, " ·")
+		if !ok {
+			t.Fatalf("header missing padding separator: %q", got)
+		}
+		rightW := runewidth.StringWidth("12:43:10 🕐")
+		if w := runewidth.StringWidth(identity); w > headerLineWidth-rightW-4 {
+			t.Errorf("identity width %d exceeds truncation budget %d: %q", w, headerLineWidth-rightW-4, identity)
+		}
+		if !strings.HasSuffix(identity, "…") {
+			t.Errorf("truncated identity should end with ellipsis: %q", identity)
+		}
+	})
 }

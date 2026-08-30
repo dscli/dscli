@@ -498,9 +498,21 @@ const headerLineWidth = 80
 // Example: "   🐦 玻尔 <bohr@dscli.io> ········· 17:12:21 🕐"
 // Without email: "   🔍 review·代码审查 ········· 17:12:21 🕐"
 func formatChatHeader(icon, nameCN, email, now string) string {
+	return formatChatHeaderWithRole(icon, nameCN, email, "", now)
+}
+
+// formatChatHeaderWithRole 在身份后追加角色标签：
+//
+//	🐦 玻尔 <bohr@dscli.io> 🏗️ architect·软件架构师 ······ 12:43:10 🕐
+//
+// roleLabel 为空时行为与 formatChatHeader 完全一致（现有调用点不受影响）。
+func formatChatHeaderWithRole(icon, nameCN, email, roleLabel, now string) string {
 	left := icon + " " + nameCN
 	if email != "" {
 		left += " <" + email + ">"
+	}
+	if roleLabel != "" {
+		left += " " + roleLabel
 	}
 	right := now + " 🕐"
 
@@ -611,7 +623,13 @@ func PrintContent(ctx context.Context, reasoning, content string) {
 		reasoning = codeFenceRe.ReplaceAllString(reasoning, "\n$0\n")
 		switch {
 		case useRoleHeader:
-			Printf("\n%s\n\n", formatChatHeader("💭", disp.String(), "", now))
+			roleLabel := disp.Icon + " " + disp.String()
+			hasAIName := nameCN != "" && email != ""
+			if hasAIName {
+				Printf("\n%s\n\n", formatChatHeaderWithRole("💭", nameCN, email, roleLabel, now))
+			} else {
+				Printf("\n%s\n\n", formatChatHeader("💭", disp.String(), "", now))
+			}
 		case nameCN != "" && email != "":
 			Printf("\n%s\n\n", formatChatHeader("💭", nameCN, email, now))
 		default:
@@ -630,7 +648,13 @@ func PrintContent(ctx context.Context, reasoning, content string) {
 		if !stream {
 			switch {
 			case useRoleHeader:
-				Printf("\n%s\n\n", formatChatHeader(disp.Icon, disp.String(), "", now))
+				roleLabel := disp.Icon + " " + disp.String()
+				hasAIName := nameCN != "" && email != ""
+				if hasAIName {
+					Printf("\n%s\n\n", formatChatHeaderWithRole(icon, nameCN, email, roleLabel, now))
+				} else {
+					Printf("\n%s\n\n", formatChatHeader(disp.Icon, disp.String(), "", now))
+				}
 				Println(content)
 				Println()
 			case nameCN != "" && email != "":

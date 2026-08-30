@@ -110,6 +110,7 @@ func TestPrintContentRoleHeader(t *testing.T) {
 		reasoning string
 		content   string
 		want      string
+		want2     string
 	}{
 		{
 			name:      "review role",
@@ -123,6 +124,17 @@ func TestPrintContentRoleHeader(t *testing.T) {
 			role:      "architect",
 			reasoning: "thinking",
 			want:      "architect·软件架构师",
+		},
+		{
+			name:      "architect role with AI name",
+			role:      "architect",
+			cn:        "玻尔",
+			email:     "bohr@dscli.io",
+			birdFrog:  "bird",
+			reasoning: "thinking",
+			content:   "answer",
+			want:      "玻尔 <bohr@dscli.io>",
+			want2:     "architect·软件架构师",
 		},
 		{
 			name:      "unknown role falls back to dev",
@@ -160,6 +172,9 @@ func TestPrintContentRoleHeader(t *testing.T) {
 
 			if !strings.Contains(s, tt.want) {
 				t.Errorf("header missing %q, got:\n%s", tt.want, s)
+			}
+			if tt.want2 != "" && !strings.Contains(s, tt.want2) {
+				t.Errorf("header missing %q, got:\n%s", tt.want2, s)
 			}
 			if strings.Contains(s, "T:") {
 				t.Errorf("header should not contain T:, got:\n%s", s)
