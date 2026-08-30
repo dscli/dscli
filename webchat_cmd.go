@@ -9,6 +9,7 @@ import (
 
 	"github.com/nanjj/clog"
 
+	"github.com/dscli/dscli/internal/keeprunning"
 	"github.com/dscli/dscli/internal/lp"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/spf13/cobra"
@@ -144,11 +145,15 @@ func (k keepValue) Type() string { return "string" }
 func webchatRunE(cmd *cobra.Command, args []string) error {
 	span, ctx := clog.StartSpanFromContext(cmd.Context(), "webchatRunE")
 	defer span.Finish()
-
 	keep, _ := cmd.Flags().GetString("keep")
 	if keep == "list" {
 		return webchatListConversations()
 	}
+
+	// Keep the system awake while the web session runs: a locked screen
+	// suspends chat.deepseek.com and can kill long DSML tool loops.
+	wakeLock := keeprunning.KeepRunning()
+	defer wakeLock()
 
 	message, err := gatherWebchatInput(cmd, args)
 	if err != nil {

@@ -92,6 +92,7 @@ Tests get an isolated database: `context.IsTesting()` → `/tmp/dscli-test-<bina
 | `internal/gse/` | Chinese text segmentation (embedded dictionary) |
 | `internal/userservice/` | OS user services (systemd --user / launchctl / pidfile) |
 | `internal/processutil/` | Cross-platform process utilities (Windows support) |
+| `internal/keeprunning/` | Long-running commands (chat/webchat) block idle screen lock (ported pulumi nosleep: caffeinate / D-Bus Inhibit / SetThreadExecutionState) |
 | `internal/version/` | Single source of truth for version string (ldflags) |
 
 ### Tool Framework

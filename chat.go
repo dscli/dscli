@@ -14,6 +14,7 @@ import (
 	"github.com/dscli/dscli/internal/config"
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/dsc"
+	"github.com/dscli/dscli/internal/keeprunning"
 	"github.com/dscli/dscli/internal/lockfile"
 	"github.com/dscli/dscli/internal/mail"
 	"github.com/dscli/dscli/internal/outfmt"
@@ -175,6 +176,10 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 		// lockfile 通过父进程 PID 判定放行。子进程不显示余额等统计信息。
 		ctx = context.WithValue(ctx, context.IsChildProcessKey, true)
 	}
+	// Keep the system awake while the interactive loop runs: a locked screen
+	// suspends the DeepSeek web session and can kill long tool loops.
+	wakeLock := keeprunning.KeepRunning()
+	defer wakeLock()
 
 	// Set AI name in context for output formatting
 	sessionID := session.GetCurrentSessionID(ctx)
