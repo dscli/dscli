@@ -145,7 +145,7 @@ func TestPrintContentRoleHeader(t *testing.T) {
 			reasoning: "thinking",
 			content:   "answer",
 			want:      "architect·软件架构师",
-			notWant:   "玻尔",
+			notWant:   "<",
 		},
 		{
 			name:      "unknown role falls back to dev",

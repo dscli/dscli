@@ -442,21 +442,39 @@ func TestFormatChatHeaderWithRole(t *testing.T) {
 		}
 	})
 
+	t.Run("exact width in both EA modes", func(t *testing.T) {
+		// 不截断场景：整行应恰好对齐 headerLineWidth。
+		oldEA := runewidth.EastAsianWidth
+		t.Cleanup(func() { runewidth.EastAsianWidth = oldEA })
+		for _, ea := range []bool{false, true} {
+			runewidth.EastAsianWidth = ea
+			got := formatChatHeaderWithRole("🐦", "玻尔", "bohr@dscli.io", "🏗️ architect·软件架构师", "12:43:10")
+			if w := runewidth.StringWidth(got); w != headerLineWidth {
+				t.Errorf("EA=%v width %d != headerLineWidth %d: %q", ea, w, headerLineWidth, got)
+			}
+		}
+	})
+
 	t.Run("truncation with long identity", func(t *testing.T) {
 		longName := strings.Repeat("很长的名字", 20)
-		got := formatChatHeaderWithRole("🐦", longName, "bohr@dscli.io", "🏗️ architect·软件架构师", "12:43:10")
-		// 任一 locale 下整行宽度都不得超过 headerLineWidth（含双宽 · padding）。
-		if w := runewidth.StringWidth(got); w > headerLineWidth {
-			t.Errorf("header width %d exceeds headerLineWidth %d: %q", w, headerLineWidth, got)
-		}
-		// 截断作用于左侧身份，其末尾应为省略号。
-		idx := strings.Index(got, "…")
-		if idx < 0 {
-			t.Fatalf("truncated header should contain ellipsis: %q", got)
-		}
-		identity := got[:idx+len("…")]
-		if !strings.HasSuffix(identity, "…") {
-			t.Errorf("truncated identity should end with ellipsis: %q", identity)
+		oldEA := runewidth.EastAsianWidth
+		t.Cleanup(func() { runewidth.EastAsianWidth = oldEA })
+		for _, ea := range []bool{false, true} {
+			runewidth.EastAsianWidth = ea
+			got := formatChatHeaderWithRole("🐦", longName, "bohr@dscli.io", "🏗️ architect·软件架构师", "12:43:10")
+			// 任一 locale 下整行宽度都不得超过 headerLineWidth（含双宽 · padding）。
+			if w := runewidth.StringWidth(got); w > headerLineWidth {
+				t.Errorf("EA=%v header width %d exceeds headerLineWidth %d: %q", ea, w, headerLineWidth, got)
+			}
+			// 截断作用于左侧身份，其末尾应为省略号。
+			idx := strings.Index(got, "…")
+			if idx < 0 {
+				t.Fatalf("EA=%v truncated header should contain ellipsis: %q", ea, got)
+			}
+			identity := got[:idx+len("…")]
+			if !strings.HasSuffix(identity, "…") {
+				t.Errorf("EA=%v truncated identity should end with ellipsis: %q", ea, identity)
+			}
 		}
 	})
 }
