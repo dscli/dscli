@@ -277,17 +277,6 @@ func normalizeDSMLText(text string) string {
 }
 
 // ParseDSMLToolCalls extracts all DSML tool calls from text. It returns an
-// error when an <invoke> block is left unclosed (e.g. the response was cut
-// off mid-emission): a truncated call must never be executed.
-//
-// Block pairing comes from dsmlBlockRanges, whose stack scan treats
-// <parameter> bodies as opaque: a literal "<invoke" or "</invoke>" inside a
-// parameter VALUE is content, not structure. This is what the old non-greedy
-// block regex could not deliver - it stopped at the first </invoke> in text
-// order, so a value embedding a DSML example (e.g. a shell snippet carrying
-// "<invoke name=\"x\">...</invoke>") cut the block early and dropped every
-// parameter after it ("missing parameter cmd" in practice).
-// ParseDSMLToolCalls extracts all DSML tool calls from text. It returns an
 // error when an invoke block is left unclosed (e.g. the response was cut
 // off mid-emission): a truncated call must never be executed.
 //
@@ -611,6 +600,9 @@ func dsmlBlockRanges(text string) (blocks []dsmlBlockRange, unclosed int, firstU
 }
 
 // decodeDSMLValue converts a raw parameter value to a Go value. string=true
+// keeps the text verbatim (entity-decoded); string=false tries boolean and
+// numeric coercion first, so numeric parameters (e.g. timeout) become real
+// numbers, not "10000" text, and falls back to text when neither parses.
 func decodeDSMLValue(raw string, isString bool) any {
 	if isString {
 		return dsmlEntityReplacer.Replace(raw)
@@ -963,12 +955,18 @@ func parseDSMLToolCallsStrict(text string) (calls []DSMLCall, strict bool, err e
 	if len(blocks) == 0 {
 		return nil, strict, nil
 	}
-	// Wrapper strictness: the canonical shape is a complete tool_calls
-	// open/close pair around the calls. Anything parsed while the text
-	// lacks the canonical close tag means a bare invoke (no wrapper), a
-	// typo'd wrapper (_calls / slash-less), or a cut-off close - all
-	// tolerated, all violations.
-	if !strings.Contains(text, "</tool_calls>") {
+	// Wrapper strictness: the canonical shape is a COMPLETE tool_calls pair
+	// enclosing the blocks - an open tag before the first block and a close
+	// tag after the last one. A bare invoke (no wrapper at all), a typo'd
+	// wrapper (_calls / slash-less), a cut-off close, or a wrapper that
+	// does not enclose the calls are all tolerated for execution but count
+	// as violations. A plain substring check is not enough: prose carrying
+	// a literal close tag would mask a bare invocation.
+	openAt := strings.Index(text, "<tool_calls>")
+	closeAt := strings.LastIndex(text, "</tool_calls>")
+	lastBlock := blocks[len(blocks)-1]
+	if openAt < 0 || closeAt < 0 || closeAt < openAt ||
+		openAt > blocks[0].openStart || closeAt < lastBlock.closeEnd {
 		strict = true
 	}
 	calls, extractStrict := extractDSMLCalls(text, blocks)
@@ -1030,6 +1028,18 @@ func extractDSMLCalls(text string, blocks []dsmlBlockRange) (calls []DSMLCall, s
 	return calls, strict
 }
 
+// CallSource returns the execution source for a reasoning/content pair:
+// content first; when content carries no call, reasoning is the fallback
+// (DeepSeek may draft calls in its thinking). This is the SAME selection
+// ParseDSMLMessage performs, exported so the webchat loop and its entry
+// gates cannot drift from the parser.
+func CallSource(reasoning, content string) string {
+	if !HasDSMLToolCalls(content) && HasDSMLToolCalls(reasoning) {
+		return reasoning
+	}
+	return content
+}
+
 // ParseDSMLMessage is the unified entry for a DeepSeek web reply (reasoning
 // + content). It extracts DSML tool calls and judges whether they strictly
 // follow the format the system prompt demands (BuildDSMLToolDoc):
@@ -1051,10 +1061,8 @@ func extractDSMLCalls(text string, blocks []dsmlBlockRange) (calls []DSMLCall, s
 // verbatim.
 func ParseDSMLMessage(reasoning string, content string) prompt.Message {
 	msg := prompt.Message{Content: content, ReasoningContent: reasoning}
-	src, fromReasoning := content, false
-	if !HasDSMLToolCalls(content) && HasDSMLToolCalls(reasoning) {
-		src, fromReasoning = reasoning, true
-	}
+	src := CallSource(reasoning, content)
+	fromReasoning := src == reasoning
 	if !HasDSMLToolCalls(src) {
 		return msg
 	}

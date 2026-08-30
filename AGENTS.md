@@ -117,26 +117,37 @@ user messages).
 DSML tool calls from WebChat: chat.deepseek.com replies (role-driven
 consultations like `review` via code_review, and plain chat alike) may embed
 DSML markup (`<invoke name="shell">` with `<parameter>` children) - it is the
-web model's native tool protocol. `lp.HandleWebChat` judges each reply
-with `toolcall.IsDSMLToolCallReply`, the union of three admission shapes:
-the reply ENDS with a `</tool_calls>` close tag (or its typo'd `</_calls>` /
-`<_calls>` cousins; whatever prose precedes it is discarded with the round;
-a lone close tag without the opening wrapper still qualifies, and a wrapper
-with no parseable `<invoke>` executes nothing - quoted code and prose
-references that merely cite an `<invoke>` example never end with the wrapper
-close tag and never qualify); the close tag was cut off at the very end
-(`"…</"` or `"</tool_calls"` without `>`); or the reply is a bare sequence
-of complete `<invoke>` blocks with no wrapper at all. It parses the calls
-(internal/toolcall/dsml.go) and feeds results back into the SAME conversation
-(handleWebChatToolLoop). Which tools
+web model's native tool protocol. Judgement and parsing now live in the
+dedicated `internal/dsml` package: `dsml.ParseDSMLMessage(reasoning, content)`
+is the single entry - it parses, reports ToolCalls, and judges strict-format
+compliance via `prompt.Message.OK` (violations such as the decorative
+`justification` parameter, missing string attributes, stray/implicit/cut
+tags, or a bare invocation NEVER block execution; the fixed-format
+`dsml.InjectStrictWarning` carries a reminder into the tool_result feedback).
+`lp.HandleWebChat` routes each reply: `dsml.IsDSMLToolCallReply` is the union
+of three admission shapes - the reply ENDS with a close tag (or its typo'd
+`_calls` cousins; whatever prose precedes it is discarded with the round; a
+lone close tag without the opening wrapper still qualifies, and a wrapper
+with no parseable invoke executes nothing - quoted code and prose references
+that merely cite an example never end with the wrapper close tag and never
+qualify); the close tag was cut off at the very end (a dangling partial close
+without the final angle bracket); or the reply is a bare sequence of complete
+invoke blocks with no wrapper at all. A reply that clearly tries to emit a
+call but failed to parse (`dsml.SuspectedDSMLToolCalls` - truncated
+emissions, outside quoted code) routes into the loop too and gets
+`dsml.ReissueWarning`, keeping the same conversation alive.
+`handleWebChatToolLoop` executes the calls (`dsml.ExecuteDSMLToolCalls`, the
+execution kernel stays in internal/toolcall) and feeds results back into the
+SAME conversation. Which tools
 are executable is decided by the role's tools config (role_configs /
 roles.DefaultFor) - the SAME source that gates GetAllTools, so `dscli role
 update --tools` is the single place that decides it; there is NO separate
 DSML whitelist. DSML tool entries are generated straight from the registered
-ToolDef (dsmlGeneratedDocEntry), so the model sees native names and parameter
-schemas - no name translation: what the model writes is what the executor
-accepts, and the role's allow-set gates by exact registered name (a legacy
-spelling like `exec_command`, or any unknown name, is skipped). The only
+ToolDef (dsmlGeneratedDocEntry in internal/dsml/doc.go), so the model sees
+native names and parameter schemas - no name translation: what the model
+writes is what the executor accepts, and the role's allow-set gates by exact
+registered name (a legacy spelling like `exec_command`, or any unknown name,
+is skipped). The only
 DSML-layer check is the destructive-command interception for shell calls
 (dsmlBlockedCmdRe) in normalizeDSMLInvoke, plus stripping the decorative
 `justification` parameter. The loop prints every round it receives (reasoning + content via
@@ -149,10 +160,13 @@ actually runs (any mode), and role sessions additionally get a role-specific
 warning up front, since the remote model's DSML tool calls will run
 locally. Role templates (internal/prompt/*.md) render a DSML tool section
 for WebChat via a `{{if .DSMLToolDoc.Intro}}` block: the section content
-(`toolcall.BuildDSMLToolDoc`, see internal/toolcall/dsml_doc.go) is derived
+(`dsml.BuildDSMLToolDoc`, see internal/dsml/doc.go) is derived
 from the role's tool config (roles.DefaultFor + role_configs), formatting
 aligned with DeepSeek V4's tool template (string= attribute rules,
-`### Available Tool Schemas`). `HandleWebChat` injects it via
+`### Available Tool Schemas`); it now states the strict format requirements
+explicitly (complete tool_calls wrapper, string attribute on every
+parameter, no extra attributes such as justification, every tag closed).
+`HandleWebChat` injects it via
 `prompt.RenderPromptForRoleWithTools`; `RenderPromptForRole` and
 `GetSystemPrompt` (dscli chat path, which registers tools through the API
 `tools` parameter instead) leave it out entirely. A role without executable

@@ -355,8 +355,11 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 			// (SuspectedDSMLToolCalls) route into the loop: the former
 			// executes, the latter re-issues the strict-format warning and
 			// keeps the conversation alive. A quoted example (fenced code)
-			// is neither and never enters the loop.
-			if dsml.IsDSMLToolCallReply(res.Content) || dsml.SuspectedDSMLToolCalls(res.Content) {
+			// is neither and never enters the loop. The call source is
+			// content first, reasoning as fallback - the same selection the
+			// loop and ParseDSMLMessage use, so a draft in the thinking gets
+			// its round.
+			if shouldEnterToolLoop(res.Reasoning, res.Content) {
 				return handleWebChatToolLoop(ctx, res, opts)
 			}
 			if opts.Role != "" && dsml.HasDSMLToolCalls(res.Content) {
@@ -440,7 +443,7 @@ func HandleWebChatResume(ctx context.Context, opts WebChatOptions) (WebChatResul
 	}
 	fmt.Fprintf(os.Stderr, "🔁 恢复会话: %s（最后一条消息 %d 字符，status=%s）\n", convURL, countRunes(content), status)
 
-	if !dsml.IsDSMLToolCallReply(content) {
+	if !shouldEnterToolLoop("", content) {
 		// Multi-turn conversation: the expert already gave a normal reply —
 		// nothing pending, hand the last content to the caller verbatim.
 		// A reply that is still streaming (status != FINISHED) is NOT a
@@ -483,6 +486,16 @@ func HandleWebChatResume(ctx context.Context, opts WebChatOptions) (WebChatResul
 //     warning on stderr.
 //
 // Browser/network errors are fatal: retrying mid-conversation is not safe.
+// shouldEnterToolLoop decides whether a reasoning/content pair routes into
+// the web chat tool loop: the call source (content first, reasoning as
+// fallback - dsml.CallSource) is an executable emission (IsDSMLToolCallReply)
+// or a suspected-but-unparseable call (SuspectedDSMLToolCalls). Shared by
+// HandleWebChat and HandleWebChatResume so the two entry gates cannot drift.
+func shouldEnterToolLoop(reasoning, content string) bool {
+	src := dsml.CallSource(reasoning, content)
+	return dsml.IsDSMLToolCallReply(src) || dsml.SuspectedDSMLToolCalls(src)
+}
+
 func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebChatOptions) (WebChatResult, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "HandleWebChatToolLoop")
 	defer span.Finish()
@@ -518,45 +531,52 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 	printRound(first)
 	lastReasoning := first.Reasoning
 	for round := 1; round <= handleWebChatMaxDSMLRounds; round++ {
-		// ParseDSMLMessage is the single judgement entry: it parses the reply,
-		// decides OK (strict-format compliance), and routes the round:
-		//   - ToolCalls present AND an executable emission (IsDSMLToolCallReply):
-		//     execute - format violations (OK=false) NEVER block execution,
-		//     the warning rides along in the tool_result feedback instead;
-		//   - ToolCalls present but NOT an executable emission (a long answer
-		//     quoting an invoke example): plain exit, nothing executed;
-		//   - no ToolCalls but the reply clearly tries to emit a call that
-		//     failed to parse (SuspectedDSMLToolCalls): re-issue warning and
-		//     keep the SAME conversation alive so the model can repeat it;
+		// ParseDSMLMessage is the single judgement entry: it parses the reply
+		// and decides OK (strict-format compliance). Routing below is driven
+		// by the RAW parse of the call source (content first, reasoning as
+		// fallback - the same source selection ParseDSMLMessage performs),
+		// because msg.ToolCalls only holds calls that converted cleanly;
+		// a round whose calls all failed conversion (destructive command
+		// intercepted, unregistered names) must STILL execute so
+		// ExecuteDSMLToolCalls can emit the rejection feedback blocks.
+		//
+		//   - parse succeeds with calls AND the source is an executable
+		//     emission (IsDSMLToolCallReply): execute. Format violations
+		//     (OK=false) NEVER block execution - the strict-format warning
+		//     rides along in the tool_result feedback instead.
+		//   - parse succeeds with calls but the source is NOT an executable
+		//     emission (a long answer quoting an invoke example): plain
+		//     exit, nothing executed.
+		//   - parse fails/empty but the source clearly tries to emit a call
+		//     (SuspectedDSMLToolCalls): re-issue warning, keep the SAME
+		//     conversation alive so the model can repeat it.
 		//   - anything else: a final answer - exit.
 		msg := dsml.ParseDSMLMessage(lastReasoning, message)
-		if len(msg.ToolCalls) == 0 && dsml.SuspectedDSMLToolCalls(message) {
-			// 疑似工具调用但解析失败（截断/畸形）：keep 会话并请求重发。
-			fmt.Fprintf(os.Stderr, "⚠️ %s 的回复疑似工具调用但解析失败，已请求按严格格式重发（第 %d/%d 轮）…\n",
-				roleName, round, handleWebChatMaxDSMLRounds)
-			followUp := WebChatOptions{Mode: opts.Mode, Keep: convURL}
-			res, callErr := handleWebChatSend(ctx, dsml.ReissueWarning, followUp)
-			if callErr != nil {
-				return WebChatResult{}, fmt.Errorf("webchat tool loop: re-issue warning during round %d: %w", round, callErr)
+		src := dsml.CallSource(lastReasoning, message)
+		calls, parseErr := dsml.ParseDSMLToolCalls(src)
+		if parseErr != nil || len(calls) == 0 {
+			if dsml.SuspectedDSMLToolCalls(src) {
+				// 疑似工具调用但解析失败（截断/畸形）：keep 会话并请求重发。
+				fmt.Fprintf(os.Stderr, "⚠️ %s 的回复疑似工具调用但解析失败，已请求按严格格式重发（第 %d/%d 轮）…\n",
+					roleName, round, handleWebChatMaxDSMLRounds)
+				followUp := WebChatOptions{Mode: opts.Mode, Keep: convURL}
+				res, callErr := handleWebChatSend(ctx, dsml.ReissueWarning, followUp)
+				if callErr != nil {
+					return WebChatResult{}, fmt.Errorf("webchat tool loop: re-issue warning during round %d: %w", round, callErr)
+				}
+				message = res.Content
+				lastReasoning = res.Reasoning
+				if res.URL != "" {
+					convURL = res.URL
+				}
+				printRound(res)
+				continue
 			}
-			message = res.Content
-			lastReasoning = res.Reasoning
-			if res.URL != "" {
-				convURL = res.URL
-			}
-			printRound(res)
-			continue
-		}
-		if len(msg.ToolCalls) == 0 || !dsml.IsDSMLToolCallReply(message) {
-			// 无调用，或长回复仅引用示例：非执行轮次，退出循环。
+			// 无调用（纯散文/引用示例）：退出循环。
 			return cleanExit()
 		}
-		calls, parseErr := dsml.ParseDSMLToolCalls(message)
-		if parseErr != nil || len(calls) == 0 {
-			// Defensive only: ParseDSMLMessage parsed the same text a moment
-			// ago, so a mismatch here is a programming error, not a model
-			// artifact.
-			fmt.Fprintf(os.Stderr, "⚠️ 工具调用解析不一致，已停止循环: %v\n", parseErr)
+		if !dsml.IsDSMLToolCallReply(src) {
+			// 长回复仅引用示例：非执行轮次，退出循环。
 			return cleanExit()
 		}
 		fmt.Fprintf(os.Stderr, "🤖 %s 请求执行 %d 个工具调用（第 %d/%d 轮）…\n",
@@ -578,12 +598,12 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 		// truncates block-wise when the total exceeds the site's input cap, so
 		// an over-long tool result cannot trigger a rejected send mid-loop
 		// (unrecoverable: the round is part of a live conversation).
-		feedback := buildWebChatFeedback(outputs)
 		if !msg.OK {
 			// 违规但已执行：警告注入每个 tool_result 块，要求下次严格。
-			feedback = buildWebChatFeedback(dsml.InjectStrictWarning(outputs))
+			outputs = dsml.InjectStrictWarning(outputs)
 			fmt.Fprintf(os.Stderr, "⚠️ %s 的工具调用格式不够严格（已执行并告警）\n", roleName)
 		}
+		feedback := buildWebChatFeedback(outputs)
 
 		// Continue the SAME conversation: same mode, Keep set to the URL
 		// returned by the previous send. Explicit construction (not

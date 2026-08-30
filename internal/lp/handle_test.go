@@ -1199,3 +1199,78 @@ func TestHandleWebChatToolLoopReissueThenSuccess(t *testing.T) {
 // in a write_file content would be misread as markup and truncate the
 // payload).
 const toolResultOK = "<" + "tool_result>" + `{"result":"ok"}` + "<" + "/tool_result>"
+
+func TestHandleWebChatToolLoopAllRejectedStillFeedsBack(t *testing.T) {
+	// A round whose calls all fail conversion (e.g. the destructive-command
+	// interception) must STILL route into the execution path so the model
+	// receives the rejection feedback - msg.ToolCalls is empty for such a
+	// round (conversion failures never enter ToolCalls), so the loop must
+	// not judge it by ToolCalls alone.
+	origFunc := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = origFunc })
+
+	const finalAnswer = "Adapted."
+	var messages []string
+	handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
+		messages = append(messages, msg)
+		if len(messages) == 1 {
+			return WebChatResult{Content: dsmlReply, URL: "https://chat.deepseek.com/a/chat/s/convA"}, nil
+		}
+		return WebChatResult{Content: finalAnswer, URL: "https://chat.deepseek.com/a/chat/s/convA"}, nil
+	}
+
+	seen := captureExecDSML(t, rejectedBlock)
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{Role: "review"})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if res.Content != finalAnswer {
+		t.Errorf("content = %q, want final answer", res.Content)
+	}
+	if len(*seen) != 1 {
+		t.Fatalf("exec = %+v, want the parsed calls handed to the executor", *seen)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("sends = %d, want 2 (rejection feedback + final)", len(messages))
+	}
+	if !strings.Contains(messages[1], "rejected") {
+		t.Errorf("rejection feedback must reach the model:\n%s", messages[1])
+	}
+}
+
+func TestHandleWebChatToolLoopReasoningDraftExecutes(t *testing.T) {
+	// Calls drafted in the REASONING (content carries no call) are the
+	// fallback execution source: the loop must use the reasoning text as
+	// the admission source, not the content.
+	origFunc := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = origFunc })
+
+	const finalAnswer = "Checked."
+	var messages []string
+	handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
+		messages = append(messages, msg)
+		if len(messages) == 1 {
+			return WebChatResult{Content: "Let me check the repo.", Reasoning: dsmlReply, URL: "https://chat.deepseek.com/a/chat/s/convR"}, nil
+		}
+		return WebChatResult{Content: finalAnswer, URL: "https://chat.deepseek.com/a/chat/s/convR"}, nil
+	}
+	seen := captureExecDSML(t, toolResultOK)
+
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{Role: "review"})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if res.Content != finalAnswer {
+		t.Errorf("content = %q, want final answer", res.Content)
+	}
+	if len(*seen) != 1 || (*seen)[0].Name != "shell" {
+		t.Fatalf("executed = %+v, want the reasoning-drafted shell call", *seen)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("sends = %d, want 2 (tool feedback + final)", len(messages))
+	}
+}
+
+// rejectedBlock is a tool_result carrying a rejection error, built at runtime
+// so this file stays transportable through DSML tool calls.
+const rejectedBlock = "<" + "tool_result>" + `{"error":"destructive command rejected"}` + "<" + "/tool_result>"

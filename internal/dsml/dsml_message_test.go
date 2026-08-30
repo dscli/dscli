@@ -198,4 +198,3 @@ func TestInjectStrictWarningUnparseable(t *testing.T) {
 	}
 }
 
-// compile-time guard: prompt.Message carries OK and ToolCalls as expected.
