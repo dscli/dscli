@@ -707,7 +707,12 @@ func StripDSMLToolCalls(text string) string {
 	// text order), and never overlap. Merging them into one ordered
 	// walk removes a mid-text stray (between calls) as well as a
 	// trailing one, while a literal close inside a parameter value or
-	// quoted code is content and never appears in the list.
+	// quoted code is content and never appears in the list. A stray that
+	// straddles the chop point (starts before end, ends after it) moves
+	// the chop point to its own start: everything from the stray onward
+	// is residue. The straddle branch is defensive - with real tag shapes
+	// a close event and an unclosed open cannot overlap, so it is
+	// unreachable by construction, but keeping it makes the triage total.
 	var spans []dsmlBlockRange
 	for _, s := range strays {
 		switch {
