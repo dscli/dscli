@@ -19,6 +19,7 @@ package keeprunning
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/godbus/dbus/v5"
@@ -70,17 +71,15 @@ func keepRunning() DoneFunc {
 }
 
 // withConnClose wraps a release function so the D-Bus connection is closed
-// exactly once, after the release call, regardless of how many times the
-// returned DoneFunc is invoked.
+// exactly once, after the release call, even if the returned DoneFunc is
+// invoked concurrently or more than once.
 func withConnClose(conn *dbus.Conn, done DoneFunc) DoneFunc {
-	var closed bool
+	var once sync.Once
 	return func() {
-		if closed {
-			return
-		}
-		closed = true
-		done()
-		conn.Close()
+		once.Do(func() {
+			done()
+			conn.Close()
+		})
 	}
 }
 
@@ -124,8 +123,13 @@ func inhibitGnomeSession(conn *dbus.Conn) (DoneFunc, bool) {
 		reason  = "dscli is running"
 		// xid is a conventional non-zero sentinel used when there is no real
 		// X window; some implementations reject 0.
-		xid   = uint32(42)
-		flags = uint32(8 | 16)
+		xid = uint32(42)
+		// flags uses only the official GNOME gsm-inhibit-flags idle bit (8),
+		// which already covers the idle -> blank -> lock chain. Bit 16 is not
+		// part of the formal enum; some GNOME implementations reject unknown
+		// bits and would fail the whole call, losing inhibition entirely. Add
+		// a blanking bit here only if a future GNOME version proves to need it.
+		flags = uint32(8)
 	)
 	var cookie uint32
 	ctx, cancel := context.WithTimeout(context.Background(), dbusCallTimeout)

@@ -37,9 +37,6 @@ func TestKeepRunningRealBus(t *testing.T) {
 	}
 
 	done := KeepRunning()
-	if done == nil {
-		t.Fatal("KeepRunning returned nil DoneFunc; want non-nil")
-	}
 	done()
 	done() // second call must be a safe no-op, not a panic
 }
