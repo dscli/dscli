@@ -419,6 +419,29 @@ func TestFormatChatHeader(t *testing.T) {
 	}
 }
 
+// withEA sets DefaultCondition.EastAsianWidth for the duration of the test.
+// runewidth.StringWidth/Truncate 全部委托 DefaultCondition；包级 EastAsianWidth
+// 仅在 init 时同步一次，运行时直接改包级变量无效。
+func withEA(t *testing.T, ea bool) {
+	t.Helper()
+	old := runewidth.DefaultCondition.EastAsianWidth
+	t.Cleanup(func() { runewidth.DefaultCondition.EastAsianWidth = old })
+	runewidth.DefaultCondition.EastAsianWidth = ea
+}
+
+// assertHeaderWidth asserts the rendered header width. exact=true 时要求恰好
+// headerLineWidth（不截断场景）；任何情况下都不得超过 headerLineWidth。
+func assertHeaderWidth(t *testing.T, got string, exact bool) {
+	t.Helper()
+	w := runewidth.StringWidth(got)
+	if exact && w != headerLineWidth {
+		t.Errorf("header width = %d, want %d: %q", w, headerLineWidth, got)
+	}
+	if w > headerLineWidth {
+		t.Errorf("header width %d exceeds %d: %q", w, headerLineWidth, got)
+	}
+}
+
 // TestFormatChatHeaderWithRole 测试带角色标签的头部构建。
 func TestFormatChatHeaderWithRole(t *testing.T) {
 	t.Run("with role label", func(t *testing.T) {
@@ -444,28 +467,46 @@ func TestFormatChatHeaderWithRole(t *testing.T) {
 
 	t.Run("exact width in both EA modes", func(t *testing.T) {
 		// 不截断场景：整行应恰好对齐 headerLineWidth。
-		oldEA := runewidth.EastAsianWidth
-		t.Cleanup(func() { runewidth.EastAsianWidth = oldEA })
 		for _, ea := range []bool{false, true} {
-			runewidth.EastAsianWidth = ea
+			withEA(t, ea)
 			got := formatChatHeaderWithRole("🐦", "玻尔", "bohr@dscli.io", "🏗️ architect·软件架构师", "12:43:10")
-			if w := runewidth.StringWidth(got); w != headerLineWidth {
-				t.Errorf("EA=%v width %d != headerLineWidth %d: %q", ea, w, headerLineWidth, got)
+			assertHeaderWidth(t, got, true)
+		}
+	})
+
+	t.Run("width invariant matrix", func(t *testing.T) {
+		// 宽度不变量矩阵：长名字、空邮箱、长 roleLabel、双 EA 模式，全部不得超宽。
+		longName := strings.Repeat("很长的名字", 20)
+		longRole := "🏗️ " + strings.Repeat("超长角色标签", 6)
+		inputs := []struct {
+			name      string
+			cn        string
+			email     string
+			roleLabel string
+		}{
+			{"long name", longName, "bohr@dscli.io", "🏗️ architect·软件架构师"},
+			{"empty email", "玻尔", "", "🏗️ architect·软件架构师"},
+			{"long role label", "玻尔", "bohr@dscli.io", longRole},
+			{"long name empty email", longName, "", "🏗️ architect·软件架构师"},
+		}
+		for _, ea := range []bool{false, true} {
+			for _, in := range inputs {
+				withEA(t, ea)
+				got := formatChatHeaderWithRole("🐦", in.cn, in.email, in.roleLabel, "12:43:10")
+				if w := runewidth.StringWidth(got); w > headerLineWidth {
+					t.Errorf("EA=%v %s: header width %d exceeds %d: %q", ea, in.name, w, headerLineWidth, got)
+				}
 			}
 		}
 	})
 
 	t.Run("truncation with long identity", func(t *testing.T) {
 		longName := strings.Repeat("很长的名字", 20)
-		oldEA := runewidth.EastAsianWidth
-		t.Cleanup(func() { runewidth.EastAsianWidth = oldEA })
 		for _, ea := range []bool{false, true} {
-			runewidth.EastAsianWidth = ea
+			withEA(t, ea)
 			got := formatChatHeaderWithRole("🐦", longName, "bohr@dscli.io", "🏗️ architect·软件架构师", "12:43:10")
 			// 任一 locale 下整行宽度都不得超过 headerLineWidth（含双宽 · padding）。
-			if w := runewidth.StringWidth(got); w > headerLineWidth {
-				t.Errorf("EA=%v header width %d exceeds headerLineWidth %d: %q", ea, w, headerLineWidth, got)
-			}
+			assertHeaderWidth(t, got, false)
 			// 截断作用于左侧身份，其末尾应为省略号。
 			idx := strings.Index(got, "…")
 			if idx < 0 {

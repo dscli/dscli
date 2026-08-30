@@ -520,18 +520,12 @@ func formatChatHeaderWithRole(icon, nameCN, email, roleLabel, now string) string
 	leftW := runewidth.StringWidth(left)
 	rightW := runewidth.StringWidth(right)
 
-	// 截断预算：保证截断后至少留出两个空格的分隔位（filler ≥ 2）。
-	// 2 = 左右各一个空格，点数可为 0。
+	// 截断预算：为右侧时间戳保留 rightW + 双空格。maxLeftW >= 5 是
+	// runewidth.Truncate 省略号尾缀的可读下限（w<4 时省略号截断会超宽）；
+	// 当前 headerLineWidth=80 与 time.TimeOnly 下 maxLeftW 恒 >= 60，该守卫不可达，属防御。
 	maxLeftW := headerLineWidth - rightW - 2
-	if leftW > maxLeftW {
-		// 5 列下限保证省略号本身可读；预算不足时降级为无省略号截断，
-		// 绝不牺牲右侧时间戳（当前 headerLineWidth=80 + time.TimeOnly 下
-		// 该分支不可达，属防御）。
-		if maxLeftW >= 5 {
-			left = runewidth.Truncate(left, maxLeftW, "…")
-		} else {
-			left = runewidth.Truncate(left, maxLeftW, "")
-		}
+	if leftW > maxLeftW && maxLeftW >= 5 {
+		left = runewidth.Truncate(left, maxLeftW, "…")
 		leftW = runewidth.StringWidth(left)
 	}
 
@@ -539,10 +533,9 @@ func formatChatHeaderWithRole(icon, nameCN, email, roleLabel, now string) string
 	filler := headerLineWidth - leftW - rightW
 	dots := max(0, (filler-2)/dotW)
 
-	// dotW=2 且 filler 为奇数时，向下取整会让整行少 1 列，时间戳不再贴右缘；
-	// 补尾部空格使整行恰好 headerLineWidth（截断省略号场景允许 ≤）。
-	totalW := leftW + 2 + dots*dotW + rightW
-	if trail := headerLineWidth - totalW; trail > 0 {
+	// dots 向下取整后可能不足 1 列（EA=true、filler 为奇数时），补空格对齐；
+	// rightW 是补空格前的宽度，filler 用截断后的 leftW 计算。
+	if trail := (filler - 2) % dotW; trail > 0 {
 		right += strings.Repeat(" ", trail)
 	}
 
