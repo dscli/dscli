@@ -1,0 +1,12 @@
+dscli includes code derived from Pulumi's pkg/util/nosleep
+(https://github.com/pulumi/pulumi/tree/master/pkg/util/nosleep):
+
+  internal/keeprunning/darwin.go
+  internal/keeprunning/unix.go
+  internal/keeprunning/windows.go
+
+Copyright 2016-2024, Pulumi Corporation.
+Licensed under the Apache License, Version 2.0 (the "License").
+You may obtain a copy of the License at:
+
+  http://www.apache.org/licenses/LICENSE-2.0

@@ -1,14 +1,34 @@
 //go:build linux || freebsd || netbsd || openbsd || solaris || dragonfly
 
+// Portions of this file are derived from Pulumi's pkg/util/nosleep
+// (https://github.com/pulumi/pulumi/tree/master/pkg/util/nosleep), Copyright
+// 2016-2024, Pulumi Corporation, licensed under the Apache License, Version
+// 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package keeprunning
 
 import (
+	"context"
 	"log/slog"
+	"time"
 
 	"github.com/godbus/dbus/v5"
 )
 
 const (
+	// dbusCallTimeout bounds every inhibit/uninhibit D-Bus call so a hung
+	// desktop daemon cannot block chat/webchat startup or shutdown.
+	dbusCallTimeout = 2 * time.Second
+
 	screenSaverDest   = "org.freedesktop.ScreenSaver"
 	screenSaverPath   = "/ScreenSaver"
 	screenSaverIface  = "org.freedesktop.ScreenSaver"
@@ -24,6 +44,10 @@ var sessionBus = dbus.SessionBus
 // protocol (KDE, XFCE, Cinnamon, MATE) and then the GNOME SessionManager
 // inhibit. The first successful mechanism wins; if none succeeds, it returns
 // a no-op DoneFunc.
+//
+// ScreenSaver is tried first because KDE Plasma (Wayland) implements the
+// xdg-screensaver interface but not org.gnome.SessionManager; upstream nosleep
+// is GNOME-first - do not "fix" the order.
 func keepRunning() DoneFunc {
 	conn, err := sessionBus()
 	if err != nil {
@@ -31,11 +55,13 @@ func keepRunning() DoneFunc {
 		return func() {}
 	}
 
+	// conn.Close ownership stays in keepRunning: the wrapper returned below
+	// closes it exactly once after the release call.
 	if done, ok := inhibitScreenSaver(conn); ok {
-		return done
+		return withConnClose(conn, done)
 	}
 	if done, ok := inhibitGnomeSession(conn); ok {
-		return done
+		return withConnClose(conn, done)
 	}
 
 	conn.Close()
@@ -43,12 +69,29 @@ func keepRunning() DoneFunc {
 	return func() {}
 }
 
+// withConnClose wraps a release function so the D-Bus connection is closed
+// exactly once, after the release call, regardless of how many times the
+// returned DoneFunc is invoked.
+func withConnClose(conn *dbus.Conn, done DoneFunc) DoneFunc {
+	var closed bool
+	return func() {
+		if closed {
+			return
+		}
+		closed = true
+		done()
+		conn.Close()
+	}
+}
+
 // inhibitScreenSaver uses org.freedesktop.ScreenSaver.Inhibit, the
 // xdg-screensaver protocol supported by KDE, XFCE, Cinnamon and MATE.
 func inhibitScreenSaver(conn *dbus.Conn) (DoneFunc, bool) {
 	obj := conn.Object(screenSaverDest, screenSaverPath)
 	var cookie uint32
-	err := obj.Call(screenSaverIface+".Inhibit", 0,
+	ctx, cancel := context.WithTimeout(context.Background(), dbusCallTimeout)
+	defer cancel()
+	err := obj.CallWithContext(ctx, screenSaverIface+".Inhibit", 0,
 		"dscli", "dscli is running").Store(&cookie)
 	if err != nil {
 		return nil, false
@@ -61,13 +104,14 @@ func inhibitScreenSaver(conn *dbus.Conn) (DoneFunc, bool) {
 			return
 		}
 		released = true
-		releaseErr := obj.Call(screenSaverIface+".UnInhibit", 0, cookie).Err
+		ctx, cancel := context.WithTimeout(context.Background(), dbusCallTimeout)
+		defer cancel()
+		releaseErr := obj.CallWithContext(ctx, screenSaverIface+".UnInhibit", 0, cookie).Err
 		if releaseErr != nil {
 			slog.Info("keeprunning: failed to un-inhibit screen saver", "cookie", cookie, "err", releaseErr)
 		} else {
 			slog.Info("keeprunning: un-inhibited screen saver", "cookie", cookie)
 		}
-		conn.Close()
 	}, true
 }
 
@@ -78,11 +122,15 @@ func inhibitGnomeSession(conn *dbus.Conn) (DoneFunc, bool) {
 	const (
 		appName = "dscli"
 		reason  = "dscli is running"
-		xid     = uint32(42)
-		flags   = uint32(8 | 16)
+		// xid is a conventional non-zero sentinel used when there is no real
+		// X window; some implementations reject 0.
+		xid   = uint32(42)
+		flags = uint32(8 | 16)
 	)
 	var cookie uint32
-	err := obj.Call(gnomeSessionIface+".Inhibit", 0,
+	ctx, cancel := context.WithTimeout(context.Background(), dbusCallTimeout)
+	defer cancel()
+	err := obj.CallWithContext(ctx, gnomeSessionIface+".Inhibit", 0,
 		appName, xid, reason, flags).Store(&cookie)
 	if err != nil {
 		return nil, false
@@ -95,12 +143,13 @@ func inhibitGnomeSession(conn *dbus.Conn) (DoneFunc, bool) {
 			return
 		}
 		released = true
-		releaseErr := obj.Call(gnomeSessionIface+".Uninhibit", 0, cookie).Err
+		ctx, cancel := context.WithTimeout(context.Background(), dbusCallTimeout)
+		defer cancel()
+		releaseErr := obj.CallWithContext(ctx, gnomeSessionIface+".Uninhibit", 0, cookie).Err
 		if releaseErr != nil {
 			slog.Info("keeprunning: failed to un-inhibit GNOME session", "cookie", cookie, "err", releaseErr)
 		} else {
 			slog.Info("keeprunning: un-inhibited GNOME session", "cookie", cookie)
 		}
-		conn.Close()
 	}, true
 }

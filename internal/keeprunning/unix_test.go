@@ -10,6 +10,10 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
+// Tests in this package must NOT use t.Parallel(): sessionBus is a
+// package-level variable that tests swap via t.Cleanup, so concurrent
+// execution would race on the injection point.
+
 // TestKeepRunningNoBus verifies that a missing D-Bus session (headless CI or
 // no desktop) yields a non-nil no-op DoneFunc that is safe to call.
 func TestKeepRunningNoBus(t *testing.T) {
@@ -37,4 +41,5 @@ func TestKeepRunningRealBus(t *testing.T) {
 		t.Fatal("KeepRunning returned nil DoneFunc; want non-nil")
 	}
 	done()
+	done() // second call must be a safe no-op, not a panic
 }
