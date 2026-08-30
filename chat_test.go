@@ -111,6 +111,7 @@ func TestPrintContentRoleHeader(t *testing.T) {
 		content   string
 		want      string
 		want2     string
+		notWant   string
 	}{
 		{
 			name:      "review role",
@@ -135,6 +136,16 @@ func TestPrintContentRoleHeader(t *testing.T) {
 			content:   "answer",
 			want:      "玻尔 <bohr@dscli.io>",
 			want2:     "architect·软件架构师",
+		},
+		{
+			name:      "role with name but no email falls back to role header",
+			role:      "architect",
+			cn:        "玻尔",
+			birdFrog:  "bird",
+			reasoning: "thinking",
+			content:   "answer",
+			want:      "architect·软件架构师",
+			notWant:   "玻尔",
 		},
 		{
 			name:      "unknown role falls back to dev",
@@ -175,6 +186,9 @@ func TestPrintContentRoleHeader(t *testing.T) {
 			}
 			if tt.want2 != "" && !strings.Contains(s, tt.want2) {
 				t.Errorf("header missing %q, got:\n%s", tt.want2, s)
+			}
+			if tt.notWant != "" && strings.Contains(s, tt.notWant) {
+				t.Errorf("header should not contain %q, got:\n%s", tt.notWant, s)
 			}
 			if strings.Contains(s, "T:") {
 				t.Errorf("header should not contain T:, got:\n%s", s)

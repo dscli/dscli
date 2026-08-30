@@ -622,13 +622,15 @@ func PrintContent(ctx context.Context, reasoning, content string) {
 		icon = "🐸"
 	}
 
+	// 角色标签与 Ainame 判定在 reasoning/content 两处共享，统一计算一次。
+	roleLabel := disp.Icon + " " + disp.String()
+	hasAIName := nameCN != "" && email != ""
+
 	reasoning = strings.TrimSpace(reasoning)
 	if reasoning != "" {
 		reasoning = codeFenceRe.ReplaceAllString(reasoning, "\n$0\n")
 		switch {
 		case useRoleHeader:
-			roleLabel := disp.Icon + " " + disp.String()
-			hasAIName := nameCN != "" && email != ""
 			if hasAIName {
 				Printf("\n%s\n\n", formatChatHeaderWithRole("💭", nameCN, email, roleLabel, now))
 			} else {
@@ -652,8 +654,6 @@ func PrintContent(ctx context.Context, reasoning, content string) {
 		if !stream {
 			switch {
 			case useRoleHeader:
-				roleLabel := disp.Icon + " " + disp.String()
-				hasAIName := nameCN != "" && email != ""
 				if hasAIName {
 					Printf("\n%s\n\n", formatChatHeaderWithRole(icon, nameCN, email, roleLabel, now))
 				} else {

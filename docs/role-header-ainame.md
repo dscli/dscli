@@ -20,12 +20,12 @@
 
 1. **范围**：所有角色头统一生效（dev/expert/review/test/architect — 共享同一渲染路径）。
 2. **缺失回退**：会话无 Ainame（`AINameCNKey` 或 `AINameEmailKey` 为空）时，保持现状纯角色头（如 `🏗️ architect·软件架构师`）。
-3. **图标**：行首 = Ainame 的 bird/frog 图标（🐦/🐸；无则保持现有默认）；角色标签 = 角色图标 + 角色名（`🏗️ architect·软件架构师`），完整格式为：
+3. **图标**：content 头行首 = Ainame 的 bird/frog 图标（🐦/🐸；无则保持现有默认）；角色标签 = 角色图标 + 角色名（`🏗️ architect·软件架构师`），完整格式为：
 
    `bird/frog图标 名字 <邮箱> 🏗️ architect·软件架构师 ········ 时间 🕐`
 
 4. **reasoning 头对称处理**：`💭` reasoning 头同样叠加 Ainame，格式为
-   `💭 玻尔 <bohr@dscli.io> 🏗️ architect·软件架构师 ····`（💭 保留行首，与现有非角色路径对称）。
+   `💭 玻尔 <bohr@dscli.io> 🏗️ architect·软件架构师 ····`。reasoning 头行首保持 `💭`（与纯聊天路径 `💭 玻尔 <...>` 逐字对称），**不显示** bird/frog 图标；bird/frog 图标仅用于 content 头行首。
 
 ## 现状（代码事实）
 
