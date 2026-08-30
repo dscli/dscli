@@ -25,7 +25,7 @@ func invokeClose() string {
 	return lt + `/invoke` + gt
 }
 
-func param(name, value string) string {
+func dsmlTestParam(name, value string) string {
 	return lt + `parameter name=` + q + name + q + ` string=` + q + `true` + q + gt + value + lt + `/parameter` + gt
 }
 
@@ -37,8 +37,8 @@ func param(name, value string) string {
 // false and the tool loop never ran - the call was silently dropped.
 func TestDSMLStrayCloseAfterCompleteCall(t *testing.T) {
 	one := invokeOpen(`shell`) + nl +
-		param(`script`, `sed -n '190,225p' runewidth.go`) + nl +
-		param(`summary`, `Read Condition.Truncate body`) + nl +
+		dsmlTestParam(`script`, `sed -n '190,225p' runewidth.go`) + nl +
+		dsmlTestParam(`summary`, `Read Condition.Truncate body`) + nl +
 		invokeClose() + nl +
 		invokeClose()
 	two := one + nl + invokeClose()
@@ -72,10 +72,10 @@ func TestDSMLStrayCloseAfterCompleteCall(t *testing.T) {
 // reply is still pure.
 func TestDSMLStrayCloseMultiCalls(t *testing.T) {
 	text := invokeOpen(`shell`) + nl +
-		param(`script`, `echo A`) + nl +
+		dsmlTestParam(`script`, `echo A`) + nl +
 		invokeClose() + nl +
 		invokeOpen(`shell`) + nl +
-		param(`script`, `echo B`) + nl +
+		dsmlTestParam(`script`, `echo B`) + nl +
 		invokeClose() + nl +
 		invokeClose()
 	calls, err := ParseDSMLToolCalls(text)
@@ -100,11 +100,11 @@ func TestDSMLStrayCloseMultiCalls(t *testing.T) {
 // the generalized tolerance removes it too, so the reply stays pure.
 func TestDSMLStrayCloseMidText(t *testing.T) {
 	text := invokeOpen(`shell`) + nl +
-		param(`script`, `echo A`) + nl +
+		dsmlTestParam(`script`, `echo A`) + nl +
 		invokeClose() + nl +
 		invokeClose() + nl +
 		invokeOpen(`shell`) + nl +
-		param(`script`, `echo B`) + nl +
+		dsmlTestParam(`script`, `echo B`) + nl +
 		invokeClose()
 	calls, err := ParseDSMLToolCalls(text)
 	if err != nil {
@@ -128,7 +128,7 @@ func TestDSMLStrayCloseMidText(t *testing.T) {
 func TestDSMLStrayCloseSafetyBoundaries(t *testing.T) {
 	innerVal := `echo ` + q + `a ` + invokeClose() + ` b` + q
 	inValue := invokeOpen(`shell`) + nl +
-		param(`script`, innerVal) + nl +
+		dsmlTestParam(`script`, innerVal) + nl +
 		invokeClose()
 	calls, err := ParseDSMLToolCalls(inValue)
 	if err != nil {
@@ -148,7 +148,7 @@ func TestDSMLStrayCloseSafetyBoundaries(t *testing.T) {
 	fence := bt + bt + bt
 	fenced := `example:` + nl + fence + nl +
 		invokeOpen(`shell`) + nl +
-		param(`script`, `ls`) + nl +
+		dsmlTestParam(`script`, `ls`) + nl +
 		invokeClose() + nl + fence + nl
 	if IsPureDSMLToolCalls(fenced) {
 		t.Error(`IsPureDSMLToolCalls(fenced) = true, want false (citation)`)
