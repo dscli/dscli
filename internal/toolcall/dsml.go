@@ -297,7 +297,7 @@ func ParseDSMLToolCalls(text string) ([]DSMLCall, error) {
 	// never satisfy an unclosed call (false negative); unlike stripping
 	// complete blocks first, a nested or mis-nested open (two opens, one
 	// close) is still detected instead of being silently swallowed.
-	blocks, unclosed, _ := dsmlBlockRanges(text)
+	blocks, unclosed, _, _ := dsmlBlockRanges(text)
 	if unclosed > 0 {
 		return nil, fmt.Errorf("DSML tool call truncated: %d unclosed <invoke>", unclosed)
 	}
@@ -354,6 +354,18 @@ type dsmlBlockRange struct {
 	openEnd    int // '>' of the open tag, exclusive
 	closeStart int // '<' of the matching close tag
 	closeEnd   int // '>' of the matching close tag, exclusive
+}
+
+// dsmlStrayClose is one </invoke> close tag that appeared with an empty
+// invoke stack: an extra close the model emitted after (or between) complete
+// calls - a token artifact, not structure. It never pairs with anything, so
+// ParseDSMLToolCalls ignores it. StripDSMLToolCalls removes it so the pure
+// judgement (IsPureDSMLToolCalls) does not fail on a leftover artifact. A
+// literal </invoke> inside a parameter VALUE (paramDepth > 0) or inside
+// quoted code is content and is never a stray.
+type dsmlStrayClose struct {
+	pos int // '<' of the stray close tag
+	end int // exclusive end of the stray close tag
 }
 
 // dsmlBlockName returns the name attribute of an <invoke> open tag.
@@ -525,7 +537,7 @@ func inCodeRanges(ranges [][2]int, pos int) bool {
 //     dropped: the wrapper close is the model's own "emission complete"
 //     signal, and complete parameters plus that signal mean the call is
 //     finished, not truncated (details in the function body).
-func dsmlBlockRanges(text string) (blocks []dsmlBlockRange, unclosed int, firstUnclosed int) {
+func dsmlBlockRanges(text string) (blocks []dsmlBlockRange, unclosed int, firstUnclosed int, strays []dsmlStrayClose) {
 	type ev struct {
 		pos  int
 		kind byte // 'o' invoke open, 'c' invoke close, 'p' param open, 'q' param close
@@ -593,6 +605,16 @@ func dsmlBlockRanges(text string) (blocks []dsmlBlockRange, unclosed int, firstU
 				o := stack[len(stack)-1]
 				stack = stack[:len(stack)-1]
 				blocks = append(blocks, dsmlBlockRange{o.start, o.end, e.pos, e.end})
+			} else if paramDepth == 0 {
+				// A close with an empty invoke stack is an extra
+				// `</invoke>` the model emitted after (or between)
+				// complete calls - a token artifact, not structure. It
+				// never pairs with anything; StripDSMLToolCalls must
+				// remove it so IsPureDSMLToolCalls does not fail on a
+				// leftover fragment. Literal `</invoke>` inside a
+				// parameter value (paramDepth > 0) is content, not a
+				// stray, and never reaches here.
+				strays = append(strays, dsmlStrayClose{pos: e.pos, end: e.end})
 			}
 		}
 	}
@@ -624,7 +646,7 @@ func dsmlBlockRanges(text string) (blocks []dsmlBlockRange, unclosed int, firstU
 		firstUnclosed = stack[0].start
 	}
 	sort.Slice(blocks, func(i, j int) bool { return blocks[i].openStart < blocks[j].openStart })
-	return blocks, unclosed, firstUnclosed
+	return blocks, unclosed, firstUnclosed, strays
 }
 
 // decodeDSMLValue converts a raw parameter value to a Go value. string=true
@@ -675,11 +697,25 @@ var dsmlToolResultRe = regexp.MustCompile(`(?s)<\s*tool_result\b[^>]*>.*?</\s*to
 // real truncated call.
 func StripDSMLToolCalls(text string) string {
 	text = normalizeDSMLText(text)
-	blocks, _, first := dsmlBlockRanges(text)
+	blocks, _, first, strays := dsmlBlockRanges(text)
 	end := len(text)
 	if first >= 0 {
 		end = first // cut-off emission: the tail is unparseable residue
 	}
+	// Delete spans = complete blocks + stray closes. Strays live
+	// outside any block, are sorted by pos (the scan walked events in
+	// text order), and never overlap. Merging them into one ordered
+	// walk removes a mid-text stray (between calls) as well as a
+	// trailing one, while a literal close inside a parameter value or
+	// quoted code is content and never appears in the list.
+	var spans []dsmlBlockRange
+	for _, s := range strays {
+		if s.end <= end {
+			spans = append(spans, dsmlBlockRange{openStart: s.pos, closeEnd: s.end})
+		}
+	}
+	blocks = append(blocks, spans...)
+	sort.Slice(blocks, func(i, j int) bool { return blocks[i].openStart < blocks[j].openStart })
 	var b strings.Builder
 	last := 0
 	for _, blk := range blocks {

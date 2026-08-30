@@ -280,14 +280,14 @@ func TestDSMLBlockRangesParamOpaque(t *testing.T) {
 	balanced := `<invoke name="a">
 <parameter name="script" string="true">show: <invoke name="b"> and </invoke> text</parameter>
 </invoke>`
-	if _, unclosed, _ := dsmlBlockRanges(balanced); unclosed != 0 {
+	if _, unclosed, _, _ := dsmlBlockRanges(balanced); unclosed != 0 {
 		t.Errorf("unclosed = %d, want 0 (param value is opaque)", unclosed)
 	}
 	// Same value but the OUTER invoke never closes: still detected.
 	trunc := `<invoke name="a">
 <parameter name="script" string="true">show: <invoke name="b"> and </invoke> text</parameter>
 `
-	if _, unclosed, first := dsmlBlockRanges(trunc); unclosed != 1 || first < 0 {
+	if _, unclosed, first, _ := dsmlBlockRanges(trunc); unclosed != 1 || first < 0 {
 		t.Errorf("unclosed = %d (first=%d), want 1 at a real offset", unclosed, first)
 	}
 	// Nested parameter-looking text inside a value: depth juggling must not
@@ -295,7 +295,7 @@ func TestDSMLBlockRangesParamOpaque(t *testing.T) {
 	nested := `<invoke name="a">
 <parameter name="script" string="true"><parameter name="x">y</parameter> done</parameter>
 </invoke>`
-	if _, unclosed, _ := dsmlBlockRanges(nested); unclosed != 0 {
+	if _, unclosed, _, _ := dsmlBlockRanges(nested); unclosed != 0 {
 		t.Errorf("nested param text: unclosed = %d, want 0", unclosed)
 	}
 }
