@@ -190,7 +190,7 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 	elapsed := time.Since(startTime)
 	outfmt.Printf("📥 收到回复 (%.1fs)\n\n", elapsed.Seconds())
 	// 工具循环场景下，每一轮（含最终答复）已由 HandleWebChat 通过
-	// outfmt.PrintContent 打印（含 reasoning 与 token）；这里只打印收尾
+	// outfmt.PrintContent 打印（含 reasoning 与 content）；这里只打印收尾
 	// 的纯 content——非循环场景（一次性的散文回复）才需要。
 	if !result.Printed {
 		fmt.Println(result.Content)
