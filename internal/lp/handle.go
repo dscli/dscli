@@ -399,8 +399,10 @@ var handleWebChatResumeRead = func(ctx context.Context, conversationURL string) 
 //
 //   - The conversation's LAST assistant message is read from the site's
 //     IndexedDB cache (the continuation point; nothing is sent yet).
-//   - When it ends with a </tool_calls>-style close tag (IsDSMLToolCallEnd),
-//     the pending calls are executed locally and their results fed back into
+//   - When the call source (content; no reasoning on resume) is an
+//     executable emission or a suspected-but-unparseable call
+//     (shouldEnterToolLoop), the pending calls are executed locally and
+//     their results fed back into
 //     the SAME conversation (Keep = the conversation URL) until the expert
 //     produces a final answer — exactly handleWebChatToolLoop, with the
 //     interrupted round as its first message. This is how the QA engineer's
@@ -461,8 +463,9 @@ func HandleWebChatResume(ctx context.Context, opts WebChatOptions) (WebChatResul
 }
 
 // handleWebChatToolLoop continues a WebChat conversation (role-driven or
-// plain chat; the gate dsml.IsDSMLToolCallReply decided entry, which also
-// admits a bare <invoke> sequence with no wrapper close tag) while the
+// plain chat; shouldEnterToolLoop decided entry - IsDSMLToolCallReply for
+// executable emissions, SuspectedDSMLToolCalls for unparseable ones - and
+// the call source is content first, reasoning as fallback) while the
 // expert emits DSML tool calls: parse the calls, execute them locally, and
 // post the results back into the SAME conversation (Keep=first URL). The
 // role prompt is injected only on the first round - HandleWebChat already

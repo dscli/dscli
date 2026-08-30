@@ -119,7 +119,7 @@ consultations like `review` via code_review, and plain chat alike) may embed
 DSML markup (`<invoke name="shell">` with `<parameter>` children) - it is the
 web model's native tool protocol. Judgement and parsing now live in the
 dedicated `internal/dsml` package: `dsml.ParseDSMLMessage(reasoning, content)`
-is the single entry - it parses, reports ToolCalls, and judges strict-format
+is the single judgement entry - it parses, reports ToolCalls, and judges strict-format
 compliance via `prompt.Message.OK` (violations such as the decorative
 `justification` parameter, missing string attributes, stray/implicit/cut
 tags, or a bare invocation NEVER block execution; the fixed-format
@@ -135,7 +135,7 @@ without the final angle bracket); or the reply is a bare sequence of complete
 invoke blocks with no wrapper at all. A reply that clearly tries to emit a
 call but failed to parse (`dsml.SuspectedDSMLToolCalls` - truncated
 emissions, outside quoted code) routes into the loop too and gets
-`dsml.ReissueWarning`, keeping the same conversation alive.
+`dsml.ReissueWarning`, keeping the same conversation alive (the loop also re-parses the call source with ParseDSMLToolCalls for raw routing, so calls and OK always come from the same text).
 `handleWebChatToolLoop` executes the calls (`dsml.ExecuteDSMLToolCalls`, the
 execution kernel stays in internal/toolcall) and feeds results back into the
 SAME conversation. Which tools

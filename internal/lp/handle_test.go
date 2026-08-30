@@ -1210,11 +1210,19 @@ func TestHandleWebChatToolLoopAllRejectedStillFeedsBack(t *testing.T) {
 	t.Cleanup(func() { handleWebChatSend = origFunc })
 
 	const finalAnswer = "Adapted."
+	// A DESTRUCTIVE command call: it parses (raw calls non-empty) but its
+	// conversion is rejected by normalizeDSMLInvoke (dsmlBlockedCmdRe), so
+	// msg.ToolCalls stays EMPTY while the raw parse still has the call. Only
+	// this shape exercises the regression: the old len(msg.ToolCalls)==0
+	// routing would exit without feedback.
+	destructive := "<" + "tool_calls><" + "invoke name=\"shell\">" +
+		"<" + "parameter name=\"script\" string=\"true\">rm -rf /<" + "/parameter>" +
+		"<" + "/invoke><" + "/tool_calls>"
 	var messages []string
 	handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
 		messages = append(messages, msg)
 		if len(messages) == 1 {
-			return WebChatResult{Content: dsmlReply, URL: "https://chat.deepseek.com/a/chat/s/convA"}, nil
+			return WebChatResult{Content: destructive, URL: "https://chat.deepseek.com/a/chat/s/convA"}, nil
 		}
 		return WebChatResult{Content: finalAnswer, URL: "https://chat.deepseek.com/a/chat/s/convA"}, nil
 	}

@@ -962,11 +962,13 @@ func parseDSMLToolCallsStrict(text string) (calls []DSMLCall, strict bool, err e
 	// does not enclose the calls are all tolerated for execution but count
 	// as violations. A plain substring check is not enough: prose carrying
 	// a literal close tag would mask a bare invocation.
+	fences := dsmlCodeRanges(text)
 	openAt := strings.Index(text, "<tool_calls>")
 	closeAt := strings.LastIndex(text, "</tool_calls>")
 	lastBlock := blocks[len(blocks)-1]
 	if openAt < 0 || closeAt < 0 || closeAt < openAt ||
-		openAt > blocks[0].openStart || closeAt < lastBlock.closeEnd {
+		openAt > blocks[0].openStart || closeAt < lastBlock.closeEnd ||
+		inCodeRanges(fences, openAt) || inCodeRanges(fences, closeAt) {
 		strict = true
 	}
 	calls, extractStrict := extractDSMLCalls(text, blocks)
@@ -1062,7 +1064,7 @@ func CallSource(reasoning, content string) string {
 func ParseDSMLMessage(reasoning string, content string) prompt.Message {
 	msg := prompt.Message{Content: content, ReasoningContent: reasoning}
 	src := CallSource(reasoning, content)
-	fromReasoning := src == reasoning
+	fromReasoning := !HasDSMLToolCalls(content) && HasDSMLToolCalls(reasoning)
 	if !HasDSMLToolCalls(src) {
 		return msg
 	}
