@@ -97,6 +97,10 @@ func inhibitScreenSaver(conn *dbus.Conn) (DoneFunc, bool) {
 	}
 	slog.Info("keeprunning: inhibited screen saver", "mechanism", screenSaverIface, "cookie", cookie)
 
+	// Defensive double-guard: the outer withConnClose sync.Once already
+	// ensures the D-Bus connection closes exactly once; this bool only
+	// prevents a duplicate UnInhibit. It is not concurrency-safe on its own
+	// and must not be reused as the sole release guard.
 	var released bool
 	return func() {
 		if released {
@@ -114,8 +118,9 @@ func inhibitScreenSaver(conn *dbus.Conn) (DoneFunc, bool) {
 	}, true
 }
 
-// inhibitGnomeSession uses org.gnome.SessionManager.Inhibit. Flags 8 (idle)
-// and 16 (no blanking) together block the lock-screen chain.
+// inhibitGnomeSession uses org.gnome.SessionManager.Inhibit with only the
+// official gsm-inhibit-flags idle bit (8), which covers the idle -> blank ->
+// lock chain on conforming implementations.
 func inhibitGnomeSession(conn *dbus.Conn) (DoneFunc, bool) {
 	obj := conn.Object(gnomeSessionDest, gnomeSessionPath)
 	const (
@@ -141,6 +146,10 @@ func inhibitGnomeSession(conn *dbus.Conn) (DoneFunc, bool) {
 	}
 	slog.Info("keeprunning: inhibited GNOME session", "mechanism", gnomeSessionIface, "cookie", cookie)
 
+	// Defensive double-guard: the outer withConnClose sync.Once already
+	// ensures the D-Bus connection closes exactly once; this bool only
+	// prevents a duplicate Uninhibit. It is not concurrency-safe on its own
+	// and must not be reused as the sole release guard.
 	var released bool
 	return func() {
 		if released {
