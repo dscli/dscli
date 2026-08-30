@@ -1,0 +1,108 @@
+  Now I'll refactor `ParseDSMLToolCalls` to a strict internal version that tracks violations, keeping the exported signature:
+
+  <｜｜DSML｜｜tool_calls>
+  <｜｜DSML｜｜invoke name="write_file">
+  <｜｜DSML｜｜parameter name="end_line" string="false">301</｜｜DSML｜｜parameter>
+  <｜｜DSML｜｜parameter name="path" string="true">internal/dsml/dsml.go</｜｜DSML｜｜parameter>
+  <｜｜DSML｜｜parameter name="start_line" string="false">290</｜｜DSML｜｜parameter>
+  <｜｜DSML｜｜parameter name="content" string="true">func ParseDSMLToolCalls(text string) ([]DSMLCall, error) {
+  	calls, _, err := parseDSMLToolCallsStrict(text)
+  	return calls, err
+  }
+
+  // dsmlToolCallsWrapperRe matches any tool_calls wrapper tag (open or close,
+  // including the typo'd _calls cousins) anywhere in the text. A wrapper
+  // presence test that is NOT anchored, unlike dsmlToolCallsCloseEndRe.
+  var dsmlToolCallsWrapperRe = regexp.MustCompile(`(?s)</?\s*(?:tool_calls|_calls)\s*>`)
+
+  // parseDSMLToolCallsStrict extracts all DSML tool calls and, on the side,
+  // reports whether the emission deviated from the strict format the prompt
+  // demands (the violated flag feeds ParseDSMLMessage's OK=false). The bool is
+  // a coarse summary - callers only need "strict or not", never the precise
+  // violation list. Calls are still returned (and executed) when violations
+  // exist; only a truncation (unclosed > 0) aborts with an error.
+  func parseDSMLToolCallsStrict(text string) ([]DSMLCall, bool, error) {
+  	original := text
+  	text = normalizeDSMLText(text)
+  	violated := text != original // violation #2: normalize repaired markup
+
+  	// Truncation check by state-machine scan: named <invoke> opens are
+  	// matched against </invoke> closes in text order, with <parameter>
+  	// bodies treated as opaque content (a raw "<invoke" or "</invoke>"
+  	// inside a parameter VALUE is content, not structure). A cut-off
+  	// emission (an opening tag never closed) must never be executed.
+  	// Unlike an opens-vs-closes count, a stray "</invoke>" in prose can
+  	// never satisfy an unclosed call (false negative); unlike stripping
+  	// complete blocks first, a nested or mis-nested open (two opens, one
+  	// close) is still detected instead of being silently swallowed.
+  	blocks, unclosed, _, strays, implicitClose := dsmlBlockRangesStrict(text)
+  	if unclosed > 0 {
+  		return nil, violated, fmt.Errorf("DSML tool call truncated: %d unclosed <invoke>", unclosed)
+  	}
+  	violated = violated || len(strays) > 0     // violation #3: stray invoke close
+  	violated = violated || implicitClose        // violation #4: missing invoke close implicitly closed
+  	violated = violated || IsDSMLToolCallCut(text) // violation #5: cut-off wrapper close
+  	if dsmlToolCallsCloseEndRe.MatchString(strings.TrimSpace(text)) {
+  		trimmed := strings.TrimSpace(text)
+  		if strings.HasSuffix(trimmed, "</_calls>") || strings.HasSuffix(trimmed, "<_calls>") {
+  			violated = true // violation #5: typo'd wrapper close
+  		}
+  	}
+  	if !dsmlToolCallsWrapperRe.MatchString(text) {
+  		violated = true // violation #5/#6: no tool_calls wrapper at all (bare invoke)
+  	}
+  	if len(blocks) == 0 {
+  		return nil, violated, nil
+  	}
+
+  	var calls []DSMLCall
+  	covered := -1 // closeEnd of the most recently parsed top-level block
+  	for _, b := range blocks {
+  		// A block directly nested inside another one (outside any
+  		// <parameter> body - those are opaque to the scan) is a structural
+  		// accident, not a second call: executing both would double-run the
+  		// inner tool. Skip it here just like StripDSMLToolCalls does.
+  		if b.openStart < covered {
+  			continue
+  		}
+  		covered = b.closeEnd
+  		body := text[b.openEnd:b.closeStart]
+  		// Mask nested blocks inside this body so their <parameter> tags are
+  		// invisible to the extraction regex: the enclosing call must not
+  		// pick up arguments the model meant for the accidental inner call.
+  		for _, c := range blocks {
+  			if c.openStart > b.openStart && c.closeEnd < b.closeEnd {
+  				violated = true // violation #8: nested DSML masked inside a parameter value
+  				s, e := c.openStart-b.openEnd, c.closeEnd-b.openEnd
+  				body = body[:s] + strings.Repeat(" ", e-s) + body[e:]
+  			}
+  		}
+  		inv := DSMLCall{Name: dsmlBlockName(text[b.openStart:b.openEnd]), Args: map[string]any{}}
+  		for _, pm := range dsmlParamRe.FindAllStringSubmatch(body, -1) {
+  			key := pm[1]
+  			if pm[2] == "" {
+  				violated = true // violation #7: parameter missing the string attribute
+  			}
+  			if key == "justification" {
+  				violated = true // violation #1: decorative justification parameter
+  			}
+  			val := decodeDSMLValue(pm[3], pm[2] == "true")
+  			// Repeated parameters mean an array (DeepSeek models emit
+  			// <parameter name="justification"> twice for a []string arg).
+  			if prev, ok := inv.Args[key]; ok {
+  				if arr, isArr := prev.([]any); isArr {
+  					inv.Args[key] = append(arr, val)
+  				} else {
+  					inv.Args[key] = []any{prev, val}
+  				}
+  			} else {
+  				inv.Args[key] = val
+  			}
+  		}
+  		calls = append(calls, inv)
+  	}
+  	return calls, violated, nil
+  }
+  </｜｜DSML｜｜parameter>
+  </｜｜DSML｜｜invoke>
+  </｜｜DSML｜｜tool_calls>

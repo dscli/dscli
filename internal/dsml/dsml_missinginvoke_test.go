@@ -1,6 +1,9 @@
 package dsml
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // TestParseDSMLMissingInvokeClose is the regression for a real code_review
 // round (2026-08-29, chat.deepseek.com IndexedDB content): the expert's last
@@ -112,8 +115,15 @@ func TestParseDSMLMissingInvokeCloseBounded(t *testing.T) {
 	if !IsDSMLToolCallEnd(unclosedParam) {
 		t.Fatal("unclosedParam text must pass the gate (wrapper close present)")
 	}
-	if _, err := ParseDSMLToolCalls(unclosedParam); err == nil {
-		t.Error("ParseDSMLToolCalls(unclosed parameter) = nil error, want truncation error")
+	calls, err := ParseDSMLToolCalls(unclosedParam)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls(unclosed parameter + wrapper close) = %v, want success", err)
+	}
+	if len(calls) != 1 || calls[0].Name != "shell" {
+		t.Fatalf("calls = %d (%+v), want 1 shell call", len(calls), calls)
+	}
+	if got, _ := calls[0].Args["script"].(string); !strings.HasPrefix(got, "echo hi") {
+		t.Errorf("script = %q, want value running to the wrapper close", got)
 	}
 }
 

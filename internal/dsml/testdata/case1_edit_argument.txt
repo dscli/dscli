@@ -1,0 +1,220 @@
+  I have a complete picture now. Let me implement step by step, starting with the new strict-parsing features in `internal/dsml/dsml.go`. First, I'll replace `ParseDSMLToolCalls` with a strict-tracking version.
+
+  <｜｜DSML｜｜_calls>
+  <｜｜DSML｜｜invoke name="code_edit">
+  <｜｜DSML｜｜parameter name="file" string="true">internal/dsml/dsml.go</｜｜DSML｜｜parameter>
+  <｜｜DSML｜｜parameter name="mode" string="true">replace</｜｜DSML｜｜parameter>
+  <｜｜DSML｜｜parameter name="oldText" string="true">// ParseDSMLToolCalls extracts all DSML tool calls from text. It returns an
+  // error when an <invoke> block is left unclosed (e.g. the response was cut
+  // off mid-emission): a truncated call must never be executed.
+  //
+  // Block pairing comes from dsmlBlockRanges, whose stack scan treats
+  // <parameter> bodies as opaque: a literal "<invoke" or "</invoke>" inside a
+  // parameter VALUE is content, not structure. This is what the old non-greedy
+  // block regex could not deliver - it stopped at the first </invoke> in text
+  // order, so a value embedding a DSML example (e.g. a shell snippet carrying
+  // "<invoke name=\"x\">...</invoke>") cut the block early and dropped every
+  // parameter after it ("missing parameter cmd" in practice).
+  func ParseDSMLToolCalls(text string) ([]DSMLCall, error) {
+  	text = normalizeDSMLText(text)
+  	// Truncation check by state-machine scan: named <invoke> opens are
+  	// matched against </invoke> closes in text order, with <parameter>
+  	// bodies treated as opaque content (a raw "<invoke" or "</invoke>"
+  	// inside a parameter VALUE is content, not structure). A cut-off
+  	// emission (an opening tag never closed) must never be executed.
+  	// Unlike an opens-vs-closes count, a stray "</invoke>" in prose can
+  	// never satisfy an unclosed call (false negative); unlike stripping
+  	// complete blocks first, a nested or mis-nested open (two opens, one
+  	// close) is still detected instead of being silently swallowed.
+  	blocks, unclosed, _, _ := dsmlBlockRanges(text)
+  	if unclosed > 0 {
+  		return nil, fmt.Errorf("DSML tool call truncated: %d unclosed <invoke>", unclosed)
+  	}
+  	if len(blocks) == 0 {
+  		return nil, nil
+  	}
+
+  	var calls []DSMLCall
+  	covered := -1 // closeEnd of the most recently parsed top-level block
+  	for _, b := range blocks {
+  		// A block directly nested inside another one (outside any
+  		// <parameter> body - those are opaque to the scan) is a structural
+  		// accident, not a second call: executing both would double-run the
+  		// inner tool. Skip it here just like StripDSMLToolCalls does.
+  		if b.openStart < covered {
+  			continue
+  		}
+  		covered = b.closeEnd
+  		body := text[b.openEnd:b.closeStart]
+  		// Mask nested blocks inside this body so their <parameter> tags are
+  		// invisible to the extraction regex: the enclosing call must not
+  		// pick up arguments the model meant for the accidental inner call.
+  		for _, c := range blocks {
+  			if c.openStart > b.openStart && c.closeEnd < b.closeEnd {
+  				s, e := c.openStart-b.openEnd, c.closeEnd-b.openEnd
+  				body = body[:s] + strings.Repeat(" ", e-s) + body[e:]
+  			}
+  		}
+  		inv := DSMLCall{Name: dsmlBlockName(text[b.openStart:b.openEnd]), Args: map[string]any{}}
+  		for _, pm := range dsmlParamRe.FindAllStringSubmatch(body, -1) {
+  			key := pm[1]
+  			val := decodeDSMLValue(pm[3], pm[2] == "true")
+  			// Repeated parameters mean an array (DeepSeek models emit
+  			// <parameter name="justification"> twice for a []string arg).
+  			if prev, ok := inv.Args[key]; ok {
+  				if arr, isArr := prev.([]any); isArr {
+  					inv.Args[key] = append(arr, val)
+  				} else {
+  					inv.Args[key] = []any{prev, val}
+  				}
+  			} else {
+  				inv.Args[key] = val
+  			}
+  		}
+  		calls = append(calls, inv)
+  	}
+  	return calls, nil
+  }</｜｜DSML｜｜parameter>
+  <｜｜DSML｜｜parameter name="newText" string="true">// ParseDSMLToolCalls extracts all DSML tool calls from text. It returns an
+  // error when an <invoke> block is left unclosed (e.g. the response was cut
+  // off mid-emission): a truncated call must never be executed.
+  //
+  // Block pairing comes from dsmlBlockRanges, whose stack scan treats
+  // <parameter> bodies as opaque: a literal "<invoke" or "</invoke>" inside a
+  // parameter VALUE is content, not structure. This is what the old non-greedy
+  // block regex could not deliver - it stopped at the first </invoke> in text
+  // order, so a value embedding a DSML example (e.g. a shell snippet carrying
+  // "<invoke name=\"x\">...</invoke>") cut the block early and dropped every
+  // parameter after it ("missing parameter cmd" in practice).
+  //
+  // ParseDSMLMessage uses parseDSMLToolCallsStrict instead - it additionally
+  // learns which strict-format violations a successful parse still contains.
+  func ParseDSMLToolCalls(text string) ([]DSMLCall, error) {
+  	calls, err, _ := parseDSMLToolCallsStrict(text)
+  	return calls, err
+  }
+
+  // dsmlViolations records whether a parse hit each of the strict-format
+  // violations (bool summary; the caller only needs "any violation happened").
+  type dsmlViolations struct {
+  	justification      bool // parameter carries the decorative justification key
+  	normalizeChanged   bool // normalizeDSMLText repaired markup (normalized != original)
+  	strayClose         bool // extra </invoke> close tag left outside any block
+  	implicitClose      bool // a missing </invoke> was closed implicitly at the wrapper close
+  	wrapperTypo        bool // wrapper close was cut off or spelled with a typo'd tag
+  	bareInvoke         bool // complete invoke blocks with no tool_calls wrapper at all
+  	missingStringAttr  bool // a <parameter> omitted its string attribute
+  	nestedMask         bool // a parameter value embedded a nested invoke block (masked)
+  }
+
+  // any reports whether at least one strict-format violation happened.
+  func (v dsmlViolations) any() bool {
+  	return v.justification || v.normalizeChanged || v.strayClose || v.implicitClose ||
+  		v.wrapperTypo || v.bareInvoke || v.missingStringAttr || v.nestedMask
+  }
+
+  // dsmlToolCallsStrictCloseRe matches the EXACT, correctly-spelled wrapper
+  // close tag at the very end of the text. The looser dsmlToolCallsCloseEndRe
+  // also admits typo'd/whitespace variants (</_calls>, <calls>, </ tool_calls >)
+  // that are still an "emission complete" signal for execution, but count as a
+  // strict-format violation here.
+  var dsmlToolCallsStrictCloseRe = regexp.MustCompile(`(?s)</tool_calls>\s*$`)
+
+  // parseDSMLToolCallsStrict is ParseDSMLToolCalls plus strict-format violation
+  // tracking. The parse itself is unchanged from the public entry point - a
+  // call that parses still parses, and the same truncated/unparseable shapes
+  // still error - so the violation flags only describe HOW strictly the model
+  // followed the required format, never whether the call is executable.
+  func parseDSMLToolCallsStrict(text string) ([]DSMLCall, error, dsmlViolations) {
+  	var viol dsmlViolations
+  	original := text
+  	text = normalizeDSMLText(text)
+  	if text != original {
+  		viol.normalizeChanged = true
+  	}
+  	// Truncation check by state-machine scan: named <invoke> opens are
+  	// matched against </invoke> closes in text order, with <parameter>
+  	// bodies treated as opaque content (a raw "<invoke" or "</invoke>"
+  	// inside a parameter VALUE is content, not structure). A cut-off
+  	// emission (an opening tag never closed) must never be executed.
+  	// Unlike an opens-vs-closes count, a stray "</invoke>" in prose can
+  	// never satisfy an unclosed call (false negative); unlike stripping
+  	// complete blocks first, a nested or mis-nested open (two opens, one
+  	// close) is still detected instead of being silently swallowed.
+  	blocks, unclosed, _, strays, implicitClose := dsmlBlockRangesStrict(text)
+  	if len(strays) > 0 {
+  		viol.strayClose = true
+  	}
+  	if implicitClose {
+  		viol.implicitClose = true
+  	}
+  	if unclosed > 0 {
+  		return nil, fmt.Errorf("DSML tool call truncated: %d unclosed <invoke>", unclosed), viol
+  	}
+  	if len(blocks) == 0 {
+  		return nil, nil, viol
+  	}
+
+  	var calls []DSMLCall
+  	covered := -1 // closeEnd of the most recently parsed top-level block
+  	for _, b := range blocks {
+  		// A block directly nested inside another one (outside any
+  		// <parameter> body - those are opaque to the scan) is a structural
+  		// accident, not a second call: executing both would double-run the
+  		// inner tool. Skip it here just like StripDSMLToolCalls does.
+  		if b.openStart < covered {
+  			continue
+  		}
+  		covered = b.closeEnd
+  		body := text[b.openEnd:b.closeStart]
+  		// Mask nested blocks inside this body so their <parameter> tags are
+  		// invisible to the extraction regex: the enclosing call must not
+  		// pick up arguments the model meant for the accidental inner call.
+  		for _, c := range blocks {
+  			if c.openStart > b.openStart && c.closeEnd < b.closeEnd {
+  				viol.nestedMask = true
+  				s, e := c.openStart-b.openEnd, c.closeEnd-b.openEnd
+  				body = body[:s] + strings.Repeat(" ", e-s) + body[e:]
+  			}
+  		}
+  		inv := DSMLCall{Name: dsmlBlockName(text[b.openStart:b.openEnd]), Args: map[string]any{}}
+  		for _, pm := range dsmlParamRe.FindAllStringSubmatch(body, -1) {
+  			key := pm[1]
+  			if pm[2] == "" {
+  				viol.missingStringAttr = true
+  			}
+  			val := decodeDSMLValue(pm[3], pm[2] == "true")
+  			// Repeated parameters mean an array (DeepSeek models emit
+  			// <parameter name="justification"> twice for a []string arg).
+  			if prev, ok := inv.Args[key]; ok {
+  				if arr, isArr := prev.([]any); isArr {
+  					inv.Args[key] = append(arr, val)
+  				} else {
+  					inv.Args[key] = []any{prev, val}
+  				}
+  			} else {
+  				inv.Args[key] = val
+  			}
+  		}
+  		if _, ok := inv.Args["justification"]; ok {
+  			viol.justification = true
+  		}
+  		calls = append(calls, inv)
+  	}
+  	// Wrapper-shape judgement (violations #5 and #6). A cut-off close tag,
+  	// a typo'd close tag, or a missing wrapper close entirely are all
+  	// "intended as a tool call" (IsDSMLToolCallReply) but not the strict
+  	// format. The strict close regex is the only clean shape.
+  	trimmed := strings.TrimSpace(text)
+  	switch {
+  	case IsDSMLToolCallCut(original):
+  		viol.wrapperTypo = true
+  	case !dsmlToolCallsCloseEndRe.MatchString(trimmed):
+  		viol.bareInvoke = true
+  	case !dsmlToolCallsStrictCloseRe.MatchString(trimmed):
+  		viol.wrapperTypo = true
+  	}
+  	return calls, nil, viol
+  }</｜｜DSML｜｜parameter>
+  </｜｜DSML｜｜invoke>
+  </｜｜DSML｜｜｜｜DSML｜｜_calls>

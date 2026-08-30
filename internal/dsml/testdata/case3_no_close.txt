@@ -1,0 +1,3 @@
+  <｜｜DSML｜｜tool_calls>
+  <invoke name="shell">
+  <parameter name="script" string="true">cd /home/nanjj/.local/src/github.com/dscli/dscli && for f in internal/toolcall/dsml_bareinvoke_test.go internal/toolcall/dsml_missinginvoke_test.go internal/toolcall/dsml_realpayload_test.go internal/toolcall/dsml_strayclose_test.go internal/toolcall/dsml_strayclose_chop_test.go internal/toolcall/dsml_doc_test.go internal/toolcall/ask/dsml_exec_test.go; do echo "=== $f ==="; head -20 "$f"; done</｜｜DSML｜｜tool_calls>

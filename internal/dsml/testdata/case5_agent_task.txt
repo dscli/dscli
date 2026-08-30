@@ -1,0 +1,183 @@
+  I have a complete picture of the current code. This is a large mechanical migration plus subtle violation-tracking logic. I'll hand the implementation to the developer role with a precise, self-contained task, then verify and fix.
+
+  <｜｜DSML｜｜_calls>
+  <invoke name="code_dev">
+  <parameter name="task" string="true">Refactor DSML tool-call logic from internal/toolcall into a new internal/dsml package, add strict-format compliance judgment (prompt.Message.OK), and rework the webchat tool loop. Follow this spec exactly.
+
+  ## 1. New package internal/dsml
+
+  Move ALL DSML parsing/judgment/documentation out of internal/toolcall:
+
+  - internal/toolcall/dsml.go -> internal/dsml/dsml.go (package dsml)
+  - internal/toolcall/dsml_doc.go -> internal/dsml/doc.go (package dsml)
+  - Delete the two old files from internal/toolcall (git rm).
+
+  The execution kernel stays in internal/toolcall: ToolDef, ToolArgs, ToolContent, the registry (RegisterTool/GetToolDef/KnownToolNames), and the tool executor. To let dsml use them, EXPORT these four from internal/toolcall (rename the unexported ones and update all internal callers):
+
+  1. `func RoleToolsSpec(ctx context.Context, role string) string` (was roleToolsSpec)
+  2. `func RoleToolAllowSet(ctx context.Context, role string) map[string]bool` (was roleToolAllowSet)
+  3. `func AllowSetFromSpec(spec string) map[string]bool` (was allowSetFromSpec)
+  4. `func ExecuteToolCalls(ctx context.Context, tcs []prompt.ToolCall, save bool) (outcomes []ToolCallOutcome, dualUsers []prompt.Message)` (was executeToolCalls; update HandleToolCalls to call it)
+  5. Add exported `func UnregisterTool(name string)` (removes a tool registration incl. its aliases from the registry map) - needed by dsml package tests. Implement it in internal/toolcall/tool.go using the same logic as the existing test helper unregisterToolForTest (lock, delete from toolRegistry and toolAliases).
+
+  In internal/dsml/dsml.go and doc.go, reference toolcall types with the toolcall. prefix: toolcall.ToolArgs, toolcall.ToolDef, toolcall.ToolContent, toolcall.GetToolDef, toolcall.KnownToolNames, toolcall.RoleToolsSpec, toolcall.RoleToolAllowSet, toolcall.AllowSetFromSpec, toolcall.ExecuteToolCalls. Keep the internal/context import for the role fallback in the allow-set helper (CurrentRoleKey, "dev"). No other package references dsml (no import cycle: dsml -> toolcall only).
+
+  ## 2. Exported API (internal/dsml)
+
+  Keep these exported names working exactly as before (just package-renamed): HasDSMLToolCalls, IsPureDSMLToolCalls, IsDSMLToolCallEnd, IsDSMLToolCallCut, IsDSMLToolCallReply, ParseDSMLToolCalls(text string) ([]DSMLCall, error), StripDSMLToolCalls, ExecuteDSMLToolCalls(ctx, calls []DSMLCall) []string, BuildDSMLToolDoc(ctx, role) prompt.DSMLToolDoc.
+
+  Add:
+
+  ```go
+  // SuspectedDSMLToolCalls reports text that clearly attempts a tool call but parses to zero calls or errors:
+  // HasDSMLToolCalls(text) is true AND (ParseDSMLToolCalls(text) fails OR returns 0 calls).
+  func SuspectedDSMLToolCalls(text string) bool
+
+  const StrictWarning = "WARNING: your tool-call markup did not strictly follow the required format (e.g. extra attribute such as justification, missing string=\"true|false\" attribute, unclosed or stray tags); the call was accepted but you MUST strictly follow the exact format in the tool schema for every future call."
+
+  const ReissueWarning = "WARNING: your reply appears to contain a DSML tool call but it could not be parsed. Please re-send the tool call(s) strictly following the required format: <tool_calls><invoke name=\"...\"><parameter name=\"...\" string=\"true|false\">...</parameter></invoke></tool_calls>. Do not include extra attributes such as justification."
+
+  // InjectStrictWarning injects StrictWarning into the warning field of each <tool_result>{...}</tool_result> block in outputs.
+  // If a block already has a warning, append (newline-separated). Skip blocks whose JSON has no result/error/warning.
+  // Parse the inner JSON into a map[string]any, set "warning" (append), re-marshal, re-wrap <tool_result>...</tool_result>.
+  func InjectStrictWarning(outputs []string) []string
+
+  // ParseDSMLMessage parses one webchat assistant reply into a protocol Message.
+  func ParseDSMLMessage(reasoning string, content string) prompt.Message
+  ```
+
+  ## 3. ParseDSMLMessage semantics
+
+  Source rule: content first. If parsing content yields calls, use content as source and leave reasoning untouched (original). If content yields zero calls AND reasoning non-empty AND HasDSMLToolCalls(reasoning), parse reasoning and use it as source.
+
+  Add an internal strict-parser: `parseDSMLToolCallsStrict(text string) (calls []DSMLCall, err error, violated bool)`. Refactor ParseDSMLToolCalls to call it and discard violated (keep its public signature and existing behavior).
+
+  Violation flags (set violated=true at each tolerance point; a bool is enough):
+
+  1. normalizeDSMLText(text) != text (fullwidth->halfwidth, entity junk, zero-width chars, tag junk were repaired).
+  2. The parse loop sees a parameter named "justification" (currently kept in Args; still keep it in Args for backward-compat of ParseDSMLToolCalls, but flag violation).
+  3. dsmlBlockRanges reports strays (extra </invoke>). Modify dsmlBlockRanges to also return `implicit int` (count of implicit closes in the wrapper-close-at-end branch); flag violation if implicit > 0.
+  4. A parameter missing the string="true|false" attribute (dsmlParamRe group 2 empty).
+  5. A nested invoke block got masked inside another block body (the nested-masking loop in ParseDSMLToolCalls).
+  6. Wrapper close at end is a typo or cut: on the trimmed NORMALIZED text, if it ends with a wrapper close that is NOT exactly </tool_calls> (i.e. </_calls>, <_calls>, or a cut-off </... as matched by dsmlToolCallsCloseCutRe), flag violation.
+  7. Bare invoke: calls parsed but there is NO wrapper close tag at end at all (IsPureDSMLToolCalls path with no wrapper) - flag violation.
+
+  Repeated <parameter> for the same name (array semantics) is NOT a violation.
+
+  ParseDSMLMessage output:
+  - Convert parsed calls via the existing dsmlCallsToToolCalls to []prompt.ToolCall (msg.ToolCalls = tcs).
+  - msg.Role = "assistant". msg.Content and msg.ReasoningContent default to the raw inputs.
+  - OK = (len(ToolCalls) > 0) && !violated.
+  - If len(ToolCalls) > 0 and !violated: strip the SOURCE (StripDSMLToolCalls of content if source==content, else StripDSMLToolCalls of reasoning into ReasoningContent; the other field stays original).
+  - If violated: keep source original (do NOT strip) - caller can fall back.
+  - If zero calls: ToolCalls nil, Content/ReasoningContent original, OK=false.
+  - If parse err (truncated): zero calls, OK=false.
+
+  ## 4. Strict prompt wording in BuildDSMLToolDoc (internal/dsml/doc.go)
+
+  In the Intro, after the "You have access to a set of tools..." paragraph and before the example loop, add an English paragraph covering: every call must be a complete <tool_calls> block wrapping <invoke name="...">; every parameter must be <parameter name="..." string="true|false">; NO extra attributes (such as justification) and NO parameters beyond the example; all tags must be closed (</invoke>, </tool_calls>); one reply may contain multiple <invoke> elements (independent calls), dependent calls must wait for previous results; output must be structurally identical to the example (the example is the authoritative format). Keep the trailing Schemas sentence "You MUST strictly follow the above defined tool name and parameter schemas to invoke tool calls."
+
+  ## 5. Rework internal/lp/handle.go handleWebChatToolLoop (about lines 513-580)
+
+  Change `var handleWebChatExecDSML = toolcall.ExecuteDSMLToolCalls` to `= dsml.ExecuteDSMLToolCalls` (import internal/dsml; keep internal/toolcall import if still used elsewhere in the file).
+
+  Track lastReasoning: before the loop set `lastReasoning := first.Reasoning`; at the end of each iteration after printRound(res) set `lastReasoning = res.Reasoning`.
+
+  New loop body per round:
+
+  ```
+  msg := dsml.ParseDSMLMessage(lastReasoning, message)
+  switch {
+  case len(msg.ToolCalls) > 0 && dsml.IsDSMLToolCallReply(message):
+      calls, _ := dsml.ParseDSMLToolCalls(message)
+      fmt.Fprintf(os.Stderr, "🤖 %s 请求执行 %d 个工具调用（第 %d/%d 轮）…\n", roleName, len(calls), round, handleWebChatMaxDSMLRounds)
+      outputs := handleWebChatExecDSML(ctx, calls)
+      if len(outputs) == 0 {
+          fmt.Fprintf(os.Stderr, "⚠️ %s 回复只包含非可执行工具调用（未在角色工具配置中或引用示例？），已跳过执行\n", roleName)
+          return cleanExit()
+      }
+      feedback := buildWebChatFeedback(outputs)
+      if !msg.OK {
+          fmt.Fprintf(os.Stderr, "⚠️ 工具调用格式不够严格，已执行并告警\n")
+          feedback = dsml.InjectStrictWarning(feedback)
+      }
+      followUp := WebChatOptions{Mode: opts.Mode, Keep: convURL}
+      res, callErr := handleWebChatSend(ctx, feedback, followUp)
+      if callErr != nil { return WebChatResult{}, fmt.Errorf("webchat tool loop: continue conversation during round %d: %w", round, callErr) }
+      message = res.Content
+      if res.URL != "" { convURL = res.URL }
+      printRound(res)
+      lastReasoning = res.Reasoning
+  case len(msg.ToolCalls) > 0 && !dsml.IsDSMLToolCallReply(message):
+      return cleanExit()
+  case len(msg.ToolCalls) == 0 && dsml.SuspectedDSMLToolCalls(message):
+      fmt.Fprintf(os.Stderr, "⚠️ 工具调用疑似但解析失败，已要求重发\n")
+      followUp := WebChatOptions{Mode: opts.Mode, Keep: convURL}
+      res, callErr := handleWebChatSend(ctx, dsml.ReissueWarning, followUp)
+      if callErr != nil { return WebChatResult{}, fmt.Errorf("webchat tool loop: reissue warning during round %d: %w", round, callErr) }
+      message = res.Content
+      if res.URL != "" { convURL = res.URL }
+      printRound(res)
+      lastReasoning = res.Reasoning
+  default:
+      return cleanExit()
+  }
+  ```
+
+  Keep the existing cleanExit and printRound closures and the trailing over-limit warning exactly as they are, EXCEPT cleanExit's strip call becomes dsml.StripDSMLToolCalls. Keep the existing "⚠️ 远程模型回复中的 DSML 工具调用..." stderr line and the round-cap exit.
+
+  ## 6. Update other call sites
+
+  - internal/toolcall/ask/code_review.go, quality_assurance.go, code_dev.go: `toolcall.BuildDSMLToolDoc` -> `dsml.BuildDSMLToolDoc` (add dsml import; keep toolcall import if still needed).
+  - internal/lp/handle.go lines ~296, ~353, ~356, ~357, ~437: BuildDSMLToolDoc, IsDSMLToolCallReply, HasDSMLToolCalls, StripDSMLToolCalls -> dsml.* (check each).
+  - internal/lp/doc.go comment mentioning toolcall.ExecuteDSMLToolCalls -> dsml.ExecuteDSMLToolCalls.
+  - webchat_cmd.go: update any comment mentioning toolcall DSML to dsml.
+  - internal/prompt/message.go: expand the OK field comment to document its dual meaning: (a) history.go JudgeHistory/CleanupReverse recomputes it after DB load to mean "history pairing complete"; (b) dsml.ParseDSMLMessage sets it to mean "DSML markup strictly complies". The two paths never overlap.
+
+  ## 7. Migrate tests into internal/dsml
+
+  Move these test files into internal/dsml/ (package dsml), updating the package line and any toolcall.* type/function references to the exported names (toolcall.ToolDef, toolcall.ToolArgs, toolcall.ToolContent, toolcall.RegisterTool, toolcall.UnregisterTool, toolcall.GetAllTools, toolcall.GetToolUsageStats, toolcall.BuildDSMLToolDoc stays dsml-local):
+
+  - internal/toolcall/dsml_test.go -> internal/dsml/dsml_test.go
+  - internal/toolcall/dsml_doc_test.go -> internal/dsml/doc_test.go (registerDocProbeTools helper moves with it; replace unregisterToolForTest with toolcall.UnregisterTool; move strPtrHelper into a shared helpers test file)
+  - internal/toolcall/dsml_bareinvoke_test.go -> internal/dsml/bareinvoke_test.go
+  - internal/toolcall/dsml_missinginvoke_test.go -> internal/dsml/missinginvoke_test.go
+  - internal/toolcall/dsml_realpayload_test.go -> internal/dsml/realpayload_test.go
+  - internal/toolcall/dsml_strayclose_test.go -> internal/dsml/strayclose_test.go
+  - internal/toolcall/dsml_strayclose_chop_test.go -> internal/dsml/strayclose_chop_test.go
+  - internal/toolcall/ask/dsml_exec_test.go -> internal/dsml/exec_test.go (package dsml; toolcall.ParseDSMLToolCalls and toolcall.ExecuteDSMLToolCalls become dsml-local ParseDSMLToolCalls/ExecuteDSMLToolCalls)
+
+  Do NOT move internal/toolcall/dual*.go (dual-message protocol stays in toolcall). The test helpers withIsolatedDualSession and unregisterToolForTest currently live in internal/toolcall/dual_integration_test.go. Since package dsml tests cannot see them, create internal/dsml/helpers_test.go (package dsml) with a local `withIsolatedSession(t *testing.T) context.Context` (copy of withIsolatedDualSession) and use toolcall.UnregisterTool for cleanup. Leave the toolcall test helpers in place (dual_integration_test.go still needs them).
+
+  Add a new internal/dsml/message_test.go covering ParseDSMLMessage with at least these cases (table-driven, t.Run):
+  - strict compliant call -> OK=true, ToolCalls>0, Content stripped of the DSML block
+  - call containing a justification parameter -> OK=false, ToolCalls>0, Content unchanged (original)
+  - stray </invoke> -> OK=false, ToolCalls>0
+  - parameter missing string attr -> OK=false
+  - truncated call -> ToolCalls==0, SuspectedDSMLToolCalls(text)==true
+  - pure prose -> ToolCalls==0, Suspected==false
+  - content has no call but reasoning has a compliant call -> ToolCalls come from reasoning
+  - content has a call and reasoning also has one -> content wins
+
+  Add internal/dsml/warning_test.go for InjectStrictWarning: injects warning into a result-only block; appends to an existing warning (newline-separated); skips an all-empty (no result/error/warning) block; returns empty slice on empty input.
+
+  ## 8. lp integration tests (internal/lp/handle_test.go)
+
+  The existing hook var handleWebChatExecDSML now has type func(context.Context, []dsml.DSMLCall) []string - update the stub at handle_test.go line ~141 accordingly. Add new tests (following the existing stub pattern: swap handleWebChatSend and handleWebChatExecDSML, restore in t.Cleanup):
+  - violation (justification) call executes AND the next feedback contains dsml.StrictWarning
+  - suspected failure (truncated open tag) sends dsml.ReissueWarning and the loop continues (handleWebChatSend called)
+  - repeated truncation hits the round cap (feed truncated replies each time; assert handleWebChatSend call count == handleWebChatMaxDSMLRounds or that it exits)
+  - long reply quoting an invoke example does NOT execute and returns immediately (regression)
+
+  ## 9. doc strictness test
+
+  In internal/dsml/doc_test.go, extend TestBuildDSMLToolDocContent to assert the new strict wording exists (e.g. substring "MUST NOT add any extra attribute" or equivalent strong phrasing, and a prohibition mentioning "justification").
+
+  ## 10. Acceptance
+
+  Run: go build ./..., go vet ./..., go test ./... (all green), make fmt-check (or gofumpt -l, no output). Fix failures. Commit ALL changes with ONE descriptive English commit message (conventional commits, e.g. "refactor(dsml): extract DSML parsing into internal/dsml with strict-format compliance"). Working tree must be clean when done.
+
+  Note: AGENTS.md already read. Do not modify sqlite.db or dscli.env. Use gofumpt formatting (make gofmt if needed). Keep godoc comments on exported symbols.</parameter>
+  <parameter name="timeout" string="false">3600</parameter>
+  </invoke>
+  </｜｜DSML｜｜_calls>

@@ -197,4 +197,3 @@ func TestInjectStrictWarningUnparseable(t *testing.T) {
 		t.Errorf("unparseable block must pass through verbatim, got %v", out)
 	}
 }
-

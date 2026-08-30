@@ -1,0 +1,5 @@
+  <invoke name="shell">
+  <parameter name="script" string="true">grep -n "func withIsolatedDualSession\|func strPtrHelper\|func unregisterToolForTest\|func resetToolRegistry\|func registerDocProbeTools" -r internal/toolcall/; echo "=== dual_integration_test head ==="; sed -n '1,75p' internal/toolcall/dual_integration_test.go</parameter>
+  <parameter name="summary" string="true">Locate test helper definitions</parameter>
+  </invoke>
+  </｜｜DSML｜｜>

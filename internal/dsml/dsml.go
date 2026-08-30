@@ -50,11 +50,14 @@ type DSMLCall struct {
 // matches because the open tag it runs on was already vetted by that regex.
 var dsmlNameAttrRe = regexp.MustCompile(`\bname\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'=<>]+))`)
 
-// dsmlParamRe matches one <parameter> child: name + optional string="true|false".
-// DeepSeek sometimes omits the string attribute entirely; the group then
-// captures "", and decodeDSMLValue's coercion path keeps text text and
-// numbers numeric, so the call is never silently dropped.
-var dsmlParamRe = regexp.MustCompile(`(?s)<\s*parameter\s+name="([^"]+)"(?:\s*string="(true|false)")?[^>]*>(.*?)</\s*parameter\s*>`)
+// dsmlParamNameRe / dsmlParamStringRe extract the name and the optional
+// string attribute from one parameter open tag. DeepSeek sometimes omits
+// the string attribute entirely; decodeDSMLValue's coercion path then keeps
+// text text and numbers numeric, so the call is never silently dropped.
+var (
+	dsmlParamNameRe   = regexp.MustCompile(`\bname\s*=\s*"([^"]+)"`)
+	dsmlParamStringRe = regexp.MustCompile(`\bstring\s*=\s*"(true|false)"`)
+)
 
 // dsmlEntityReplacer decodes the XML entities DeepSeek may emit inside
 // parameter values. &amp; must be last so other entities are not re-escaped.
@@ -112,6 +115,9 @@ func IsPureDSMLToolCalls(text string) bool {
 // wrapper with no parseable <invoke> still yields zero calls (the loop
 // exits without executing anything), so the safety boundary is unchanged.
 //
+// An EMPTY-NAME close (</> - the model dropped the whole tag name after
+// a bare invoke, 2026-08-30 webchat shape) is accepted as the same degradation: the
+// intent is a wrapper close attempt, and execution is still gated by parse success.
 // `<_calls>` (and `<tool_calls>` with the slash missing) is accepted as
 // the same degradation one step further: the model closed the round with
 // the OPENING-tag spelling ("<_calls>" instead of "</_calls>"), observed in
@@ -119,7 +125,7 @@ func IsPureDSMLToolCalls(text string) bool {
 // same - a wrapper close attempt at the very end after complete <invoke>
 // blocks - and execution is still gated by parse success, so a dangling
 // opening tag with no parseable calls executes nothing.
-var dsmlToolCallsCloseEndRe = regexp.MustCompile(`(?s)</?\s*(?:tool_calls|_calls)\s*>\s*$`)
+var dsmlToolCallsCloseEndRe = regexp.MustCompile(`(?s)</?\s*(?:tool_calls|_calls)?\s*>\s*$`)
 
 // dsmlToolCallsCloseCutRe matches a CUT-OFF wrapper close tag at the very
 // end of the text: the opening "</" exists but the tag was truncated
@@ -263,6 +269,13 @@ var dsmlFullwidthReplacer = strings.NewReplacer("＜", "<", "＞", ">")
 // ParseDSMLToolCalls see the close at all.
 var dsmlTagJunkRe = regexp.MustCompile(`(?i)(</?)(?:[|｜]\s*|d\s*s\s*m\s*l\s*)+((?:invoke|parameter|tool_calls|_calls)\b)`)
 
+// dsmlTagJunkEmptyRe catches the empty-name badge form: a badge marker
+// sequence (pipes or DSML literals) directly followed by > with no tag
+// name at all, e.g. a bare invoke closed as </> (the model
+// dropped the whole name). It normalizes to </> so the wrapper
+// gates see the close. The capturing group keeps the > in place.
+var dsmlTagJunkEmptyRe = regexp.MustCompile(`(?i)(</?)(?:[|｜]\s*|d\s*s\s*m\s*l\s*)+([>])`)
+
 func normalizeDSMLText(text string) string {
 	text = dsmlFullwidthReplacer.Replace(text)
 	text = strings.Map(func(r rune) rune {
@@ -273,6 +286,7 @@ func normalizeDSMLText(text string) string {
 	}, text)
 	// $1 keeps the opener (</?), $2 re-emits the captured tag name so the
 	// junk match can never eat into content that is not a DSML tag.
+	text = dsmlTagJunkEmptyRe.ReplaceAllString(text, "$1$2")
 	return dsmlTagJunkRe.ReplaceAllString(text, "$1$2")
 }
 
@@ -478,6 +492,23 @@ func inCodeRanges(ranges [][2]int, pos int) bool {
 //     dropped: the wrapper close is the model's own "emission complete"
 //     signal, and complete parameters plus that signal mean the call is
 //     finished, not truncated (details in the function body).
+//
+// dsmlStructuralTag reports whether the tag at pos is STRUCTURE rather than content:
+// it starts a line (only whitespace before it) or immediately follows another tag
+// (the closing > of the previous tag, no space between). A tag inside a parameter
+// value - pasted code, a Go comment, a doc snippet the model did not entity-escape -
+// is content; after normalization, position is the only reliable discriminator.
+func dsmlStructuralTag(text string, pos int) bool {
+	i := pos
+	for i > 0 && (text[i-1] == ' ' || text[i-1] == '\t') {
+		i--
+	}
+	if i == 0 || text[i-1] == '\n' || text[i-1] == '\r' {
+		return true
+	}
+	return text[i-1] == '>'
+}
+
 func dsmlBlockRangesStrict(text string) (blocks []dsmlBlockRange, unclosed int, firstUnclosed int, strays []dsmlStrayClose, implicitClose bool) {
 	type ev struct {
 		pos  int
@@ -486,25 +517,47 @@ func dsmlBlockRangesStrict(text string) (blocks []dsmlBlockRange, unclosed int, 
 	}
 	fences := dsmlCodeRanges(text)
 	events := []ev{}
-	// add skips events inside quoted code (fenced block or inline code
-	// span): DSML there is quoted content (an example, a test reference),
-	// not structure to pair.
-	add := func(m []int, kind byte) {
-		if !inCodeRanges(fences, m[0]) {
-			events = append(events, ev{m[0], kind, m[1]})
+	// addOpen collects OPEN tags: quoted-code content and NON-structural
+	// tags (dsmlStructuralTag) are skipped - a tag inside a parameter value
+	// (a Go comment, a pasted snippet the model left literally) is content,
+	// not structure to pair. addClose only skips quoted-code content: a
+	// closing tag may legitimately sit right after the value text on the same
+	// line (the normal shape) or after the previous tag, so position must not
+	// gate it; whether a close is structural is decided by the pairing state
+	// (paramDepth / stack) below.
+	addOpen := func(m []int, kind byte) {
+		// Quoted-code content is skipped for every kind. An OPEN parameter
+		// additionally needs to be structural (line start or right after
+		// another tag) and to carry a name attribute: a tag inside a
+		// parameter value (a Go comment, a pasted snippet the model left
+		// literally) is content, not structure. OPEN invoke tags get no
+		// position gate on purpose: a call after prose on the same line is
+		// still a call.
+		if inCodeRanges(fences, m[0]) {
+			return
 		}
+		if kind == 'p' && (!dsmlStructuralTag(text, m[0]) || !dsmlParamNameRe.MatchString(text[m[0]:m[1]])) {
+			return
+		}
+		events = append(events, ev{m[0], kind, m[1]})
+	}
+	addClose := func(m []int, kind byte) {
+		if inCodeRanges(fences, m[0]) {
+			return
+		}
+		events = append(events, ev{m[0], kind, m[1]})
 	}
 	for _, m := range dsmlNamedInvokeOpenRe.FindAllStringIndex(text, -1) {
-		add(m, 'o')
+		addOpen(m, 'o')
 	}
 	for _, m := range dsmlInvokeCloseRe.FindAllStringIndex(text, -1) {
-		add(m, 'c')
+		addClose(m, 'c')
 	}
 	for _, m := range dsmlParamOpenRe.FindAllStringIndex(text, -1) {
-		add(m, 'p')
+		addOpen(m, 'p')
 	}
 	for _, m := range dsmlParamCloseRe.FindAllStringIndex(text, -1) {
-		add(m, 'q')
+		addClose(m, 'q')
 	}
 	sort.Slice(events, func(i, j int) bool {
 		if events[i].pos != events[j].pos {
@@ -512,12 +565,8 @@ func dsmlBlockRangesStrict(text string) (blocks []dsmlBlockRange, unclosed int, 
 		}
 		return events[i].kind < events[j].kind
 	})
-	// open tracks one <invoke> open whose </invoke> may be missing. bodyEnd
-	// records where its parameter block ended (the last </parameter>, or the
-	// open tag's own end when the call has no parameters), so an implicit
-	// close lands at the call's own content end instead of swallowing the
-	// wrapper close tag.
-	type open struct{ start, end, bodyEnd int }
+	// open tracks one <invoke> open whose </invoke> may be missing.
+	type open struct{ start, end int }
 	stack := []open{} // unmatched opens, in text order
 	paramDepth := 0
 	firstUnclosed = -1
@@ -528,18 +577,10 @@ func dsmlBlockRangesStrict(text string) (blocks []dsmlBlockRange, unclosed int, 
 		case 'q':
 			if paramDepth > 0 {
 				paramDepth--
-				// The parameter that just closed belongs to the innermost
-				// open; record its end for a later implicit close. A literal
-				// "</parameter>" inside a value still balances the count -
-				// the known best-effort boundary of the scan (see the
-				// function docs), unchanged for the strict path.
-				if paramDepth == 0 && len(stack) > 0 {
-					stack[len(stack)-1].bodyEnd = e.end
-				}
 			}
 		case 'o':
 			if paramDepth == 0 {
-				stack = append(stack, open{e.pos, e.end, e.end})
+				stack = append(stack, open{e.pos, e.end})
 			}
 		case 'c':
 			if paramDepth == 0 && len(stack) > 0 {
@@ -560,26 +601,24 @@ func dsmlBlockRangesStrict(text string) (blocks []dsmlBlockRange, unclosed int, 
 		}
 	}
 	// Implicit close: a wrapper close tag at the very end (</tool_calls>,
-	// or its typo'd cousins </_calls> / <_calls>, see
-	// dsmlToolCallsCloseEndRe) is the model's own "emission complete"
-	// signal - the same intent IsDSMLToolCallEnd gates the tool loop on.
-	// When every <parameter> was closed (paramDepth == 0) but the model
-	// dropped the trailing </invoke> (observed 2026-08-29: a code_review
-	// round stored as "...</parameter>\n</_calls>" in the chat.deepseek.com
-	// IndexedDB - the close tag of both the call and the wrapper collapsed
-	// into one typo'd fragment), the one remaining open is a complete call
-	// missing only its close tag: closing it implicitly at its own bodyEnd
-	// keeps a finished emission executable instead of misreading it as
-	// truncated. Exactly ONE open is required: with back-to-back siblings
+	// or its typo'd cousins </_calls> / <_calls>, or an
+	// empty-name </>, see dsmlToolCallsCloseEndRe) is the model's own
+	// "emission complete" signal - the same intent IsDSMLToolCallEnd gates the
+	// tool loop on. When the model dropped the trailing </invoke> (observed
+	// 2026-08-29: a code_review round stored as "...</parameter>\n</_calls>" in
+	// the chat.deepseek.com IndexedDB - the close tag of both the call and the
+	// wrapper collapsed into one typo'd fragment; 2026-08-30 webchat also cut
+	// the last </parameter> right after the value), the one remaining open is a
+	// complete call missing only its close tag: closing it implicitly at the
+	// wrapper close keeps a finished emission executable instead of misreading
+	// it as truncated. Exactly ONE open is required: with back-to-back siblings
 	// each preceding invoke is closed by its own </invoke> and pops, so at
 	// most one open remains, and only that one is implicitly closed. Several
 	// opens at once (mis-nested shapes, e.g. a second invoke opened before
-	// the first was closed) are a genuine truncation and must never run - a
-	// missing wrapper close, or an unclosed <parameter> (paramDepth > 0),
-	// stays a truncation too.
-	if m := dsmlToolCallsCloseEndRe.FindStringIndex(text); m != nil && paramDepth == 0 && len(stack) == 1 {
+	// the first was closed) are a genuine truncation and must never run.
+	if m := dsmlToolCallsCloseEndRe.FindStringIndex(text); m != nil && len(stack) == 1 {
 		o := stack[0]
-		blocks = append(blocks, dsmlBlockRange{o.start, o.end, o.bodyEnd, o.bodyEnd})
+		blocks = append(blocks, dsmlBlockRange{o.start, o.end, m[0], m[1]})
 		implicitClose = true
 		stack = stack[:0]
 	}
@@ -716,6 +755,10 @@ func StripDSMLToolCalls(text string) string {
 	// first; a fullwidth "</" or format-char variant would otherwise open the
 	// gate but survive the strip mismatch).
 	out = dsmlToolCallsCloseCutRe.ReplaceAllString(normalizeDSMLText(out), "")
+	// A close tag with an empty name (</> - the model dropped the
+	// whole tag name after a bare invoke) is wrapper residue too: strip it
+	// so IsPureDSMLToolCalls sees clean text.
+	out = strings.ReplaceAll(out, "</>", "")
 	out = dsmlToolResultRe.ReplaceAllString(out, "")
 	return strings.TrimSpace(out)
 }
@@ -986,6 +1029,7 @@ func parseDSMLToolCallsStrict(text string) (calls []DSMLCall, strict bool, err e
 // observed along the way (nested-block masking, missing string attribute).
 func extractDSMLCalls(text string, blocks []dsmlBlockRange) (calls []DSMLCall, strict bool) {
 	covered := -1 // closeEnd of the most recently parsed top-level block
+	fences := dsmlCodeRanges(text)
 	for _, b := range blocks {
 		// A block directly nested inside another one (outside any
 		// parameter body - those are opaque to the scan) is a structural
@@ -995,26 +1039,119 @@ func extractDSMLCalls(text string, blocks []dsmlBlockRange) (calls []DSMLCall, s
 			continue
 		}
 		covered = b.closeEnd
+		// Opaque regions inside the block body, as body-relative offsets:
+		// a nested invoke block (a structural accident whose parameters must
+		// not leak into the enclosing call) and quoted code (a fenced block
+		// or inline code span the model pasted into a value - the value must
+		// survive verbatim, nothing inside it is structure).
+		var opaque [][2]int
 		body := text[b.openEnd:b.closeStart]
-		// Mask nested blocks inside this body so their parameter tags are
-		// invisible to the extraction regex: the enclosing call must not
-		// pick up arguments the model meant for the accidental inner call.
 		for _, c := range blocks {
 			if c.openStart > b.openStart && c.closeEnd < b.closeEnd {
 				s, e := c.openStart-b.openEnd, c.closeEnd-b.openEnd
-				body = body[:s] + strings.Repeat(" ", e-s) + body[e:]
+				opaque = append(opaque, [2]int{s, e})
 				strict = true // violation: nested block was masked
 			}
 		}
+		for _, r := range fences {
+			s, e := r[0]-b.openEnd, r[1]-b.openEnd
+			if e <= 0 || s >= len(body) {
+				continue
+			}
+			if s < 0 {
+				s = 0
+			}
+			if e > len(body) {
+				e = len(body)
+			}
+			opaque = append(opaque, [2]int{s, e})
+		}
+		inOpaque := func(pos int) bool {
+			for _, r := range opaque {
+				if pos >= r[0] && pos < r[1] {
+					return true
+				}
+			}
+			return false
+		}
 		inv := DSMLCall{Name: dsmlBlockName(text[b.openStart:b.openEnd]), Args: map[string]any{}}
-		for _, pm := range dsmlParamRe.FindAllStringSubmatch(body, -1) {
-			if pm[2] == "" {
+		scan := 0
+		for scan < len(body) {
+			m := dsmlParamOpenRe.FindStringIndex(body[scan:])
+			if m == nil {
+				break
+			}
+			pos := scan + m[0]
+			if inOpaque(pos) || !dsmlStructuralTag(body, pos) {
+				// quoted code or value content that merely looks like a parameter:
+				scan = pos + 1
+				continue
+			}
+			openEnd := scan + m[1]
+			nameM := dsmlParamNameRe.FindStringSubmatch(body[pos:openEnd])
+			if nameM == nil {
+				scan = openEnd
+				continue
+			}
+			key := nameM[1]
+			strM := dsmlParamStringRe.FindStringSubmatch(body[pos:openEnd])
+			isStr := strM != nil && strM[1] == "true"
+			if strM == nil {
 				strict = true // violation: parameter without the string attribute
 			}
-			key := pm[1]
-			val := decodeDSMLValue(pm[3], pm[2] == "true")
+			// Find the matching close, skipping nested complete parameter pairs
+			// (a value may embed one) and opaque regions. A missing close is
+			// tolerated in two shapes: the value runs to the end of the body
+			// (the wrapper close authorized the block) or to the next
+			// structural parameter.
+			depth := 0
+			valueEnd := -1
+			j := openEnd
+			for j < len(body) {
+				nextOpen := dsmlParamOpenRe.FindStringIndex(body[j:])
+				nextClose := dsmlParamCloseRe.FindStringIndex(body[j:])
+				if nextOpen == nil && nextClose == nil {
+					break
+				}
+				if nextClose == nil || (nextOpen != nil && nextOpen[0] < nextClose[0]) {
+					op := j + nextOpen[0]
+					if inOpaque(op) || !dsmlStructuralTag(body, op) {
+						j = j + nextOpen[1]
+						continue
+					}
+					if depth == 0 {
+						// A new structural parameter starts before this one closed:
+						// the current one is implicitly closed here.
+						valueEnd = op
+						break
+					}
+					depth++
+					j = j + nextOpen[1]
+				} else {
+					cp := j + nextClose[0]
+					if inOpaque(cp) {
+						j = j + nextClose[1]
+						continue
+					}
+					if depth > 0 {
+						depth--
+						j = j + nextClose[1]
+						continue
+					}
+					valueEnd = cp
+					break
+				}
+			}
+			if valueEnd < 0 {
+				valueEnd = len(body)
+				strict = true // violation: parameter close missing
+			}
+			val := decodeDSMLValue(body[openEnd:valueEnd], isStr)
+			if key == "justification" {
+				strict = true // violation: the decorative justification parameter
+			}
 			// Repeated parameters mean an array (DeepSeek models emit
-			// <parameter name="justification"> twice for a []string arg).
+			// the same name twice for a []string arg).
 			if prev, ok := inv.Args[key]; ok {
 				if arr, isArr := prev.([]any); isArr {
 					inv.Args[key] = append(arr, val)
@@ -1024,17 +1161,13 @@ func extractDSMLCalls(text string, blocks []dsmlBlockRange) (calls []DSMLCall, s
 			} else {
 				inv.Args[key] = val
 			}
+			scan = valueEnd
 		}
 		calls = append(calls, inv)
 	}
 	return calls, strict
 }
 
-// CallSource returns the execution source for a reasoning/content pair:
-// content first; when content carries no call, reasoning is the fallback
-// (DeepSeek may draft calls in its thinking). This is the SAME selection
-// ParseDSMLMessage performs, exported so the webchat loop and its entry
-// gates cannot drift from the parser.
 func CallSource(reasoning, content string) string {
 	if !HasDSMLToolCalls(content) && HasDSMLToolCalls(reasoning) {
 		return reasoning
