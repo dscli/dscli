@@ -516,19 +516,23 @@ func formatChatHeaderWithRole(icon, nameCN, email, roleLabel, now string) string
 	}
 	right := now + " 🕐"
 
+	dotW := runewidth.StringWidth("·") // EA=true 时占 2 列，EA=false 时占 1 列
 	leftW := runewidth.StringWidth(left)
 	rightW := runewidth.StringWidth(right)
 
-	// 当左侧身份信息过长时截断，确保整行不超过 headerLineWidth。
-	maxLeftW := headerLineWidth - rightW - 4 // 4 = " ·· " at minimum
+	// 截断预算：保证截断后至少留出两个空格的分隔位（filler ≥ 2）。
+	// 2 = 左右各一个空格，点数可为 0。
+	maxLeftW := headerLineWidth - rightW - 2
 	if leftW > maxLeftW && maxLeftW >= 5 {
 		left = runewidth.Truncate(left, maxLeftW, "…")
 		leftW = runewidth.StringWidth(left)
 	}
 
-	padding := max(headerLineWidth-leftW-rightW, 2)
+	// filler 为可用于填充的列数；左右各保留一个空格后按实际点宽计算点数。
+	filler := headerLineWidth - leftW - rightW
+	dots := max(0, (filler-2)/dotW)
 
-	return left + " " + strings.Repeat("·", padding-2) + " " + right
+	return left + " " + strings.Repeat("·", dots) + " " + right
 }
 
 func PrintClimeinContent(ctx context.Context, content string) {

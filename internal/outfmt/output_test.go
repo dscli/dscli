@@ -445,16 +445,16 @@ func TestFormatChatHeaderWithRole(t *testing.T) {
 	t.Run("truncation with long identity", func(t *testing.T) {
 		longName := strings.Repeat("很长的名字", 20)
 		got := formatChatHeaderWithRole("🐦", longName, "bohr@dscli.io", "🏗️ architect·软件架构师", "12:43:10")
-		// 截断只作用于左侧身份部分；pad 用的 · 在 runewidth 里占 2 格，
-		// 整行必然超宽，所以这里拆出身份前缀单独断言。
-		identity, _, ok := strings.Cut(got, " ·")
-		if !ok {
-			t.Fatalf("header missing padding separator: %q", got)
+		// 任一 locale 下整行宽度都不得超过 headerLineWidth（含双宽 · padding）。
+		if w := runewidth.StringWidth(got); w > headerLineWidth {
+			t.Errorf("header width %d exceeds headerLineWidth %d: %q", w, headerLineWidth, got)
 		}
-		rightW := runewidth.StringWidth("12:43:10 🕐")
-		if w := runewidth.StringWidth(identity); w > headerLineWidth-rightW-4 {
-			t.Errorf("identity width %d exceeds truncation budget %d: %q", w, headerLineWidth-rightW-4, identity)
+		// 截断作用于左侧身份，其末尾应为省略号。
+		idx := strings.Index(got, "…")
+		if idx < 0 {
+			t.Fatalf("truncated header should contain ellipsis: %q", got)
 		}
+		identity := got[:idx+len("…")]
 		if !strings.HasSuffix(identity, "…") {
 			t.Errorf("truncated identity should end with ellipsis: %q", identity)
 		}
