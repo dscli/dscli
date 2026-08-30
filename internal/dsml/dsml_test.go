@@ -1,4 +1,4 @@
-package toolcall
+package dsml
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	dsctx "github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/roles"
 	"github.com/dscli/dscli/internal/session"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 // docSample is the exact DSML shape observed from chat.deepseek.com during a
@@ -660,13 +661,13 @@ func TestDsmlCallsToToolCalls(t *testing.T) {
 func TestFormatDSMLToolResult(t *testing.T) {
 	cases := []struct {
 		name string
-		in   *ToolContent
+		in   *toolcall.ToolContent
 		want string
 	}{
-		{"result only", &ToolContent{Result: "ok\n"}, `<tool_result>{"result":"ok\n"}</tool_result>`},
-		{"result and warning", &ToolContent{Result: "ok", Warning: "note"}, `<tool_result>{"result":"ok","warning":"note"}</tool_result>`},
-		{"error only", &ToolContent{Error: `boom "x"`}, `<tool_result>{"error":"boom \"x\""}</tool_result>`},
-		{"all empty", &ToolContent{}, `<tool_result>{"result":"(no output)"}</tool_result>`},
+		{"result only", &toolcall.ToolContent{Result: "ok\n"}, `<tool_result>{"result":"ok\n"}</tool_result>`},
+		{"result and warning", &toolcall.ToolContent{Result: "ok", Warning: "note"}, `<tool_result>{"result":"ok","warning":"note"}</tool_result>`},
+		{"error only", &toolcall.ToolContent{Error: `boom "x"`}, `<tool_result>{"error":"boom \"x\""}</tool_result>`},
+		{"all empty", &toolcall.ToolContent{}, `<tool_result>{"result":"(no output)"}</tool_result>`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -676,7 +677,7 @@ func TestFormatDSMLToolResult(t *testing.T) {
 		})
 	}
 	// 输入不得被修改（format 内部拷贝）。
-	orig := &ToolContent{Result: "keep"}
+	orig := &toolcall.ToolContent{Result: "keep"}
 	formatDSMLToolResult(orig)
 	if orig.Result != "keep" {
 		t.Errorf("input mutated: %q", orig.Result)
@@ -692,18 +693,18 @@ func TestExecuteDSMLToolCallsToolResultFormat(t *testing.T) {
 	ctx := withIsolatedDualSession(t)
 
 	// 原生注册名即执行名：shell 执行 shell，read_file 执行 read_file。
-	for _, def := range []ToolDef{
-		{Name: "shell", Description: "test shell", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
+	for _, def := range []toolcall.ToolDef{
+		{Name: "shell", Description: "test shell", Handler: func(_ context.Context, _ toolcall.ToolArgs) (string, string, error) {
 			return "ok", "note", nil
 		}},
-		{Name: "read_file", Description: "test read_file", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
+		{Name: "read_file", Description: "test read_file", Handler: func(_ context.Context, _ toolcall.ToolArgs) (string, string, error) {
 			return "", "", nil // empty result → (no output)
 		}},
 	} {
-		if err := RegisterTool(def); err != nil {
+		if err := toolcall.RegisterTool(def); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { unregisterToolForTest(def.Name) })
+		t.Cleanup(func() { toolcall.UnregisterTool(def.Name) })
 	}
 
 	calls := []DSMLCall{
@@ -726,7 +727,7 @@ func TestExecuteDSMLToolCallsToolResultFormat(t *testing.T) {
 	}
 
 	// 工具使用统计：shell 被真正执行了 1 次，read_file 也是（结果为空也执行）。
-	stats, err := GetToolUsageStats(ctx, 0)
+	stats, err := toolcall.GetToolUsageStats(ctx, 0)
 	if err != nil {
 		t.Fatalf("GetToolUsageStats: %v", err)
 	}
@@ -766,22 +767,22 @@ func TestExecuteDSMLToolCallsRoleGate(t *testing.T) {
 		}
 	})
 
-	for _, def := range []ToolDef{
-		{Name: "shell", Description: "test shell", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
+	for _, def := range []toolcall.ToolDef{
+		{Name: "shell", Description: "test shell", Handler: func(_ context.Context, _ toolcall.ToolArgs) (string, string, error) {
 			return "shell-ok", "", nil
 		}},
-		{Name: "read_file", Description: "test read_file", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
+		{Name: "read_file", Description: "test read_file", Handler: func(_ context.Context, _ toolcall.ToolArgs) (string, string, error) {
 			return "file-ok", "", nil
 		}},
 		// sql is REGISTERED but NOT in the role's tools config.
-		{Name: "sql", Description: "test sql", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
+		{Name: "sql", Description: "test sql", Handler: func(_ context.Context, _ toolcall.ToolArgs) (string, string, error) {
 			return "sql-ok", "", nil
 		}},
 	} {
-		if err := RegisterTool(def); err != nil {
+		if err := toolcall.RegisterTool(def); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { unregisterToolForTest(def.Name) })
+		t.Cleanup(func() { toolcall.UnregisterTool(def.Name) })
 	}
 
 	outputs := ExecuteDSMLToolCalls(ctx, []DSMLCall{
@@ -817,12 +818,12 @@ func TestExecuteDSMLToolCallsLegacySpellingSkipped(t *testing.T) {
 		}
 	})
 
-	if err := RegisterTool(ToolDef{Name: "shell", Description: "test shell", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
+	if err := toolcall.RegisterTool(toolcall.ToolDef{Name: "shell", Description: "test shell", Handler: func(_ context.Context, _ toolcall.ToolArgs) (string, string, error) {
 		return "shell-ok", "", nil
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { unregisterToolForTest("shell") })
+	t.Cleanup(func() { toolcall.UnregisterTool("shell") })
 
 	// 旧拼写 exec_command 不再被翻译为 shell（无映射），只有规范名执行。
 	outputs := ExecuteDSMLToolCalls(ctx, []DSMLCall{
@@ -851,14 +852,14 @@ func TestGetAllToolsUnknownSpecName(t *testing.T) {
 		}
 	})
 
-	if err := RegisterTool(ToolDef{Name: "shell", Description: "test shell", Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
+	if err := toolcall.RegisterTool(toolcall.ToolDef{Name: "shell", Description: "test shell", Handler: func(_ context.Context, _ toolcall.ToolArgs) (string, string, error) {
 		return "", "", nil
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { unregisterToolForTest("shell") })
+	t.Cleanup(func() { toolcall.UnregisterTool("shell") })
 
-	tools := GetAllTools(ctx)
+	tools := toolcall.GetAllTools(ctx)
 	for _, tool := range tools {
 		if tool.Function.Name == "shell" {
 			t.Fatalf("GetAllTools with unknown spec name must not register shell, got %d tools", len(tools))

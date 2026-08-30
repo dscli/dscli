@@ -13,7 +13,7 @@
 // straight from the registered ToolDef (dsmlGeneratedDocEntry), so the
 // model sees the native tool names and parameter schemas - what the model
 // writes is what the executor accepts, no translation.
-package toolcall
+package dsml
 
 import (
 	"context"
@@ -24,6 +24,7 @@ import (
 
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/prompt"
+	"github.com/dscli/dscli/internal/toolcall"
 	"github.com/nanjj/clog"
 )
 
@@ -44,7 +45,7 @@ type dsmlDocTool struct {
 // schema, so the schema is the tool's own schema and the example/params line
 // are derived from it. This is the only doc source - the role's tools spec
 // decides what gets registered, with no code change needed per tool.
-func dsmlGeneratedDocEntry(def ToolDef) dsmlDocTool {
+func dsmlGeneratedDocEntry(def toolcall.ToolDef) dsmlDocTool {
 	name := def.Name
 	props, _ := def.Parameters["properties"].(map[string]any)
 	keys := sortedSchemaKeys(props)
@@ -138,10 +139,10 @@ func sortedSchemaKeys(props map[string]any) []string {
 // are skipped with a debug log: they would fail at execution anyway, and
 // registering them only misleads the model into failed calls.
 func dsmlGeneratedEntries(ctx context.Context, spec string) []dsmlDocTool {
-	allow := allowSetFromSpec(spec)
+	allow := toolcall.AllowSetFromSpec(spec)
 	var names []string
 	if allow == nil { // "all"
-		names = KnownToolNames()
+		names = toolcall.KnownToolNames()
 	} else {
 		for n := range allow {
 			names = append(names, n)
@@ -151,7 +152,7 @@ func dsmlGeneratedEntries(ctx context.Context, spec string) []dsmlDocTool {
 	var out []dsmlDocTool
 	seen := map[string]bool{}
 	for _, n := range names {
-		def, ok := GetToolDef(ctx, n)
+		def, ok := toolcall.GetToolDef(ctx, n)
 		if !ok {
 			outfmt.Debug("dsml doc: role tool %q is not a registered tool and will not be registered\n", n)
 			continue
@@ -175,7 +176,7 @@ func BuildDSMLToolDoc(ctx context.Context, role string) prompt.DSMLToolDoc {
 	span, ctx := clog.StartSpanFromContext(ctx, "BuildDSMLToolDoc")
 	defer span.Finish()
 
-	spec := roleToolsSpec(ctx, role)
+	spec := toolcall.RoleToolsSpec(ctx, role)
 	entries := dsmlGeneratedEntries(ctx, spec)
 	if len(entries) == 0 {
 		return prompt.DSMLToolDoc{}
@@ -191,6 +192,12 @@ func BuildDSMLToolDoc(ctx context.Context, role string) prompt.DSMLToolDoc {
 	b.WriteString("You have access to a set of tools to help answer the user's question. Call the\n")
 	b.WriteString("tools with DSML markup in your reply. Independent calls may be issued in one\n")
 	b.WriteString("reply; dependent calls must wait for previous results.\n\n")
+	b.WriteString("You MUST follow this exact format for every tool call:\n")
+	b.WriteString("- Wrap all calls in a tool_calls block; each call is an invoke block with a name attribute.\n")
+	b.WriteString("- Every argument MUST be a parameter tag carrying a string attribute (string=\"true\" for text, string=\"false\" for numbers/booleans/arrays/objects).\n")
+	b.WriteString("- Do NOT add any extra attribute (such as justification) or any argument outside the examples.\n")
+	b.WriteString("- Every invoke tag and every tool_calls tag MUST be closed (the close tag must be present).\n")
+	b.WriteString("- You may emit several invoke blocks in one reply (independent calls); dependent calls must wait for the previous round's results.\n\n")
 	for _, e := range entries {
 		b.WriteString("```xml\n")
 		b.WriteString(e.example)
@@ -221,6 +228,7 @@ func BuildDSMLToolDoc(ctx context.Context, role string) prompt.DSMLToolDoc {
 		s.WriteString("\n```\n\n")
 	}
 	s.WriteString("You MUST strictly follow the above defined tool name and parameter schemas to invoke tool calls.\n")
+	s.WriteString("No extra attributes (such as justification), no extra arguments, and every tag closed - output the exact DSML shape shown above.\n")
 	schemas := strings.TrimSpace(s.String())
 
 	return prompt.DSMLToolDoc{Intro: intro, Schemas: schemas}

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dscli/dscli/internal/dsml"
 	"github.com/dscli/dscli/internal/lp"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/shell"
@@ -154,7 +155,7 @@ func handleQualityAssurance(ctx context.Context, args toolcall.ToolArgs) (result
 	// roles.DefaultFor: none by default). Without them the report is
 	// limited to the diff itself; warn explicitly instead of degrading
 	// silently (mirrors code_review).
-	if doc := toolcall.BuildDSMLToolDoc(ctx, "test"); doc.Intro == "" {
+	if doc := dsml.BuildDSMLToolDoc(ctx, "test"); doc.Intro == "" {
 		fmt.Fprintf(os.Stderr, "⚠️ test 角色未配置 DSML 工具（默认无工具）：QA 工程师将无法读取文件/运行项目的测试命令，报告限于提交内容。可运行 `dscli role update test --tools shell,read_file,write_file` 启用。\n")
 	}
 	structuredRequest, warning := truncateReviewRequest(summary, fullLog, patch)

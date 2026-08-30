@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/dsml"
 )
 
 // Sample HTML fragments mirror the real DeepSeek DOM captured by the probe
@@ -212,7 +212,7 @@ func TestMarkdownFragmentPreservesDSML(t *testing.T) {
 	}
 	// The preserved DSML must round-trip through the DSML parser: presence and
 	// arguments survive (the tool loop's trigger condition).
-	calls, err := toolcall.ParseDSMLToolCalls(joinMarkdown([]string{`<invoke name="shell"><parameter name="script" string="true">pwd && git status</parameter></invoke>`}))
+	calls, err := dsml.ParseDSMLToolCalls(joinMarkdown([]string{`<invoke name="shell"><parameter name="script" string="true">pwd && git status</parameter></invoke>`}))
 	if err != nil || len(calls) != 1 {
 		t.Fatalf("ParseDSMLToolCalls after conversion: %v, %d calls; want 1", err, len(calls))
 	}

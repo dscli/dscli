@@ -14,7 +14,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/dscli/dscli/internal/toolcall"
+	"github.com/dscli/dscli/internal/dsml"
 )
 
 func TestHeadRunes(t *testing.T) {
@@ -411,8 +411,8 @@ func TestHandleWebChatToolLoopTruncatesFeedback(t *testing.T) {
 	// omitted in the note.
 	big := strings.Repeat("Z", webChatMaxInputRunes)
 	origExec := handleWebChatExecDSML
-	var seenCalls []toolcall.DSMLCall
-	handleWebChatExecDSML = func(_ context.Context, calls []toolcall.DSMLCall) []string {
+	var seenCalls []dsml.DSMLCall
+	handleWebChatExecDSML = func(_ context.Context, calls []dsml.DSMLCall) []string {
 		seenCalls = append(seenCalls, calls...)
 		return []string{
 			"<tool_result>{\"result\":\"" + big + "\"}</tool_result>",

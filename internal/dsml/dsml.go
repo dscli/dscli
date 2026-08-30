@@ -15,7 +15,7 @@
 // is what the executor accepts, no translation. The only DSML-layer check
 // that remains is the destructive-command interception for shell calls
 // (dsmlBlockedCmdRe) in normalizeDSMLInvoke.
-package toolcall
+package dsml
 
 import (
 	"context"
@@ -32,6 +32,7 @@ import (
 	dsctx "github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/prompt"
+	"github.com/dscli/dscli/internal/toolcall"
 	"github.com/nanjj/clog"
 )
 
@@ -286,65 +287,16 @@ func normalizeDSMLText(text string) string {
 // order, so a value embedding a DSML example (e.g. a shell snippet carrying
 // "<invoke name=\"x\">...</invoke>") cut the block early and dropped every
 // parameter after it ("missing parameter cmd" in practice).
+// ParseDSMLToolCalls extracts all DSML tool calls from text. It returns an
+// error when an invoke block is left unclosed (e.g. the response was cut
+// off mid-emission): a truncated call must never be executed.
+//
+// Block pairing comes from dsmlBlockRangesStrict, whose stack scan treats
+// parameter bodies as opaque: a literal invoke open/close inside a parameter
+// VALUE is content, not structure.
 func ParseDSMLToolCalls(text string) ([]DSMLCall, error) {
-	text = normalizeDSMLText(text)
-	// Truncation check by state-machine scan: named <invoke> opens are
-	// matched against </invoke> closes in text order, with <parameter>
-	// bodies treated as opaque content (a raw "<invoke" or "</invoke>"
-	// inside a parameter VALUE is content, not structure). A cut-off
-	// emission (an opening tag never closed) must never be executed.
-	// Unlike an opens-vs-closes count, a stray "</invoke>" in prose can
-	// never satisfy an unclosed call (false negative); unlike stripping
-	// complete blocks first, a nested or mis-nested open (two opens, one
-	// close) is still detected instead of being silently swallowed.
-	blocks, unclosed, _, _ := dsmlBlockRanges(text)
-	if unclosed > 0 {
-		return nil, fmt.Errorf("DSML tool call truncated: %d unclosed <invoke>", unclosed)
-	}
-	if len(blocks) == 0 {
-		return nil, nil
-	}
-
-	var calls []DSMLCall
-	covered := -1 // closeEnd of the most recently parsed top-level block
-	for _, b := range blocks {
-		// A block directly nested inside another one (outside any
-		// <parameter> body - those are opaque to the scan) is a structural
-		// accident, not a second call: executing both would double-run the
-		// inner tool. Skip it here just like StripDSMLToolCalls does.
-		if b.openStart < covered {
-			continue
-		}
-		covered = b.closeEnd
-		body := text[b.openEnd:b.closeStart]
-		// Mask nested blocks inside this body so their <parameter> tags are
-		// invisible to the extraction regex: the enclosing call must not
-		// pick up arguments the model meant for the accidental inner call.
-		for _, c := range blocks {
-			if c.openStart > b.openStart && c.closeEnd < b.closeEnd {
-				s, e := c.openStart-b.openEnd, c.closeEnd-b.openEnd
-				body = body[:s] + strings.Repeat(" ", e-s) + body[e:]
-			}
-		}
-		inv := DSMLCall{Name: dsmlBlockName(text[b.openStart:b.openEnd]), Args: map[string]any{}}
-		for _, pm := range dsmlParamRe.FindAllStringSubmatch(body, -1) {
-			key := pm[1]
-			val := decodeDSMLValue(pm[3], pm[2] == "true")
-			// Repeated parameters mean an array (DeepSeek models emit
-			// <parameter name="justification"> twice for a []string arg).
-			if prev, ok := inv.Args[key]; ok {
-				if arr, isArr := prev.([]any); isArr {
-					inv.Args[key] = append(arr, val)
-				} else {
-					inv.Args[key] = []any{prev, val}
-				}
-			} else {
-				inv.Args[key] = val
-			}
-		}
-		calls = append(calls, inv)
-	}
-	return calls, nil
+	calls, _, err := parseDSMLToolCallsStrict(text)
+	return calls, err
 }
 
 // dsmlBlockRange is one completely paired <invoke name="...">...</invoke>
@@ -537,7 +489,7 @@ func inCodeRanges(ranges [][2]int, pos int) bool {
 //     dropped: the wrapper close is the model's own "emission complete"
 //     signal, and complete parameters plus that signal mean the call is
 //     finished, not truncated (details in the function body).
-func dsmlBlockRanges(text string) (blocks []dsmlBlockRange, unclosed int, firstUnclosed int, strays []dsmlStrayClose) {
+func dsmlBlockRangesStrict(text string) (blocks []dsmlBlockRange, unclosed int, firstUnclosed int, strays []dsmlStrayClose, implicitClose bool) {
 	type ev struct {
 		pos  int
 		kind byte // 'o' invoke open, 'c' invoke close, 'p' param open, 'q' param close
@@ -639,6 +591,7 @@ func dsmlBlockRanges(text string) (blocks []dsmlBlockRange, unclosed int, firstU
 	if m := dsmlToolCallsCloseEndRe.FindStringIndex(text); m != nil && paramDepth == 0 && len(stack) == 1 {
 		o := stack[0]
 		blocks = append(blocks, dsmlBlockRange{o.start, o.end, o.bodyEnd, o.bodyEnd})
+		implicitClose = true
 		stack = stack[:0]
 	}
 	unclosed = len(stack)
@@ -646,12 +599,18 @@ func dsmlBlockRanges(text string) (blocks []dsmlBlockRange, unclosed int, firstU
 		firstUnclosed = stack[0].start
 	}
 	sort.Slice(blocks, func(i, j int) bool { return blocks[i].openStart < blocks[j].openStart })
+	return blocks, unclosed, firstUnclosed, strays, implicitClose
+}
+
+// dsmlBlockRanges keeps the legacy four-value signature used across the
+// parser and the existing tests; ParseDSMLMessage uses dsmlBlockRangesStrict
+// to also learn whether an implicit close took place (violation #4).
+func dsmlBlockRanges(text string) (blocks []dsmlBlockRange, unclosed int, firstUnclosed int, strays []dsmlStrayClose) {
+	blocks, unclosed, firstUnclosed, strays, _ = dsmlBlockRangesStrict(text)
 	return blocks, unclosed, firstUnclosed, strays
 }
 
 // decodeDSMLValue converts a raw parameter value to a Go value. string=true
-// keeps the text verbatim; string=false tries numeric or boolean coercion so
-// numeric parameters (e.g. timeout) become real numbers, not "10000" text.
 func decodeDSMLValue(raw string, isString bool) any {
 	if isString {
 		return dsmlEntityReplacer.Replace(raw)
@@ -779,7 +738,7 @@ func dsmlRoleAllowSet(ctx context.Context) map[string]bool {
 	// DefaultFor's unknown-role profile - unrelated to the chat CLI's
 	// --role default (defaultChatRole = "architect" in chat.go).
 	role := dsctx.ContextValue(ctx, dsctx.CurrentRoleKey, "dev")
-	return roleToolAllowSet(ctx, role)
+	return toolcall.RoleToolAllowSet(ctx, role)
 }
 
 // dsmlBlockedCmdRe rejects destructive shell commands the web model could
@@ -820,8 +779,8 @@ var dsmlBlockedCmdRe = regexp.MustCompile(`(?i)(^|\s|;|&&|\|\|)(` +
 // One DSML-layer check remains, not avoidable: destructive-command
 // interception for calls targeting the shell tool (dsmlBlockedCmdRe) - a
 // remote web model is not a trusted local agent.
-func normalizeDSMLInvoke(inv DSMLCall) (name string, args ToolArgs, err error) {
-	args = ToolArgs{}
+func normalizeDSMLInvoke(inv DSMLCall) (name string, args toolcall.ToolArgs, err error) {
+	args = toolcall.ToolArgs{}
 	for k, v := range inv.Args {
 		if k == "justification" {
 			continue
@@ -858,30 +817,27 @@ func dsmlToolCallID(name, argsJSON string) string {
 	return fmt.Sprintf("dsml_%x", sum[:8])
 }
 
-// dsmlExecPlan 记录一个 DSML 调用在 ExecuteDSMLToolCalls 中的去向：
-// content != nil 表示调用在转换阶段就被拒绝（不执行），直接使用该错误
-// 结果；否则 index 是它在可执行列表 tcs（也是 outcomes）中的下标。
 type dsmlExecPlan struct {
-	content *ToolContent
+	content *toolcall.ToolContent
 	index   int
 }
 
 // dsmlCallsToToolCalls 把解析出的 DSML 调用转换为协议 ToolCall，交给
-// executeToolCalls 批量执行。转换失败的调用（工具不在角色配置或未注册、
-// 参数缺失、
-// 危险命令被拦截）不进执行列表，由计划表记录错误结果，保证输出与原始
-// 调用 1:1 对齐——专家按顺序对应它自己发出的 tool_calls。
+// toolcall.ExecuteToolCallsNoSave 批量执行。转换失败的调用（工具不在角色
+// 配置或未注册、参数缺失、危险命令被拦截）不进执行列表，由计划表记录错误
+// 结果，保证输出与原始调用 1:1 对齐——专家按顺序对应它自己发出的
+// tool_calls。
 func dsmlCallsToToolCalls(calls []DSMLCall) (tcs []prompt.ToolCall, plan []dsmlExecPlan) {
 	plan = make([]dsmlExecPlan, 0, len(calls))
 	for _, inv := range calls {
 		name, args, err := normalizeDSMLInvoke(inv)
 		if err != nil {
-			plan = append(plan, dsmlExecPlan{content: &ToolContent{ToolName: inv.Name, Error: err.Error()}})
+			plan = append(plan, dsmlExecPlan{content: &toolcall.ToolContent{ToolName: inv.Name, Error: err.Error()}})
 			continue
 		}
 		argsJSON, err := json.Marshal(args)
 		if err != nil {
-			plan = append(plan, dsmlExecPlan{content: &ToolContent{ToolName: inv.Name, Error: err.Error()}})
+			plan = append(plan, dsmlExecPlan{content: &toolcall.ToolContent{ToolName: inv.Name, Error: err.Error()}})
 			continue
 		}
 		tcs = append(tcs, prompt.ToolCall{
@@ -947,7 +903,7 @@ func ExecuteDSMLToolCalls(ctx context.Context, calls []DSMLCall) (outputs []stri
 			outfmt.Debug("DSML skipped tool %q: not in role's tools config", inv.Name)
 			continue
 		}
-		if _, defOK := GetToolDef(ctx, inv.Name); !defOK {
+		if _, defOK := toolcall.GetToolDef(ctx, inv.Name); !defOK {
 			outfmt.Debug("DSML skipped unregistered tool %q (quoted example or unknown name)", inv.Name)
 			continue
 		}
@@ -959,7 +915,7 @@ func ExecuteDSMLToolCalls(ctx context.Context, calls []DSMLCall) (outputs []stri
 	}
 
 	tcs, plan := dsmlCallsToToolCalls(calls)
-	outcomes, dualUsers := executeToolCalls(ctx, tcs, false)
+	outcomes, dualUsers := toolcall.ExecuteToolCallsNoSave(ctx, tcs)
 	if len(dualUsers) > 0 {
 		// A role-configured tool may return a DualMessage (e.g. a vision
 		// tool attaching image blocks). The DSML wire format cannot carry
@@ -978,10 +934,7 @@ func ExecuteDSMLToolCalls(ctx context.Context, calls []DSMLCall) (outputs []stri
 	return outputs
 }
 
-// formatDSMLToolResult serializes one tool outcome as a DSML tool_result
-// block. An all-empty result is normalized to "(no output)" so the model
-// sees an explicit answer instead of an empty payload.
-func formatDSMLToolResult(c *ToolContent) string {
+func formatDSMLToolResult(c *toolcall.ToolContent) string {
 	dup := *c // never mutate the caller's ToolContent (and avoid shadowing copy)
 	if dup.Result == "" && dup.Error == "" && dup.Warning == "" {
 		dup.Result = "(no output)"
@@ -991,4 +944,206 @@ func formatDSMLToolResult(c *ToolContent) string {
 		return fmt.Sprintf(`<tool_result>{"error":%q}</tool_result>`, err.Error())
 	}
 	return "<tool_result>" + string(b) + "</tool_result>"
+}
+
+// parseDSMLToolCallsStrict is ParseDSMLToolCalls plus a strictness verdict:
+// strict=true means the calls parsed (and are executable) but the markup
+// deviated from the format the system prompt demands (see the violation list
+// in ParseDSMLMessage). Violations only feed the OK judgement and the warning
+// injected by InjectStrictWarning - they never block execution.
+func parseDSMLToolCallsStrict(text string) (calls []DSMLCall, strict bool, err error) {
+	original := text
+	text = normalizeDSMLText(text)
+	strict = text != original // violation: normalize changed the text (fullwidth/entities/zero-width/junk)
+	blocks, unclosed, _, strays, implicitClose := dsmlBlockRangesStrict(text)
+	if unclosed > 0 {
+		return nil, false, fmt.Errorf("DSML tool call truncated: %d unclosed <invoke>", unclosed)
+	}
+	strict = strict || len(strays) > 0 || implicitClose // stray close / implicit close / cut close
+	if len(blocks) == 0 {
+		return nil, strict, nil
+	}
+	// Wrapper strictness: the canonical shape is a complete tool_calls
+	// open/close pair around the calls. Anything parsed while the text
+	// lacks the canonical close tag means a bare invoke (no wrapper), a
+	// typo'd wrapper (_calls / slash-less), or a cut-off close - all
+	// tolerated, all violations.
+	if !strings.Contains(text, "</tool_calls>") {
+		strict = true
+	}
+	calls, extractStrict := extractDSMLCalls(text, blocks)
+	strict = strict || extractStrict
+	for _, c := range calls {
+		if _, has := c.Args["justification"]; has {
+			strict = true // violation: the decorative justification parameter
+		}
+	}
+	return calls, strict, nil
+}
+
+// extractDSMLCalls pulls the calls out of already-paired invoke blocks (the
+// shared extraction of ParseDSMLToolCalls); strict accumulates violations
+// observed along the way (nested-block masking, missing string attribute).
+func extractDSMLCalls(text string, blocks []dsmlBlockRange) (calls []DSMLCall, strict bool) {
+	covered := -1 // closeEnd of the most recently parsed top-level block
+	for _, b := range blocks {
+		// A block directly nested inside another one (outside any
+		// parameter body - those are opaque to the scan) is a structural
+		// accident, not a second call: executing both would double-run the
+		// inner tool. Skip it here just like StripDSMLToolCalls does.
+		if b.openStart < covered {
+			continue
+		}
+		covered = b.closeEnd
+		body := text[b.openEnd:b.closeStart]
+		// Mask nested blocks inside this body so their parameter tags are
+		// invisible to the extraction regex: the enclosing call must not
+		// pick up arguments the model meant for the accidental inner call.
+		for _, c := range blocks {
+			if c.openStart > b.openStart && c.closeEnd < b.closeEnd {
+				s, e := c.openStart-b.openEnd, c.closeEnd-b.openEnd
+				body = body[:s] + strings.Repeat(" ", e-s) + body[e:]
+				strict = true // violation: nested block was masked
+			}
+		}
+		inv := DSMLCall{Name: dsmlBlockName(text[b.openStart:b.openEnd]), Args: map[string]any{}}
+		for _, pm := range dsmlParamRe.FindAllStringSubmatch(body, -1) {
+			if pm[2] == "" {
+				strict = true // violation: parameter without the string attribute
+			}
+			key := pm[1]
+			val := decodeDSMLValue(pm[3], pm[2] == "true")
+			// Repeated parameters mean an array (DeepSeek models emit
+			// <parameter name="justification"> twice for a []string arg).
+			if prev, ok := inv.Args[key]; ok {
+				if arr, isArr := prev.([]any); isArr {
+					inv.Args[key] = append(arr, val)
+				} else {
+					inv.Args[key] = []any{prev, val}
+				}
+			} else {
+				inv.Args[key] = val
+			}
+		}
+		calls = append(calls, inv)
+	}
+	return calls, strict
+}
+
+// ParseDSMLMessage is the unified entry for a DeepSeek web reply (reasoning
+// + content). It extracts DSML tool calls and judges whether they strictly
+// follow the format the system prompt demands (BuildDSMLToolDoc):
+//
+//   - ToolCalls non-empty: the reply contains tool calls that parsed. They
+//     are executable regardless of OK (a format violation never blocks
+//     execution - the result comes back with a warning instead).
+//   - OK=true: no violations; Content (or ReasoningContent when the calls
+//     came from reasoning) is stripped of the call blocks.
+//   - OK=false: violations observed (see parseDSMLToolCallsStrict); the
+//     Content/ReasoningContent keep the original text for the caller's
+//     fallback judgement.
+//   - ToolCalls empty: no executable call; whether the reply merely LOOKS
+//     like a broken tool call is SuspectedDSMLToolCalls' job.
+//
+// Parse source: content first; when content carries no call, reasoning is
+// parsed as a fallback (DeepSeek may draft calls in its thinking). When
+// content has calls, reasoning is never an execution source and is kept
+// verbatim.
+func ParseDSMLMessage(reasoning string, content string) prompt.Message {
+	msg := prompt.Message{Content: content, ReasoningContent: reasoning}
+	src, fromReasoning := content, false
+	if !HasDSMLToolCalls(content) && HasDSMLToolCalls(reasoning) {
+		src, fromReasoning = reasoning, true
+	}
+	if !HasDSMLToolCalls(src) {
+		return msg
+	}
+	calls, strict, err := parseDSMLToolCallsStrict(src)
+	if err != nil || len(calls) == 0 {
+		// Parse failure / no call: the caller decides between the re-issue
+		// path (SuspectedDSMLToolCalls) and a plain final answer.
+		return msg
+	}
+	msg.ToolCalls, _ = dsmlCallsToToolCalls(calls)
+	msg.OK = !strict
+	if msg.OK {
+		// OK=true: the message carries no tool-call content, only clean
+		// content (per the contract).
+		if fromReasoning {
+			msg.ReasoningContent = StripDSMLToolCalls(reasoning)
+		} else {
+			msg.Content = StripDSMLToolCalls(content)
+		}
+	}
+	return msg
+}
+
+// SuspectedDSMLToolCalls reports whether text is clearly TRYING to emit a
+// tool call but none parsed: an unquoted named invoke open tag exists while
+// ParseDSMLToolCalls fails or yields zero calls. The caller re-issues
+// ReissueWarning and keeps the conversation alive. Quoted examples (fenced
+// code, inline code, tool_result echoes) are not suspected.
+func SuspectedDSMLToolCalls(text string) bool {
+	if !HasDSMLToolCalls(text) {
+		return false
+	}
+	calls, err := ParseDSMLToolCalls(text)
+	if err == nil && len(calls) > 0 {
+		return false
+	}
+	return hasUnquotedInvokeOpen(text)
+}
+
+// hasUnquotedInvokeOpen reports a named invoke open tag outside quoted code
+// (fenced blocks, inline spans, tool_result echoes).
+func hasUnquotedInvokeOpen(text string) bool {
+	text = normalizeDSMLText(text)
+	fences := dsmlCodeRanges(text)
+	for _, m := range dsmlNamedInvokeOpenRe.FindAllStringIndex(text, -1) {
+		if !inCodeRanges(fences, m[0]) {
+			return true
+		}
+	}
+	return false
+}
+
+// StrictWarning is the fixed-format warning template injected into every
+// tool_result block when a call parsed with format violations (message.OK
+// false): the call is accepted, the model is told to strictly follow the
+// required format next time.
+const StrictWarning = "WARNING: your tool-call markup did not strictly follow the required format (e.g. extra attribute such as justification, missing string attribute, unclosed or stray tags); the call was accepted but you MUST strictly follow the exact format in the tool schema for every future call."
+
+// ReissueWarning is the re-issue template for a reply that clearly tries to
+// emit a tool call but could not be parsed: ask for a strict re-send.
+const ReissueWarning = "WARNING: your reply appears to contain a DSML tool call but it could not be parsed. Please re-send the tool call(s) strictly following the required format: invoke blocks (each with a name attribute and parameter children carrying the string attribute) wrapped in a tool_calls block, exactly as shown in the tool schema section of your instructions. Do not include extra attributes such as justification."
+
+// InjectStrictWarning injects StrictWarning into the warning field of every
+// tool_result block in outputs (ExecuteDSMLToolCalls' return values, each
+// shaped like <tool_result>{...}</tool_result>). An existing warning is
+// appended on a new line; empty blocks (no result/error/warning) and
+// unparseable blocks are left untouched.
+func InjectStrictWarning(outputs []string) []string {
+	if len(outputs) == 0 {
+		return outputs
+	}
+	out := make([]string, 0, len(outputs))
+	for _, o := range outputs {
+		body := strings.TrimSuffix(strings.TrimPrefix(o, "<tool_result>"), "</tool_result>")
+		var c toolcall.ToolContent
+		if err := json.Unmarshal([]byte(body), &c); err != nil {
+			out = append(out, o)
+			continue
+		}
+		if c.Result == "" && c.Error == "" && c.Warning == "" {
+			out = append(out, o)
+			continue
+		}
+		if c.Warning == "" {
+			c.Warning = StrictWarning
+		} else {
+			c.Warning += "\n" + StrictWarning
+		}
+		out = append(out, formatDSMLToolResult(&c))
+	}
+	return out
 }

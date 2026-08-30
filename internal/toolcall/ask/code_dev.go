@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dscli/dscli/internal/dsml"
 	"github.com/dscli/dscli/internal/lp"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/shell"
@@ -133,7 +134,7 @@ func handleCodeDev(ctx context.Context, args toolcall.ToolArgs) (result, warning
 	// may have narrowed it via `dscli role update dev --tools ...`. Warn
 	// explicitly when the role has no DSML tools instead of letting the
 	// session silently degrade (mirrors code_review / quality_assurance).
-	if doc := toolcall.BuildDSMLToolDoc(ctx, "dev"); doc.Intro == "" {
+	if doc := dsml.BuildDSMLToolDoc(ctx, "dev"); doc.Intro == "" {
 		fmt.Fprintf(os.Stderr, "⚠️ dev 角色未配置 DSML 工具（role update dev 缩小了工具集）：开发者将无法读取文件/执行命令。可运行 `dscli role reset dev` 恢复全部工具。\n")
 	}
 

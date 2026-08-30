@@ -1,4 +1,4 @@
-package toolcall
+package dsml
 
 import (
 	"context"
@@ -7,24 +7,25 @@ import (
 
 	"github.com/dscli/dscli/internal/roles"
 	"github.com/dscli/dscli/internal/session"
+	"github.com/dscli/dscli/internal/toolcall"
 )
 
 // registerDocProbeTools registers minimal ToolDefs so the doc builder has
 // tool definitions to generate entries from (this package's test env does
 // not blank-import alltools; production does).
-func registerDocProbeTools(t *testing.T, defs ...ToolDef) {
+func registerDocProbeTools(t *testing.T, defs ...toolcall.ToolDef) {
 	t.Helper()
 	for _, def := range defs {
 		def := def
-		if err := RegisterTool(def); err != nil {
+		if err := toolcall.RegisterTool(def); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { unregisterToolForTest(def.Name) })
+		t.Cleanup(func() { toolcall.UnregisterTool(def.Name) })
 	}
 }
 
-func docShellDef() ToolDef {
-	return ToolDef{
+func docShellDef() toolcall.ToolDef {
+	return toolcall.ToolDef{
 		Name:        "shell",
 		Description: "Run a shell script.",
 		Parameters: map[string]any{
@@ -37,12 +38,12 @@ func docShellDef() ToolDef {
 			"required":             []string{"script", "summary"},
 			"additionalProperties": false,
 		},
-		Handler: func(_ context.Context, _ ToolArgs) (string, string, error) { return "", "", nil },
+		Handler: func(_ context.Context, _ toolcall.ToolArgs) (string, string, error) { return "", "", nil },
 	}
 }
 
-func docReadFileDef() ToolDef {
-	return ToolDef{
+func docReadFileDef() toolcall.ToolDef {
+	return toolcall.ToolDef{
 		Name:        "read_file",
 		Description: "Read a file or line range.",
 		Parameters: map[string]any{
@@ -55,7 +56,7 @@ func docReadFileDef() ToolDef {
 			"required":             []string{"path"},
 			"additionalProperties": false,
 		},
-		Handler: func(_ context.Context, _ ToolArgs) (string, string, error) { return "", "", nil },
+		Handler: func(_ context.Context, _ toolcall.ToolArgs) (string, string, error) { return "", "", nil },
 	}
 }
 
@@ -169,7 +170,7 @@ func TestBuildDSMLToolDocGenerated(t *testing.T) {
 	sessionID := session.GetCurrentSessionID(ctx)
 
 	const probeName = "probe_tool"
-	if err := RegisterTool(ToolDef{
+	if err := toolcall.RegisterTool(toolcall.ToolDef{
 		Name:        probeName,
 		Description: "probe description",
 		Parameters: map[string]any{
@@ -181,13 +182,13 @@ func TestBuildDSMLToolDocGenerated(t *testing.T) {
 			"required":             []string{"query"},
 			"additionalProperties": false,
 		},
-		Handler: func(_ context.Context, _ ToolArgs) (string, string, error) {
+		Handler: func(_ context.Context, _ toolcall.ToolArgs) (string, string, error) {
 			return "", "", nil
 		},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { unregisterToolForTest(probeName) })
+	t.Cleanup(func() { toolcall.UnregisterTool(probeName) })
 
 	if err := roles.UpsertRoleConfig(ctx, "review", sessionID, nil, strPtrHelper("probe_tool"), nil); err != nil {
 		t.Fatalf("UpsertRoleConfig: %v", err)

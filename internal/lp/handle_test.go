@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dscli/dscli/internal/dsml"
 	"github.com/dscli/dscli/internal/outfmt"
-	"github.com/dscli/dscli/internal/toolcall"
 )
 
 // interruptedRound is the exact last-message content of a real QA round that
@@ -138,7 +138,7 @@ func TestHandleWebChatResumeMultiTurnReply(t *testing.T) {
 
 	origExec := handleWebChatExecDSML
 	executed := false
-	handleWebChatExecDSML = func(_ context.Context, _ []toolcall.DSMLCall) []string {
+	handleWebChatExecDSML = func(_ context.Context, _ []dsml.DSMLCall) []string {
 		executed = true
 		return nil
 	}
@@ -403,11 +403,11 @@ const dsmlReply = `<tool_calls>
 
 // captureExecDSML replaces handleWebChatExecDSML with a recorder and returns
 // the feedback text to emit. The recorded calls are verified per test.
-func captureExecDSML(t *testing.T, feedback string) *[]toolcall.DSMLCall {
+func captureExecDSML(t *testing.T, feedback string) *[]dsml.DSMLCall {
 	t.Helper()
 	orig := handleWebChatExecDSML
-	var seen []toolcall.DSMLCall
-	handleWebChatExecDSML = func(_ context.Context, calls []toolcall.DSMLCall) []string {
+	var seen []dsml.DSMLCall
+	handleWebChatExecDSML = func(_ context.Context, calls []dsml.DSMLCall) []string {
 		seen = append(seen, calls...)
 		return []string{feedback}
 	}
@@ -600,7 +600,7 @@ func TestHandleWebChatToolLoopPlainChatProseReference(t *testing.T) {
 	}
 	origExec := handleWebChatExecDSML
 	executed := false
-	handleWebChatExecDSML = func(_ context.Context, _ []toolcall.DSMLCall) []string {
+	handleWebChatExecDSML = func(_ context.Context, _ []dsml.DSMLCall) []string {
 		executed = true
 		return nil
 	}
@@ -636,7 +636,7 @@ func TestHandleWebChatToolLoopPlainChatNonRegistered(t *testing.T) {
 	}
 	origExec := handleWebChatExecDSML
 	executed := false
-	handleWebChatExecDSML = func(_ context.Context, _ []toolcall.DSMLCall) []string {
+	handleWebChatExecDSML = func(_ context.Context, _ []dsml.DSMLCall) []string {
 		executed = true
 		return nil // non-registered call: native executor also returns nothing
 	}
@@ -793,7 +793,7 @@ func TestHandleWebChatToolLoopEmptyWrapperExecutesNothing(t *testing.T) {
 	}
 	origExec := handleWebChatExecDSML
 	executed := false
-	handleWebChatExecDSML = func(_ context.Context, _ []toolcall.DSMLCall) []string {
+	handleWebChatExecDSML = func(_ context.Context, _ []dsml.DSMLCall) []string {
 		executed = true
 		return nil
 	}
@@ -849,7 +849,7 @@ func TestHandleWebChatToolLoopTruncatedDSML(t *testing.T) {
 	}
 	origExec := handleWebChatExecDSML
 	executed := false
-	handleWebChatExecDSML = func(_ context.Context, _ []toolcall.DSMLCall) []string {
+	handleWebChatExecDSML = func(_ context.Context, _ []dsml.DSMLCall) []string {
 		executed = true
 		return nil
 	}
@@ -901,7 +901,7 @@ func TestHandleWebChatQuotedDSMLNotExecuted(t *testing.T) {
 	t.Cleanup(func() { handleWebChatSend = origFunc })
 	executed := false
 	origExec := handleWebChatExecDSML
-	handleWebChatExecDSML = func(_ context.Context, _ []toolcall.DSMLCall) []string {
+	handleWebChatExecDSML = func(_ context.Context, _ []dsml.DSMLCall) []string {
 		executed = true
 		return []string{`<tool_result>{"error":"unsupported tool ..."}</tool_result>`}
 	}
@@ -1115,3 +1115,87 @@ func TestHandleWebChatResumeUnknownStatusAccepted(t *testing.T) {
 		t.Errorf("content = %q, want verbatim last reply", res.Content)
 	}
 }
+
+func TestHandleWebChatToolLoopViolationExecutesWithWarning(t *testing.T) {
+	origFunc := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = origFunc })
+
+	const finalAnswer = "Done."
+	var messages []string
+	handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
+		messages = append(messages, msg)
+		if len(messages) == 1 {
+			// First send receives the tool-call reply: dsmlReply carries the
+			// decorative justification parameter - parseable, but a format
+			// violation (message.OK=false).
+			return WebChatResult{Content: dsmlReply, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+		}
+		return WebChatResult{Content: finalAnswer, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+	}
+
+	res := WebChatResult{Content: "unset"}
+	seen := captureExecDSML(t, toolResultOK)
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{Role: "review"})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if res.Content != finalAnswer {
+		t.Errorf("content = %q, want final answer", res.Content)
+	}
+	if len(*seen) != 1 || (*seen)[0].Name != "shell" {
+		t.Fatalf("executed = %+v, want one shell (violation must NOT block execution)", *seen)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("sends = %d, want 2 (initial + tool feedback)", len(messages))
+	}
+	if !strings.Contains(messages[1], "ok") || !strings.Contains(messages[1], dsml.StrictWarning) {
+		t.Errorf("tool feedback must carry the result AND StrictWarning:\n%s", messages[1])
+	}
+}
+
+func TestHandleWebChatToolLoopReissueThenSuccess(t *testing.T) {
+	// A reply that tries to emit a tool call but cannot be parsed (cut off)
+	// re-issues the ReissueWarning and keeps the SAME conversation alive;
+	// the model's corrected re-send then executes normally.
+	origFunc := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = origFunc })
+
+	cut := "<" + "tool_calls>\n<" + "invoke name=\"shell\">\n<" + "parameter name=\"script\" string=\"true\">git show"
+	const finalAnswer = "All good."
+	var messages []string
+	handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
+		messages = append(messages, msg)
+		switch len(messages) {
+		case 1:
+			return WebChatResult{Content: cut, URL: "https://chat.deepseek.com/a/chat/s/convR1"}, nil
+		case 2:
+			return WebChatResult{Content: dsmlReply, URL: "https://chat.deepseek.com/a/chat/s/convR2"}, nil
+		default:
+			return WebChatResult{Content: finalAnswer, URL: "https://chat.deepseek.com/a/chat/s/convR3"}, nil
+		}
+	}
+	seen := captureExecDSML(t, toolResultOK)
+
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{Role: "review"})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if res.Content != finalAnswer {
+		t.Errorf("content = %q, want final answer", res.Content)
+	}
+	if len(messages) != 3 {
+		t.Fatalf("sends = %d, want 3 (re-issue warning, tool feedback, final)", len(messages))
+	}
+	if messages[1] != dsml.ReissueWarning {
+		t.Errorf("second send = %q, want ReissueWarning", messages[1])
+	}
+	if len(*seen) != 1 || (*seen)[0].Name != "shell" {
+		t.Errorf("executed = %+v, want one shell after re-issue", *seen)
+	}
+}
+
+// toolResultOK is a well-formed tool_result block, built at runtime so this
+// file stays transportable through DSML tool calls (literal angle brackets
+// in a write_file content would be misread as markup and truncate the
+// payload).
+const toolResultOK = "<" + "tool_result>" + `{"result":"ok"}` + "<" + "/tool_result>"

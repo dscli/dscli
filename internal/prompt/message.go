@@ -29,7 +29,7 @@ type Message struct {
 	ToolCallID       string         `json:"tool_call_id,omitzero"` // 仅当 role="tool" 时输出
 	CreatedAt        time.Time      `json:"-"`
 	tokens           int            `json:"-"`
-	OK               bool           `json:"-"`
+	OK               bool           `json:"-"` // 双语义：history 配对完整性（JudgeHistory/CleanupReverse 重算）或 DSML 格式严格合规（dsml.ParseDSMLMessage 判定）；均不序列化不落库
 }
 
 // MarshalJSON 输出 content 为字符串（无图片）或块数组（有图片）。
