@@ -520,8 +520,9 @@ func formatChatHeaderWithRole(icon, nameCN, email, roleLabel, now string) string
 	leftW := runewidth.StringWidth(left)
 	rightW := runewidth.StringWidth(right)
 
-	// 截断预算：为右侧时间戳保留 rightW + 双空格。maxLeftW >= 5 是
-	// runewidth.Truncate 省略号尾缀的可读下限（w<4 时省略号截断会超宽）；
+	// 截断预算：为右侧时间戳保留 rightW + 双空格。
+	// maxLeftW >= 5 is the lower bound for legible ellipsis truncation:
+	// Truncate at w <= 4 exceeds the requested width.
 	// 当前 headerLineWidth=80 与 time.TimeOnly 下 maxLeftW 恒 >= 60，该守卫不可达，属防御。
 	maxLeftW := headerLineWidth - rightW - 2
 	if leftW > maxLeftW && maxLeftW >= 5 {

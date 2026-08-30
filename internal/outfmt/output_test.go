@@ -422,6 +422,10 @@ func TestFormatChatHeader(t *testing.T) {
 // withEA sets DefaultCondition.EastAsianWidth for the duration of the test.
 // runewidth.StringWidth/Truncate 全部委托 DefaultCondition；包级 EastAsianWidth
 // 仅在 init 时同步一次，运行时直接改包级变量无效。
+//
+// withEA mutates the runewidth package-global DefaultCondition and must NOT
+// be used alongside t.Parallel() — other tests in the same binary would see
+// the mutated EA mode.
 func withEA(t *testing.T, ea bool) {
 	t.Helper()
 	old := runewidth.DefaultCondition.EastAsianWidth
@@ -479,23 +483,20 @@ func TestFormatChatHeaderWithRole(t *testing.T) {
 		longName := strings.Repeat("很长的名字", 20)
 		longRole := "🏗️ " + strings.Repeat("超长角色标签", 6)
 		inputs := []struct {
-			name      string
 			cn        string
 			email     string
 			roleLabel string
 		}{
-			{"long name", longName, "bohr@dscli.io", "🏗️ architect·软件架构师"},
-			{"empty email", "玻尔", "", "🏗️ architect·软件架构师"},
-			{"long role label", "玻尔", "bohr@dscli.io", longRole},
-			{"long name empty email", longName, "", "🏗️ architect·软件架构师"},
+			{longName, "bohr@dscli.io", "🏗️ architect·软件架构师"},
+			{"玻尔", "", "🏗️ architect·软件架构师"},
+			{"玻尔", "bohr@dscli.io", longRole},
+			{longName, "", "🏗️ architect·软件架构师"},
 		}
 		for _, ea := range []bool{false, true} {
+			withEA(t, ea)
 			for _, in := range inputs {
-				withEA(t, ea)
 				got := formatChatHeaderWithRole("🐦", in.cn, in.email, in.roleLabel, "12:43:10")
-				if w := runewidth.StringWidth(got); w > headerLineWidth {
-					t.Errorf("EA=%v %s: header width %d exceeds %d: %q", ea, in.name, w, headerLineWidth, got)
-				}
+				assertHeaderWidth(t, got, false)
 			}
 		}
 	})
@@ -515,6 +516,11 @@ func TestFormatChatHeaderWithRole(t *testing.T) {
 			identity := got[:idx+len("…")]
 			if !strings.HasSuffix(identity, "…") {
 				t.Errorf("EA=%v truncated identity should end with ellipsis: %q", ea, identity)
+			}
+			// 截断确实发生：截断后的身份宽度应小于未截断的完整身份宽度。
+			untruncated := "🐦 " + longName + " <bohr@dscli.io> 🏗️ architect·软件架构师"
+			if w, uw := runewidth.StringWidth(identity), runewidth.StringWidth(untruncated); w >= uw {
+				t.Errorf("EA=%v identity width %d should be less than untruncated %d: %q", ea, w, uw, identity)
 			}
 		}
 	})
