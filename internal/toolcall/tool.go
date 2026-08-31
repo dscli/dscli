@@ -16,7 +16,6 @@ import (
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/prompt"
 	"github.com/dscli/dscli/internal/roles"
-	"github.com/dscli/dscli/internal/session"
 	"github.com/dscli/dscli/internal/sqlite"
 	"github.com/nanjj/clog"
 )
@@ -187,16 +186,11 @@ func KnownToolNames() []string {
 }
 
 // roleToolsSpec returns the role's tools spec ("all", "", or "a,b") from
-// role_configs, falling back to roles.DefaultFor. It is the single source
-// of truth for "which tools this role may use": GetAllTools (dscli chat /
-// ask) and the DSML executor (webchat) both derive their tool set from it,
-// so the web model can only ever call what the role is configured for.
+// prompt.ToolsSpec — the single source of truth shared by GetAllTools, the
+// DSML executor and the prompt-layer mail gate (RoleCanReadMail), so the
+// web model can only ever call what the role is configured for.
 func roleToolsSpec(ctx context.Context, role string) string {
-	sessionID := session.GetCurrentSessionID(ctx)
-	if cfg, err := roles.GetRoleConfig(ctx, role, sessionID); err == nil && cfg != nil {
-		return cfg.Tools
-	}
-	return roles.DefaultFor(role).Tools
+	return prompt.ToolsSpec(ctx, role)
 }
 
 // roleToolAllowSet converts the role's tools spec into an allow-set:

@@ -460,25 +460,35 @@ func (c *promptConfig) GeneratePromptWithTemplate(ctx context.Context) string {
 // 无法执行的邮件指令。architect.md 的 mail 步骤是 ungated 的，不受影响。
 func RoleCanReadMail(ctx context.Context) bool {
 	role := context.ContextValue(ctx, context.CurrentRoleKey, "dev")
-	spec := ""
-	sessionID := session.GetCurrentSessionID(ctx)
-	if cfg, err := roles.GetRoleConfig(ctx, role, sessionID); err == nil && cfg != nil {
-		spec = cfg.Tools
-	} else {
-		spec = roles.DefaultFor(role).Tools
-	}
-	return roleCanReadMailSpec(spec)
+	return roleCanReadMailSpec(ToolsSpec(ctx, role))
 }
 
 // roleCanReadMailSpec 判断一个 tools spec 是否包含 readmail。"all"（解析
 // 为 nil）视为含 readmail；显式名单里含 "readmail" 则 true。
 func roleCanReadMailSpec(spec string) bool {
+	if strings.TrimSpace(spec) == "all" {
+		return true
+	}
 	for _, name := range roles.ParseToolsList(spec) {
 		if name == "readmail" {
 			return true
 		}
 	}
-	return spec == "all" // ParseToolsList("all") 返回 nil（nil=一切）
+	return false
+}
+
+// ToolsSpec returns the role's tools spec ("all", "", or "a,b") from
+// role_configs, falling back to roles.DefaultFor. It is the single source
+// of truth for "which tools this role may use": toolcall.GetAllTools, the
+// DSML executor (via toolcall.roleToolsSpec) and the prompt-layer mail gate
+// (RoleCanReadMail) all derive their allow-set from it. A stored row wins
+// over the built-in default, matching the storage convention.
+func ToolsSpec(ctx context.Context, role string) string {
+	sessionID := session.GetCurrentSessionID(ctx)
+	if cfg, err := roles.GetRoleConfig(ctx, role, sessionID); err == nil && cfg != nil {
+		return cfg.Tools
+	}
+	return roles.DefaultFor(role).Tools
 }
 
 // GetSystemPrompt renders the enhanced system prompt for the chat path.

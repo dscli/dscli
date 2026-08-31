@@ -6,6 +6,7 @@ import (
 
 	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/roles"
+	"github.com/dscli/dscli/internal/session"
 )
 
 func TestGetEnhancedSystemPrompt(t *testing.T) {
@@ -223,13 +224,15 @@ func TestRoleCanReadMail(t *testing.T) {
 
 // TestRoleCanReadMailSpec locks the spec parsing: "all" resolves to nil
 // (everything, including readmail); DevDefaultTools and "" exclude it; an
-// explicit list containing readmail includes it.
+// explicit list containing readmail includes it. Whitespace is tolerated
+// around the spec.
 func TestRoleCanReadMailSpec(t *testing.T) {
 	cases := []struct {
 		spec string
 		want bool
 	}{
 		{"all", true},
+		{" all ", true},
 		{roles.DevDefaultTools, false},
 		{"", false},
 		{"shell,readmail", true},
@@ -238,6 +241,24 @@ func TestRoleCanReadMailSpec(t *testing.T) {
 		if got := roleCanReadMailSpec(c.spec); got != c.want {
 			t.Errorf("roleCanReadMailSpec(%q) = %v, want %v", c.spec, got, c.want)
 		}
+	}
+}
+
+// TestRoleCanReadMailRowOverride verifies the row-wins semantics end to end:
+// a stored dev row with tools=all flips RoleCanReadMail to true even though
+// the dev default (DevDefaultTools) excludes readmail. It exercises the full
+// chain through prompt.ToolsSpec → roles.GetRoleConfig without mocking.
+func TestRoleCanReadMailRowOverride(t *testing.T) {
+	session.ResetSessionID()
+	t.Cleanup(session.ResetSessionID)
+	sessionID := session.GetCurrentSessionID(t.Context())
+	all := "all"
+	if err := roles.UpsertRoleConfig(t.Context(), "dev", sessionID, nil, &all, nil); err != nil {
+		t.Fatalf("UpsertRoleConfig: %v", err)
+	}
+	devCtx := context.WithValue(t.Context(), context.CurrentRoleKey, "dev")
+	if !RoleCanReadMail(devCtx) {
+		t.Errorf("RoleCanReadMail(dev) with stored tools=all row = false, want true (row wins over default)")
 	}
 }
 
