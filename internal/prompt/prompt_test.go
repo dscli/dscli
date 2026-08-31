@@ -244,22 +244,38 @@ func TestRoleCanReadMailSpec(t *testing.T) {
 	}
 }
 
-// TestRoleCanReadMailRowOverride verifies the row-wins semantics end to end:
-// a stored dev row with tools=all flips RoleCanReadMail to true even though
-// the dev default (DevDefaultTools) excludes readmail. It exercises the full
-// chain through prompt.ToolsSpec → roles.GetRoleConfig without mocking.
+// TestRoleCanReadMailRowOverride verifies the row-wins semantics end to end
+// in BOTH directions, exercising the full chain through prompt.ToolsSpec →
+// roles.GetRoleConfig without mocking. It runs in an isolated session scope
+// (a temp project root, like withIsolatedSession in interrupt_test.go), so
+// the upserted role_configs rows land under a throwaway session id and can
+// never leak into tests that resolve the real project session — this is what
+// keeps `go test -shuffle=on` clean.
 func TestRoleCanReadMailRowOverride(t *testing.T) {
-	session.ResetSessionID()
-	t.Cleanup(session.ResetSessionID)
-	sessionID := session.GetCurrentSessionID(t.Context())
-	all := "all"
-	if err := roles.UpsertRoleConfig(t.Context(), "dev", sessionID, nil, &all, nil); err != nil {
-		t.Fatalf("UpsertRoleConfig: %v", err)
-	}
-	devCtx := context.WithValue(t.Context(), context.CurrentRoleKey, "dev")
-	if !RoleCanReadMail(devCtx) {
-		t.Errorf("RoleCanReadMail(dev) with stored tools=all row = false, want true (row wins over default)")
-	}
+	ctx := withIsolatedSession(t)
+	sessionID := session.GetCurrentSessionID(ctx)
+
+	t.Run("tools=all flips dev to true", func(t *testing.T) {
+		all := "all"
+		if err := roles.UpsertRoleConfig(t.Context(), "dev", sessionID, nil, &all, nil); err != nil {
+			t.Fatalf("UpsertRoleConfig: %v", err)
+		}
+		devCtx := context.WithValue(t.Context(), context.CurrentRoleKey, "dev")
+		if !RoleCanReadMail(devCtx) {
+			t.Errorf("RoleCanReadMail(dev) with stored tools=all row = false, want true (row wins over default)")
+		}
+	})
+
+	t.Run("tools=none flips dev back to false", func(t *testing.T) {
+		none := ""
+		if err := roles.UpsertRoleConfig(t.Context(), "dev", sessionID, nil, &none, nil); err != nil {
+			t.Fatalf("UpsertRoleConfig: %v", err)
+		}
+		devCtx := context.WithValue(t.Context(), context.CurrentRoleKey, "dev")
+		if RoleCanReadMail(devCtx) {
+			t.Errorf("RoleCanReadMail(dev) with stored tools=none row = true, want false (row wins in both directions)")
+		}
+	})
 }
 
 // assertMailCheckStripped checks the shared invariants for a WebChat-rendered

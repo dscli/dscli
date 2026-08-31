@@ -452,9 +452,10 @@ func (c *promptConfig) GeneratePromptWithTemplate(ctx context.Context) string {
 }
 
 // RoleCanReadMail 报告当前角色的工具集是否包含 readmail（即该角色被
-// 允许访问 AI 间邮件系统）。判定顺序与 toolcall.roleToolsSpec 一致：
-// role_configs 行优先，无行回退 roles.DefaultFor；spec 为 "all"（解析为
-// nil）视为含 readmail，显式名单里含 "readmail" 则 true。
+// 允许访问 AI 间邮件系统）。它委托给 ToolsSpec（role_configs 行优先，
+// 无行回退 roles.DefaultFor）——toolcall.roleToolsSpec 现在也调用同一
+// ToolsSpec，两者按构造一致，不可能漂移。spec 为 "all"（解析为 nil）
+// 视为含 readmail，显式名单里含 "readmail" 则 true。
 // chat 路径用它门控 dev 模板的 mail-check 步骤（CheckMail）与用户消息的
 // 未读邮件通知注入——没有 readmail 工具的角色（dev 默认）不应看到
 // 无法执行的邮件指令。architect.md 的 mail 步骤是 ungated 的，不受影响。
@@ -464,7 +465,10 @@ func RoleCanReadMail(ctx context.Context) bool {
 }
 
 // roleCanReadMailSpec 判断一个 tools spec 是否包含 readmail。"all"（解析
-// 为 nil）视为含 readmail；显式名单里含 "readmail" 则 true。
+// 为 nil）视为含 readmail；显式名单里含 "readmail" 则 true。先对 spec 做
+// TrimSpace 再比较 "all" 是为了与 ParseToolsList 内部的 Trim 对称：
+// 列表路径本身会 trim 每个名字，若不在短路分支先 trim，" all " 会被误判
+// 为名单并拆出空元素，导致语义不一致。
 func roleCanReadMailSpec(spec string) bool {
 	if strings.TrimSpace(spec) == "all" {
 		return true
