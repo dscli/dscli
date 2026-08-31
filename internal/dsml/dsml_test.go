@@ -226,9 +226,17 @@ func TestNormalizeDSMLText(t *testing.T) {
 		{"dsml_version untouched", "grep '<dsml_version'", "grep '<dsml_version'"},
 		{"dsml before real tag still stripped", "<dsml invoke name=\"x\">", `<invoke name="x">`},
 		{"dsml before parameter still stripped", "<｜DSML\n|parameter name=\"script\">", `<parameter name="script">`},
-		// Badge-label close: the site replaces the wrapper tag name with a
-		// rendered badge label ("evaluation"), keeping the pipe marker.
-		{"badge label close", "</｜‑evaluation>", `</tool_calls>`},
+		// Badge-label close at the text TAIL: the site replaces the wrapper tag
+		// name with a rendered badge label ("evaluation"), keeping the
+		// full-width pipe marker. Only the tail is rewritten (the gates look
+		// for a wrapper close that ends the reply).
+		{"badge label close at tail", "</｜‑evaluation>", `</tool_calls>`},
+		{"badge label close at tail keeps trailing space", "</｜‑evaluation>  ", `</tool_calls>  `},
+		// Non-tail lookalikes must survive untouched: they are content, not
+		// markup, and rewriting them would corrupt shell values or prose.
+		{"chatml token untouched", "<|im_start|>", "<|im_start|>"},
+		{"ascii pipe shell value untouched", "echo 'a|b'", "echo 'a|b'"},
+		{"fullwidth pipe in value untouched", "echo '</｜report>'", "echo '</｜report>'"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

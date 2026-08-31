@@ -289,14 +289,19 @@ var dsmlTagJunkEmptyRe = regexp.MustCompile(`(?i)(</?)(?:[|｜]\s*|d\s*s\s*m\s*l
 // form into its IndexedDB history, with the tag NAME replaced by a human-readable
 // badge label (observed 2026-08: "</｜‑evaluation>" - the site's full-width pipe
 // badge marker plus the badge label for a QA/evaluation round). The badge label
-// is NOT a DSML tag name, so dsmlTagJunkRe's known-name guard never matches it;
-// this regex runs AFTER dsmlTagJunkRe in normalizeDSMLText and rewrites whatever
-// full-width-pipe-marked close remains to the canonical wrapper close, discarding
-// the label. Only the full-width pipe ｜ anchors the rule (the site's badge
-// marker is always full-width; ASCII "|" in shell values must survive), and only
-// the close shape "</" is matched, so prose such as "cat <dsml_config" or a
-// ChatML token like "<|im_start|>" is untouched.
-var dsmlTagBadgeLabelRe = regexp.MustCompile(`(?s)</｜[^<>]*>`)
+// is NOT a DSML tag name, so dsmlTagJunkRe's known-name guard never matches it.
+//
+// The rule is TAIL-ANCHORED: it only rewrites the badge close when it sits at
+// the very end of the text (the wrapper close the gates look for is always the
+// final token), so a literal </｜...> inside a parameter VALUE - e.g. a shell
+// snippet or doc fragment the model pasted - is never rewritten into markup
+// that would change the command to execute. The full-width pipe ｜ is the site's
+// badge marker and is always full-width, so ASCII "|" in shell values is left
+// alone by construction; only the close shape "</" is accepted, so prose such
+// as "cat <dsml_config" or a ChatML token like "<|im_start|>" is untouched.
+// The capture group keeps trailing whitespace so the rewrite never trims the
+// text (strictness compares normalized text against the original).
+var dsmlTagBadgeLabelRe = regexp.MustCompile(`</｜[^<>]*>(\s*)$`)
 
 func normalizeDSMLText(text string) string {
 	text = dsmlFullwidthReplacer.Replace(text)
@@ -310,11 +315,12 @@ func normalizeDSMLText(text string) string {
 	// junk match can never eat into content that is not a DSML tag.
 	text = dsmlTagJunkEmptyRe.ReplaceAllString(text, "$1$2")
 	text = dsmlTagJunkRe.ReplaceAllString(text, "$1$2")
-	// Rewrite a pipe-marked wrapper whose name is not a DSML tag (the badge
-	// label case, e.g. "</｜‑evaluation>") to the canonical close. Running it
+	// Rewrite a pipe-marked wrapper close at the very END of the text (the
+	// badge-label case, e.g. "</｜‑evaluation>") to the canonical close,
+	// preserving any trailing whitespace via the capture group. Running it
 	// last means known-tag junk has already been repaired, and only
-	// pipe-anchored residue reaches this replacement.
-	return dsmlTagBadgeLabelRe.ReplaceAllString(text, "</tool_calls>")
+	// tail-anchored, pipe-marked residue reaches this replacement.
+	return dsmlTagBadgeLabelRe.ReplaceAllString(text, "</tool_calls>$1")
 }
 
 // ParseDSMLToolCalls extracts all DSML tool calls from text. It returns an
