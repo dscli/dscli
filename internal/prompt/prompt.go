@@ -86,10 +86,13 @@ type promptConfig struct {
 	// was scoped to the dev role and the architect template was left
 	// untouched by design.
 	//
+	// On the chat path this is now driven by RoleCanReadMail: a role
+	// without the readmail tool (dev by default, since its tool set no
+	// longer includes mail) must not be told to check mail it cannot read.
 	// The zero value is false (opt-in): WebChat role sessions are
 	// task-scoped, one-shot consultations where a mail probe wastes the
 	// first round and has no relevant inbox anyway. Chat sessions opt in
-	// via GetSystemPrompt, which sets it true.
+	// via GetSystemPrompt, which sets it from RoleCanReadMail(ctx).
 	CheckMail bool
 
 	// DSMLToolDoc 是 DSML 工具注册段的动态内容（<tool_calls>/<invoke>
@@ -448,21 +451,54 @@ func (c *promptConfig) GeneratePromptWithTemplate(ctx context.Context) string {
 	return prompt
 }
 
+// RoleCanReadMail 报告当前角色的工具集是否包含 readmail（即该角色被
+// 允许访问 AI 间邮件系统）。判定顺序与 toolcall.roleToolsSpec 一致：
+// role_configs 行优先，无行回退 roles.DefaultFor；spec 为 "all"（解析为
+// nil）视为含 readmail，显式名单里含 "readmail" 则 true。
+// chat 路径用它门控 dev 模板的 mail-check 步骤（CheckMail）与用户消息的
+// 未读邮件通知注入——没有 readmail 工具的角色（dev 默认）不应看到
+// 无法执行的邮件指令。architect.md 的 mail 步骤是 ungated 的，不受影响。
+func RoleCanReadMail(ctx context.Context) bool {
+	role := context.ContextValue(ctx, context.CurrentRoleKey, "dev")
+	spec := ""
+	sessionID := session.GetCurrentSessionID(ctx)
+	if cfg, err := roles.GetRoleConfig(ctx, role, sessionID); err == nil && cfg != nil {
+		spec = cfg.Tools
+	} else {
+		spec = roles.DefaultFor(role).Tools
+	}
+	return roleCanReadMailSpec(spec)
+}
+
+// roleCanReadMailSpec 判断一个 tools spec 是否包含 readmail。"all"（解析
+// 为 nil）视为含 readmail；显式名单里含 "readmail" 则 true。
+func roleCanReadMailSpec(spec string) bool {
+	for _, name := range roles.ParseToolsList(spec) {
+		if name == "readmail" {
+			return true
+		}
+	}
+	return spec == "all" // ParseToolsList("all") 返回 nil（nil=一切）
+}
+
 // GetSystemPrompt renders the enhanced system prompt for the chat path.
 // This is the chat entry point: LoadPrompts funnels through it, and it opts
-// into the template's mail-check step by setting CheckMail to true. The
-// WebChat path goes through RenderPromptForRoleWithTools instead, which
-// leaves CheckMail at its false zero value.
+// into the template's mail-check step by setting CheckMail from
+// RoleCanReadMail(ctx) — a role without readmail (dev by default) gets no
+// mail instruction. The WebChat path goes through
+// RenderPromptForRoleWithTools instead, which leaves CheckMail at its false
+// zero value.
 func GetSystemPrompt(ctx context.Context) string {
 	span, ctx := clog.StartSpanFromContext(ctx, "GetSystemPrompt")
 	defer span.Finish()
 	config := newPromptConfig(ctx)
 	// Chat path: LoadPrompts goes through GetSystemPrompt, and ChatRunE
-	// additionally injects an unread-mail notification as a user message,
-	// so chat keeps a mail reminder independent of this template step.
-	// WebChat has no such injection, so the zero value stays false to keep
-	// the mail step out of WebChat prompts by default.
-	config.CheckMail = true
+	// additionally injects an unread-mail notification as a user message
+	// (gated by the same RoleCanReadMail check), so chat keeps a mail
+	// reminder independent of this template step. WebChat has no such
+	// injection, so the zero value stays false to keep the mail step out
+	// of WebChat prompts by default.
+	config.CheckMail = RoleCanReadMail(ctx)
 	return config.GeneratePromptWithTemplate(ctx)
 }
 

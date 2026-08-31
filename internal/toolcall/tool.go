@@ -235,9 +235,13 @@ func GetAllTools(ctx context.Context) []Tool {
 	// DefaultFor's unknown-role profile. It is unrelated to the chat
 	// CLI's --role default (defaultChatRole = "architect" in chat.go).
 	role := context.ContextValue(ctx, context.CurrentRoleKey, "dev")
-	// dev is capable by default; expert/review/test execute nothing until
-	// configured. This mirrors the role list display, which shows the very
-	// same defaults (roleToolsSpec).
+	// dev is capable by default — its default set is the development tool
+	// set (roles.DevDefaultTools), no longer including the
+	// mail/communication/ai/check categories (those are architect's);
+	// expert/review/test execute nothing until configured. This mirrors
+	// the role list display, which shows the very same defaults
+	// (roleToolsSpec). The gating semantics are unchanged: role_configs →
+	// DefaultFor → allow-set matched by exact registered name.
 	allowSet := roleToolAllowSet(ctx, role)
 	if allowSet != nil && len(allowSet) == 0 {
 		return nil // explicit empty = no tools

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dscli/dscli/internal/context"
+	"github.com/dscli/dscli/internal/roles"
 )
 
 func TestGetEnhancedSystemPrompt(t *testing.T) {
@@ -137,20 +138,27 @@ func TestDSMLToolsSectionScopedToWebChat(t *testing.T) {
 	}
 }
 
-// TestMailCheckStepScopedToChatPath verifies the dev template's "check
-// unread mail" opening step appears on the chat path (GetSystemPrompt) but
-// is stripped from WebChat role renders (RenderPromptForRole and
-// RenderPromptForRoleWithTools). WebChat sessions are task-scoped one-shot
-// consultations where a mail probe wastes the first round.
-func TestMailCheckStepScopedToChatPath(t *testing.T) {
-	ctx := t.Context()
-	ctx = context.WithValue(ctx, context.CurrentRoleKey, "dev")
-	chatPrompt := GetSystemPrompt(ctx)
-	if !strings.Contains(chatPrompt, "Check for unread mail") {
-		t.Errorf("chat system prompt must contain the mail-check step:\n%s", chatPrompt)
+// TestMailCheckStepScopedToRolesWithMail verifies the dev template's "check
+// unread mail" opening step follows the role's mail capability: on the chat
+// path (GetSystemPrompt) a role without readmail (dev by default) gets no
+// mail instruction, architect gets one (architect.md keeps its own ungated
+// step), and WebChat role renders always strip it (CheckMail=false by
+// design — WebChat sessions are task-scoped one-shot consultations where a
+// mail probe wastes the first round).
+func TestMailCheckStepScopedToRolesWithMail(t *testing.T) {
+	devChatCtx := context.WithValue(t.Context(), context.CurrentRoleKey, "dev")
+	devChat := GetSystemPrompt(devChatCtx)
+	if strings.Contains(devChat, "Check for unread mail") {
+		t.Errorf("dev chat prompt must not contain the mail-check step (no readmail):\n%s", devChat)
 	}
-	if !strings.Contains(chatPrompt, "0b. **Read AGENTS.md**") {
-		t.Errorf("chat system prompt must retain the AGENTS.md step:\n%s", chatPrompt)
+	if !strings.Contains(devChat, "0b. **Read AGENTS.md**") {
+		t.Errorf("dev chat prompt must retain the AGENTS.md step:\n%s", devChat)
+	}
+
+	archChatCtx := context.WithValue(t.Context(), context.CurrentRoleKey, "architect")
+	archChat := GetSystemPrompt(archChatCtx)
+	if !strings.Contains(archChat, "Check for unread mail") {
+		t.Errorf("architect chat prompt must keep its own ungated mail-check step:\n%s", archChat)
 	}
 
 	plain := RenderPromptForRole(t.Context(), "dev")
@@ -191,6 +199,45 @@ func TestMailCheckStepScopedToChatPath(t *testing.T) {
 	}
 	if !strings.Contains(content, "\u003cinvoke name=\"read_file\"\u003e") {
 		t.Errorf("webchat prompt missing DSML read_file registration:\n%s", content)
+	}
+}
+
+// TestRoleCanReadMail verifies the chat-path mail gate: without readmail in
+// the role's tool set (dev by default) RoleCanReadMail is false; architect
+// (all tools) is true. Tests run without a session row, so the fallback
+// (roles.DefaultFor) applies — GetCurrentSessionID returns 0 and the lookup
+// misses, matching production behavior for fresh projects.
+func TestRoleCanReadMail(t *testing.T) {
+	if got := RoleCanReadMail(t.Context()); got {
+		t.Errorf("RoleCanReadMail() with no role (defaults to dev) = true, want false")
+	}
+	devCtx := context.WithValue(t.Context(), context.CurrentRoleKey, "dev")
+	if got := RoleCanReadMail(devCtx); got {
+		t.Errorf("RoleCanReadMail(dev) = true, want false")
+	}
+	archCtx := context.WithValue(t.Context(), context.CurrentRoleKey, "architect")
+	if !RoleCanReadMail(archCtx) {
+		t.Errorf("RoleCanReadMail(architect) = false, want true (architect is all tools)")
+	}
+}
+
+// TestRoleCanReadMailSpec locks the spec parsing: "all" resolves to nil
+// (everything, including readmail); DevDefaultTools and "" exclude it; an
+// explicit list containing readmail includes it.
+func TestRoleCanReadMailSpec(t *testing.T) {
+	cases := []struct {
+		spec string
+		want bool
+	}{
+		{"all", true},
+		{roles.DevDefaultTools, false},
+		{"", false},
+		{"shell,readmail", true},
+	}
+	for _, c := range cases {
+		if got := roleCanReadMailSpec(c.spec); got != c.want {
+			t.Errorf("roleCanReadMailSpec(%q) = %v, want %v", c.spec, got, c.want)
+		}
 	}
 }
 

@@ -214,12 +214,17 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	// Inject unread mail notification as a single line at the top of
 	// the user message. Unlike system prompt injection, this doesn't
 	// affect cache stability — user content varies per-message anyway.
-	if summaries := mail.UnreadMailList(ctx); len(summaries) > 0 {
-		if notif := mail.FormatUnreadMailLine(summaries); notif != "" {
-			if content != "" {
-				content = notif + "\n" + content
-			} else {
-				content = notif
+	// Gate on RoleCanReadMail: roles without readmail (dev by default)
+	// must not see a notification they cannot act on — the prompt and
+	// notification paths stay consistent.
+	if prompt.RoleCanReadMail(ctx) {
+		if summaries := mail.UnreadMailList(ctx); len(summaries) > 0 {
+			if notif := mail.FormatUnreadMailLine(summaries); notif != "" {
+				if content != "" {
+					content = notif + "\n" + content
+				} else {
+					content = notif
+				}
 			}
 		}
 	}

@@ -7,7 +7,7 @@
 // sessions.project_path — role_configs follows automatically.
 //
 // Fallback: when no row exists for a role+session, the system uses hardcoded
-// defaults: dev gets all skills+tools, expert/review/test get none.
+// defaults: dev gets all skills + DevDefaultTools, expert/review/test get none.
 //
 // API conventions:
 //   - "all"  → nil slice (no filtering, include everything)
@@ -53,18 +53,43 @@ type DefaultConfig struct {
 	Prompt string
 }
 
+// DevDefaultTools 是 dev 角色的内置默认工具集：完整的开发工具链
+// （code/file_ops/system/history/memory/skill/vision/web），但不含
+// mail（readmail 等 7 个）、communication（ask_expert/ask_user）、
+// ai（ainap/wakeup/aistatus）、check（flycheck/code_review/code_dev/
+// quality_assurance）四类沟通/协作工具——这些由 architect 承担
+// （architect 保持 "all"）。dev 的默认值是显式名单而非 "all"：
+// 未来新增工具默认不会自动授予 dev，须在此显式登记（这是刻意为之，
+// 防止新的协作类工具静默进入 dev 会话）。
+const DevDefaultTools = "read_file,write_file,search_file_with_pattern," +
+	"shell,sql,cwd_get,cwd_push,cwd_pop," +
+	"note,recall,show,recent," +
+	"mem_save,mem_search,mem_update,mem_get_observation,mem_delete,mem_stats," +
+	"skill_by_name,skill_save,skill_search,skill_set_auto_inject," +
+	"code_edit,code_search_code,code_get_code_snippet,code_validate,code_get_text," +
+	"code_search_graph,code_get_definitions,code_get_project_root,code_open_project," +
+	"code_get_architecture,code_get_structure,code_edit_body,code_list_projects," +
+	"code_find_references,code_query_graph,code_index_repository,code_save_memo," +
+	"code_locate,code_trace_path,code_get_graph_schema,code_index_status,code_analysis," +
+	"code_detect_changes,code_delete_project,code_search_memos,code_ingest_traces," +
+	"code_manage_adr," +
+	"vision_file_read,vision_file_delete,vision_file_info,vision_file_list," +
+	"web_fetch"
+
 // DefaultFor returns the built-in defaults for the given role. It is the
 // single source of truth consumed by the CLI display (role list/show), the
 // tool registry (GetAllTools), prompt loading (LoadPrompts) and the WebChat
 // DSML section — a role without a DB row behaves exactly as role list shows.
 //
-//   - dev:       all skills, all tools
+//   - dev:       all skills, DevDefaultTools (development tools; the
+//     mail/communication/ai/check categories are the architect's)
 //   - expert:    none (a pure domain expert consults; it does not execute)
 //   - review:    none (configure tools per project, e.g. shell,read_file)
 //   - test:      none (configure tools per project, e.g. shell,read_file,write_file)
 //   - architect: all skills, all tools (the orchestrator needs the full
 //     toolset to design, write the architecture doc to disk, delegate via
-//     code_dev/code_review/quality_assurance, and verify delivery)
+//     code_dev/code_review/quality_assurance, and verify delivery — dev no
+//     longer owns the communication/collaboration categories; architect does)
 //
 // An unknown role falls back to the dev profile (the default template).
 func DefaultFor(role string) DefaultConfig {
@@ -78,7 +103,7 @@ func DefaultFor(role string) DefaultConfig {
 	case "architect":
 		return DefaultConfig{Skills: "all", Tools: "all", Prompt: "architect"}
 	default: // "dev", "" and unknown roles
-		return DefaultConfig{Skills: "all", Tools: "all", Prompt: "dev"}
+		return DefaultConfig{Skills: "all", Tools: DevDefaultTools, Prompt: "dev"}
 	}
 }
 
@@ -266,8 +291,8 @@ func invalidateRoleCache() {
 // shell,read_file" on a fresh project must NOT grant review all skills just
 // because skills was not passed — DefaultFor("review").Skills is "", so the
 // row stores none, matching what role list already displayed. dev keeps the
-// incident protection: its default is all/all, so an unspecified field never
-// turns the fully-capable role into a tool-less one.
+// incident protection: its default is Skills=all + Tools=DevDefaultTools, so
+// an unspecified field never turns the capable role into a tool-less one.
 func UpsertRoleConfig(ctx context.Context, role string, sessionID int64, skills, tools, prompt *string) error {
 	span, ctx := clog.StartSpanFromContext(ctx, "UpsertRoleConfig")
 	defer span.Finish()

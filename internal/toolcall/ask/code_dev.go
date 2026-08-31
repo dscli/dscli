@@ -67,9 +67,9 @@ func init() {
 
 // handleCodeDev implements the code_dev tool: it hands an implementation
 // task to the built-in dev role via DeepSeek Web, and the dev works in the
-// local repo through the DSML tool loop (role "dev" defaults to all tools,
-// gated by the same role_configs / roles.DefaultFor source that gates
-// GetAllTools).
+// local repo through the DSML tool loop (role "dev" defaults to the
+// development tool set — roles.DefaultFor → DevDefaultTools — gated by the
+// same role_configs / roles.DefaultFor source that gates GetAllTools).
 func handleCodeDev(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "handleCodeDev")
 	defer span.Finish()
@@ -130,12 +130,13 @@ func handleCodeDev(ctx context.Context, args toolcall.ToolArgs) (result, warning
 		outfmt.Println("⚠️  完成后所有更改都必须提交（code_review 需要干净工作区）。")
 	}
 
-	// The dev role defaults to all tools (roles.DefaultFor), but a project
-	// may have narrowed it via `dscli role update dev --tools ...`. Warn
-	// explicitly when the role has no DSML tools instead of letting the
-	// session silently degrade (mirrors code_review / quality_assurance).
+	// The dev role defaults to the development tool set (roles.DefaultFor
+	// → DevDefaultTools), but a project may have narrowed it via
+	// `dscli role update dev --tools ...`. Warn explicitly when the role
+	// has no DSML tools instead of letting the session silently degrade
+	// (mirrors code_review / quality_assurance).
 	if doc := dsml.BuildDSMLToolDoc(ctx, "dev"); doc.Intro == "" {
-		fmt.Fprintf(os.Stderr, "⚠️ dev 角色未配置 DSML 工具（role update dev 缩小了工具集）：开发者将无法读取文件/执行命令。可运行 `dscli role reset dev` 恢复全部工具。\n")
+		fmt.Fprintf(os.Stderr, "⚠️ dev 角色未配置 DSML 工具（role update dev 缩小了工具集）：开发者将无法读取文件/执行命令。可运行 `dscli role reset dev` 恢复默认工具集。\n")
 	}
 
 	// Compose the request: the task plus the delivery contract. AGENTS.md

@@ -155,7 +155,8 @@ outfmt.PrintContent, with the header shown per role — icon + role·label —
 and no token count) and marks the final result `Printed` so callers do not
 re-print it. The `webchat` CLI defaults to `--role ""` (plain
 chat: no role injection; DSML tool-call replies are still executed - default
-dev profile, i.e. all tools); a stderr warning fires whenever the tool loop
+dev profile, i.e. the development tool set); a stderr warning fires whenever
+the tool loop
 actually runs (any mode), and role sessions additionally get a role-specific
 warning up front, since the remote model's DSML tool calls will run
 locally. Role templates (internal/prompt/*.md) render a DSML tool section
@@ -170,8 +171,10 @@ parameter, no extra attributes such as justification, every tag closed).
 `prompt.RenderPromptForRoleWithTools`; `RenderPromptForRole` and
 `GetSystemPrompt` (dscli chat path, which registers tools through the API
 `tools` parameter instead) leave it out entirely. A role without executable
-tools (expert/review/test by default; dev and architect have all tools, so
-they do get a section) gets no DSML section at all.
+tools (expert/review/test by default; dev defaults to the development tool
+set — DevDefaultTools, no mail/communication/ai/check categories — and
+architect has all tools, so both do get a section) gets no DSML section at
+all.
 
 code_review sends ONLY commit message + diff on its first message: the review
 expert reads AGENTS.md and full changed-file contents on demand via the DSML

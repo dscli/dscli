@@ -55,7 +55,7 @@ func init() {
 		Short: "更新或创建角色的配置",
 		Long: `更新或创建指定角色的配置。通过 --skills、--tools、--prompt 标志指定对应值。
 仅显式传入的标志会被修改；其余字段保持不变。新建配置时未指定的字段使用
-该角色的默认配置（dev / architect：all；expert/review/test：none）。
+该角色的默认配置（dev：开发工具集；architect：all；expert/review/test：none）。
 
 技能与工具接受三个取值：
   all  全部（默认）

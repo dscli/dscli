@@ -60,8 +60,8 @@ func TestUpsertInsertUnspecifiedFallsBackToRoleDefaults(t *testing.T) {
 	if cfg.Skills != "all" {
 		t.Errorf("Skills = %q, want %q", cfg.Skills, "all")
 	}
-	if cfg.Tools != "all" {
-		t.Errorf("Tools = %q, want %q", cfg.Tools, "all")
+	if cfg.Tools != DevDefaultTools {
+		t.Errorf("Tools = %q, want %q", cfg.Tools, DevDefaultTools)
 	}
 	if cfg.Prompt != "editor" {
 		t.Errorf("Prompt = %q, want %q", cfg.Prompt, "editor")
@@ -163,8 +163,8 @@ func TestUpsertInsertPromptEmptyKeepsEmpty(t *testing.T) {
 	if cfg.Skills != "go-fix" {
 		t.Errorf("Skills = %q, want %q", cfg.Skills, "go-fix")
 	}
-	if cfg.Tools != "all" {
-		t.Errorf("Tools = %q, want %q", cfg.Tools, "all")
+	if cfg.Tools != DevDefaultTools {
+		t.Errorf("Tools = %q, want %q", cfg.Tools, DevDefaultTools)
 	}
 	if cfg.Prompt != "" {
 		t.Errorf("Prompt = %q, want empty", cfg.Prompt)
@@ -291,7 +291,7 @@ func TestDefaultFor(t *testing.T) {
 		wantTools  string
 		wantPrompt string
 	}{
-		{"dev", "all", "all", "dev"},
+		{"dev", "all", DevDefaultTools, "dev"},
 		{"expert", "", "", "expert"},
 		{"review", "", "", "review"},
 		{"test", "", "", "test"},
@@ -299,14 +299,50 @@ func TestDefaultFor(t *testing.T) {
 		// able to design, persist the architecture doc, delegate via
 		// code_dev/code_review/quality_assurance, and verify delivery.
 		{"architect", "all", "all", "architect"},
-		{"", "all", "all", "dev"}, // empty role = dev behavior
-		{"unknown", "all", "all", "dev"},
+		{"", "all", DevDefaultTools, "dev"}, // empty role = dev behavior
+		{"unknown", "all", DevDefaultTools, "dev"},
 	}
 	for _, c := range cases {
 		got := DefaultFor(c.role)
 		if got.Skills != c.wantSkills || got.Tools != c.wantTools || got.Prompt != c.wantPrompt {
 			t.Errorf("DefaultFor(%q) = %+v, want skills=%q tools=%q prompt=%q",
 				c.role, got, c.wantSkills, c.wantTools, c.wantPrompt)
+		}
+	}
+}
+
+// TestDevDefaultToolsExcludesCommunication locks the dev tool-set shape:
+// DevDefaultTools must be a non-empty, duplicate-free explicit list that
+// excludes the communication/collaboration categories owned by architect,
+// while still including the core development tools.
+func TestDevDefaultToolsExcludesCommunication(t *testing.T) {
+	names := ParseToolsList(DevDefaultTools)
+	if names == nil || len(names) == 0 {
+		t.Fatal("ParseToolsList(DevDefaultTools) must return a non-empty list")
+	}
+	seen := make(map[string]bool, len(names))
+	for _, n := range names {
+		if seen[n] {
+			t.Errorf("DevDefaultTools has duplicate name %q", n)
+		}
+		seen[n] = true
+	}
+	excluded := []string{
+		"readmail", "replymail", "sendmail", "listmail", "deletemail",
+		"contacts", "mail_search",
+		"ask_expert", "ask_user",
+		"ainap", "wakeup", "aistatus",
+		"flycheck", "code_review", "code_dev", "quality_assurance",
+	}
+	for _, ex := range excluded {
+		if seen[ex] {
+			t.Errorf("DevDefaultTools must not include %q", ex)
+		}
+	}
+	included := []string{"read_file", "shell", "code_edit", "mem_save", "skill_by_name", "web_fetch"}
+	for _, in := range included {
+		if !seen[in] {
+			t.Errorf("DevDefaultTools must include %q", in)
 		}
 	}
 }

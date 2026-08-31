@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/dscli/dscli/internal/roles"
 	"github.com/dscli/dscli/internal/toolcall"
 )
 
@@ -40,5 +41,20 @@ func TestGetAllTools(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestDevDefaultToolsAllRegistered guards the explicit DevDefaultTools list:
+// every name must exist in the tool registry, so a single typo cannot
+// silently drop a development tool from the dev role.
+func TestDevDefaultToolsAllRegistered(t *testing.T) {
+	known := make(map[string]bool, len(toolcall.KnownToolNames()))
+	for _, n := range toolcall.KnownToolNames() {
+		known[n] = true
+	}
+	for _, n := range roles.ParseToolsList(roles.DevDefaultTools) {
+		if !known[n] {
+			t.Errorf("DevDefaultTools entry %q is not a registered tool", n)
+		}
 	}
 }

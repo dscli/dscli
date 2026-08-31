@@ -848,6 +848,7 @@ func TestHandleWebChatToolLoopSlashlessProseOnly(t *testing.T) {
 		t.Errorf("content = %q, want verbatim text (prose mention of <tool_calls> must survive)", res.Content)
 	}
 }
+
 func TestHandleWebChatToolLoopEmptyWrapperRoleSession(t *testing.T) {
 	// 0 调用轮次的角色会话：空 wrapper（以 </tool_calls> 结尾但内部没有任何
 	// 可解析 <invoke>）也原样返回（verbatim），与"散文提及 <tool_calls>"
@@ -883,6 +884,7 @@ func TestHandleWebChatToolLoopEmptyWrapperRoleSession(t *testing.T) {
 		t.Errorf("content = %q, want verbatim text (zero-call round never strips)", res.Content)
 	}
 }
+
 func TestHandleWebChatToolLoopRoundCap(t *testing.T) {
 	origFunc, origRounds := handleWebChatSend, handleWebChatMaxDSMLRounds
 	t.Cleanup(func() { handleWebChatSend, handleWebChatMaxDSMLRounds = origFunc, origRounds })

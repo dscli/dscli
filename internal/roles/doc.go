@@ -16,8 +16,9 @@
 // # Fallback chain
 //
 //	DB row exists? → use it
-//	No row        → DefaultFor(role): dev=all/all, expert=none/none,
-//	               review=none/none, test=none/none, architect=all/all
+//	No row        → DefaultFor(role): dev=all skills/DevDefaultTools,
+//	               expert=none/none, review=none/none, test=none/none,
+//	               architect=all/all
 //
 //	DefaultFor is the single source of truth for built-in defaults: the CLI
 //	display (role list/show), GetAllTools, LoadPrompts and the WebChat DSML
