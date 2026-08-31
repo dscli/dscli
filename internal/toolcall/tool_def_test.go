@@ -28,18 +28,17 @@ type toolArgsCase[T Primitive] struct {
 	want         T
 	// setKey 为 true 时无条件写入 key（即使 value 为零值），用于覆盖
 	// "显式零值"用例；slices 经 JSON 往返会坍缩 []any{} 并返回默认值，
-	// 该行为由 []string 组的 "explicit empty collapses to default" 用例锁定。
+	// 该行为由 []string 组的 "known limitation: explicit empty returns default" 用例锁定。
 	setKey bool
 }
-
-// key 是 runToolArgsValueTest 写入与断言使用的固定参数名。
-const key = "key"
 
 // runToolArgsValueTest 以表驱动方式验证 ToolArgsValue。
 // isZero 判断一个 case 的 value 是否等于类型的零值：等于零值的 value
 // 模拟"缺少 key"（除非 case 显式 setKey，见 toolArgsCase.setKey）。
 func runToolArgsValueTest[T Primitive](t *testing.T, name string, isZero func(T) bool, cases []toolArgsCase[T]) {
 	t.Helper()
+	// key 是写入与断言使用的固定参数名，仅此 helper 消费。
+	const key = "key"
 	t.Run(name, func(t *testing.T) {
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
@@ -82,9 +81,9 @@ func TestToolArgsValue(t *testing.T) {
 	})
 
 	runToolArgsValueTest(t, "int", func(v int) bool { return v == 0 }, []toolArgsCase[int]{
-		{name: "uses default when value is zero", value: int(0), defaultValue: 1, want: 1, setKey: false},
-		{name: "uses value when nonzero", value: int(1), defaultValue: 0, want: 1, setKey: false},
-		{name: "explicit zero value", value: int(0), defaultValue: 1, want: 0, setKey: true},
+		{name: "uses default when value is zero", value: 0, defaultValue: 1, want: 1, setKey: false},
+		{name: "uses value when nonzero", value: 1, defaultValue: 0, want: 1, setKey: false},
+		{name: "explicit zero value", value: 0, defaultValue: 1, want: 0, setKey: true},
 	})
 
 	runToolArgsValueTest(t, "int32", func(v int32) bool { return v == 0 }, []toolArgsCase[int32]{
@@ -103,7 +102,7 @@ func TestToolArgsValue(t *testing.T) {
 		{name: "uses default when empty", value: []string{}, defaultValue: []string{"default"}, want: []string{"default"}, setKey: false},
 		{name: "uses value when non-empty", value: []string{"value"}, defaultValue: []string{}, want: []string{"value"}, setKey: false},
 		// 已知限制: 显式设置的空 slice 经 JSON 往返后与缺失 key 不可区分，返回默认值。
-		{name: "explicit empty collapses to default", value: []string{}, defaultValue: []string{"default"}, want: []string{"default"}, setKey: true},
+		{name: "known limitation: explicit empty returns default", value: []string{}, defaultValue: []string{"default"}, want: []string{"default"}, setKey: true},
 	})
 
 	runToolArgsValueTest(t, "[]float64", func(v []float64) bool { return len(v) == 0 }, []toolArgsCase[[]float64]{
