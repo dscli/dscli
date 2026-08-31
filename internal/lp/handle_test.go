@@ -848,6 +848,41 @@ func TestHandleWebChatToolLoopSlashlessProseOnly(t *testing.T) {
 		t.Errorf("content = %q, want verbatim text (prose mention of <tool_calls> must survive)", res.Content)
 	}
 }
+func TestHandleWebChatToolLoopEmptyWrapperRoleSession(t *testing.T) {
+	// 0 调用轮次的角色会话：空 wrapper（以 </tool_calls> 结尾但内部没有任何
+	// 可解析 <invoke>）也原样返回（verbatim），与"散文提及 <tool_calls>"
+	// 无法可靠区分——两者都只是字面标签，没有可解析的调用；误删散文提及
+	// 比保留一个空 wrapper 更糟，所以 0 调用轮次一律 verbatim（见 cleanExit
+	// 注释）。plain-chat 变体见 TestHandleWebChatToolLoopEmptyWrapperExecutesNothing；
+	// 本测试锁定 role 会话的同一行为。
+	text := "例如 <tool_calls> 就是工具调用的包裹标签，注意别漏掉结尾：\n<tool_calls>\n</tool_calls>"
+	origFunc := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = origFunc })
+	handleWebChatSend = func(_ context.Context, _ string, _ WebChatOptions) (WebChatResult, error) {
+		return WebChatResult{Content: text, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+	}
+	origExec := handleWebChatExecDSML
+	executed := false
+	handleWebChatExecDSML = func(_ context.Context, _ []dsml.DSMLCall) []string {
+		executed = true
+		return nil
+	}
+	t.Cleanup(func() { handleWebChatExecDSML = origExec })
+
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{Role: "review"})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if executed {
+		t.Error("empty tool_calls wrapper must not execute anything")
+	}
+	if !res.Printed {
+		t.Error("loop exit must mark the result Printed (it was printed inside the loop)")
+	}
+	if res.Content != text {
+		t.Errorf("content = %q, want verbatim text (zero-call round never strips)", res.Content)
+	}
+}
 func TestHandleWebChatToolLoopRoundCap(t *testing.T) {
 	origFunc, origRounds := handleWebChatSend, handleWebChatMaxDSMLRounds
 	t.Cleanup(func() { handleWebChatSend, handleWebChatMaxDSMLRounds = origFunc, origRounds })

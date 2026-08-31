@@ -693,6 +693,13 @@ var dsmlToolResultRe = regexp.MustCompile(`(?s)<\s*tool_result\b[^>]*>.*?</\s*to
 // The chop point comes from dsmlBlockRanges, which already treats parameter
 // VALUES as opaque, so a raw "<invoke" inside a value is never taken for a
 // real truncated call.
+//
+// Known limitation: wrapper-copy cleanup below is a global exact-string
+// ReplaceAll, so a literal "<tool_calls>" mention inside the SURVIVING prose
+// is deleted too. Callers that strip only after parsing calls (lp's tool
+// loop) are fine for zero-call rounds - those never reach this function;
+// rounds WITH calls may still lose a prose mention, accepted tradeoff
+// (markup removal wins over a rare literal mention next to real markup).
 func StripDSMLToolCalls(text string) string {
 	text = normalizeDSMLText(text)
 	blocks, _, first, strays := dsmlBlockRanges(text)
