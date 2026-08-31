@@ -506,3 +506,83 @@ func assertSessionConfig(t *testing.T, label string, cfg *RoleConfig, populated 
 		t.Errorf("GetRoleConfig(%s) = %+v, want nil", label, cfg)
 	}
 }
+
+// TestGetRoleConfigSessionValueIsolation guards config-value leakage between
+// populated buckets: two sessions each holding a distinct config for the
+// same role must not cross-contaminate, regardless of lookup order.
+func TestGetRoleConfigSessionValueIsolation(t *testing.T) {
+	const role = "dev"
+	const (
+		shellID = int64(30)
+		sqlID   = int64(40)
+	)
+	scenarios := []struct {
+		name     string
+		firstID  int64
+		secondID int64
+	}{
+		{"shell first", shellID, sqlID},
+		{"sql first", sqlID, shellID},
+	}
+	for _, sc := range scenarios {
+		t.Run(sc.name, func(t *testing.T) {
+			newTestDB(t)
+			ctx := t.Context()
+			if err := UpsertRoleConfig(ctx, role, shellID, nil, strPtr("shell"), nil); err != nil {
+				t.Fatalf("UpsertRoleConfig(shell): %v", err)
+			}
+			if err := UpsertRoleConfig(ctx, role, sqlID, nil, strPtr("sql"), nil); err != nil {
+				t.Fatalf("UpsertRoleConfig(sql): %v", err)
+			}
+			want := map[int64]string{shellID: "shell", sqlID: "sql"}
+			for _, sid := range []int64{sc.firstID, sc.secondID} {
+				cfg, err := GetRoleConfig(ctx, role, sid)
+				if err != nil {
+					t.Fatalf("GetRoleConfig(%d): %v", sid, err)
+				}
+				if cfg == nil || cfg.Tools != want[sid] {
+					t.Errorf("GetRoleConfig(%d) = %+v, want Tools=%q", sid, cfg, want[sid])
+				}
+			}
+		})
+	}
+}
+
+// TestGetRoleConfigSeesCacheInvalidation proves UpsertRoleConfig and
+// DeleteRoleConfig clear the cache: a cached negative must flip to the
+// inserted value after upsert, and back to nil after delete.
+func TestGetRoleConfigSeesCacheInvalidation(t *testing.T) {
+	newTestDB(t)
+	ctx := t.Context()
+	const (
+		role = "dev"
+		sid  = int64(1)
+	)
+	cfg, err := GetRoleConfig(ctx, role, sid)
+	if err != nil {
+		t.Fatalf("GetRoleConfig before upsert: %v", err)
+	}
+	if cfg != nil {
+		t.Fatalf("GetRoleConfig before upsert = %+v, want nil", cfg)
+	}
+	if err := UpsertRoleConfig(ctx, role, sid, nil, strPtr("shell"), nil); err != nil {
+		t.Fatalf("UpsertRoleConfig: %v", err)
+	}
+	cfg, err = GetRoleConfig(ctx, role, sid)
+	if err != nil {
+		t.Fatalf("GetRoleConfig after upsert: %v", err)
+	}
+	if cfg == nil || cfg.Tools != "shell" {
+		t.Fatalf("GetRoleConfig after upsert = %+v, want Tools=shell", cfg)
+	}
+	if err := DeleteRoleConfig(ctx, role, sid); err != nil {
+		t.Fatalf("DeleteRoleConfig: %v", err)
+	}
+	cfg, err = GetRoleConfig(ctx, role, sid)
+	if err != nil {
+		t.Fatalf("GetRoleConfig after delete: %v", err)
+	}
+	if cfg != nil {
+		t.Fatalf("GetRoleConfig after delete = %+v, want nil", cfg)
+	}
+}

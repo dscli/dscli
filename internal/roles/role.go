@@ -148,7 +148,10 @@ func GetRoleConfig(ctx context.Context, role string, sessionID int64) (*RoleConf
 	}
 	roleCacheMu.RUnlock()
 
-	// Slow path: load the session bucket (requires write lock).
+	// Slow path: load the session bucket. The DB query runs OUTSIDE the
+	// lock so concurrent lookups for other sessions do not serialize; the
+	// second lock below is a singleflight-style double-check for same-session
+	// races.
 	roleCacheMu.Lock()
 	if bucket := roleCache[sessionID]; bucket != nil {
 		// Another goroutine loaded this session while we waited.
@@ -156,12 +159,21 @@ func GetRoleConfig(ctx context.Context, role string, sessionID int64) (*RoleConf
 		roleCacheMu.Unlock()
 		return cfg, nil
 	}
+	roleCacheMu.Unlock()
 
 	configs, err := ListRoleConfigs(ctx, sessionID)
 	if err == nil {
 		m := make(map[string]*RoleConfig, len(configs))
 		for i := range configs {
 			m[configs[i].Role] = &configs[i]
+		}
+		roleCacheMu.Lock()
+		if bucket := roleCache[sessionID]; bucket != nil {
+			// Another goroutine stored this session's bucket while we were
+			// querying; use their result and discard ours.
+			cfg := bucket[role]
+			roleCacheMu.Unlock()
+			return cfg, nil
 		}
 		if roleCache == nil {
 			roleCache = make(map[int64]map[string]*RoleConfig)
@@ -171,7 +183,6 @@ func GetRoleConfig(ctx context.Context, role string, sessionID int64) (*RoleConf
 		roleCacheMu.Unlock()
 		return cfg, nil
 	}
-	roleCacheMu.Unlock()
 
 	// Fallback: direct DB query.
 	db, err := sqlite.OpenDB(ctx)
@@ -221,12 +232,12 @@ func ListRoleConfigs(ctx context.Context, sessionID int64) ([]RoleConfig, error)
 		var cfg RoleConfig
 		if err := rows.Scan(&cfg.ID, &cfg.Role, &cfg.Skills, &cfg.Tools, &cfg.Prompt,
 			&cfg.SessionID, &cfg.CreatedAt, &cfg.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("iterate role configs: %w", err)
+			return nil, fmt.Errorf("扫描角色配置失败: %w", err)
 		}
 		configs = append(configs, cfg)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate role configs: %w", err)
+		return nil, fmt.Errorf("遍历角色配置失败: %w", err)
 	}
 	return configs, nil
 }
