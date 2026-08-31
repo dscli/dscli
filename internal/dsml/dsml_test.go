@@ -747,7 +747,7 @@ func TestExecuteDSMLToolCallsToolResultFormat(t *testing.T) {
 		}
 	}
 
-	// 工具使用统计：assert the DELTA this test produced, not the global
+	// Usage stats: assert the DELTA this test produced, not the global
 	// total. Other tests in this package execute shell/read_file against
 	// the same shared test DB and would otherwise trip these absolute
 	// == 1 checks under -shuffle. shell executes exactly once here;
@@ -766,7 +766,8 @@ func TestExecuteDSMLToolCallsToolResultFormat(t *testing.T) {
 	if got := deltaFor("read_file"); got != 1 {
 		t.Errorf("read_file usage delta = %d, want 1", got)
 	}
-	// 被拒绝的调用绝不能执行（无对应工具注册，避免注册表污染）。
+	// The rejected call must never execute (no matching tool registered,
+	// avoids polluting the tool registry).
 	if got := deltaFor("write_file"); got != 0 {
 		t.Errorf("write_file usage delta = %d, want 0 (rejected)", got)
 	}

@@ -434,64 +434,75 @@ func TestListRoleConfigsByPrompt(t *testing.T) {
 
 // TestGetRoleConfigSessionIsolation guards the per-session cache buckets:
 // role_configs is keyed by UNIQUE(role, session_id), so a lookup for session
-// B must never return session A's row (or A's cached nil). Both orderings are
-// exercised because the pre-bucket cache failed depending on which session
-// was loaded first.
+// B must never return session A's row (or A's cached nil). Both LOOKUP
+// orders are exercised because the pre-bucket cache had two failure modes:
+// populated-first served the wrong config (false positive), empty-first
+// cached nil and then hid the populated session's config (false negative).
 func TestGetRoleConfigSessionIsolation(t *testing.T) {
-	orders := []struct {
-		name string
-		sidA int64
-		sidB int64
+	const (
+		role        = "dev"
+		populatedID = int64(10) // has a config row
+		emptyID     = int64(20) // has no rows
+	)
+	scenarios := []struct {
+		name     string
+		firstID  int64 // session looked up first
+		secondID int64 // session looked up second
 	}{
-		{"A then B", int64(10), int64(20)},
-		{"B then A", int64(20), int64(10)},
+		{"populated first", populatedID, emptyID},
+		{"empty first", emptyID, populatedID},
 	}
-	for _, ord := range orders {
-		t.Run(ord.name, func(t *testing.T) {
-			newTestDB(t)
-			invalidateRoleCache() // each subtest starts with a clean cache
+
+	for _, sc := range scenarios {
+		t.Run(sc.name, func(t *testing.T) {
+			newTestDB(t) // fresh DB per subtest; also clears the role cache
 			ctx := t.Context()
-			const role = "dev"
-			sidA, sidB := ord.sidA, ord.sidB
 
-			if err := UpsertRoleConfig(ctx, role, sidA, nil, strPtr("shell"), nil); err != nil {
-				t.Fatalf("UpsertRoleConfig(sidA): %v", err)
+			if err := UpsertRoleConfig(ctx, role, populatedID, nil, strPtr("shell"), nil); err != nil {
+				t.Fatalf("UpsertRoleConfig(populated): %v", err)
 			}
 
-			cfgA, err := GetRoleConfig(ctx, role, sidA)
+			// First lookup: the populated session must return its config,
+			// the empty session nil. A repeat lookup must agree (positive
+			// and negative results are cached within their bucket).
+			first, err := GetRoleConfig(ctx, role, sc.firstID)
 			if err != nil {
-				t.Fatalf("GetRoleConfig(sidA): %v", err)
+				t.Fatalf("GetRoleConfig(first): %v", err)
 			}
-			if cfgA == nil || cfgA.Tools != "shell" {
-				t.Fatalf("GetRoleConfig(sidA) = %+v, want Tools=shell", cfgA)
-			}
-
-			// Session B has no rows at all: lookup returns nil, and a second
-			// lookup must stay nil (negative result cached in B's bucket).
-			cfgB, err := GetRoleConfig(ctx, role, sidB)
+			assertSessionConfig(t, "first", first, sc.firstID == populatedID)
+			first, err = GetRoleConfig(ctx, role, sc.firstID)
 			if err != nil {
-				t.Fatalf("GetRoleConfig(sidB): %v", err)
+				t.Fatalf("GetRoleConfig(first) second call: %v", err)
 			}
-			if cfgB != nil {
-				t.Fatalf("GetRoleConfig(sidB) = %+v, want nil", cfgB)
-			}
-			cfgB, err = GetRoleConfig(ctx, role, sidB)
-			if err != nil {
-				t.Fatalf("GetRoleConfig(sidB) second call: %v", err)
-			}
-			if cfgB != nil {
-				t.Fatalf("GetRoleConfig(sidB) second call = %+v, want nil (cached negative)", cfgB)
-			}
+			assertSessionConfig(t, "first repeat", first, sc.firstID == populatedID)
 
-			// Session A's config must survive session B's lookups: buckets do
+			// Second lookup must not be affected by the first: buckets do
 			// not overwrite each other.
-			cfgA, err = GetRoleConfig(ctx, role, sidA)
+			second, err := GetRoleConfig(ctx, role, sc.secondID)
 			if err != nil {
-				t.Fatalf("GetRoleConfig(sidA) after sidB: %v", err)
+				t.Fatalf("GetRoleConfig(second): %v", err)
 			}
-			if cfgA == nil || cfgA.Tools != "shell" {
-				t.Fatalf("GetRoleConfig(sidA) after sidB = %+v, want Tools=shell", cfgA)
+			assertSessionConfig(t, "second", second, sc.secondID == populatedID)
+			second, err = GetRoleConfig(ctx, role, sc.secondID)
+			if err != nil {
+				t.Fatalf("GetRoleConfig(second) second call: %v", err)
 			}
+			assertSessionConfig(t, "second repeat", second, sc.secondID == populatedID)
 		})
+	}
+}
+
+// assertSessionConfig checks a lookup result against the expected session
+// state: the populated session must return Tools=="shell", the empty one nil.
+func assertSessionConfig(t *testing.T, label string, cfg *RoleConfig, populated bool) {
+	t.Helper()
+	if populated {
+		if cfg == nil || cfg.Tools != "shell" {
+			t.Errorf("GetRoleConfig(%s) = %+v, want Tools=shell", label, cfg)
+		}
+		return
+	}
+	if cfg != nil {
+		t.Errorf("GetRoleConfig(%s) = %+v, want nil", label, cfg)
 	}
 }

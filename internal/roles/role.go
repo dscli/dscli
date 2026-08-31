@@ -221,9 +221,12 @@ func ListRoleConfigs(ctx context.Context, sessionID int64) ([]RoleConfig, error)
 		var cfg RoleConfig
 		if err := rows.Scan(&cfg.ID, &cfg.Role, &cfg.Skills, &cfg.Tools, &cfg.Prompt,
 			&cfg.SessionID, &cfg.CreatedAt, &cfg.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("扫描角色配置失败: %w", err)
+			return nil, fmt.Errorf("iterate role configs: %w", err)
 		}
 		configs = append(configs, cfg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate role configs: %w", err)
 	}
 	return configs, nil
 }
