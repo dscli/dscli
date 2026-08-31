@@ -290,18 +290,13 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 		endLine = startLine
 	}
 
-	// 计算新内容的行数
-	contentLineCount := countContentLines(content)
-
 	// 读取原文件所有行
 	file, err := os.Open(fullPath)
 	if err != nil {
 		// 如果文件不存在，创建一个空文件
 		if os.IsNotExist(err) {
-			result, handled, err := writeMissingFile(fullPath, displayPath, startLine, content, showContext, contentLineCount)
-			if handled {
-				return result, warning, err
-			}
+			result, err := writeMissingFile(fullPath, displayPath, startLine, content, showContext, countContentLines(content))
+			return result, warning, err
 		}
 		err = fmt.Errorf("failed to open file: %w", err)
 		return result, warning, err
@@ -325,6 +320,9 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 	if err != nil {
 		return result, warning, err
 	}
+
+	// 计算新内容的行数（CAS 剥离后；标签为 4 字符且不含换行，数值不变）
+	contentLineCount := countContentLines(content)
 
 	// --- 构建新内容 ---
 	newLines := buildReplacementLines(lines, startLine, endLine, content)
@@ -394,12 +392,11 @@ func appendFlycheckWarning(ctx context.Context, warning, path string) string {
 
 // writeMissingFile 处理替换路径中"目标文件不存在"的分支:
 // 只允许从第 1 行开始写入；空内容创建空文件；否则写入内容并按需追加上下文窗口。
-// handled=true 表示该分支已完整处理本次操作，调用方直接返回。
-func writeMissingFile(fullPath, displayPath string, startLine int, content string, showContext bool, contentLineCount int) (result string, handled bool, err error) {
+func writeMissingFile(fullPath, displayPath string, startLine int, content string, showContext bool, contentLineCount int) (result string, err error) {
 	// 对于新文件，只能从第1行开始写入
 	if startLine != 1 {
 		err = fmt.Errorf("cannot write to non-existent file at line %d, must start from line 1", startLine)
-		return result, true, err
+		return result, err
 	}
 
 	// 创建新文件并写入内容
@@ -409,12 +406,12 @@ func writeMissingFile(fullPath, displayPath string, startLine int, content strin
 		newFile, err = os.Create(fullPath)
 		if err != nil {
 			err = fmt.Errorf("failed to create file: %w", err)
-			return result, true, err
+			return result, err
 		}
 		newFile.Close()
 		outfmt.Notice("创建空文件 \"%s\"", displayPath)
 		result = "成功创建空文件"
-		return result, true, err
+		return result, err
 	}
 
 	// 写入内容到新文件，确保末尾换行
@@ -425,7 +422,7 @@ func writeMissingFile(fullPath, displayPath string, startLine int, content strin
 	err = os.WriteFile(fullPath, []byte(writeContent), 0o644)
 	if err != nil {
 		err = fmt.Errorf("failed to write to new file: %w", err)
-		return result, true, err
+		return result, err
 	}
 
 	outfmt.Notice("创建文件 \"%s\" 并写入 %d 行内容", displayPath, contentLineCount)
@@ -438,12 +435,13 @@ func writeMissingFile(fullPath, displayPath string, startLine int, content strin
 			result += ctxStr
 		}
 	}
-	return result, true, err
+	return result, err
 }
 
 // resolveCASTags 处理 line_tag/line_tags 参数: 互斥检查、长度检查、标签解析、
 // 与文件内容校验（verifyLineTags），并剥离 content 中匹配已验证 tag 的前缀。
-// casVerified=true 表示调用者执行了 CAS 校验（后续的长度突变告警因此跳过）。
+// casVerified 仅在 err == nil 时有意义：true 表示调用者执行了 CAS 校验
+// （后续的长度突变告警因此跳过）。
 func resolveCASTags(args ToolArgs, lines []string, startLine int, content string) (contentOut string, casVerified bool, warning string, err error) {
 	// --- CAS tag verification (antirez-style check-and-set) ---
 	// 如果提供了 line_tag 或 line_tags，写入前校验标签匹配
@@ -454,25 +452,25 @@ func resolveCASTags(args ToolArgs, lines []string, startLine int, content string
 	if lineTag != "" || lineTags != "" {
 		if lineTag != "" && lineTags != "" {
 			err = fmt.Errorf("cannot specify both line_tag and line_tags; use line_tag for single-line edits, line_tags for multi-line")
-			return content, true, warning, err
+			return content, false, warning, err
 		}
 		if lineTag != "" {
 			if len(lineTag) != 4 {
 				err = fmt.Errorf("line_tag must be exactly 4 characters, got %q (%d chars)", lineTag, len(lineTag))
-				return content, true, warning, err
+				return content, false, warning, err
 			}
 			expectedTags = []string{lineTag}
 		} else {
 			expectedTags, err = parseLineTags(lineTags)
 			if err != nil {
 				err = fmt.Errorf("failed to parse line_tags: %w", err)
-				return content, true, warning, err
+				return content, false, warning, err
 			}
 		}
 
 		// Verify tags against actual file content at startLine
 		if err = verifyLineTags(lines, startLine-1, expectedTags); err != nil {
-			return content, true, warning, err
+			return content, false, warning, err
 		}
 	}
 
