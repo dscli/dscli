@@ -284,6 +284,20 @@ var dsmlTagJunkRe = regexp.MustCompile(`(?i)(</?)(?:[|｜]\s*|d\s*s\s*m\s*l\s*)+
 // gates see the close. The capturing group keeps the > in place.
 var dsmlTagJunkEmptyRe = regexp.MustCompile(`(?i)(</?)(?:[|｜]\s*|d\s*s\s*m\s*l\s*)+([>])`)
 
+// dsmlTagBadgeLabelRe repairs the badge-LABEL close variant: chat.deepseek.com
+// renders a <tool_calls> wrapper as a special UI badge and persists the RENDERED
+// form into its IndexedDB history, with the tag NAME replaced by a human-readable
+// badge label (observed 2026-08: "</｜‑evaluation>" - the site's full-width pipe
+// badge marker plus the badge label for a QA/evaluation round). The badge label
+// is NOT a DSML tag name, so dsmlTagJunkRe's known-name guard never matches it;
+// this regex runs AFTER dsmlTagJunkRe in normalizeDSMLText and rewrites whatever
+// full-width-pipe-marked close remains to the canonical wrapper close, discarding
+// the label. Only the full-width pipe ｜ anchors the rule (the site's badge
+// marker is always full-width; ASCII "|" in shell values must survive), and only
+// the close shape "</" is matched, so prose such as "cat <dsml_config" or a
+// ChatML token like "<|im_start|>" is untouched.
+var dsmlTagBadgeLabelRe = regexp.MustCompile(`(?s)</｜[^<>]*>`)
+
 func normalizeDSMLText(text string) string {
 	text = dsmlFullwidthReplacer.Replace(text)
 	text = strings.Map(func(r rune) rune {
@@ -295,7 +309,12 @@ func normalizeDSMLText(text string) string {
 	// $1 keeps the opener (</?), $2 re-emits the captured tag name so the
 	// junk match can never eat into content that is not a DSML tag.
 	text = dsmlTagJunkEmptyRe.ReplaceAllString(text, "$1$2")
-	return dsmlTagJunkRe.ReplaceAllString(text, "$1$2")
+	text = dsmlTagJunkRe.ReplaceAllString(text, "$1$2")
+	// Rewrite a pipe-marked wrapper whose name is not a DSML tag (the badge
+	// label case, e.g. "</｜‑evaluation>") to the canonical close. Running it
+	// last means known-tag junk has already been repaired, and only
+	// pipe-anchored residue reaches this replacement.
+	return dsmlTagBadgeLabelRe.ReplaceAllString(text, "</tool_calls>")
 }
 
 // ParseDSMLToolCalls extracts all DSML tool calls from text. It returns an

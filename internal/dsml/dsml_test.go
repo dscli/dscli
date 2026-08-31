@@ -226,6 +226,9 @@ func TestNormalizeDSMLText(t *testing.T) {
 		{"dsml_version untouched", "grep '<dsml_version'", "grep '<dsml_version'"},
 		{"dsml before real tag still stripped", "<dsml invoke name=\"x\">", `<invoke name="x">`},
 		{"dsml before parameter still stripped", "<｜DSML\n|parameter name=\"script\">", `<parameter name="script">`},
+		// Badge-label close: the site replaces the wrapper tag name with a
+		// rendered badge label ("evaluation"), keeping the pipe marker.
+		{"badge label close", "</｜‑evaluation>", `</tool_calls>`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
