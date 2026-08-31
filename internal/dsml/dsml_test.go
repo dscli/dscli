@@ -712,6 +712,27 @@ func TestExecuteDSMLToolCallsToolResultFormat(t *testing.T) {
 		{Name: "write_file", Args: map[string]any{"path": "x"}}, // unregistered: skipped, no block
 		{Name: "read_file", Args: map[string]any{"path": "main.go"}},
 	}
+
+	// usageSnapshot reads the per-tool usage counts into a map. The counts
+	// are global across the shared test DB (other tests in this package
+	// execute shell/read_file too), so this test asserts only the DELTA it
+	// produces, never the absolute total.
+	usageSnapshot := func() (map[string]int, error) {
+		stats, err := toolcall.GetToolUsageStats(ctx, 0)
+		if err != nil {
+			return nil, err
+		}
+		m := make(map[string]int, len(stats))
+		for _, s := range stats {
+			m[s.Name] = s.UsageCount
+		}
+		return m, nil
+	}
+	before, err := usageSnapshot()
+	if err != nil {
+		t.Fatalf("GetToolUsageStats (baseline): %v", err)
+	}
+
 	outputs := ExecuteDSMLToolCalls(ctx, calls)
 	if len(outputs) != 2 {
 		t.Fatalf("outputs = %d, want 2 (unregistered call produces no block)", len(outputs))
@@ -726,28 +747,28 @@ func TestExecuteDSMLToolCallsToolResultFormat(t *testing.T) {
 		}
 	}
 
-	// 工具使用统计：shell 被真正执行了 1 次，read_file 也是（结果为空也执行）。
-	stats, err := toolcall.GetToolUsageStats(ctx, 0)
+	// 工具使用统计：assert the DELTA this test produced, not the global
+	// total. Other tests in this package execute shell/read_file against
+	// the same shared test DB and would otherwise trip these absolute
+	// == 1 checks under -shuffle. shell executes exactly once here;
+	// read_file also executes once (empty result still counts); the
+	// unregistered write_file call never executes.
+	after, err := usageSnapshot()
 	if err != nil {
-		t.Fatalf("GetToolUsageStats: %v", err)
+		t.Fatalf("GetToolUsageStats (after): %v", err)
 	}
-	countFor := func(name string) int {
-		for _, s := range stats {
-			if s.Name == name {
-				return s.UsageCount
-			}
-		}
-		return 0
+	deltaFor := func(name string) int {
+		return after[name] - before[name]
 	}
-	if got := countFor("shell"); got != 1 {
-		t.Errorf("shell usage count = %d, want 1", got)
+	if got := deltaFor("shell"); got != 1 {
+		t.Errorf("shell usage delta = %d, want 1", got)
 	}
-	if got := countFor("read_file"); got != 1 {
-		t.Errorf("read_file usage count = %d, want 1", got)
+	if got := deltaFor("read_file"); got != 1 {
+		t.Errorf("read_file usage delta = %d, want 1", got)
 	}
 	// 被拒绝的调用绝不能执行（无对应工具注册，避免注册表污染）。
-	if got := countFor("write_file"); got != 0 {
-		t.Errorf("write_file usage count = %d, want 0 (rejected)", got)
+	if got := deltaFor("write_file"); got != 0 {
+		t.Errorf("write_file usage delta = %d, want 0 (rejected)", got)
 	}
 }
 
