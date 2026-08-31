@@ -125,14 +125,13 @@ compliance via `prompt.Message.OK` (violations such as the decorative
 tags, or a bare invocation NEVER block execution; the fixed-format
 `dsml.InjectStrictWarning` carries a reminder into the tool_result feedback).
 `lp.HandleWebChat` routes each reply: `dsml.IsDSMLToolCallReply` is the union
-of three admission shapes - the reply ENDS with a close tag (or its typo'd
-`_calls` cousins; whatever prose precedes it is discarded with the round; a
-lone close tag without the opening wrapper still qualifies, and a wrapper
-with no parseable invoke executes nothing - quoted code and prose references
-that merely cite an example never end with the wrapper close tag and never
-qualify); the close tag was cut off at the very end (a dangling partial close
-without the final angle bracket); or the reply is a bare sequence of complete
-invoke blocks with no wrapper at all. A reply that clearly tries to emit a
+of TWO executable admission shapes - the reply ENDS with a close tag (or its
+typo'd `_calls` cousins; whatever prose precedes it is discarded with the
+round; a lone close tag without the opening wrapper still qualifies, and a
+wrapper with no parseable invoke executes nothing - quoted code and prose
+references that merely cite an example never end with the wrapper close tag
+and never qualify); or the reply is a bare sequence of complete invoke
+blocks with no wrapper at all. A reply that clearly tries to emit a
 call but failed to parse (`dsml.SuspectedDSMLToolCalls` - truncated
 emissions, outside quoted code) routes into the loop too and gets
 `dsml.ReissueWarning`, keeping the same conversation alive (the loop also re-parses the call source with ParseDSMLToolCalls for raw routing, so calls and OK always come from the same text). A reply ending in a partial close (a cut-off `</` without the `>`) or carrying a misspelled invoke tag (`<invinvoke ...>`) is MALFORMED markup (`dsml.MalformedDSMLToolCalls`): it routes into the loop and gets `dsml.MalformedWarning`, and is NEVER executed (only `dsml.IsDSMLToolCallEnd` / bare-invoke shapes execute).

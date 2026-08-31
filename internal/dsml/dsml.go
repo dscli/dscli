@@ -1342,7 +1342,8 @@ func hasUnquotedInvokeOpen(text string) bool {
 // opaque. Pairing mirrors extractDSMLCalls' depth-count loop with the
 // structural gate and the depth==0 name gate: an unclosed parameter
 // contributes a range up to the next structural NAMED parameter open
-// (implicit close) or to the end of the text.
+// (implicit close); with no following sibling and no close it contributes
+// no range - the value stops being tracked at the truncated emission.
 func dsmlParamBodyRanges(text string) [][2]int {
 	fences := dsmlCodeRanges(text)
 	var ranges [][2]int
