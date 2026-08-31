@@ -814,6 +814,40 @@ func TestHandleWebChatToolLoopEmptyWrapperExecutesNothing(t *testing.T) {
 	}
 }
 
+func TestHandleWebChatToolLoopSlashlessProseOnly(t *testing.T) {
+	// 回复以开口拼写的 <tool_calls>（无斜杠）结尾但没有可解析 <invoke>：
+	// 门（IsDSMLToolCallReply）因 2026-08 "重复的开头" 退化而放行进循环，
+	// 解析得 0 调用 → 循环退出且不执行任何工具。角色会话也必须把内容
+	// 原样返回——散文里字面的 "<tool_calls>" 提及是模型的话，不是标记，
+	// StripDSMLToolCalls 的全局 ReplaceAll 不得误删它。
+	text := "记得用 <tool_calls> 包裹你的工具调用哦\n<tool_calls>"
+	origFunc := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = origFunc })
+	handleWebChatSend = func(_ context.Context, _ string, _ WebChatOptions) (WebChatResult, error) {
+		return WebChatResult{Content: text, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+	}
+	origExec := handleWebChatExecDSML
+	executed := false
+	handleWebChatExecDSML = func(_ context.Context, _ []dsml.DSMLCall) []string {
+		executed = true
+		return nil
+	}
+	t.Cleanup(func() { handleWebChatExecDSML = origExec })
+
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{Role: "review"})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if executed {
+		t.Error("prose-only reply must not execute any tool")
+	}
+	if !res.Printed {
+		t.Error("loop exit must mark the result Printed (it was printed inside the loop)")
+	}
+	if res.Content != text {
+		t.Errorf("content = %q, want verbatim text (prose mention of <tool_calls> must survive)", res.Content)
+	}
+}
 func TestHandleWebChatToolLoopRoundCap(t *testing.T) {
 	origFunc, origRounds := handleWebChatSend, handleWebChatMaxDSMLRounds
 	t.Cleanup(func() { handleWebChatSend, handleWebChatMaxDSMLRounds = origFunc, origRounds })

@@ -220,6 +220,8 @@ func TestWebchatCase7DupOpen(t *testing.T) {
 	// the slash-less spelling, both inside DSML badge markers (2026-08,
 	// dsml.org "重复的开头"). The invoke block itself is complete: the
 	// round must still route into the tool loop and parse the call.
+	// The fixture is verbatim: the developer-machine path in the script
+	// value ("cd /home/nanjj/...") is part of the capture, not a requirement.
 	calls, err := ParseDSMLToolCalls(wcCase7)
 	if err != nil {
 		t.Fatalf("ParseDSMLToolCalls: %v", err)

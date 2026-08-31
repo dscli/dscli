@@ -515,10 +515,15 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 	convURL := first.URL
 	// cleanExit 收尾：角色会话剥离 DSML 标记，露出干净散文；纯聊天原样返回
 	// （专家的话是内容，不是命令）——与第一轮的非执行契约保持一致。
+	// strip 只在真正有调用可剥的轮次启用：一个以 </tool_calls>（或退化拼写，
+	// 含开口拼写）结尾但没有任何可解析 <invoke> 的回复是纯散文（模型只是在
+	// 提语法，例如 "wrap your calls in <tool_calls>"）——这种轮次 StripDSMLToolCalls
+	// 的全局 ReplaceAll 会误删散文里字面的 "<tool_calls>" 提及，所以内容原样
+	// 返回。有调用的轮次（non-executable 调用 / 轮次上限）仍剥离标记。
 	// Printed 表示最后一轮内容已经在循环内打印过，调用方不要重复打印。
-	cleanExit := func() (WebChatResult, error) {
+	cleanExit := func(strip bool) (WebChatResult, error) {
 		content := message
-		if opts.Role != "" {
+		if strip && opts.Role != "" {
 			content = dsml.StripDSMLToolCalls(message)
 		}
 		return WebChatResult{Content: content, URL: convURL, Printed: true}, nil
@@ -575,12 +580,14 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 				printRound(res)
 				continue
 			}
-			// 无调用（纯散文/引用示例）：退出循环。
-			return cleanExit()
+			// 无调用（纯散文/引用示例）：退出循环。内容没有标记可剥——
+			// 尤其一个以退化 wrapper 拼写结尾但无 <invoke> 的回复，其散文
+			// 里的字面 "<tool_calls>" 提及必须原样保留（见 cleanExit）。
+			return cleanExit(false)
 		}
 		if !dsml.IsDSMLToolCallReply(src) {
 			// 长回复仅引用示例：非执行轮次，退出循环。
-			return cleanExit()
+			return cleanExit(true)
 		}
 		fmt.Fprintf(os.Stderr, "🤖 %s 请求执行 %d 个工具调用（第 %d/%d 轮）…\n",
 			roleName, len(calls), round, handleWebChatMaxDSMLRounds)
@@ -594,7 +601,7 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 			// so the caller sees clean content; plain chat keeps the
 			// original text (it is content, not a command).
 			fmt.Fprintf(os.Stderr, "⚠️ %s 回复只包含非可执行工具调用（未在角色工具配置中或引用示例？），已跳过执行\n", roleName)
-			return cleanExit()
+			return cleanExit(true)
 		}
 		// Each output is a self-delimiting tool_result block, in
 		// tool_calls order — newline separation is enough. buildWebChatFeedback
@@ -628,5 +635,5 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 		printRound(res)
 	}
 	fmt.Fprintf(os.Stderr, "⚠️ %s 连续工具调用超过 %d 轮上限，已返回中间结果\n", roleName, handleWebChatMaxDSMLRounds)
-	return cleanExit()
+	return cleanExit(true)
 }
