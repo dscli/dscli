@@ -216,10 +216,7 @@ func handleWriteFileFull(ctx context.Context, args ToolArgs) (result, warning st
 		}
 	}
 
-	lines := strings.Count(content, "\n") + 1
-	if content == "" || strings.HasSuffix(content, "\n") {
-		lines = strings.Count(content, "\n")
-	}
+	lines := countContentLines(content)
 	outfmt.Notice("写入文件 \"%s\"，%d 行", path, lines)
 	result = fmt.Sprintf("成功写入文件 \"%s\"，%d 行。", path, lines)
 	if truncated {
@@ -242,12 +239,7 @@ func handleWriteFileFull(ctx context.Context, args ToolArgs) (result, warning st
 	}
 
 	// Run flycheck on the written file and append issues to suggestion
-	if flyResult, _, flyErr := flycheck.Flycheck(ctx, path); flyErr == nil && flyResult != "" {
-		if warning != "" {
-			warning += "\n\n"
-		}
-		warning += flyResult
-	}
+	warning = appendFlycheckWarning(ctx, warning, path)
 
 	return result, warning, err
 }
@@ -299,59 +291,17 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 	}
 
 	// 计算新内容的行数
-	contentLineCount := strings.Count(content, "\n") + 1
-	if content == "" || strings.HasSuffix(content, "\n") {
-		contentLineCount = strings.Count(content, "\n")
-	}
+	contentLineCount := countContentLines(content)
 
 	// 读取原文件所有行
 	file, err := os.Open(fullPath)
 	if err != nil {
 		// 如果文件不存在，创建一个空文件
 		if os.IsNotExist(err) {
-			// 对于新文件，只能从第1行开始写入
-			if startLine != 1 {
-				err = fmt.Errorf("cannot write to non-existent file at line %d, must start from line 1", startLine)
+			result, handled, err := writeMissingFile(fullPath, displayPath, startLine, content, showContext, contentLineCount)
+			if handled {
 				return result, warning, err
 			}
-
-			// 创建新文件并写入内容
-			if content == "" {
-				// 空内容，创建空文件
-				var newFile *os.File
-				newFile, err = os.Create(fullPath)
-				if err != nil {
-					err = fmt.Errorf("failed to create file: %w", err)
-					return result, warning, err
-				}
-				newFile.Close()
-				outfmt.Notice("创建空文件 \"%s\"", displayPath)
-				result = "成功创建空文件"
-				return result, warning, err
-			}
-
-			// 写入内容到新文件，确保末尾换行
-			writeContent := content
-			if writeContent != "" && !strings.HasSuffix(writeContent, "\n") {
-				writeContent += "\n"
-			}
-			err = os.WriteFile(fullPath, []byte(writeContent), 0o644)
-			if err != nil {
-				err = fmt.Errorf("failed to write to new file: %w", err)
-				return result, warning, err
-			}
-
-			outfmt.Notice("创建文件 \"%s\" 并写入 %d 行内容", displayPath, contentLineCount)
-			result = fmt.Sprintf("成功创建文件并写入 %d 行内容", contentLineCount)
-
-			// 上下文窗口（新文件）
-			if showContext {
-				ctxStr := AppendWriteFileContext(displayPath)
-				if ctxStr != "" {
-					result += ctxStr
-				}
-			}
-			return result, warning, err
 		}
 		err = fmt.Errorf("failed to open file: %w", err)
 		return result, warning, err
@@ -371,6 +321,130 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 
 	oldTotalLines := len(lines)
 
+	content, casVerified, warning, err := resolveCASTags(args, lines, startLine, content)
+	if err != nil {
+		return result, warning, err
+	}
+
+	// --- 构建新内容 ---
+	newLines := buildReplacementLines(lines, startLine, endLine, content)
+
+	// 将新内容写回文件，确保末尾有换行符
+	writeContent := joinLinesWithNewline(newLines)
+	err = os.WriteFile(fullPath, []byte(writeContent), 0o644)
+	if err != nil {
+		err = fmt.Errorf("failed to write file: %w", err)
+		return result, warning, err
+	}
+
+	// 记录操作日志
+	operation, rangeDesc, oldReplaced, linesChanged := describeReplacement(content, startLine, endLine, oldTotalLines, contentLineCount)
+
+	warning = appendLengthMismatchWarning(warning, content, endLine, casVerified, oldReplaced, contentLineCount)
+
+	outfmt.Notice("%s文件 \"%s\" 行范围 %s，影响 %d 行", operation, displayPath, rangeDesc, linesChanged)
+
+	// 构建最终结果
+	result = fmt.Sprintf("成功%s文件 \"%s\" 行范围 %s", operation, displayPath, rangeDesc)
+
+	// 编辑后上下文窗口
+	result = appendEditContext(result, showContext, displayPath, startLine, endLine, oldTotalLines, oldReplaced, contentLineCount)
+
+	// Run flycheck on the written file and append issues as suggestion
+	warning = appendFlycheckWarning(ctx, warning, fullPath)
+
+	return result, warning, err
+}
+
+// countContentLines 返回 content 的"行数"语义：
+// 空串为 0 行；以 \n 结尾时等于换行符数（尾随换行不产生空行）；否则 \n 数 + 1。
+func countContentLines(content string) int {
+	if content == "" || strings.HasSuffix(content, "\n") {
+		return strings.Count(content, "\n")
+	}
+	return strings.Count(content, "\n") + 1
+}
+
+// joinLinesWithNewline 以 \n 连接行切片；非空结果保证以 \n 结尾（POSIX 文本约定）。
+func joinLinesWithNewline(lines []string) string {
+	var sb strings.Builder
+	for i, line := range lines {
+		sb.WriteString(line)
+		if i < len(lines)-1 {
+			sb.WriteString("\n")
+		}
+	}
+	out := sb.String()
+	if out != "" && !strings.HasSuffix(out, "\n") {
+		out += "\n"
+	}
+	return out
+}
+
+// appendFlycheckWarning 在已写文件上运行 flycheck，把问题追加到 warning（如有）。
+func appendFlycheckWarning(ctx context.Context, warning, path string) string {
+	if flyResult, _, flyErr := flycheck.Flycheck(ctx, path); flyErr == nil && flyResult != "" {
+		if warning != "" {
+			warning += "\n\n"
+		}
+		warning += flyResult
+	}
+	return warning
+}
+
+// writeMissingFile 处理替换路径中"目标文件不存在"的分支:
+// 只允许从第 1 行开始写入；空内容创建空文件；否则写入内容并按需追加上下文窗口。
+// handled=true 表示该分支已完整处理本次操作，调用方直接返回。
+func writeMissingFile(fullPath, displayPath string, startLine int, content string, showContext bool, contentLineCount int) (result string, handled bool, err error) {
+	// 对于新文件，只能从第1行开始写入
+	if startLine != 1 {
+		err = fmt.Errorf("cannot write to non-existent file at line %d, must start from line 1", startLine)
+		return result, true, err
+	}
+
+	// 创建新文件并写入内容
+	if content == "" {
+		// 空内容，创建空文件
+		var newFile *os.File
+		newFile, err = os.Create(fullPath)
+		if err != nil {
+			err = fmt.Errorf("failed to create file: %w", err)
+			return result, true, err
+		}
+		newFile.Close()
+		outfmt.Notice("创建空文件 \"%s\"", displayPath)
+		result = "成功创建空文件"
+		return result, true, err
+	}
+
+	// 写入内容到新文件，确保末尾换行
+	writeContent := content
+	if writeContent != "" && !strings.HasSuffix(writeContent, "\n") {
+		writeContent += "\n"
+	}
+	err = os.WriteFile(fullPath, []byte(writeContent), 0o644)
+	if err != nil {
+		err = fmt.Errorf("failed to write to new file: %w", err)
+		return result, true, err
+	}
+
+	outfmt.Notice("创建文件 \"%s\" 并写入 %d 行内容", displayPath, contentLineCount)
+	result = fmt.Sprintf("成功创建文件并写入 %d 行内容", contentLineCount)
+
+	// 上下文窗口（新文件）
+	if showContext {
+		ctxStr := AppendWriteFileContext(displayPath)
+		if ctxStr != "" {
+			result += ctxStr
+		}
+	}
+	return result, true, err
+}
+
+// resolveCASTags 处理 line_tag/line_tags 参数: 互斥检查、长度检查、标签解析、
+// 与文件内容校验（verifyLineTags），并剥离 content 中匹配已验证 tag 的前缀。
+// casVerified=true 表示调用者执行了 CAS 校验（后续的长度突变告警因此跳过）。
+func resolveCASTags(args ToolArgs, lines []string, startLine int, content string) (contentOut string, casVerified bool, warning string, err error) {
 	// --- CAS tag verification (antirez-style check-and-set) ---
 	// 如果提供了 line_tag 或 line_tags，写入前校验标签匹配
 	lineTag := toolcall.ToolArgsValue(args, "line_tag", "")
@@ -380,25 +454,25 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 	if lineTag != "" || lineTags != "" {
 		if lineTag != "" && lineTags != "" {
 			err = fmt.Errorf("cannot specify both line_tag and line_tags; use line_tag for single-line edits, line_tags for multi-line")
-			return result, warning, err
+			return content, true, warning, err
 		}
 		if lineTag != "" {
 			if len(lineTag) != 4 {
 				err = fmt.Errorf("line_tag must be exactly 4 characters, got %q (%d chars)", lineTag, len(lineTag))
-				return result, warning, err
+				return content, true, warning, err
 			}
 			expectedTags = []string{lineTag}
 		} else {
 			expectedTags, err = parseLineTags(lineTags)
 			if err != nil {
 				err = fmt.Errorf("failed to parse line_tags: %w", err)
-				return result, warning, err
+				return content, true, warning, err
 			}
 		}
 
 		// Verify tags against actual file content at startLine
 		if err = verifyLineTags(lines, startLine-1, expectedTags); err != nil {
-			return result, warning, err
+			return content, true, warning, err
 		}
 	}
 
@@ -413,8 +487,12 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 			warning = "注意：已自动去除 content 中的 CAS tag 前缀（匹配已验证的 tag）。"
 		}
 	}
+	return content, len(expectedTags) > 0, warning, nil
+}
 
-	// --- 构建新内容 ---
+// buildReplacementLines 按 startLine/endLine 语义拼接新文件行:
+// start 之前、空行填充、新内容（去掉尾随 \n 避免 Split 空行）、end 之后。
+func buildReplacementLines(lines []string, startLine, endLine int, content string) []string {
 	var newLines []string
 
 	// 1. 添加 start_line 之前的部分
@@ -447,54 +525,43 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 			newLines = append(newLines, lines[endLine:]...)
 		}
 	}
+	return newLines
+}
 
-	// 将新内容写回文件，确保末尾有换行符
-	var contentBuilder strings.Builder
-	for i, line := range newLines {
-		contentBuilder.WriteString(line)
-		if i < len(newLines)-1 {
-			contentBuilder.WriteString("\n")
-		}
-	}
-	// POSIX 约定：文本文件应以换行符结尾
-	writeContent := contentBuilder.String()
-	if writeContent != "" && !strings.HasSuffix(writeContent, "\n") {
-		writeContent += "\n"
-	}
-	err = os.WriteFile(fullPath, []byte(writeContent), 0o644)
-	if err != nil {
-		err = fmt.Errorf("failed to write file: %w", err)
-		return result, warning, err
-	}
-
-	// 记录操作日志
-	operation := "替换"
+// describeReplacement 计算操作描述（替换/删除）、行范围描述、被替换原始行数与净行数。
+func describeReplacement(content string, startLine, endLine int, oldTotalLines, contentLineCount int) (operation, rangeDesc string, oldReplaced, linesChanged int) {
+	operation = "替换"
 	if content == "" {
 		operation = "删除"
 	}
 
-	rangeDesc := fmt.Sprintf("第%d行 - 第%d行", startLine, endLine)
+	rangeDesc = fmt.Sprintf("第%d行 - 第%d行", startLine, endLine)
 	if endLine == -1 {
 		rangeDesc = fmt.Sprintf("第%d行 - 末尾", startLine)
 	}
 
 	// 计算被替换的原始行数
-	oldReplaced := 0
+	oldReplaced = 0
 	if endLine == -1 {
 		oldReplaced = max(0, oldTotalLines-startLine+1)
 	} else {
 		oldReplaced = max(0, min(endLine, oldTotalLines)-startLine+1)
 	}
-	linesChanged := oldReplaced
+	linesChanged = oldReplaced
 	if content != "" {
 		linesChanged = contentLineCount
 	}
+	return operation, rangeDesc, oldReplaced, linesChanged
+}
 
+// appendLengthMismatchWarning 在无 CAS 校验、非空内容、显式 end_line 时检测
+// "行号错位覆盖"信号并追加告警文案。
+func appendLengthMismatchWarning(warning string, content string, endLine int, casVerified bool, oldReplaced, contentLineCount int) string {
 	// 长度突变告警（无 CAS tag 时）：替换区域行数与写入内容行数严重不匹配
 	// 是"行号错位覆盖"的典型信号——AI 本意在某处插入新内容，但目标区域实际
 	// 行数远少于内容行数，静默覆盖了不该覆盖的内容。仅告警不阻断：合法的大
 	// 规模替换（如展开函数体）也会触发，由 LLM 自行判断。
-	if content != "" && endLine != -1 && lineTag == "" && lineTags == "" {
+	if content != "" && endLine != -1 && !casVerified {
 		if m := warnOnLengthMismatch(oldReplaced, contentLineCount); m != "" {
 			if warning != "" {
 				warning += "\n\n"
@@ -502,13 +569,11 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 			warning += m
 		}
 	}
+	return warning
+}
 
-	outfmt.Notice("%s文件 \"%s\" 行范围 %s，影响 %d 行", operation, displayPath, rangeDesc, linesChanged)
-
-	// 构建最终结果
-	result = fmt.Sprintf("成功%s文件 \"%s\" 行范围 %s", operation, displayPath, rangeDesc)
-
-	// 编辑后上下文窗口
+// appendEditContext 计算有效结束行并把编辑后上下文窗口追加到 result。
+func appendEditContext(result string, showContext bool, displayPath string, startLine, endLine, oldTotalLines, oldReplaced, contentLineCount int) string {
 	if showContext {
 		effectiveEndLine := endLine
 		if effectiveEndLine == -1 {
@@ -522,16 +587,7 @@ func handleWriteFileWithLineRange(ctx context.Context, args ToolArgs) (result, w
 			result += ctxStr
 		}
 	}
-
-	// Run flycheck on the written file and append issues as suggestion
-	if flyResult, _, flyErr := flycheck.Flycheck(ctx, fullPath); flyErr == nil && flyResult != "" {
-		if warning != "" {
-			warning += "\n\n"
-		}
-		warning += flyResult
-	}
-
-	return result, warning, err
+	return result
 }
 
 // warnOnLengthMismatch 检测替换区域行数与写入内容行数的严重不匹配。
@@ -645,10 +701,7 @@ func handleInsertBeforeLine(ctx context.Context, args ToolArgs, fullPath, displa
 
 	// 构建新内容：插入点之前的行 + 新内容 + 插入点及之后的行。
 	// TrimSuffix 去掉末尾换行符，避免 Split 产生多余空行（与替换路径一致）。
-	contentLineCount := strings.Count(content, "\n") + 1
-	if strings.HasSuffix(content, "\n") {
-		contentLineCount = strings.Count(content, "\n")
-	}
+	contentLineCount := countContentLines(content)
 	contentLines := strings.Split(strings.TrimSuffix(content, "\n"), "\n")
 	newLines := make([]string, 0, len(lines)+contentLineCount)
 	newLines = append(newLines, lines[:insertLine-1]...)
@@ -656,17 +709,7 @@ func handleInsertBeforeLine(ctx context.Context, args ToolArgs, fullPath, displa
 	newLines = append(newLines, lines[insertLine-1:]...)
 
 	// 写回文件，确保末尾有换行符
-	var contentBuilder strings.Builder
-	for i, line := range newLines {
-		contentBuilder.WriteString(line)
-		if i < len(newLines)-1 {
-			contentBuilder.WriteString("\n")
-		}
-	}
-	writeContent := contentBuilder.String()
-	if writeContent != "" && !strings.HasSuffix(writeContent, "\n") {
-		writeContent += "\n"
-	}
+	writeContent := joinLinesWithNewline(newLines)
 	if err = os.WriteFile(fullPath, []byte(writeContent), 0o644); err != nil {
 		err = fmt.Errorf("failed to write file: %w", err)
 		return result, warning, err
@@ -689,12 +732,7 @@ func handleInsertBeforeLine(ctx context.Context, args ToolArgs, fullPath, displa
 	}
 
 	// Run flycheck on the written file and append issues as suggestion
-	if flyResult, _, flyErr := flycheck.Flycheck(ctx, fullPath); flyErr == nil && flyResult != "" {
-		if warning != "" {
-			warning += "\n\n"
-		}
-		warning += flyResult
-	}
+	warning = appendFlycheckWarning(ctx, warning, fullPath)
 
 	return result, warning, err
 }
