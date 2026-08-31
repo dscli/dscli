@@ -120,6 +120,8 @@ var (
 	// listRoleConfigs is an overridable seam so tests can deterministically
 	// exercise the generation-check branches of the slow path (a concurrent
 	// write landing mid-query is not reproducible with -race alone).
+	// Overrides must not run in parallel with tests calling GetRoleConfig
+	// (no t.Parallel while overridden); it is an unsynchronized mutable var.
 	listRoleConfigs = ListRoleConfigs
 )
 
