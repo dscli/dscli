@@ -108,7 +108,10 @@ func DefaultFor(role string) DefaultConfig {
 }
 
 var (
-	roleCache   map[string]*RoleConfig // role name → config, nil until loaded
+	// roleCache: sessionID → role name → config.
+	// A bucket present means that session was loaded (negative results are
+	// cached too). nil outer map means the cache is empty.
+	roleCache   map[int64]map[string]*RoleConfig
 	roleCacheMu sync.RWMutex
 )
 
@@ -129,25 +132,27 @@ func init() {
 }
 
 // GetRoleConfig retrieves the role config for a given role and session.
-// Uses an in-memory cache loaded once per process lifetime;
-// falls back to direct DB query when cache loading fails.
+// The cache is keyed by sessionID because role_configs is keyed by
+// UNIQUE(role, session_id): a per-session bucket is loaded lazily on demand
+// and cleared by any write (invalidateRoleCache). A missing bucket falls
+// through to the DB; a present bucket with a nil entry is a cached negative.
 func GetRoleConfig(ctx context.Context, role string, sessionID int64) (*RoleConfig, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "GetRoleConfig")
 	defer span.Finish()
 	// Fast path: read from cache (RLock only).
 	roleCacheMu.RLock()
-	if roleCache != nil {
-		cfg := roleCache[role]
+	if bucket := roleCache[sessionID]; bucket != nil {
+		cfg := bucket[role]
 		roleCacheMu.RUnlock()
 		return cfg, nil
 	}
 	roleCacheMu.RUnlock()
 
-	// Slow path: load cache (one-time, requires write lock).
+	// Slow path: load the session bucket (requires write lock).
 	roleCacheMu.Lock()
-	if roleCache != nil {
-		// Another goroutine loaded the cache while we waited.
-		cfg := roleCache[role]
+	if bucket := roleCache[sessionID]; bucket != nil {
+		// Another goroutine loaded this session while we waited.
+		cfg := bucket[role]
 		roleCacheMu.Unlock()
 		return cfg, nil
 	}
@@ -158,7 +163,10 @@ func GetRoleConfig(ctx context.Context, role string, sessionID int64) (*RoleConf
 		for i := range configs {
 			m[configs[i].Role] = &configs[i]
 		}
-		roleCache = m
+		if roleCache == nil {
+			roleCache = make(map[int64]map[string]*RoleConfig)
+		}
+		roleCache[sessionID] = m
 		cfg := m[role]
 		roleCacheMu.Unlock()
 		return cfg, nil

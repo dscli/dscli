@@ -18,6 +18,9 @@ func newTestDB(t *testing.T) {
 	origDBPath := sqlite.GetDBPath()
 	sqlite.SetDBPath(filepath.Join(t.TempDir(), "roles-test.db"))
 	t.Cleanup(func() { sqlite.SetDBPath(origDBPath) })
+	// roleCache is package-level and survives the DB swap; without clearing
+	// it a previous test's configs would leak into this one's fresh DB.
+	invalidateRoleCache()
 }
 
 // findConfig returns the config for role in sessionID, or nil if absent.
@@ -426,5 +429,69 @@ func TestListRoleConfigsByPrompt(t *testing.T) {
 	}
 	if len(refs) != 0 {
 		t.Errorf("ListRoleConfigsByPrompt(missing) = %d rows, want 0", len(refs))
+	}
+}
+
+// TestGetRoleConfigSessionIsolation guards the per-session cache buckets:
+// role_configs is keyed by UNIQUE(role, session_id), so a lookup for session
+// B must never return session A's row (or A's cached nil). Both orderings are
+// exercised because the pre-bucket cache failed depending on which session
+// was loaded first.
+func TestGetRoleConfigSessionIsolation(t *testing.T) {
+	orders := []struct {
+		name string
+		sidA int64
+		sidB int64
+	}{
+		{"A then B", int64(10), int64(20)},
+		{"B then A", int64(20), int64(10)},
+	}
+	for _, ord := range orders {
+		t.Run(ord.name, func(t *testing.T) {
+			newTestDB(t)
+			invalidateRoleCache() // each subtest starts with a clean cache
+			ctx := t.Context()
+			const role = "dev"
+			sidA, sidB := ord.sidA, ord.sidB
+
+			if err := UpsertRoleConfig(ctx, role, sidA, nil, strPtr("shell"), nil); err != nil {
+				t.Fatalf("UpsertRoleConfig(sidA): %v", err)
+			}
+
+			cfgA, err := GetRoleConfig(ctx, role, sidA)
+			if err != nil {
+				t.Fatalf("GetRoleConfig(sidA): %v", err)
+			}
+			if cfgA == nil || cfgA.Tools != "shell" {
+				t.Fatalf("GetRoleConfig(sidA) = %+v, want Tools=shell", cfgA)
+			}
+
+			// Session B has no rows at all: lookup returns nil, and a second
+			// lookup must stay nil (negative result cached in B's bucket).
+			cfgB, err := GetRoleConfig(ctx, role, sidB)
+			if err != nil {
+				t.Fatalf("GetRoleConfig(sidB): %v", err)
+			}
+			if cfgB != nil {
+				t.Fatalf("GetRoleConfig(sidB) = %+v, want nil", cfgB)
+			}
+			cfgB, err = GetRoleConfig(ctx, role, sidB)
+			if err != nil {
+				t.Fatalf("GetRoleConfig(sidB) second call: %v", err)
+			}
+			if cfgB != nil {
+				t.Fatalf("GetRoleConfig(sidB) second call = %+v, want nil (cached negative)", cfgB)
+			}
+
+			// Session A's config must survive session B's lookups: buckets do
+			// not overwrite each other.
+			cfgA, err = GetRoleConfig(ctx, role, sidA)
+			if err != nil {
+				t.Fatalf("GetRoleConfig(sidA) after sidB: %v", err)
+			}
+			if cfgA == nil || cfgA.Tools != "shell" {
+				t.Fatalf("GetRoleConfig(sidA) after sidB = %+v, want Tools=shell", cfgA)
+			}
+		})
 	}
 }
