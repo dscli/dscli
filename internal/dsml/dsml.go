@@ -139,10 +139,13 @@ var dsmlToolCallsCloseEndRe = regexp.MustCompile(`(?s)(?:</\s*(?:tool_calls|_cal
 // end of the text: the opening "</" exists but the tag was truncated
 // before its ">" (e.g. "</", "</tool_calls", "</_calls") — observed in a
 // real QA round where every <invoke> parsed cleanly but the IDB-stored
-// content ended mid-close-tag. The close tag is the "emission complete"
-// intent signal, and a cut tag does not change that intent: the calls
-// still parse, so the gate opens; execution safety is unchanged (parse
-// success + role tool set + destructive-command interception).
+// content ended mid-close-tag. A cut close is MALFORMED markup: it never
+// authorizes execution, even when every <invoke> inside parses. The
+// routing gate is MalformedDSMLToolCalls, which turns a cut close (with a
+// genuine tool-call attempt) into a re-issue warning instead of an
+// execute-feedback round. Execution safety still rests on parse success +
+// role tool set + destructive-command interception, but the cut shape is
+// now refused outright.
 var dsmlToolCallsCloseCutRe = regexp.MustCompile(`(?s)</\s*(?:tool_calls|_calls)?\s*$`)
 
 // IsDSMLToolCallEnd reports whether text is INTENDED as a tool-call
@@ -173,19 +176,23 @@ func IsDSMLToolCallEnd(text string) bool {
 	return dsmlToolCallsCloseEndRe.MatchString(strings.TrimSpace(normalizeDSMLText(text)))
 }
 
-// IsDSMLToolCallCut reports whether text is INTENDED as a tool-call emission
-// whose wrapper close tag was CUT OFF at the very end (no closing ">").
-// This is the truncated twin of IsDSMLToolCallEnd: the same intent signal
-// (the expert began closing the wrapper) with the last byte truncated —
-// "…</invoke>\n</" is common when the site's stored content is cut at a
-// boundary, and "</tool_calls" / "</_calls" (name present, ">" missing) are
-// the same cut. NOTE: a trailing bare "</" also matches — it is the
-// motivating live shape (a real review round ended exactly there), and the
-// regex accepts it by design. The gate alone does NOT execute:
-// ParseDSMLToolCalls must still succeed (every <invoke> complete) for
-// anything to run, so a cut wrapper around a truncated call stays
-// non-executable, and quoted examples without a cut close stay
-// non-executable too.
+// IsDSMLToolCallCut reports whether text ends with a CUT-OFF wrapper close
+// tag (no closing ">"). This is the truncated twin of IsDSMLToolCallEnd:
+// the same shape (the expert began closing the wrapper) with the last byte
+// truncated — "…</invoke>\n</" is common when the site's stored content is
+// cut at a boundary, and "</tool_calls" / "</_calls" (name present, ">"
+// missing) are the same cut. NOTE: a trailing bare "</" also matches — it
+// is the motivating live shape (a real review round ended exactly there),
+// and the regex accepts it by design.
+//
+// The gate alone does NOT decide execution anymore: a cut close is
+// malformed markup, so MalformedDSMLToolCalls turns it into a re-issue
+// warning (never an execution) when the reply actually attempts a tool
+// call. This function only reports the cut SHAPE; callers that route on
+// cutness must go through MalformedDSMLToolCalls, which adds the tool-call
+// attempt guard so a prose reply that happens to end with "</" (quoting an
+// example inside code) is not warned. Quoted examples without a cut close
+// stay non-executable too.
 func IsDSMLToolCallCut(text string) bool {
 	return dsmlToolCallsCloseCutRe.MatchString(strings.TrimSpace(normalizeDSMLText(text)))
 }
@@ -200,8 +207,9 @@ func IsDSMLToolCallCut(text string) bool {
 //     authorizes the implicit close of a missing </invoke> in
 //     dsmlBlockRanges.
 //   - IsDSMLToolCallCut - the wrapper close tag was cut off at the very end
-//     ("…</" or "</tool_calls" without ">"): the emission is complete in
-//     intent but the stored content was truncated at a boundary.
+//     ("…</" or "</tool_calls" without ">"): routes into the loop, where
+//     MalformedDSMLToolCalls turns the cut into a re-issue warning (never
+//     an execution) when the reply actually attempts a tool call.
 //   - IsPureDSMLToolCalls - the reply is a sequence of complete <invoke>
 //     blocks (possibly inside a <tool_calls>/<tool_result> wrapper) with no
 //     prose surviving after stripping block markup; observed 2026-08-29 for
@@ -231,6 +239,16 @@ func IsDSMLToolCallReply(text string) bool {
 // "<invoke data-name=...>") or INSIDE a quoted attribute value
 // ("<invoke note=\"use name=x here\">") must NOT match.
 var dsmlNamedInvokeOpenRe = regexp.MustCompile(`(?s)<\s*invoke\b(?:'[^']*'|"[^"]*"|[^'">])*\s+name\s*=[^>]*>`)
+
+// dsmlTypoInvokeOpenRe matches an opening tag that is invoke-LIKE but not
+// exactly <invoke: the tag name is captured and carries a name attribute,
+// e.g. <invinvoke name="read_file"> (the model duplicated the "in" prefix).
+// It shares dsmlNamedInvokeOpenRe's shape constraints (name must be its own
+// attribute at a whitespace boundary; quoted-attribute values must not
+// match). The captured name is compared in hasTypoInvokeOpen: it is a typo
+// only when it is not exactly "invoke" but case-insensitively CONTAINS
+// "invoke" (<invinvoke> ✓, <invokee> ✓; <div name=x> ✗, no "invoke").
+var dsmlTypoInvokeOpenRe = regexp.MustCompile(`(?s)<\s*([A-Za-z][A-Za-z0-9_-]*)\b(?:'[^']*'|"[^"]*"|[^'">])*\s+name\s*=[^>]*>`)
 
 // dsmlInvokeCloseRe matches a closing </invoke> tag, tolerating the same
 // whitespace variants as dsmlInvokeRe (models emit "</ invoke >").
@@ -1304,6 +1322,52 @@ func hasUnquotedInvokeOpen(text string) bool {
 	return false
 }
 
+// hasTypoInvokeOpen reports an invoke-LIKE open tag (a misspelled <invoke
+// carrying a name attribute) outside quoted code. A match is a typo only
+// when the captured tag name is not exactly "invoke" but case-insensitively
+// contains "invoke": <invinvoke> and <invokee> qualify; a canonical
+// <invoke> is not a typo (it is the valid path), and <div name=x> never
+// qualifies (no "invoke" in the name). Mirrors hasUnquotedInvokeOpen.
+func hasTypoInvokeOpen(text string) bool {
+	text = normalizeDSMLText(text)
+	fences := dsmlCodeRanges(text)
+	for _, m := range dsmlTypoInvokeOpenRe.FindAllStringSubmatchIndex(text, -1) {
+		if inCodeRanges(fences, m[0]) {
+			continue
+		}
+		name := text[m[2]:m[3]]
+		if name == "invoke" {
+			continue // canonical spelling is the valid path, not a typo
+		}
+		if !strings.Contains(strings.ToLower(name), "invoke") {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// MalformedDSMLToolCalls reports whether text carries MALFORMED DSML
+// tool-call markup that must never execute: a misspelled invoke open tag
+// (<invinvoke name=...>), or a cut-off wrapper close tag ("</" without ">")
+// combined with a genuine tool-call attempt. The caller re-issues
+// MalformedWarning and keeps the conversation alive so the model can review
+// and re-send.
+//
+// A cut close alone is NOT enough: a prose reply that happens to end with
+// "</" while quoting an example inside code must not be warned. The guard
+// therefore requires an unquoted named invoke open (valid or typo'd) before
+// admitting the cut shape.
+func MalformedDSMLToolCalls(text string) bool {
+	if hasTypoInvokeOpen(text) {
+		return true
+	}
+	if IsDSMLToolCallCut(text) {
+		return hasUnquotedInvokeOpen(text) || hasTypoInvokeOpen(text)
+	}
+	return false
+}
+
 // StrictWarning is the fixed-format warning template injected into every
 // tool_result block when a call parsed with format violations (message.OK
 // false): the call is accepted, the model is told to strictly follow the
@@ -1313,6 +1377,12 @@ const StrictWarning = "WARNING: your tool-call markup did not strictly follow th
 // ReissueWarning is the re-issue template for a reply that clearly tries to
 // emit a tool call but could not be parsed: ask for a strict re-send.
 const ReissueWarning = "WARNING: your reply appears to contain a DSML tool call but it could not be parsed. Please re-send the tool call(s) strictly following the required format: invoke blocks (each with a name attribute and parameter children carrying the string attribute) wrapped in a tool_calls block, exactly as shown in the tool schema section of your instructions. Do not include extra attributes such as justification."
+
+// MalformedWarning is the re-issue template for a reply carrying MALFORMED
+// DSML markup (a misspelled <invoke tag or a truncated wrapper close tag):
+// nothing was executed, and the model is asked to review and re-send. It is
+// distinct from ReissueWarning, which stays for parse-failed emissions.
+const MalformedWarning = "WARNING: your reply contains malformed DSML tool-call markup (a misspelled tool tag or a truncated closing tag) — nothing was executed. Please review and re-send the complete tool call(s) strictly following the required format: invoke blocks (each with a name attribute and parameter children carrying the string attribute) wrapped in a tool_calls block, exactly as shown in the tool schema section of your instructions. Do not include extra attributes such as justification."
 
 // InjectStrictWarning injects StrictWarning into the warning field of every
 // tool_result block in outputs (ExecuteDSMLToolCalls' return values, each

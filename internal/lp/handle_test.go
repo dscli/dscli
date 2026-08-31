@@ -1084,7 +1084,8 @@ func TestHandleWebChatSharesBrowserSession(t *testing.T) {
 
 // cutRound is the shape of a real review round whose content ended with a
 // CUT-OFF wrapper close tag (">" never came): every <invoke> is complete,
-// the tail is "</" — the IsDSMLToolCallCut gate must route it into the loop.
+// the tail is "</" — MalformedDSMLToolCalls must route it into the loop as
+// malformed (never executed).
 const cutRound = `<tool_calls>
 <invoke name="read_file">
 <parameter name="path" string="true">AGENTS.md</parameter>
@@ -1094,12 +1095,13 @@ const cutRound = `<tool_calls>
 <parameter name="script" string="true">git show --stat HEAD</parameter>
 <parameter name="justification" string="true">See full commit stats and files changed</parameter>
 </invoke>
-</tool_calls>`
+</`
 
 func TestHandleWebChatToolLoopCutCloseTagExecutes(t *testing.T) {
-	// A live reply whose wrapper close tag was cut off before ">": the gate
-	// IsDSMLToolCallCut opens, the calls parse (all invokes complete), and
-	// the execute-feedback loop runs — never returned verbatim.
+	// A live reply whose wrapper close tag was cut off before ">": the
+	// cut close is MALFORMED markup, so the loop must re-issue
+	// MalformedWarning (0 executions) and let the model re-send; the
+	// corrected final answer then ends the loop.
 	origFunc := handleWebChatSend
 	t.Cleanup(func() { handleWebChatSend = origFunc })
 
@@ -1118,21 +1120,24 @@ func TestHandleWebChatToolLoopCutCloseTagExecutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HandleWebChat: %v", err)
 	}
-	if len(*seen) != 2 {
-		t.Fatalf("executed calls = %d, want 2 (both invokes complete)", len(*seen))
+	if len(*seen) != 0 {
+		t.Fatalf("executed calls = %d, want 0 (cut close never executes)", len(*seen))
 	}
 	if res.Content != finalAnswer {
 		t.Errorf("content = %q, want final answer", res.Content)
 	}
 	if len(messages) != 2 {
-		t.Fatalf("sends = %d, want 2 (initial cut round + feedback)", len(messages))
+		t.Fatalf("sends = %d, want 2 (malformed warning + final)", len(messages))
+	}
+	if messages[1] != dsml.MalformedWarning {
+		t.Errorf("second send = %q, want MalformedWarning", messages[1])
 	}
 }
 
 func TestHandleWebChatResumeCutCloseTag(t *testing.T) {
-	// Resume with a cut close tag: the last assistant message is a pending
-	// tool-call round with a truncated wrapper — must execute, not return
-	// the markup verbatim.
+	// Resume with a cut close tag: the last assistant message is malformed
+	// markup, so the resume path must re-issue MalformedWarning (0
+	// executions, one send) instead of executing the pending calls.
 	origFunc := handleWebChatSend
 	t.Cleanup(func() { handleWebChatSend = origFunc })
 
@@ -1150,14 +1155,59 @@ func TestHandleWebChatResumeCutCloseTag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HandleWebChatResume: %v", err)
 	}
-	if len(*seen) != 2 {
-		t.Fatalf("executed calls = %d, want 2", len(*seen))
+	if len(*seen) != 0 {
+		t.Fatalf("executed calls = %d, want 0 (cut close never executes on resume)", len(*seen))
 	}
 	if res.Content != finalAnswer {
 		t.Errorf("content = %q, want final answer", res.Content)
 	}
 	if len(messages) != 1 {
-		t.Fatalf("sends = %d, want 1 (feedback only)", len(messages))
+		t.Fatalf("sends = %d, want 1 (malformed warning only)", len(messages))
+	}
+	if messages[0] != dsml.MalformedWarning {
+		t.Errorf("send = %q, want MalformedWarning", messages[0])
+	}
+}
+
+func TestHandleWebChatToolLoopTypoInvokeReissues(t *testing.T) {
+	// A live reply carrying a misspelled <invoke open tag (invinvoke) never
+	// executes: the loop re-issues MalformedWarning, executes nothing, and
+	// the model's corrected final answer ends the loop.
+	origFunc := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = origFunc })
+
+	typo := "<" + "tool_calls>\n" +
+		"<" + "invinvoke name=\"read_file\">\n" +
+		"<" + "parameter name=\"path\" string=\"true\">AGENTS.md<" + "/parameter>\n" +
+		"<" + "/invoke>\n" +
+		"<" + "/tool_calls>"
+
+	const finalAnswer = "## Overall Assessment\nReviewed conventions."
+	var messages []string
+	handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
+		messages = append(messages, msg)
+		if len(messages) == 1 {
+			return WebChatResult{Content: typo, URL: "https://chat.deepseek.com/a/chat/s/convTYPO"}, nil
+		}
+		return WebChatResult{Content: finalAnswer, URL: "https://chat.deepseek.com/a/chat/s/convTF"}, nil
+	}
+	seen := captureExecDSML(t, "<tool_result>contents</tool_result>")
+
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{Role: "review"})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if len(*seen) != 0 {
+		t.Fatalf("executed calls = %d, want 0 (typo'd invoke tag never executes)", len(*seen))
+	}
+	if res.Content != finalAnswer {
+		t.Errorf("content = %q, want final answer", res.Content)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("sends = %d, want 2 (malformed warning + final)", len(messages))
+	}
+	if messages[1] != dsml.MalformedWarning {
+		t.Errorf("second send = %q, want MalformedWarning", messages[1])
 	}
 }
 

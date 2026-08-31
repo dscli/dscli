@@ -350,15 +350,17 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 			// in role consultations is stripped so callers see clean
 			// prose; plain chat keeps it verbatim (the expert's words are
 			// content there, not a command).
-			// Entry gate: an executable emission (IsDSMLToolCallReply) AND a
+			// Entry gate: an executable emission (IsDSMLToolCallReply), a
 			// reply that clearly tries to emit a call but failed to parse
-			// (SuspectedDSMLToolCalls) route into the loop: the former
-			// executes, the latter re-issues the strict-format warning and
-			// keeps the conversation alive. A quoted example (fenced code)
-			// is neither and never enters the loop. The call source is
-			// content first, reasoning as fallback - the same selection the
-			// loop and ParseDSMLMessage use, so a draft in the thinking gets
-			// its round.
+			// (SuspectedDSMLToolCalls), and a reply carrying MALFORMED DSML
+			// markup (MalformedDSMLToolCalls - a misspelled <invoke tag or a
+			// cut-off close tag) all route into the loop: the former
+			// executes, the latter two re-issue a warning (ReissueWarning /
+			// MalformedWarning) and keep the conversation alive. A quoted
+			// example (fenced code) is none of these and never enters the
+			// loop. The call source is content first, reasoning as fallback -
+			// the same selection the loop and ParseDSMLMessage use, so a
+			// draft in the thinking gets its round.
 			if shouldEnterToolLoop(res.Reasoning, res.Content) {
 				return handleWebChatToolLoop(ctx, res, opts)
 			}
@@ -464,7 +466,8 @@ func HandleWebChatResume(ctx context.Context, opts WebChatOptions) (WebChatResul
 
 // handleWebChatToolLoop continues a WebChat conversation (role-driven or
 // plain chat; shouldEnterToolLoop decided entry - IsDSMLToolCallReply for
-// executable emissions, SuspectedDSMLToolCalls for unparseable ones - and
+// executable emissions, SuspectedDSMLToolCalls for unparseable ones,
+// MalformedDSMLToolCalls for misspelled tags / cut-off close tags - and
 // the call source is content first, reasoning as fallback) while the
 // expert emits DSML tool calls: parse the calls, execute them locally, and
 // post the results back into the SAME conversation (Keep=first URL). The
@@ -491,12 +494,14 @@ func HandleWebChatResume(ctx context.Context, opts WebChatOptions) (WebChatResul
 // Browser/network errors are fatal: retrying mid-conversation is not safe.
 // shouldEnterToolLoop decides whether a reasoning/content pair routes into
 // the web chat tool loop: the call source (content first, reasoning as
-// fallback - dsml.CallSource) is an executable emission (IsDSMLToolCallReply)
-// or a suspected-but-unparseable call (SuspectedDSMLToolCalls). Shared by
+// fallback - dsml.CallSource) is an executable emission (IsDSMLToolCallReply),
+// a suspected-but-unparseable call (SuspectedDSMLToolCalls), or malformed DSML
+// markup (MalformedDSMLToolCalls - a misspelled <invoke tag or a cut-off close
+// tag, which never executes and instead re-issues MalformedWarning). Shared by
 // HandleWebChat and HandleWebChatResume so the two entry gates cannot drift.
 func shouldEnterToolLoop(reasoning, content string) bool {
 	src := dsml.CallSource(reasoning, content)
-	return dsml.IsDSMLToolCallReply(src) || dsml.SuspectedDSMLToolCalls(src)
+	return dsml.IsDSMLToolCallReply(src) || dsml.SuspectedDSMLToolCalls(src) || dsml.MalformedDSMLToolCalls(src)
 }
 
 func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebChatOptions) (WebChatResult, error) {
@@ -552,6 +557,10 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 		// intercepted, unregistered names) must STILL execute so
 		// ExecuteDSMLToolCalls can emit the rejection feedback blocks.
 		//
+		//   - malformed markup (MalformedDSMLToolCalls - a misspelled
+		//     <invoke tag or a cut-off close tag): never execute, re-issue
+		//     MalformedWarning, keep the SAME conversation alive. A cut close
+		//     may parse fine, so this check runs FIRST.
 		//   - parse succeeds with calls AND the source is an executable
 		//     emission (IsDSMLToolCallReply): execute. Format violations
 		//     (OK=false) NEVER block execution - the strict-format warning
@@ -566,6 +575,24 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 		msg := dsml.ParseDSMLMessage(lastReasoning, message)
 		src := dsml.CallSource(lastReasoning, message)
 		calls, parseErr := dsml.ParseDSMLToolCalls(src)
+		if dsml.MalformedDSMLToolCalls(src) {
+			// 畸形标记（打错的 <invoke 标签 / 截断的 </ 闭合）：永不执行；
+			// 同会话发送 MalformedWarning，请模型审视后按严格格式重发。
+			fmt.Fprintf(os.Stderr, "⚠️ %s 的回复包含畸形 DSML 工具调用标记，已请求审视重发（第 %d/%d 轮）…\n",
+				roleName, round, handleWebChatMaxDSMLRounds)
+			followUp := WebChatOptions{Mode: opts.Mode, Keep: convURL}
+			res, callErr := handleWebChatSend(ctx, dsml.MalformedWarning, followUp)
+			if callErr != nil {
+				return WebChatResult{}, fmt.Errorf("webchat tool loop: malformed DSML re-issue during round %d: %w", round, callErr)
+			}
+			message = res.Content
+			lastReasoning = res.Reasoning
+			if res.URL != "" {
+				convURL = res.URL
+			}
+			printRound(res)
+			continue
+		}
 		if parseErr != nil || len(calls) == 0 {
 			if dsml.SuspectedDSMLToolCalls(src) {
 				// 疑似工具调用但解析失败（截断/畸形）：keep 会话并请求重发。

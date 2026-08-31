@@ -135,7 +135,7 @@ without the final angle bracket); or the reply is a bare sequence of complete
 invoke blocks with no wrapper at all. A reply that clearly tries to emit a
 call but failed to parse (`dsml.SuspectedDSMLToolCalls` - truncated
 emissions, outside quoted code) routes into the loop too and gets
-`dsml.ReissueWarning`, keeping the same conversation alive (the loop also re-parses the call source with ParseDSMLToolCalls for raw routing, so calls and OK always come from the same text).
+`dsml.ReissueWarning`, keeping the same conversation alive (the loop also re-parses the call source with ParseDSMLToolCalls for raw routing, so calls and OK always come from the same text). A reply ending in a partial close (a cut-off `</` without the `>`) or carrying a misspelled invoke tag (`<invinvoke ...>`) is MALFORMED markup (`dsml.MalformedDSMLToolCalls`): it routes into the loop and gets `dsml.MalformedWarning`, and is NEVER executed (only `dsml.IsDSMLToolCallEnd` / bare-invoke shapes execute).
 `handleWebChatToolLoop` executes the calls (`dsml.ExecuteDSMLToolCalls`, the
 execution kernel stays in internal/toolcall) and feeds results back into the
 SAME conversation. Which tools
