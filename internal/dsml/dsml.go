@@ -98,6 +98,9 @@ func HasDSMLToolCalls(text string) bool {
 // feedback. Fenced-code and inline-code quotes fail the strip check on
 // their own, without parser gymnastics.
 func IsPureDSMLToolCalls(text string) bool {
+	if IsDSMLToolCallCut(text) {
+		return false // a cut close is malformed markup, never an executable emission
+	}
 	calls, err := ParseDSMLToolCalls(text)
 	if err != nil || len(calls) == 0 {
 		return false // truncated or no call at all: not an executable reply
@@ -199,30 +202,29 @@ func IsDSMLToolCallCut(text string) bool {
 
 // IsDSMLToolCallReply reports whether text is INTENDED as a tool-call
 // emission and should route into the tool loop. It is the union of the
-// three shapes the web model actually emits:
+// two executable shapes the web model actually emits:
 //
 //   - IsDSMLToolCallEnd - the reply ends with a wrapper close tag (even the
-//     typo'd </_calls> / <_calls> variants): the model's "emission
-//     complete" signal, whatever prose precedes it, and the shape that
-//     authorizes the implicit close of a missing </invoke> in
-//     dsmlBlockRanges.
-//   - IsDSMLToolCallCut - the wrapper close tag was cut off at the very end
-//     ("…</" or "</tool_calls" without ">"): routes into the loop, where
-//     MalformedDSMLToolCalls turns the cut into a re-issue warning (never
-//     an execution) when the reply actually attempts a tool call.
-//   - IsPureDSMLToolCalls - the reply is a sequence of complete <invoke>
-//     blocks (possibly inside a <tool_calls>/<tool_result> wrapper) with no
-//     prose surviving after stripping block markup; observed 2026-08-29 for
-//     a code_dev round: the model emitted "<invoke name=\"read_file\">
-//     <parameter ...>…</invoke>" alone, with no <tool_calls> wrapper at all.
+//     typo'd close variants): the model's emission-complete signal,
+//     whatever prose precedes it, and the shape that authorizes the
+//     implicit close of a missing invoke close in dsmlBlockRanges.
+//   - IsPureDSMLToolCalls - the reply is a sequence of complete invoke
+//     blocks (possibly inside a wrapper) with no prose surviving after
+//     stripping block markup; observed 2026-08-29 for a code_dev round.
+//
+// A cut-off wrapper close tag (IsDSMLToolCallCut) is deliberately NOT part
+// of this union: a cut close is malformed markup, never an execution
+// intent. MalformedDSMLToolCalls is its sole router (shouldEnterToolLoop
+// ORs it in separately), so admission is unchanged but a cut close now
+// re-issues MalformedWarning instead of executing.
 //
 // Non-executable shapes stay outside the union by construction: a reply
-// that CITES an <invoke> example (in prose, a fenced block, or an inline
-// code span) leaves non-empty stripped text, so IsPureDSMLToolCalls says
-// false; a truncated emission (an open without close, or a parameter never
-// closed) fails ParseDSMLToolCalls, so every branch stays false.
+// that merely cites an invoke example leaves non-empty stripped text, so
+// IsPureDSMLToolCalls says false; a truncated emission (an open without
+// close, or a parameter never closed) fails ParseDSMLToolCalls, so every
+// branch stays false.
 func IsDSMLToolCallReply(text string) bool {
-	return IsDSMLToolCallEnd(text) || IsDSMLToolCallCut(text) || IsPureDSMLToolCalls(text)
+	return IsDSMLToolCallEnd(text) || IsPureDSMLToolCalls(text)
 }
 
 // dsmlNamedInvokeOpenRe matches an opening <invoke> tag that carries a name
@@ -504,9 +506,10 @@ func dsmlCodeRanges(text string) [][2]int {
 	return ranges
 }
 
-// inCodeRanges reports whether pos falls inside quoted code (fence or
-// inline span). ranges is sorted by offset; the walk stops once past pos.
-func inCodeRanges(ranges [][2]int, pos int) bool {
+// inRanges reports whether pos falls inside any of the sorted [start, end)
+// byte ranges (quoted code, parameter bodies, ...). The walk stops once past
+// pos, since ranges is sorted by offset.
+func inRanges(ranges [][2]int, pos int) bool {
 	for _, r := range ranges {
 		if r[0] > pos {
 			return false
@@ -593,7 +596,7 @@ func dsmlBlockRangesStrict(text string) (blocks []dsmlBlockRange, unclosed int, 
 		// literally) is content, not structure. OPEN invoke tags get no
 		// position gate on purpose: a call after prose on the same line is
 		// still a call.
-		if inCodeRanges(fences, m[0]) {
+		if inRanges(fences, m[0]) {
 			return
 		}
 		if kind == 'p' && (!dsmlStructuralTag(text, m[0]) || !dsmlParamNameRe.MatchString(text[m[0]:m[1]])) {
@@ -602,7 +605,7 @@ func dsmlBlockRangesStrict(text string) (blocks []dsmlBlockRange, unclosed int, 
 		events = append(events, ev{m[0], kind, m[1]})
 	}
 	addClose := func(m []int, kind byte) {
-		if inCodeRanges(fences, m[0]) {
+		if inRanges(fences, m[0]) {
 			return
 		}
 		events = append(events, ev{m[0], kind, m[1]})
@@ -1078,7 +1081,7 @@ func parseDSMLToolCallsStrict(text string) (calls []DSMLCall, strict bool, err e
 	lastBlock := blocks[len(blocks)-1]
 	if openAt < 0 || closeAt < 0 || closeAt < openAt ||
 		openAt > blocks[0].openStart || closeAt < lastBlock.closeEnd ||
-		inCodeRanges(fences, openAt) || inCodeRanges(fences, closeAt) {
+		inRanges(fences, openAt) || inRanges(fences, closeAt) {
 		strict = true
 	}
 	calls, extractStrict := extractDSMLCalls(text, blocks)
@@ -1315,29 +1318,84 @@ func hasUnquotedInvokeOpen(text string) bool {
 	text = normalizeDSMLText(text)
 	fences := dsmlCodeRanges(text)
 	for _, m := range dsmlNamedInvokeOpenRe.FindAllStringIndex(text, -1) {
-		if !inCodeRanges(fences, m[0]) {
+		if !inRanges(fences, m[0]) {
 			return true
 		}
 	}
 	return false
 }
 
-// hasTypoInvokeOpen reports an invoke-LIKE open tag (a misspelled <invoke
-// carrying a name attribute) outside quoted code. A match is a typo only
-// when the captured tag name is not exactly "invoke" but case-insensitively
-// contains "invoke": <invinvoke> and <invokee> qualify; a canonical
-// <invoke> is not a typo (it is the valid path), and <div name=x> never
-// qualifies (no "invoke" in the name). Mirrors hasUnquotedInvokeOpen.
+// dsmlParamBodyRanges returns the byte ranges of parameter bodies in text
+// (open tag start to close tag end), skipping parameter pairs that sit
+// inside quoted code. A misspelled invoke open inside a parameter VALUE is
+// content - e.g. a shell script that echoes a typo'd invoke tag - not
+// markup, exactly as dsmlBlockRangesStrict treats parameter bodies as
+// opaque. Pairing uses the same depth-count loop as extractDSMLCalls; a
+// parameter open with no matching close contributes no body range (no pair).
+func dsmlParamBodyRanges(text string) [][2]int {
+	fences := dsmlCodeRanges(text)
+	var ranges [][2]int
+	for _, m := range dsmlParamOpenRe.FindAllStringIndex(text, -1) {
+		if inRanges(fences, m[0]) {
+			continue
+		}
+		depth := 0
+		end := -1
+		j := m[1]
+		for j < len(text) {
+			nextOpen := dsmlParamOpenRe.FindStringIndex(text[j:])
+			nextClose := dsmlParamCloseRe.FindStringIndex(text[j:])
+			if nextOpen == nil && nextClose == nil {
+				break
+			}
+			if nextClose == nil || (nextOpen != nil && nextOpen[0] < nextClose[0]) {
+				op := j + nextOpen[0]
+				if inRanges(fences, op) {
+					j += nextOpen[1]
+					continue
+				}
+				depth++
+				j += nextOpen[1]
+				continue
+			}
+			cp := j + nextClose[0]
+			if inRanges(fences, cp) {
+				j += nextClose[1]
+				continue
+			}
+			if depth > 0 {
+				depth--
+				j += nextClose[1]
+				continue
+			}
+			end = cp + nextClose[1]
+			break
+		}
+		if end >= 0 {
+			ranges = append(ranges, [2]int{m[0], end})
+		}
+	}
+	return ranges
+}
+
+// hasTypoInvokeOpen reports an invoke-LIKE open tag (a misspelled invoke
+// carrying a name attribute) outside quoted code and parameter bodies. A
+// match is a typo only when the captured tag name is not exactly "invoke"
+// (any case) but case-insensitively contains "invoke": a duplicated or
+// extended spelling qualifies; a canonical invoke is not a typo (it is the
+// valid path), and a div with a name attribute never qualifies (no "invoke"
+// in the name). Mirrors hasUnquotedInvokeOpen.
 func hasTypoInvokeOpen(text string) bool {
 	text = normalizeDSMLText(text)
 	fences := dsmlCodeRanges(text)
+	paramBodies := dsmlParamBodyRanges(text)
 	for _, m := range dsmlTypoInvokeOpenRe.FindAllStringSubmatchIndex(text, -1) {
-		if inCodeRanges(fences, m[0]) {
+		if inRanges(fences, m[0]) || inRanges(paramBodies, m[0]) {
 			continue
 		}
 		name := text[m[2]:m[3]]
-		if name == "invoke" {
-			continue // canonical spelling is the valid path, not a typo
+		if strings.EqualFold(name, "invoke") {
+			continue // canonical spelling (any case) is the valid path, not a typo
 		}
 		if !strings.Contains(strings.ToLower(name), "invoke") {
 			continue
@@ -1363,7 +1421,7 @@ func MalformedDSMLToolCalls(text string) bool {
 		return true
 	}
 	if IsDSMLToolCallCut(text) {
-		return hasUnquotedInvokeOpen(text) || hasTypoInvokeOpen(text)
+		return hasUnquotedInvokeOpen(text)
 	}
 	return false
 }

@@ -1097,7 +1097,7 @@ const cutRound = `<tool_calls>
 </invoke>
 </`
 
-func TestHandleWebChatToolLoopCutCloseTagExecutes(t *testing.T) {
+func TestHandleWebChatToolLoopCutCloseTagReissuesWarning(t *testing.T) {
 	// A live reply whose wrapper close tag was cut off before ">": the
 	// cut close is MALFORMED markup, so the loop must re-issue
 	// MalformedWarning (0 executions) and let the model re-send; the
@@ -1127,7 +1127,7 @@ func TestHandleWebChatToolLoopCutCloseTagExecutes(t *testing.T) {
 		t.Errorf("content = %q, want final answer", res.Content)
 	}
 	if len(messages) != 2 {
-		t.Fatalf("sends = %d, want 2 (malformed warning + final)", len(messages))
+		t.Fatalf("sends = %d, want 2 (initial + malformed warning)", len(messages))
 	}
 	if messages[1] != dsml.MalformedWarning {
 		t.Errorf("second send = %q, want MalformedWarning", messages[1])
@@ -1204,7 +1204,7 @@ func TestHandleWebChatToolLoopTypoInvokeReissues(t *testing.T) {
 		t.Errorf("content = %q, want final answer", res.Content)
 	}
 	if len(messages) != 2 {
-		t.Fatalf("sends = %d, want 2 (malformed warning + final)", len(messages))
+		t.Fatalf("sends = %d, want 2 (initial + malformed warning)", len(messages))
 	}
 	if messages[1] != dsml.MalformedWarning {
 		t.Errorf("second send = %q, want MalformedWarning", messages[1])

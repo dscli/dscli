@@ -86,20 +86,26 @@ func TestIsDSMLToolCallReplyBareInvokeBounded(t *testing.T) {
 	}
 }
 
-// TestIsDSMLToolCallReplyEndCutSignalsPreserved: replies that already
-// qualified via the wrapper-close signals still do; the union is additive,
-// not a replacement.
-func TestIsDSMLToolCallReplyEndCutSignalsPreserved(t *testing.T) {
+// TestIsDSMLToolCallReplyEndCutSignalsRouteToMalformed: replies that end
+// with a wrapper close (or its typo'd variants) still qualify as executable;
+// a cut-off close no longer does - it routes through MalformedDSMLToolCalls
+// instead of executing.
+func TestIsDSMLToolCallReplyEndCutSignalsRouteToMalformed(t *testing.T) {
 	withClose := "<tool_calls>\n<invoke name=\"shell\">\n<parameter name=\"script\" string=\"true\">ls</parameter>\n</invoke>\n</tool_calls>"
 	withTypoClose := "<tool_calls>\n<invoke name=\"shell\">\n<parameter name=\"script\" string=\"true\">ls</parameter>\n</invoke>\n</_calls>"
 	withCut := "<tool_calls>\n<invoke name=\"shell\">\n<parameter name=\"script\" string=\"true\">ls</parameter>\n</invoke>\n</"
 	for name, text := range map[string]string{
 		"end":        withClose,
 		"typo-close": withTypoClose,
-		"cut":        withCut,
 	} {
 		if !IsDSMLToolCallReply(text) {
 			t.Errorf("%s: IsDSMLToolCallReply = false, want true (signal preserved)", name)
 		}
+	}
+	if IsDSMLToolCallReply(withCut) {
+		t.Error("withCut: IsDSMLToolCallReply = true, want false (cut close is not executable)")
+	}
+	if !MalformedDSMLToolCalls(withCut) {
+		t.Error("withCut: MalformedDSMLToolCalls = false, want true (cut close routes to malformed)")
 	}
 }

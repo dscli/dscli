@@ -459,8 +459,9 @@ func HandleWebChatResume(ctx context.Context, opts WebChatOptions) (WebChatResul
 		return WebChatResult{Content: content, URL: convURL}, nil
 	}
 	// Pending tool-call round: execute and continue until the final answer.
-	// The interrupted round may legitimately be stored non-FINISHED (the
-	// cut close tag IS the pending signal) — the loop resolves it.
+	// The interrupted round may legitimately be stored non-FINISHED - a cut
+	// close is a pending signal only when accompanied by a genuine unquoted
+	// invoke attempt (see shouldEnterToolLoop), and the loop resolves it.
 	return handleWebChatToolLoop(ctx, WebChatResult{Content: content, URL: convURL}, opts)
 }
 

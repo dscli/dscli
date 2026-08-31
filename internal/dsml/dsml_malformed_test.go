@@ -59,3 +59,25 @@ func TestMalformedDSMLToolCallsShapes(t *testing.T) {
 		})
 	}
 }
+
+// TestMalformedDSMLToolCallsParamValueTypoQuote pins the parameter-body
+// awareness of hasTypoInvokeOpen: a typo'd invoke tag INSIDE a parameter
+// VALUE is content, not markup - the call must parse and must NOT be
+// flagged malformed.
+func TestMalformedDSMLToolCallsParamValueTypoQuote(t *testing.T) {
+	text := "<tool_calls>\n<invoke name=\"shell\">\n<parameter name=\"script\" string=\"true\">echo '<invinvoke name=\"x\">'</parameter>\n</invoke>\n</tool_calls>"
+
+	if MalformedDSMLToolCalls(text) {
+		t.Fatal("MalformedDSMLToolCalls = true, want false (typo inside parameter value is content)")
+	}
+	calls, err := ParseDSMLToolCalls(text)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls error = %v, want nil", err)
+	}
+	if len(calls) != 1 || calls[0].Name != "shell" {
+		t.Fatalf("calls = %+v, want one shell call", calls)
+	}
+	if got, _ := calls[0].Args["script"].(string); got != "echo '<invinvoke name=\"x\">'" {
+		t.Errorf("script = %q, want the echoed typo text verbatim", got)
+	}
+}
