@@ -1,0 +1,9 @@
+  All 4 commits are done. Now the full verification: `gocyclo -over 20 .`, `go build ./...`, `go vet ./...`, `go test ./...`, `make fmt-check`.
+
+  <｜｜DSML｜｜tool_calls>
+  <｜｜DSML｜｜tool_calls>
+  <invoke name="shell">
+  <parameter name="script" string="true">cd /home/nanjj/.local/src/github.com/dscli/dscli && echo "=== gocyclo ===" && gocyclo -over 20 . 2>&1 | grep -E "handleWriteFileWithLineRange|processItem|convertMarkdownSimple|TestToolArgsValue" || echo "OK: none of 4 target functions listed"</parameter>
+  <parameter name="summary" string="true">gocyclo check for 4 target functions</parameter>
+  </invoke>
+  <｜｜DSML｜｜tool_calls>

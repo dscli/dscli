@@ -30,6 +30,9 @@ var wcCase5 string
 //go:embed testdata/case6_bare_short_close.txt
 var wcCase6 string
 
+//go:embed testdata/case7_dup_open.txt
+var wcCase7 string
+
 func TestWebchatCase1EditArgument(t *testing.T) {
 	// code_edit whose oldText/newText values contain literal DSML tag text
 	// (Go comments about <parameter>/</invoke>), closed with a typo'd </_calls>.
@@ -207,5 +210,88 @@ func TestWebchatCaseMisNestedUnclosedParam(t *testing.T) {
 	}
 	if got, _ := calls[0].Args["p"].(string); !strings.Contains(got, "v\n"+lt+"invoke name=\"b\"") {
 		t.Errorf("p value = %q, want the value running to the wrapper close", got)
+	}
+}
+
+func TestWebchatCase7DupOpen(t *testing.T) {
+	// The wrapper open tag is duplicated at the start and the CLOSE is
+	// spelled with the OPENING form "<tool_calls>" (no slash) at the very
+	// end - the model repeated the header line and closed the round with
+	// the slash-less spelling, both inside DSML badge markers (2026-08,
+	// dsml.org "重复的开头"). The invoke block itself is complete: the
+	// round must still route into the tool loop and parse the call.
+	calls, err := ParseDSMLToolCalls(wcCase7)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls: %v", err)
+	}
+	if len(calls) != 1 || calls[0].Name != "shell" {
+		t.Fatalf("calls = %d (%+v), want one shell call", len(calls), calls)
+	}
+	script, _ := calls[0].Args["script"].(string)
+	if !strings.HasPrefix(script, "cd /home/nanjj") {
+		t.Errorf("script = %q, want the full command", script)
+	}
+	if !strings.Contains(script, "gocyclo -over 20") {
+		t.Errorf("script value corrupted: %q", script)
+	}
+	if !IsDSMLToolCallEnd(wcCase7) {
+		t.Error("IsDSMLToolCallEnd = false, want true (slash-less <tool_calls> close at end)")
+	}
+	if !IsDSMLToolCallReply(wcCase7) {
+		t.Error("IsDSMLToolCallReply = false, want true")
+	}
+	// End to end through the unified entry: the call must still be
+	// delivered for execution. The markup is NOT strict (badge markers +
+	// duplicated header + slash-less close), so OK=false and the content
+	// keeps the original text - violations feed only the injected warning,
+	// never the execution judgement.
+	msg := ParseDSMLMessage("", wcCase7)
+	if msg.OK {
+		t.Error("ParseDSMLMessage OK = true, want false (non-strict markup: badge markers, duplicated header, slash-less close)")
+	}
+	if len(msg.ToolCalls) != 1 || msg.ToolCalls[0].Function.Name != "shell" {
+		t.Fatalf("msg.ToolCalls = %+v, want one shell call", msg.ToolCalls)
+	}
+	if !strings.Contains(msg.Content, "All 4 commits") {
+		t.Errorf("prose preamble lost: %.80q", msg.Content)
+	}
+	// Strip must remove every wrapper copy (duplicated header AND the
+	// slash-less close), leaving only the prose preamble.
+	stripped := StripDSMLToolCalls(wcCase7)
+	if strings.Contains(stripped, "tool_calls") || strings.Contains(stripped, "<invoke") {
+		t.Errorf("markup residue after strip: %q", stripped)
+	}
+	if !strings.Contains(stripped, "All 4 commits") {
+		t.Errorf("strip lost the prose preamble: %q", stripped)
+	}
+	if IsPureDSMLToolCalls(wcCase7) {
+		t.Error("IsPureDSMLToolCalls = true, want false (prose preamble survives)")
+	}
+}
+
+func TestWebchatCase7ImplicitClose(t *testing.T) {
+	// Twin shape of the same capture: the duplicated header and slash-less
+	// close, but the model ALSO dropped the trailing </invoke>. The
+	// slash-less <tool_calls> at the end is the wrapper-close signal, so
+	// the one remaining open is implicitly closed and the call must parse
+	// instead of being reported as truncated.
+	text := "prose\n" +
+		"<tool_calls>\n" +
+		"<tool_calls>\n" +
+		"<invoke name=\"shell\">\n" +
+		"<parameter name=\"script\" string=\"true\">echo hi</parameter>\n" +
+		"<tool_calls>"
+	calls, err := ParseDSMLToolCalls(text)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls: %v", err)
+	}
+	if len(calls) != 1 || calls[0].Name != "shell" {
+		t.Fatalf("calls = %d (%+v), want one shell call", len(calls), calls)
+	}
+	if got, _ := calls[0].Args["script"].(string); got != "echo hi" {
+		t.Errorf("script = %q, want echo hi", got)
+	}
+	if !IsDSMLToolCallReply(text) {
+		t.Error("IsDSMLToolCallReply = false, want true (wrapper-close signal present)")
 	}
 }

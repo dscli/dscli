@@ -1208,6 +1208,11 @@ func TestIsDSMLToolCallEnd(t *testing.T) {
 		{"trailing whitespace after close tag", pure + "\n\n", true},
 		// 全角括号经 normalizeDSMLText 转半角后同样成立。
 		{"full-width close tag", "分析一下：\n" + strings.Replace(pure, "</tool_calls>", "＜/tool_calls＞", 1), true},
+		// 开口拼写"闭合"（模型把 </tool_calls> 写成 <tool_calls>，2026-08
+		// dsml.org "重复的开头"样例）：与 <_calls> 同类的退化，$ 锚定保证
+		// 只有真在文本末尾的才当作闭合信号。
+		{"slash-less <tool_calls> close at end", "prose\n<tool_calls>", true},
+		{"slash-less <tool_calls> not at end", "<tool_calls>\n<invoke name=\"a\"></invoke>", false},
 		// 无 </tool_calls> 结尾：引用示例、裸 invoke 列表、截断调用都不执行。
 		{"bare invoke list, no wrapper close", strings.TrimSuffix(bareList, "</tool_calls>"), false},
 		{"bare invoke list ending in wrapper close", bareList, true},

@@ -125,11 +125,15 @@ func IsPureDSMLToolCalls(text string) bool {
 // `<_calls>` (and `<tool_calls>` with the slash missing) is accepted as
 // the same degradation one step further: the model closed the round with
 // the OPENING-tag spelling ("<_calls>" instead of "</_calls>"), observed in
-// a real QA follow-up round on chat.deepseek.com. The intent signal is the
-// same - a wrapper close attempt at the very end after complete <invoke>
-// blocks - and execution is still gated by parse success, so a dangling
-// opening tag with no parseable calls executes nothing.
-var dsmlToolCallsCloseEndRe = regexp.MustCompile(`(?s)(?:</\s*(?:tool_calls|_calls)?\s*>|<\s*_calls\s*>)\s*$`)
+// a real QA follow-up round on chat.deepseek.com. The FULL-NAME opening
+// spelling `<\s*tool_calls\s*>` is admitted the same way: a 2026-08
+// dsml.org capture ("重复的开头") shows the model repeating the wrapper
+// header twice and closing the round with the slash-less "<tool_calls>"
+// (inside DSML badge markers). The intent signal is the same - a wrapper
+// close attempt at the very end after complete <invoke> blocks - and
+// execution is still gated by parse success, so a dangling opening tag
+// with no parseable calls executes nothing.
+var dsmlToolCallsCloseEndRe = regexp.MustCompile(`(?s)(?:</\s*(?:tool_calls|_calls)?\s*>|<\s*(?:tool_calls|_calls)\s*>)\s*$`)
 
 // dsmlToolCallsCloseCutRe matches a CUT-OFF wrapper close tag at the very
 // end of the text: the opening "</" exists but the tag was truncated
