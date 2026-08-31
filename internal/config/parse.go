@@ -269,15 +269,24 @@ func (p *parser) popItemKey() item {
 	return last
 }
 
-func (p *parser) processItem(it item, fp string) error {
-	setValue := func(it item, v any) {
-		if p.pedantic {
-			p.setValue(&token{it, v, false, fp})
-		} else {
-			p.setValue(v)
-		}
-	}
+// numericSuffixFactors: 数字字面量后缀 → 乘数 (k=1000, kb/ki/kib=1024, ...)
+var numericSuffixFactors = map[string]int64{
+	"": 1, "k": 1e3,
+	"kb": 1 << 10, "ki": 1 << 10, "kib": 1 << 10,
+	"m": 1e6, "mb": 1 << 20, "mi": 1 << 20, "mib": 1 << 20,
+	"g": 1e9, "gb": 1 << 30, "gi": 1 << 30, "gib": 1 << 30,
+	"t": 1e12, "tb": 1 << 40, "ti": 1 << 40, "tib": 1 << 40,
+	"p": 1e15, "pb": 1 << 50, "pi": 1 << 50, "pib": 1 << 50,
+	"e": 1e18, "eb": 1 << 60, "ei": 1 << 60, "eib": 1 << 60,
+}
 
+// numericSuffixValue 返回 num 乘上后缀因子；未知后缀返回 (0, false) 表示忽略。
+func numericSuffixValue(num int64, suffix string) (int64, bool) {
+	factor, ok := numericSuffixFactors[suffix]
+	return num * factor, ok
+}
+
+func (p *parser) processItem(it item, fp string) error {
 	switch it.typ {
 	case itemError:
 		return fmt.Errorf("Parse error on line %d: '%s'", it.line, it.val)
@@ -294,144 +303,155 @@ func (p *parser) processItem(it item, fp string) error {
 		newCtx := make(map[string]any)
 		p.pushContext(newCtx)
 	case itemMapEnd:
-		setValue(it, p.popContext())
+		p.setPedanticValue(it, p.popContext(), fp)
 	case itemString:
 		// FIXME(dlc) sanitize string?
-		setValue(it, it.val)
+		p.setPedanticValue(it, it.val, fp)
 	case itemInteger:
-		lastDigit := 0
-		for _, r := range it.val {
-			if !unicode.IsDigit(r) && r != '-' {
-				break
-			}
-			lastDigit++
-		}
-		numStr := it.val[:lastDigit]
-		num, err := strconv.ParseInt(numStr, 10, 64)
-		if err != nil {
-			if e, ok := err.(*strconv.NumError); ok &&
-				e.Err == strconv.ErrRange {
-				return fmt.Errorf("integer '%s' is out of the range", it.val)
-			}
-			return fmt.Errorf("expected integer, but got '%s'", it.val)
-		}
-		// Process a suffix
-		suffix := strings.ToLower(strings.TrimSpace(it.val[lastDigit:]))
-
-		switch suffix {
-		case "":
-			setValue(it, num)
-		case "k":
-			setValue(it, num*1000)
-		case "kb", "ki", "kib":
-			setValue(it, num*1024)
-		case "m":
-			setValue(it, num*1000*1000)
-		case "mb", "mi", "mib":
-			setValue(it, num*1024*1024)
-		case "g":
-			setValue(it, num*1000*1000*1000)
-		case "gb", "gi", "gib":
-			setValue(it, num*1024*1024*1024)
-		case "t":
-			setValue(it, num*1000*1000*1000*1000)
-		case "tb", "ti", "tib":
-			setValue(it, num*1024*1024*1024*1024)
-		case "p":
-			setValue(it, num*1000*1000*1000*1000*1000)
-		case "pb", "pi", "pib":
-			setValue(it, num*1024*1024*1024*1024*1024)
-		case "e":
-			setValue(it, num*1000*1000*1000*1000*1000*1000)
-		case "eb", "ei", "eib":
-			setValue(it, num*1024*1024*1024*1024*1024*1024)
-		}
+		return p.processInteger(it, fp)
 	case itemFloat:
-		num, err := strconv.ParseFloat(it.val, 64)
-		if err != nil {
-			if e, ok := err.(*strconv.NumError); ok &&
-				e.Err == strconv.ErrRange {
-				return fmt.Errorf("float '%s' is out of the range", it.val)
-			}
-			return fmt.Errorf("expected float, but got '%s'", it.val)
-		}
-		setValue(it, num)
+		return p.processFloat(it, fp)
 	case itemBool:
-		switch strings.ToLower(it.val) {
-		case "true", "yes", "on":
-			setValue(it, true)
-		case "false", "no", "off":
-			setValue(it, false)
-		default:
-			return fmt.Errorf("expected boolean value, but got '%s'", it.val)
-		}
-
+		return p.processBool(it, fp)
 	case itemDatetime:
-		dt, err := time.Parse("2006-01-02T15:04:05Z", it.val)
-		if err != nil {
-			return fmt.Errorf(
-				"expected Zulu formatted DateTime, but got '%s'", it.val,
-			)
-		}
-		setValue(it, dt)
+		return p.processDatetime(it, fp)
 	case itemArrayStart:
 		array := make([]any, 0)
 		p.pushContext(array)
 	case itemArrayEnd:
 		array := p.ctx
 		p.popContext()
-		setValue(it, array)
+		p.setPedanticValue(it, array, fp)
 	case itemVariable:
-		value, found, err := p.lookupVariable(it.val)
-		if err != nil {
-			return fmt.Errorf("variable reference for '%s' on line %d could not be parsed: %s",
-				it.val, it.line, err)
-		}
-		if !found {
-			return fmt.Errorf("variable reference for '%s' on line %d can not be found",
-				it.val, it.line)
-		}
-
-		if p.pedantic {
-			switch tk := value.(type) {
-			case *token:
-				// Mark the looked up variable as used, and make
-				// the variable reference become handled as a token.
-				tk.usedVariable = true
-				p.setValue(&token{it, tk.Value(), false, fp})
-			default:
-				// Special case to add position context to bcrypt references.
-				p.setValue(&token{it, value, false, fp})
-			}
-		} else {
-			p.setValue(value)
-		}
+		return p.processVariable(it, fp)
 	case itemInclude:
-		var (
-			m   map[string]any
-			err error
-		)
-		if p.pedantic {
-			m, err = ParseFileWithChecks(filepath.Join(p.fp, it.val))
-		} else {
-			m, err = ParseFile(filepath.Join(p.fp, it.val))
-		}
-		if err != nil {
-			return fmt.Errorf("error parsing include file '%s', %v", it.val, err)
-		}
-		for k, v := range m {
-			p.pushKey(k)
+		return p.processInclude(it, fp)
+	}
+	return nil
+}
 
-			if p.pedantic {
-				switch tk := v.(type) {
-				case *token:
-					p.pushItemKey(tk.item)
-				}
-			}
-			p.setValue(v)
+// setPedanticValue 按 pedantic 模式设置值: 严格模式包装 token 以保留源码位置。
+func (p *parser) setPedanticValue(it item, v any, fp string) {
+	if p.pedantic {
+		p.setValue(&token{it, v, false, fp})
+	} else {
+		p.setValue(v)
+	}
+}
+
+func (p *parser) processInteger(it item, fp string) error {
+	lastDigit := 0
+	for _, r := range it.val {
+		if !unicode.IsDigit(r) && r != '-' {
+			break
 		}
+		lastDigit++
+	}
+	numStr := it.val[:lastDigit]
+	num, err := strconv.ParseInt(numStr, 10, 64)
+	if err != nil {
+		if e, ok := err.(*strconv.NumError); ok &&
+			e.Err == strconv.ErrRange {
+			return fmt.Errorf("integer '%s' is out of the range", it.val)
+		}
+		return fmt.Errorf("expected integer, but got '%s'", it.val)
+	}
+	// Process a suffix
+	suffix := strings.ToLower(strings.TrimSpace(it.val[lastDigit:]))
+	if value, ok := numericSuffixValue(num, suffix); ok {
+		p.setPedanticValue(it, value, fp)
+	}
+	return nil
+}
+
+func (p *parser) processFloat(it item, fp string) error {
+	num, err := strconv.ParseFloat(it.val, 64)
+	if err != nil {
+		if e, ok := err.(*strconv.NumError); ok &&
+			e.Err == strconv.ErrRange {
+			return fmt.Errorf("float '%s' is out of the range", it.val)
+		}
+		return fmt.Errorf("expected float, but got '%s'", it.val)
+	}
+	p.setPedanticValue(it, num, fp)
+	return nil
+}
+
+func (p *parser) processBool(it item, fp string) error {
+	switch strings.ToLower(it.val) {
+	case "true", "yes", "on":
+		p.setPedanticValue(it, true, fp)
+	case "false", "no", "off":
+		p.setPedanticValue(it, false, fp)
+	default:
+		return fmt.Errorf("expected boolean value, but got '%s'", it.val)
+	}
+	return nil
+}
+
+func (p *parser) processDatetime(it item, fp string) error {
+	dt, err := time.Parse("2006-01-02T15:04:05Z", it.val)
+	if err != nil {
+		return fmt.Errorf(
+			"expected Zulu formatted DateTime, but got '%s'", it.val,
+		)
+	}
+	p.setPedanticValue(it, dt, fp)
+	return nil
+}
+
+func (p *parser) processVariable(it item, fp string) error {
+	value, found, err := p.lookupVariable(it.val)
+	if err != nil {
+		return fmt.Errorf("variable reference for '%s' on line %d could not be parsed: %s",
+			it.val, it.line, err)
+	}
+	if !found {
+		return fmt.Errorf("variable reference for '%s' on line %d can not be found",
+			it.val, it.line)
 	}
 
+	if p.pedantic {
+		switch tk := value.(type) {
+		case *token:
+			// Mark the looked up variable as used, and make
+			// the variable reference become handled as a token.
+			tk.usedVariable = true
+			p.setValue(&token{it, tk.Value(), false, fp})
+		default:
+			// Special case to add position context to bcrypt references.
+			p.setValue(&token{it, value, false, fp})
+		}
+	} else {
+		p.setValue(value)
+	}
+	return nil
+}
+
+func (p *parser) processInclude(it item, fp string) error {
+	var (
+		m   map[string]any
+		err error
+	)
+	if p.pedantic {
+		m, err = ParseFileWithChecks(filepath.Join(p.fp, it.val))
+	} else {
+		m, err = ParseFile(filepath.Join(p.fp, it.val))
+	}
+	if err != nil {
+		return fmt.Errorf("error parsing include file '%s', %v", it.val, err)
+	}
+	for k, v := range m {
+		p.pushKey(k)
+
+		if p.pedantic {
+			switch tk := v.(type) {
+			case *token:
+				p.pushItemKey(tk.item)
+			}
+		}
+		p.setValue(v)
+	}
 	return nil
 }
 
