@@ -74,7 +74,11 @@ func TestMalformedDSMLToolCallsShapes(t *testing.T) {
 // VALUE is content, not markup - the call must parse and must NOT be
 // flagged malformed.
 func TestMalformedDSMLToolCallsParamValueTypoQuote(t *testing.T) {
-	text := "<tool_calls>\n<invoke name=\"shell\">\n<parameter name=\"script\" string=\"true\">echo '<invinvoke name=\"x\">'</parameter>\n</invoke>\n</tool_calls>"
+	text := "<" + "tool_calls>\n" +
+		"<" + "invoke name=\"shell\">\n" +
+		"<" + "parameter name=\"script\" string=\"true\">echo '<invinvoke name=\"x\">'<" + "/parameter>\n" +
+		"<" + "/invoke>\n" +
+		"<" + "/tool_calls>"
 
 	if MalformedDSMLToolCalls(text) {
 		t.Fatal("MalformedDSMLToolCalls = true, want false (typo inside parameter value is content)")
@@ -96,7 +100,7 @@ func TestMalformedDSMLToolCallsParamValueTypoQuote(t *testing.T) {
 // parameter-looking token (after a ">" so it reads as structural) must not
 // hide the parameter body - the typo'd invoke inside the value is content,
 // the call must not be flagged malformed, and it must still parse as the
-// one shell call.
+// one shell call whose script value survives verbatim.
 func TestMalformedDSMLToolCallsParamValueLiteralParamTag(t *testing.T) {
 	litParam := "<" + "para" + "meter>"
 	text := "<" + "tool_calls>\n" +
@@ -114,5 +118,38 @@ func TestMalformedDSMLToolCallsParamValueLiteralParamTag(t *testing.T) {
 	}
 	if len(calls) != 1 || calls[0].Name != "shell" {
 		t.Fatalf("calls = %+v, want one shell call", calls)
+	}
+	wantScript := "echo '<invinvoke name=\"x\"> " + litParam + "'"
+	if got, _ := calls[0].Args["script"].(string); got != wantScript {
+		t.Errorf("script = %q, want the full value verbatim %q", got, wantScript)
+	}
+}
+
+// TestMalformedDSMLToolCallsParamValueTypoAfterLiteral pins the depth==0
+// name gate in both inner loops: a typo'd invoke tag AFTER a literal nameless
+// "<parameter>" token inside the value must stay content (the nameless token
+// must not truncate the param-body range), so the call is NOT malformed and
+// parses as one shell call with the full value.
+func TestMalformedDSMLToolCallsParamValueTypoAfterLiteral(t *testing.T) {
+	litParam := "<" + "para" + "meter>"
+	text := "<" + "tool_calls>\n" +
+		"<" + "invoke name=\"shell\">\n" +
+		"<" + "parameter name=\"script\" string=\"true\">echo '<invinvoke name=\"a\"> " + litParam + " after <invinvoke name=\"y\">'<" + "/parameter>\n" +
+		"<" + "/invoke>\n" +
+		"<" + "/tool_calls>"
+
+	if MalformedDSMLToolCalls(text) {
+		t.Fatal("MalformedDSMLToolCalls = true, want false (typo after literal parameter token is content)")
+	}
+	calls, err := ParseDSMLToolCalls(text)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls error = %v, want nil", err)
+	}
+	if len(calls) != 1 || calls[0].Name != "shell" {
+		t.Fatalf("calls = %+v, want one shell call", calls)
+	}
+	wantScript := "echo '<invinvoke name=\"a\"> " + litParam + " after <invinvoke name=\"y\">'"
+	if got, _ := calls[0].Args["script"].(string); got != wantScript {
+		t.Errorf("script = %q, want the full value verbatim %q", got, wantScript)
 	}
 }

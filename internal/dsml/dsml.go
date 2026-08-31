@@ -1190,8 +1190,16 @@ func extractDSMLCalls(text string, blocks []dsmlBlockRange) (calls []DSMLCall, s
 						continue
 					}
 					if depth == 0 {
-						// A new structural parameter starts before this one closed:
-						// the current one is implicitly closed here.
+						// Only a NAMED structural parameter closes this one
+						// implicitly: the outer scan already treats a nameless
+						// "<parameter>" as content, so the value must run past
+						// it. A nameless one here is value content - skip it.
+						if !dsmlParamNameRe.MatchString(body[op : j+nextOpen[1]]) {
+							j = j + nextOpen[1]
+							continue
+						}
+						// A new named structural parameter starts before this one
+						// closed: the current one is implicitly closed here.
 						valueEnd = op
 						break
 					}
@@ -1313,7 +1321,7 @@ func SuspectedDSMLToolCalls(text string) bool {
 }
 
 // hasUnquotedInvokeOpen reports a named invoke open tag outside quoted code
-// (fenced blocks, inline spans, tool_result echoes).
+// (fenced blocks, inline spans, tool_result echoes) and parameter bodies.
 func hasUnquotedInvokeOpen(text string) bool {
 	text = normalizeDSMLText(text)
 	fences := dsmlCodeRanges(text)
@@ -1332,8 +1340,9 @@ func hasUnquotedInvokeOpen(text string) bool {
 // content - e.g. a shell script that echoes a typo'd invoke tag - not
 // markup, exactly as dsmlBlockRangesStrict treats parameter bodies as
 // opaque. Pairing mirrors extractDSMLCalls' depth-count loop with the
-// structural gate; unlike extractDSMLCalls, an unclosed parameter
-// contributes no range.
+// structural gate and the depth==0 name gate: an unclosed parameter
+// contributes a range up to the next structural NAMED parameter open
+// (implicit close) or to the end of the text.
 func dsmlParamBodyRanges(text string) [][2]int {
 	fences := dsmlCodeRanges(text)
 	var ranges [][2]int
@@ -1359,10 +1368,15 @@ func dsmlParamBodyRanges(text string) [][2]int {
 					continue
 				}
 				if depth == 0 {
-					// A new structural parameter starts before this one
-					// closed: the current value implicitly ends here, just
-					// as extractDSMLCalls closes the value at a structural
-					// nested open.
+					// Only a NAMED structural parameter ends this body
+					// implicitly, mirroring extractDSMLCalls' depth==0
+					// branch: the outer structural scan already treats a
+					// nameless "<parameter>" as content, so it is content
+					// here too - skip it.
+					if !dsmlParamNameRe.MatchString(text[op : j+nextOpen[1]]) {
+						j += nextOpen[1]
+						continue
+					}
 					end = op
 					break
 				}
