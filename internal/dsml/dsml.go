@@ -1317,8 +1317,9 @@ func SuspectedDSMLToolCalls(text string) bool {
 func hasUnquotedInvokeOpen(text string) bool {
 	text = normalizeDSMLText(text)
 	fences := dsmlCodeRanges(text)
+	paramBodies := dsmlParamBodyRanges(text)
 	for _, m := range dsmlNamedInvokeOpenRe.FindAllStringIndex(text, -1) {
-		if !inRanges(fences, m[0]) {
+		if !inRanges(fences, m[0]) && !inRanges(paramBodies, m[0]) {
 			return true
 		}
 	}
@@ -1330,13 +1331,16 @@ func hasUnquotedInvokeOpen(text string) bool {
 // inside quoted code. A misspelled invoke open inside a parameter VALUE is
 // content - e.g. a shell script that echoes a typo'd invoke tag - not
 // markup, exactly as dsmlBlockRangesStrict treats parameter bodies as
-// opaque. Pairing uses the same depth-count loop as extractDSMLCalls; a
-// parameter open with no matching close contributes no body range (no pair).
+// opaque. Pairing mirrors extractDSMLCalls' depth-count loop with the
+// structural gate; unlike extractDSMLCalls, an unclosed parameter
+// contributes no range.
 func dsmlParamBodyRanges(text string) [][2]int {
 	fences := dsmlCodeRanges(text)
 	var ranges [][2]int
 	for _, m := range dsmlParamOpenRe.FindAllStringIndex(text, -1) {
-		if inRanges(fences, m[0]) {
+		if inRanges(fences, m[0]) ||
+			!dsmlStructuralTag(text, m[0]) ||
+			!dsmlParamNameRe.MatchString(text[m[0]:m[1]]) {
 			continue
 		}
 		depth := 0
@@ -1350,9 +1354,17 @@ func dsmlParamBodyRanges(text string) [][2]int {
 			}
 			if nextClose == nil || (nextOpen != nil && nextOpen[0] < nextClose[0]) {
 				op := j + nextOpen[0]
-				if inRanges(fences, op) {
+				if inRanges(fences, op) || !dsmlStructuralTag(text, op) {
 					j += nextOpen[1]
 					continue
+				}
+				if depth == 0 {
+					// A new structural parameter starts before this one
+					// closed: the current value implicitly ends here, just
+					// as extractDSMLCalls closes the value at a structural
+					// nested open.
+					end = op
+					break
 				}
 				depth++
 				j += nextOpen[1]
@@ -1380,11 +1392,15 @@ func dsmlParamBodyRanges(text string) [][2]int {
 
 // hasTypoInvokeOpen reports an invoke-LIKE open tag (a misspelled invoke
 // carrying a name attribute) outside quoted code and parameter bodies. A
-// match is a typo only when the captured tag name is not exactly "invoke"
-// (any case) but case-insensitively contains "invoke": a duplicated or
-// extended spelling qualifies; a canonical invoke is not a typo (it is the
-// valid path), and a div with a name attribute never qualifies (no "invoke"
-// in the name). Mirrors hasUnquotedInvokeOpen.
+// match is a typo only when the captured tag name is not exactly the
+// canonical lowercase "invoke" but case-insensitively contains "invoke": a
+// duplicated or extended spelling qualifies, and a mixed- or upper-case
+// spelling (<Invoke ...>) qualifies too - the parser (case-sensitive
+// lowercase dsmlNamedInvokeOpenRe) never executes it, so flagging it gives
+// the model corrective feedback instead of silently dropping the call. A
+// canonical invoke is not a typo (it is the valid path), and a div with a
+// name attribute never qualifies (no "invoke" in the name). Mirrors
+// hasUnquotedInvokeOpen.
 func hasTypoInvokeOpen(text string) bool {
 	text = normalizeDSMLText(text)
 	fences := dsmlCodeRanges(text)
@@ -1394,8 +1410,8 @@ func hasTypoInvokeOpen(text string) bool {
 			continue
 		}
 		name := text[m[2]:m[3]]
-		if strings.EqualFold(name, "invoke") {
-			continue // canonical spelling (any case) is the valid path, not a typo
+		if name == "invoke" {
+			continue // canonical lowercase spelling is the valid path, not a typo
 		}
 		if !strings.Contains(strings.ToLower(name), "invoke") {
 			continue

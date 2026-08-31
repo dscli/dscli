@@ -25,6 +25,7 @@ func TestMalformedDSMLToolCallsShapes(t *testing.T) {
 	div := "<" + `div name="x">content<` + "/div>"
 	noName := "<" + "invinvoke>content<" + "/invinvoke>"
 	invokee := "<" + `invokee name="shell">` + "<" + `parameter name="script" string="true">ls<` + "/parameter><" + "/invokee>"
+	mixedCaseInvoke := "<" + `Invoke name="x">` + "</" + "Invoke>"
 	cut := "<" + `tool_calls><invoke name="write_file">` + "<" + `parameter name="path" string="true">a.txt<` + "/parameter><" + "/invoke>" + "\n</"
 	cutNoGT := "<" + `tool_calls><invoke name="write_file">` + "<" + `parameter name="path" string="true">a.txt<` + "/parameter><" + "/invoke><" + "/tool_calls"
 	complete := "<" + `tool_calls><invoke name="write_file">` + "<" + `parameter name="path" string="true">a.txt<` + "/parameter><" + "/invoke><" + "/tool_calls>"
@@ -42,6 +43,7 @@ func TestMalformedDSMLToolCallsShapes(t *testing.T) {
 		{name: "div with name attr is not malformed", text: div, want: false},
 		{name: "invinvoke without name attr is not malformed", text: noName, want: false},
 		{name: "invokee typo with name attr is malformed", text: invokee, want: true},
+		{name: "mixed-case invoke with name attr is malformed", text: mixedCaseInvoke, want: true},
 		{name: "cut close after complete invokes is malformed", text: cut, want: true},
 		{name: "cut close without greater-than after complete invokes is malformed", text: cutNoGT, want: true},
 		{name: "complete tool_calls close is not malformed", text: complete, want: false},
@@ -57,6 +59,13 @@ func TestMalformedDSMLToolCallsShapes(t *testing.T) {
 				t.Errorf("MalformedDSMLToolCalls(%q) = %v, want %v", tc.text, got, tc.want)
 			}
 		})
+	}
+
+	// The mixed-case <Invoke name=...> contract: it is flagged malformed (a
+	// typo for corrective feedback) and never parsed/executed (the parser
+	// only accepts the lowercase canonical spelling).
+	if HasDSMLToolCalls(mixedCaseInvoke) {
+		t.Error("HasDSMLToolCalls(mixed-case invoke) = true, want false (parser only accepts lowercase canonical spelling)")
 	}
 }
 
@@ -79,5 +88,31 @@ func TestMalformedDSMLToolCallsParamValueTypoQuote(t *testing.T) {
 	}
 	if got, _ := calls[0].Args["script"].(string); got != "echo '<invinvoke name=\"x\">'" {
 		t.Errorf("script = %q, want the echoed typo text verbatim", got)
+	}
+}
+
+// TestMalformedDSMLToolCallsParamValueLiteralParamTag pins the structural
+// gate in dsmlParamBodyRanges: a parameter value containing a literal
+// parameter-looking token (after a ">" so it reads as structural) must not
+// hide the parameter body - the typo'd invoke inside the value is content,
+// the call must not be flagged malformed, and it must still parse as the
+// one shell call.
+func TestMalformedDSMLToolCallsParamValueLiteralParamTag(t *testing.T) {
+	litParam := "<" + "para" + "meter>"
+	text := "<" + "tool_calls>\n" +
+		"<" + "invoke name=\"shell\">\n" +
+		"<" + "parameter name=\"script\" string=\"true\">" + "echo '<invinvoke name=\"x\"> " + litParam + "'" + "<" + "/parameter>\n" +
+		"<" + "/invoke>\n" +
+		"<" + "/tool_calls>"
+
+	if MalformedDSMLToolCalls(text) {
+		t.Fatal("MalformedDSMLToolCalls = true, want false (typo inside parameter value is content)")
+	}
+	calls, err := ParseDSMLToolCalls(text)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls error = %v, want nil", err)
+	}
+	if len(calls) != 1 || calls[0].Name != "shell" {
+		t.Fatalf("calls = %+v, want one shell call", calls)
 	}
 }
