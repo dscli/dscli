@@ -712,16 +712,22 @@ func TestGetRoleConfigLostInvalidationRetry(t *testing.T) {
 		t.Fatalf("listRoleConfigs called %d times, want exactly 2 calls (one initial + one retry)", calls)
 	}
 
-	// Directly assert the cache holds no bucket for this session. This is
-	// the proof; the upsert-then-reread below cannot be, because UpsertRoleConfig's
-	// own invalidateRoleCache() would wipe any stale negative and mask a
-	// broken generation guard.
+	// The proof is the conjunction: calls == 2 (the retry happened) AND
+	// bucket == nil (the retry did not store a stale snapshot). The stub's
+	// own invalidateRoleCache leaves roleCache nil, so bucket == nil alone
+	// would not prove the guard; but a broken guard on the retry attempt
+	// would have stored a non-nil empty bucket, which bucket == nil catches.
 	roleCacheMu.RLock()
 	bucket := roleCache[sid]
 	roleCacheMu.RUnlock()
 	if bucket != nil {
 		t.Fatalf("stale bucket cached for session %d after retry: %v", sid, bucket)
 	}
+
+	// Restore the seam so the final leg is a genuinely independent
+	// end-to-end sanity check (clean fast-path/invalidation behavior, not
+	// another stub-driven retry). t.Cleanup still restores as a backstop.
+	listRoleConfigs = orig
 
 	// End-to-end sanity check (not the proof): after upserting a real row, a
 	// fresh lookup must reflect it.
