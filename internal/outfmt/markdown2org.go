@@ -345,160 +345,188 @@ func (c *MarkdownToOrgConverter) passThroughMdTableBuf() string {
 	return result.String()
 }
 
+// convertBoldMarkup 处理 **...**; 找到闭合时输出 *...*（含 CJK 边界空格），
+// 未闭合时输出剩余全部文本并令 next=n（与旧行为"WriteString(text[i:]); break"等价）。
+func (c *MarkdownToOrgConverter) convertBoldMarkup(sb *strings.Builder, text string, i int) (next int, ok bool) {
+	n := len(text)
+	if i+1 >= n || text[i] != '*' || text[i+1] != '*' {
+		return 0, false
+	}
+	// Find closing **
+	j := i + 2
+	for j < n {
+		if j+1 < n && text[j] == '*' && text[j+1] == '*' {
+			// Found closing **
+			boldText := text[i+2 : j]
+			// 递归处理粗体中的斜体
+			boldText = c.convertItalicInBold(boldText)
+			writePreSpaceIfCJK(sb)
+			sb.WriteString("*")
+			sb.WriteString(boldText)
+			sb.WriteString("*")
+			next = j + 2
+			writePostSpaceIfCJK(sb, text, next)
+			return next, true
+		}
+		j++
+	}
+	// No closing ** found
+	sb.WriteString(text[i:])
+	return n, true
+}
+
+// convertItalicMarkup 处理单 *...*（排除 ** 边界）; 输出 /.../。
+func (c *MarkdownToOrgConverter) convertItalicMarkup(sb *strings.Builder, text string, i int) (next int, ok bool) {
+	n := len(text)
+	if text[i] != '*' || (i > 0 && text[i-1] == '*') || (i+1 < n && text[i+1] == '*') {
+		return 0, false
+	}
+	// Find closing *
+	j := i + 1
+	for j < n {
+		if text[j] == '*' && (j+1 >= n || text[j+1] != '*') {
+			// Found closing *
+			italicText := text[i+1 : j]
+			writePreSpaceIfCJK(sb)
+			sb.WriteString("/")
+			sb.WriteString(italicText)
+			sb.WriteString("/")
+			next = j + 1
+			writePostSpaceIfCJK(sb, text, next)
+			return next, true
+		}
+		j++
+	}
+	// No closing * found
+	sb.WriteByte(text[i])
+	return i + 1, true
+}
+
+// convertStrikeMarkup 处理 ~~...~~; 输出 +...+。
+func (c *MarkdownToOrgConverter) convertStrikeMarkup(sb *strings.Builder, text string, i int) (next int, ok bool) {
+	n := len(text)
+	if i+1 >= n || text[i] != '~' || text[i+1] != '~' {
+		return 0, false
+	}
+	j := i + 2
+	for j < n {
+		if j+1 < n && text[j] == '~' && text[j+1] == '~' {
+			strikeText := text[i+2 : j]
+			writePreSpaceIfCJK(sb)
+			sb.WriteString("+")
+			sb.WriteString(strikeText)
+			sb.WriteString("+")
+			next = j + 2
+			writePostSpaceIfCJK(sb, text, next)
+			return next, true
+		}
+		j++
+	}
+	// No closing ~~ found
+	sb.WriteString(text[i:])
+	return n, true
+}
+
+// convertInlineCodeMarkup 处理 `...`; 2+ 连续反引号原样透传; 输出 =code=。
+func (c *MarkdownToOrgConverter) convertInlineCodeMarkup(sb *strings.Builder, text string, i int) (next int, ok bool) {
+	n := len(text)
+	if text[i] != '`' {
+		return 0, false
+	}
+	// Count consecutive backticks
+	tickCount := 1
+	for i+tickCount < n && text[i+tickCount] == '`' {
+		tickCount++
+	}
+	// 2+ backticks (`` or ```...): not inline code, pass through
+	if tickCount >= 2 {
+		for k := 0; k < tickCount; k++ {
+			sb.WriteByte('`')
+		}
+		return i + tickCount, true
+	}
+	// Single backtick: inline code
+	j := i + 1
+	for j < n && text[j] != '`' {
+		j++
+	}
+	if j < n {
+		codeText := text[i+1 : j]
+		sb.WriteString(" =")
+		sb.WriteString(codeText)
+		sb.WriteString("= ")
+		return j + 1, true
+	}
+	sb.WriteByte(text[i])
+	return i + 1, true
+}
+
+// convertLinkMarkup 处理 [text](url); 完整匹配时输出 [[url][text]]，否则不消费。
+func (c *MarkdownToOrgConverter) convertLinkMarkup(sb *strings.Builder, text string, i int) (next int, ok bool) {
+	n := len(text)
+	if text[i] != '[' {
+		return 0, false
+	}
+	// Find closing ]
+	bracketEnd := -1
+	for j := i + 1; j < n; j++ {
+		if text[j] == ']' {
+			bracketEnd = j
+			break
+		}
+	}
+	if bracketEnd == -1 || bracketEnd+1 >= n || text[bracketEnd+1] != '(' {
+		return 0, false
+	}
+	// Find closing )
+	parenEnd := -1
+	for j := bracketEnd + 2; j < n; j++ {
+		if text[j] == ')' {
+			parenEnd = j
+			break
+		}
+	}
+	if parenEnd == -1 {
+		return 0, false
+	}
+	linkText := text[i+1 : bracketEnd]
+	url := text[bracketEnd+2 : parenEnd]
+	sb.WriteString("[[")
+	sb.WriteString(url)
+	sb.WriteString("][")
+	sb.WriteString(linkText)
+	sb.WriteString("]]")
+	return parenEnd + 1, true
+}
+
 func (c *MarkdownToOrgConverter) convertMarkdownSimple(text string) string {
 	var result strings.Builder
 	i := 0
 	n := len(text)
-
 	for i < n {
-		// Check for bold **
-		if i+1 < n && text[i] == '*' && text[i+1] == '*' {
-			// Find closing **
-			j := i + 2
-			for j < n {
-				if j+1 < n && text[j] == '*' && text[j+1] == '*' {
-					// Found closing **
-					boldText := text[i+2 : j]
-					// 递归处理粗体中的斜体
-					boldText = c.convertItalicInBold(boldText)
-					writePreSpaceIfCJK(&result)
-					result.WriteString("*")
-					result.WriteString(boldText)
-					result.WriteString("*")
-					i = j + 2
-					writePostSpaceIfCJK(&result, text, i)
-					break
-				}
-				j++
-			}
-			if j >= n {
-				// No closing ** found
-				result.WriteString(text[i:])
-				break
-			}
+		if next, ok := c.convertBoldMarkup(&result, text, i); ok {
+			i = next
 			continue
 		}
-
-		// Check for italic * (but not part of **)
-		if text[i] == '*' && (i == 0 || text[i-1] != '*') && (i+1 >= n || text[i+1] != '*') {
-			// Find closing *
-			j := i + 1
-			for j < n {
-				if text[j] == '*' && (j+1 >= n || text[j+1] != '*') {
-					// Found closing *
-					italicText := text[i+1 : j]
-					writePreSpaceIfCJK(&result)
-					result.WriteString("/")
-					result.WriteString(italicText)
-					result.WriteString("/")
-					i = j + 1
-					writePostSpaceIfCJK(&result, text, i)
-					break
-				}
-				j++
-			}
-			if j >= n {
-				// No closing * found
-				result.WriteByte(text[i])
-				i++
-			}
+		if next, ok := c.convertItalicMarkup(&result, text, i); ok {
+			i = next
 			continue
 		}
-
-		// Check for strikethrough ~~
-		if i+1 < n && text[i] == '~' && text[i+1] == '~' {
-			j := i + 2
-			for j < n {
-				if j+1 < n && text[j] == '~' && text[j+1] == '~' {
-					strikeText := text[i+2 : j]
-					writePreSpaceIfCJK(&result)
-					result.WriteString("+")
-					result.WriteString(strikeText)
-					result.WriteString("+")
-					i = j + 2
-					writePostSpaceIfCJK(&result, text, i)
-					break
-				}
-				j++
-			}
-			if j >= n {
-				result.WriteString(text[i:])
-				break
-			}
+		if next, ok := c.convertStrikeMarkup(&result, text, i); ok {
+			i = next
 			continue
 		}
-
-		// Check for inline code `
-		if text[i] == '`' {
-			// Count consecutive backticks
-			tickCount := 1
-			for i+tickCount < n && text[i+tickCount] == '`' {
-				tickCount++
-			}
-			// 2+ backticks (`` or ```...): not inline code, pass through
-			if tickCount >= 2 {
-				for k := 0; k < tickCount; k++ {
-					result.WriteByte('`')
-				}
-				i += tickCount
-				continue
-			}
-			// Single backtick: inline code
-			j := i + 1
-			for j < n && text[j] != '`' {
-				j++
-			}
-			if j < n {
-				codeText := text[i+1 : j]
-				result.WriteString(" =")
-				result.WriteString(codeText)
-				result.WriteString("= ")
-				i = j + 1
-			} else {
-				result.WriteByte(text[i])
-				i++
-			}
+		if next, ok := c.convertInlineCodeMarkup(&result, text, i); ok {
+			i = next
 			continue
 		}
-
-		// Check for links [text](url)
-		if text[i] == '[' {
-			// Find closing ]
-			bracketEnd := -1
-			for j := i + 1; j < n; j++ {
-				if text[j] == ']' {
-					bracketEnd = j
-					break
-				}
-			}
-			if bracketEnd != -1 && bracketEnd+1 < n && text[bracketEnd+1] == '(' {
-				// Find closing )
-				parenEnd := -1
-				for j := bracketEnd + 2; j < n; j++ {
-					if text[j] == ')' {
-						parenEnd = j
-						break
-					}
-				}
-				if parenEnd != -1 {
-					linkText := text[i+1 : bracketEnd]
-					url := text[bracketEnd+2 : parenEnd]
-					result.WriteString("[[")
-					result.WriteString(url)
-					result.WriteString("][")
-					result.WriteString(linkText)
-					result.WriteString("]]")
-					i = parenEnd + 1
-					continue
-				}
-			}
+		if next, ok := c.convertLinkMarkup(&result, text, i); ok {
+			i = next
+			continue
 		}
-
-		// Default: copy character
 		result.WriteByte(text[i])
 		i++
 	}
-
 	return result.String()
 }
 
@@ -507,39 +535,14 @@ func (c *MarkdownToOrgConverter) convertItalicInBold(text string) string {
 	var result strings.Builder
 	i := 0
 	n := len(text)
-
 	for i < n {
-		// Check for italic * inside bold
-		if text[i] == '*' && (i == 0 || text[i-1] != '*') && (i+1 >= n || text[i+1] != '*') {
-			// Find closing *
-			j := i + 1
-			for j < n {
-				if text[j] == '*' && (j+1 >= n || text[j+1] != '*') {
-					// Found closing *
-					italicText := text[i+1 : j]
-					writePreSpaceIfCJK(&result)
-					result.WriteString("/")
-					result.WriteString(italicText)
-					result.WriteString("/")
-					i = j + 1
-					writePostSpaceIfCJK(&result, text, i)
-					break
-				}
-				j++
-			}
-			if j >= n {
-				// No closing * found
-				result.WriteByte(text[i])
-				i++
-			}
+		if next, ok := c.convertItalicMarkup(&result, text, i); ok {
+			i = next
 			continue
 		}
-
-		// Default: copy character
 		result.WriteByte(text[i])
 		i++
 	}
-
 	return result.String()
 }
 
