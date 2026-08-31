@@ -27,25 +27,29 @@ type toolArgsCase[T Primitive] struct {
 	defaultValue T
 	want         T
 	// setKey 为 true 时无条件写入 key（即使 value 为零值），用于覆盖
-	// "显式零值"用例；slices 不适用（JSON 往返会坍缩 []any{} 并返回默认值）。
+	// "显式零值"用例；slices 经 JSON 往返会坍缩 []any{} 并返回默认值，
+	// 该行为由 []string 组的 "explicit empty collapses to default" 用例锁定。
 	setKey bool
 }
 
+// key 是 runToolArgsValueTest 写入与断言使用的固定参数名。
+const key = "key"
+
 // runToolArgsValueTest 以表驱动方式验证 ToolArgsValue。
-// isAbsent 判定一个 case 的 value 是否等于类型的零值：等于零值的 value
+// isZero 判断一个 case 的 value 是否等于类型的零值：等于零值的 value
 // 模拟"缺少 key"（除非 case 显式 setKey，见 toolArgsCase.setKey）。
-func runToolArgsValueTest[T Primitive](t *testing.T, name string, isAbsent func(T) bool, cases []toolArgsCase[T]) {
+func runToolArgsValueTest[T Primitive](t *testing.T, name string, isZero func(T) bool, cases []toolArgsCase[T]) {
 	t.Helper()
 	t.Run(name, func(t *testing.T) {
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
 				args := ToolArgs{}
-				if tc.setKey || !isAbsent(tc.value) {
-					args["key"] = tc.value
+				if tc.setKey || !isZero(tc.value) {
+					args[key] = tc.value
 				}
-				actual := ToolArgsValue(marshalToolArgs(t, args), "key", tc.defaultValue)
+				actual := ToolArgsValue(marshalToolArgs(t, args), key, tc.defaultValue)
 				if !reflect.DeepEqual(actual, tc.want) {
-					t.Fatalf("ToolArgsValue(key=%q) = %v, want %v", "key", actual, tc.want)
+					t.Errorf("ToolArgsValue(key=%q) = %v, want %v", key, actual, tc.want)
 				}
 			})
 		}
@@ -54,80 +58,82 @@ func runToolArgsValueTest[T Primitive](t *testing.T, name string, isAbsent func(
 
 func TestToolArgsValue(t *testing.T) {
 	runToolArgsValueTest(t, "string", func(v string) bool { return v == "" }, []toolArgsCase[string]{
-		{"uses default when value is zero", "", "a", "a", false},
-		{"uses value when nonzero", "a", "", "a", false},
-		{"explicit zero value", "", "a", "", true},
+		{name: "uses default when value is zero", value: "", defaultValue: "a", want: "a", setKey: false},
+		{name: "uses value when nonzero", value: "a", defaultValue: "", want: "a", setKey: false},
+		{name: "explicit zero value", value: "", defaultValue: "a", want: "", setKey: true},
 	})
 
 	runToolArgsValueTest(t, "float64", func(v float64) bool { return v == 0 }, []toolArgsCase[float64]{
-		{"uses default when value is zero", float64(0), float64(1), float64(1), false},
-		{"uses value when nonzero", float64(1), float64(0), float64(1), false},
-		{"explicit zero value", float64(0), float64(1), float64(0), true},
+		{name: "uses default when value is zero", value: float64(0), defaultValue: float64(1), want: float64(1), setKey: false},
+		{name: "uses value when nonzero", value: float64(1), defaultValue: float64(0), want: float64(1), setKey: false},
+		{name: "explicit zero value", value: float64(0), defaultValue: float64(1), want: float64(0), setKey: true},
 	})
 
 	runToolArgsValueTest(t, "float32", func(v float32) bool { return v == 0.0 }, []toolArgsCase[float32]{
-		{"uses default when value is zero", 0.0, 1.0, 1.0, false},
-		{"uses value when nonzero", 1.0, 0.0, 1.0, false},
-		{"explicit zero value", 0.0, 1.0, 0.0, true},
+		{name: "uses default when value is zero", value: 0.0, defaultValue: 1.0, want: 1.0, setKey: false},
+		{name: "uses value when nonzero", value: 1.0, defaultValue: 0.0, want: 1.0, setKey: false},
+		{name: "explicit zero value", value: 0.0, defaultValue: 1.0, want: 0.0, setKey: true},
 	})
 
 	runToolArgsValueTest(t, "int64", func(v int64) bool { return v == 0 }, []toolArgsCase[int64]{
-		{"uses default when value is zero", int64(0), int64(1), int64(1), false},
-		{"uses value when nonzero", int64(1), int64(0), int64(1), false},
-		{"explicit zero value", int64(0), int64(1), int64(0), true},
+		{name: "uses default when value is zero", value: int64(0), defaultValue: int64(1), want: int64(1), setKey: false},
+		{name: "uses value when nonzero", value: int64(1), defaultValue: int64(0), want: int64(1), setKey: false},
+		{name: "explicit zero value", value: int64(0), defaultValue: int64(1), want: int64(0), setKey: true},
 	})
 
 	runToolArgsValueTest(t, "int", func(v int) bool { return v == 0 }, []toolArgsCase[int]{
-		{"uses default when value is zero", int(0), 1, 1, false},
-		{"uses value when nonzero", int(1), 0, 1, false},
-		{"explicit zero value", int(0), 1, 0, true},
+		{name: "uses default when value is zero", value: int(0), defaultValue: 1, want: 1, setKey: false},
+		{name: "uses value when nonzero", value: int(1), defaultValue: 0, want: 1, setKey: false},
+		{name: "explicit zero value", value: int(0), defaultValue: 1, want: 0, setKey: true},
 	})
 
 	runToolArgsValueTest(t, "int32", func(v int32) bool { return v == 0 }, []toolArgsCase[int32]{
-		{"uses default when value is zero", int32(0), int32(1), int32(1), false},
-		{"uses value when nonzero", int32(1), int32(0), int32(1), false},
-		{"explicit zero value", int32(0), int32(1), int32(0), true},
+		{name: "uses default when value is zero", value: int32(0), defaultValue: int32(1), want: int32(1), setKey: false},
+		{name: "uses value when nonzero", value: int32(1), defaultValue: int32(0), want: int32(1), setKey: false},
+		{name: "explicit zero value", value: int32(0), defaultValue: int32(1), want: int32(0), setKey: true},
 	})
 
 	runToolArgsValueTest(t, "bool", func(v bool) bool { return !v }, []toolArgsCase[bool]{
-		{"uses default when value is zero", false, true, true, false},
-		{"uses value when nonzero", true, false, true, false},
-		{"explicit zero value", false, true, false, true},
+		{name: "uses default when value is false", value: false, defaultValue: true, want: true, setKey: false},
+		{name: "uses value when true", value: true, defaultValue: false, want: true, setKey: false},
+		{name: "explicit zero value", value: false, defaultValue: true, want: false, setKey: true},
 	})
 
 	runToolArgsValueTest(t, "[]string", func(v []string) bool { return len(v) == 0 }, []toolArgsCase[[]string]{
-		{"uses default when empty", []string{}, []string{"default"}, []string{"default"}, false},
-		{"uses value when non-empty", []string{"value"}, []string{}, []string{"value"}, false},
+		{name: "uses default when empty", value: []string{}, defaultValue: []string{"default"}, want: []string{"default"}, setKey: false},
+		{name: "uses value when non-empty", value: []string{"value"}, defaultValue: []string{}, want: []string{"value"}, setKey: false},
+		// 已知限制: 显式设置的空 slice 经 JSON 往返后与缺失 key 不可区分，返回默认值。
+		{name: "explicit empty collapses to default", value: []string{}, defaultValue: []string{"default"}, want: []string{"default"}, setKey: true},
 	})
 
 	runToolArgsValueTest(t, "[]float64", func(v []float64) bool { return len(v) == 0 }, []toolArgsCase[[]float64]{
-		{"uses default when empty", []float64{}, []float64{1.0}, []float64{1.0}, false},
-		{"uses value when non-empty", []float64{2.0}, []float64{}, []float64{2.0}, false},
+		{name: "uses default when empty", value: []float64{}, defaultValue: []float64{1.0}, want: []float64{1.0}, setKey: false},
+		{name: "uses value when non-empty", value: []float64{2.0}, defaultValue: []float64{}, want: []float64{2.0}, setKey: false},
 	})
 
 	runToolArgsValueTest(t, "[]float32", func(v []float32) bool { return len(v) == 0 }, []toolArgsCase[[]float32]{
-		{"uses default when empty", []float32{}, []float32{1.0}, []float32{1.0}, false},
-		{"uses value when non-empty", []float32{2.0}, []float32{}, []float32{2.0}, false},
+		{name: "uses default when empty", value: []float32{}, defaultValue: []float32{1.0}, want: []float32{1.0}, setKey: false},
+		{name: "uses value when non-empty", value: []float32{2.0}, defaultValue: []float32{}, want: []float32{2.0}, setKey: false},
 	})
 
 	runToolArgsValueTest(t, "[]int64", func(v []int64) bool { return len(v) == 0 }, []toolArgsCase[[]int64]{
-		{"uses default when empty", []int64{}, []int64{1}, []int64{1}, false},
-		{"uses value when non-empty", []int64{2}, []int64{}, []int64{2}, false},
+		{name: "uses default when empty", value: []int64{}, defaultValue: []int64{1}, want: []int64{1}, setKey: false},
+		{name: "uses value when non-empty", value: []int64{2}, defaultValue: []int64{}, want: []int64{2}, setKey: false},
 	})
 
 	runToolArgsValueTest(t, "[]int32", func(v []int32) bool { return len(v) == 0 }, []toolArgsCase[[]int32]{
-		{"uses default when empty", []int32{}, []int32{1}, []int32{1}, false},
-		{"uses value when non-empty", []int32{2}, []int32{}, []int32{2}, false},
+		{name: "uses default when empty", value: []int32{}, defaultValue: []int32{1}, want: []int32{1}, setKey: false},
+		{name: "uses value when non-empty", value: []int32{2}, defaultValue: []int32{}, want: []int32{2}, setKey: false},
 	})
 
 	runToolArgsValueTest(t, "[]int", func(v []int) bool { return len(v) == 0 }, []toolArgsCase[[]int]{
-		{"uses default when empty", []int{}, []int{1}, []int{1}, false},
-		{"uses value when non-empty", []int{2}, []int{}, []int{2}, false},
+		{name: "uses default when empty", value: []int{}, defaultValue: []int{1}, want: []int{1}, setKey: false},
+		{name: "uses value when non-empty", value: []int{2}, defaultValue: []int{}, want: []int{2}, setKey: false},
 	})
 
 	runToolArgsValueTest(t, "[]bool", func(v []bool) bool { return len(v) == 0 }, []toolArgsCase[[]bool]{
-		{"uses default when empty", []bool{}, []bool{true}, []bool{true}, false},
-		{"uses value when non-empty", []bool{true}, []bool{}, []bool{true}, false},
+		{name: "uses default when empty", value: []bool{}, defaultValue: []bool{true}, want: []bool{true}, setKey: false},
+		{name: "uses value when non-empty", value: []bool{true}, defaultValue: []bool{}, want: []bool{true}, setKey: false},
 	})
 }
 
