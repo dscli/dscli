@@ -1364,7 +1364,7 @@ func dsmlParamBodyRanges(text string) [][2]int {
 			if nextClose == nil || (nextOpen != nil && nextOpen[0] < nextClose[0]) {
 				op := j + nextOpen[0]
 				if inRanges(fences, op) || !dsmlStructuralTag(text, op) {
-					j += nextOpen[1]
+					j = j + nextOpen[1]
 					continue
 				}
 				if depth == 0 {
@@ -1374,24 +1374,24 @@ func dsmlParamBodyRanges(text string) [][2]int {
 					// nameless "<parameter>" as content, so it is content
 					// here too - skip it.
 					if !dsmlParamNameRe.MatchString(text[op : j+nextOpen[1]]) {
-						j += nextOpen[1]
+						j = j + nextOpen[1]
 						continue
 					}
 					end = op
 					break
 				}
 				depth++
-				j += nextOpen[1]
+				j = j + nextOpen[1]
 				continue
 			}
 			cp := j + nextClose[0]
 			if inRanges(fences, cp) {
-				j += nextClose[1]
+				j = j + nextClose[1]
 				continue
 			}
 			if depth > 0 {
 				depth--
-				j += nextClose[1]
+				j = j + nextClose[1]
 				continue
 			}
 			end = cp + nextClose[1]

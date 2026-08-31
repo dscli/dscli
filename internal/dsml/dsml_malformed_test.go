@@ -90,7 +90,11 @@ func TestMalformedDSMLToolCallsParamValueTypoQuote(t *testing.T) {
 	if len(calls) != 1 || calls[0].Name != "shell" {
 		t.Fatalf("calls = %+v, want one shell call", calls)
 	}
-	if got, _ := calls[0].Args["script"].(string); got != "echo '<invinvoke name=\"x\">'" {
+	got, ok := calls[0].Args["script"].(string)
+	if !ok {
+		t.Fatalf("script arg missing or wrong type: %+v", calls[0].Args)
+	}
+	if got != "echo '<invinvoke name=\"x\">'" {
 		t.Errorf("script = %q, want the echoed typo text verbatim", got)
 	}
 }
@@ -120,7 +124,11 @@ func TestMalformedDSMLToolCallsParamValueLiteralParamTag(t *testing.T) {
 		t.Fatalf("calls = %+v, want one shell call", calls)
 	}
 	wantScript := "echo '<invinvoke name=\"x\"> " + litParam + "'"
-	if got, _ := calls[0].Args["script"].(string); got != wantScript {
+	got, ok := calls[0].Args["script"].(string)
+	if !ok {
+		t.Fatalf("script arg missing or wrong type: %+v", calls[0].Args)
+	}
+	if got != wantScript {
 		t.Errorf("script = %q, want the full value verbatim %q", got, wantScript)
 	}
 }
@@ -149,7 +157,49 @@ func TestMalformedDSMLToolCallsParamValueTypoAfterLiteral(t *testing.T) {
 		t.Fatalf("calls = %+v, want one shell call", calls)
 	}
 	wantScript := "echo '<invinvoke name=\"a\"> " + litParam + " after <invinvoke name=\"y\">'"
-	if got, _ := calls[0].Args["script"].(string); got != wantScript {
+	got, ok := calls[0].Args["script"].(string)
+	if !ok {
+		t.Fatalf("script arg missing or wrong type: %+v", calls[0].Args)
+	}
+	if got != wantScript {
 		t.Errorf("script = %q, want the full value verbatim %q", got, wantScript)
+	}
+}
+
+// TestParseDSMLNamedSiblingImplicitClose is the positive-path regression for
+// the depth==0 implicit-close branch in extractDSMLCalls (commit d6607bc): a
+// genuine NAMED sibling parameter implicitly closes a previous unclosed
+// parameter, so the first parameter's value ends exactly where the sibling
+// opens. Without the gate, the sibling would silently truncate (or swallow)
+// the previous value. The script value must survive verbatim and the sibling
+// timeout must parse as a number.
+func TestParseDSMLNamedSiblingImplicitClose(t *testing.T) {
+	text := "<" + "tool_calls>\n" +
+		"<" + "invoke name=\"shell\">\n" +
+		"<" + "parameter name=\"script\" string=\"true\">echo hi\n" +
+		"<" + "parameter name=\"timeout\" string=\"false\">180</" + "parameter>\n" +
+		"<" + "/invoke>\n" +
+		"<" + "/tool_calls>"
+
+	calls, err := ParseDSMLToolCalls(text)
+	if err != nil {
+		t.Fatalf("ParseDSMLToolCalls error = %v, want nil", err)
+	}
+	if len(calls) != 1 || calls[0].Name != "shell" {
+		t.Fatalf("calls = %+v, want one shell call", calls)
+	}
+	script, ok := calls[0].Args["script"].(string)
+	if !ok {
+		t.Fatalf("script arg missing or wrong type: %+v", calls[0].Args)
+	}
+	if script != "echo hi\n" {
+		t.Errorf("script = %q, want the value ending at the named sibling", script)
+	}
+	timeout, ok := calls[0].Args["timeout"].(float64)
+	if !ok {
+		t.Fatalf("timeout arg missing or wrong type: %+v", calls[0].Args)
+	}
+	if timeout != 180 {
+		t.Errorf("timeout = %v (%T), want 180 (float64)", timeout, timeout)
 	}
 }
