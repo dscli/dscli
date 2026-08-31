@@ -299,9 +299,18 @@ var dsmlTagJunkEmptyRe = regexp.MustCompile(`(?i)(</?)(?:[|｜]\s*|d\s*s\s*m\s*l
 // badge marker and is always full-width, so ASCII "|" in shell values is left
 // alone by construction; only the close shape "</" is accepted, so prose such
 // as "cat <dsml_config" or a ChatML token like "<|im_start|>" is untouched.
-// The capture group keeps trailing whitespace so the rewrite never trims the
-// text (strictness compares normalized text against the original).
-var dsmlTagBadgeLabelRe = regexp.MustCompile(`</｜[^<>]*>(\s*)$`)
+// The capture group carries any trailing whitespace (including the full-width
+// ideographic space U+3000, which RE2's \s does not match) through the rewrite:
+// StripDSMLToolCalls hands the NORMALIZED text to callers, so dropping it would
+// change the caller-visible content even though the tag-name change alone
+// already makes the strict verdict unequal.
+//
+// Assumption: only the CLOSE wrapper is label-ized by the site; the opening
+// <tool_calls> is emitted canonically. If the opening wrapper ever comes back
+// as a badge label too (e.g. "<｜evaluation>"), block pairing would fall
+// through to the bare-invoke path and need separate handling - do not treat a
+// label-ized opening wrapper as silently parseable.
+var dsmlTagBadgeLabelRe = regexp.MustCompile(`</｜[^<>]*>([\s　]*)$`)
 
 func normalizeDSMLText(text string) string {
 	text = dsmlFullwidthReplacer.Replace(text)

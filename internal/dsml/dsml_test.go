@@ -232,6 +232,11 @@ func TestNormalizeDSMLText(t *testing.T) {
 		// for a wrapper close that ends the reply).
 		{"badge label close at tail", "</｜‑evaluation>", `</tool_calls>`},
 		{"badge label close at tail keeps trailing space", "</｜‑evaluation>  ", `</tool_calls>  `},
+		// The ideographic space (U+3000) is a trailing-whitespace char RE2's
+		// \s does not match; the capture group must still carry it through so
+		// the tail-anchored rewrite fires (the site may pad with full-width
+		// spaces around rendered badges).
+		{"badge label close at tail keeps ideographic space", "</｜‑evaluation>　", `</tool_calls>　`},
 		// Non-tail lookalikes must survive untouched: they are content, not
 		// markup, and rewriting them would corrupt shell values or prose.
 		{"chatml token untouched", "<|im_start|>", "<|im_start|>"},
