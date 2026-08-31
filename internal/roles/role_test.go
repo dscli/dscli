@@ -2,6 +2,7 @@ package roles
 
 import (
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/dscli/dscli/internal/sqlite"
@@ -585,4 +586,91 @@ func TestGetRoleConfigSeesCacheInvalidation(t *testing.T) {
 	if cfg != nil {
 		t.Fatalf("GetRoleConfig after delete = %+v, want nil", cfg)
 	}
+}
+
+// TestGetRoleConfigConcurrent exercises the lock-boundary code under -race:
+// (1) two populated sessions looked up simultaneously from an empty cache,
+// (2) many goroutines hitting the SAME session from an empty cache (the
+// singleflight double-check path). The lost-invalidation race itself is a
+// logical ordering bug (stale snapshot vs concurrent write) that -race
+// cannot detect; it is guarded by roleCacheGen rather than exercised here.
+func TestGetRoleConfigConcurrent(t *testing.T) {
+	const role = "dev"
+	const (
+		shellID = int64(50)
+		sqlID   = int64(60)
+	)
+
+	t.Run("two sessions", func(t *testing.T) {
+		newTestDB(t)
+		ctx := t.Context()
+		if err := UpsertRoleConfig(ctx, role, shellID, nil, strPtr("shell"), nil); err != nil {
+			t.Fatalf("UpsertRoleConfig(shell): %v", err)
+		}
+		if err := UpsertRoleConfig(ctx, role, sqlID, nil, strPtr("sql"), nil); err != nil {
+			t.Fatalf("UpsertRoleConfig(sql): %v", err)
+		}
+		got := make(map[int64]string, 2)
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+		for sid, want := range map[int64]string{shellID: "shell", sqlID: "sql"} {
+			wg.Add(1)
+			go func(sid int64, want string) {
+				defer wg.Done()
+				cfg, err := GetRoleConfig(ctx, role, sid)
+				if err != nil {
+					t.Errorf("GetRoleConfig(%d): %v", sid, err)
+					return
+				}
+				tools := ""
+				if cfg != nil {
+					tools = cfg.Tools
+				}
+				mu.Lock()
+				got[sid] = tools
+				mu.Unlock()
+				if tools != want {
+					t.Errorf("GetRoleConfig(%d).Tools = %q, want %q", sid, tools, want)
+				}
+			}(sid, want)
+		}
+		wg.Wait()
+		if got[shellID] != "shell" || got[sqlID] != "sql" {
+			t.Errorf("concurrent lookups = %v, want shell/sql", got)
+		}
+	})
+
+	t.Run("same session", func(t *testing.T) {
+		newTestDB(t)
+		ctx := t.Context()
+		const sid = int64(70)
+		if err := UpsertRoleConfig(ctx, role, sid, nil, strPtr("shell"), nil); err != nil {
+			t.Fatalf("UpsertRoleConfig: %v", err)
+		}
+		const n = 8
+		results := make([]string, n)
+		var wg sync.WaitGroup
+		for i := range n {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				cfg, err := GetRoleConfig(ctx, role, sid)
+				if err != nil {
+					t.Errorf("GetRoleConfig[%d]: %v", i, err)
+					return
+				}
+				if cfg == nil || cfg.Tools != "shell" {
+					t.Errorf("GetRoleConfig[%d] = %+v, want Tools=shell", i, cfg)
+					return
+				}
+				results[i] = cfg.Tools
+			}(i)
+		}
+		wg.Wait()
+		for i, r := range results {
+			if r != "shell" {
+				t.Errorf("results[%d] = %q, want shell", i, r)
+			}
+		}
+	})
 }

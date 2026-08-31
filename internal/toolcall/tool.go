@@ -783,7 +783,7 @@ func GetToolUsageStats(ctx context.Context, days int) ([]ToolUsageStat, error) {
 		stats = append(stats, stat)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate tool stats: %w", err)
+		return nil, fmt.Errorf("遍历工具统计失败: %w", err)
 	}
 	return stats, nil
 }
@@ -839,6 +839,9 @@ func GetProjectToolUsage(ctx context.Context, days int) ([]ToolUsageStat, error,
 			}
 		}
 		stats = append(stats, stat)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("遍历项目工具使用失败: %w", err)
 	}
 	return stats, nil
 }

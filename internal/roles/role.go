@@ -113,6 +113,10 @@ var (
 	// cached too). nil outer map means the cache is empty.
 	roleCache   map[int64]map[string]*RoleConfig
 	roleCacheMu sync.RWMutex
+	// roleCacheGen counts invalidations. The slow path snapshots it before
+	// querying so a concurrent write (which bumps the generation) cannot be
+	// masked by a stale snapshot being stored afterwards.
+	roleCacheGen uint64
 )
 
 func init() {
@@ -150,24 +154,37 @@ func GetRoleConfig(ctx context.Context, role string, sessionID int64) (*RoleConf
 
 	// Slow path: load the session bucket. The DB query runs OUTSIDE the
 	// lock so concurrent lookups for other sessions do not serialize; the
-	// second lock below is a singleflight-style double-check for same-session
-	// races.
-	roleCacheMu.Lock()
-	if bucket := roleCache[sessionID]; bucket != nil {
-		// Another goroutine loaded this session while we waited.
-		cfg := bucket[role]
+	// singleflight-style double-check below resolves same-session races and
+	// the generation guard prevents a concurrent write (which bumps
+	// roleCacheGen via invalidateRoleCache) from being masked by a stale
+	// snapshot stored afterwards. The retry is bounded: after two attempts
+	// we fall through to the always-fresh direct DB query.
+	for attempt := 0; attempt < 2; attempt++ {
+		roleCacheMu.Lock()
+		if bucket := roleCache[sessionID]; bucket != nil {
+			// Another goroutine loaded this session while we waited.
+			cfg := bucket[role]
+			roleCacheMu.Unlock()
+			return cfg, nil
+		}
+		gen := roleCacheGen
 		roleCacheMu.Unlock()
-		return cfg, nil
-	}
-	roleCacheMu.Unlock()
 
-	configs, err := ListRoleConfigs(ctx, sessionID)
-	if err == nil {
+		configs, err := ListRoleConfigs(ctx, sessionID)
+		if err != nil {
+			break // fall through to the direct DB query
+		}
 		m := make(map[string]*RoleConfig, len(configs))
 		for i := range configs {
 			m[configs[i].Role] = &configs[i]
 		}
 		roleCacheMu.Lock()
+		if roleCacheGen != gen {
+			// A write invalidated the cache while we were querying; our
+			// snapshot is stale. Retry once.
+			roleCacheMu.Unlock()
+			continue
+		}
 		if bucket := roleCache[sessionID]; bucket != nil {
 			// Another goroutine stored this session's bucket while we were
 			// querying; use their result and discard ours.
@@ -286,12 +303,13 @@ func ListRoleConfigsByPrompt(ctx context.Context, promptName string, sessionID i
 	return configs, nil
 }
 
-// invalidateRoleCache clears the in-memory role config cache.
-// Call after any write to role_configs to ensure subsequent reads
-// see the latest data.
+// invalidateRoleCache clears the in-memory role config cache and bumps the
+// generation counter. Call after any write to role_configs so concurrent
+// slow-path readers holding a stale snapshot cannot repopulate it.
 func invalidateRoleCache() {
 	roleCacheMu.Lock()
 	roleCache = nil
+	roleCacheGen++
 	roleCacheMu.Unlock()
 }
 
