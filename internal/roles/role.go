@@ -117,6 +117,10 @@ var (
 	// querying so a concurrent write (which bumps the generation) cannot be
 	// masked by a stale snapshot being stored afterwards.
 	roleCacheGen uint64
+	// listRoleConfigs is an overridable seam so tests can deterministically
+	// exercise the generation-check branches of the slow path (a concurrent
+	// write landing mid-query is not reproducible with -race alone).
+	listRoleConfigs = ListRoleConfigs
 )
 
 func init() {
@@ -140,6 +144,10 @@ func init() {
 // UNIQUE(role, session_id): a per-session bucket is loaded lazily on demand
 // and cleared by any write (invalidateRoleCache). A missing bucket falls
 // through to the DB; a present bucket with a nil entry is a cached negative.
+// The fast path returns a value valid at read time but a concurrent write
+// may supersede it in flight; the generation guard prevents a stale snapshot
+// from being stored afterwards, but callers of authorization-critical state
+// (tool allowlists) must re-check after their own writes.
 func GetRoleConfig(ctx context.Context, role string, sessionID int64) (*RoleConfig, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "GetRoleConfig")
 	defer span.Finish()
@@ -151,11 +159,10 @@ func GetRoleConfig(ctx context.Context, role string, sessionID int64) (*RoleConf
 		return cfg, nil
 	}
 	roleCacheMu.RUnlock()
-
 	// Slow path: load the session bucket. The DB query runs OUTSIDE the
 	// lock so concurrent lookups for other sessions do not serialize; the
-	// singleflight-style double-check below resolves same-session races and
-	// the generation guard prevents a concurrent write (which bumps
+	// double-check below dedups the store for same-session races and the
+	// generation guard prevents a concurrent write (which bumps
 	// roleCacheGen via invalidateRoleCache) from being masked by a stale
 	// snapshot stored afterwards. The retry is bounded: after two attempts
 	// we fall through to the always-fresh direct DB query.
@@ -170,7 +177,7 @@ func GetRoleConfig(ctx context.Context, role string, sessionID int64) (*RoleConf
 		gen := roleCacheGen
 		roleCacheMu.Unlock()
 
-		configs, err := ListRoleConfigs(ctx, sessionID)
+		configs, err := listRoleConfigs(ctx, sessionID)
 		if err != nil {
 			break // fall through to the direct DB query
 		}

@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/sqlite"
 )
 
@@ -591,7 +592,7 @@ func TestGetRoleConfigSeesCacheInvalidation(t *testing.T) {
 // TestGetRoleConfigConcurrent exercises the lock-boundary code under -race:
 // (1) two populated sessions looked up simultaneously from an empty cache,
 // (2) many goroutines hitting the SAME session from an empty cache (the
-// singleflight double-check path). The lost-invalidation race itself is a
+// double-check dedup path). The lost-invalidation race itself is a
 // logical ordering bug (stale snapshot vs concurrent write) that -race
 // cannot detect; it is guarded by roleCacheGen rather than exercised here.
 func TestGetRoleConfigConcurrent(t *testing.T) {
@@ -673,4 +674,55 @@ func TestGetRoleConfigConcurrent(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestGetRoleConfigLostInvalidationRetry deterministically exercises the
+// generation-check branch via the listRoleConfigs seam. -race cannot detect
+// this logical ordering bug (stale snapshot vs concurrent write), so the
+// stub invalidates the cache during the query to force the retry path.
+func TestGetRoleConfigLostInvalidationRetry(t *testing.T) {
+	newTestDB(t)
+	ctx := t.Context()
+	const (
+		role = "dev"
+		sid  = int64(1)
+	)
+
+	orig := listRoleConfigs
+	calls := 0
+	listRoleConfigs = func(ctx context.Context, sessionID int64) ([]RoleConfig, error) {
+		// Simulate a concurrent write landing mid-query: it invalidates the
+		// cache before we return the (now stale) snapshot.
+		invalidateRoleCache()
+		calls++
+		return orig(ctx, sessionID)
+	}
+	t.Cleanup(func() { listRoleConfigs = orig })
+
+	// First call from an empty cache: the stub triggers the gen mismatch and
+	// forces a bounded retry.
+	cfg, err := GetRoleConfig(ctx, role, sid)
+	if err != nil {
+		t.Fatalf("GetRoleConfig: %v", err)
+	}
+	if cfg != nil {
+		t.Fatalf("GetRoleConfig = %+v, want nil", cfg)
+	}
+	if calls < 2 {
+		t.Fatalf("listRoleConfigs called %d times, want >= 2 (retry fired)", calls)
+	}
+
+	// Prove no stale bucket was stored: after upserting a real row, a fresh
+	// lookup must reflect it (the retry/fallback path never cached a stale
+	// negative).
+	if err := UpsertRoleConfig(ctx, role, sid, nil, strPtr("shell"), nil); err != nil {
+		t.Fatalf("UpsertRoleConfig: %v", err)
+	}
+	cfg, err = GetRoleConfig(ctx, role, sid)
+	if err != nil {
+		t.Fatalf("GetRoleConfig after upsert: %v", err)
+	}
+	if cfg == nil || cfg.Tools != "shell" {
+		t.Fatalf("GetRoleConfig after upsert = %+v, want Tools=shell", cfg)
+	}
 }
