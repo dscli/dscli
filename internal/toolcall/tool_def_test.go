@@ -7,381 +7,115 @@ import (
 	"testing"
 )
 
-func TestToolArgsValue(t *testing.T) {
-	ta := func(t *testing.T, toolArgs ToolArgs) (v ToolArgs) {
-		b, err := json.Marshal(toolArgs)
-		if err != nil {
-			t.Fatal(err)
-		}
-		v = ToolArgs{}
-		err = json.Unmarshal(b, &v)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return v
+// marshalToolArgs 往返 JSON 序列化 ToolArgs（模拟工具参数经 API 传输）。
+func marshalToolArgs(t *testing.T, toolArgs ToolArgs) ToolArgs {
+	t.Helper()
+	b, err := json.Marshal(toolArgs)
+	if err != nil {
+		t.Fatal(err)
 	}
+	v := ToolArgs{}
+	if err = json.Unmarshal(b, &v); err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
 
-	{ // string
-		tcs := []struct {
-			name         string
-			value        string
-			defaultValue string
-			want         string
-		}{
-			{"string empty ", "", "a", "a"},
-			{"string value", "a", "", "a"},
-		}
+type toolArgsCase[T Primitive] struct {
+	name         string
+	value        T
+	defaultValue T
+	want         T
+}
 
-		for _, tc := range tcs {
+func runToolArgsValueTest[T Primitive](t *testing.T, name string, hasValue func(T) bool, cases []toolArgsCase[T]) {
+	t.Helper()
+	t.Run(name, func(t *testing.T) {
+		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
 				args := ToolArgs{}
-				if tc.value != "" {
+				if hasValue(tc.value) {
 					args["key"] = tc.value
 				}
-				actual := ToolArgsValue(ta(t, args), "key", tc.defaultValue)
-				if actual != tc.want {
-					t.Fatal(actual, tc.want)
-				}
-			})
-		}
-	}
-	{ // number - float64
-		tcs := []struct {
-			name         string
-			value        float64
-			defaultValue float64
-			want         float64
-		}{
-			{"float64 default", float64(0), float64(1), float64(1)},
-			{"float64 default", float64(1), float64(0), float64(1)},
-		}
-
-		for _, tc := range tcs {
-			t.Run(tc.name, func(t *testing.T) {
-				args := ToolArgs{}
-				key := "key"
-				if tc.value != float64(0) {
-					args[key] = tc.value
-				}
-				actual := ToolArgsValue(ta(t, args), "key", tc.defaultValue)
-				if actual != tc.want {
-					t.Fatal(actual, tc.want)
-				}
-			})
-		}
-	}
-
-	{ // number float32
-		tcs := []struct {
-			name         string
-			value        float32
-			defaultValue float32
-			want         float32
-		}{
-			{"float64 default", 0.0, 1.0, 1.0},
-			{"float64 default", 1.0, 0.0, 1.0},
-		}
-
-		for _, tc := range tcs {
-			t.Run(tc.name, func(t *testing.T) {
-				args := ToolArgs{}
-				key := "key"
-				if tc.value != 0.0 {
-					args[key] = tc.value
-				}
-				actual := ToolArgsValue(ta(t, args), "key", tc.defaultValue)
-				if actual != tc.want {
-					t.Fatal(actual, tc.want)
-				}
-			})
-		}
-	}
-
-	{ // integer - int64
-		tcs := []struct {
-			name         string
-			value        int64
-			defaultValue int64
-			want         int64
-		}{
-			{"integer default", int64(0), int64(1), int64(1)},
-			{"integer default", int64(1), int64(0), int64(1)},
-		}
-
-		for _, tc := range tcs {
-			t.Run(tc.name, func(t *testing.T) {
-				args := ToolArgs{}
-				key := "key"
-				if tc.value != int64(0) {
-					args[key] = tc.value
-				}
-				actual := ToolArgsValue(ta(t, args), "key", tc.defaultValue)
-				if actual != tc.want {
-					t.Fatal(actual, tc.want)
-				}
-			})
-		}
-	}
-
-	{ // integer - int
-		tcs := []struct {
-			name         string
-			value        int
-			defaultValue int
-			want         int
-		}{
-			{"integer default", int(0), 1, 1},
-			{"integer default", int(1), 0, 1},
-		}
-
-		for _, tc := range tcs {
-			t.Run(tc.name, func(t *testing.T) {
-				args := ToolArgs{}
-				key := "key"
-				if tc.value != 0 {
-					args[key] = tc.value
-				}
-				actual := ToolArgsValue(ta(t, args), "key", tc.defaultValue)
-				if actual != tc.want {
-					t.Fatal(actual, tc.want)
-				}
-			})
-		}
-	}
-
-	{ // integer - int32
-		tcs := []struct {
-			name         string
-			value        int32
-			defaultValue int32
-			want         int32
-		}{
-			{"integer default", int32(0), int32(1), int32(1)},
-			{"integer default", int32(1), int32(0), int32(1)},
-		}
-
-		for _, tc := range tcs {
-			t.Run(tc.name, func(t *testing.T) {
-				args := ToolArgs{}
-				key := "key"
-				if tc.value != 0 {
-					args[key] = tc.value
-				}
-				actual := ToolArgsValue(ta(t, args), "key", tc.defaultValue)
-				if actual != tc.want {
-					t.Fatal(actual, tc.want)
-				}
-			})
-		}
-	}
-
-	{ // boolean
-		tcs := []struct {
-			name         string
-			value        bool
-			defaultValue bool
-			want         bool
-		}{
-			{"boolean default", false, true, true},
-			{"boolean", true, false, true},
-		}
-
-		for _, tc := range tcs {
-			t.Run(tc.name, func(t *testing.T) {
-				args := ToolArgs{}
-				key := "key"
-				if tc.value != false {
-					args[key] = tc.value
-				}
-				actual := ToolArgsValue(ta(t, args), "key", tc.defaultValue)
-				if actual != tc.want {
-					t.Fatal(actual, tc.want)
-				}
-			})
-		}
-	}
-
-	{ // array with item type string
-		tcs := []struct {
-			name         string
-			value        []string
-			defaultValue []string
-			want         []string
-		}{
-			{"[]string default", []string{}, []string{"default"}, []string{"default"}},
-			{"[]string", []string{"value"}, []string{}, []string{"value"}},
-		}
-
-		for _, tc := range tcs {
-			t.Run(tc.name, func(t *testing.T) {
-				args := ToolArgs{}
-				key := "key"
-				if len(tc.value) != 0 {
-					args[key] = tc.value
-				}
-				actual := ToolArgsValue(ta(t, args), "key", tc.defaultValue)
+				actual := ToolArgsValue(marshalToolArgs(t, args), "key", tc.defaultValue)
 				if !reflect.DeepEqual(actual, tc.want) {
 					t.Fatal(actual, tc.want)
 				}
 			})
 		}
-	}
+	})
+}
 
-	{ // array with item type float64
-		tcs := []struct {
-			name         string
-			value        []float64
-			defaultValue []float64
-			want         []float64
-		}{
-			{"[]float64 default", []float64{}, []float64{1.0}, []float64{1.0}},
-			{"[]float64 default", []float64{2.0}, []float64{}, []float64{2.0}},
-		}
+func TestToolArgsValue(t *testing.T) {
+	runToolArgsValueTest(t, "string", func(v string) bool { return v != "" }, []toolArgsCase[string]{
+		{"string empty ", "", "a", "a"},
+		{"string value", "a", "", "a"},
+	})
 
-		for _, tc := range tcs {
-			t.Run(tc.name, func(t *testing.T) {
-				args := ToolArgs{}
-				key := "key"
-				if len(tc.value) != 0 {
-					args[key] = tc.value
-				}
-				actual := ToolArgsValue(ta(t, args), "key", tc.defaultValue)
-				if !reflect.DeepEqual(actual, tc.want) {
-					t.Fatal(actual, tc.want)
-				}
-			})
-		}
-	}
+	runToolArgsValueTest(t, "float64", func(v float64) bool { return v != 0 }, []toolArgsCase[float64]{
+		{"float64 default", float64(0), float64(1), float64(1)},
+		{"float64 default", float64(1), float64(0), float64(1)},
+	})
 
-	{ // array with item type float32
-		tcs := []struct {
-			name         string
-			value        []float32
-			defaultValue []float32
-			want         []float32
-		}{
-			{"[]float64 default", []float32{}, []float32{1.0}, []float32{1.0}},
-			{"[]float64 default", []float32{2.0}, []float32{}, []float32{2.0}},
-		}
+	runToolArgsValueTest(t, "float32", func(v float32) bool { return v != 0.0 }, []toolArgsCase[float32]{
+		{"float64 default", 0.0, 1.0, 1.0},
+		{"float64 default", 1.0, 0.0, 1.0},
+	})
 
-		for _, tc := range tcs {
-			t.Run(tc.name, func(t *testing.T) {
-				args := ToolArgs{}
-				key := "key"
-				if len(tc.value) != 0 {
-					args[key] = tc.value
-				}
-				actual := ToolArgsValue(ta(t, args), "key", tc.defaultValue)
-				if !reflect.DeepEqual(actual, tc.want) {
-					t.Fatal(actual, tc.want)
-				}
-			})
-		}
-	}
+	runToolArgsValueTest(t, "int64", func(v int64) bool { return v != 0 }, []toolArgsCase[int64]{
+		{"integer default", int64(0), int64(1), int64(1)},
+		{"integer default", int64(1), int64(0), int64(1)},
+	})
 
-	{ // array with item type int64
-		tcs := []struct {
-			name         string
-			value        []int64
-			defaultValue []int64
-			want         []int64
-		}{
-			{"[]int64 default", []int64{}, []int64{1}, []int64{1}},
-			{"[]int64", []int64{2}, []int64{}, []int64{2}},
-		}
+	runToolArgsValueTest(t, "int", func(v int) bool { return v != 0 }, []toolArgsCase[int]{
+		{"integer default", int(0), 1, 1},
+		{"integer default", int(1), 0, 1},
+	})
 
-		for _, tc := range tcs {
-			t.Run(tc.name, func(t *testing.T) {
-				args := ToolArgs{}
-				key := "key"
-				if len(tc.value) != 0 {
-					args[key] = tc.value
-				}
-				actual := ToolArgsValue(ta(t, args), "key", tc.defaultValue)
-				if !reflect.DeepEqual(actual, tc.want) {
-					t.Fatal(actual, tc.want)
-				}
-			})
-		}
-	}
+	runToolArgsValueTest(t, "int32", func(v int32) bool { return v != 0 }, []toolArgsCase[int32]{
+		{"integer default", int32(0), int32(1), int32(1)},
+		{"integer default", int32(1), int32(0), int32(1)},
+	})
 
-	{ // array with item type int32
-		tcs := []struct {
-			name         string
-			value        []int32
-			defaultValue []int32
-			want         []int32
-		}{
-			{"[]int64 default", []int32{}, []int32{1}, []int32{1}},
-			{"[]int64", []int32{2}, []int32{}, []int32{2}},
-		}
+	runToolArgsValueTest(t, "bool", func(v bool) bool { return v }, []toolArgsCase[bool]{
+		{"boolean default", false, true, true},
+		{"boolean", true, false, true},
+	})
 
-		for _, tc := range tcs {
-			t.Run(tc.name, func(t *testing.T) {
-				args := ToolArgs{}
-				key := "key"
-				if len(tc.value) != 0 {
-					args[key] = tc.value
-				}
-				actual := ToolArgsValue(ta(t, args), "key", tc.defaultValue)
-				if !reflect.DeepEqual(actual, tc.want) {
-					t.Fatal(actual, tc.want)
-				}
-			})
-		}
-	}
+	runToolArgsValueTest(t, "[]string", func(v []string) bool { return len(v) != 0 }, []toolArgsCase[[]string]{
+		{"[]string default", []string{}, []string{"default"}, []string{"default"}},
+		{"[]string", []string{"value"}, []string{}, []string{"value"}},
+	})
 
-	{ // array with item type int
-		tcs := []struct {
-			name         string
-			value        []int
-			defaultValue []int
-			want         []int
-		}{
-			{"[]int64 default", []int{}, []int{1}, []int{1}},
-			{"[]int64", []int{2}, []int{}, []int{2}},
-		}
+	runToolArgsValueTest(t, "[]float64", func(v []float64) bool { return len(v) != 0 }, []toolArgsCase[[]float64]{
+		{"[]float64 default", []float64{}, []float64{1.0}, []float64{1.0}},
+		{"[]float64 default", []float64{2.0}, []float64{}, []float64{2.0}},
+	})
 
-		for _, tc := range tcs {
-			t.Run(tc.name, func(t *testing.T) {
-				args := ToolArgs{}
-				key := "key"
-				if len(tc.value) != 0 {
-					args[key] = tc.value
-				}
-				actual := ToolArgsValue(ta(t, args), "key", tc.defaultValue)
-				if !reflect.DeepEqual(actual, tc.want) {
-					t.Fatal(actual, tc.want)
-				}
-			})
-		}
-	}
+	runToolArgsValueTest(t, "[]float32", func(v []float32) bool { return len(v) != 0 }, []toolArgsCase[[]float32]{
+		{"[]float64 default", []float32{}, []float32{1.0}, []float32{1.0}},
+		{"[]float64 default", []float32{2.0}, []float32{}, []float32{2.0}},
+	})
 
-	{ // array with item type bool
-		tcs := []struct {
-			name         string
-			value        []bool
-			defaultValue []bool
-			want         []bool
-		}{
-			{"bool default", []bool{}, []bool{true}, []bool{true}},
-			{"[]bool", []bool{true}, []bool{}, []bool{true}},
-		}
+	runToolArgsValueTest(t, "[]int64", func(v []int64) bool { return len(v) != 0 }, []toolArgsCase[[]int64]{
+		{"[]int64 default", []int64{}, []int64{1}, []int64{1}},
+		{"[]int64", []int64{2}, []int64{}, []int64{2}},
+	})
 
-		for _, tc := range tcs {
-			t.Run(tc.name, func(t *testing.T) {
-				args := ToolArgs{}
-				key := "key"
-				if len(tc.value) != 0 {
-					args[key] = tc.value
-				}
-				actual := ToolArgsValue(ta(t, args), "key", tc.defaultValue)
-				if !reflect.DeepEqual(actual, tc.want) {
-					t.Fatal(actual, tc.want)
-				}
-			})
-		}
-	}
+	runToolArgsValueTest(t, "[]int32", func(v []int32) bool { return len(v) != 0 }, []toolArgsCase[[]int32]{
+		{"[]int64 default", []int32{}, []int32{1}, []int32{1}},
+		{"[]int64", []int32{2}, []int32{}, []int32{2}},
+	})
+
+	runToolArgsValueTest(t, "[]int", func(v []int) bool { return len(v) != 0 }, []toolArgsCase[[]int]{
+		{"[]int64 default", []int{}, []int{1}, []int{1}},
+		{"[]int64", []int{2}, []int{}, []int{2}},
+	})
+
+	runToolArgsValueTest(t, "[]bool", func(v []bool) bool { return len(v) != 0 }, []toolArgsCase[[]bool]{
+		{"bool default", []bool{}, []bool{true}, []bool{true}},
+		{"[]bool", []bool{true}, []bool{}, []bool{true}},
+	})
 }
 
 func TestToolContent(t *testing.T) {
