@@ -68,7 +68,9 @@ gofmt:
 fmt-check:
 	@echo "检查代码格式（不修改文件）..."
 	@echo "检查 goimports..."
-	@find . -type f -name '*.go' -exec goimports -d {} \; -exec gofumpt -d {} \;
+	@! find . -type f -name '*.go' -print0 | xargs -0 goimports -d | grep -q .
+	@echo "检查 gofumpt..."
+	@! find . -type f -name '*.go' -print0 | xargs -0 gofumpt -d | grep -q .
 
 # test: 运行测试（默认）
 test: gofmt
