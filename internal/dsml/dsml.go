@@ -1266,10 +1266,11 @@ func CallSource(reasoning, content string) string {
 //     are executable regardless of OK (a format violation never blocks
 //     execution - the result comes back with a warning instead).
 //   - OK=true: the call source (content, or reasoning when content has no
-//     calls) carries no violations; Content (or ReasoningContent when the
-//     calls came from reasoning) is stripped of the call blocks. OK is also
-//     true when the message carries no executable calls at all (no
-//     violations): a plain final answer, or quoted/referenced examples only.
+//     calls but reasoning does) carries no violations; Content (or
+//     ReasoningContent when the calls came from reasoning) is stripped of
+//     the call blocks. OK is also true when the message carries no
+//     executable calls at all (no violations): a plain final answer, or
+//     quoted/referenced examples only.
 //   - OK=false: violations observed (see parseDSMLToolCallsStrict); the
 //     Content/ReasoningContent keep the original text for the caller's
 //     fallback judgement.
