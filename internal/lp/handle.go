@@ -233,15 +233,13 @@ var handleWebChatExecDSML = dsml.ExecuteDSMLToolCalls
 //   - Backoff retry on transient server overload and truncation
 //     (ErrServerBusy / ErrSendRejected / ErrTruncated). Permanent errors
 //     (login, bad arguments) fail immediately - retrying them is pointless.
-//   - DSML tool loop: a reply (role-driven or plain chat alike) that ENDS
-//     with a </tool_calls> close tag - the web expert's own signal that the
-//     emission is complete, whatever prose precedes it - has its underlying
-//     dscli tools executed locally, and the results fed back into the SAME
-//     conversation until the expert produces a final answer. The judge
-//     (dsml.IsDSMLToolCallEnd) is deliberately structural, and the
-//     role tool set plus destructive-command interception (see
-//     dsmlBlockedCmdRe) are the safety boundary: a long answer that merely
-//     cites an <invoke> example does not end with the wrapper close tag and
+//   - DSML tool loop: a reply (role-driven or plain chat alike) that
+//     PARSES at least one DSML tool call - even when the wrapper is
+//     malformed - has its underlying dscli tools executed locally, and the
+//     results fed back into the SAME conversation until the expert
+//     produces a final answer. The role tool set plus destructive-command
+//     interception (see dsmlBlockedCmdRe) are the safety boundary: a long
+//     answer that merely cites an <invoke> example parses zero calls and
 //     is never executed; role consultations still strip such quotes so
 //     callers see clean prose, while plain chat keeps them verbatim.
 //   - Round visibility: every reply the loop receives (reasoning + content)
@@ -341,26 +339,22 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 			// and feed the results back into the SAME conversation until
 			// the expert produces a final answer.
 			//
-			// IsDSMLToolCallReply is the gate: the reply must be intended as
-			// a tool-call emission - ending with a complete </tool_calls>
-			// close tag (even the typo'd </_calls>), a cut-off close tag, or
-			// a bare sequence of complete <invoke> blocks with no wrapper at
-			// all. A long answer that merely quotes an <invoke> example is
-			// none of these and must never be executed. Non-executable DSML
-			// in role consultations is stripped so callers see clean
-			// prose; plain chat keeps it verbatim (the expert's words are
-			// content there, not a command).
-			// Entry gate: an executable emission (IsDSMLToolCallReply), a
-			// reply that clearly tries to emit a call but failed to parse
-			// (SuspectedDSMLToolCalls), and a reply carrying MALFORMED DSML
-			// markup (MalformedDSMLToolCalls - a misspelled <invoke tag or a
-			// cut-off close tag) all route into the loop: the former
+			// Entry gate: the reply routes into the loop when the call
+			// source parses at least one tool call (even when the wrapper is
+			// malformed). A reply that clearly tries to emit a call but
+			// failed to parse (SuspectedDSMLToolCalls), and a reply carrying
+			// MALFORMED DSML markup (MalformedDSMLToolCalls - a misspelled
+			// <invoke tag or a cut-off close tag) also route in: the former
 			// executes, the latter two re-issue a warning (ReissueWarning /
 			// MalformedWarning) and keep the conversation alive. A quoted
-			// example (fenced code) is none of these and never enters the
-			// loop. The call source is content first, reasoning as fallback -
-			// the same selection the loop and ParseDSMLMessage use, so a
-			// draft in the thinking gets its round.
+			// example (fenced code), an empty wrapper, or a prose mention -
+			// zero calls - never enters the loop. Non-executable DSML in
+			// role consultations is stripped so callers see clean prose;
+			// plain chat keeps it verbatim (the expert's words are content
+			// there, not a command). The call source is content first,
+			// reasoning as fallback - the same selection the loop and
+			// ParseDSMLMessage use, so a draft in the thinking gets its
+			// round.
 			if shouldEnterToolLoop(res.Reasoning, res.Content) {
 				return handleWebChatToolLoop(ctx, res, opts)
 			}
@@ -466,7 +460,7 @@ func HandleWebChatResume(ctx context.Context, opts WebChatOptions) (WebChatResul
 }
 
 // handleWebChatToolLoop continues a WebChat conversation (role-driven or
-// plain chat; shouldEnterToolLoop decided entry - IsDSMLToolCallReply for
+// plain chat; shouldEnterToolLoop decided entry - parse success for
 // executable emissions, SuspectedDSMLToolCalls for unparseable ones,
 // MalformedDSMLToolCalls for misspelled tags / cut-off close tags - and
 // the call source is content first, reasoning as fallback) while the
@@ -495,14 +489,19 @@ func HandleWebChatResume(ctx context.Context, opts WebChatOptions) (WebChatResul
 // Browser/network errors are fatal: retrying mid-conversation is not safe.
 // shouldEnterToolLoop decides whether a reasoning/content pair routes into
 // the web chat tool loop: the call source (content first, reasoning as
-// fallback - dsml.CallSource) is an executable emission (IsDSMLToolCallReply),
-// a suspected-but-unparseable call (SuspectedDSMLToolCalls), or malformed DSML
-// markup (MalformedDSMLToolCalls - a misspelled <invoke tag or a cut-off close
-// tag, which never executes and instead re-issues MalformedWarning). Shared by
+// fallback - dsml.CallSource) must PARSE at least one tool call. Parse
+// success is the executable admission; SuspectedDSMLToolCalls and
+// MalformedDSMLToolCalls are only consulted when parsing fails - they
+// re-issue a warning instead of executing. Empty wrappers, prose mentions,
+// and quoted examples (zero calls) never enter the loop. Shared by
 // HandleWebChat and HandleWebChatResume so the two entry gates cannot drift.
 func shouldEnterToolLoop(reasoning, content string) bool {
 	src := dsml.CallSource(reasoning, content)
-	return dsml.IsDSMLToolCallReply(src) || dsml.SuspectedDSMLToolCalls(src) || dsml.MalformedDSMLToolCalls(src)
+	calls, err := dsml.ParseDSMLToolCalls(src)
+	if err == nil && len(calls) > 0 {
+		return true
+	}
+	return dsml.SuspectedDSMLToolCalls(src) || dsml.MalformedDSMLToolCalls(src)
 }
 
 func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebChatOptions) (WebChatResult, error) {
@@ -562,13 +561,10 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 		//     <invoke tag or a cut-off close tag): never execute, re-issue
 		//     MalformedWarning, keep the SAME conversation alive. A cut close
 		//     may parse fine, so this check runs FIRST.
-		//   - parse succeeds with calls AND the source is an executable
-		//     emission (IsDSMLToolCallReply): execute. Format violations
+		//   - parse succeeds with calls: execute, even when the wrapper is
+		//     malformed (a broken close tag mid-prose). Format violations
 		//     (OK=false) NEVER block execution - the strict-format warning
 		//     rides along in the tool_result feedback instead.
-		//   - parse succeeds with calls but the source is NOT an executable
-		//     emission (a long answer quoting an invoke example): plain
-		//     exit, nothing executed.
 		//   - parse fails/empty but the source clearly tries to emit a call
 		//     (SuspectedDSMLToolCalls): re-issue warning, keep the SAME
 		//     conversation alive so the model can repeat it.
@@ -616,10 +612,6 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 			// 尤其一个以退化 wrapper 拼写结尾但无 <invoke> 的回复，其散文
 			// 里的字面 "<tool_calls>" 提及必须原样保留（见 cleanExit）。
 			return cleanExitVerbatim()
-		}
-		if !dsml.IsDSMLToolCallReply(src) {
-			// 长回复仅引用示例：非执行轮次，退出循环。
-			return cleanExitStripped()
 		}
 		fmt.Fprintf(os.Stderr, "🤖 %s 请求执行 %d 个工具调用（第 %d/%d 轮）…\n",
 			roleName, len(calls), round, handleWebChatMaxDSMLRounds)

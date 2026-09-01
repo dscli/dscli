@@ -415,6 +415,18 @@ func captureExecDSML(t *testing.T, feedback string) *[]dsml.DSMLCall {
 	return &seen
 }
 
+// brokenWrapperReply is the full corrupt emission from the field: the model
+// wrote the shell close tag instead of the tool_calls close, then continued
+// with prose plus a stray shell close. The single shell call is complete.
+func brokenWrapperReply() string {
+	return "\u003ctool_calls\u003e\n" +
+		"\u003cinvoke name=\"shell\"\u003e\n" +
+		"\u003cparameter name=\"script\" string=\"true\"\u003ego test ./internal/dsml/ -run 'TestMessageContent01|TestParseDSMLMessage' -v 2\u003e\u00261 | tail -60\u003c/parameter\u003e\n" +
+		"\u003cparameter name=\"summary\" string=\"true\"\u003eRun DSML message tests\u003c/parameter\u003e\n" +
+		"\u003cparameter name=\"timeout\" string=\"false\"\u003e120\u003c/parameter\u003e\n" +
+		"\u003c/invoke\u003e\n\u003c/shell\u003e\n\n✅ 代码审查结果\n\u003c/shell\u003e\n✅ CodeReview 执行成功"
+}
+
 func TestHandleWebChatToolLoop(t *testing.T) {
 	origFunc := handleWebChatSend
 	t.Cleanup(func() { handleWebChatSend = origFunc })
@@ -716,6 +728,47 @@ func TestHandleWebChatToolLoopLongPreambleExecutes(t *testing.T) {
 	}
 }
 
+func TestHandleWebChatToolLoopBrokenWrapperExecutes(t *testing.T) {
+	// Field case: the model wrote </shell> instead of </tool_calls>, then
+	// continued with prose plus a stray </shell>. One shell call parses, so
+	// the loop must execute it (the ONLY admission is len(calls)>0) and the
+	// strict-format warning must ride along in the tool feedback.
+	broken := brokenWrapperReply()
+	origFunc := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = origFunc })
+	var sends int
+	var messages []string
+	handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
+		sends++
+		messages = append(messages, msg)
+		if sends == 1 {
+			return WebChatResult{Content: broken, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+		}
+		return WebChatResult{Content: "final answer", URL: "https://chat.deepseek.com/a/chat/s/convY"}, nil
+	}
+	seen := captureExecDSML(t, "<tool_result>{\"result\":\"ok\"}</tool_result>")
+
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{Role: "review"})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if len(*seen) != 1 || (*seen)[0].Name != "shell" {
+		t.Fatalf("executed calls = %+v, want one shell", *seen)
+	}
+	if sends != 2 {
+		t.Fatalf("sends = %d, want 2 (initial + tool feedback)", sends)
+	}
+	if !strings.Contains(messages[1], "did not strictly follow") {
+		t.Errorf("round-2 feedback = %q, want strict-format warning fragment", messages[1])
+	}
+	if res.Content != "final answer" {
+		t.Errorf("content = %q, want final answer", res.Content)
+	}
+	if !res.Printed {
+		t.Error("loop result must be marked Printed")
+	}
+}
+
 func TestHandleWebChatToolLoopPrintsRounds(t *testing.T) {
 	// 工具循环每一轮（reasoning + content）都通过 outfmt.PrintContent
 	// 打印（头部按角色显示，不打印 token 计数）；结果标记 Printed 让
@@ -782,9 +835,9 @@ func TestHandleWebChatOneShotNotPrinted(t *testing.T) {
 }
 
 func TestHandleWebChatToolLoopEmptyWrapperExecutesNothing(t *testing.T) {
-	// gate 通过（以 </tool_calls> 结尾）但包裹内没有任何可解析的 <invoke>
-	//（例如模型只是引用了语法、或只有一个裸闭合标签）→ 解析器返回 0 个
-	// 调用 → 循环退出且不执行任何工具；结果标记 Printed（已在循环内打印）。
+	// 空 wrapper（</tool_calls> 结尾但内部没有任何可解析 <invoke>）解析出
+	// 0 个调用 → shouldEnterToolLoop=false → 不进循环、不执行任何工具；
+	// 非循环路径不标记 Printed，content 原样返回。
 	text := "例如 <tool_calls> 就是工具调用的包裹标签，注意别漏掉结尾：\n<tool_calls>\n</tool_calls>"
 	origFunc := handleWebChatSend
 	t.Cleanup(func() { handleWebChatSend = origFunc })
@@ -806,8 +859,8 @@ func TestHandleWebChatToolLoopEmptyWrapperExecutesNothing(t *testing.T) {
 	if executed {
 		t.Error("empty tool_calls wrapper must not execute anything")
 	}
-	if !res.Printed {
-		t.Error("loop exit must mark the result Printed (it was printed inside the loop)")
+	if res.Printed {
+		t.Error("zero-call round must not be marked Printed (never entered the loop)")
 	}
 	if res.Content != text {
 		t.Errorf("content = %q, want verbatim text (plain chat keeps the expert's words)", res.Content)
@@ -816,10 +869,9 @@ func TestHandleWebChatToolLoopEmptyWrapperExecutesNothing(t *testing.T) {
 
 func TestHandleWebChatToolLoopSlashlessProseOnly(t *testing.T) {
 	// 回复以开口拼写的 <tool_calls>（无斜杠）结尾但没有可解析 <invoke>：
-	// 门（IsDSMLToolCallReply）因 2026-08 "重复的开头" 退化而放行进循环，
-	// 解析得 0 调用 → 循环退出且不执行任何工具。角色会话也必须把内容
-	// 原样返回——散文里字面的 "<tool_calls>" 提及是模型的话，不是标记，
-	// StripDSMLToolCalls 的全局 ReplaceAll 不得误删它。
+	// 解析得 0 调用 → shouldEnterToolLoop=false → 不进循环、不执行任何工具。
+	// 角色会话也必须把内容原样返回——散文里字面的 "<tool_calls>" 提及是
+	// 模型的话，不是标记（HasDSMLToolCalls=false，非循环路径不 strip）。
 	text := "记得用 <tool_calls> 包裹你的工具调用哦\n<tool_calls>"
 	origFunc := handleWebChatSend
 	t.Cleanup(func() { handleWebChatSend = origFunc })
@@ -841,8 +893,8 @@ func TestHandleWebChatToolLoopSlashlessProseOnly(t *testing.T) {
 	if executed {
 		t.Error("prose-only reply must not execute any tool")
 	}
-	if !res.Printed {
-		t.Error("loop exit must mark the result Printed (it was printed inside the loop)")
+	if res.Printed {
+		t.Error("zero-call round must not be marked Printed (never entered the loop)")
 	}
 	if res.Content != text {
 		t.Errorf("content = %q, want verbatim text (prose mention of <tool_calls> must survive)", res.Content)
@@ -850,12 +902,11 @@ func TestHandleWebChatToolLoopSlashlessProseOnly(t *testing.T) {
 }
 
 func TestHandleWebChatToolLoopEmptyWrapperRoleSession(t *testing.T) {
-	// 0 调用轮次的角色会话：空 wrapper（以 </tool_calls> 结尾但内部没有任何
-	// 可解析 <invoke>）也原样返回（verbatim），与"散文提及 <tool_calls>"
-	// 无法可靠区分——两者都只是字面标签，没有可解析的调用；误删散文提及
-	// 比保留一个空 wrapper 更糟，所以 0 调用轮次一律 verbatim（见 cleanExit
-	// 注释）。plain-chat 变体见 TestHandleWebChatToolLoopEmptyWrapperExecutesNothing；
-	// 本测试锁定 role 会话的同一行为。
+	// 0 调用轮次的角色会话：空 wrapper（</tool_calls> 结尾但内部没有任何
+	// 可解析 <invoke>）不进循环，非循环路径 HasDSMLToolCalls=false 故不
+	// strip、内容原样返回（verbatim），且不标记 Printed。plain-chat 变体见
+	// TestHandleWebChatToolLoopEmptyWrapperExecutesNothing；本测试锁定 role
+	// 会话的同一行为。
 	text := "例如 <tool_calls> 就是工具调用的包裹标签，注意别漏掉结尾：\n<tool_calls>\n</tool_calls>"
 	origFunc := handleWebChatSend
 	t.Cleanup(func() { handleWebChatSend = origFunc })
@@ -877,8 +928,8 @@ func TestHandleWebChatToolLoopEmptyWrapperRoleSession(t *testing.T) {
 	if executed {
 		t.Error("empty tool_calls wrapper must not execute anything")
 	}
-	if !res.Printed {
-		t.Error("loop exit must mark the result Printed (it was printed inside the loop)")
+	if res.Printed {
+		t.Error("zero-call round must not be marked Printed (never entered the loop)")
 	}
 	if res.Content != text {
 		t.Errorf("content = %q, want verbatim text (zero-call round never strips)", res.Content)

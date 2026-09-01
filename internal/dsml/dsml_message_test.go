@@ -222,3 +222,39 @@ func TestInjectStrictWarningUnparseable(t *testing.T) {
 		t.Errorf("unparseable block must pass through verbatim, got %v", out)
 	}
 }
+
+// brokenWrapperReply is the full corrupt emission from the field: the model
+// wrote </shell> instead of </tool_calls>, then continued with prose plus a
+// stray </shell>. The single shell call is complete and must parse.
+func brokenWrapperReply() string {
+	return "<tool_calls>\n" +
+		invokeBlock("shell",
+			paramX("script", "go test ./internal/dsml/ -run 'TestMessageContent01|TestParseDSMLMessage' -v 2>&1 | tail -60", "true")+
+				paramX("summary", "Run DSML message tests", "true")+
+				paramX("timeout", "120", "false")) +
+		"\n</shell>\n\n✅ 代码审查结果\n</shell>\n✅ CodeReview 执行成功"
+}
+
+func TestParseDSMLMessageBrokenWrapperCall(t *testing.T) {
+	// The wrapper is malformed (</shell> instead of </tool_calls>) and stray
+	// close tags follow, but one shell call parses. The ONLY authority for
+	// "is this a tool-call reply" is len(ToolCalls) != 0, so OK=false
+	// (violations) while the call is kept and the content stays verbatim.
+	text := brokenWrapperReply()
+	msg := ParseDSMLMessage("", text)
+	if msg.OK {
+		t.Error("OK = true, want false (broken wrapper and stray closes)")
+	}
+	if len(msg.ToolCalls) != 1 {
+		t.Fatalf("ToolCalls = %d, want 1", len(msg.ToolCalls))
+	}
+	if msg.ToolCalls[0].Function.Name != "shell" {
+		t.Errorf("tool name = %q, want shell", msg.ToolCalls[0].Function.Name)
+	}
+	if msg.Content != text {
+		t.Errorf("Content must stay verbatim when OK=false, got:\n%q", msg.Content)
+	}
+	if SuspectedDSMLToolCalls(text) {
+		t.Error("SuspectedDSMLToolCalls = true, want false (calls parsed)")
+	}
+}

@@ -1265,15 +1265,15 @@ func CallSource(reasoning, content string) string {
 //   - ToolCalls non-empty: the reply contains tool calls that parsed. They
 //     are executable regardless of OK (a format violation never blocks
 //     execution - the result comes back with a warning instead).
-//   - OK=true: the call source (content, or reasoning when content has no
-//     calls but reasoning does) carries no violations; Content (or
-//     ReasoningContent when the calls came from reasoning) is stripped of
-//     the call blocks. OK is also true when the message carries no
-//     executable calls at all (no violations): a plain final answer, or
-//     quoted/referenced examples only.
-//   - OK=false: violations observed (see parseDSMLToolCallsStrict); the
-//     Content/ReasoningContent keep the original text for the caller's
-//     fallback judgement.
+//   - OK=true: no strict-format violations. With calls, the call source
+//     followed the required format and Content (or ReasoningContent when
+//     the calls came from reasoning) is stripped of the call blocks. OK is
+//     ALWAYS true when the message carries no executable calls at all - a
+//     plain final answer, a quoted/referenced example, a prose mention, or
+//     stray broken tags have no "tool-call format" to violate.
+//   - OK=false: calls parsed but violations observed (see
+//     parseDSMLToolCallsStrict); the Content/ReasoningContent keep the
+//     original text for the caller's fallback judgement.
 //   - ToolCalls empty: no executable call; whether the reply merely LOOKS
 //     like a broken tool call is SuspectedDSMLToolCalls' job.
 //
@@ -1296,9 +1296,11 @@ func ParseDSMLMessage(reasoning string, content string) prompt.Message {
 		return msg // OK stays false
 	}
 	if len(calls) == 0 {
-		// Only quoted/referenced examples (code blocks, inline spans):
-		// no violations unless normalize/stray marks appeared.
-		msg.OK = !strict
+		// No executable calls: there is nothing whose "tool-call format"
+		// could violate the schema. Quoted examples, prose mentions, and
+		// stray broken tags all report OK=true - only a parsed call has a
+		// strict-format verdict.
+		msg.OK = true
 		return msg
 	}
 	msg.ToolCalls, _ = dsmlCallsToToolCalls(calls)

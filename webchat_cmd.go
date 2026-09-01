@@ -54,8 +54,8 @@ func init() {
 同一会话（同 code_review 工具）。这是远程模型在本地执行命令的会话：角色会话
 开始前会打印警告，且只执行角色配置允许的工具 + 危险命令拦截（rm -rf、
 sudo、curl/wget 外传等被拒绝）；仍建议在可信工作目录使用。--role=（空值）即纯聊天：不注入角色
-提示词（回复中的 DSML 工具调用仍会执行）。判定规则：回复以 </tool_calls> 结束
-即解析并执行其中的 tool_calls（见 toolcall.IsDSMLToolCallEnd）。
+提示词（回复中的 DSML 工具调用仍会执行）。判定规则：回复中解析出 DSML 工具调用
+（即使格式不严格，例如 wrapper 标签拼写错误）即本地执行并回填；解析失败才会请求重发。
 
 附件（--attach，可多次指定，仅 flash/vision 模型支持）：
   dscli webchat --model vision --attach screenshot.png "这张截图说明了什么？"
@@ -87,8 +87,9 @@ sudo、curl/wget 外传等被拒绝）；仍建议在可信工作目录使用。
 	webchatCmd.Flags().StringSlice("attach", nil, "附件图片路径，可多次指定（仅 flash/vision 模型支持）")
 	// --role defaults to "" = plain chat (no role prompt injection; DSML
 	// tool calls in replies are still judged and executed when the reply
-	// ends with </tool_calls> - see toolcall.IsDSMLToolCallEnd). A
-	// non-empty value selects the role prompt template
+	// parses at least one tool call, even if the format is not strict -
+	// parse failure alone triggers a re-issue warning). A non-empty value
+	// selects the role prompt template
 	// (dev/expert/review/test/architect) before the user message.
 	webchatCmd.Flags().String("role", "", "Role: dev (developer), expert (domain expert), review (code review), test (QA engineer), architect (software architect)；空 = 纯聊天（不注入角色提示词；回复中的 DSML 工具调用仍会执行）")
 }
