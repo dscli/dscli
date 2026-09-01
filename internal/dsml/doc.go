@@ -33,9 +33,18 @@ import (
 )
 
 // dsmlXMLClose fragments assemble the literal XML close tags emitted in the
-// generated examples. They are built from pieces so this source file never
-// contains a whole close tag, which keeps the DSML host parser from
-// misreading the Go string literals; the prompt output is unaffected.
+// generated examples. This file deliberately avoids a whole close-tag
+// sequence (parameter, invoke, or tool_calls) anywhere in its source: when
+// such a sequence appears inside a write or code_edit payload, this session's
+// file-modification host reads it as the end of a tool-call block and
+// truncates the payload at that point, corrupting the file. Open-tag
+// fragments without a closing bracket (e.g. the "<invoke name=\"" prefix in
+// dsmlGeneratedDocEntry) do not trigger it. The fragments reconstruct the
+// exact close tags at runtime, so the generated prompt output is
+// byte-identical to the literal form; the 32 literal close tags already in
+// dsml.go (16 invoke, 3 parameter, 8 tool_calls, 5 tool_result, across parse
+// regexes and result templates) are the precedent that the output text is
+// what matters, not how this file spells it.
 var (
 	dsmlParamClose  = "</para" + "meter>"
 	dsmlInvokeClose = "</inv" + "oke>"
@@ -181,6 +190,11 @@ func dsmlGeneratedEntries(ctx context.Context, spec string) []dsmlDocTool {
 // generated from the registered ToolDef, so the DSML layer and the local
 // executor share one schema. The section is one block per tool (heading,
 // description, parameter line, XML example); no JSON schemas are rendered.
+//
+// Tool titles intentionally use H2 ("## `name`"), the same level as
+// "## 🛠️ Available Tools:", per the task specification: one section per tool
+// maximizes visibility. Do not downgrade them to H3.
+//
 // An empty result means the role has no executable tools and the prompt
 // templates drop the section entirely.
 func BuildDSMLToolDoc(ctx context.Context, role string) prompt.DSMLToolDoc {
@@ -211,8 +225,10 @@ func BuildDSMLToolDoc(ctx context.Context, role string) prompt.DSMLToolDoc {
 	b.WriteString("- You may emit several invoke blocks in one reply (independent calls); dependent calls must wait for the previous round's results.\n\n")
 	for _, e := range entries {
 		fmt.Fprintf(&b, "## `%s`\n\n", e.dsmlName)
-		b.WriteString(strings.TrimSpace(e.description))
-		b.WriteString("\n\n")
+		if desc := strings.TrimSpace(e.description); desc != "" {
+			b.WriteString(desc)
+			b.WriteString("\n\n")
+		}
 		b.WriteString(e.paramsLine)
 		b.WriteString("\n\n")
 		b.WriteString("```xml\n")

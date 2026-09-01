@@ -166,6 +166,7 @@ as one "## `name`" block per tool: the tool's own description, a one-line
 parameter summary, and an XML invocation example, with no JSON schemas
 section; it now states the strict format requirements
 explicitly (complete tool_calls wrapper, string attribute on every
+parameter, no extra attributes such as justification, every tag closed).
 `HandleWebChat` injects it via
 `prompt.RenderPromptForRoleWithTools`; `RenderPromptForRole` and
 `GetSystemPrompt` (dscli chat path, which registers tools through the API

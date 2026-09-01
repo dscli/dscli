@@ -120,6 +120,12 @@ func TestBuildDSMLToolDocContent(t *testing.T) {
 			t.Errorf("doc missing %q\nIntro:\n%s", want, doc.Intro)
 		}
 	}
+	// Guard the dsmlCallsClose fragment: the generated examples must still
+	// contain a well-formed tool_calls close tag (asserted by building the
+	// literal from fragments, mirroring doc.go).
+	if !strings.Contains(doc.Intro, "</tool_"+"calls>") {
+		t.Errorf("doc missing a well-formed tool_calls close tag\nIntro:\n%s", doc.Intro)
+	}
 	// exec_command 不在文档中出现：文档只从注册的 ToolDef 生成，任何
 	// 未注册/旧拼写都不会被广告，避免误导模型生成无法执行的调用。
 	if strings.Contains(doc.Intro, "exec_command") {

@@ -87,6 +87,8 @@ func TestDSMLToolsSectionScopedToWebChat(t *testing.T) {
 		t.Errorf("chat system prompt must not contain the DSML tool section:\n%s", chatPrompt)
 	}
 
+	// This fixture is deliberately truncated before any close tag: the test
+	// only needs a non-empty Intro so the template renders the DSML section.
 	doc := DSMLToolDoc{
 		Intro: "## 🛠️ Available Tools: `read_file`" + "\n\n" + `<invoke name="read_file">` + "\n" + `<parameter name="path" string="true">AGENTS.md`,
 	}
@@ -181,6 +183,7 @@ func TestMailCheckStepScopedToRolesWithMail(t *testing.T) {
 		t.Errorf("architect WebChat prompt must keep its own mail-check step:\n%s", archPlain)
 	}
 
+	// Same deliberately-truncated fixture: only a non-empty Intro is needed.
 	doc := DSMLToolDoc{
 		Intro: "## 🛠️ Available Tools: `read_file`" + "\n\n" + `<invoke name="read_file">` + "\n" + `<parameter name="path" string="true">AGENTS.md`,
 	}
