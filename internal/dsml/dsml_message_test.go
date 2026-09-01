@@ -343,3 +343,47 @@ func TestParseDSMLMessageProseWrapperMentionNotSuspected(t *testing.T) {
 		t.Error("SuspectedDSMLToolCalls = true, want false (prose wrapper mention)")
 	}
 }
+
+// TestHasUnquotedAttemptShapesBranches pins the close-only and _calls-twin
+// variants of the attempt-shape detector, plus the fenced-code exemption.
+func TestHasUnquotedAttemptShapesBranches(t *testing.T) {
+	closeOnly := "<" + "tool_calls>\n" +
+		"<" + "/invoke>\n" +
+		"<" + "/tool_calls>"
+
+	callsTwin := "<" + "_calls>\n" +
+		"<" + "parameter name=\"read_file\">\n" +
+		"<" + "/invoke>\n" +
+		"<" + "/_calls>"
+
+	fenced := "Here is how:\n```xml\n" +
+		"<" + "tool_calls>\n" +
+		"<" + "/invoke>\n" +
+		"<" + "/tool_calls>\n" +
+		"```"
+
+	cases := []struct {
+		name        string
+		text        string
+		wantOK      bool
+		wantSuspect bool
+	}{
+		{"close-only", closeOnly, false, true},
+		{"_calls twin", callsTwin, false, true},
+		{"fenced close-only", fenced, true, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			msg := ParseDSMLMessage("", c.text)
+			if len(msg.ToolCalls) != 0 {
+				t.Fatalf("ToolCalls = %d, want 0", len(msg.ToolCalls))
+			}
+			if msg.OK != c.wantOK {
+				t.Errorf("OK = %v, want %v", msg.OK, c.wantOK)
+			}
+			if SuspectedDSMLToolCalls(c.text) != c.wantSuspect {
+				t.Errorf("SuspectedDSMLToolCalls = %v, want %v", SuspectedDSMLToolCalls(c.text), c.wantSuspect)
+			}
+		})
+	}
+}

@@ -1315,8 +1315,9 @@ func ParseDSMLMessage(reasoning string, content string) prompt.Message {
 		// mention, empty wrapper, stray broken tags) reports OK=true; an
 		// unparseable attempt residue reports OK=false so the caller warns
 		// and re-issues instead of surfacing a broken emission as the final
-		// answer.
-		msg.OK = !SuspectedDSMLToolCalls(src)
+		// answer. The verdict reuses the calls just parsed above instead of
+		// re-running the strict parser.
+		msg.OK = !suspectedForParsed(src, calls)
 		return msg
 	}
 	msg.ToolCalls, _ = dsmlCallsToToolCalls(calls)
@@ -1347,8 +1348,17 @@ func SuspectedDSMLToolCalls(text string) bool {
 		// collapsed the invoke open into a parameter tag).
 		return hasUnquotedAttemptShapes(text)
 	}
-	calls, err := ParseDSMLToolCalls(text)
-	if err == nil && len(calls) > 0 {
+	calls, _ := ParseDSMLToolCalls(text)
+	return suspectedForParsed(text, calls)
+}
+
+// suspectedForParsed is SuspectedDSMLToolCalls' parsed branch without the
+// re-parse: calls is the already-parsed result (the caller has already
+// decided HasDSMLToolCalls and routed the no-open case to
+// hasUnquotedAttemptShapes). Keeping this shared keeps the exported and
+// parsed-verdict paths from drifting.
+func suspectedForParsed(text string, calls []DSMLCall) bool {
+	if len(calls) > 0 {
 		return false
 	}
 	return hasUnquotedInvokeOpen(text)
@@ -1369,11 +1379,13 @@ func hasUnquotedInvokeOpen(text string) bool {
 }
 
 // hasUnquotedAttemptShapes reports the residue of a tool-call attempt whose
-// invoke open tag is gone: the model wrote it as a parameter shape, or badge
-// rendering collapsed the <invoke name=...> open into a parameter tag. The
-// caller should re-issue ReissueWarning; a false positive at worst only
-// issues a warning and never executes anything. A nested parameter open
-// inside another parameter's VALUE is a known false-positive limitation.
+// invoke open tag is gone: the model wrote it as a parameter shape, badge
+// rendering collapsed the <invoke name=...> open into a parameter tag, or
+// only a close residue (wrapper + </invoke>) survived. The caller should
+// re-issue ReissueWarning; a false positive at worst only issues a warning
+// and never executes anything. Known limitation: an UNCLOSED parameter body
+// contributes no range to dsmlParamBodyRanges, so a shape inside an
+// unclosed parameter VALUE may be misread as structure.
 func hasUnquotedAttemptShapes(text string) bool {
 	text = normalizeDSMLText(text)
 	fences := dsmlCodeRanges(text)
@@ -1405,7 +1417,7 @@ func hasUnquotedAttemptShapes(text string) bool {
 			if b[0] == m[0] {
 				continue // its own body range
 			}
-			if inRanges([][2]int{b}, m[0]) {
+			if b[0] <= m[0] && m[0] < b[1] {
 				insideOther = true
 				break
 			}

@@ -580,7 +580,11 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 		msg := dsml.ParseDSMLMessage(lastReasoning, message)
 		src := dsml.CallSource(lastReasoning, message)
 		// Same parseDSMLToolCallsStrict backend as ParseDSMLMessage above:
-		// the call count here and msg.OK are necessarily consistent.
+		// the call count here and msg.OK are necessarily consistent. The zero-call
+		// branch below reuses msg.OK (already !SuspectedDSMLToolCalls in
+		// ParseDSMLMessage) instead of recomputing suspicion; only the truncated
+		// path (parseErr != nil) re-derives it explicitly, since ParseDSMLMessage's
+		// err branch never assigns msg.OK from the suspicion verdict.
 		calls, parseErr := dsml.ParseDSMLToolCalls(src)
 		if dsml.MalformedDSMLToolCalls(src) {
 			// 畸形标记（打错的 <invoke 标签 / 截断的 </ 闭合）：永不执行；
@@ -601,7 +605,16 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 			continue
 		}
 		if parseErr != nil || len(calls) == 0 {
-			if dsml.SuspectedDSMLToolCalls(src) {
+			// suspected 复用 ParseDSMLMessage 的判定（OK=false 等价于疑似调用）
+			// 而不是再次解析：截断路径（parseErr != nil）本就 OK=false 但
+			// SuspectedDSMLToolCalls 未进入 msg.OK 的直接赋值（见 ParseDSMLMessage
+			// 的 err 分支），所以仅该路径需要显式调用；零调用已解析路径直接取
+			// !msg.OK，与上述共享同一后端，不会漂移。
+			suspected := !msg.OK
+			if parseErr != nil {
+				suspected = dsml.SuspectedDSMLToolCalls(src)
+			}
+			if suspected {
 				// 疑似工具调用但解析失败（截断/畸形）：keep 会话并请求重发。
 				fmt.Fprintf(os.Stderr, "⚠️ %s 的回复疑似工具调用但解析失败，已请求按严格格式重发（第 %d/%d 轮）…\n",
 					roleName, round, handleWebChatMaxDSMLRounds)
