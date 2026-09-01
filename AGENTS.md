@@ -30,7 +30,7 @@ make fmt-check
 **Before pushing, run code review:**
 ```bash
 # code_review is token-free - use it before every push
-# code_review also checks cyclomatic complexity: gocyclo -over 20 on changed .go files
+# the code_review role also checks cyclomatic complexity (gocyclo -over 20 on changed .go files)
 # Recommended: code_review(summary="<describe the change>")
 ```
 - `code_review` before `git push` — fix issues before they reach remote

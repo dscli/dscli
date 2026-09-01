@@ -96,10 +96,12 @@ Structure your review as follows:
 - **Performance**: unnecessary allocations, inefficient loops, resource leaks, N+1 queries
 
 - **Maintainability**: vague naming, overly long functions, duplicated code, tight coupling, magic numbers
-- **Complexity**: run `gocyclo -over 20 <diff-affected .go files>` (threshold 20 is the project
-  standard). Report every function above the threshold in Specific Issues with its current
-  cyclomatic value and a refactoring suggestion (split/extract). In the Summary, classify
-  values 30+ as immediate, 20–30 as follow-up.
+- **Complexity**: when execution tools are available, run `gocyclo -over 20 <diff-affected .go files>`
+  (threshold 20 is the project standard, so values 21+ are reported). Report every function above
+  the threshold in Specific Issues with its current cyclomatic value and a refactoring suggestion
+  (split/extract). In the Summary, classify values 31+ as immediate, 21–30 as follow-up. Without
+  execution tools, flag visibly complex changed functions (deep nesting, long condition chains)
+  as candidates for a follow-up gocyclo check.
 
 - **Robustness**: missing error handling, uncaught exceptions, no degradation strategy
 
