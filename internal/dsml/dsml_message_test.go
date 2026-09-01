@@ -361,6 +361,15 @@ func TestHasUnquotedAttemptShapesBranches(t *testing.T) {
 		"<" + "/invoke>\n" +
 		"<" + "/tool_calls>\n" +
 		"```"
+	mixed := "Here is how:\n```xml\n" +
+		"<" + "invoke name=\"shell\">\n" +
+		"<" + "parameter name=\"script\" string=\"true\">echo hi<" + "/parameter>\n" +
+		"<" + "/invoke>\n" +
+		"```\n" +
+		"<" + "tool_calls>\n" +
+		"<" + "parameter name=\"x\">\n" +
+		"<" + "/invoke>\n" +
+		"<" + "/tool_calls>"
 
 	cases := []struct {
 		name        string
@@ -371,6 +380,7 @@ func TestHasUnquotedAttemptShapesBranches(t *testing.T) {
 		{"close-only", closeOnly, false, true},
 		{"_calls twin", callsTwin, false, true},
 		{"fenced close-only", fenced, true, false},
+		{"mixed quoted open + unquoted residue", mixed, false, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

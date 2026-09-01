@@ -1355,13 +1355,17 @@ func SuspectedDSMLToolCalls(text string) bool {
 // suspectedForParsed is SuspectedDSMLToolCalls' parsed branch without the
 // re-parse: calls is the already-parsed result (the caller has already
 // decided HasDSMLToolCalls and routed the no-open case to
-// hasUnquotedAttemptShapes). Keeping this shared keeps the exported and
-// parsed-verdict paths from drifting.
+// hasUnquotedAttemptShapes). The text may carry BOTH a quoted invoke open
+// (fenced/inline, which HasDSMLToolCalls still matches) AND an unquoted
+// badge-rendered residue, so both predicates must be consulted: a quoted
+// example alone is not suspected, an unquoted residue with no parseable call
+// is. Keeping this shared keeps the exported and parsed-verdict paths from
+// drifting.
 func suspectedForParsed(text string, calls []DSMLCall) bool {
 	if len(calls) > 0 {
 		return false
 	}
-	return hasUnquotedInvokeOpen(text)
+	return hasUnquotedInvokeOpen(text) || hasUnquotedAttemptShapes(text)
 }
 
 // hasUnquotedInvokeOpen reports a named invoke open tag outside quoted code
@@ -1388,6 +1392,9 @@ func hasUnquotedInvokeOpen(text string) bool {
 // unclosed parameter VALUE may be misread as structure.
 func hasUnquotedAttemptShapes(text string) bool {
 	text = normalizeDSMLText(text)
+	if !dsmlWrapperRe.MatchString(text) {
+		return false // no wrapper marker: nothing to detect, skip the range scans
+	}
 	fences := dsmlCodeRanges(text)
 	paramBodies := dsmlParamBodyRanges(text)
 	// A wrapper marker outside quoted code and parameter VALUES: the

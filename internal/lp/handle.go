@@ -605,11 +605,13 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 			continue
 		}
 		if parseErr != nil || len(calls) == 0 {
-			// suspected 复用 ParseDSMLMessage 的判定（OK=false 等价于疑似调用）
-			// 而不是再次解析：截断路径（parseErr != nil）本就 OK=false 但
-			// SuspectedDSMLToolCalls 未进入 msg.OK 的直接赋值（见 ParseDSMLMessage
-			// 的 err 分支），所以仅该路径需要显式调用；零调用已解析路径直接取
-			// !msg.OK，与上述共享同一后端，不会漂移。
+			// suspected reuses ParseDSMLMessage's verdict (OK=false equals
+			// suspected) instead of re-parsing: the truncated path
+			// (parseErr != nil) never assigns msg.OK from the suspicion
+			// verdict (see ParseDSMLMessage's err branch), so only that path
+			// calls SuspectedDSMLToolCalls explicitly; the zero-call parsed
+			// path takes !msg.OK directly, sharing the same backend so the
+			// two cannot drift.
 			suspected := !msg.OK
 			if parseErr != nil {
 				suspected = dsml.SuspectedDSMLToolCalls(src)
