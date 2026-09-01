@@ -28,7 +28,7 @@ GOFLAGS = -trimpath -tags netgo
 SOURCE_DIR = .
 BUILD_DIR = build
 
-.PHONY: all build clean install test gofmt fmt fmt-check test-coverage coverage coverage-html clean-coverage test-all dev-test watch-test release
+.PHONY: all build clean install test gofmt fmt fmt-check test-coverage coverage coverage-html clean-coverage test-all dev-test watch-test release release-info version-info
 
 all: clean build
 
@@ -39,7 +39,7 @@ $(BUILD_DIR)/$(BINARY_NAME): $(shell find . -name "*.go")
 	@echo "构建 dscli $(VERSION) (commit: $(GIT_COMMIT), date: $(BUILD_DATE))"
 	CGO_ENABLED=0 go build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(SOURCE_DIR)
 
-# install: 构建并安装。安装后验证二进制嵌入的 commit 与当前 HEAD 一致——
+# install: 构建并安装。安装后验证二进制嵌入的 commit 与当前 HEAD 一致 -
 # go:embed 的脚本（dscli-flycheck.sh 等）是编译期快照，PATH 里的旧二进制
 # 会静默运行旧脚本（曾导致 flycheck 全挂）。不一致时给出警告。
 install:
@@ -51,7 +51,7 @@ install:
 		if [ -n "$$built" ]; then \
 			if [ "$$built" != "$(GIT_COMMIT)" ]; then \
 				echo "⚠️  警告: $$target 嵌入 commit $$built，当前 HEAD 是 $(GIT_COMMIT)"; \
-				echo "    go:embed 脚本是编译期快照——旧二进制运行旧 dscli-flycheck.sh。"; \
+				echo "    go:embed 脚本是编译期快照 - 旧二进制运行旧 dscli-flycheck.sh。"; \
 			else \
 				echo "✅ $$target 与当前 HEAD 一致 ($(GIT_COMMIT))"; \
 			fi; \
