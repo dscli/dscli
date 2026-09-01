@@ -13,11 +13,15 @@
 // straight from the registered ToolDef (dsmlGeneratedDocEntry), so the
 // model sees the native tool names and parameter schemas - what the model
 // writes is what the executor accepts, no translation.
+//
+// Since JSON schemas proved too verbose for the role prompt, the section is
+// now one block per tool: a heading, the tool's own description, a one-line
+// parameter summary, and an XML invocation example. No JSON schema is
+// rendered anywhere.
 package dsml
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -28,23 +32,34 @@ import (
 	"github.com/nanjj/clog"
 )
 
+// dsmlXMLClose fragments assemble the literal XML close tags emitted in the
+// generated examples. They are built from pieces so this source file never
+// contains a whole close tag, which keeps the DSML host parser from
+// misreading the Go string literals; the prompt output is unaffected.
+var (
+	dsmlParamClose  = "</para" + "meter>"
+	dsmlInvokeClose = "</inv" + "oke>"
+	dsmlCallsClose  = "</tool_" + "calls>"
+)
+
 // dsmlDocTool is one tool entry in the DSML registration section.
 type dsmlDocTool struct {
 	// dsmlName is the name the model writes in <invoke name="...">.
 	dsmlName string
+	// description is the tool's own description (def.Description), shown
+	// verbatim under the per-tool heading.
+	description string
 	// example is one XML invocation sample.
 	example string
 	// paramsLine summarizes the parameters in one line.
 	paramsLine string
-	// schema is the JSON schema (the tool's own Parameters).
-	schema map[string]any
 }
 
 // dsmlGeneratedDocEntry builds a DSML documentation entry straight from a
 // registered ToolDef: the DSML layer uses the native tool name and parameter
-// schema, so the schema is the tool's own schema and the example/params line
-// are derived from it. This is the only doc source - the role's tools spec
-// decides what gets registered, with no code change needed per tool.
+// schema, so the description and example/params line are derived from it.
+// This is the only doc source - the role's tools spec decides what gets
+// registered, with no code change needed per tool.
 func dsmlGeneratedDocEntry(def toolcall.ToolDef) dsmlDocTool {
 	name := def.Name
 	props, _ := def.Parameters["properties"].(map[string]any)
@@ -73,19 +88,20 @@ func dsmlGeneratedDocEntry(def toolcall.ToolDef) dsmlDocTool {
 		typ, _ := p["type"].(string)
 		switch typ {
 		case "integer", "number":
-			fmt.Fprintf(&b, "<parameter name=%q string=\"false\">0</parameter>\n", k)
+			fmt.Fprintf(&b, "<parameter name=%q string=\"false\">0%s\n", k, dsmlParamClose)
 		case "boolean":
-			fmt.Fprintf(&b, "<parameter name=%q string=\"false\">true</parameter>\n", k)
+			fmt.Fprintf(&b, "<parameter name=%q string=\"false\">true%s\n", k, dsmlParamClose)
 		case "array":
-			fmt.Fprintf(&b, "<parameter name=%q string=\"false\">[]</parameter>\n", k)
+			fmt.Fprintf(&b, "<parameter name=%q string=\"false\">[]%s\n", k, dsmlParamClose)
 		case "object":
-			fmt.Fprintf(&b, "<parameter name=%q string=\"false\">{}</parameter>\n", k)
+			fmt.Fprintf(&b, "<parameter name=%q string=\"false\">{}%s\n", k, dsmlParamClose)
 		default:
-			fmt.Fprintf(&b, "<parameter name=%q string=\"true\">...</parameter>\n", k)
+			fmt.Fprintf(&b, "<parameter name=%q string=\"true\">...%s\n", k, dsmlParamClose)
 		}
 	}
-	b.WriteString("</invoke>\n")
-	b.WriteString("</tool_calls>")
+	b.WriteString(dsmlInvokeClose)
+	b.WriteString("\n")
+	b.WriteString(dsmlCallsClose)
 
 	var parts []string
 	for _, k := range keys {
@@ -98,25 +114,18 @@ func dsmlGeneratedDocEntry(def toolcall.ToolDef) dsmlDocTool {
 		}
 		parts = append(parts, fmt.Sprintf("`%s` (%s, %s) — %s", k, typ, opt, desc))
 	}
-	paramsLine := "`" + name + "`: " + strings.Join(parts, "; ")
+	paramsLine := "Parameters: " + strings.Join(parts, "; ")
 	if len(parts) == 0 {
 		// A schema without properties (no required params) still gets a
 		// useful registration line; the empty example body is parseable.
-		paramsLine = "`" + name + "`: (no parameters)"
+		paramsLine = "Parameters: (no parameters)"
 	}
 
 	return dsmlDocTool{
-		dsmlName:   name,
-		example:    b.String(),
-		paramsLine: paramsLine,
-		schema: map[string]any{
-			"type": "function",
-			"function": map[string]any{
-				"name":        name,
-				"description": def.Description,
-				"parameters":  def.Parameters, // the tool's own JSON schema
-			},
-		},
+		dsmlName:    name,
+		description: def.Description,
+		example:     b.String(),
+		paramsLine:  paramsLine,
 	}
 }
 
@@ -170,8 +179,10 @@ func dsmlGeneratedEntries(ctx context.Context, spec string) []dsmlDocTool {
 // driven by the role's tool configuration (role_configs row, falling back to
 // roles.DefaultFor) - the same spec that gates GetAllTools. Every entry is
 // generated from the registered ToolDef, so the DSML layer and the local
-// executor share one schema. An empty result means the role has no
-// executable tools and the prompt templates drop the section entirely.
+// executor share one schema. The section is one block per tool (heading,
+// description, parameter line, XML example); no JSON schemas are rendered.
+// An empty result means the role has no executable tools and the prompt
+// templates drop the section entirely.
 func BuildDSMLToolDoc(ctx context.Context, role string) prompt.DSMLToolDoc {
 	span, ctx := clog.StartSpanFromContext(ctx, "BuildDSMLToolDoc")
 	defer span.Finish()
@@ -199,6 +210,11 @@ func BuildDSMLToolDoc(ctx context.Context, role string) prompt.DSMLToolDoc {
 	b.WriteString("- Every invoke tag and every tool_calls tag MUST be closed (the close tag must be present).\n")
 	b.WriteString("- You may emit several invoke blocks in one reply (independent calls); dependent calls must wait for the previous round's results.\n\n")
 	for _, e := range entries {
+		fmt.Fprintf(&b, "## `%s`\n\n", e.dsmlName)
+		b.WriteString(strings.TrimSpace(e.description))
+		b.WriteString("\n\n")
+		b.WriteString(e.paramsLine)
+		b.WriteString("\n\n")
 		b.WriteString("```xml\n")
 		b.WriteString(e.example)
 		b.WriteString("\n```\n\n")
@@ -206,30 +222,9 @@ func BuildDSMLToolDoc(ctx context.Context, role string) prompt.DSMLToolDoc {
 	b.WriteString("String parameters should be specified as is and set `string=\"true\"`. For all\n")
 	b.WriteString("other types (numbers, booleans, arrays, objects), pass the value in JSON format\n")
 	b.WriteString("and set `string=\"false\"`.\n\n")
-	for _, e := range entries {
-		b.WriteString("- ")
-		b.WriteString(e.paramsLine)
-		b.WriteString("\n")
-	}
+	b.WriteString("You MUST strictly follow the above defined tool name and parameter schemas to invoke tool calls.\n")
+	b.WriteString("No extra attributes (such as justification), no extra arguments, and every tag closed - output the exact DSML shape shown above.\n")
 	intro := strings.TrimSpace(b.String())
 
-	var s strings.Builder
-	s.WriteString("### Available Tool Schemas\n\n")
-	for _, e := range entries {
-		raw, err := json.MarshalIndent(e.schema, "", "  ")
-		if err != nil {
-			// Schema maps come from the registry; a marshal failure here
-			// is a programming error, so the doc must not silently drop a
-			// registered tool - surface it loudly.
-			raw = []byte(fmt.Sprintf("{/* schema error: %v */}", err))
-		}
-		s.WriteString("```json\n")
-		s.Write(raw)
-		s.WriteString("\n```\n\n")
-	}
-	s.WriteString("You MUST strictly follow the above defined tool name and parameter schemas to invoke tool calls.\n")
-	s.WriteString("No extra attributes (such as justification), no extra arguments, and every tag closed - output the exact DSML shape shown above.\n")
-	schemas := strings.TrimSpace(s.String())
-
-	return prompt.DSMLToolDoc{Intro: intro, Schemas: schemas}
+	return prompt.DSMLToolDoc{Intro: intro}
 }

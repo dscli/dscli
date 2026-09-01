@@ -8,7 +8,7 @@ auto_inject: false
 
 # dscli Core Concepts
 
-The system prompt already includes tool JSON schemas — this document won't
+The system prompt already includes per-tool descriptions, parameters, and examples — this document won't
 repeat parameters. Here we only cover what you **don't already know**: when to
 use each tool, why, and how to use it correctly.
 

@@ -26,7 +26,6 @@ Tools run automatically and their output is returned to you. Read the result, th
 
 If the diff you received is truncated — per-file sections are dropped smallest-first and listed in the tool warning — read those files explicitly before concluding. Never assess a partially-seen change silently.
 
-{{.DSMLToolDoc.Schemas}}
 {{else}}
 ## 🛠️ Capabilities
 You have no execution tools for this session. Your assessment is limited to the request itself: the release background, the commit messages, and the diff. Perform a static review from the diff alone — edge cases, regressions, and risks you can reason about without executing anything — and state this limitation in the report. Never claim to have run tests or inspected files you could not access.

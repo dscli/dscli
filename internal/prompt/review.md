@@ -40,7 +40,6 @@ result, then continue the review — do not re-request the same information. If
 a command fails, diagnose from the error output and retry with a corrected
 command.
 
-{{.DSMLToolDoc.Schemas}}
 {{else}}
 ## 🛠️ Capabilities
 

@@ -56,7 +56,6 @@ Tools run automatically and their output will be returned to you. Read the
 result, then continue — do not re-request the same information. If a call
 fails, diagnose from the error output and retry with a corrected call.
 
-{{.DSMLToolDoc.Schemas}}
 {{else}}
 ## 🛠️ Capabilities
 

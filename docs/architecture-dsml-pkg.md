@@ -135,8 +135,10 @@ of tools..." 段落附近，措辞由实现者润色，必须覆盖以下语义�
 - **不允许**添加任何额外属性（如 justification）或示例之外的参数；
 - 所有标签必须闭合（invoke 与 tool_calls 的闭标签都必须输出）；
 - 一次回复可含多个 invoke（独立调用），依赖调用必须等上一轮结果；
-- 结尾 Schemas 段保留并强化现有 "You MUST strictly follow the above
-  defined tool name and parameter schemas to invoke tool calls." 措辞。
+- 结尾保留并强化 "You MUST strictly follow the above defined tool name
+  and parameter schemas to invoke tool calls." 措辞。JSON schemas 段已退役：
+  每工具改为一段（名称标题 + 工具描述 + 参数说明行 + 调用示例），详见
+  internal/dsml/doc.go 的 BuildDSMLToolDoc。
 
 模型输出应当与 dsmlGeneratedDocEntry 生成的示例**逐字节同构**（示例就是
 格式规范的唯一权威）。核对现有示例已体现全部参数带 string 属性（现状应已

@@ -876,7 +876,7 @@ var dsmlBlockedCmdRe = regexp.MustCompile(`(?i)(^|\s|;|&&|\|\|)(` +
 // normalizeDSMLInvoke maps a DSML call to a native tool name and arguments.
 //
 // Role-configured tools are registered with their native names and parameter
-// schemas (dsml_doc.go), so the model writes what the executor accepts: this
+// schemas (doc.go), so the model writes what the executor accepts: this
 // is a verbatim passthrough that only strips the DSML decorative parameter
 // justification (DeepSeek's habit of adding it to every call) - the local
 // handler validates everything else.

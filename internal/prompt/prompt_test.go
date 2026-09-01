@@ -88,8 +88,7 @@ func TestDSMLToolsSectionScopedToWebChat(t *testing.T) {
 	}
 
 	doc := DSMLToolDoc{
-		Intro:   "## 🛠️ Available Tools: `read_file`\n\n<tool_calls>\n<invoke name=\"read_file\">\n<parameter name=\"path\" string=\"true\">AGENTS.md</parameter>\n</invoke>\n</tool_calls>",
-		Schemas: "### Available Tool Schemas\n\n```json\n{\"type\":\"function\"}\n```\n\nYou MUST strictly follow the above defined tool name and parameter schemas to invoke tool calls.",
+		Intro: "## 🛠️ Available Tools: `read_file`" + "\n\n" + `<invoke name="read_file">` + "\n" + `<parameter name="path" string="true">AGENTS.md`,
 	}
 	for _, role := range []string{"dev", "expert", "review", "test", "architect"} {
 		t.Run(role, func(t *testing.T) {
@@ -183,8 +182,7 @@ func TestMailCheckStepScopedToRolesWithMail(t *testing.T) {
 	}
 
 	doc := DSMLToolDoc{
-		Intro:   "## 🛠️ Available Tools: `read_file`\n\n\u003ctool_calls\u003e\n\u003cinvoke name=\"read_file\"\u003e\n\u003cparameter name=\"path\" string=\"true\"\u003eAGENTS.md\u003c/parameter\u003e\n\u003c/invoke\u003e\n\u003c/tool_calls\u003e",
-		Schemas: "### Available Tool Schemas\n\n```json\n{\"type\":\"function\"}\n```\n\nYou MUST strictly follow the above defined tool name and parameter schemas to invoke tool calls.",
+		Intro: "## 🛠️ Available Tools: `read_file`" + "\n\n" + `<invoke name="read_file">` + "\n" + `<parameter name="path" string="true">AGENTS.md`,
 	}
 	content := RenderPromptForRoleWithTools(t.Context(), "dev", doc)
 	assertMailCheckStripped(t, "webchat prompt (with tools)", content)

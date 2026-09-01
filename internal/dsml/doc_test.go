@@ -77,7 +77,7 @@ func TestBuildDSMLToolDocDefaults(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.role, func(t *testing.T) {
 			doc := BuildDSMLToolDoc(t.Context(), tt.role)
-			if doc.Intro == "" && doc.Schemas == "" {
+			if doc.Intro == "" {
 				if tt.wantTools {
 					t.Fatalf("%s: expected a DSML tool doc, got empty", tt.role)
 				}
@@ -86,17 +86,14 @@ func TestBuildDSMLToolDocDefaults(t *testing.T) {
 			if !tt.wantTools {
 				t.Fatalf("%s: expected no DSML tool doc, got:\n%s", tt.role, doc.Intro)
 			}
-			if doc.Intro == "" || doc.Schemas == "" {
-				t.Fatalf("%s: Intro and Schemas must both be set (Intro=%q, Schemas=%q)", tt.role, doc.Intro, doc.Schemas)
-			}
 		})
 	}
 }
 
-// TestBuildDSMLToolDocContent 验证生成的文档包含 V4 对齐的关键要素：
-// 可用工具标题、骨架示例、string= 编码规则、参数说明、JSON schemas
-// 与 "strictly follow" 闭合句。条目一律从注册的 ToolDef 生成，所以
-// 模型看到的名字/参数就是本地工具的原生 schema（shell 而非 exec_command）。
+// TestBuildDSMLToolDocContent 验证生成的文档包含关键要素：可用工具标题、
+// 每工具一段（名称标题/描述/参数说明/骨架示例）、string= 编码规则与
+// "strictly follow" 闭合句。条目一律从注册的 ToolDef 生成，所以模型看到
+// 的名字/参数就是本地工具的原生 schema（shell 而非 exec_command）。
 func TestBuildDSMLToolDocContent(t *testing.T) {
 	registerDocProbeTools(t, docShellDef(), docReadFileDef())
 	doc := BuildDSMLToolDoc(t.Context(), "dev")
@@ -104,29 +101,31 @@ func TestBuildDSMLToolDocContent(t *testing.T) {
 		"## 🛠️ Available Tools:",
 		"`shell`",
 		"`read_file`",
+		"## `shell`",
+		"## `read_file`",
+		"Run a shell script.",
+		"Read a file or line range.",
+		"Parameters: `script` (string, required) — Shell script content.",
+		"`path` (string, required) — File path.",
+		"`start_line` (integer, optional) — Start line.",
 		"<tool_calls>",
 		"<invoke name=\"shell\">",
 		"<parameter name=\"script\" string=\"true\">",
 		"<invoke name=\"read_file\">",
 		"String parameters should be specified as is and set `string=\"true\"`",
-		"- `shell`: `script`",
-		"- `read_file`:",
-		"`path` (string, required) — File path.",
-		"### Available Tool Schemas",
-		"\"name\": \"shell\"",
-		"\"name\": \"read_file\"",
 		"You MUST strictly follow the above defined tool name and parameter schemas to invoke tool calls.",
+		"No extra attributes (such as justification), no extra arguments, and every tag closed - output the exact DSML shape shown above.",
 	} {
-		if !strings.Contains(doc.Intro, want) && !strings.Contains(doc.Schemas, want) {
-			t.Errorf("doc missing %q\nIntro:\n%s\nSchemas:\n%s", want, doc.Intro, doc.Schemas)
+		if !strings.Contains(doc.Intro, want) {
+			t.Errorf("doc missing %q\nIntro:\n%s", want, doc.Intro)
 		}
 	}
 	// exec_command 不在文档中出现：文档只从注册的 ToolDef 生成，任何
 	// 未注册/旧拼写都不会被广告，避免误导模型生成无法执行的调用。
-	if strings.Contains(doc.Intro, "exec_command") || strings.Contains(doc.Schemas, "exec_command") {
+	if strings.Contains(doc.Intro, "exec_command") {
 		t.Errorf("doc must not advertise the unknown exec_command spelling\nIntro:\n%s", doc.Intro)
 	}
-	if strings.Contains(doc.Intro, "{{") || strings.Contains(doc.Schemas, "{{") {
+	if strings.Contains(doc.Intro, "{{") {
 		t.Error("doc leaks template placeholders")
 	}
 }
@@ -150,7 +149,7 @@ func TestBuildDSMLToolDocRoleConfig(t *testing.T) {
 	if err := roles.UpsertRoleConfig(ctx, "review", sessionID, nil, strPtrHelper(""), nil); err != nil {
 		t.Fatalf("UpsertRoleConfig (clear): %v", err)
 	}
-	if doc := BuildDSMLToolDoc(ctx, "review"); doc.Intro != "" || doc.Schemas != "" {
+	if doc := BuildDSMLToolDoc(ctx, "review"); doc.Intro != "" {
 		t.Errorf("review doc must be empty after clearing tools:\n%s", doc.Intro)
 	}
 
@@ -207,12 +206,11 @@ func TestBuildDSMLToolDocGenerated(t *testing.T) {
 		"<invoke name=\"probe_tool\">",
 		`<parameter name="query" string="true">...</parameter>`,
 		`<parameter name="limit" string="false">0</parameter>`,
-		"`query` (string, required) — SQL query",
-		"`limit` (integer, optional) — Row cap",
-		"\"name\": \"probe_tool\"",
+		"probe description",
+		"Parameters: `limit` (integer, optional) — Row cap; `query` (string, required) — SQL query",
 	} {
-		if !strings.Contains(doc.Intro, want) && !strings.Contains(doc.Schemas, want) {
-			t.Errorf("generated doc missing %q\nIntro:\n%s\nSchemas:\n%s", want, doc.Intro, doc.Schemas)
+		if !strings.Contains(doc.Intro, want) {
+			t.Errorf("generated doc missing %q\nIntro:\n%s", want, doc.Intro)
 		}
 	}
 }

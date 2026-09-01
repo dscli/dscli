@@ -162,10 +162,10 @@ locally. Role templates (internal/prompt/*.md) render a DSML tool section
 for WebChat via a `{{if .DSMLToolDoc.Intro}}` block: the section content
 (`dsml.BuildDSMLToolDoc`, see internal/dsml/doc.go) is derived
 from the role's tool config (roles.DefaultFor + role_configs), formatting
-aligned with DeepSeek V4's tool template (string= attribute rules,
-`### Available Tool Schemas`); it now states the strict format requirements
+as one "## `name`" block per tool: the tool's own description, a one-line
+parameter summary, and an XML invocation example, with no JSON schemas
+section; it now states the strict format requirements
 explicitly (complete tool_calls wrapper, string attribute on every
-parameter, no extra attributes such as justification, every tag closed).
 `HandleWebChat` injects it via
 `prompt.RenderPromptForRoleWithTools`; `RenderPromptForRole` and
 `GetSystemPrompt` (dscli chat path, which registers tools through the API

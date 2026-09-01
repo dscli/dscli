@@ -44,16 +44,15 @@ type promptTemplate struct {
 	Name string
 }
 
-// DSMLToolDoc 是 DSML 工具注册段的两个部分，供角色模板注入：
+// DSMLToolDoc 是 DSML 工具注册段，供角色模板注入：
 //
-//   - Intro: 可用工具标题、调用骨架示例、string= 编码规则与参数说明
-//   - Schemas: Available Tool Schemas（JSON）与严格遵循提示
+//   - Intro: 可用工具标题、每工具一段（名称/描述/参数说明/调用示例）、
+//     string= 编码规则与严格格式要求
 //
-// 两者由 toolcall.BuildDSMLToolDoc 按角色配置生成；Intro 为空时模板
-// 不渲染整段（该角色没有可用的 DSML 工具），Schemas 必须配套出现。
+// 由 dsml.BuildDSMLToolDoc 按角色配置生成；Intro 为空时模板不渲染整段
+// （该角色没有可用的 DSML 工具）。
 type DSMLToolDoc struct {
-	Intro   string
-	Schemas string
+	Intro string
 }
 
 // promptConfig 模板数据
@@ -96,12 +95,12 @@ type promptConfig struct {
 	CheckMail bool
 
 	// DSMLToolDoc 是 DSML 工具注册段的动态内容（<tool_calls>/<invoke>
-	// 示例、string= 编码规则、参数说明与 JSON schemas）。仅在 WebChat
-	// 场景非空：chat.deepseek.com 没有原生工具协议，角色提示词是唯一
-	// 注册通道，lp.HandleWebChat 解析并本地执行；dscli chat 通过 API 的
-	// tools 参数注册工具，此段必须保持为空，否则模型会误用 DSML 标记
-	// 而非原生 tool_calls。内容由 toolcall.BuildDSMLToolDoc 按角色工具
-	// 配置（roles.DefaultFor + role_configs）生成，见 dsml_doc.go。
+	// 示例、string= 编码规则、每工具名称/描述/参数说明/示例）。仅在
+	// WebChat 场景非空：chat.deepseek.com 没有原生工具协议，角色提示词
+	// 是唯一注册通道，lp.HandleWebChat 解析并本地执行；dscli chat 通过
+	// API 的 tools 参数注册工具，此段必须保持为空，否则模型会误用 DSML
+	// 标记而非原生 tool_calls。内容由 dsml.BuildDSMLToolDoc 按角色工具
+	// 配置（roles.DefaultFor + role_configs）生成，见 internal/dsml/doc.go。
 	DSMLToolDoc DSMLToolDoc
 
 	// 模型特定配置
@@ -524,7 +523,7 @@ func GetSystemPrompt(ctx context.Context) string {
 //
 // It renders WITHOUT the DSML tool registration section - the section is
 // role-config-driven and must be injected by the WebChat caller via
-// RenderPromptForRoleWithTools (see toolcall.BuildDSMLToolDoc). Plain Chat
+// RenderPromptForRoleWithTools (see dsml.BuildDSMLToolDoc). Plain Chat
 // (GetSystemPrompt) never gets the section either: dscli chat registers
 // tools through the API's tools parameter.
 func RenderPromptForRole(ctx context.Context, role string) string {
@@ -533,7 +532,7 @@ func RenderPromptForRole(ctx context.Context, role string) string {
 
 // RenderPromptForRoleWithTools renders the role prompt with the DSML tool
 // registration section (doc) injected. doc comes from
-// toolcall.BuildDSMLToolDoc, which derives the tool set from the role
+// dsml.BuildDSMLToolDoc, which derives the tool set from the role
 // config; an empty doc makes the templates drop the whole section, so a
 // tool-less role (expert/review/test by default) gets no tool registrations.
 func RenderPromptForRoleWithTools(ctx context.Context, role string, doc DSMLToolDoc) string {
