@@ -22,6 +22,10 @@ func TestMessageContent01(t *testing.T) {
 	}
 
 	if message.ReasoningContent != reasoning01 {
-		t.Fatal(message.Content)
+		t.Fatal(message.ReasoningContent)
+	}
+
+	if SuspectedDSMLToolCalls(content01) {
+		t.Error("SuspectedDSMLToolCalls = true, want false (quoted/referenced examples)")
 	}
 }
