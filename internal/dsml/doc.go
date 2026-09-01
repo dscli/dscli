@@ -35,16 +35,15 @@ import (
 // dsmlXMLClose fragments assemble the literal XML close tags emitted in the
 // generated examples. This file deliberately avoids a whole close-tag
 // sequence (parameter, invoke, or tool_calls) anywhere in its source: when
-// such a sequence appears inside a write or code_edit payload, this session's
-// file-modification host reads it as the end of a tool-call block and
-// truncates the payload at that point, corrupting the file. Open-tag
-// fragments without a closing bracket (e.g. the "<invoke name=\"" prefix in
-// dsmlGeneratedDocEntry) do not trigger it. The fragments reconstruct the
-// exact close tags at runtime, so the generated prompt output is
-// byte-identical to the literal form; the 32 literal close tags already in
-// dsml.go (16 invoke, 3 parameter, 8 tool_calls, 5 tool_result, across parse
-// regexes and result templates) are the precedent that the output text is
-// what matters, not how this file spells it.
+// such a sequence appears inside a write or code_edit payload, the
+// file-modification host used to edit this project reads it as the end of a
+// tool-call block and truncates the payload at that point, corrupting the
+// file. Open-tag fragments without a closing bracket (e.g. the
+// "<invoke name=\"" prefix in dsmlGeneratedDocEntry) do not trigger it. The
+// fragments reconstruct the exact close tags at runtime, so the generated
+// prompt output is byte-identical to the literal form; the literal close
+// tags already present in dsml.go and its tests are the precedent that the
+// output text is what matters, not how this file spells it.
 var (
 	dsmlParamClose  = "</para" + "meter>"
 	dsmlInvokeClose = "</inv" + "oke>"

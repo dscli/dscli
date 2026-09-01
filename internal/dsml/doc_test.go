@@ -221,4 +221,64 @@ func TestBuildDSMLToolDocGenerated(t *testing.T) {
 	}
 }
 
+// TestBuildDSMLToolDocEmptyDescription locks the empty-description guard: a
+// tool whose Description is empty (or whitespace-only) must not produce a
+// double blank line in its block. The block is heading -> Parameters line ->
+// example, with exactly one blank line between each; a naive write of the
+// trimmed description plus "\n\n" would emit "\n\n\n". This also locks the
+// TrimSpace behavior.
+func TestBuildDSMLToolDocEmptyDescription(t *testing.T) {
+	ctx := t.Context()
+	sessionID := session.GetCurrentSessionID(ctx)
+
+	for _, tt := range []struct {
+		name string
+		desc string
+	}{
+		{"empty_desc_tool", ""},
+		{"blank_desc_tool", "   "},
+	} {
+		def := toolcall.ToolDef{
+			Name:        tt.name,
+			Description: tt.desc,
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"value": map[string]any{"type": "string", "description": "Value"},
+				},
+				"required":             []string{"value"},
+				"additionalProperties": false,
+			},
+			Handler: func(_ context.Context, _ toolcall.ToolArgs) (string, string, error) {
+				return "", "", nil
+			},
+		}
+		if err := toolcall.RegisterTool(def); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { toolcall.UnregisterTool(tt.name) })
+	}
+
+	if err := roles.UpsertRoleConfig(ctx, "review", sessionID, nil, strPtrHelper("empty_desc_tool,blank_desc_tool"), nil); err != nil {
+		t.Fatalf("UpsertRoleConfig: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := roles.DeleteRoleConfig(ctx, "review", sessionID); err != nil {
+			t.Fatalf("DeleteRoleConfig: %v", err)
+		}
+	})
+
+	doc := BuildDSMLToolDoc(ctx, "review")
+	// No double blank line may appear anywhere, and the heading must flow
+	// into the Parameters line through exactly one blank line.
+	if strings.Contains(doc.Intro, "\n\n\n") {
+		t.Errorf("empty-description tool produced a double blank line:\n%s", doc.Intro)
+	}
+	for _, name := range []string{"empty_desc_tool", "blank_desc_tool"} {
+		if !strings.Contains(doc.Intro, "## `"+name+"`\n\nParameters:") {
+			t.Errorf("heading for %s must be followed by exactly one blank line and the Parameters line:\n%s", name, doc.Intro)
+		}
+	}
+}
+
 func strPtrHelper(s string) *string { return &s }
