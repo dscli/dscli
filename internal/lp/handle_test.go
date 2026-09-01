@@ -1366,6 +1366,49 @@ func TestHandleWebChatToolLoopReissueThenSuccess(t *testing.T) {
 	}
 }
 
+func TestHandleWebChatToolLoopBadgeRenderedAttemptReissues(t *testing.T) {
+	// A badge-rendered emission: wrapper + named parameter + </invoke>, but
+	// NO <invoke name=...> open. It never parses, so nothing executes; the
+	// loop re-issues ReissueWarning and the model's next reply is final prose.
+	badge := "<" + "tool_calls>\n" +
+		"<" + "parameter name=\"read_file\">\n" +
+		"<" + "parameter name=\"path\" string=\"true\">AGENTS.md<" + "/parameter>\n" +
+		"<" + "/invoke>\n" +
+		"<" + "/tool_calls>"
+	const finalAnswer = "All good."
+	origFunc := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = origFunc })
+
+	var messages []string
+	handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
+		messages = append(messages, msg)
+		switch len(messages) {
+		case 1:
+			return WebChatResult{Content: badge, URL: "https://chat.deepseek.com/a/chat/s/convB1"}, nil
+		default:
+			return WebChatResult{Content: finalAnswer, URL: "https://chat.deepseek.com/a/chat/s/convB2"}, nil
+		}
+	}
+	seen := captureExecDSML(t, toolResultOK)
+
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{Role: "review"})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if res.Content != finalAnswer {
+		t.Errorf("content = %q, want final answer", res.Content)
+	}
+	if len(*seen) != 0 {
+		t.Errorf("executed = %+v, want nothing (badge-rendered attempt must not execute)", *seen)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("sends = %d, want 2 (re-issue warning, final)", len(messages))
+	}
+	if messages[1] != dsml.ReissueWarning {
+		t.Errorf("second send = %q, want ReissueWarning", messages[1])
+	}
+}
+
 // toolResultOK is a well-formed tool_result block, built at runtime so this
 // file stays transportable through DSML tool calls (literal angle brackets
 // in a write_file content would be misread as markup and truncate the

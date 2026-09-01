@@ -342,10 +342,12 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 			// Entry gate: the reply routes into the loop when the call
 			// source parses at least one tool call (even when the wrapper is
 			// malformed). A reply that clearly tries to emit a call but
-			// failed to parse (SuspectedDSMLToolCalls), and a reply carrying
-			// MALFORMED DSML markup (MalformedDSMLToolCalls - a misspelled
-			// <invoke tag or a cut-off close tag) also route in: the former
-			// executes, the latter two re-issue a warning (ReissueWarning /
+			// failed to parse (SuspectedDSMLToolCalls - truncated emissions
+			// or badge-rendered wrapper/parameter residue with no invoke
+			// open), and a reply carrying MALFORMED DSML markup
+			// (MalformedDSMLToolCalls - a misspelled <invoke tag or a
+			// cut-off close tag) also route in: the former two never
+			// execute, re-issue a warning (ReissueWarning /
 			// MalformedWarning) and keep the conversation alive. A quoted
 			// example (fenced code), an empty wrapper, or a prose mention -
 			// zero calls - never enters the loop. Non-executable DSML in
@@ -461,8 +463,10 @@ func HandleWebChatResume(ctx context.Context, opts WebChatOptions) (WebChatResul
 
 // handleWebChatToolLoop continues a WebChat conversation (role-driven or
 // plain chat; shouldEnterToolLoop decided entry - parse success for
-// executable emissions, SuspectedDSMLToolCalls for unparseable ones,
-// MalformedDSMLToolCalls for misspelled tags / cut-off close tags - and
+// executable emissions, SuspectedDSMLToolCalls for unparseable ones
+// (truncated emissions or badge-rendered wrapper/parameter residue with no
+// invoke open), MalformedDSMLToolCalls for misspelled tags / cut-off close
+// tags - and
 // the call source is content first, reasoning as fallback) while the
 // expert emits DSML tool calls: parse the calls, execute them locally, and
 // post the results back into the SAME conversation (Keep=first URL). The
@@ -490,8 +494,9 @@ func HandleWebChatResume(ctx context.Context, opts WebChatOptions) (WebChatResul
 // shouldEnterToolLoop decides whether a reasoning/content pair routes into
 // the web chat tool loop: the call source (content first, reasoning as
 // fallback - dsml.CallSource) must PARSE at least one tool call. Parse
-// success is the executable admission; SuspectedDSMLToolCalls and
-// MalformedDSMLToolCalls are only consulted when parsing fails - they
+// success is the executable admission; SuspectedDSMLToolCalls (truncated
+// emissions or badge-rendered wrapper/parameter residue with no invoke open)
+// and MalformedDSMLToolCalls are only consulted when parsing fails - they
 // re-issue a warning instead of executing. Empty wrappers, prose mentions,
 // and quoted examples (zero calls) never enter the loop. Shared by
 // HandleWebChat and HandleWebChatResume so the two entry gates cannot drift.

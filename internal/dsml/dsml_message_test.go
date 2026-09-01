@@ -258,3 +258,88 @@ func TestParseDSMLMessageBrokenWrapperCall(t *testing.T) {
 		t.Error("SuspectedDSMLToolCalls = true, want false (calls parsed)")
 	}
 }
+
+func TestParseDSMLMessageBadgeRenderedAttempt(t *testing.T) {
+	// A badge-rendered emission whose invoke open collapsed into a parameter
+	// tag: wrapper + named parameter + </invoke>, no <invoke name=...> open.
+	// Nothing parses, but the attempt residue must be suspected and OK=false.
+	badge := "<" + "tool_calls>\n" +
+		"<" + "parameter name=\"read_file\">\n" +
+		paramX("path", "AGENTS.md", "true") + "\n" +
+		"<" + "/invoke>\n" +
+		"<" + "/tool_calls>"
+	msg := ParseDSMLMessage("", badge)
+	if len(msg.ToolCalls) != 0 {
+		t.Fatalf("ToolCalls = %d, want 0", len(msg.ToolCalls))
+	}
+	if msg.OK {
+		t.Error("OK = true, want false (badge-rendered attempt residue)")
+	}
+	if !SuspectedDSMLToolCalls(badge) {
+		t.Error("SuspectedDSMLToolCalls = false, want true (badge-rendered attempt)")
+	}
+}
+
+func TestParseDSMLMessageEmptyWrapperNotSuspected(t *testing.T) {
+	text := "<" + "tool_calls>" + "<" + "/tool_calls>"
+	msg := ParseDSMLMessage("", text)
+	if len(msg.ToolCalls) != 0 {
+		t.Fatalf("ToolCalls = %d, want 0", len(msg.ToolCalls))
+	}
+	if !msg.OK {
+		t.Error("OK = false, want true (empty wrapper is not an attempt)")
+	}
+	if SuspectedDSMLToolCalls(text) {
+		t.Error("SuspectedDSMLToolCalls = true, want false (empty wrapper)")
+	}
+}
+
+func TestParseDSMLMessageInlineCodeQuoteNotSuspected(t *testing.T) {
+	inner := "<" + "tool_calls>" +
+		paramX("x", "y", "true") +
+		"<" + "/invoke>" +
+		"<" + "/tool_calls>"
+	text := "`" + inner + "`"
+	msg := ParseDSMLMessage("", text)
+	if len(msg.ToolCalls) != 0 {
+		t.Fatalf("ToolCalls = %d, want 0", len(msg.ToolCalls))
+	}
+	if !msg.OK {
+		t.Error("OK = false, want true (inline code quote)")
+	}
+	if SuspectedDSMLToolCalls(text) {
+		t.Error("SuspectedDSMLToolCalls = true, want false (inline code quote)")
+	}
+}
+
+func TestParseDSMLMessageFencedCodeQuoteNotSuspected(t *testing.T) {
+	inner := "<" + "tool_calls>" +
+		paramX("x", "y", "true") +
+		"<" + "/invoke>" +
+		"<" + "/tool_calls>"
+	text := "Here is how:\n```xml\n" + inner + "\n```"
+	msg := ParseDSMLMessage("", text)
+	if len(msg.ToolCalls) != 0 {
+		t.Fatalf("ToolCalls = %d, want 0", len(msg.ToolCalls))
+	}
+	if !msg.OK {
+		t.Error("OK = false, want true (fenced code quote)")
+	}
+	if SuspectedDSMLToolCalls(text) {
+		t.Error("SuspectedDSMLToolCalls = true, want false (fenced code quote)")
+	}
+}
+
+func TestParseDSMLMessageProseWrapperMentionNotSuspected(t *testing.T) {
+	text := "Remember to wrap tool calls in tool_calls."
+	msg := ParseDSMLMessage("", text)
+	if len(msg.ToolCalls) != 0 {
+		t.Fatalf("ToolCalls = %d, want 0", len(msg.ToolCalls))
+	}
+	if !msg.OK {
+		t.Error("OK = false, want true (plain prose)")
+	}
+	if SuspectedDSMLToolCalls(text) {
+		t.Error("SuspectedDSMLToolCalls = true, want false (prose wrapper mention)")
+	}
+}

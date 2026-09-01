@@ -132,7 +132,8 @@ only execution authority; strict-format violations (`message.OK == false`)
 never block execution - `dsml.InjectStrictWarning` rides along in the
 tool_result feedback. A reply that clearly tries to emit a call but failed
 to parse (`dsml.SuspectedDSMLToolCalls` - truncated emissions outside quoted
-code) routes into the loop too and gets `dsml.ReissueWarning`; a reply
+code and badge-rendered wrapper/parameter residue (no invoke open survived))
+routes into the loop too and gets `dsml.ReissueWarning`; a reply
 carrying MALFORMED markup (`dsml.MalformedDSMLToolCalls` - a misspelled
 `<invoke` tag or a cut-off close tag such as `</` without `>`) routes into
 the loop and gets `dsml.MalformedWarning`, and is NEVER executed. Quoted

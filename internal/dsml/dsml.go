@@ -256,6 +256,11 @@ var dsmlTypoInvokeOpenRe = regexp.MustCompile(`(?s)<\s*([A-Za-z][A-Za-z0-9_-]*)\
 // whitespace variants as dsmlInvokeRe (models emit "</ invoke >").
 var dsmlInvokeCloseRe = regexp.MustCompile(`(?s)</\s*invoke\s*>`)
 
+// dsmlWrapperRe matches a wrapper open/close marker on NORMALIZED text for
+// attempt-shape detection (unlike dsmlToolCallsCloseEndRe it is NOT
+// tail-anchored); _calls is the typo'd twin observed in real rounds.
+var dsmlWrapperRe = regexp.MustCompile(`(?i)</?\s*(?:tool_calls|_calls)\s*>`)
+
 // normalizeDSMLText repairs markup artifacts LLMs commonly emit around DSML
 // tags before parsing, so a well-formed call is never misread as truncated
 // ("DSML tool call truncated: N unclosed <invoke>"):
@@ -1267,16 +1272,20 @@ func CallSource(reasoning, content string) string {
 //     execution - the result comes back with a warning instead).
 //   - OK=true: no strict-format violations. With calls, the call source
 //     followed the required format and Content (or ReasoningContent when
-//     the calls came from reasoning) is stripped of the call blocks. OK is
-//     ALWAYS true when the message carries no executable calls at all - a
-//     plain final answer, a quoted/referenced example, a prose mention, or
-//     stray broken tags have no "tool-call format" to violate.
-//   - OK=false: one of two failure paths. Either calls parsed but
+//     the calls came from reasoning) is stripped of the call blocks. A
+//     zero-call reply that is NOT a call attempt (a plain final answer, a
+//     quoted/referenced example, a prose mention, an empty wrapper, or
+//     stray broken tags) reports OK=true - there is no "tool-call format"
+//     to violate. A zero-call reply that IS suspected of attempting a call
+//     (wrapper/parameter/close residue, badge-rendered shapes) reports
+//     OK=false: nothing executed, and the caller should warn and re-issue.
+//   - OK=false: one of three failure paths. Either calls parsed but
 //     violations were observed (see parseDSMLToolCallsStrict) - the
 //     Content/ReasoningContent keep the original text for the caller's
 //     fallback judgement - or the emission was truncated and parse failed
-//     (err), in which case calls never execute and OK stays false.
-//     A zero-call reply is unconditionally OK=true (see above).
+//     (err), in which case calls never execute and OK stays false - or no
+//     call parsed but SuspectedDSMLToolCalls sees an unparseable attempt
+//     (caller should ReissueWarning).
 //   - ToolCalls empty: no executable call; whether the reply merely LOOKS
 //     like a broken tool call is SuspectedDSMLToolCalls' job.
 //
@@ -1289,8 +1298,11 @@ func ParseDSMLMessage(reasoning string, content string) prompt.Message {
 	src := CallSource(reasoning, content)
 	fromReasoning := !HasDSMLToolCalls(content) && HasDSMLToolCalls(reasoning)
 	if !HasDSMLToolCalls(src) {
-		// No call marker at all: no violations, a clean final answer.
-		msg.OK = true
+		// No <invoke name=...> open survived. A non-attempt stays a clean
+		// final answer; a wrapper/parameter/close residue (badge-rendered
+		// shape) is a failed call attempt and reports OK=false so the caller
+		// warns and re-issues.
+		msg.OK = !SuspectedDSMLToolCalls(src)
 		return msg
 	}
 	calls, strict, err := parseDSMLToolCallsStrict(src)
@@ -1299,11 +1311,12 @@ func ParseDSMLMessage(reasoning string, content string) prompt.Message {
 		return msg // OK stays false
 	}
 	if len(calls) == 0 {
-		// No executable calls: there is nothing whose "tool-call format"
-		// could violate the schema. Quoted examples, prose mentions, and
-		// stray broken tags all report OK=true - only a parsed call has a
-		// strict-format verdict.
-		msg.OK = true
+		// No executable calls. A non-attempt (quoted example, prose
+		// mention, empty wrapper, stray broken tags) reports OK=true; an
+		// unparseable attempt residue reports OK=false so the caller warns
+		// and re-issues instead of surfacing a broken emission as the final
+		// answer.
+		msg.OK = !SuspectedDSMLToolCalls(src)
 		return msg
 	}
 	msg.ToolCalls, _ = dsmlCallsToToolCalls(calls)
@@ -1322,12 +1335,17 @@ func ParseDSMLMessage(reasoning string, content string) prompt.Message {
 
 // SuspectedDSMLToolCalls reports whether text is clearly TRYING to emit a
 // tool call but none parsed: an unquoted named invoke open tag exists while
-// ParseDSMLToolCalls fails or yields zero calls. The caller re-issues
-// ReissueWarning and keeps the conversation alive. Quoted examples (fenced
-// code, inline code, tool_result echoes) are not suspected.
+// ParseDSMLToolCalls fails or yields zero calls, or the emission survives as
+// wrapper/parameter/close residue with no invoke open at all (a badge-
+// rendered shape that collapsed the invoke open into a parameter tag). The
+// caller re-issues ReissueWarning and keeps the conversation alive. Quoted
+// examples (fenced code, inline code, tool_result echoes) are not suspected.
 func SuspectedDSMLToolCalls(text string) bool {
 	if !HasDSMLToolCalls(text) {
-		return false
+		// No <invoke name=...> survived: the attempt may still be visible as
+		// wrapper + parameter/close residue (badge-rendered shapes that
+		// collapsed the invoke open into a parameter tag).
+		return hasUnquotedAttemptShapes(text)
 	}
 	calls, err := ParseDSMLToolCalls(text)
 	if err == nil && len(calls) > 0 {
@@ -1343,6 +1361,62 @@ func hasUnquotedInvokeOpen(text string) bool {
 	fences := dsmlCodeRanges(text)
 	paramBodies := dsmlParamBodyRanges(text)
 	for _, m := range dsmlNamedInvokeOpenRe.FindAllStringIndex(text, -1) {
+		if !inRanges(fences, m[0]) && !inRanges(paramBodies, m[0]) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasUnquotedAttemptShapes reports the residue of a tool-call attempt whose
+// invoke open tag is gone: the model wrote it as a parameter shape, or badge
+// rendering collapsed the <invoke name=...> open into a parameter tag. The
+// caller should re-issue ReissueWarning; a false positive at worst only
+// issues a warning and never executes anything. A nested parameter open
+// inside another parameter's VALUE is a known false-positive limitation.
+func hasUnquotedAttemptShapes(text string) bool {
+	text = normalizeDSMLText(text)
+	fences := dsmlCodeRanges(text)
+	paramBodies := dsmlParamBodyRanges(text)
+	// A wrapper marker outside quoted code and parameter VALUES: the
+	// attempt's enclosure. Prose mentioning the wrapper name without the
+	// tag never matches (no real angle-bracket tag).
+	wrapper := false
+	for _, m := range dsmlWrapperRe.FindAllStringIndex(text, -1) {
+		if !inRanges(fences, m[0]) && !inRanges(paramBodies, m[0]) {
+			wrapper = true
+			break
+		}
+	}
+	if !wrapper {
+		return false
+	}
+	// Named parameter open outside quoted code: mirrors dsmlParamBodyRanges'
+	// filtering (structural + name attribute), and skips the body range that
+	// STARTS at this very open (inRanges is start-inclusive) - an open inside
+	// ANOTHER parameter's value is content, not structure.
+	for _, m := range dsmlParamOpenRe.FindAllStringIndex(text, -1) {
+		if inRanges(fences, m[0]) || !dsmlStructuralTag(text, m[0]) ||
+			!dsmlParamNameRe.MatchString(text[m[0]:m[1]]) {
+			continue
+		}
+		insideOther := false
+		for _, b := range paramBodies {
+			if b[0] == m[0] {
+				continue // its own body range
+			}
+			if inRanges([][2]int{b}, m[0]) {
+				insideOther = true
+				break
+			}
+		}
+		if !insideOther {
+			return true
+		}
+	}
+	// A </invoke> close outside quoted code and parameter values: the model
+	// closed a block whose open tag is gone.
+	for _, m := range dsmlInvokeCloseRe.FindAllStringIndex(text, -1) {
 		if !inRanges(fences, m[0]) && !inRanges(paramBodies, m[0]) {
 			return true
 		}
