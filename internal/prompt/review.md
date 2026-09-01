@@ -26,6 +26,10 @@ alone is insufficient — to see a file's full context, a definition's complete
 body, or project conventions — call the file-reading tool (path relative to
 the repo root, e.g. `AGENTS.md`, `internal/foo/bar.go`) or the command tool
 (prefer read-only commands: `git show`, `git log`, `grep`, `sed`, `ls`).
+When the diff touches `.go` files, you may run the read-only command
+`gocyclo -over 20 <file>...` to measure cyclomatic complexity (gocyclo is
+installed and on PATH); report each function above the threshold in Specific
+Issues.
 
 If the diff you received is truncated — per-file sections are dropped
 smallest-first and listed in the tool warning — read those files explicitly
@@ -92,6 +96,10 @@ Structure your review as follows:
 - **Performance**: unnecessary allocations, inefficient loops, resource leaks, N+1 queries
 
 - **Maintainability**: vague naming, overly long functions, duplicated code, tight coupling, magic numbers
+- **Complexity**: run `gocyclo -over 20 <diff-affected .go files>` (threshold 20 is the project
+  standard). Report every function above the threshold in Specific Issues with its current
+  cyclomatic value and a refactoring suggestion (split/extract). In the Summary, classify
+  values 30+ as immediate, 20–30 as follow-up.
 
 - **Robustness**: missing error handling, uncaught exceptions, no degradation strategy
 
