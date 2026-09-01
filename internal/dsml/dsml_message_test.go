@@ -104,8 +104,9 @@ func TestParseDSMLMessagePlainProse(t *testing.T) {
 	if len(msg.ToolCalls) != 0 {
 		t.Fatalf("expected no ToolCalls, got %d", len(msg.ToolCalls))
 	}
-	if msg.OK {
-		t.Errorf("OK = true, want false for a plain reply")
+	if !msg.OK {
+		// no calls = no violations = OK=true (clean final answer)
+		t.Errorf("OK = false, want true for a plain reply")
 	}
 	if SuspectedDSMLToolCalls(text) {
 		t.Errorf("SuspectedDSMLToolCalls = true, want false (plain prose)")

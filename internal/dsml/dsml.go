@@ -1266,7 +1266,9 @@ func CallSource(reasoning, content string) string {
 //     are executable regardless of OK (a format violation never blocks
 //     execution - the result comes back with a warning instead).
 //   - OK=true: no violations; Content (or ReasoningContent when the calls
-//     came from reasoning) is stripped of the call blocks.
+//     came from reasoning) is stripped of the call blocks. OK is also true
+//     when the message carries no executable calls at all (no violations):
+//     a plain final answer, or quoted/referenced examples only.
 //   - OK=false: violations observed (see parseDSMLToolCallsStrict); the
 //     Content/ReasoningContent keep the original text for the caller's
 //     fallback judgement.
@@ -1282,19 +1284,24 @@ func ParseDSMLMessage(reasoning string, content string) prompt.Message {
 	src := CallSource(reasoning, content)
 	fromReasoning := !HasDSMLToolCalls(content) && HasDSMLToolCalls(reasoning)
 	if !HasDSMLToolCalls(src) {
+		// No call marker at all: no violations, a clean final answer.
+		msg.OK = true
 		return msg
 	}
 	calls, strict, err := parseDSMLToolCallsStrict(src)
-	if err != nil || len(calls) == 0 {
-		// Parse failure / no call: the caller decides between the re-issue
-		// path (SuspectedDSMLToolCalls) and a plain final answer.
+	if err != nil {
+		// Truncated emission: a format violation; calls never execute.
+		return msg // OK stays false
+	}
+	if len(calls) == 0 {
+		// Only quoted/referenced examples (code blocks, inline spans):
+		// no violations unless normalize/stray marks appeared.
+		msg.OK = !strict
 		return msg
 	}
 	msg.ToolCalls, _ = dsmlCallsToToolCalls(calls)
 	msg.OK = !strict
 	if msg.OK {
-		// OK=true: the message carries no tool-call content, only clean
-		// content (per the contract).
 		if fromReasoning {
 			msg.ReasoningContent = StripDSMLToolCalls(reasoning)
 		} else {
