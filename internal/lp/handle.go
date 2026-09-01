@@ -579,12 +579,8 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 		//   - anything else: a final answer - exit.
 		msg := dsml.ParseDSMLMessage(lastReasoning, message)
 		src := dsml.CallSource(lastReasoning, message)
-		// Same parseDSMLToolCallsStrict backend as ParseDSMLMessage above:
-		// the call count here and msg.OK are necessarily consistent. The zero-call
-		// branch below reuses msg.OK (already !SuspectedDSMLToolCalls in
-		// ParseDSMLMessage) instead of recomputing suspicion; only the truncated
-		// path (parseErr != nil) re-derives it explicitly, since ParseDSMLMessage's
-		// err branch never assigns msg.OK from the suspicion verdict.
+		// calls and msg.OK share parseDSMLToolCallsStrict, so the zero-call
+		// branch below reuses msg.OK.
 		calls, parseErr := dsml.ParseDSMLToolCalls(src)
 		if dsml.MalformedDSMLToolCalls(src) {
 			// 畸形标记（打错的 <invoke 标签 / 截断的 </ 闭合）：永不执行；
@@ -612,9 +608,12 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 			// calls SuspectedDSMLToolCalls explicitly; the zero-call parsed
 			// path takes !msg.OK directly, sharing the same backend so the
 			// two cannot drift.
-			suspected := !msg.OK
+			var suspected bool
 			if parseErr != nil {
 				suspected = dsml.SuspectedDSMLToolCalls(src)
+			} else {
+				// zero-call parsed: ParseDSMLMessage already set OK from the same backend
+				suspected = !msg.OK
 			}
 			if suspected {
 				// 疑似工具调用但解析失败（截断/畸形）：keep 会话并请求重发。

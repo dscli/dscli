@@ -1387,9 +1387,11 @@ func hasUnquotedInvokeOpen(text string) bool {
 // rendering collapsed the <invoke name=...> open into a parameter tag, or
 // only a close residue (wrapper + </invoke>) survived. The caller should
 // re-issue ReissueWarning; a false positive at worst only issues a warning
-// and never executes anything. Known limitation: an UNCLOSED parameter body
-// contributes no range to dsmlParamBodyRanges, so a shape inside an
-// unclosed parameter VALUE may be misread as structure.
+// and never executes anything. Requires a wrapper marker; a residue with no
+// wrapper at all (e.g. a bare <parameter> + </invoke>) is currently not
+// detected. Known limitation: an UNCLOSED parameter body contributes no
+// range to dsmlParamBodyRanges, so a shape inside an unclosed parameter
+// VALUE may be misread as structure.
 func hasUnquotedAttemptShapes(text string) bool {
 	text = normalizeDSMLText(text)
 	if !dsmlWrapperRe.MatchString(text) {
