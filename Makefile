@@ -65,6 +65,9 @@ gofmt:
 	@echo "运行 goimports 和 gofumpt 格式化..."
 	@find . -type f -name '*.go' -exec goimports -w {} \; -exec gofumpt -w {} \;
 
+# fmt: 格式化源码（写文件）——test/test-coverage 的前置依赖
+fmt: gofmt
+
 fmt-check:
 	@echo "检查代码格式（不修改文件）..."
 	@echo "检查 goimports..."
