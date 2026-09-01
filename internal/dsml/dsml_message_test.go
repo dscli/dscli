@@ -93,6 +93,9 @@ func TestParseDSMLMessageTruncated(t *testing.T) {
 	if len(msg.ToolCalls) != 0 {
 		t.Fatalf("expected no ToolCalls for truncated emission, got %d", len(msg.ToolCalls))
 	}
+	if msg.OK {
+		t.Errorf("OK = true, want false (truncated emission)")
+	}
 	if !SuspectedDSMLToolCalls(text) {
 		t.Errorf("SuspectedDSMLToolCalls = false, want true (truncated call)")
 	}
@@ -131,6 +134,27 @@ func TestParseDSMLMessageReasoningFallback(t *testing.T) {
 	}
 	if msg.Content != content {
 		t.Errorf("Content modified (%q), want %q", msg.Content, content)
+	}
+}
+
+func TestParseDSMLMessageReasoningQuotedOnly(t *testing.T) {
+	// Reasoning carries only a fenced quoted example: no executable call,
+	// so OK=true and ReasoningContent must stay verbatim (not stripped).
+	inner := invokeBlock("shell", paramX("script", "echo hi", "true"))
+	reasoning := "Example in thinking:\n```xml\n" + toolCallsBlock(inner) + "\n```"
+	content := "Here is my answer."
+	msg := ParseDSMLMessage(reasoning, content)
+	if len(msg.ToolCalls) != 0 {
+		t.Fatalf("expected no ToolCalls, got %d", len(msg.ToolCalls))
+	}
+	if !msg.OK {
+		t.Errorf("OK = false, want true (quoted example only)")
+	}
+	if msg.Content != content {
+		t.Errorf("Content modified (%q), want %q", msg.Content, content)
+	}
+	if msg.ReasoningContent != reasoning {
+		t.Errorf("ReasoningContent must stay verbatim, got:\n%s", msg.ReasoningContent)
 	}
 }
 
