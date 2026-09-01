@@ -28,7 +28,7 @@ GOFLAGS = -trimpath -tags netgo
 SOURCE_DIR = .
 BUILD_DIR = build
 
-.PHONY: all build clean install test gofmt test-coverage coverage coverage-html clean-coverage test-all dev-test watch-test release
+.PHONY: all build clean install test gofmt fmt-check test-coverage coverage coverage-html clean-coverage test-all dev-test watch-test release
 
 all: clean build
 
@@ -68,9 +68,9 @@ gofmt:
 fmt-check:
 	@echo "检查代码格式（不修改文件）..."
 	@echo "检查 goimports..."
-	@! find . -type f -name '*.go' -print0 | xargs -0 goimports -d | grep -q .
+	@! find . -type f -name '*.go' -print0 | xargs -0 goimports -d 2>&1 | grep .
 	@echo "检查 gofumpt..."
-	@! find . -type f -name '*.go' -print0 | xargs -0 gofumpt -d | grep -q .
+	@! find . -type f -name '*.go' -print0 | xargs -0 gofumpt -d 2>&1 | grep .
 
 # test: 运行测试（默认）
 test: gofmt

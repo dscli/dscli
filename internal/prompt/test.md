@@ -9,7 +9,9 @@ You are the QA engineer for the {{.ProjectName}} project, focused on defect disc
 3. **Establish a baseline and measure coverage in one run**: run
    `PROFILE="$(mktemp "${TMPDIR:-/tmp}/dscli-qa-cover.XXXXXX")"; echo "profile: $PROFILE"; go test -coverprofile="$PROFILE" ./...` —
    the `echo` prints the profile path before the test runs, so step 4 can read the coverage even when the baseline fails.
-   Also run the project's declared lint command from AGENTS.md (e.g. `make fmt-check`) — it is read-only and does not modify files. Treat any printed diff as a failure, regardless of the command's exit code.
+   Also run the project's declared lint command from AGENTS.md (e.g. `make fmt-check`) —
+   it is read-only and does not modify files. Treat a non-zero exit code, or any diff
+   output the command prints, as a failure.
    Prefer a temporary path (the OS temp directory via `mktemp`); no cleanup is required — the OS temp
    profile lives outside the project root and may be left for the OS to reclaim. If
    `mktemp` is unavailable, fall back to a gitignored file in the project root (e.g. `coverage.out`),
