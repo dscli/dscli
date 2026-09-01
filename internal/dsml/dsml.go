@@ -1271,9 +1271,12 @@ func CallSource(reasoning, content string) string {
 //     ALWAYS true when the message carries no executable calls at all - a
 //     plain final answer, a quoted/referenced example, a prose mention, or
 //     stray broken tags have no "tool-call format" to violate.
-//   - OK=false: calls parsed but violations observed (see
-//     parseDSMLToolCallsStrict); the Content/ReasoningContent keep the
-//     original text for the caller's fallback judgement.
+//   - OK=false: one of two failure paths. Either calls parsed but
+//     violations were observed (see parseDSMLToolCallsStrict) - the
+//     Content/ReasoningContent keep the original text for the caller's
+//     fallback judgement - or the emission was truncated and parse failed
+//     (err), in which case calls never execute and OK stays false.
+//     A zero-call reply is unconditionally OK=true (see above).
 //   - ToolCalls empty: no executable call; whether the reply merely LOOKS
 //     like a broken tool call is SuspectedDSMLToolCalls' job.
 //

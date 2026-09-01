@@ -124,17 +124,22 @@ compliance via `prompt.Message.OK` (violations such as the decorative
 `justification` parameter, missing string attributes, stray/implicit/cut
 tags, or a bare invocation NEVER block execution; the fixed-format
 `dsml.InjectStrictWarning` carries a reminder into the tool_result feedback).
-`lp.HandleWebChat` routes each reply: `dsml.IsDSMLToolCallReply` is the union
-of TWO executable admission shapes - the reply ENDS with a close tag (or its
-typo'd `_calls` cousins; whatever prose precedes it is discarded with the
-round; a lone close tag without the opening wrapper still qualifies, and a
-wrapper with no parseable invoke executes nothing - quoted code and prose
-references that merely cite an example never end with the wrapper close tag
-and never qualify); or the reply is a bare sequence of complete invoke
-blocks with no wrapper at all. A reply that clearly tries to emit a
-call but failed to parse (`dsml.SuspectedDSMLToolCalls` - truncated
-emissions, outside quoted code) routes into the loop too and gets
-`dsml.ReissueWarning`, keeping the same conversation alive (the loop also re-parses the call source with ParseDSMLToolCalls for raw routing, so calls and OK always come from the same text). A reply ending in a partial close (a cut-off `</` without the `>`) or carrying a misspelled invoke tag (`<invinvoke ...>`) is MALFORMED markup (`dsml.MalformedDSMLToolCalls`): it routes into the loop and gets `dsml.MalformedWarning`, and is NEVER executed (only `dsml.IsDSMLToolCallEnd` / bare-invoke shapes execute).
+`lp.HandleWebChat` routes each reply by the call source (content first,
+reasoning as fallback - `dsml.CallSource`): the reply enters the tool loop
+when it PARSES at least one DSML tool call, even when the wrapper is
+malformed (e.g. `</shell>` instead of `</tool_calls>`). A parsed call is the
+only execution authority; strict-format violations (`message.OK == false`)
+never block execution - `dsml.InjectStrictWarning` rides along in the
+tool_result feedback. A reply that clearly tries to emit a call but failed
+to parse (`dsml.SuspectedDSMLToolCalls` - truncated emissions outside quoted
+code) routes into the loop too and gets `dsml.ReissueWarning`; a reply
+carrying MALFORMED markup (`dsml.MalformedDSMLToolCalls` - a misspelled
+`<invoke` tag or a cut-off close tag such as `</` without `>`) routes into
+the loop and gets `dsml.MalformedWarning`, and is NEVER executed. Quoted
+examples, empty wrappers, and prose mentions (zero parsed calls) never enter
+the loop. The shape predicates `dsml.IsDSMLToolCallReply` /
+`dsml.IsDSMLToolCallEnd` remain available for tests and diagnostics, but
+production routing no longer uses them.
 `handleWebChatToolLoop` executes the calls (`dsml.ExecuteDSMLToolCalls`, the
 execution kernel stays in internal/toolcall) and feeds results back into the
 SAME conversation. Which tools

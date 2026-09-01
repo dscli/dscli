@@ -496,6 +496,9 @@ func HandleWebChatResume(ctx context.Context, opts WebChatOptions) (WebChatResul
 // and quoted examples (zero calls) never enter the loop. Shared by
 // HandleWebChat and HandleWebChatResume so the two entry gates cannot drift.
 func shouldEnterToolLoop(reasoning, content string) bool {
+	// ParseDSMLToolCalls shares the parseDSMLToolCallsStrict backend with
+	// ParseDSMLMessage, so the call count here and the OK verdict there can
+	// never disagree about whether a call exists.
 	src := dsml.CallSource(reasoning, content)
 	calls, err := dsml.ParseDSMLToolCalls(src)
 	if err == nil && len(calls) > 0 {
@@ -571,6 +574,8 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 		//   - anything else: a final answer - exit.
 		msg := dsml.ParseDSMLMessage(lastReasoning, message)
 		src := dsml.CallSource(lastReasoning, message)
+		// Same parseDSMLToolCallsStrict backend as ParseDSMLMessage above:
+		// the call count here and msg.OK are necessarily consistent.
 		calls, parseErr := dsml.ParseDSMLToolCalls(src)
 		if dsml.MalformedDSMLToolCalls(src) {
 			// 畸形标记（打错的 <invoke 标签 / 截断的 </ 闭合）：永不执行；
