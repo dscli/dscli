@@ -296,7 +296,8 @@ func AskExpertWithRoleConv(ctx context.Context, input, role string) (reply, conv
 // parameters onto lp.HandleWebChat, the high-level WebChat entry point that
 // renders the role/system prompt, retries transient server overload and
 // truncation, and executes DSML tool calls embedded in replies (role-driven
-// or plain chat alike - see toolcall.IsDSMLToolCallEnd).
+// or plain chat alike - the call source is judged for execution by
+// dsml.ParseDSMLToolCalls).
 //
 // When both role and system are empty, no persona is injected and the input
 // is sent verbatim (the ask_expert tool relies on the caller's own context;
