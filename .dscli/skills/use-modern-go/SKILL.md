@@ -9,12 +9,13 @@ keywords:
 - 1.24
 - 1.25
 - 1.26
+- 1.27
 - best-practice
 ---
 
 ## Go Version
 
-This project targets **Go 1.26**. Use all features up to Go 1.26.
+This project targets **Go 1.27**. Use all features up to Go 1.27.
 
 ---
 

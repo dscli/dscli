@@ -1,6 +1,6 @@
 module github.com/dscli/dscli
 
-go 1.26.4
+go 1.27.1
 
 require (
 	github.com/chromedp/chromedp v0.15.1

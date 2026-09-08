@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This is **dscli**, an AI-enhanced CLI tool for developers - DeepSeek API chat client with tool calling, project management, and a pluggable skills system. Module path: `github.com/dscli/dscli` (requires Go 1.26+, see `go.mod`).
+This is **dscli**, an AI-enhanced CLI tool for developers - DeepSeek API chat client with tool calling, project management, and a pluggable skills system. Module path: `github.com/dscli/dscli` (requires Go 1.27.1+, see `go.mod`).
 
 ## Build, Test, and Lint
 
@@ -271,7 +271,7 @@ for empty/unknown roles (webchat plain chat, role-less code paths) - do not
 
 ### Patterns
 - Table-driven tests with `t.Run()` for multiple scenarios
-- Use `t.Context()` for context (Go 1.24+, project requires 1.26)
+- Use `t.Context()` for context (Go 1.24+, project requires 1.27)
 - Use `t.TempDir()` for temporary directories
 - Standard `testing` package: `t.Fatal` for setup errors, `t.Error`/`t.Errorf` for assertions
 - See `go-test` skill: scripts `run.sh`, `lint.sh`, config isolation scaffold
@@ -295,7 +295,7 @@ Tests live alongside their code:
 - **Godoc comments** on all exported functions, types, and constants
 - **gofumpt -extra** before commit (`make gofmt`)
 - **Prefer simplicity** - avoid unnecessary abstraction
-- **Modern Go** - use features from Go 1.22+ (see `use-modern-go` skill; go.mod requires 1.26.4)
+- **Modern Go** - use features from Go 1.22+ (see `use-modern-go` skill; go.mod requires 1.27.1)
 - **No em dashes** - use regular dashes in code and comments
 - **Comment the *why***, not the *what* - don't restate obvious code
 
@@ -329,7 +329,7 @@ Skills are reusable recipes in `.dscli/skills/<name>/SKILL.md`, registered in `.
 
 Key skills for development:
 - `cobra-use-convention` - Cobra Use field conventions
-- `use-modern-go` - Modern Go syntax (1.22–1.26)
+- `use-modern-go` - Modern Go syntax (1.22–1.27)
 - `go-test` - Go testing best practices + scripts
 - `gofumpt` - Strict Go formatter rules
 - `go-fix` - Go code modernization (analyzer-based)
