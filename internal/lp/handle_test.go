@@ -1063,8 +1063,14 @@ func TestHandleWebChatToolLoopFollowUpTruncatedNudges(t *testing.T) {
 // transient no-reply errors share the branch; pin them together so a future
 // refactor cannot drop ErrSendRejected.
 func TestHandleWebChatToolLoopFollowUpTransientResends(t *testing.T) {
-	for _, transient := range []error{ErrServerBusy, ErrSendRejected} {
-		t.Run(transient.Error(), func(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{name: "ErrServerBusy", err: ErrServerBusy},
+		{name: "ErrSendRejected", err: ErrSendRejected},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			origFunc, origDelays := handleWebChatSend, handleWebChatRetryDelays
 			t.Cleanup(func() { handleWebChatSend, handleWebChatRetryDelays = origFunc, origDelays })
 			handleWebChatRetryDelays = []time.Duration{0, 0, 0}
@@ -1078,7 +1084,7 @@ func TestHandleWebChatToolLoopFollowUpTransientResends(t *testing.T) {
 				case 1:
 					return WebChatResult{Content: dsmlReply, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
 				case 2:
-					return WebChatResult{}, transient
+					return WebChatResult{}, tc.err
 				default:
 					return WebChatResult{Content: "final answer", URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
 				}

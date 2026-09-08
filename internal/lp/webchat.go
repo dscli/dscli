@@ -2276,7 +2276,9 @@ func isTruncated(s string) bool {
 // is at least as long and followed only by whitespace (CommonMark). Only
 // spaces count as indentation: a tab advances to the next four-column tab
 // stop, so a tab-indented line is indented code, not a fence. A backtick
-// fence whose info string contains a backtick is not a fence either.
+// fence whose info string contains a backtick is not a fence either
+// (CommonMark restricts only backtick fences; a tilde fence's info string
+// may contain tildes).
 //
 // Counting ``` occurrences cannot work: a complete answer may legitimately
 // carry an odd number of them when a code block quotes a fence, and a lone
