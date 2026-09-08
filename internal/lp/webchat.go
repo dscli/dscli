@@ -2234,15 +2234,20 @@ func stripUIChromePrefix(s string) string {
 }
 
 // isTruncated reports whether s shows clear structural signs of being cut
-// off mid-generation. Detection is deliberately conservative — only signals
-// that a complete answer would never exhibit count:
+// off mid-generation. Detection is deliberately conservative - only signals
+// a complete answer would never exhibit:
 //
-//   - An unclosed markdown code fence: an odd number of ``` where the text
-//     opens with a fence (a code block cut off) or has at least three fences
-//     (an interior fence never closed). A lone fence inside prose (e.g. an
-//     explanation of the syntax) is not flagged.
-//   - JSON that starts like a document (an object or array containing a
-//     quoted key) but never terminates: json.Valid fails.
+//   - An unclosed markdown code fence: the text ends inside a fenced block.
+//     Fences are recognised per CommonMark - a fence opens only at the start
+//     of a line (up to three leading spaces), with a run of three or more
+//     backticks or tildes, and closes on a line whose run of the same
+//     character is at least as long. A ``` inside a line is ordinary text
+//     (an explanation of the syntax, or a code block quoting a fence), so it
+//     never opens or closes anything.
+//   - A JSON document that starts like a document (an object or array
+//     containing a quoted key) but never terminates: the first JSON value
+//     does not decode. JSON followed by prose is not a JSON document and is
+//     not flagged.
 //
 // webchatWait turns such text into ErrTruncated instead of handing a
 // silently incomplete answer to the caller.
@@ -2255,14 +2260,74 @@ func isTruncated(s string) bool {
 	if t == "" {
 		return false
 	}
-	fences := strings.Count(t, "```")
-	if fences%2 == 1 && (strings.HasPrefix(t, "```") || fences >= 3) {
+	if hasUnclosedFence(t) {
 		return true
 	}
 	if (strings.HasPrefix(t, "{") || strings.HasPrefix(t, "[")) && strings.Contains(t, `":`) {
-		return !json.Valid([]byte(t))
+		return isTruncatedJSONDocument(t)
 	}
 	return false
+}
+
+// hasUnclosedFence reports whether t ends inside a markdown fenced code
+// block. A fence opens at the start of a line - at most three leading spaces
+// (four or more indent a code block instead) - with a run of three or more
+// backticks or tildes, and closes on a line whose run of the SAME character
+// is at least as long and followed only by whitespace (CommonMark).
+//
+// Counting ``` occurrences cannot work: a complete answer may legitimately
+// carry an odd number of them when a code block quotes a fence, and a lone
+// fence inside a line is prose. The open/close state is the only reliable
+// signal.
+func hasUnclosedFence(t string) bool {
+	var (
+		open     bool
+		fenceCh  byte
+		fenceLen int
+	)
+	for line := range strings.SplitSeq(t, "\n") {
+		trimmed := strings.TrimLeft(line, " ")
+		if len(line)-len(trimmed) > 3 {
+			continue // four+ spaces indent a code block, not a fence
+		}
+		ch, n := fenceRun(trimmed)
+		if n < 3 {
+			continue
+		}
+		if !open {
+			open, fenceCh, fenceLen = true, ch, n
+			continue
+		}
+		if ch == fenceCh && n >= fenceLen && strings.TrimSpace(trimmed[n:]) == "" {
+			open = false
+		}
+	}
+	return open
+}
+
+// fenceRun returns the fence character and run length when s starts with a
+// run of three or more backticks or tildes; (0, 0) otherwise.
+func fenceRun(s string) (ch byte, n int) {
+	if s == "" || (s[0] != '`' && s[0] != '~') {
+		return 0, 0
+	}
+	ch = s[0]
+	for n < len(s) && s[n] == ch {
+		n++
+	}
+	if n < 3 {
+		return 0, 0
+	}
+	return ch, n
+}
+
+// isTruncatedJSONDocument reports whether t is a JSON document cut off
+// mid-generation: its first JSON value must fail to decode. A text whose
+// first value decodes cleanly is either a complete document or JSON followed
+// by prose, and neither is a truncated JSON document.
+func isTruncatedJSONDocument(t string) bool {
+	var raw json.RawMessage
+	return json.NewDecoder(strings.NewReader(t)).Decode(&raw) != nil
 }
 
 // maxBusyErrorLen bounds the busy-error detection to short texts. A real

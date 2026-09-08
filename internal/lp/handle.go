@@ -200,6 +200,70 @@ var handleWebChatRetryDelays = []time.Duration{5 * time.Second, 15 * time.Second
 // with a mock to skip browser automation.
 var handleWebChatSend = WebChatWithOptions
 
+// webChatContinueWarning is sent to the SAME conversation when a follow-up
+// reply comes back truncated. The partial answer stays in the conversation
+// history, so the model is asked to continue from the cut point instead of
+// repeating itself - re-sending the feedback verbatim would duplicate it.
+const webChatContinueWarning = "WARNING: your previous reply was cut off mid-generation (truncated output). Continue from where it stopped; do not repeat what you already sent. If you were in the middle of a DSML tool call, re-send that call completely and strictly formatted."
+
+// handleWebChatTransient reports whether err is a transient web-chat failure
+// the retry policy covers: server overload, a rejected send, or a truncated
+// reply. Permanent errors (login, bad arguments) fail immediately.
+func handleWebChatTransient(err error) bool {
+	return errors.Is(err, ErrServerBusy) || errors.Is(err, ErrSendRejected) || errors.Is(err, ErrTruncated)
+}
+
+// handleWebChatRetryWait prints the retry notice for a 1-based retry attempt
+// and waits out its backoff. It returns ctx.Err() when the caller is
+// cancelled while waiting.
+func handleWebChatRetryWait(ctx context.Context, err error, attempt int) error {
+	delay := handleWebChatRetryDelays[attempt-1]
+	reason := "服务器繁忙"
+	if errors.Is(err, ErrTruncated) {
+		reason = "输出被截断"
+	}
+	fmt.Fprintf(os.Stderr, "🔄 %s，%.0fs 后重试 (attempt %d/%d)...\n",
+		reason, delay.Seconds(), attempt+1, len(handleWebChatRetryDelays)+1)
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(delay):
+		return nil
+	}
+}
+
+// handleWebChatFollowUpSend sends one follow-up turn of the DSML tool loop
+// with the same transient-failure policy as the initial send, so a busy or
+// truncated reply mid-conversation no longer aborts the whole session. A
+// truncated follow-up already left its partial answer in the conversation,
+// so the retry sends webChatContinueWarning instead of the original text;
+// busy/rejected sends produced no reply and are re-sent verbatim. opts must
+// carry Mode and Keep (the conversation URL). Permanent errors stay fatal:
+// retrying mid-conversation is not safe for browser/network failures.
+func handleWebChatFollowUpSend(ctx context.Context, message string, opts WebChatOptions) (WebChatResult, error) {
+	var lastErr error
+	for attempt := 0; attempt <= len(handleWebChatRetryDelays); attempt++ {
+		if attempt > 0 {
+			if err := handleWebChatRetryWait(ctx, lastErr, attempt); err != nil {
+				return WebChatResult{}, err
+			}
+		}
+		res, callErr := handleWebChatSend(ctx, message, opts)
+		if callErr == nil {
+			return res, nil
+		}
+		lastErr = callErr
+		if !handleWebChatTransient(callErr) {
+			return WebChatResult{}, callErr
+		}
+		if errors.Is(callErr, ErrTruncated) {
+			message = webChatContinueWarning
+		}
+	}
+	return WebChatResult{}, fmt.Errorf("%w (after %d attempts)", lastErr, len(handleWebChatRetryDelays)+1)
+}
+
 // handleWebChatMaxDSMLRounds caps the tool-call rounds within one web chat
 // consultation. The loop naturally exits whenever a reply carries no tool
 // calls - the expert always finishes with prose - so this is only a failsafe
@@ -233,6 +297,10 @@ var handleWebChatExecDSML = dsml.ExecuteDSMLToolCalls
 //   - Backoff retry on transient server overload and truncation
 //     (ErrServerBusy / ErrSendRejected / ErrTruncated). Permanent errors
 //     (login, bad arguments) fail immediately - retrying them is pointless.
+//     The DSML loop's follow-up sends use the same policy
+//     (handleWebChatFollowUpSend), so a transient failure mid-conversation
+//     no longer aborts the whole session; a truncated follow-up is answered
+//     with a continuation nudge instead of a verbatim re-send.
 //   - DSML tool loop: a reply (role-driven or plain chat alike) that
 //     PARSES at least one DSML tool call - even when the wrapper is
 //     malformed - has its underlying dscli tools executed locally, and the
@@ -310,18 +378,8 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 	var lastErr error
 	for attempt := 0; attempt <= len(handleWebChatRetryDelays); attempt++ {
 		if attempt > 0 {
-			delay := handleWebChatRetryDelays[attempt-1]
-			reason := "服务器繁忙"
-			if errors.Is(lastErr, ErrTruncated) {
-				reason = "输出被截断"
-			}
-			fmt.Fprintf(os.Stderr, "🔄 %s，%.0fs 后重试 (attempt %d/%d)...\n",
-				reason, delay.Seconds(), attempt+1, len(handleWebChatRetryDelays)+1)
-
-			select {
-			case <-ctx.Done():
-				return WebChatResult{}, ctx.Err()
-			case <-time.After(delay):
+			if err := handleWebChatRetryWait(ctx, lastErr, attempt); err != nil {
+				return WebChatResult{}, err
 			}
 		}
 
@@ -366,11 +424,11 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 			return res, nil
 		}
 		lastErr = callErr
-		if !errors.Is(callErr, ErrServerBusy) && !errors.Is(callErr, ErrSendRejected) && !errors.Is(callErr, ErrTruncated) {
+		if !handleWebChatTransient(callErr) {
 			return WebChatResult{}, callErr
 		}
 	}
-	return WebChatResult{}, fmt.Errorf("webchat: %w (after %d attempts)", lastErr, len(handleWebChatRetryDelays)+1)
+	return WebChatResult{}, fmt.Errorf("%w (after %d attempts)", lastErr, len(handleWebChatRetryDelays)+1)
 }
 
 // handleWebChatResolveConversation resolves a Keep value to a conversation
@@ -588,7 +646,7 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 			fmt.Fprintf(os.Stderr, "⚠️ %s 的回复包含畸形 DSML 工具调用标记，已请求审视重发（第 %d/%d 轮）…\n",
 				roleName, round, handleWebChatMaxDSMLRounds)
 			followUp := WebChatOptions{Mode: opts.Mode, Keep: convURL}
-			res, callErr := handleWebChatSend(ctx, dsml.MalformedWarning, followUp)
+			res, callErr := handleWebChatFollowUpSend(ctx, dsml.MalformedWarning, followUp)
 			if callErr != nil {
 				return WebChatResult{}, fmt.Errorf("webchat tool loop: malformed DSML re-issue during round %d: %w", round, callErr)
 			}
@@ -620,7 +678,7 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 				fmt.Fprintf(os.Stderr, "⚠️ %s 的回复疑似工具调用但解析失败，已请求按严格格式重发（第 %d/%d 轮）…\n",
 					roleName, round, handleWebChatMaxDSMLRounds)
 				followUp := WebChatOptions{Mode: opts.Mode, Keep: convURL}
-				res, callErr := handleWebChatSend(ctx, dsml.ReissueWarning, followUp)
+				res, callErr := handleWebChatFollowUpSend(ctx, dsml.ReissueWarning, followUp)
 				if callErr != nil {
 					return WebChatResult{}, fmt.Errorf("webchat tool loop: re-issue warning during round %d: %w", round, callErr)
 				}
@@ -669,7 +727,7 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 		// follow-ups: no role injection and no re-upload of attachments
 		// here - the expert only gets the tool results.
 		followUp := WebChatOptions{Mode: opts.Mode, Keep: convURL}
-		res, callErr := handleWebChatSend(ctx, feedback, followUp)
+		res, callErr := handleWebChatFollowUpSend(ctx, feedback, followUp)
 		if callErr != nil {
 			return WebChatResult{}, fmt.Errorf("webchat tool loop: continue conversation during round %d: %w", round, callErr)
 		}

@@ -12,9 +12,11 @@
 // GetAllTools - there is no separate DSML allow-set. Role-configured tools
 // are registered with their NATIVE names and parameter schemas (see
 // dsml_doc.go), so a call maps 1:1 to the local tool: what the model writes
-// is what the executor accepts, no translation. The only DSML-layer check
-// that remains is the destructive-command interception for shell calls
-// (dsmlBlockedCmdRe) in normalizeDSMLInvoke.
+// is what the executor accepts, no translation. Two DSML-layer checks
+// remain, both in normalizeDSMLInvoke: the destructive-command interception
+// for shell calls (dsmlBlockedCmdRe), and the trailing close-tag residue
+// gate (rejectTrailingResidue) that refuses a parameter value which
+// swallowed its call's own close tags.
 package dsml
 
 import (
@@ -878,6 +880,40 @@ var dsmlBlockedCmdRe = regexp.MustCompile(`(?i)(^|\s|;|&&|\|\|)(` +
 	// History/state rewriting git operations.
 	`git\s+(push\s+(-f|--force)|reset\s+--hard|clean\s+-[a-zA-Z]*[fd]|stash|checkout\s+--))`)
 
+// dsmlTrailingResidueRe matches DSML close-tag residue at the very end of a
+// parameter value: the value's last non-empty lines are </parameter> +
+// </invoke> (optionally followed by the wrapper close). The structural scan
+// treats a code fence as opaque, so an unclosed fence inside the value
+// swallows the call's own close tags into the value; the residue is the
+// signature of a truncated or unbalanced emission. Executing it would write
+// the tags into the target file (the 2026-09-08 code_dev report: SKILL.md
+// lines 89-90 ended with exactly these two tags).
+var dsmlTrailingResidueRe = regexp.MustCompile(`(?s)(?:</\s*parameter\s*>\s*</\s*invoke\s*>|</\s*invoke\s*>\s*</\s*tool_calls\s*>)\s*$`)
+
+// rejectTrailingResidue refuses a call whose string parameter ends with DSML
+// close-tag residue. The call is NOT executed and the model gets an error
+// block asking for a complete re-send - silently trimming the residue could
+// corrupt a value that legitimately ends with those tags inside a closed
+// code fence.
+func rejectTrailingResidue(args toolcall.ToolArgs) error {
+	keys := make([]string, 0, len(args))
+	for k := range args {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		s, ok := args[k].(string)
+		if !ok {
+			continue
+		}
+		if m := dsmlTrailingResidueRe.FindString(s); m != "" {
+			return fmt.Errorf("parameter %q ends with DSML close-tag residue (%q): the value swallowed the call's own closing tags (an unclosed code fence inside the value). Nothing was executed - re-send the call with the value complete and every code fence closed",
+				k, strings.TrimSpace(m))
+		}
+	}
+	return nil
+}
+
 // normalizeDSMLInvoke maps a DSML call to a native tool name and arguments.
 //
 // Role-configured tools are registered with their native names and parameter
@@ -886,9 +922,11 @@ var dsmlBlockedCmdRe = regexp.MustCompile(`(?i)(^|\s|;|&&|\|\|)(` +
 // justification (DeepSeek's habit of adding it to every call) - the local
 // handler validates everything else.
 //
-// One DSML-layer check remains, not avoidable: destructive-command
+// Two DSML-layer checks remain, not avoidable: destructive-command
 // interception for calls targeting the shell tool (dsmlBlockedCmdRe) - a
-// remote web model is not a trusted local agent.
+// remote web model is not a trusted local agent - and the trailing
+// close-tag residue gate (rejectTrailingResidue), which refuses a value that
+// swallowed its call's own close tags.
 func normalizeDSMLInvoke(inv DSMLCall) (name string, args toolcall.ToolArgs, err error) {
 	args = toolcall.ToolArgs{}
 	for k, v := range inv.Args {
@@ -896,6 +934,9 @@ func normalizeDSMLInvoke(inv DSMLCall) (name string, args toolcall.ToolArgs, err
 			continue
 		}
 		args[k] = v
+	}
+	if err := rejectTrailingResidue(args); err != nil {
+		return "", nil, err
 	}
 
 	name = inv.Name

@@ -153,10 +153,19 @@ ToolDef (dsmlGeneratedDocEntry in internal/dsml/doc.go), so the model sees
 native names and parameter schemas - no name translation: what the model
 writes is what the executor accepts, and the role's allow-set gates by exact
 registered name (a legacy spelling like `exec_command`, or any unknown name,
-is skipped). The only
-DSML-layer check is the destructive-command interception for shell calls
-(dsmlBlockedCmdRe) in normalizeDSMLInvoke, plus stripping the decorative
-`justification` parameter. The loop prints every round it receives (reasoning + content via
+is skipped). The DSML-layer checks are the destructive-command interception
+for shell calls (dsmlBlockedCmdRe) in normalizeDSMLInvoke, stripping the
+decorative `justification` parameter, and refusing a string parameter whose
+value ends with DSML close-tag residue (`</parameter>` + `</invoke>` - an
+unclosed code fence inside the value swallowed the call's own close tags;
+the call is never executed and the model is told to re-send). Transient
+follow-up failures inside the loop reuse the initial send's retry policy
+(`handleWebChatFollowUpSend`): busy/rejected sends are re-sent verbatim, a
+truncated follow-up gets a continuation nudge (`webChatContinueWarning`)
+because its partial answer already sits in the conversation. Reply
+truncation detection is line-anchored (a markdown fence opens/closes only at
+line start, CommonMark), so a complete answer that quotes a fence is not
+misjudged as cut off. The loop prints every round it receives (reasoning + content via
 outfmt.PrintContent, with the header shown per role — icon + role·label —
 and no token count) and marks the final result `Printed` so callers do not
 re-print it. The `webchat` CLI defaults to `--role ""` (plain

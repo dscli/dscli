@@ -489,11 +489,34 @@ func TestIsTruncated(t *testing.T) {
 		s    string
 		want bool
 	}{
-		// Unclosed markdown code fence: cut-off code block.
+		// Unclosed markdown code fence: the answer ends inside a block.
 		{name: "cut-off json fence", s: "```json\n{\"a\": 1", want: true},
 		{name: "cut-off plain fence", s: "```python\nprint('hello'", want: true},
 		{name: "closed code block", s: "```json\n{\"a\": 1}\n```", want: false},
-		{name: "interior fence never closed", s: "text\n```\ncode\n```\nthen ``` more", want: true},
+		// A complete answer may contain an odd number of ``` when a code
+		// block quotes a fence. Counting occurrences flagged these as
+		// truncated (the 2026-09-08 code_dev report: a complete 20-rune
+		// answer judged truncated 4/4 times).
+		{name: "code block quoting a fence", s: "```text\nPM0a ```\n```", want: false},
+		{name: "code block quoting a fence with prefix prose", s: "结果如下：\n\n```\nPM0a ```\n```\n", want: false},
+		{name: "fence-only answer", s: "```\nfoo\n```", want: false},
+		{name: "inline fence only", s: "PM0a ```", want: false},
+		// An inline fence never opens a block, so a trailing one is prose,
+		// not a cut-off block (the old odd-count heuristic flagged it).
+		{name: "inline fence in trailing prose", s: "text\n```\ncode\n```\nthen ``` more", want: false},
+		// An unclosed fence AFTER a closed block still truncates.
+		{name: "unclosed fence after closed block", s: "text\n```\ncode\n```\nthen\n```", want: true},
+		// An unclosed fence inside a DSML parameter value: the reply was cut
+		// off mid-call and must never reach the parser/executor (2026-09-08
+		// report: the call's own close tags were swallowed into the value
+		// and written into the target file).
+		{name: "unclosed fence inside a DSML call", s: "<tool_calls>\n<invoke name=\"write_file\">\n<parameter name=\"content\">\n```bash\ncmd\n</parameter>\n</invoke>\n</tool_calls>", want: true},
+		{name: "unclosed tilde fence", s: "~~~\ncode", want: true},
+		{name: "closed tilde fence", s: "~~~\ncode\n~~~", want: false},
+		{name: "tilde does not close a backtick fence", s: "```\ncode\n~~~", want: true},
+		{name: "shorter close does not close", s: "````\ncode\n```", want: true},
+		{name: "longer close closes", s: "```\ncode\n````", want: false},
+		{name: "indented fence is code block content", s: "prose\n    ```\ncode", want: false},
 		// A lone fence inside prose explains the syntax, not truncation.
 		{name: "lone fence in prose", s: "Use ``` to open a code block.", want: false},
 		// JSON that never terminates.
@@ -501,6 +524,9 @@ func TestIsTruncated(t *testing.T) {
 		{name: "truncated array of objects", s: "[{\"id\": 1}, {\"id\": 2}", want: true},
 		{name: "complete object", s: "{\"question\": \"1\", \"answer\": \"A\"}", want: false},
 		{name: "complete array", s: "[{\"id\": 1}, {\"id\": 2}]", want: false},
+		// JSON followed by prose is not a JSON document: the old json.Valid
+		// check flagged any complete answer that merely starts with one.
+		{name: "complete json followed by prose", s: "{\"a\": 1} is the config object.", want: false},
 		// DeepSeek renders a ```json fence as a code-block toolbar whose
 		// labels (language name + Copy/Download buttons) prefix the code.
 		// The noise must not defeat the JSON check (#30 blind spot).
@@ -537,6 +563,7 @@ func TestAnswerUsable(t *testing.T) {
 		{name: "busy notice rejected", s: "服务器繁忙，请稍后再试", want: false},
 		{name: "english busy notice rejected", s: "Service is busy, please try again later.", want: false},
 		{name: "cut-off code fence rejected", s: "```python\nprint('hello'", want: false},
+		{name: "complete answer quoting a fence accepted", s: "```text\nPM0a ```\n```", want: true},
 		{name: "truncated json rejected", s: "{\"question\": \"1\", \"answer\": \"A\"", want: false},
 		{name: "short plain answer accepted", s: "好的", want: true},
 		{name: "long answer accepted", s: "这是一段完整的回答。" + strings.Repeat("内容", 300), want: true},

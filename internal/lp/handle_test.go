@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -1010,6 +1011,137 @@ func TestHandleWebChatToolLoopContinueFails(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Errorf("handleWebChatSend calls = %d, want 2 (follow-up attempted once)", calls)
+	}
+}
+
+// TestHandleWebChatToolLoopFollowUpTruncatedNudges: a truncated follow-up
+// reply must not abort the session. The partial answer is already in the
+// conversation, so the retry sends webChatContinueWarning (continue from
+// where you stopped) instead of duplicating the original feedback.
+func TestHandleWebChatToolLoopFollowUpTruncatedNudges(t *testing.T) {
+	origFunc, origDelays := handleWebChatSend, handleWebChatRetryDelays
+	t.Cleanup(func() { handleWebChatSend, handleWebChatRetryDelays = origFunc, origDelays })
+	handleWebChatRetryDelays = []time.Duration{0, 0, 0}
+
+	var messages []string
+	calls := 0
+	handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
+		calls++
+		messages = append(messages, msg)
+		switch calls {
+		case 1:
+			return WebChatResult{Content: dsmlReply, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+		case 2:
+			return WebChatResult{}, ErrTruncated
+		default:
+			return WebChatResult{Content: "final answer", URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+		}
+	}
+	captureExecDSML(t, "tool output")
+
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{Role: "review"})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if res.Content != "final answer" {
+		t.Errorf("content = %q, want final answer", res.Content)
+	}
+	if calls != 3 {
+		t.Fatalf("handleWebChatSend calls = %d, want 3", calls)
+	}
+	if messages[2] != webChatContinueWarning {
+		t.Errorf("retry message = %q, want continuation nudge", messages[2])
+	}
+}
+
+// TestHandleWebChatToolLoopFollowUpBusyResends: a busy/rejected follow-up
+// produced no reply, so the retry must re-send the SAME message (a
+// continuation nudge would answer a reply that never happened).
+func TestHandleWebChatToolLoopFollowUpBusyResends(t *testing.T) {
+	origFunc, origDelays := handleWebChatSend, handleWebChatRetryDelays
+	t.Cleanup(func() { handleWebChatSend, handleWebChatRetryDelays = origFunc, origDelays })
+	handleWebChatRetryDelays = []time.Duration{0, 0, 0}
+
+	var messages []string
+	calls := 0
+	handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
+		calls++
+		messages = append(messages, msg)
+		switch calls {
+		case 1:
+			return WebChatResult{Content: dsmlReply, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+		case 2:
+			return WebChatResult{}, ErrServerBusy
+		default:
+			return WebChatResult{Content: "final answer", URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+		}
+	}
+	captureExecDSML(t, "tool output")
+
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{Role: "review"})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if res.Content != "final answer" {
+		t.Errorf("content = %q, want final answer", res.Content)
+	}
+	if calls != 3 {
+		t.Fatalf("handleWebChatSend calls = %d, want 3", calls)
+	}
+	if messages[2] != messages[1] {
+		t.Errorf("busy retry message = %q, want the original feedback %q", messages[2], messages[1])
+	}
+}
+
+// TestHandleWebChatToolLoopFollowUpPersistentTruncation: the retry budget is
+// finite - a follow-up that stays truncated exhausts the shared backoff
+// policy (1 initial send + len(delays)+1 follow-up attempts) and reports the
+// truncation in the error chain instead of hanging.
+func TestHandleWebChatToolLoopFollowUpPersistentTruncation(t *testing.T) {
+	origFunc, origDelays := handleWebChatSend, handleWebChatRetryDelays
+	t.Cleanup(func() { handleWebChatSend, handleWebChatRetryDelays = origFunc, origDelays })
+	handleWebChatRetryDelays = []time.Duration{0, 0, 0}
+
+	calls := 0
+	handleWebChatSend = func(_ context.Context, _ string, _ WebChatOptions) (WebChatResult, error) {
+		calls++
+		if calls == 1 {
+			return WebChatResult{Content: dsmlReply, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+		}
+		return WebChatResult{}, ErrTruncated
+	}
+	captureExecDSML(t, "tool output")
+
+	_, err := HandleWebChat(context.Background(), "input", WebChatOptions{Role: "review"})
+	if err == nil || !errors.Is(err, ErrTruncated) {
+		t.Fatalf("err = %v, want ErrTruncated chain", err)
+	}
+	if !strings.Contains(err.Error(), "continue conversation") {
+		t.Errorf("err = %v, want continue-conversation context", err)
+	}
+	if want := 1 + len(handleWebChatRetryDelays) + 1; calls != want {
+		t.Errorf("handleWebChatSend calls = %d, want %d (initial + retry budget)", calls, want)
+	}
+}
+
+// TestHandleWebChatRetryErrorSinglePrefix pins the report's cosmetic defect:
+// the exhausted-retry error must not stack two "webchat:" prefixes (the
+// transport already wraps the underlying failure).
+func TestHandleWebChatRetryErrorSinglePrefix(t *testing.T) {
+	origFunc, origDelays := handleWebChatSend, handleWebChatRetryDelays
+	t.Cleanup(func() { handleWebChatSend, handleWebChatRetryDelays = origFunc, origDelays })
+	handleWebChatRetryDelays = []time.Duration{0}
+
+	handleWebChatSend = func(_ context.Context, _ string, _ WebChatOptions) (WebChatResult, error) {
+		return WebChatResult{}, fmt.Errorf("webchat: %w", ErrTruncated)
+	}
+
+	_, err := HandleWebChat(context.Background(), "input", WebChatOptions{})
+	if err == nil {
+		t.Fatal("expected error after retry exhaustion")
+	}
+	if got := strings.Count(err.Error(), "webchat:"); got != 1 {
+		t.Errorf("error %q has %d webchat: prefixes, want 1", err, got)
 	}
 }
 
