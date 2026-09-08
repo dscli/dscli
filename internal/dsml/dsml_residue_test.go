@@ -84,6 +84,23 @@ func TestNormalizeDSMLInvokeKeepsClosedFenceTags(t *testing.T) {
 	}
 }
 
+// TestRejectTrailingResidueDeterministicOrder: with two residue-bearing
+// parameters the gate reports the first key in sorted order, so the error the
+// model sees does not depend on Go's map iteration order.
+func TestRejectTrailingResidueDeterministicOrder(t *testing.T) {
+	args := toolcall.ToolArgs{
+		"zeta":  "x\n</parameter>\n</invoke>",
+		"alpha": "y\n</parameter>\n</invoke>",
+	}
+	err := rejectTrailingResidue(args)
+	if err == nil {
+		t.Fatal("expected residue error")
+	}
+	if !strings.Contains(err.Error(), `"alpha"`) {
+		t.Errorf("err = %v, want the sorted-first key alpha", err)
+	}
+}
+
 // TestRejectTrailingResidue documents the gate's exact boundary: the residue
 // PAIR (</parameter> + </invoke>, or </invoke> + wrapper close) is refused; a
 // single trailing tag is prose/doc content and is left alone.

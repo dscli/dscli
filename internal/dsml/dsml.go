@@ -888,7 +888,7 @@ var dsmlBlockedCmdRe = regexp.MustCompile(`(?i)(^|\s|;|&&|\|\|)(` +
 // signature of a truncated or unbalanced emission. Executing it would write
 // the tags into the target file (the 2026-09-08 code_dev report: SKILL.md
 // lines 89-90 ended with exactly these two tags).
-var dsmlTrailingResidueRe = regexp.MustCompile(`(?s)(?:</\s*parameter\s*>\s*</\s*invoke\s*>|</\s*invoke\s*>\s*</\s*tool_calls\s*>)\s*$`)
+var dsmlTrailingResidueRe = regexp.MustCompile(`(?:</\s*parameter\s*>\s*</\s*invoke\s*>|</\s*invoke\s*>\s*</\s*tool_calls\s*>)\s*$`)
 
 // rejectTrailingResidue refuses a call whose string parameter ends with DSML
 // close-tag residue. The call is NOT executed and the model gets an error

@@ -1009,6 +1009,9 @@ func TestHandleWebChatToolLoopContinueFails(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "continue conversation") {
 		t.Fatalf("err = %v, want continue-conversation error", err)
 	}
+	if !errors.Is(err, lastErr) {
+		t.Errorf("err = %v, want the permanent error in the chain (no retry)", err)
+	}
 	if calls != 2 {
 		t.Errorf("handleWebChatSend calls = %d, want 2 (follow-up attempted once)", calls)
 	}
@@ -1054,42 +1057,48 @@ func TestHandleWebChatToolLoopFollowUpTruncatedNudges(t *testing.T) {
 	}
 }
 
-// TestHandleWebChatToolLoopFollowUpBusyResends: a busy/rejected follow-up
-// produced no reply, so the retry must re-send the SAME message (a
-// continuation nudge would answer a reply that never happened).
-func TestHandleWebChatToolLoopFollowUpBusyResends(t *testing.T) {
-	origFunc, origDelays := handleWebChatSend, handleWebChatRetryDelays
-	t.Cleanup(func() { handleWebChatSend, handleWebChatRetryDelays = origFunc, origDelays })
-	handleWebChatRetryDelays = []time.Duration{0, 0, 0}
+// TestHandleWebChatToolLoopFollowUpTransientResends: a busy/rejected
+// follow-up produced no reply, so the retry must re-send the SAME message (a
+// continuation nudge would answer a reply that never happened). Both
+// transient no-reply errors share the branch; pin them together so a future
+// refactor cannot drop ErrSendRejected.
+func TestHandleWebChatToolLoopFollowUpTransientResends(t *testing.T) {
+	for _, transient := range []error{ErrServerBusy, ErrSendRejected} {
+		t.Run(transient.Error(), func(t *testing.T) {
+			origFunc, origDelays := handleWebChatSend, handleWebChatRetryDelays
+			t.Cleanup(func() { handleWebChatSend, handleWebChatRetryDelays = origFunc, origDelays })
+			handleWebChatRetryDelays = []time.Duration{0, 0, 0}
 
-	var messages []string
-	calls := 0
-	handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
-		calls++
-		messages = append(messages, msg)
-		switch calls {
-		case 1:
-			return WebChatResult{Content: dsmlReply, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
-		case 2:
-			return WebChatResult{}, ErrServerBusy
-		default:
-			return WebChatResult{Content: "final answer", URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
-		}
-	}
-	captureExecDSML(t, "tool output")
+			var messages []string
+			calls := 0
+			handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
+				calls++
+				messages = append(messages, msg)
+				switch calls {
+				case 1:
+					return WebChatResult{Content: dsmlReply, URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+				case 2:
+					return WebChatResult{}, transient
+				default:
+					return WebChatResult{Content: "final answer", URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+				}
+			}
+			captureExecDSML(t, "tool output")
 
-	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{Role: "review"})
-	if err != nil {
-		t.Fatalf("HandleWebChat: %v", err)
-	}
-	if res.Content != "final answer" {
-		t.Errorf("content = %q, want final answer", res.Content)
-	}
-	if calls != 3 {
-		t.Fatalf("handleWebChatSend calls = %d, want 3", calls)
-	}
-	if messages[2] != messages[1] {
-		t.Errorf("busy retry message = %q, want the original feedback %q", messages[2], messages[1])
+			res, err := HandleWebChat(context.Background(), "input", WebChatOptions{Role: "review"})
+			if err != nil {
+				t.Fatalf("HandleWebChat: %v", err)
+			}
+			if res.Content != "final answer" {
+				t.Errorf("content = %q, want final answer", res.Content)
+			}
+			if calls != 3 {
+				t.Fatalf("handleWebChatSend calls = %d, want 3", calls)
+			}
+			if messages[2] != messages[1] {
+				t.Errorf("retry message = %q, want the original feedback %q", messages[2], messages[1])
+			}
+		})
 	}
 }
 

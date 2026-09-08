@@ -2273,7 +2273,10 @@ func isTruncated(s string) bool {
 // block. A fence opens at the start of a line - at most three leading spaces
 // (four or more indent a code block instead) - with a run of three or more
 // backticks or tildes, and closes on a line whose run of the SAME character
-// is at least as long and followed only by whitespace (CommonMark).
+// is at least as long and followed only by whitespace (CommonMark). Only
+// spaces count as indentation: a tab advances to the next four-column tab
+// stop, so a tab-indented line is indented code, not a fence. A backtick
+// fence whose info string contains a backtick is not a fence either.
 //
 // Counting ``` occurrences cannot work: a complete answer may legitimately
 // carry an odd number of them when a code block quotes a fence, and a lone
@@ -2295,6 +2298,9 @@ func hasUnclosedFence(t string) bool {
 			continue
 		}
 		if !open {
+			if ch == '`' && strings.ContainsRune(trimmed[n:], '`') {
+				continue // a backtick fence's info string cannot contain backticks
+			}
 			open, fenceCh, fenceLen = true, ch, n
 			continue
 		}

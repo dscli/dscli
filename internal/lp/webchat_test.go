@@ -517,6 +517,9 @@ func TestIsTruncated(t *testing.T) {
 		{name: "shorter close does not close", s: "````\ncode\n```", want: true},
 		{name: "longer close closes", s: "```\ncode\n````", want: false},
 		{name: "indented fence is code block content", s: "prose\n    ```\ncode", want: false},
+		{name: "tab-indented fence is code block content", s: "prose\n\t```\ncode", want: false},
+		// CommonMark: a backtick fence's info string cannot contain backticks.
+		{name: "backtick in info string is not a fence", s: "```foo`bar\ncode", want: false},
 		// A lone fence inside prose explains the syntax, not truncation.
 		{name: "lone fence in prose", s: "Use ``` to open a code block.", want: false},
 		// JSON that never terminates.

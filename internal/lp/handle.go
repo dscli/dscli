@@ -191,9 +191,13 @@ func truncateToolResultBlock(s string, maxRunes int) (out string, ok bool) {
 // handleWebChatRetryDelays is the backoff sequence between retry attempts for
 // transient server overload and truncation (ErrServerBusy / ErrSendRejected /
 // ErrTruncated). The official DeepSeek error docs recommend retrying 429/500/
-// 503 after a brief wait; each retry starts a fresh conversation, so a
-// duplicate send has no side effects. A package variable so tests can shorten
-// it.
+// 503 after a brief wait. A first-round retry (Keep empty) starts a fresh
+// conversation, so a duplicate send has no side effects; a retry with Keep
+// set (resume, tool-loop follow-up) targets the SAME conversation - busy and
+// rejected sends produced no reply, and a truncated follow-up is answered
+// with webChatContinueWarning instead of the original text because its
+// partial reply already sits in that conversation (see
+// handleWebChatFollowUpSend). A package variable so tests can shorten it.
 var handleWebChatRetryDelays = []time.Duration{5 * time.Second, 15 * time.Second, 30 * time.Second}
 
 // handleWebChatSend is the transport used by HandleWebChat; tests replace it
@@ -327,8 +331,11 @@ var handleWebChatExecDSML = dsml.ExecuteDSMLToolCalls
 //     <tool_result> blocks stay well-formed; a truncated marker is appended so
 //     the model knows the text is partial.
 //
-// A retried send targets the same conversation (Keep is preserved): the busy
-// server never acknowledged the send, so re-sending is harmless.
+// Retries target the same conversation when Keep is set (resume/follow-up) or
+// a fresh one when it is empty (first round). Busy/rejected sends were never
+// acknowledged, so re-sending is harmless. A truncated initial reply is
+// re-sent verbatim; a truncated follow-up uses webChatContinueWarning because
+// its partial reply stays in the conversation (see handleWebChatFollowUpSend).
 func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (WebChatResult, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "HandleWebChat")
 	defer span.Finish()
