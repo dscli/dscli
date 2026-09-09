@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 
 	"github.com/dscli/dscli/internal/context"
@@ -86,7 +85,8 @@ func init() {
 }
 
 // roleNames 是 role 系统支持的内置角色（顺序即显示顺序）。
-var roleNames = []string{"dev", "expert", "review", "test", "architect"}
+// 单一来源是 roles.Names——新增角色只需改那里一处。
+var roleNames = roles.Names()
 
 // displaySpec converts a stored skills/tools value to its display form:
 // "" (none) renders as "none", everything else verbatim.
@@ -197,7 +197,7 @@ func roleUpdateRunE(cmd *cobra.Command, args []string) error {
 	roleName := args[0]
 
 	// Validate role name
-	if !slices.Contains(roleNames, roleName) {
+	if !roles.IsValid(roleName) {
 		return fmt.Errorf("无效的角色名 %q，支持的角色：%s", roleName, strings.Join(roleNames, ", "))
 	}
 
@@ -314,7 +314,7 @@ func roleResetRunE(cmd *cobra.Command, args []string) error {
 	roleName := args[0]
 
 	// Validate role name
-	if !slices.Contains(roleNames, roleName) {
+	if !roles.IsValid(roleName) {
 		return fmt.Errorf("无效的角色名 %q，支持的角色：%s", roleName, strings.Join(roleNames, ", "))
 	}
 

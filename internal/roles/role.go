@@ -20,6 +20,7 @@ package roles
 import (
 	"database/sql"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -75,6 +76,20 @@ const DevDefaultTools = "read_file,write_file,search_file_with_pattern," +
 	"code_manage_adr," +
 	"vision_file_read,vision_file_delete,vision_file_info,vision_file_list," +
 	"web_fetch"
+
+// Names returns the built-in role names in display order. It is the single
+// source of truth for role validation (IsValid) and the CLI's role listing:
+// a new role is registered in exactly one place.
+func Names() []string {
+	return []string{"dev", "expert", "review", "test", "architect"}
+}
+
+// IsValid reports whether role is one of the built-in role names. Callers
+// that accept a role from user or model input use it to reject typos loudly
+// instead of letting DefaultFor's unknown-role fallback silently pick dev.
+func IsValid(role string) bool {
+	return slices.Contains(Names(), role)
+}
 
 // DefaultFor returns the built-in defaults for the given role. It is the
 // single source of truth consumed by the CLI display (role list/show), the
