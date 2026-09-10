@@ -234,9 +234,9 @@ func TestResolvePrices(t *testing.T) {
 	c := builtinCache()
 	flashOld := Price{PromptCacheHit: 0.02, PromptCacheMiss: 1.0, Completion: 2.0}
 	proOld := Price{PromptCacheHit: 0.025, PromptCacheMiss: 3.0, Completion: 6.0}
-	flashOff := Price{PromptCacheHit: 0.05, PromptCacheMiss: 1.5, Completion: 4.5}
+	flashOff := Price{PromptCacheHit: 0.02, PromptCacheMiss: 1, Completion: 4}
 	proOff := Price{PromptCacheHit: 0.15, PromptCacheMiss: 4.5, Completion: 13.5}
-	flashPeak := Price{PromptCacheHit: 0.10, PromptCacheMiss: 3.0, Completion: 9.0}
+	flashPeak := Price{PromptCacheHit: 0.04, PromptCacheMiss: 2, Completion: 8}
 	proPeak := Price{PromptCacheHit: 0.30, PromptCacheMiss: 9.0, Completion: 27.0}
 	// vision-exp 价格同 flash，且仅 8-17 生效后存在。
 	visionOff := flashOff
@@ -296,7 +296,7 @@ func TestGetPriceCaching(t *testing.T) {
 
 	// now = 2026-08-16 22:00 北京时间：生效日前，返回现价表价格。
 	// +25h = 8-17 23:00、+26h = 8-18 00:00、+49h = 8-18 23:00 均为空闲时段，
-	// 新价格生效后统一返回谷价 0.05，便于断言。
+	// 新价格生效后统一返回谷价 0.02，便于断言。
 	now := time.Date(2026, 8, 16, 22, 0, 0, 0, beijing)
 	got := getPrice(now)
 	if got["deepseek-v4-flash"].PromptCacheHit != 0.02 {
@@ -320,7 +320,7 @@ func TestGetPriceCaching(t *testing.T) {
 
 	// 缓存仍新鲜（+26h 距上次抓取仅 1h）：不触发抓取，直接服务缓存。
 	got = getPrice(now.Add(26 * time.Hour))
-	if got["deepseek-v4-flash"].PromptCacheHit != 0.05 {
+	if got["deepseek-v4-flash"].PromptCacheHit != 0.02 {
 		t.Fatalf("unexpected new off-peak prices: %v", got)
 	}
 	if fetches != 2 {
@@ -333,7 +333,7 @@ func TestGetPriceCaching(t *testing.T) {
 		return nil, errors.New("network down")
 	}
 	got = getPrice(now.Add(49 * time.Hour))
-	if got["deepseek-v4-flash"].PromptCacheHit != 0.05 {
+	if got["deepseek-v4-flash"].PromptCacheHit != 0.02 {
 		t.Fatalf("stale cache not served after failed fetch: %v", got)
 	}
 	if fetches != 3 {
@@ -350,7 +350,7 @@ func TestGetPriceCaching(t *testing.T) {
 	if fetches != 3 {
 		t.Fatalf("expected disk cache hit without fetch, got %d", fetches)
 	}
-	if got["deepseek-v4-flash"].PromptCacheHit != 0.05 {
+	if got["deepseek-v4-flash"].PromptCacheHit != 0.02 {
 		t.Fatalf("disk cache not restored: %v", got)
 	}
 }
@@ -371,10 +371,153 @@ func TestGetPriceFallbackBuiltin(t *testing.T) {
 		t.Fatalf("builtin snapshot not used: %v", got)
 	}
 	got = getPrice(time.Date(2026, 8, 17, 9, 0, 0, 0, beijing)) // 高峰时段
-	if got["deepseek-v4-flash"].PromptCacheHit != 0.10 {
+	if got["deepseek-v4-flash"].PromptCacheHit != 0.04 {
 		t.Fatalf("builtin new peak prices not used: %v", got)
 	}
-	if len(got) != 3 || got["deepseek-v4-flash-vision-exp"].PromptCacheHit != 0.10 {
+	if len(got) != 3 || got["deepseek-v4-flash-vision-exp"].PromptCacheHit != 0.04 {
 		t.Fatalf("builtin vision-exp price missing: %v", got)
+	}
+}
+
+func TestLookupPriceFamilyFallback(t *testing.T) {
+	flash := Price{PromptCacheHit: 0.02, PromptCacheMiss: 1, Completion: 4}
+	pro := Price{PromptCacheHit: 0.15, PromptCacheMiss: 4.5, Completion: 13.5}
+	alt := Price{PromptCacheHit: 0.09, PromptCacheMiss: 9, Completion: 90}
+	base := map[string]Price{
+		"deepseek-v4-flash":            flash,
+		"deepseek-v4-pro":              pro,
+		"deepseek-v4-flash-vision-exp": flash,
+	}
+	flashOnly := map[string]Price{
+		"deepseek-v4-flash": flash,
+	}
+	// vision-exp 价格漂移：flash 家族不再一致，不做模糊匹配。
+	divergedFlash := map[string]Price{
+		"deepseek-v4-flash":            flash,
+		"deepseek-v4-flash-vision-exp": alt,
+	}
+	// pro 家族两列不一致：同样不可用。
+	divergedPro := map[string]Price{
+		"deepseek-v4-flash": flash,
+		"deepseek-v4-pro":   pro,
+		"deepseek-pro-0813": alt,
+	}
+
+	tests := []struct {
+		name   string
+		prices map[string]Price
+		model  string
+		want   Price
+		ok     bool
+	}{
+		{"exact flash column", base, "deepseek-v4-flash", flash, true},
+		{"exact pro column", base, "deepseek-v4-pro", pro, true},
+		{"exact vision column", base, "deepseek-v4-flash-vision-exp", flash, true},
+		{"flash alias", base, "deepseek-flash", flash, true},
+		{"flash temp id", base, "deepseek-v4.1-flash-expires-on-0910", flash, true},
+		{"case insensitive family", base, "DeepSeek-Flash", flash, true},
+		{"pro alias", base, "deepseek-pro-0813", pro, true},
+		{"dual word prefers pro", base, "deepseek-flash-pro", pro, true},
+		{"dual word falls back to flash when pro family absent", flashOnly, "deepseek-flash-pro", flash, true},
+		{"dual word falls back to flash when pro family diverges", divergedPro, "deepseek-flash-pro", flash, true},
+		{"pro alias without pro family", flashOnly, "deepseek-pro", Price{}, false},
+		{"no family word", base, "deepseek-chat", Price{}, false},
+		{"diverged flash family", divergedFlash, "deepseek-flash", Price{}, false},
+		{"diverged flash family keeps exact column", divergedFlash, "deepseek-v4-flash", flash, true},
+		{"empty map", nil, "deepseek-flash", Price{}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := lookupPrice(tt.prices, tt.model)
+			if ok != tt.ok || got != tt.want {
+				t.Fatalf("lookupPrice(%q) = %v, %v; want %v, %v", tt.model, got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
+func TestGetPriceFor(t *testing.T) {
+	flash := Price{PromptCacheHit: 0.02, PromptCacheMiss: 1, Completion: 4}
+	setTestPrices(map[string]Price{"deepseek-v4-flash": flash})
+
+	if p, ok := GetPriceFor("deepseek-v4-flash"); !ok || p != flash {
+		t.Fatalf("GetPriceFor(exact) = %v, %v; want %v, true", p, ok, flash)
+	}
+	if p, ok := GetPriceFor("deepseek-flash"); !ok || p != flash {
+		t.Fatalf("GetPriceFor(family) = %v, %v; want %v, true", p, ok, flash)
+	}
+	if p, ok := GetPriceFor("deepseek-chat"); ok {
+		t.Fatalf("GetPriceFor(no family) = %v, want no price", p)
+	}
+}
+
+func TestForceRefresh(t *testing.T) {
+	origPath, origFetch := cachePath, fetchPage
+	cachePath = filepath.Join(t.TempDir(), "price.json")
+	t.Cleanup(func() {
+		cachePath, fetchPage = origPath, origFetch
+		resetPriceState()
+	})
+	resetPriceState()
+
+	oldPrice := Price{PromptCacheHit: 0.05, PromptCacheMiss: 1.5, Completion: 4.5}
+	newPrice := Price{PromptCacheHit: 0.02, PromptCacheMiss: 1, Completion: 4}
+	now := time.Now()
+
+	// 新鲜缓存 + 活跃退避：只有显式 ForceRefresh 允许此刻抓取。
+	theCacheMu.Lock()
+	theCache = &priceCache{
+		FetchedAt: now,
+		Current:   map[string]Price{"deepseek-v4-flash": oldPrice},
+		New:       map[string]peakPrice{"deepseek-v4-flash": {OffPeak: oldPrice, Peak: oldPrice}},
+	}
+	lastFetch = now
+	theCacheMu.Unlock()
+
+	fetches := 0
+	fetchPage = func() (*priceCache, error) {
+		fetches++
+		return &priceCache{
+			Current: map[string]Price{"deepseek-v4-flash": newPrice},
+			New:     map[string]peakPrice{"deepseek-v4-flash": {OffPeak: newPrice, Peak: newPrice}},
+		}, nil
+	}
+
+	// 成功：绕过 TTL 与退避，替换缓存并写盘。
+	if err := ForceRefresh(); err != nil {
+		t.Fatalf("ForceRefresh() = %v, want nil", err)
+	}
+	if fetches != 1 {
+		t.Fatalf("expected 1 fetch, got %d", fetches)
+	}
+	if p, ok := GetPriceFor("deepseek-flash"); !ok || p != newPrice {
+		t.Fatalf("cache not replaced by force refresh: %v, %v", p, ok)
+	}
+	if c := readCacheFile(); c == nil {
+		t.Fatal("force refresh did not write the disk cache")
+	}
+
+	// 失败：返回错误并保留旧缓存。
+	fetchPage = func() (*priceCache, error) {
+		fetches++
+		return nil, errors.New("network down")
+	}
+	if err := ForceRefresh(); err == nil {
+		t.Fatal("ForceRefresh() = nil, want error")
+	}
+	if fetches != 2 {
+		t.Fatalf("expected second fetch attempt, got %d", fetches)
+	}
+	if p, ok := GetPriceFor("deepseek-flash"); !ok || p != newPrice {
+		t.Fatalf("failed refresh must keep cached prices: %v, %v", p, ok)
+	}
+
+	// 退避已记录：过期缓存 + 1 小时内的自动路径不重抓。
+	theCacheMu.Lock()
+	theCache.FetchedAt = time.Now().Add(-25 * time.Hour)
+	theCacheMu.Unlock()
+	getPrice(time.Now())
+	if fetches != 2 {
+		t.Fatalf("expected no automatic refetch within backoff, got %d fetches", fetches)
 	}
 }

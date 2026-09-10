@@ -251,6 +251,9 @@ dscli parse main.go -l python
 # 查看可用模型
 dscli models
 
+# 强制刷新价格缓存（忽略 24 小时缓存）
+dscli models --refresh
+
 # 查看账户余额
 dscli balance
 

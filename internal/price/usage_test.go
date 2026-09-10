@@ -85,3 +85,20 @@ func TestGetCostConcurrentSafe(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestGetCostFamilyFallback(t *testing.T) {
+	// deepseek-flash 没有精确列：成本必须走 flash 家族回退而不是 0。
+	setTestPrices(map[string]Price{
+		"deepseek-v4-flash": {PromptCacheHit: 0.02, PromptCacheMiss: 1.0, Completion: 4.0},
+	})
+	theUsage = Usage{
+		PromptCacheHitTokens:  1_000_000, // 1M tokens → 0.02 元
+		PromptCacheMissTokens: 500_000,   // 0.5M tokens → 0.5 元
+		CompletionTokens:      100_000,   // 0.1M tokens → 0.4 元
+	}
+	cost := GetCost("deepseek-flash")
+	expected := 0.02 + 0.5 + 0.4 // = 0.92
+	if cost != expected {
+		t.Fatalf("expected %f, got %f", expected, cost)
+	}
+}

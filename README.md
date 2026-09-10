@@ -302,6 +302,9 @@ dscli parse main.go -l python
 # List available models (with current token prices)
 dscli models
 
+# Force refresh cached prices (ignores the 24h cache)
+dscli models --refresh
+
 # Check account balance
 dscli balance
 

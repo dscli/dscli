@@ -50,8 +50,7 @@ func GetCost(model string) (cost float64) {
 
 // Cost computes the cost for this specific usage record at the given model's price.
 func (u Usage) Cost(model string) float64 {
-	prices := GetPrice()
-	p, ok := prices[model]
+	p, ok := GetPriceFor(model)
 	if !ok {
 		return 0
 	}

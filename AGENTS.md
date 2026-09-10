@@ -72,7 +72,7 @@ Tests get an isolated database: `context.IsTesting()` → `/tmp/dscli-test-<bina
 | `internal/skills/` | Skill lifecycle: search, load, validate, auto-inject |
 | `internal/context/` | Extends stdlib `context` with typed KV keys, project root, param bus |
 | `internal/dsc/` | DeepSeek API client (chat, balance, models) + Files API (upload/list/info/delete with local content cache) |
-| `internal/price/` | Token usage tracking & cost calculation; time-aware pricing (peak/off-peak after 2026-08-17, daily cache in ~/.dscli/price.json) |
+| `internal/price/` | Token usage tracking & cost calculation; time-aware pricing (peak/off-peak after 2026-08-17, daily cache in ~/.dscli/price.json); unknown model IDs fall back to their pro/flash family price (`GetPriceFor`, all family columns must agree); `dscli models --refresh` forces a refetch |
 | `internal/flycheck/` | Static analysis (Go, Python, Emacs) via embedded `dscli-flycheck.sh` |
 | `internal/toolcall/vision/` | Files API vision tools: vision_file_read/list/info/delete (category: vision) |
 | `internal/toolcall/ai/` | AI-conversation tools: wakeup, ainap, aistatus (category: ai) |

@@ -106,14 +106,32 @@ func refresh(now time.Time) {
 	if now.Sub(lastFetch) < fetchRetryGap {
 		return
 	}
+	_ = doFetch(now)
+}
+
+// doFetch attempts one fetch and installs the result, recording the attempt
+// in lastFetch so the automatic path keeps its backoff behavior. The caller
+// must hold theCacheMu.
+func doFetch(now time.Time) error {
 	lastFetch = now
 	c, err := fetchPage()
 	if err != nil {
-		return
+		return err
 	}
 	c.FetchedAt = now
 	theCache = c
 	saveCacheFile(c)
+	return nil
+}
+
+// ForceRefresh fetches the pricing page immediately, ignoring the daily TTL
+// and the hourly failure backoff, and replaces the cached prices on success.
+// A failed fetch keeps the existing cache and returns the error. The attempt
+// is recorded so the automatic path keeps its backoff behavior.
+func ForceRefresh() error {
+	theCacheMu.Lock()
+	defer theCacheMu.Unlock()
+	return doFetch(time.Now())
 }
 
 // resolve returns the effective prices at time t for every model with a
@@ -154,6 +172,57 @@ func (c *priceCache) priceFor(model string, t time.Time) (Price, bool) {
 	return np.OffPeak, true
 }
 
+// GetPriceFor returns the effective price for model at the current time.
+// It prefers the exact column of the pricing table for the model ID and
+// falls back to the price of the model's family when the table has no such
+// column: a model ID containing "pro" or "flash" (case-insensitive) uses
+// that family's price, provided every model of the family agrees. Families
+// are tried pro first; flash is used only when the ID also names it and pro
+// yields no reliable price. It reports false when neither lookup produces a
+// price.
+func GetPriceFor(model string) (Price, bool) {
+	return lookupPrice(getPrice(time.Now()), model)
+}
+
+// lookupPrice resolves model against a resolved price map (see resolve):
+// exact match first, then the family fallback described on GetPriceFor.
+func lookupPrice(prices map[string]Price, model string) (Price, bool) {
+	if p, ok := prices[model]; ok {
+		return p, true
+	}
+	m := strings.ToLower(model)
+	for _, family := range []string{"pro", "flash"} {
+		if !strings.Contains(m, family) {
+			continue
+		}
+		if p, ok := familyPrice(prices, family); ok {
+			return p, true
+		}
+	}
+	return Price{}, false
+}
+
+// familyPrice returns the price shared by every entry of prices whose
+// lowercased model ID contains family, reporting false unless at least one
+// entry matches and all of them agree - a divergent family yields no price,
+// because a wrong price is worse than a missing one.
+func familyPrice(prices map[string]Price, family string) (Price, bool) {
+	var (
+		price Price
+		found bool
+	)
+	for m, p := range prices {
+		if !strings.Contains(strings.ToLower(m), family) {
+			continue
+		}
+		if found && p != price {
+			return Price{}, false
+		}
+		price, found = p, true
+	}
+	return price, found
+}
+
 // inPeakHours reports whether t (already in Beijing time) falls in the
 // peak periods. Per the pricing page footnote (2026-08-22 snapshot) the
 // peak windows are Monday-Friday 9:00-12:00 and 14:00-18:00; weekends are
@@ -167,15 +236,18 @@ func inPeakHours(t time.Time) bool {
 }
 
 // builtinCache returns the prices parsed from the pricing page snapshot
-// taken 2026-08 (the page's main table plus the announced new rates). It is
-// the last-resort fallback when the page is unreachable and no cache exists.
+// taken 2026-08 (the page's main table plus the announced new rates), with
+// the flash-series rates of the 2026-09-10 adjustment folded in. It is the
+// last-resort fallback when the page is unreachable and no cache exists.
 func builtinCache() *priceCache {
 	// deepseek-v4-flash-vision-exp (added 2026-08-17) prices its tokens
 	// identically to deepseek-v4-flash; only images are billed separately
-	// via their token conversion.
+	// via their token conversion. The rates below fold in the flash-series
+	// adjustment announced for 2026-09-10 12:00 Beijing time: off-peak
+	// 0.02 / 1 / 4 yuan, peak at twice the off-peak rate.
 	flashNew := peakPrice{
-		OffPeak: Price{PromptCacheHit: 0.05, PromptCacheMiss: 1.5, Completion: 4.5},
-		Peak:    Price{PromptCacheHit: 0.10, PromptCacheMiss: 3.0, Completion: 9.0},
+		OffPeak: Price{PromptCacheHit: 0.02, PromptCacheMiss: 1, Completion: 4},
+		Peak:    Price{PromptCacheHit: 0.04, PromptCacheMiss: 2, Completion: 8},
 	}
 	proNew := peakPrice{
 		OffPeak: Price{PromptCacheHit: 0.15, PromptCacheMiss: 4.5, Completion: 13.5},
