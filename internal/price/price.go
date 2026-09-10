@@ -127,7 +127,9 @@ func doFetch(now time.Time) error {
 // ForceRefresh fetches the pricing page immediately, ignoring the daily TTL
 // and the hourly failure backoff, and replaces the cached prices on success.
 // A failed fetch keeps the existing cache and returns the error. The attempt
-// is recorded so the automatic path keeps its backoff behavior.
+// is recorded so the automatic path keeps its backoff behavior. The fetch
+// runs under the cache mutex (like any refresh), so concurrent price lookups
+// wait for it to finish.
 func ForceRefresh() error {
 	theCacheMu.Lock()
 	defer theCacheMu.Unlock()

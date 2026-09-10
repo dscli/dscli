@@ -1,15 +1,18 @@
 package price
 
 import (
+	"errors"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 )
 
-// setTestPrices installs a fresh in-memory cache so GetCost never touches
-// the network or the on-disk cache. The same prices are set for the current
-// and the new peak/off-peak regime so the expected cost holds regardless of
-// when the test runs.
+// setTestPrices installs a fresh in-memory cache (FetchedAt is now, which
+// short-circuits loadCache's refresh path) so GetCost never touches the
+// network or the on-disk cache. The same prices are set for the current and
+// the new peak/off-peak regime so the expected cost holds regardless of when
+// the test runs.
 func setTestPrices(current map[string]Price) {
 	theCacheMu.Lock()
 	newPrices := make(map[string]peakPrice, len(current))
@@ -87,6 +90,12 @@ func TestGetCostConcurrentSafe(t *testing.T) {
 }
 
 func TestGetCostFamilyFallback(t *testing.T) {
+	// 隔离：内存缓存应短路一切；显式覆盖路径与抓取，防止意外触碰真实缓存/网络。
+	origPath, origFetch := cachePath, fetchPage
+	cachePath = filepath.Join(t.TempDir(), "price.json")
+	fetchPage = func() (*priceCache, error) { return nil, errors.New("fetch not expected") }
+	t.Cleanup(func() { cachePath, fetchPage = origPath, origFetch })
+
 	// deepseek-flash 没有精确列：成本必须走 flash 家族回退而不是 0。
 	setTestPrices(map[string]Price{
 		"deepseek-v4-flash": {PromptCacheHit: 0.02, PromptCacheMiss: 1.0, Completion: 4.0},

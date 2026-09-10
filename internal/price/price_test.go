@@ -437,6 +437,12 @@ func TestLookupPriceFamilyFallback(t *testing.T) {
 }
 
 func TestGetPriceFor(t *testing.T) {
+	// 隔离：内存缓存应短路一切；显式覆盖路径与抓取，防止意外触碰真实缓存/网络。
+	origPath, origFetch := cachePath, fetchPage
+	cachePath = filepath.Join(t.TempDir(), "price.json")
+	fetchPage = func() (*priceCache, error) { return nil, errors.New("fetch not expected") }
+	t.Cleanup(func() { cachePath, fetchPage = origPath, origFetch })
+
 	flash := Price{PromptCacheHit: 0.02, PromptCacheMiss: 1, Completion: 4}
 	setTestPrices(map[string]Price{"deepseek-v4-flash": flash})
 

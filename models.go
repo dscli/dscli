@@ -47,7 +47,7 @@ func ModelsRun(cmd *cobra.Command, args []string) {
 
 	if modelsRefresh {
 		if err := price.ForceRefresh(); err != nil {
-			fmt.Fprintf(os.Stderr, "pricing refresh failed: %v (using cached prices)\n", err)
+			fmt.Fprintf(os.Stderr, "pricing refresh failed: %v (using cached or built-in prices)\n", err)
 		}
 	}
 
