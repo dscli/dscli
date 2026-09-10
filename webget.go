@@ -31,6 +31,11 @@ func init() {
 失败后自动经代理重试。可用配置 lightpanda-additional-proxy-domains 添加额外
 的代理域名（数组或逗号分隔字符串），或加 --force-proxy 强制经代理抓取。
 
+DeepSeek 分享链接（chat.deepseek.com/share/...）自动读取完整会话：分享页的
+消息列表是虚拟滚动的，DOM 只含首屏消息；此时改从分享数据接口取全量会话
+（含思考过程、搜索来源、附件），接口不可用时回退为普通 DOM 抓取。仅对
+--dump markdown（默认）生效，html / semantic_tree 等仍输出原始页面结构。
+
 示例：
   dscli webget https://go.dev
   dscli webget https://www.google.com

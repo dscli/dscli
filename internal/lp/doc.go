@@ -10,6 +10,13 @@
 // (config key lightpanda-http-proxy), other hosts are fetched directly first
 // and retried via the proxy when the direct attempt fails.
 //
+// DeepSeek share pages (chat.deepseek.com/share/<id>) are a special case:
+// their message list is virtualized, so a DOM dump only carries the first
+// screenful of a conversation. For markdown dumps Fetch pulls the full
+// conversation from the share-content API through an injected page script
+// and renders it locally; see share.go. Any failure there falls back to the
+// regular dump.
+//
 // # DeepSeek web interactions
 //
 // WebChat drives a local Chrome/Chromium via chromedp to chat with

@@ -26,6 +26,12 @@ import (
 //	refresh-rel    like refresh but with a relative refresh target
 //	empty-html     markdown empty; html has content (no refresh)
 //	block-all      HTTP 0 even through the proxy
+//	share-ok       calls carrying --inject-script print $FAKE_SHARE_OUT (a
+//	               parked share-content envelope prepared by the test);
+//	               other calls return the default fake markdown
+//	share-broken   calls carrying --inject-script return an html dump with
+//	               no parked element, so the share path falls back to the
+//	               DOM dump; other calls return the default fake markdown
 func writeFakeBin(t *testing.T, argsFile string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -77,6 +83,16 @@ case "$FAKE_MODE" in
       *) echo '{"url":"u","http_status":200,"content":""}' ;;
     esac ;;
   block-all) echo '{"url":"u","http_status":0,"content":""}' ;;
+  share-ok)
+    case " $* " in
+      *" --inject-script "*) printf '%s\n' "$FAKE_SHARE_OUT" ;;
+      *) printf '%s\n' '{"url":"u","http_status":200,"content":"# Fake Markdown\n"}' ;;
+    esac ;;
+  share-broken)
+    case " $* " in
+      *" --inject-script "*) printf '%s\n' '{"url":"u","http_status":200,"content":"<html><body>no parked content</body></html>"}' ;;
+      *) printf '%s\n' '{"url":"u","http_status":200,"content":"# Fake Markdown\n"}' ;;
+    esac ;;
   *) printf '%s\n' '{"url":"u","http_status":200,"content":"# Fake Markdown\n"}' ;;
 esac
 `

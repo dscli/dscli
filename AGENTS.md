@@ -86,7 +86,7 @@ Tests get an isolated database: `context.IsTesting()` → `/tmp/dscli-test-<bina
 | `internal/lockfile/` | Per-project process lock for chat sessions |
 | `internal/editor/` | External editor integration (emacsclient-aware) |
 | `internal/shell/` | Safe shell execution via mvdan/sh |
-| `internal/lp/` | Web page reading via `lightpanda fetch` CLI, DeepSeek web login/chat (chromedp) with overload/truncation detection and conversation registry; `HandleWebChat` is the high-level entry point (retry + DSML tool loop) shared by ask_expert and the webchat CLI |
+| `internal/lp/` | Web page reading via `lightpanda fetch` CLI (DeepSeek share links read the full conversation from the share-content API: the page's virtualized message list truncates DOM dumps; see `share.go`), DeepSeek web login/chat (chromedp) with overload/truncation detection and conversation registry; `HandleWebChat` is the high-level entry point (retry + DSML tool loop) shared by ask_expert and the webchat CLI |
 | `internal/mcphub/` | Multi-MCP-server connections; dispatches unknown tools |
 | `internal/memories/` | Persistent cross-session memory with FTS5 |
 | `internal/tokenizer/` | Chinese+English segmentation for FTS5 (gse) |

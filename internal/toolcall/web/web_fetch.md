@@ -29,6 +29,11 @@ Prefer it for read-only page retrieval: search results, docs, articles.
 
 ## Notes
 
+- DeepSeek share links (`chat.deepseek.com/share/...`) are read through the
+  share-content API: the page's message list is virtualized, so a DOM dump
+  would only contain the first screenful. The markdown output then holds the
+  full conversation, including thinking, search sources and attachments.
+  Other dump formats still return the raw page.
 - Each call is a fresh process: no shared state.
 - HTTP timeout 300s, page JS capped at 60s (330s backstop) - endless
   scripts cannot hang the call.

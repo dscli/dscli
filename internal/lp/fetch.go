@@ -100,7 +100,7 @@ func Fetch(ctx context.Context, rawURL string, opts FetchOptions) (string, error
 	span, ctx := clog.StartSpanFromContext(ctx, "Fetch")
 	defer span.Finish()
 
-	text, err := fetchWithDepth(ctx, rawURL, opts, 0)
+	text, err := fetchResolved(ctx, rawURL, opts)
 	if err != nil {
 		return "", err
 	}
@@ -116,6 +116,34 @@ func Fetch(ctx context.Context, rawURL string, opts FetchOptions) (string, error
 	return text, nil
 }
 
+// fetchResolved picks the retrieval strategy for rawURL.  DeepSeek share
+// pages take the share-content API (their virtualized message list makes a
+// DOM dump structurally incomplete - see share.go); a share failure falls
+// back to the regular path, because partial content still beats failing.
+// Every other URL goes straight to the regular fetching strategy.
+func fetchResolved(ctx context.Context, rawURL string, opts FetchOptions) (string, error) {
+	if dumpMode(opts) == "markdown" {
+		if shareID, ok := deepSeekShareID(rawURL); ok {
+			text, err := fetchShareMarkdown(ctx, rawURL, shareID, opts)
+			if err == nil {
+				return text, nil
+			}
+			// Partial content still beats failing: fall through to the
+			// regular path.
+			clog.Debug(ctx, "deepseek share fetch failed; falling back to page dump", "url", rawURL, "err", err)
+		}
+	}
+	return fetchWithDepth(ctx, rawURL, opts, 0)
+}
+
+// dumpMode returns the effective dump mode for opts (markdown when unset).
+func dumpMode(opts FetchOptions) string {
+	if opts.Dump == "" {
+		return "markdown"
+	}
+	return opts.Dump
+}
+
 // fetchWithDepth is the recursive core of Fetch.  depth tracks followed
 // meta-refresh hops and caps the recursion via maxRefreshFollows.
 func fetchWithDepth(ctx context.Context, rawURL string, opts FetchOptions, depth int) (string, error) {
@@ -124,10 +152,7 @@ func fetchWithDepth(ctx context.Context, rawURL string, opts FetchOptions, depth
 		return "", fmt.Errorf("lightpanda not found in PATH: %w", err)
 	}
 
-	dump := opts.Dump
-	if dump == "" {
-		dump = "markdown"
-	}
+	dump := dumpMode(opts)
 	term := opts.TerminateMS
 	if term == 0 {
 		term = terminateMS
@@ -185,14 +210,30 @@ func fetchOnce(ctx context.Context, path, rawURL, dump, proxy string, timeoutMS,
 	if err != nil {
 		return "", err
 	}
+	res, err := decodeFetchResult(out)
+	if err != nil {
+		return "", err
+	}
+	return validateFetchResult(rawURL, res, proxy)
+}
+
+// decodeFetchResult parses lightpanda's --json output.
+func decodeFetchResult(out string) (fetchResult, error) {
 	var res fetchResult
 	if err := json.Unmarshal([]byte(out), &res); err != nil {
 		preview := out
 		if len(preview) > 100 {
 			preview = preview[:100]
 		}
-		return "", fmt.Errorf("lightpanda fetch: parse --json output: %w (output: %q)", err, preview)
+		return res, fmt.Errorf("lightpanda fetch: parse --json output: %w (output: %q)", err, preview)
 	}
+	return res, nil
+}
+
+// validateFetchResult turns a parsed --json result into dump text or an
+// error.  proxy names the proxy of the attempt (for status-0 diagnostics)
+// and is empty for direct attempts.
+func validateFetchResult(rawURL string, res fetchResult, proxy string) (string, error) {
 	switch {
 	case res.HTTPStatus == 0:
 		if isGoogleHost(rawURL) {
