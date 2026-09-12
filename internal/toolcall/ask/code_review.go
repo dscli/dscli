@@ -3,7 +3,10 @@ package ask
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -12,8 +15,9 @@ import (
 
 	_ "embed"
 
-	"github.com/dscli/dscli/internal/dsml"
+	"github.com/dscli/dscli/internal/lp"
 	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/prompt"
 	"github.com/dscli/dscli/internal/shell"
 	"github.com/dscli/dscli/internal/toolcall"
 	"github.com/nanjj/clog"
@@ -51,16 +55,14 @@ var codeReviewTool = toolcall.ToolDef{
 		"additionalProperties": false,
 	},
 	Category: "check",
-	// The expert may run multiple tool-call rounds (each needs a browser
-	// session + a model reply), so the budget must cover a full loop, not
-	// just a single WebChat exchange. 30 minutes: a review of a large diff
-	// can take several rounds, and 15 minutes proved too short.
+	// One browser session plus model generation: a large review can take
+	// several minutes to generate, and 15 minutes proved too short.
 	Timeout: 30 * time.Minute,
 	Handler: handleCodeReview,
 }
 
 func init() {
-	// WebChat is always available (free DeepSeek V4 Pro) — no API key needed.
+	// WebChat is always available (free DeepSeek Web) — no API key needed.
 	toolcall.RegisterTool(codeReviewTool)
 }
 
@@ -86,8 +88,9 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result, warn
 		return result, warning, err
 	}
 
-	// 校验 since 格式
-	if err := parseSince(since); err != nil {
+	// 校验 since 格式（并取出提交数，用于列出变更文件）
+	commits, err := parseSince(since)
+	if err != nil {
 		outfmt.Printf("❌ since 参数格式错误: %v\n", err)
 		return result, warning, err
 	}
@@ -172,19 +175,131 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result, warn
 		return result, warning, err
 	}
 
-	// 首次请求只带提交信息 + diff：review 专家在 WebChat 工具循环里按
-	// review 角色的工具配置（role_configs / roles.DefaultFor，默认无工具）
-	// 注册 read_file/shell 等 DSML 工具（见 internal/prompt/review.md
-	// 与 dsml.BuildDSMLToolDoc），需要改动文件全文或项目指南
-	// （AGENTS.md）时会自己读取，不再预先注入 - 避免输入预算被全文挤占，
-	// 也让专家按需深读任意上下文。未配置工具时审查只能依赖 diff 本身，
-	// 明确提示配置方法，避免静默退化。
-	if doc := dsml.BuildDSMLToolDoc(ctx, "review"); doc.Intro == "" {
-		fmt.Fprintf(os.Stderr, "⚠️ review 角色未配置 DSML 工具（默认无工具）：专家将无法读取文件/执行命令，审查限于提交内容。可运行 `dscli role update review --tools shell,read_file` 启用。\n")
+	// 审查输入全部作为附件上传：review-guide.md（渲染后的 review 提示词）、
+	// changes.patch（完整 diff）、变更文件全文（附件名编码仓库路径）、
+	// AGENTS.md（存在时）和 gocyclo.txt（变更 Go 文件的圈复杂度报告）。
+	// review 角色默认没有可执行工具（role_configs / roles.DefaultFor），
+	// 专家静态地基于这些输入完成审查；消息正文只承载摘要、提交信息和覆盖
+	// 清单（哪些文件没有附上），让盲区显式可见。
+	repoRoot, err := gitRepoRoot(ctx)
+	if err != nil {
+		return result, warning, err
 	}
-	structuredRequest, warning := truncateReviewRequest(summary, fullLog, patch)
-	outfmt.Printf("📤 发送代码审查请求到 DeepSeek Web（免费 V4 Pro）...\n%s\n", structuredRequest)
-	result, err = AskExpertWithRole(ctx, structuredRequest, "review")
+	dir, err := os.MkdirTemp("", "dscli-code-review-*")
+	if err != nil {
+		err = fmt.Errorf("创建审查附件目录失败: %w", err)
+		return result, warning, err
+	}
+	defer os.RemoveAll(dir)
+
+	var candidates []candidateFile
+	var skipped []string
+	for _, p := range listChangedFiles(ctx, commits) {
+		info, statErr := os.Stat(filepath.Join(repoRoot, p))
+		if statErr != nil || !info.Mode().IsRegular() {
+			// 删除的文件、子模块等没有全文附件；git log 回退路径还会列出
+			// 二进制文件（不适合作为文本上传），一并跳过并在覆盖清单里说明。
+			skipped = append(skipped, p)
+			continue
+		}
+		candidates = append(candidates, candidateFile{path: p, size: info.Size()})
+	}
+	changed := make([]string, 0, len(candidates))
+	var goFiles []string
+	for _, c := range candidates {
+		changed = append(changed, c.path)
+		if strings.HasSuffix(c.path, ".go") {
+			goFiles = append(goFiles, c.path)
+		}
+	}
+	sort.Strings(changed)
+
+	guide := prompt.RenderPromptForRole(ctx, "review")
+	agents := ""
+	if b, readErr := os.ReadFile(filepath.Join(repoRoot, reviewAgentsName)); readErr == nil {
+		agents = string(b)
+	}
+	gocyclo := runGocyclo(ctx, repoRoot, goFiles)
+
+	plan := reviewPlan{CommitCount: commits, Changed: changed, Skipped: skipped}
+	// 固定附件优先：guide/patch/AGENTS.md/gocyclo 先占预算，patch 只在自身
+	// 超预算时才按文件区段丢弃（越小越优先保留，覆盖面最大）。
+	patchBody := patch
+	othersBytes := int64(len(guide)) + int64(len(gocyclo))
+	if agents != "" {
+		othersBytes += int64(len(agents))
+	}
+	if othersBytes+int64(len(patchBody)) > int64(lp.WebUploadMaxTotal) {
+		budget := int64(lp.WebUploadMaxTotal) - othersBytes
+		if budget < 0 {
+			budget = 0
+		}
+		patchBody, plan.PatchDropped = truncatePatchToBudget(patchBody, int(budget))
+		plan.PatchTruncated = true
+	}
+	fixedBytes := othersBytes + int64(len(patchBody))
+	fixedCount := 3 // guide + patch + gocyclo
+	if agents != "" {
+		fixedCount++
+	}
+	kept, dropped := selectReviewFiles(candidates, lp.WebUploadMaxFiles-fixedCount, int64(lp.WebUploadMaxTotal)-fixedBytes)
+
+	attachments := make([]string, 0, fixedCount+len(kept))
+	for _, f := range []struct{ name, content string }{
+		{reviewGuideName, guide},
+		{reviewPatchName, patchBody},
+		{reviewGocycloName, gocyclo},
+	} {
+		p, werr := writeReviewFile(dir, f.name, f.content)
+		if werr != nil {
+			err = werr
+			return result, warning, err
+		}
+		attachments = append(attachments, p)
+	}
+	if agents != "" {
+		p, werr := writeReviewFile(dir, reviewAgentsName, agents)
+		if werr != nil {
+			err = werr
+			return result, warning, err
+		}
+		attachments = append(attachments, p)
+	}
+
+	usedNames := map[string]bool{
+		reviewGuideName:   true,
+		reviewPatchName:   true,
+		reviewGocycloName: true,
+	}
+	if agents != "" {
+		usedNames[reviewAgentsName] = true
+	}
+	attached := make([]string, 0, len(kept))
+	notAttached := make([]string, 0, len(dropped))
+	for _, d := range dropped {
+		notAttached = append(notAttached, d.path)
+	}
+	for _, c := range kept {
+		name := uniqueAttachmentName(usedNames, encodeAttachmentName(c.path))
+		p, cerr := copyReviewFile(dir, name, filepath.Join(repoRoot, c.path))
+		if cerr != nil {
+			fmt.Fprintf(os.Stderr, "⚠️ 附件复制失败: %v\n", cerr)
+			notAttached = append(notAttached, c.path)
+			continue
+		}
+		attachments = append(attachments, p)
+		attached = append(attached, c.path)
+	}
+	sort.Strings(attached)
+	sort.Strings(notAttached)
+	plan.Attached = attached
+	plan.NotAttached = notAttached
+
+	message := buildReviewMessage(summary, fullLog, plan)
+	outfmt.Printf("📤 发送代码审查请求到 DeepSeek Web（免费）...\n%s\n", message)
+	outfmt.Printf("📎 附件 %d 个（%d 个变更文件全文，%d 个文件未附）\n", len(attachments), len(attached), len(notAttached))
+	warning = reviewAttachmentWarning(plan)
+	result, err = AskExpertWithRoleFiles(ctx, message, "review", attachments)
 	if err != nil {
 		err = fmt.Errorf("代码审查失败: %w", err)
 		return result, warning, err
@@ -194,16 +309,363 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result, warn
 	return result, warning, err
 }
 
-// parseSince 校验 since 参数：必须是 "-N" 格式（如 "-1", "-2", "-3"）。
-func parseSince(since string) error {
+// parseSince 校验并解析 since 参数：必须是 "-N" 格式（如 "-1", "-2", "-3"），
+// 返回提交数 N（用于列出变更文件）。
+func parseSince(since string) (int, error) {
 	if !strings.HasPrefix(since, "-") {
-		return fmt.Errorf("格式必须为 '-N'（如 '-1', '-2', '-3'），当前值: %q", since)
+		return 0, fmt.Errorf("格式必须为 '-N'（如 '-1', '-2', '-3'），当前值: %q", since)
 	}
 	n, err := strconv.Atoi(since[1:])
 	if err != nil || n < 1 {
-		return fmt.Errorf("格式必须为 '-N'（如 '-1', '-2', '-3'），当前值: %q", since)
+		return 0, fmt.Errorf("格式必须为 '-N'（如 '-1', '-2', '-3'），当前值: %q", since)
 	}
-	return nil
+	return n, nil
+}
+
+// ---------- 审查附件 ----------
+
+// Review attachment names: the fixed inputs always uploaded (when available)
+// under these names. Changed files are uploaded under path-encoded names (see
+// encodeAttachmentName).
+const (
+	reviewGuideName   = "review-guide.md"
+	reviewPatchName   = "changes.patch"
+	reviewAgentsName  = "AGENTS.md"
+	reviewGocycloName = "gocyclo.txt"
+)
+
+// maxReviewCommitLogRunes caps the commit-message section of the request
+// message: a very long multi-commit log must not push the coverage note past
+// a site-truncated send, and the head of the log carries the subject lines a
+// reviewer needs first.
+const maxReviewCommitLogRunes = 40000
+
+// gocycloThreshold is the project standard for cyclomatic complexity; the
+// report lists functions above it (values 21+).
+const gocycloThreshold = 20
+
+// runGocyclo is the gocyclo runner used by handleCodeReview. A package
+// variable so tests can inject a fake (no external binary needed there).
+var runGocyclo = gocycloCmd
+
+// gocycloCmd runs `gocyclo -over <threshold>` over the changed Go files (dir =
+// repo root) and returns the report attached as gocyclo.txt. Failures (missing
+// binary, unparsable file) are reported IN the report instead of failing the
+// review: complexity is a secondary signal, not a gate.
+func gocycloCmd(ctx context.Context, dir string, files []string) string {
+	if len(files) == 0 {
+		return "No changed Go files in this review.\n"
+	}
+	if _, err := exec.LookPath("gocyclo"); err != nil {
+		return fmt.Sprintf("gocyclo not found on PATH; cyclomatic complexity was not measured. Changed Go files: %s\n", strings.Join(files, ", "))
+	}
+	args := append([]string{"-over", strconv.Itoa(gocycloThreshold)}, files...)
+	cmd := exec.CommandContext(ctx, "gocyclo", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	report := fmt.Sprintf("gocyclo -over %d (project threshold), %d changed Go file(s):\n", gocycloThreshold, len(files))
+	trimmed := strings.TrimSpace(string(out))
+	switch {
+	case trimmed != "" && err == nil:
+		report += trimmed + "\n"
+	case trimmed != "":
+		report += trimmed + fmt.Sprintf("\n(gocyclo exited with an error: %v; the report may be partial)\n", err)
+	case err == nil:
+		report += fmt.Sprintf("No function above the cyclomatic threshold (%d).\n", gocycloThreshold)
+	default:
+		report += fmt.Sprintf("gocyclo failed: %v\n", err)
+	}
+	return report
+}
+
+// gitRepoRoot returns the toplevel directory of the git repository containing
+// the working directory. Git reports repository-relative paths even when run
+// from a subdirectory, so every file lookup (changed files, AGENTS.md,
+// gocyclo) resolves against this root.
+func gitRepoRoot(ctx context.Context) (string, error) {
+	out, err := shell.SimpleExecute(ctx, "git rev-parse --show-toplevel")
+	if err != nil {
+		return "", fmt.Errorf("无法定位 git 仓库根目录: %w", err)
+	}
+	root := strings.TrimSpace(out)
+	if root == "" {
+		return "", fmt.Errorf("无法定位 git 仓库根目录: 输出为空")
+	}
+	return root, nil
+}
+
+// parseNumstat parses `git diff --numstat` output into changed file paths.
+// Binary files (both counters "-") are skipped. With --no-renames a rename
+// shows as delete + add; the deleted path is filtered later by the on-disk
+// existence check.
+func parseNumstat(out string) []string {
+	var paths []string
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.SplitN(line, "\t", 3)
+		if len(fields) != 3 {
+			continue
+		}
+		if fields[0] == "-" && fields[1] == "-" {
+			continue // binary file
+		}
+		if p := strings.TrimSpace(fields[2]); p != "" {
+			paths = append(paths, p)
+		}
+	}
+	return paths
+}
+
+// parseNameOnly parses `git log --name-only --pretty=format:` output into a
+// deduplicated path list. Used when the diff range is unavailable (e.g. a
+// shallow clone where HEAD~N does not resolve); the list can include deleted
+// and binary files, which the caller filters against the filesystem.
+func parseNameOnly(out string) []string {
+	seen := map[string]bool{}
+	var paths []string
+	for _, line := range strings.Split(out, "\n") {
+		p := strings.TrimSpace(line)
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		paths = append(paths, p)
+	}
+	return paths
+}
+
+// listChangedFiles returns the files touched by the last n commits. The
+// primary path is `git diff --numstat` over HEAD~n..HEAD; when the range does
+// not resolve (shallow history), it falls back to `git log --name-only`.
+// Returns nil when both fail - the review then proceeds with the patch alone.
+func listChangedFiles(ctx context.Context, n int) []string {
+	out, err := shell.SimpleExecute(ctx, fmt.Sprintf("git diff --numstat --no-renames HEAD~%d..HEAD", n))
+	if err == nil {
+		return parseNumstat(out)
+	}
+	out, err = shell.SimpleExecute(ctx, fmt.Sprintf("git log --name-only --pretty=format: -n %d", n))
+	if err != nil {
+		return nil
+	}
+	return parseNameOnly(out)
+}
+
+// candidateFile is a changed file that can be attached, with its size on disk.
+type candidateFile struct {
+	path string
+	size int64
+}
+
+// selectReviewFiles greedily keeps the smallest files first while both the
+// attachment count and byte budgets allow (the site caps uploads at 50 files
+// and 100MB; code_review pre-drops inputs instead of failing the whole call).
+// Smallest-first maximizes the number of files with full-content context; the
+// complete diff is in changes.patch either way. Kept and dropped are returned
+// sorted by path for stable output.
+func selectReviewFiles(files []candidateFile, maxCount int, maxBytes int64) (kept, dropped []candidateFile) {
+	sorted := make([]candidateFile, len(files))
+	copy(sorted, files)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].size != sorted[j].size {
+			return sorted[i].size < sorted[j].size
+		}
+		return sorted[i].path < sorted[j].path
+	})
+	var used int64
+	for _, f := range sorted {
+		if len(kept) < maxCount && used+f.size <= maxBytes {
+			kept = append(kept, f)
+			used += f.size
+			continue
+		}
+		dropped = append(dropped, f)
+	}
+	sortByPath(kept)
+	sortByPath(dropped)
+	return kept, dropped
+}
+
+// sortByPath sorts candidate files by path.
+func sortByPath(files []candidateFile) {
+	sort.Slice(files, func(i, j int) bool { return files[i].path < files[j].path })
+}
+
+// encodeAttachmentName maps a repo-relative path to a flat attachment file
+// name: path separators become "__" (internal/lp/doc.go ->
+// internal__lp__doc.go). Uploads keep only the base name, so the encoded form
+// is what the expert sees; the request message explains the encoding and
+// changes.patch carries the real paths.
+func encodeAttachmentName(path string) string {
+	return strings.ReplaceAll(path, "/", "__")
+}
+
+// uniqueAttachmentName appends a numeric suffix when an earlier file already
+// mapped to the same encoded name (a/b__c vs a__b/c both encode to a__b__c),
+// so no attachment silently overwrites another.
+func uniqueAttachmentName(used map[string]bool, name string) string {
+	if !used[name] {
+		used[name] = true
+		return name
+	}
+	for i := 2; ; i++ {
+		candidate := fmt.Sprintf("%s_%d", name, i)
+		if !used[candidate] {
+			used[candidate] = true
+			return candidate
+		}
+	}
+}
+
+// writeReviewFile writes one attachment file into dir and returns its path.
+func writeReviewFile(dir, name, content string) (string, error) {
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		return "", fmt.Errorf("写入审查附件 %s 失败: %w", name, err)
+	}
+	return path, nil
+}
+
+// copyReviewFile copies a changed file into dir under the given attachment
+// name and returns the new path.
+func copyReviewFile(dir, name, source string) (string, error) {
+	in, err := os.Open(source)
+	if err != nil {
+		return "", fmt.Errorf("打开 %s 失败: %w", source, err)
+	}
+	defer in.Close()
+	path := filepath.Join(dir, name)
+	out, err := os.Create(path)
+	if err != nil {
+		return "", fmt.Errorf("创建附件 %s 失败: %w", name, err)
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return "", fmt.Errorf("复制 %s 失败: %w", source, err)
+	}
+	if err := out.Close(); err != nil {
+		return "", fmt.Errorf("关闭附件 %s 失败: %w", name, err)
+	}
+	return path, nil
+}
+
+// dropSectionsToBytes greedily keeps the smallest patch sections until the
+// byte budget is exhausted (smallest-first: maximal coverage count).
+func dropSectionsToBytes(sections []namedSection, maxBytes int) (kept, dropped []namedSection) {
+	sort.Slice(sections, func(i, j int) bool { return len(sections[i].text) < len(sections[j].text) })
+	used := 0
+	for _, s := range sections {
+		if used+len(s.text) <= maxBytes {
+			kept = append(kept, s)
+			used += len(s.text)
+		} else {
+			dropped = append(dropped, s)
+		}
+	}
+	return kept, dropped
+}
+
+// sectionNames returns the file names of the patch sections.
+func sectionNames(secs []namedSection) []string {
+	names := make([]string, 0, len(secs))
+	for _, s := range secs {
+		names = append(names, s.name)
+	}
+	return names
+}
+
+// truncatePatchToBudget drops whole file sections (smallest first) until the
+// patch fits maxBytes (attachment limits are file sizes, so this budget is in
+// bytes), and reports the dropped section names. A defensive path: the diff
+// is the primary review input and is only cut when it alone blows the upload
+// budget.
+func truncatePatchToBudget(patch string, maxBytes int) (string, []string) {
+	secs := splitPatchByFile(patch)
+	if maxBytes <= 0 {
+		return "", sectionNames(secs)
+	}
+	kept, dropped := dropSectionsToBytes(secs, maxBytes)
+	if len(dropped) == 0 {
+		return patch, nil
+	}
+	return joinNamed(kept), sectionNames(dropped)
+}
+
+// reviewPlan describes what the review request carries; it drives the
+// message's coverage note (the expert must know what it cannot see) and the
+// local warning.
+type reviewPlan struct {
+	CommitCount    int      // commits under review
+	Changed        []string // reviewable changed files (existing, non-binary)
+	Skipped        []string // changed entries skipped (deleted, binary, unreadable)
+	Attached       []string // repo paths attached with full content
+	NotAttached    []string // repo paths not attached (attachment budget / read error)
+	PatchDropped   []string // files whose patch section was dropped
+	PatchTruncated bool     // the patch was cut to fit the upload budget
+}
+
+// capCommitLog head-caps the commit-message section at
+// maxReviewCommitLogRunes with an explicit marker.
+func capCommitLog(log string) string {
+	if countRunes(log) <= maxReviewCommitLogRunes {
+		return log
+	}
+	return cutToRuneLen(log, maxReviewCommitLogRunes) + "\n[commit message truncated for length]"
+}
+
+// buildReviewMessage assembles the first message: commit background, the
+// capped commit message, one line describing the attached inputs, and the
+// coverage note. The coverage note replaces the old in-body truncation note:
+// with every input uploaded as an attachment, the message is the only place
+// that can name the blind spots (files not attached, patch sections dropped).
+func buildReviewMessage(summary, commitLog string, plan reviewPlan) string {
+	var sb strings.Builder
+	sb.WriteString("## Commit Background\n")
+	sb.WriteString(summary)
+	sb.WriteString("\n\n## Commit Message\n")
+	sb.WriteString(capCommitLog(commitLog))
+	sb.WriteString("\n\n## Review Inputs\n")
+	sb.WriteString("All review inputs are attached to this message: review-guide.md (the review instructions - follow them), ")
+	sb.WriteString("changes.patch (the complete diff), the full content of every changed file, AGENTS.md (project guide) ")
+	sb.WriteString("and gocyclo.txt (cyclomatic complexity of the changed Go files, project threshold 20). ")
+	sb.WriteString("Attachment file names encode repo paths: \"internal__lp__webchat.go\" is \"internal/lp/webchat.go\".\n")
+	sb.WriteString("\n## Coverage\n")
+	fmt.Fprintf(&sb, "- Commits under review: %d.\n", plan.CommitCount)
+	fmt.Fprintf(&sb, "- Changed files: %d (%d skipped as deleted/binary/unreadable).\n", len(plan.Changed)+len(plan.Skipped), len(plan.Skipped))
+	fmt.Fprintf(&sb, "- Full content attached: %d file(s).\n", len(plan.Attached))
+	if len(plan.NotAttached) == 0 {
+		sb.WriteString("- Not attached: none.\n")
+	} else {
+		fmt.Fprintf(&sb, "- NOT attached (attachment budget): %s\n", strings.Join(plan.NotAttached, ", "))
+	}
+	if plan.PatchTruncated {
+		fmt.Fprintf(&sb, "- changes.patch was truncated: patch sections missing for %s\n", strings.Join(plan.PatchDropped, ", "))
+	}
+	return sb.String()
+}
+
+// reviewAttachmentWarning summarizes the coverage gaps for the local caller,
+// capped like the old truncation warning. The same information rides in the
+// request message for the expert.
+func reviewAttachmentWarning(plan reviewPlan) string {
+	var parts []string
+	if n := len(plan.NotAttached); n > 0 {
+		parts = append(parts, fmt.Sprintf("附件预算不足，未附上 %d 个文件的全文: %s", n, cappedList(plan.NotAttached)))
+	}
+	if plan.PatchTruncated {
+		parts = append(parts, fmt.Sprintf("patch 超预算已截断，缺少区段: %s", cappedList(plan.PatchDropped)))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "⚠️ " + strings.Join(parts, "；") + "。"
+}
+
+// cappedList joins names for terminal output, capping the listed count at
+// maxWarnList with an explicit remainder.
+func cappedList(names []string) string {
+	if len(names) <= maxWarnList {
+		return strings.Join(names, ", ")
+	}
+	return strings.Join(names[:maxWarnList], ", ") + fmt.Sprintf(" …等共 %d 个", len(names))
 }
 
 // ---------- 请求构建 ----------

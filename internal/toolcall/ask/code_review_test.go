@@ -3,7 +3,12 @@ package ask
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -463,5 +468,338 @@ func TestCutToRuneLenNegativeBudget(t *testing.T) {
 		if got != "" {
 			t.Errorf("cutToRuneLen(s, %d) = %q, want empty", n, got)
 		}
+	}
+}
+
+// ---------- 附件装配（code_review 输入附件化） ----------
+
+func TestParseNumstat(t *testing.T) {
+	out := "1\t2\tinternal/a.go\n-\t-\tassets/logo.png\n3\t0\tb.md\n\nbroken line\n4\t5\tc/d.go\n"
+	got := parseNumstat(out)
+	want := []string{"internal/a.go", "b.md", "c/d.go"}
+	if !slices.Equal(got, want) {
+		t.Errorf("parseNumstat = %v, want %v (binary and malformed lines skipped)", got, want)
+	}
+	if got := parseNumstat(""); got != nil {
+		t.Errorf("parseNumstat(\"\") = %v, want nil", got)
+	}
+}
+
+func TestParseNameOnly(t *testing.T) {
+	out := "a.go\n\nb/c.go\na.go\n"
+	got := parseNameOnly(out)
+	want := []string{"a.go", "b/c.go"}
+	if !slices.Equal(got, want) {
+		t.Errorf("parseNameOnly = %v, want %v (blank lines dropped, deduplicated)", got, want)
+	}
+}
+
+func TestEncodeAttachmentName(t *testing.T) {
+	cases := map[string]string{
+		"main.go":                "main.go",
+		"internal/lp/webchat.go": "internal__lp__webchat.go",
+		"a/b/c.txt":              "a__b__c.txt",
+	}
+	for in, want := range cases {
+		if got := encodeAttachmentName(in); got != want {
+			t.Errorf("encodeAttachmentName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestUniqueAttachmentName(t *testing.T) {
+	used := map[string]bool{}
+	for i, want := range []string{"x.go", "x.go_2", "x.go_3"} {
+		if got := uniqueAttachmentName(used, "x.go"); got != want {
+			t.Errorf("collision %d: got %q, want %q", i, got, want)
+		}
+	}
+}
+
+func TestSelectReviewFiles(t *testing.T) {
+	files := []candidateFile{
+		{path: "big.go", size: 100},
+		{path: "tiny.go", size: 1},
+		{path: "mid.go", size: 10},
+	}
+
+	// Smallest-first: the two smallest fit the count budget.
+	kept, dropped := selectReviewFiles(files, 2, 1000)
+	if len(kept) != 2 || kept[0].path != "mid.go" || kept[1].path != "tiny.go" {
+		t.Errorf("kept = %v, want [mid.go tiny.go] (path-sorted)", kept)
+	}
+	if len(dropped) != 1 || dropped[0].path != "big.go" {
+		t.Errorf("dropped = %v, want [big.go]", dropped)
+	}
+
+	// Byte budget: only the tiny file fits.
+	kept, dropped = selectReviewFiles(files, 10, 5)
+	if len(kept) != 1 || kept[0].path != "tiny.go" {
+		t.Errorf("byte-limited kept = %v, want [tiny.go]", kept)
+	}
+	if len(dropped) != 2 {
+		t.Errorf("byte-limited dropped = %v, want 2 entries", dropped)
+	}
+
+	// Zero count budget keeps nothing.
+	kept, dropped = selectReviewFiles(files, 0, 1000)
+	if len(kept) != 0 || len(dropped) != 3 {
+		t.Errorf("zero-count result kept=%v dropped=%v", kept, dropped)
+	}
+}
+
+func TestCapCommitLog(t *testing.T) {
+	small := "fix: something"
+	if got := capCommitLog(small); got != small {
+		t.Errorf("capCommitLog(small) = %q, want unchanged", got)
+	}
+
+	big := strings.Repeat("x", maxReviewCommitLogRunes+500)
+	got := capCommitLog(big)
+	if countRunes(got) > maxReviewCommitLogRunes+64 {
+		t.Errorf("capped log has %d runes, want about %d", countRunes(got), maxReviewCommitLogRunes)
+	}
+	if !strings.HasSuffix(got, "[commit message truncated for length]") {
+		t.Errorf("capped log missing truncation marker: %q", got[len(got)-60:])
+	}
+}
+
+func TestTruncatePatchToBudget(t *testing.T) {
+	secA := "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n@@ -1 +1 @@\n-a\n+b\n"
+	secB := "diff --git a/b.go b/b.go\n--- a/b.go\n+++ b/b.go\n@@ -1 +1 @@\n" + strings.Repeat("-old\n+new\n", 50)
+	patch := secA + secB
+
+	// Budget fits only the smaller section; the dropped file is reported.
+	kept, dropped := truncatePatchToBudget(patch, len(secA))
+	if kept != secA {
+		t.Errorf("kept = %q, want only section a", kept)
+	}
+	if len(dropped) != 1 || dropped[0] != "b.go" {
+		t.Errorf("dropped = %v, want [b.go]", dropped)
+	}
+
+	// Everything fits: the patch passes through byte-for-byte. (The splitter
+	// adds one trailing newline per section, so the full-size budget is
+	// len(patch)+1.)
+	if got, dropped := truncatePatchToBudget(patch, len(patch)+1); got != patch || dropped != nil {
+		t.Errorf("full budget must keep the patch intact (dropped=%v)", dropped)
+	}
+
+	// Zero budget: nothing kept, both files reported.
+	if got, dropped := truncatePatchToBudget(patch, 0); got != "" || len(dropped) != 2 {
+		t.Errorf("zero budget: got %q, dropped %v", got, dropped)
+	}
+}
+
+func TestBuildReviewMessage(t *testing.T) {
+	plan := reviewPlan{
+		CommitCount: 2,
+		Changed:     []string{"a.go", "b.go"},
+		Skipped:     []string{"gone.go"},
+		Attached:    []string{"a.go", "b.go"},
+	}
+	msg := buildReviewMessage("summary text", "commit body", plan)
+	for _, want := range []string{
+		"## Commit Background",
+		"summary text",
+		"## Commit Message",
+		"commit body",
+		"## Review Inputs",
+		"review-guide.md",
+		"changes.patch",
+		"gocyclo.txt",
+		"internal__lp__webchat.go",
+		"## Coverage",
+		"Commits under review: 2.",
+		"Changed files: 3 (1 skipped as deleted/binary/unreadable).",
+		"Full content attached: 2 file(s).",
+		"- Not attached: none.",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message missing %q:\n%s", want, msg)
+		}
+	}
+
+	// Budget drops and patch truncation are named explicitly.
+	plan.NotAttached = []string{"c.go"}
+	plan.PatchTruncated = true
+	plan.PatchDropped = []string{"d.go"}
+	msg = buildReviewMessage("s", "l", plan)
+	if !strings.Contains(msg, "NOT attached (attachment budget): c.go") {
+		t.Errorf("message must list not-attached files:\n%s", msg)
+	}
+	if !strings.Contains(msg, "changes.patch was truncated") || !strings.Contains(msg, "d.go") {
+		t.Errorf("message must report patch truncation:\n%s", msg)
+	}
+}
+
+func TestReviewAttachmentWarning(t *testing.T) {
+	if got := reviewAttachmentWarning(reviewPlan{}); got != "" {
+		t.Errorf("warning = %q, want empty for full coverage", got)
+	}
+	got := reviewAttachmentWarning(reviewPlan{
+		NotAttached:    []string{"a.go"},
+		PatchTruncated: true,
+		PatchDropped:   []string{"b.go"},
+	})
+	for _, want := range []string{"a.go", "b.go", "截断"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("warning missing %q: %q", want, got)
+		}
+	}
+}
+
+func TestGocycloCmd(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script fake is Unix-only")
+	}
+	if got := gocycloCmd(context.Background(), "", nil); !strings.Contains(got, "No changed Go files") {
+		t.Errorf("empty file list report = %q", got)
+	}
+
+	// Missing binary: the report says so instead of failing the review.
+	t.Setenv("PATH", t.TempDir())
+	if got := gocycloCmd(context.Background(), "", []string{"a.go"}); !strings.Contains(got, "not found") {
+		t.Errorf("missing-binary report = %q", got)
+	}
+
+	// Fake binary: its output is embedded in the report.
+	dir := t.TempDir()
+	script := filepath.Join(dir, "gocyclo")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"21 main.foo a.go:1:1\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	got := gocycloCmd(context.Background(), "", []string{"a.go"})
+	if !strings.Contains(got, "21 main.foo a.go:1:1") || !strings.Contains(got, fmt.Sprintf("-over %d", gocycloThreshold)) {
+		t.Errorf("fake-binary report = %q", got)
+	}
+}
+
+// TestHandleCodeReviewAttachments drives the full handler against a throwaway
+// git repository: every review input (guide, patch, gocyclo report, changed
+// file, AGENTS.md) must arrive as an attachment, the message must carry the
+// coverage note, and the temporary attachment directory must be cleaned up
+// once the expert call returns.
+func TestHandleCodeReviewAttachments(t *testing.T) {
+	repo := t.TempDir()
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		cmd.Env = append(
+			os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t",
+		)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	runGit("init", "-q")
+	if err := os.WriteFile(filepath.Join(repo, "first.go"), []byte("package main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "AGENTS.md"), []byte("# guide\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", "-A")
+	runGit("commit", "-qm", "one")
+	if err := os.WriteFile(filepath.Join(repo, "second.go"), []byte("package main\n// v2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", "-A")
+	runGit("commit", "-qm", "two")
+
+	origAsk := askExpertWithRoleFunc
+	t.Cleanup(func() { askExpertWithRoleFunc = origAsk })
+	var (
+		gotMessage     string
+		gotRole        string
+		gotSkip        bool
+		gotAttachments []string
+		attachmentData map[string]string
+	)
+	askExpertWithRoleFunc = func(_ context.Context, input, role, system, keep string, attachments []string, skip bool) (string, string, bool, error) {
+		gotMessage = input
+		gotRole = role
+		gotSkip = skip
+		gotAttachments = attachments
+		attachmentData = map[string]string{}
+		for _, p := range attachments {
+			b, rerr := os.ReadFile(p)
+			if rerr != nil {
+				t.Errorf("attachment %s unreadable: %v", p, rerr)
+				continue
+			}
+			attachmentData[filepath.Base(p)] = string(b)
+		}
+		return "[MOCK]", "", false, nil
+	}
+
+	origGocyclo := runGocyclo
+	t.Cleanup(func() { runGocyclo = origGocyclo })
+	runGocyclo = func(_ context.Context, _ string, files []string) string {
+		if !slices.Equal(files, []string{"second.go"}) {
+			t.Errorf("gocyclo files = %v, want [second.go]", files)
+		}
+		return "gocyclo report stub\n"
+	}
+
+	t.Chdir(repo)
+
+	result, warning, err := handleCodeReview(context.Background(), toolcall.ToolArgs{"summary": "test summary", "since": "-1"})
+	if err != nil {
+		t.Fatalf("handleCodeReview: %v", err)
+	}
+	if result != "[MOCK]" {
+		t.Errorf("result = %q, want [MOCK]", result)
+	}
+	if warning != "" {
+		t.Errorf("warning = %q, want empty (nothing dropped)", warning)
+	}
+	if gotRole != "review" || !gotSkip {
+		t.Errorf("ask call role=%q skip=%v, want review/skip=true", gotRole, gotSkip)
+	}
+
+	if len(gotAttachments) != 5 {
+		t.Fatalf("attachments = %v, want 5 (guide, patch, gocyclo, AGENTS.md, second.go)", gotAttachments)
+	}
+	for _, name := range []string{reviewGuideName, reviewPatchName, reviewGocycloName, reviewAgentsName, "second.go"} {
+		if _, ok := attachmentData[name]; !ok {
+			t.Errorf("attachment %q missing (paths: %v)", name, gotAttachments)
+		}
+	}
+	if len(attachmentData[reviewGuideName]) == 0 {
+		t.Errorf("review guide attachment is empty")
+	}
+	if !strings.Contains(attachmentData[reviewPatchName], "second.go") {
+		t.Errorf("patch attachment misses the change:\n%s", attachmentData[reviewPatchName])
+	}
+	if attachmentData[reviewGocycloName] != "gocyclo report stub\n" {
+		t.Errorf("gocyclo attachment = %q", attachmentData[reviewGocycloName])
+	}
+	if attachmentData[reviewAgentsName] != "# guide\n" {
+		t.Errorf("AGENTS.md attachment = %q, want the repo guide", attachmentData[reviewAgentsName])
+	}
+	if got := attachmentData["second.go"]; !strings.Contains(got, "// v2") {
+		t.Errorf("changed-file attachment = %q, want the file content", got)
+	}
+
+	for _, want := range []string{
+		"## Coverage",
+		"Commits under review: 1.",
+		"Full content attached: 1 file(s).",
+		"- Not attached: none.",
+		"test summary",
+	} {
+		if !strings.Contains(gotMessage, want) {
+			t.Errorf("message missing %q:\n%s", want, gotMessage)
+		}
+	}
+
+	// The temporary attachment directory must be gone after the call.
+	if _, serr := os.Stat(filepath.Dir(gotAttachments[0])); !os.IsNotExist(serr) {
+		t.Errorf("attachment dir not cleaned up (stat err = %v)", serr)
 	}
 }

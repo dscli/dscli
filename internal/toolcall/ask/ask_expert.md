@@ -3,7 +3,7 @@
 Ask expert for help.
 
 Ask an expert to review plans or answer difficult questions.
-Uses DeepSeek Web (free V4 Pro) via Chrome browser — no API key needed.
+Uses DeepSeek Web (free) via Chrome browser — no API key needed.
 
 Key behaviors (parameter details are in the tool schema):
 
@@ -17,7 +17,7 @@ Key behaviors (parameter details are in the tool schema):
   (use when the prompt defines the output format, e.g. JSON extraction).
 
 Correction flow example (misread image):
-1. ask_expert(input="分析这张图", attachments=[img], mode="vision")
+1. ask_expert(input="分析这张图", attachments=[img])
    → result ends with conversation_id: abc123
 2. ask_expert(input="再仔细看，是不是白发罗小黑？", keep="abc123")
    → expert re-examines the SAME image in context, no re-upload

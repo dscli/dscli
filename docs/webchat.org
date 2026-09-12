@@ -2,11 +2,9 @@
 
 * WebChat 工具调用
 
-WebChat 指使用 web 版本的 https://chat.deepseek.com 与 LLM 交互：
-
-1. flash - deepseek-v4-flash
-2. pro - deepseek-v4-pro
-3. vision - deepseek-v4-flash-vision-exp
+WebChat 指使用 web 版本的 https://chat.deepseek.com 与 LLM 交互。dscli 不再
+切换网页端的模型，对话使用站点当前的模型选择；=--attach= 附件上传支持图片、
+文本与 PDF 文件（最多 50 个、共 100MB）。
 
 此能力集中在 =dscli webchat= 使用。交互过程中有类似以下输出
 
@@ -87,7 +85,8 @@ webchat 的 DSML 归一化层直接透传，无需映射；=read_file_with_line_
 
 - =internal/prompt/dev.md= —— webchat CLI 角色之一（=--role dev=），已注册工具。
 - =internal/prompt/review.md= —— code_review（review 角色）的 webchat
-  会话，已注册工具（Available Tools 段）。
+  会话；审查输入（review-guide.md 提示词、diff、变更文件全文、AGENTS.md、
+  gocyclo 报告）随消息作为附件上传，提示词不含 DSML 工具段。
 - =internal/prompt/expert.md= —— expert 角色（AskExpertWithRole）的
   webchat 会话，已注册工具。
 - =internal/prompt/test.md= —— test 角色（=--role test=），已注册工具。

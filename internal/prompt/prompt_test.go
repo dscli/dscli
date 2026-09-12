@@ -80,7 +80,8 @@ const capabilitiesHeading = "## 🛠️ Capabilities"
 // chat 通过 API 的 tools 参数注册工具（GetSystemPrompt），模板中的
 // <invoke> 示例不得泄漏进去，否则模型会误用 DSML 而非原生 tool_calls。
 // RenderPromptForRole（无 doc）也不得渲染该段：工具集合由角色配置
-// 驱动（toolcall.BuildDSMLToolDoc），无配置时 expert/review 无工具。
+// 驱动（toolcall.BuildDSMLToolDoc），无配置时 expert/test 无工具；review
+// 模板不含 DSML 段（审查输入随附件上传，见 code_review）。
 func TestDSMLToolsSectionScopedToWebChat(t *testing.T) {
 	chatPrompt := GetSystemPrompt(t.Context())
 	if strings.Contains(chatPrompt, "<invoke name=") || strings.Contains(chatPrompt, "Available Tools") {
@@ -92,7 +93,7 @@ func TestDSMLToolsSectionScopedToWebChat(t *testing.T) {
 	doc := DSMLToolDoc{
 		Intro: "## 🛠️ Available Tools: `read_file`" + "\n\n" + `<invoke name="read_file">` + "\n" + `<parameter name="path" string="true">AGENTS.md`,
 	}
-	for _, role := range []string{"dev", "expert", "review", "test", "architect"} {
+	for _, role := range []string{"dev", "expert", "test", "architect"} {
 		t.Run(role, func(t *testing.T) {
 			// Without doc: the section must be absent (role may have no tools).
 			plain := RenderPromptForRole(t.Context(), role)
@@ -123,13 +124,12 @@ func TestDSMLToolsSectionScopedToWebChat(t *testing.T) {
 			// The no-tools branch wording is role-specific: dev/architect
 			// tools are registered by the session protocol (chat path
 			// registers them via the API tools parameter), while
-			// expert/review/test have none by default and must say so.
+			// expert/test have none by default and must say so.
 			// architect keeps the no-tools branch as a defensive fallback
 			// for sessions where a project narrowed its toolset.
 			want := map[string]string{
 				"dev":       "registered by the session protocol",
 				"expert":    "no execution tools",
-				"review":    "no execution tools",
 				"test":      "no execution tools",
 				"architect": "no execution tools",
 			}[role]
@@ -138,6 +138,28 @@ func TestDSMLToolsSectionScopedToWebChat(t *testing.T) {
 			}
 		})
 	}
+
+	// review is attachment-based (code_review uploads its inputs): its
+	// template carries no DSML block, so the section must not render even
+	// when a doc is supplied, and the capabilities statement stays.
+	t.Run("review", func(t *testing.T) {
+		plain := RenderPromptForRole(t.Context(), "review")
+		content := RenderPromptForRoleWithTools(t.Context(), "review", doc)
+		for _, got := range []string{plain, content} {
+			if strings.Contains(got, "<invoke name=") || strings.Contains(got, "Available Tools") {
+				t.Errorf("review prompt must never contain the DSML tool section:\n%s", got)
+			}
+		}
+		if strings.Contains(content, "{{") {
+			t.Errorf("review prompt leaks template placeholders")
+		}
+		if !strings.Contains(content, capabilitiesHeading) {
+			t.Errorf("review prompt must state its capabilities/limitations")
+		}
+		if !strings.Contains(content, "no execution tools") {
+			t.Errorf("review prompt missing the no-tools limitation")
+		}
+	})
 }
 
 // TestMailCheckStepScopedToRolesWithMail verifies the dev template's "check

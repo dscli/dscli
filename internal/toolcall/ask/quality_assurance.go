@@ -95,7 +95,7 @@ func handleQualityAssurance(ctx context.Context, args toolcall.ToolArgs) (result
 		return result, warning, err
 	}
 
-	if err := parseSince(since); err != nil {
+	if _, err := parseSince(since); err != nil {
 		outfmt.Printf("❌ since 参数格式错误: %v\n", err)
 		return result, warning, err
 	}

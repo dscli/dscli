@@ -3,7 +3,7 @@
 Implement a feature or fix via the developer role.
 
 Hand a complete implementation task to the built-in `dev` assistant
-(DeepSeek Web, free V4 Pro via Chrome — no API key needed), which works in
+(DeepSeek Web, free via Chrome — no API key needed), which works in
 the project repo with the developer's full toolset (shell, read_file,
 write_file, git, ...) through the DSML tool loop. It implements, runs the
 project's tests, and commits the result.

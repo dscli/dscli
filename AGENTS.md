@@ -30,7 +30,7 @@ make fmt-check
 **Before pushing, run code review:**
 ```bash
 # code_review is token-free - use it before every push
-# the code_review role also checks cyclomatic complexity (gocyclo -over 20 on changed .go files)
+# the code_review role also checks cyclomatic complexity (gocyclo -over 20 on changed .go files, attached as gocyclo.txt)
 # Recommended: code_review(summary="<describe the change>")
 ```
 - `code_review` before `git push` — fix issues before they reach remote
@@ -116,7 +116,7 @@ block right after a tool call (OpenAI-compatible APIs allow images only in
 user messages).
 
 DSML tool calls from WebChat: chat.deepseek.com replies (role-driven
-consultations like `review` via code_review, and plain chat alike) may embed
+consultations like `dev` via code_dev, and plain chat alike) may embed
 DSML markup (`<invoke name="shell">` with `<parameter>` children) - it is the
 web model's native tool protocol. Judgement and parsing now live in the
 dedicated `internal/dsml` package: `dsml.ParseDSMLMessage(reasoning, content)`
@@ -192,12 +192,15 @@ set — DevDefaultTools, no mail/communication/ai/check categories — and
 architect has all tools, so both do get a section) gets no DSML section at
 all.
 
-code_review sends ONLY commit message + diff on its first message: the review
-expert reads AGENTS.md and full changed-file contents on demand via the DSML
-tool loop (`read_file` / `shell`). Do not re-inject file contents or
-AGENTS.md into the request — the web-chat input budget (140k runes, see code_review.go) is better spent on
-the diff, and the expert can deep-read any file it needs (see
-internal/prompt/review.md).
+code_review uploads its review inputs as attachments: the rendered review
+guide (review-guide.md, from internal/prompt/review.md), the complete diff
+(changes.patch), the full content of the changed files (attachment names
+encode repo paths: `internal__lp__x.go` = `internal/lp/x.go`), AGENTS.md, and
+the gocyclo report (gocyclo.txt, threshold 20 on the changed .go files, run
+locally). The first message carries the summary, the commit message(s) and a
+coverage note for anything NOT attached; the review role has no executable
+tools (role_configs / roles.DefaultFor), so the expert works statically from
+these inputs.
 
 ### Embedded Assets (`go:embed`)
 
