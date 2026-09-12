@@ -770,7 +770,7 @@ func buildReviewMessage(summary, commitLog string, plan reviewPlan) string {
 	sb.WriteString("Attachment file names encode repo paths: \"internal__lp__webchat.go\" is \"internal/lp/webchat.go\".\n")
 	sb.WriteString("\n## Coverage\n")
 	fmt.Fprintf(&sb, "- Commits under review: %d.\n", plan.CommitCount)
-	fmt.Fprintf(&sb, "- Changed files: %d (%d skipped as deleted/binary/unreadable).\n", len(plan.Changed)+len(plan.Skipped), len(plan.Skipped))
+	fmt.Fprintf(&sb, "- Changed files: %d (%d skipped as deleted/binary/symlink/unreadable).\n", len(plan.Changed)+len(plan.Skipped), len(plan.Skipped))
 	fmt.Fprintf(&sb, "- Full content attached: %d file(s).\n", len(plan.Attached))
 	if len(plan.NotAttached) == 0 {
 		sb.WriteString("- Not attached: none.\n")

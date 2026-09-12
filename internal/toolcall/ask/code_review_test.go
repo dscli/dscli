@@ -664,7 +664,7 @@ func TestBuildReviewMessage(t *testing.T) {
 		"internal__lp__webchat.go",
 		"## Coverage",
 		"Commits under review: 2.",
-		"Changed files: 3 (1 skipped as deleted/binary/unreadable).",
+		"Changed files: 3 (1 skipped as deleted/binary/symlink/unreadable).",
 		"Full content attached: 2 file(s).",
 		"- Not attached: none.",
 	} {
@@ -960,7 +960,7 @@ func TestHandleCodeReviewAttachments(t *testing.T) {
 	for _, want := range []string{
 		"## Coverage",
 		"Commits under review: 1.",
-		"Changed files: 2 (1 skipped as deleted/binary/unreadable).",
+		"Changed files: 2 (1 skipped as deleted/binary/symlink/unreadable).",
 		"Full content attached: 1 file(s).",
 		"- Not attached: none.",
 		"AGENTS.md (project guide)",
@@ -992,7 +992,7 @@ func TestHandleCodeReviewFallbackSkipsBinary(t *testing.T) {
 	if slices.Contains(call.names, "blob.bin") {
 		t.Errorf("binary file must never be attached (attachments: %v)", call.names)
 	}
-	if !strings.Contains(call.message, "skipped as deleted/binary/unreadable") {
+	if !strings.Contains(call.message, "skipped as deleted/binary/symlink/unreadable") {
 		t.Errorf("coverage must account for the skipped binary:\n%s", call.message)
 	}
 }
@@ -1030,7 +1030,7 @@ func TestHandleCodeReviewSkipsSymlinks(t *testing.T) {
 			t.Errorf("symlink target leaked through attachment %s", name)
 		}
 	}
-	if !strings.Contains(call.message, "skipped as deleted/binary/unreadable") {
+	if !strings.Contains(call.message, "skipped as deleted/binary/symlink/unreadable") {
 		t.Errorf("coverage must list the symlink as skipped:\n%s", call.message)
 	}
 }
