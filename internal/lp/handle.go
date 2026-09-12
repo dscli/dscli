@@ -277,6 +277,20 @@ func handleWebChatFollowUpSend(ctx context.Context, message string, opts WebChat
 // is generous. A variable so tests can shrink it.
 var handleWebChatMaxDSMLRounds = 1024
 
+// webChatTransportOptions returns the options reduced to what the transport
+// accepts: Role/System/SkipPromptInjection are HandleWebChat concerns (prompt
+// rendering, DSML gating, injection gating) and are rejected by
+// WebChatWithOptions, so every send strips them. Keeping this in one place
+// prevents a new handle-level option from leaking into the transport (a bug
+// the live smoke test caught for SkipPromptInjection).
+func webChatTransportOptions(opts WebChatOptions) WebChatOptions {
+	transport := opts
+	transport.Role = ""
+	transport.System = ""
+	transport.SkipPromptInjection = false
+	return transport
+}
+
 // handleWebChatExecDSML is the DSML executor hook; tests replace it with a
 // recording mock (the real executor runs shells and needs no browser).
 var handleWebChatExecDSML = dsml.ExecuteDSMLToolCalls
@@ -396,12 +410,10 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 			}
 		}
 
-		// Role/System are handle-level concerns; the transport rejects them
-		// (see WebChatWithOptions), so strip them before the send.
-		transport := opts
-		transport.Role = ""
-		transport.System = ""
-		res, callErr := handleWebChatSend(ctx, fullMessage, transport)
+		// Role/System/SkipPromptInjection are handle-level concerns; the
+		// transport rejects them (see WebChatWithOptions), so strip them
+		// before the send.
+		res, callErr := handleWebChatSend(ctx, fullMessage, webChatTransportOptions(opts))
 		if callErr == nil {
 			// The web expert (chat.deepseek.com) emits tool calls natively
 			// in DSML: role consultations (code_review's review role) and

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -159,6 +160,34 @@ func TestHandleWebChatResumeMultiTurnReply(t *testing.T) {
 	}
 	if res.Printed {
 		t.Error("multi-turn reply must not be marked Printed (caller prints it)")
+	}
+}
+
+// TestWebChatTransportOptionsClearsHandleFields guards the strip before
+// every transport send: a new handle-level field that leaks into the
+// transport makes WebChatWithOptions reject the whole send (the live smoke
+// test caught exactly that for SkipPromptInjection).
+func TestWebChatTransportOptionsClearsHandleFields(t *testing.T) {
+	att := filepath.Join(t.TempDir(), "x.md")
+	if err := os.WriteFile(att, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	opts := WebChatOptions{
+		Role:                "review",
+		System:              "persona",
+		SkipPromptInjection: true,
+		Keep:                "abc",
+		Attachments:         []string{att},
+	}
+	transport := webChatTransportOptions(opts)
+	if transport.Role != "" || transport.System != "" || transport.SkipPromptInjection {
+		t.Errorf("handle-only fields must be cleared: %+v", transport)
+	}
+	if transport.Keep != "abc" || len(transport.Attachments) != 1 {
+		t.Errorf("transport fields must survive: %+v", transport)
+	}
+	if err := validateWebChatOptions(transport); err != nil {
+		t.Errorf("stripped transport options must validate: %v", err)
 	}
 }
 
