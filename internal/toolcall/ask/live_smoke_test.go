@@ -2,6 +2,7 @@ package ask
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -10,10 +11,15 @@ import (
 
 // TestLiveCodeReviewSmoke is a manual, network-dependent smoke test: it runs
 // the real code_review handler against the last commit and the live DeepSeek
-// web chat (browser + attachment uploads). Not part of the normal suite.
+// web chat (browser + attachment uploads). It is skipped unless
+// DSCLI_LIVE_SMOKE=1 is set, so the normal suite and CI never touch the
+// network:
 //
-//	go test -run TestLiveCodeReviewSmoke -timeout 900s ./internal/toolcall/ask/
+//	DSCLI_LIVE_SMOKE=1 go test -run TestLiveCodeReviewSmoke -timeout 900s ./internal/toolcall/ask/
 func TestLiveCodeReviewSmoke(t *testing.T) {
+	if os.Getenv("DSCLI_LIVE_SMOKE") != "1" {
+		t.Skip("live smoke: set DSCLI_LIVE_SMOKE=1 (needs Chrome login and network)")
+	}
 	orig := askExpertWithRoleFunc
 	askExpertWithRoleFunc = askExpertWebChat // bypass the test-mode [MOCK]
 	t.Cleanup(func() { askExpertWithRoleFunc = orig })
