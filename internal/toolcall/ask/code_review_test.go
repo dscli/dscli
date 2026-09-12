@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -602,6 +603,12 @@ func TestTruncatePatchToBudget(t *testing.T) {
 	if got, dropped := truncatePatchToBudget(patch, 0); got != "" || len(dropped) != 2 {
 		t.Errorf("zero budget: got %q, dropped %v", got, dropped)
 	}
+
+	// A patch without parseable sections shrinks to nothing at a zero budget
+	// without naming files; the caller flags the cut from the byte reduction.
+	if got, dropped := truncatePatchToBudget("no diff sections here", 0); got != "" || len(dropped) != 0 {
+		t.Errorf("degenerate patch: got %q, dropped %v", got, dropped)
+	}
 }
 
 func TestIsBinaryFile(t *testing.T) {
@@ -677,6 +684,13 @@ func TestBuildReviewMessage(t *testing.T) {
 		t.Errorf("degenerate truncation must be reported:\n%s", msg)
 	}
 
+	// A skipped (deleted/binary) file narrows the inputs claim without
+	// mentioning the upload budget.
+	msg = buildReviewMessage("s", "l", reviewPlan{Skipped: []string{"blob.bin"}})
+	if !strings.Contains(msg, "changed text file") || strings.Contains(msg, "upload budget") {
+		t.Errorf("skipped-only inputs sentence = %q", msg)
+	}
+
 	// Without AGENTS.md the inputs sentence must not claim it, and the
 	// coverage note must state the blind spot.
 	msg = buildReviewMessage("s", "l", reviewPlan{})
@@ -748,6 +762,16 @@ func TestGocycloCmd(t *testing.T) {
 	if !strings.Contains(got, "21 main.foo a.go:1:1") || !strings.Contains(got, "may be partial") {
 		t.Errorf("failure-with-output report = %q", got)
 	}
+
+	// Diagnostics on stderr alongside findings also mark the report partial
+	// (gocyclo exits 1 both for findings and for fatal errors).
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf '21 main.foo a.go:1:1\n'\nprintf 'boom\n' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got = gocycloCmd(context.Background(), "", []string{"a.go"})
+	if !strings.Contains(got, "boom") || !strings.Contains(got, "may be partial") {
+		t.Errorf("stderr-diagnostics report = %q", got)
+	}
 }
 
 // setupReviewRepo creates a throwaway git repository with two commits, the
@@ -769,11 +793,11 @@ func setupReviewRepo(t *testing.T) string {
 		}
 	}
 	runGit("init", "-q")
-	for name, content := range map[string]string{
-		"first.go":  "package main\n",
-		"AGENTS.md": "# guide\n",
+	for _, f := range []struct{ name, content string }{
+		{"first.go", "package main\n"},
+		{"AGENTS.md", "# guide\n"},
 	} {
-		if err := os.WriteFile(filepath.Join(repo, name), []byte(content), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(repo, f.name), []byte(f.content), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -790,6 +814,64 @@ func setupReviewRepo(t *testing.T) string {
 	return repo
 }
 
+// capturedReviewCall records what the stubbed expert received: the request
+// message, the role/skip flags, and the attachment contents read at call time
+// (the handler removes its temp attachment dir once it returns).
+type capturedReviewCall struct {
+	message     string
+	role        string
+	skip        bool
+	attachments []string
+	names       []string          // attachment base names
+	data        map[string]string // attachment base name -> content
+}
+
+// stubReviewExpert replaces askExpertWithRoleFunc with a recording mock that
+// snapshots every attachment and returns [MOCK].
+func stubReviewExpert(t *testing.T) *capturedReviewCall {
+	t.Helper()
+	call := &capturedReviewCall{data: map[string]string{}}
+	orig := askExpertWithRoleFunc
+	t.Cleanup(func() { askExpertWithRoleFunc = orig })
+	askExpertWithRoleFunc = func(_ context.Context, input, role, system, keep string, attachments []string, skip bool) (string, string, bool, error) {
+		call.message = input
+		call.role = role
+		call.skip = skip
+		call.attachments = attachments
+		for _, p := range attachments {
+			name := filepath.Base(p)
+			call.names = append(call.names, name)
+			b, rerr := os.ReadFile(p)
+			if rerr != nil {
+				t.Errorf("attachment %s unreadable: %v", p, rerr)
+				continue
+			}
+			call.data[name] = string(b)
+		}
+		return "[MOCK]", "", false, nil
+	}
+	return call
+}
+
+// stubGocyclo replaces the gocyclo runner with a fixed report, asserting the
+// changed Go files it receives (order-insensitively: git decides the listing
+// order).
+func stubGocyclo(t *testing.T, wantFiles []string) {
+	t.Helper()
+	orig := runGocyclo
+	t.Cleanup(func() { runGocyclo = orig })
+	runGocyclo = func(_ context.Context, _ string, files []string) string {
+		got := slices.Clone(files)
+		sort.Strings(got)
+		want := slices.Clone(wantFiles)
+		sort.Strings(want)
+		if !slices.Equal(got, want) {
+			t.Errorf("gocyclo files = %v, want %v (sorted compare)", files, wantFiles)
+		}
+		return "gocyclo report stub\n"
+	}
+}
+
 // TestHandleCodeReviewAttachments drives the full handler against a throwaway
 // git repository: every review input (guide, patch, gocyclo report, changed
 // file, AGENTS.md) must arrive as an attachment, the message must carry the
@@ -797,42 +879,8 @@ func setupReviewRepo(t *testing.T) string {
 // once the expert call returns.
 func TestHandleCodeReviewAttachments(t *testing.T) {
 	repo := setupReviewRepo(t)
-
-	origAsk := askExpertWithRoleFunc
-	t.Cleanup(func() { askExpertWithRoleFunc = origAsk })
-	var (
-		gotMessage     string
-		gotRole        string
-		gotSkip        bool
-		gotAttachments []string
-		attachmentData map[string]string
-	)
-	askExpertWithRoleFunc = func(_ context.Context, input, role, system, keep string, attachments []string, skip bool) (string, string, bool, error) {
-		gotMessage = input
-		gotRole = role
-		gotSkip = skip
-		gotAttachments = attachments
-		attachmentData = map[string]string{}
-		for _, p := range attachments {
-			b, rerr := os.ReadFile(p)
-			if rerr != nil {
-				t.Errorf("attachment %s unreadable: %v", p, rerr)
-				continue
-			}
-			attachmentData[filepath.Base(p)] = string(b)
-		}
-		return "[MOCK]", "", false, nil
-	}
-
-	origGocyclo := runGocyclo
-	t.Cleanup(func() { runGocyclo = origGocyclo })
-	runGocyclo = func(_ context.Context, _ string, files []string) string {
-		if !slices.Equal(files, []string{"second.go"}) {
-			t.Errorf("gocyclo files = %v, want [second.go]", files)
-		}
-		return "gocyclo report stub\n"
-	}
-
+	call := stubReviewExpert(t)
+	stubGocyclo(t, []string{"second.go"})
 	t.Chdir(repo)
 
 	result, warning, err := handleCodeReview(context.Background(), toolcall.ToolArgs{"summary": "test summary", "since": "-1"})
@@ -845,35 +893,34 @@ func TestHandleCodeReviewAttachments(t *testing.T) {
 	if warning != "" {
 		t.Errorf("warning = %q, want empty (nothing dropped)", warning)
 	}
-	if gotRole != "review" || !gotSkip {
-		t.Errorf("ask call role=%q skip=%v, want review/skip=true", gotRole, gotSkip)
+	if call.role != "review" || !call.skip {
+		t.Errorf("ask call role=%q skip=%v, want review/skip=true", call.role, call.skip)
 	}
-
-	if len(gotAttachments) != 5 {
-		t.Fatalf("attachments = %v, want 5 (guide, patch, gocyclo, AGENTS.md, second.go)", gotAttachments)
+	if len(call.attachments) != 5 {
+		t.Fatalf("attachments = %v, want 5 (guide, patch, gocyclo, AGENTS.md, second.go)", call.attachments)
 	}
 	for _, name := range []string{reviewGuideName, reviewPatchName, reviewGocycloName, reviewAgentsName, "second.go"} {
-		if _, ok := attachmentData[name]; !ok {
-			t.Errorf("attachment %q missing (paths: %v)", name, gotAttachments)
+		if _, ok := call.data[name]; !ok {
+			t.Errorf("attachment %q missing (paths: %v)", name, call.attachments)
 		}
 	}
-	if len(attachmentData[reviewGuideName]) == 0 {
+	if len(call.data[reviewGuideName]) == 0 {
 		t.Errorf("review guide attachment is empty")
 	}
-	if !strings.Contains(attachmentData[reviewPatchName], "second.go") {
-		t.Errorf("patch attachment misses the change:\n%s", attachmentData[reviewPatchName])
+	if !strings.Contains(call.data[reviewPatchName], "second.go") {
+		t.Errorf("patch attachment misses the change:\n%s", call.data[reviewPatchName])
 	}
-	if attachmentData[reviewGocycloName] != "gocyclo report stub\n" {
-		t.Errorf("gocyclo attachment = %q", attachmentData[reviewGocycloName])
+	if call.data[reviewGocycloName] != "gocyclo report stub\n" {
+		t.Errorf("gocyclo attachment = %q", call.data[reviewGocycloName])
 	}
-	if attachmentData[reviewAgentsName] != "# guide\n" {
-		t.Errorf("AGENTS.md attachment = %q, want the repo guide", attachmentData[reviewAgentsName])
+	if call.data[reviewAgentsName] != "# guide\n" {
+		t.Errorf("AGENTS.md attachment = %q, want the repo guide", call.data[reviewAgentsName])
 	}
-	if got := attachmentData["second.go"]; !strings.Contains(got, "// v2") {
+	if got := call.data["second.go"]; !strings.Contains(got, "// v2") {
 		t.Errorf("changed-file attachment = %q, want the file content", got)
 	}
-	if _, ok := attachmentData["blob.bin"]; ok {
-		t.Errorf("binary file must never be attached as text: %v", gotAttachments)
+	if _, ok := call.data["blob.bin"]; ok {
+		t.Errorf("binary file must never be attached as text: %v", call.attachments)
 	}
 
 	for _, want := range []string{
@@ -885,13 +932,33 @@ func TestHandleCodeReviewAttachments(t *testing.T) {
 		"AGENTS.md (project guide)",
 		"test summary",
 	} {
-		if !strings.Contains(gotMessage, want) {
-			t.Errorf("message missing %q:\n%s", want, gotMessage)
+		if !strings.Contains(call.message, want) {
+			t.Errorf("message missing %q:\n%s", want, call.message)
 		}
 	}
 
 	// The temporary attachment directory must be gone after the call.
-	if _, serr := os.Stat(filepath.Dir(gotAttachments[0])); !os.IsNotExist(serr) {
+	if _, serr := os.Stat(filepath.Dir(call.attachments[0])); !os.IsNotExist(serr) {
 		t.Errorf("attachment dir not cleaned up (stat err = %v)", serr)
+	}
+}
+
+// TestHandleCodeReviewFallbackSkipsBinary forces the `git log --name-only`
+// fallback (since="-2" on a two-commit repo does not resolve HEAD~2) so the
+// binary changed file is filtered by the NUL sniff rather than by numstat.
+func TestHandleCodeReviewFallbackSkipsBinary(t *testing.T) {
+	repo := setupReviewRepo(t)
+	call := stubReviewExpert(t)
+	stubGocyclo(t, []string{"first.go", "second.go"}) // the fallback skips blob.bin
+	t.Chdir(repo)
+
+	if _, _, err := handleCodeReview(context.Background(), toolcall.ToolArgs{"summary": "fallback", "since": "-2"}); err != nil {
+		t.Fatalf("handleCodeReview: %v", err)
+	}
+	if slices.Contains(call.names, "blob.bin") {
+		t.Errorf("binary file must never be attached (attachments: %v)", call.names)
+	}
+	if !strings.Contains(call.message, "skipped as deleted/binary/unreadable") {
+		t.Errorf("coverage must account for the skipped binary:\n%s", call.message)
 	}
 }

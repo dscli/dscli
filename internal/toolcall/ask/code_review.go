@@ -252,10 +252,10 @@ const gocycloThreshold = 20
 // variable so tests can inject a fake (no external binary needed there).
 var runGocyclo = gocycloCmd
 
-// isGocycloFindingsExit reports whether err is nil or gocyclo's normal
+// isGocycloAcceptableExit reports whether err is nil or gocyclo's normal
 // non-zero exit for "functions above the threshold were found" (exit status
 // 1). Any other error means the report may be incomplete.
-func isGocycloFindingsExit(err error) bool {
+func isGocycloAcceptableExit(err error) bool {
 	if err == nil {
 		return true
 	}
@@ -277,20 +277,36 @@ func gocycloCmd(ctx context.Context, dir string, files []string) string {
 	args := append([]string{"-over", strconv.Itoa(gocycloThreshold)}, files...)
 	cmd := exec.CommandContext(ctx, "gocyclo", args...)
 	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
+	// stdout and stderr are captured separately: findings go to stdout,
+	// fatal errors (log.Fatal) to stderr, and gocyclo exits 1 for BOTH - a
+	// merged stream could present an aborted run's error text as findings.
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
 	report := fmt.Sprintf("gocyclo -over %d (project threshold), %d changed Go file(s):\n", gocycloThreshold, len(files))
-	trimmed := strings.TrimSpace(string(out))
+	findings := strings.TrimSpace(stdout.String())
+	diagnostics := strings.TrimSpace(stderr.String())
 	switch {
-	case trimmed != "" && isGocycloFindingsExit(err):
-		// Output with a clean exit - or gocyclo's normal non-zero "findings"
-		// status (exit 1) - is the report itself.
-		report += trimmed + "\n"
-	case trimmed != "":
-		// Output alongside any other error (e.g. a crash after partial
-		// listings) must be flagged as potentially partial.
-		report += trimmed + fmt.Sprintf("\n(gocyclo failed: %v; the report may be partial)\n", err)
-	case err == nil:
+	case findings == "" && diagnostics == "" && err == nil:
 		report += fmt.Sprintf("No function above the cyclomatic threshold (%d).\n", gocycloThreshold)
+	case findings != "" && diagnostics == "" && isGocycloAcceptableExit(err):
+		// Clean findings: nil or the normal "found something" exit (1).
+		report += findings + "\n"
+	case findings != "" || diagnostics != "":
+		// Anything else may be a partial listing (an abort after some
+		// findings, or diagnostics on stderr): show it, but say so.
+		if findings != "" {
+			report += findings + "\n"
+		}
+		if diagnostics != "" {
+			report += diagnostics + "\n"
+		}
+		if diagnostics != "" {
+			report += "(gocyclo wrote to stderr; the report may be partial)\n"
+		} else {
+			report += fmt.Sprintf("(gocyclo exited with %v; the report may be partial)\n", err)
+		}
 	default:
 		report += fmt.Sprintf("gocyclo failed: %v\n", err)
 	}
@@ -396,25 +412,30 @@ func isBinaryFile(path string) bool {
 	return bytes.IndexByte(buf[:n], 0) >= 0
 }
 
-// assembleReviewAttachments collects the changed files, renders the fixed
-// inputs and writes every review attachment into dir (owned by the caller).
-// It returns the upload paths and the coverage plan; a write failure aborts
-// the review because an incomplete attachment set must not be sent silently.
-func assembleReviewAttachments(ctx context.Context, dir, repoRoot, patch string, commits int) ([]string, reviewPlan, error) {
-	var candidates []candidateFile
-	var skipped []string
+// reviewCandidates splits the changed files of the last n commits into
+// attachable candidates and skipped entries. A file is skipped when numstat
+// flags it binary, when it no longer exists (deleted), when it is not a
+// regular file (submodule), or when the NUL sniff calls it binary on the
+// git log fallback path; the coverage note lists every skipped path.
+func reviewCandidates(ctx context.Context, repoRoot string, commits int) (candidates []candidateFile, skipped []string) {
 	for _, e := range listChangedFiles(ctx, commits) {
 		full := filepath.Join(repoRoot, e.path)
 		info, statErr := os.Stat(full)
 		if e.binary || statErr != nil || !info.Mode().IsRegular() || isBinaryFile(full) {
-			// 删除的文件、子模块、二进制文件没有可用的全文附件（numstat
-			// 路径直接标出二进制，git log 回退路径由 NUL 嗅探兜底），统一
-			// 过滤并在覆盖清单里说明。
 			skipped = append(skipped, e.path)
 			continue
 		}
 		candidates = append(candidates, candidateFile{path: e.path, size: info.Size()})
 	}
+	return candidates, skipped
+}
+
+// assembleReviewAttachments collects the changed files, renders the fixed
+// inputs and writes every review attachment into dir (owned by the caller).
+// It returns the upload paths and the coverage plan; a write failure aborts
+// the review because an incomplete attachment set must not be sent silently.
+func assembleReviewAttachments(ctx context.Context, dir, repoRoot, patch string, commits int) ([]string, reviewPlan, error) {
+	candidates, skipped := reviewCandidates(ctx, repoRoot, commits)
 
 	changed := make([]string, 0, len(candidates))
 	var goFiles []string
@@ -691,10 +712,13 @@ func buildReviewMessage(summary, commitLog string, plan reviewPlan) string {
 		"review-guide.md (the review instructions - follow them)",
 		"changes.patch (the complete diff)",
 	}
-	if len(plan.NotAttached) == 0 {
-		inputs = append(inputs, "the full content of every changed file")
-	} else {
+	switch {
+	case len(plan.NotAttached) > 0:
 		inputs = append(inputs, "the full content of the changed files that fit the upload budget")
+	case len(plan.Skipped) > 0:
+		inputs = append(inputs, "the full content of every changed text file (deleted and binary files are listed as skipped)")
+	default:
+		inputs = append(inputs, "the full content of every changed file")
 	}
 	if plan.Agents {
 		inputs = append(inputs, "AGENTS.md (project guide)")
@@ -736,7 +760,7 @@ func reviewAttachmentWarning(plan reviewPlan) string {
 		if len(plan.PatchDropped) > 0 {
 			parts = append(parts, fmt.Sprintf("patch 超预算已截断，缺少区段: %s", cappedList(plan.PatchDropped)))
 		} else {
-			parts = append(parts, "patch 超预算已截断")
+			parts = append(parts, "patch 超预算已截断（部分内容已省略）")
 		}
 	}
 	if len(parts) == 0 {
