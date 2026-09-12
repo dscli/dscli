@@ -3,6 +3,7 @@ package ask
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -251,6 +252,17 @@ const gocycloThreshold = 20
 // variable so tests can inject a fake (no external binary needed there).
 var runGocyclo = gocycloCmd
 
+// isGocycloFindingsExit reports whether err is nil or gocyclo's normal
+// non-zero exit for "functions above the threshold were found" (exit status
+// 1). Any other error means the report may be incomplete.
+func isGocycloFindingsExit(err error) bool {
+	if err == nil {
+		return true
+	}
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == 1
+}
+
 // gocycloCmd runs `gocyclo -over <threshold>` over the changed Go files (dir =
 // repo root) and returns the report attached as gocyclo.txt. Failures (missing
 // binary, unparsable file) are reported IN the report instead of failing the
@@ -269,12 +281,14 @@ func gocycloCmd(ctx context.Context, dir string, files []string) string {
 	report := fmt.Sprintf("gocyclo -over %d (project threshold), %d changed Go file(s):\n", gocycloThreshold, len(files))
 	trimmed := strings.TrimSpace(string(out))
 	switch {
-	case trimmed != "":
-		// Output means findings. gocyclo also exits non-zero when it reports
-		// functions above the threshold (its normal "found something" status),
-		// so a non-zero exit with output is NOT an error - only an empty
-		// report with a non-zero exit is.
+	case trimmed != "" && isGocycloFindingsExit(err):
+		// Output with a clean exit - or gocyclo's normal non-zero "findings"
+		// status (exit 1) - is the report itself.
 		report += trimmed + "\n"
+	case trimmed != "":
+		// Output alongside any other error (e.g. a crash after partial
+		// listings) must be flagged as potentially partial.
+		report += trimmed + fmt.Sprintf("\n(gocyclo failed: %v; the report may be partial)\n", err)
 	case err == nil:
 		report += fmt.Sprintf("No function above the cyclomatic threshold (%d).\n", gocycloThreshold)
 	default:
@@ -299,25 +313,32 @@ func gitRepoRoot(ctx context.Context) (string, error) {
 	return root, nil
 }
 
-// parseNumstat parses `git diff --numstat` output into changed file paths.
-// Binary files (both counters "-") are skipped. With --no-renames a rename
-// shows as delete + add; the deleted path is filtered later by the on-disk
-// existence check.
-func parseNumstat(out string) []string {
-	var paths []string
+// numstatEntry is one changed-file entry from `git diff --numstat`: a path
+// plus whether git considers the change binary (both counters "-"). Binary
+// entries are reported (not silently dropped) so the coverage note can list
+// them as skipped.
+type numstatEntry struct {
+	path   string
+	binary bool
+}
+
+// parseNumstat parses `git diff --numstat` output into changed-file entries.
+// With --no-renames a rename shows as delete + add; the deleted path is
+// filtered later by the on-disk existence check.
+func parseNumstat(out string) []numstatEntry {
+	var entries []numstatEntry
 	for _, line := range strings.Split(out, "\n") {
 		fields := strings.SplitN(line, "\t", 3)
 		if len(fields) != 3 {
 			continue
 		}
-		if fields[0] == "-" && fields[1] == "-" {
-			continue // binary file
+		p := strings.TrimSpace(fields[2])
+		if p == "" {
+			continue
 		}
-		if p := strings.TrimSpace(fields[2]); p != "" {
-			paths = append(paths, p)
-		}
+		entries = append(entries, numstatEntry{path: p, binary: fields[0] == "-" && fields[1] == "-"})
 	}
-	return paths
+	return entries
 }
 
 // parseNameOnly parses `git log --name-only --pretty=format:` output into a
@@ -339,10 +360,11 @@ func parseNameOnly(out string) []string {
 }
 
 // listChangedFiles returns the files touched by the last n commits. The
-// primary path is `git diff --numstat` over HEAD~n..HEAD; when the range does
-// not resolve (shallow history), it falls back to `git log --name-only`.
+// primary path is `git diff --numstat` over HEAD~n..HEAD (binary entries
+// flagged); when the range does not resolve (shallow history), it falls back
+// to `git log --name-only` (binary detection deferred to the NUL sniff).
 // Returns nil when both fail - the review then proceeds with the patch alone.
-func listChangedFiles(ctx context.Context, n int) []string {
+func listChangedFiles(ctx context.Context, n int) []numstatEntry {
 	out, err := shell.SimpleExecute(ctx, fmt.Sprintf("git diff --numstat --no-renames HEAD~%d..HEAD", n))
 	if err == nil {
 		return parseNumstat(out)
@@ -351,19 +373,25 @@ func listChangedFiles(ctx context.Context, n int) []string {
 	if err != nil {
 		return nil
 	}
-	return parseNameOnly(out)
+	var entries []numstatEntry
+	for _, p := range parseNameOnly(out) {
+		entries = append(entries, numstatEntry{path: p})
+	}
+	return entries
 }
 
-// isBinaryFile reports whether the file looks binary (a NUL byte within the
-// first 8KB - the same heuristic git uses). Binary files cannot be uploaded
-// as text attachments, so they are skipped and listed in the coverage note.
+// isBinaryFile reports whether the file looks binary: a NUL byte within the
+// first 8000 bytes, matching git's FIRST_FEW_BYTES heuristic. Binary files
+// cannot be uploaded as text attachments, so they are skipped and listed in
+// the coverage note. An unreadable file returns false; it is caught later as
+// a copy failure and lands in the not-attached list instead.
 func isBinaryFile(path string) bool {
 	f, err := os.Open(path)
 	if err != nil {
 		return false
 	}
 	defer f.Close()
-	buf := make([]byte, 8192)
+	buf := make([]byte, 8000)
 	n, _ := io.ReadFull(f, buf)
 	return bytes.IndexByte(buf[:n], 0) >= 0
 }
@@ -375,16 +403,17 @@ func isBinaryFile(path string) bool {
 func assembleReviewAttachments(ctx context.Context, dir, repoRoot, patch string, commits int) ([]string, reviewPlan, error) {
 	var candidates []candidateFile
 	var skipped []string
-	for _, p := range listChangedFiles(ctx, commits) {
-		full := filepath.Join(repoRoot, p)
+	for _, e := range listChangedFiles(ctx, commits) {
+		full := filepath.Join(repoRoot, e.path)
 		info, statErr := os.Stat(full)
-		if statErr != nil || !info.Mode().IsRegular() || isBinaryFile(full) {
-			// 删除的文件、子模块、二进制文件没有可用的全文附件；git log
-			// 回退路径也会列出这些条目，统一过滤并在覆盖清单里说明。
-			skipped = append(skipped, p)
+		if e.binary || statErr != nil || !info.Mode().IsRegular() || isBinaryFile(full) {
+			// 删除的文件、子模块、二进制文件没有可用的全文附件（numstat
+			// 路径直接标出二进制，git log 回退路径由 NUL 嗅探兜底），统一
+			// 过滤并在覆盖清单里说明。
+			skipped = append(skipped, e.path)
 			continue
 		}
-		candidates = append(candidates, candidateFile{path: p, size: info.Size()})
+		candidates = append(candidates, candidateFile{path: e.path, size: info.Size()})
 	}
 
 	changed := make([]string, 0, len(candidates))
@@ -417,8 +446,13 @@ func assembleReviewAttachments(ctx context.Context, dir, repoRoot, patch string,
 		if budget < 0 {
 			budget = 0
 		}
-		patchBody, plan.PatchDropped = truncatePatchToBudget(patchBody, int(budget))
-		plan.PatchTruncated = len(plan.PatchDropped) > 0
+		cut, dropped := truncatePatchToBudget(patchBody, int(budget))
+		plan.PatchDropped = dropped
+		// Flag from the actual reduction, not from the dropped list: a
+		// degenerate patch (no parseable sections) can shrink without naming
+		// any file, and the coverage note must never claim completeness.
+		plan.PatchTruncated = len(cut) < len(patchBody)
+		patchBody = cut
 	}
 	fixedBytes := othersBytes + int64(len(patchBody))
 	fixedCount := 3 // guide + patch + gocyclo
@@ -656,7 +690,11 @@ func buildReviewMessage(summary, commitLog string, plan reviewPlan) string {
 	inputs := []string{
 		"review-guide.md (the review instructions - follow them)",
 		"changes.patch (the complete diff)",
-		"the full content of every changed file",
+	}
+	if len(plan.NotAttached) == 0 {
+		inputs = append(inputs, "the full content of every changed file")
+	} else {
+		inputs = append(inputs, "the full content of the changed files that fit the upload budget")
 	}
 	if plan.Agents {
 		inputs = append(inputs, "AGENTS.md (project guide)")
@@ -674,10 +712,14 @@ func buildReviewMessage(summary, commitLog string, plan reviewPlan) string {
 		fmt.Fprintf(&sb, "- NOT attached (attachment budget): %s\n", strings.Join(plan.NotAttached, ", "))
 	}
 	if !plan.Agents {
-		sb.WriteString("- AGENTS.md not attached (not present in the repository root).\n")
+		sb.WriteString("- AGENTS.md not attached (absent, empty, or unreadable).\n")
 	}
 	if plan.PatchTruncated {
-		fmt.Fprintf(&sb, "- changes.patch was truncated: patch sections missing for %s\n", strings.Join(plan.PatchDropped, ", "))
+		if len(plan.PatchDropped) > 0 {
+			fmt.Fprintf(&sb, "- changes.patch was truncated: patch sections missing for %s\n", strings.Join(plan.PatchDropped, ", "))
+		} else {
+			sb.WriteString("- changes.patch was truncated (some content omitted).\n")
+		}
 	}
 	return sb.String()
 }
@@ -691,7 +733,11 @@ func reviewAttachmentWarning(plan reviewPlan) string {
 		parts = append(parts, fmt.Sprintf("附件预算不足，未附上 %d 个文件的全文: %s", n, cappedList(plan.NotAttached)))
 	}
 	if plan.PatchTruncated {
-		parts = append(parts, fmt.Sprintf("patch 超预算已截断，缺少区段: %s", cappedList(plan.PatchDropped)))
+		if len(plan.PatchDropped) > 0 {
+			parts = append(parts, fmt.Sprintf("patch 超预算已截断，缺少区段: %s", cappedList(plan.PatchDropped)))
+		} else {
+			parts = append(parts, "patch 超预算已截断")
+		}
 	}
 	if len(parts) == 0 {
 		return ""

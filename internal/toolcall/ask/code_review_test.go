@@ -476,9 +476,22 @@ func TestCutToRuneLenNegativeBudget(t *testing.T) {
 func TestParseNumstat(t *testing.T) {
 	out := "1\t2\tinternal/a.go\n-\t-\tassets/logo.png\n3\t0\tb.md\n\nbroken line\n4\t5\tc/d.go\n"
 	got := parseNumstat(out)
-	want := []string{"internal/a.go", "b.md", "c/d.go"}
-	if !slices.Equal(got, want) {
-		t.Errorf("parseNumstat = %v, want %v (binary and malformed lines skipped)", got, want)
+	want := []struct {
+		path   string
+		binary bool
+	}{
+		{"internal/a.go", false},
+		{"assets/logo.png", true}, // binary entries are reported, not dropped
+		{"b.md", false},
+		{"c/d.go", false},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("parseNumstat = %v, want %d entries (malformed lines skipped)", got, len(want))
+	}
+	for i, w := range want {
+		if got[i].path != w.path || got[i].binary != w.binary {
+			t.Errorf("entry %d = %+v, want path=%q binary=%v", i, got[i], w.path, w.binary)
+		}
 	}
 	if got := parseNumstat(""); got != nil {
 		t.Errorf("parseNumstat(\"\") = %v, want nil", got)
@@ -654,6 +667,15 @@ func TestBuildReviewMessage(t *testing.T) {
 	if !strings.Contains(msg, "changes.patch was truncated") || !strings.Contains(msg, "d.go") {
 		t.Errorf("message must report patch truncation:\n%s", msg)
 	}
+	if !strings.Contains(msg, "that fit the upload budget") {
+		t.Errorf("inputs sentence must not claim completeness when files are dropped:\n%s", msg)
+	}
+
+	// A degenerate truncation without named sections must still be reported.
+	msg = buildReviewMessage("s", "l", reviewPlan{PatchTruncated: true})
+	if !strings.Contains(msg, "changes.patch was truncated (some content omitted)") {
+		t.Errorf("degenerate truncation must be reported:\n%s", msg)
+	}
 
 	// Without AGENTS.md the inputs sentence must not claim it, and the
 	// coverage note must state the blind spot.
@@ -717,6 +739,15 @@ func TestGocycloCmd(t *testing.T) {
 	if !strings.Contains(got, "21 main.foo a.go:1:1") || strings.Contains(got, "failed") || strings.Contains(got, "error") {
 		t.Errorf("findings-exit report = %q", got)
 	}
+
+	// Any other non-zero exit with output means the report may be partial.
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf '21 main.foo a.go:1:1\n'\nexit 2\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got = gocycloCmd(context.Background(), "", []string{"a.go"})
+	if !strings.Contains(got, "21 main.foo a.go:1:1") || !strings.Contains(got, "may be partial") {
+		t.Errorf("failure-with-output report = %q", got)
+	}
 }
 
 // setupReviewRepo creates a throwaway git repository with two commits, the
@@ -749,6 +780,9 @@ func setupReviewRepo(t *testing.T) string {
 	runGit("add", "-A")
 	runGit("commit", "-qm", "one")
 	if err := os.WriteFile(filepath.Join(repo, "second.go"), []byte("package main\n// v2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "blob.bin"), []byte{0x00, 0x01, 0xff, 0x00}, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	runGit("add", "-A")
@@ -838,10 +872,14 @@ func TestHandleCodeReviewAttachments(t *testing.T) {
 	if got := attachmentData["second.go"]; !strings.Contains(got, "// v2") {
 		t.Errorf("changed-file attachment = %q, want the file content", got)
 	}
+	if _, ok := attachmentData["blob.bin"]; ok {
+		t.Errorf("binary file must never be attached as text: %v", gotAttachments)
+	}
 
 	for _, want := range []string{
 		"## Coverage",
 		"Commits under review: 1.",
+		"Changed files: 2 (1 skipped as deleted/binary/unreadable).",
 		"Full content attached: 1 file(s).",
 		"- Not attached: none.",
 		"AGENTS.md (project guide)",
