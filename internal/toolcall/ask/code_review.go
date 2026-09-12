@@ -269,10 +269,12 @@ func gocycloCmd(ctx context.Context, dir string, files []string) string {
 	report := fmt.Sprintf("gocyclo -over %d (project threshold), %d changed Go file(s):\n", gocycloThreshold, len(files))
 	trimmed := strings.TrimSpace(string(out))
 	switch {
-	case trimmed != "" && err == nil:
-		report += trimmed + "\n"
 	case trimmed != "":
-		report += trimmed + fmt.Sprintf("\n(gocyclo exited with an error: %v; the report may be partial)\n", err)
+		// Output means findings. gocyclo also exits non-zero when it reports
+		// functions above the threshold (its normal "found something" status),
+		// so a non-zero exit with output is NOT an error - only an empty
+		// report with a non-zero exit is.
+		report += trimmed + "\n"
 	case err == nil:
 		report += fmt.Sprintf("No function above the cyclomatic threshold (%d).\n", gocycloThreshold)
 	default:

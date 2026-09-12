@@ -707,14 +707,22 @@ func TestGocycloCmd(t *testing.T) {
 	if !strings.Contains(got, "21 main.foo a.go:1:1") || !strings.Contains(got, fmt.Sprintf("-over %d", gocycloThreshold)) {
 		t.Errorf("fake-binary report = %q", got)
 	}
+
+	// gocyclo exits non-zero when it reports findings; that is its normal
+	// status, so the report must not call it an error.
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf '21 main.foo a.go:1:1\n'\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got = gocycloCmd(context.Background(), "", []string{"a.go"})
+	if !strings.Contains(got, "21 main.foo a.go:1:1") || strings.Contains(got, "failed") || strings.Contains(got, "error") {
+		t.Errorf("findings-exit report = %q", got)
+	}
 }
 
-// TestHandleCodeReviewAttachments drives the full handler against a throwaway
-// git repository: every review input (guide, patch, gocyclo report, changed
-// file, AGENTS.md) must arrive as an attachment, the message must carry the
-// coverage note, and the temporary attachment directory must be cleaned up
-// once the expert call returns.
-func TestHandleCodeReviewAttachments(t *testing.T) {
+// setupReviewRepo creates a throwaway git repository with two commits, the
+// second modifying second.go; AGENTS.md is committed with the first.
+func setupReviewRepo(t *testing.T) string {
+	t.Helper()
 	repo := t.TempDir()
 	runGit := func(args ...string) {
 		t.Helper()
@@ -730,11 +738,13 @@ func TestHandleCodeReviewAttachments(t *testing.T) {
 		}
 	}
 	runGit("init", "-q")
-	if err := os.WriteFile(filepath.Join(repo, "first.go"), []byte("package main\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(repo, "AGENTS.md"), []byte("# guide\n"), 0o600); err != nil {
-		t.Fatal(err)
+	for name, content := range map[string]string{
+		"first.go":  "package main\n",
+		"AGENTS.md": "# guide\n",
+	} {
+		if err := os.WriteFile(filepath.Join(repo, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	runGit("add", "-A")
 	runGit("commit", "-qm", "one")
@@ -743,6 +753,16 @@ func TestHandleCodeReviewAttachments(t *testing.T) {
 	}
 	runGit("add", "-A")
 	runGit("commit", "-qm", "two")
+	return repo
+}
+
+// TestHandleCodeReviewAttachments drives the full handler against a throwaway
+// git repository: every review input (guide, patch, gocyclo report, changed
+// file, AGENTS.md) must arrive as an attachment, the message must carry the
+// coverage note, and the temporary attachment directory must be cleaned up
+// once the expert call returns.
+func TestHandleCodeReviewAttachments(t *testing.T) {
+	repo := setupReviewRepo(t)
 
 	origAsk := askExpertWithRoleFunc
 	t.Cleanup(func() { askExpertWithRoleFunc = origAsk })
