@@ -609,6 +609,16 @@ func TestTruncatePatchToBudget(t *testing.T) {
 	if got, dropped := truncatePatchToBudget("no diff sections here", 0); got != "" || len(dropped) != 0 {
 		t.Errorf("degenerate patch: got %q, dropped %v", got, dropped)
 	}
+
+	// Kept sections keep their original patch order (not size order).
+	secLarge := "diff --git a/l.go b/l.go\n" + strings.Repeat("+x\n", 6)
+	secSmall := "diff --git a/s.go b/s.go\n" + strings.Repeat("+y\n", 1)
+	secHuge := "diff --git a/h.go b/h.go\n" + strings.Repeat("+z\n", 200)
+	patchOrder := secLarge + secSmall + secHuge
+	got, _ := truncatePatchToBudget(patchOrder, len(secLarge)+len(secSmall))
+	if got != secLarge+secSmall {
+		t.Errorf("kept sections must keep the original order, got %q", got)
+	}
 }
 
 func TestIsBinaryFile(t *testing.T) {
@@ -668,7 +678,7 @@ func TestBuildReviewMessage(t *testing.T) {
 	plan.PatchTruncated = true
 	plan.PatchDropped = []string{"d.go"}
 	msg = buildReviewMessage("s", "l", plan)
-	if !strings.Contains(msg, "NOT attached (attachment budget): c.go") {
+	if !strings.Contains(msg, "NOT attached (budget or read error): c.go") {
 		t.Errorf("message must list not-attached files:\n%s", msg)
 	}
 	if !strings.Contains(msg, "changes.patch was truncated") || !strings.Contains(msg, "d.go") {
@@ -678,10 +688,14 @@ func TestBuildReviewMessage(t *testing.T) {
 		t.Errorf("inputs sentence must not claim completeness when files are dropped:\n%s", msg)
 	}
 
-	// A degenerate truncation without named sections must still be reported.
+	// A degenerate truncation without named sections must still be reported,
+	// and the patch must not be advertised as complete.
 	msg = buildReviewMessage("s", "l", reviewPlan{PatchTruncated: true})
 	if !strings.Contains(msg, "changes.patch was truncated (some content omitted)") {
 		t.Errorf("degenerate truncation must be reported:\n%s", msg)
+	}
+	if strings.Contains(msg, "the complete diff") || !strings.Contains(msg, "sections omitted") {
+		t.Errorf("truncated patch must not be called complete:\n%s", msg)
 	}
 
 	// A skipped (deleted/binary) file narrows the inputs claim without
@@ -786,6 +800,22 @@ func TestGocycloCmd(t *testing.T) {
 	}
 }
 
+// runGitIn runs a git command in dir with a fixed test identity, failing the
+// test on error.
+func runGitIn(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(
+		os.Environ(),
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
 // setupReviewRepo creates a throwaway git repository with two commits, the
 // second modifying second.go; AGENTS.md is committed with the first.
 func setupReviewRepo(t *testing.T) string {
@@ -793,16 +823,7 @@ func setupReviewRepo(t *testing.T) string {
 	repo := t.TempDir()
 	runGit := func(args ...string) {
 		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = repo
-		cmd.Env = append(
-			os.Environ(),
-			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
-			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t",
-		)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
+		runGitIn(t, repo, args...)
 	}
 	runGit("init", "-q")
 	for _, f := range []struct{ name, content string }{
@@ -973,5 +994,108 @@ func TestHandleCodeReviewFallbackSkipsBinary(t *testing.T) {
 	}
 	if !strings.Contains(call.message, "skipped as deleted/binary/unreadable") {
 		t.Errorf("coverage must account for the skipped binary:\n%s", call.message)
+	}
+}
+
+// TestHandleCodeReviewSkipsSymlinks: a committed symlink must never be
+// followed and uploaded - its target can live outside the repository (e.g. a
+// private key), while the attachment travels to an external service.
+func TestHandleCodeReviewSkipsSymlinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation is not portable on windows")
+	}
+	repo := setupReviewRepo(t)
+	secret := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(secret, []byte("TOP SECRET\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, filepath.Join(repo, "link.txt")); err != nil {
+		t.Fatal(err)
+	}
+	runGitIn(t, repo, "add", "-A")
+	runGitIn(t, repo, "commit", "-qm", "link")
+
+	call := stubReviewExpert(t)
+	stubGocyclo(t, nil)
+	t.Chdir(repo)
+
+	if _, _, err := handleCodeReview(context.Background(), toolcall.ToolArgs{"summary": "symlink", "since": "-1"}); err != nil {
+		t.Fatalf("handleCodeReview: %v", err)
+	}
+	if slices.Contains(call.names, "link.txt") {
+		t.Errorf("symlink must not be attached (attachments: %v)", call.names)
+	}
+	for name, content := range call.data {
+		if strings.Contains(content, "TOP SECRET") {
+			t.Errorf("symlink target leaked through attachment %s", name)
+		}
+	}
+	if !strings.Contains(call.message, "skipped as deleted/binary/unreadable") {
+		t.Errorf("coverage must list the symlink as skipped:\n%s", call.message)
+	}
+}
+
+// TestHandleCodeReviewNonASCIIPath: git quotes non-ASCII paths by default
+// (octal escapes); the listing must unquote them so the file is attached
+// instead of being mistaken for deleted.
+func TestHandleCodeReviewNonASCIIPath(t *testing.T) {
+	repo := setupReviewRepo(t)
+	const name = "café.go"
+	if err := os.WriteFile(filepath.Join(repo, name), []byte("package main\n// café\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGitIn(t, repo, "add", "-A")
+	runGitIn(t, repo, "commit", "-qm", "non-ascii")
+
+	call := stubReviewExpert(t)
+	stubGocyclo(t, []string{name})
+	t.Chdir(repo)
+
+	if _, _, err := handleCodeReview(context.Background(), toolcall.ToolArgs{"summary": "non-ascii", "since": "-1"}); err != nil {
+		t.Fatalf("handleCodeReview: %v", err)
+	}
+	if !strings.Contains(call.data[name], "café") {
+		t.Errorf("non-ASCII path must be attached with its real name (attachments: %v)", call.names)
+	}
+	if !strings.Contains(call.message, "Full content attached: 1 file(s).") {
+		t.Errorf("coverage must count the file as attached:\n%s", call.message)
+	}
+}
+
+// TestHandleCodeReviewBudgetDrop: more changed files than the budget can
+// carry exercises the end-to-end drop path - the largest files are dropped,
+// the batch stays at the 50-file site cap, and the dropped files are named in
+// both the coverage note and the local warning.
+func TestHandleCodeReviewBudgetDrop(t *testing.T) {
+	repo := setupReviewRepo(t)
+	for i := 0; i < 48; i++ {
+		name := fmt.Sprintf("extra%02d.go", i)
+		content := fmt.Sprintf("package main\n// %d\n", i)
+		if err := os.WriteFile(filepath.Join(repo, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGitIn(t, repo, "add", "-A")
+	runGitIn(t, repo, "commit", "-qm", "many")
+
+	call := stubReviewExpert(t)
+	origG := runGocyclo
+	t.Cleanup(func() { runGocyclo = origG })
+	runGocyclo = func(context.Context, string, []string) string { return "stub\n" }
+	t.Chdir(repo)
+
+	_, warning, err := handleCodeReview(context.Background(), toolcall.ToolArgs{"summary": "budget", "since": "-1"})
+	if err != nil {
+		t.Fatalf("handleCodeReview: %v", err)
+	}
+	// 4 fixed attachments + 46 kept files = the 50-file site cap.
+	if len(call.attachments) != 50 {
+		t.Fatalf("attachments = %d, want 50", len(call.attachments))
+	}
+	if !strings.Contains(call.message, "NOT attached (budget or read error): extra46.go, extra47.go") {
+		t.Errorf("coverage must name the dropped files:\n%s", call.message)
+	}
+	if !strings.Contains(warning, "未能附上 2 个文件的全文") {
+		t.Errorf("warning = %q, want the drop notice", warning)
 	}
 }

@@ -385,11 +385,14 @@ func parseNameOnly(out string) []string {
 // to `git log --name-only` (binary detection deferred to the NUL sniff).
 // Returns nil when both fail - the review then proceeds with the patch alone.
 func listChangedFiles(ctx context.Context, n int) []numstatEntry {
-	out, err := shell.SimpleExecute(ctx, fmt.Sprintf("git diff --numstat --no-renames HEAD~%d..HEAD", n))
+	// core.quotePath=false keeps non-ASCII paths unquoted: git would otherwise
+	// emit octal escapes ("caf\303\251.go"), and the on-disk stat of the
+	// quoted name fails - silently demoting the file to 'skipped'.
+	out, err := shell.SimpleExecute(ctx, fmt.Sprintf("git -c core.quotePath=false diff --numstat --no-renames HEAD~%d..HEAD", n))
 	if err == nil {
 		return parseNumstat(out)
 	}
-	out, err = shell.SimpleExecute(ctx, fmt.Sprintf("git log --name-only --pretty=format: -n %d", n))
+	out, err = shell.SimpleExecute(ctx, fmt.Sprintf("git -c core.quotePath=false log --name-only --pretty=format: -n %d", n))
 	if err != nil {
 		return nil
 	}
@@ -424,7 +427,12 @@ func isBinaryFile(path string) bool {
 func reviewCandidates(ctx context.Context, repoRoot string, commits int) (candidates []candidateFile, skipped []string) {
 	for _, e := range listChangedFiles(ctx, commits) {
 		full := filepath.Join(repoRoot, e.path)
-		info, statErr := os.Stat(full)
+		// Lstat, not Stat: a committed symlink must never be followed and
+		// uploaded - its target can live outside the repository (e.g. a
+		// private key), while the attachment would travel to an external
+		// service. Symlinks (and anything else that is not a regular file)
+		// are skipped and listed in the coverage note.
+		info, statErr := os.Lstat(full)
 		if e.binary || statErr != nil || !info.Mode().IsRegular() || isBinaryFile(full) {
 			skipped = append(skipped, e.path)
 			continue
@@ -466,6 +474,10 @@ func assembleReviewAttachments(ctx context.Context, dir, repoRoot, patch string,
 	if agents != "" {
 		othersBytes += int64(len(agents))
 	}
+	// The patch absorbs the cut first (it is the primary input); a fixed set
+	// that alone exceeded the budget would clamp to an empty patch and be
+	// rejected site-side - not reachable in practice (guide + gocyclo +
+	// AGENTS.md total a few hundred KB).
 	if othersBytes+int64(len(patchBody)) > int64(lp.WebUploadMaxTotal) {
 		budget := int64(lp.WebUploadMaxTotal) - othersBytes
 		if budget < 0 {
@@ -636,16 +648,34 @@ func copyReviewFile(dir, name, source string) (string, error) {
 }
 
 // dropSectionsToBytes greedily keeps the smallest patch sections until the
-// byte budget is exhausted (smallest-first: maximal coverage count).
+// byte budget is exhausted (smallest-first: maximal coverage count). The kept
+// sections are returned in their ORIGINAL patch order, so the assembled patch
+// keeps reading in file order; dropped keeps the selection order.
 func dropSectionsToBytes(sections []namedSection, maxBytes int) (kept, dropped []namedSection) {
-	sort.Slice(sections, func(i, j int) bool { return len(sections[i].text) < len(sections[j].text) })
+	order := make([]int, len(sections))
+	for i := range order {
+		order[i] = i
+	}
+	sort.Slice(order, func(a, b int) bool {
+		la, lb := len(sections[order[a]].text), len(sections[order[b]].text)
+		if la != lb {
+			return la < lb
+		}
+		return order[a] < order[b]
+	})
+	keep := make(map[int]bool, len(sections))
 	used := 0
-	for _, s := range sections {
-		if used+len(s.text) <= maxBytes {
-			kept = append(kept, s)
-			used += len(s.text)
+	for _, i := range order {
+		if used+len(sections[i].text) <= maxBytes {
+			keep[i] = true
+			used += len(sections[i].text)
 		} else {
-			dropped = append(dropped, s)
+			dropped = append(dropped, sections[i])
+		}
+	}
+	for i, s := range sections {
+		if keep[i] {
+			kept = append(kept, s)
 		}
 	}
 	return kept, dropped
@@ -712,9 +742,13 @@ func buildReviewMessage(summary, commitLog string, plan reviewPlan) string {
 	sb.WriteString("\n\n## Commit Message\n")
 	sb.WriteString(capCommitLog(commitLog))
 	sb.WriteString("\n\n## Review Inputs\n")
+	patchClaim := "changes.patch (the complete diff)"
+	if plan.PatchTruncated {
+		patchClaim = "changes.patch (the diff; sections omitted - see Coverage)"
+	}
 	inputs := []string{
 		"review-guide.md (the review instructions - follow them)",
-		"changes.patch (the complete diff)",
+		patchClaim,
 	}
 	switch {
 	case len(plan.NotAttached) > 0:
@@ -741,7 +775,7 @@ func buildReviewMessage(summary, commitLog string, plan reviewPlan) string {
 	if len(plan.NotAttached) == 0 {
 		sb.WriteString("- Not attached: none.\n")
 	} else {
-		fmt.Fprintf(&sb, "- NOT attached (attachment budget): %s\n", strings.Join(plan.NotAttached, ", "))
+		fmt.Fprintf(&sb, "- NOT attached (budget or read error): %s\n", strings.Join(plan.NotAttached, ", "))
 	}
 	if !plan.Agents {
 		sb.WriteString("- AGENTS.md not attached (absent, empty, or unreadable).\n")
@@ -762,7 +796,7 @@ func buildReviewMessage(summary, commitLog string, plan reviewPlan) string {
 func reviewAttachmentWarning(plan reviewPlan) string {
 	var parts []string
 	if n := len(plan.NotAttached); n > 0 {
-		parts = append(parts, fmt.Sprintf("附件预算不足，未附上 %d 个文件的全文: %s", n, cappedList(plan.NotAttached)))
+		parts = append(parts, fmt.Sprintf("未能附上 %d 个文件的全文（预算不足或读取失败）: %s", n, cappedList(plan.NotAttached)))
 	}
 	if plan.PatchTruncated {
 		if len(plan.PatchDropped) > 0 {

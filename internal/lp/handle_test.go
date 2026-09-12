@@ -1241,9 +1241,13 @@ func TestHandleWebChatSkipPromptInjectionStripsDSML(t *testing.T) {
 	// A quoted (fenced) DSML example parses zero executable calls; role
 	// sessions still strip the markup so callers see clean prose.
 	reply := "Answer text.\n\n```xml\n<tool_calls>\n<invoke name=\"read_file\">\n<parameter name=\"path\" string=\"true\">AGENTS.md</parameter>\n</invoke>\n</tool_calls>\n```"
-	var sent string
-	handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
+	var (
+		sent     string
+		sentOpts WebChatOptions
+	)
+	handleWebChatSend = func(_ context.Context, msg string, opts WebChatOptions) (WebChatResult, error) {
 		sent = msg
+		sentOpts = opts
 		return WebChatResult{Content: reply, URL: "https://chat.deepseek.com/a/chat/s/convSKIP"}, nil
 	}
 
@@ -1253,6 +1257,9 @@ func TestHandleWebChatSkipPromptInjectionStripsDSML(t *testing.T) {
 	}
 	if sent != "input" {
 		t.Errorf("message = %q, want input verbatim (no prompt injection)", sent)
+	}
+	if sentOpts.Role != "" || sentOpts.SkipPromptInjection {
+		t.Errorf("transport options must be stripped at the call site, got %+v", sentOpts)
 	}
 	if strings.Contains(res.Content, "<tool_calls>") {
 		t.Errorf("role session must strip the DSML wrapper even with SkipPromptInjection, got %q", res.Content)
