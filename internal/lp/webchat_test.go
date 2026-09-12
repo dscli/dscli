@@ -2,6 +2,7 @@ package lp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -444,6 +445,29 @@ func TestRegistryTrim(t *testing.T) {
 	}
 	if _, ok := reg.Sessions["id010"]; !ok {
 		t.Error("newest entry id010 was trimmed away")
+	}
+}
+
+func TestRegistryIgnoresLegacyModeField(t *testing.T) {
+	// webchat_sessions.json files written before the model-selection removal
+	// carry a "mode" field; loading must ignore it, and a re-save must not
+	// resurrect it (encoding/json drops unknown fields by default - this test
+	// pins that back-compat contract).
+	const legacy = `{"sessions":{"abc":{"url":"https://chat.deepseek.com/a/chat/s/abc","mode":"pro","updated_at":"2026-09-01T00:00:00Z"}}}`
+	var reg conversationRegistry
+	if err := json.Unmarshal([]byte(legacy), &reg); err != nil {
+		t.Fatalf("legacy registry must load: %v", err)
+	}
+	entry, ok := reg.Sessions["abc"]
+	if !ok || entry.URL != "https://chat.deepseek.com/a/chat/s/abc" || entry.UpdatedAt != "2026-09-01T00:00:00Z" {
+		t.Fatalf("legacy entry = %+v (ok=%v), want URL and timestamp preserved", entry, ok)
+	}
+	out, err := json.Marshal(reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), `"mode"`) {
+		t.Errorf("re-saved registry must not contain the removed mode field: %s", out)
 	}
 }
 

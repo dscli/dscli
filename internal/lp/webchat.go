@@ -160,7 +160,11 @@ const (
 	// the visible page text OR a thumbnail counts as one ready file; counts
 	// are capped at the number of names (a mixed batch may match both ways).
 	// The client-side wait loop polls this until every file is confirmed or
-	// the budget expires (then the send proceeds with a warning).
+	// the budget expires (then the send proceeds with a warning). The
+	// confirmation is optimistic by construction: pre-existing thumbnails in
+	// a continued conversation, or a short file name matching unrelated page
+	// text, can confirm early - the send retry and the fall-through warning
+	// make this best-effort, not a guarantee.
 	jsUploadReadyCountFmt = `(() => {
 		const names = %s;
 		const text = (document.body ? document.body.innerText : '') || '';
@@ -1046,13 +1050,15 @@ func webchatSetValue(ctx context.Context, message string) error {
 	return nil
 }
 
-// Web chat upload limits enforced by chat.deepseek.com. Exported so callers
-// that assemble attachments themselves (code_review) can pre-drop inputs
-// under the same budget instead of failing in validateWebAttachments.
-const (
-	WebUploadMaxFiles = 50
-	WebUploadMaxTotal = 100 << 20 // 100MB total
-)
+// WebUploadMaxFiles is the maximum number of files chat.deepseek.com accepts
+// in one upload batch. Exported so callers that assemble attachments
+// themselves (code_review) can pre-drop inputs under the same budget instead
+// of failing in validateWebAttachments.
+const WebUploadMaxFiles = 50
+
+// WebUploadMaxTotal is the maximum total byte size chat.deepseek.com accepts
+// in one upload batch (100MB).
+const WebUploadMaxTotal = 100 << 20
 
 // webUploadReadyWaitAttempts bounds the best-effort wait for the page to
 // confirm uploaded attachments (one probe per second) before the send goes

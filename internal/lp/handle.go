@@ -253,7 +253,7 @@ func handleWebChatFollowUpSend(ctx context.Context, message string, opts WebChat
 				return WebChatResult{}, err
 			}
 		}
-		res, callErr := handleWebChatSend(ctx, message, opts)
+		res, callErr := handleWebChatSend(ctx, message, webChatTransportOptions(opts))
 		if callErr == nil {
 			return res, nil
 		}
@@ -280,9 +280,10 @@ var handleWebChatMaxDSMLRounds = 1024
 // webChatTransportOptions returns the options reduced to what the transport
 // accepts: Role/System/SkipPromptInjection are HandleWebChat concerns (prompt
 // rendering, DSML gating, injection gating) and are rejected by
-// WebChatWithOptions, so every send strips them. Keeping this in one place
-// prevents a new handle-level option from leaking into the transport (a bug
-// the live smoke test caught for SkipPromptInjection).
+// WebChatWithOptions. Every transport send - the initial send and the
+// DSML-loop follow-ups - goes through this helper, so a new handle-level
+// option cannot leak into the transport (the live smoke test caught exactly
+// that for SkipPromptInjection).
 func webChatTransportOptions(opts WebChatOptions) WebChatOptions {
 	transport := opts
 	transport.Role = ""

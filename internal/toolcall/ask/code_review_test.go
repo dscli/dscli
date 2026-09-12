@@ -591,12 +591,34 @@ func TestTruncatePatchToBudget(t *testing.T) {
 	}
 }
 
+func TestIsBinaryFile(t *testing.T) {
+	dir := t.TempDir()
+	text := filepath.Join(dir, "text.go")
+	if err := os.WriteFile(text, []byte("package main\n// text\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if isBinaryFile(text) {
+		t.Error("text file flagged as binary")
+	}
+	bin := filepath.Join(dir, "blob.bin")
+	if err := os.WriteFile(bin, []byte{0x00, 0x01, 0xff, 0x00}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !isBinaryFile(bin) {
+		t.Error("file with NUL bytes must be flagged as binary")
+	}
+	if isBinaryFile(filepath.Join(dir, "missing.bin")) {
+		t.Error("missing file must not be flagged as binary")
+	}
+}
+
 func TestBuildReviewMessage(t *testing.T) {
 	plan := reviewPlan{
 		CommitCount: 2,
 		Changed:     []string{"a.go", "b.go"},
 		Skipped:     []string{"gone.go"},
 		Attached:    []string{"a.go", "b.go"},
+		Agents:      true,
 	}
 	msg := buildReviewMessage("summary text", "commit body", plan)
 	for _, want := range []string{
@@ -608,6 +630,7 @@ func TestBuildReviewMessage(t *testing.T) {
 		"review-guide.md",
 		"changes.patch",
 		"gocyclo.txt",
+		"AGENTS.md (project guide)",
 		"internal__lp__webchat.go",
 		"## Coverage",
 		"Commits under review: 2.",
@@ -630,6 +653,16 @@ func TestBuildReviewMessage(t *testing.T) {
 	}
 	if !strings.Contains(msg, "changes.patch was truncated") || !strings.Contains(msg, "d.go") {
 		t.Errorf("message must report patch truncation:\n%s", msg)
+	}
+
+	// Without AGENTS.md the inputs sentence must not claim it, and the
+	// coverage note must state the blind spot.
+	msg = buildReviewMessage("s", "l", reviewPlan{})
+	if strings.Contains(msg, "AGENTS.md (project guide)") {
+		t.Errorf("message must not claim AGENTS.md is attached when absent:\n%s", msg)
+	}
+	if !strings.Contains(msg, "AGENTS.md not attached") {
+		t.Errorf("message must flag the missing AGENTS.md:\n%s", msg)
 	}
 }
 
@@ -791,6 +824,7 @@ func TestHandleCodeReviewAttachments(t *testing.T) {
 		"Commits under review: 1.",
 		"Full content attached: 1 file(s).",
 		"- Not attached: none.",
+		"AGENTS.md (project guide)",
 		"test summary",
 	} {
 		if !strings.Contains(gotMessage, want) {

@@ -1,6 +1,7 @@
 package ask
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -192,112 +193,14 @@ func handleCodeReview(ctx context.Context, args toolcall.ToolArgs) (result, warn
 	}
 	defer os.RemoveAll(dir)
 
-	var candidates []candidateFile
-	var skipped []string
-	for _, p := range listChangedFiles(ctx, commits) {
-		info, statErr := os.Stat(filepath.Join(repoRoot, p))
-		if statErr != nil || !info.Mode().IsRegular() {
-			// 删除的文件、子模块等没有全文附件；git log 回退路径还会列出
-			// 二进制文件（不适合作为文本上传），一并跳过并在覆盖清单里说明。
-			skipped = append(skipped, p)
-			continue
-		}
-		candidates = append(candidates, candidateFile{path: p, size: info.Size()})
+	attachments, plan, err := assembleReviewAttachments(ctx, dir, repoRoot, patch, commits)
+	if err != nil {
+		return result, warning, err
 	}
-	changed := make([]string, 0, len(candidates))
-	var goFiles []string
-	for _, c := range candidates {
-		changed = append(changed, c.path)
-		if strings.HasSuffix(c.path, ".go") {
-			goFiles = append(goFiles, c.path)
-		}
-	}
-	sort.Strings(changed)
-
-	guide := prompt.RenderPromptForRole(ctx, "review")
-	agents := ""
-	if b, readErr := os.ReadFile(filepath.Join(repoRoot, reviewAgentsName)); readErr == nil {
-		agents = string(b)
-	}
-	gocyclo := runGocyclo(ctx, repoRoot, goFiles)
-
-	plan := reviewPlan{CommitCount: commits, Changed: changed, Skipped: skipped}
-	// 固定附件优先：guide/patch/AGENTS.md/gocyclo 先占预算，patch 只在自身
-	// 超预算时才按文件区段丢弃（越小越优先保留，覆盖面最大）。
-	patchBody := patch
-	othersBytes := int64(len(guide)) + int64(len(gocyclo))
-	if agents != "" {
-		othersBytes += int64(len(agents))
-	}
-	if othersBytes+int64(len(patchBody)) > int64(lp.WebUploadMaxTotal) {
-		budget := int64(lp.WebUploadMaxTotal) - othersBytes
-		if budget < 0 {
-			budget = 0
-		}
-		patchBody, plan.PatchDropped = truncatePatchToBudget(patchBody, int(budget))
-		plan.PatchTruncated = true
-	}
-	fixedBytes := othersBytes + int64(len(patchBody))
-	fixedCount := 3 // guide + patch + gocyclo
-	if agents != "" {
-		fixedCount++
-	}
-	kept, dropped := selectReviewFiles(candidates, lp.WebUploadMaxFiles-fixedCount, int64(lp.WebUploadMaxTotal)-fixedBytes)
-
-	attachments := make([]string, 0, fixedCount+len(kept))
-	for _, f := range []struct{ name, content string }{
-		{reviewGuideName, guide},
-		{reviewPatchName, patchBody},
-		{reviewGocycloName, gocyclo},
-	} {
-		p, werr := writeReviewFile(dir, f.name, f.content)
-		if werr != nil {
-			err = werr
-			return result, warning, err
-		}
-		attachments = append(attachments, p)
-	}
-	if agents != "" {
-		p, werr := writeReviewFile(dir, reviewAgentsName, agents)
-		if werr != nil {
-			err = werr
-			return result, warning, err
-		}
-		attachments = append(attachments, p)
-	}
-
-	usedNames := map[string]bool{
-		reviewGuideName:   true,
-		reviewPatchName:   true,
-		reviewGocycloName: true,
-	}
-	if agents != "" {
-		usedNames[reviewAgentsName] = true
-	}
-	attached := make([]string, 0, len(kept))
-	notAttached := make([]string, 0, len(dropped))
-	for _, d := range dropped {
-		notAttached = append(notAttached, d.path)
-	}
-	for _, c := range kept {
-		name := uniqueAttachmentName(usedNames, encodeAttachmentName(c.path))
-		p, cerr := copyReviewFile(dir, name, filepath.Join(repoRoot, c.path))
-		if cerr != nil {
-			fmt.Fprintf(os.Stderr, "⚠️ 附件复制失败: %v\n", cerr)
-			notAttached = append(notAttached, c.path)
-			continue
-		}
-		attachments = append(attachments, p)
-		attached = append(attached, c.path)
-	}
-	sort.Strings(attached)
-	sort.Strings(notAttached)
-	plan.Attached = attached
-	plan.NotAttached = notAttached
 
 	message := buildReviewMessage(summary, fullLog, plan)
 	outfmt.Printf("📤 发送代码审查请求到 DeepSeek Web（免费）...\n%s\n", message)
-	outfmt.Printf("📎 附件 %d 个（%d 个变更文件全文，%d 个文件未附）\n", len(attachments), len(attached), len(notAttached))
+	outfmt.Printf("📎 附件 %d 个（%d 个变更文件全文，%d 个文件未附）\n", len(attachments), len(plan.Attached), len(plan.NotAttached))
 	warning = reviewAttachmentWarning(plan)
 	result, err = AskExpertWithRoleFiles(ctx, message, "review", attachments)
 	if err != nil {
@@ -449,6 +352,130 @@ func listChangedFiles(ctx context.Context, n int) []string {
 	return parseNameOnly(out)
 }
 
+// isBinaryFile reports whether the file looks binary (a NUL byte within the
+// first 8KB - the same heuristic git uses). Binary files cannot be uploaded
+// as text attachments, so they are skipped and listed in the coverage note.
+func isBinaryFile(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	buf := make([]byte, 8192)
+	n, _ := io.ReadFull(f, buf)
+	return bytes.IndexByte(buf[:n], 0) >= 0
+}
+
+// assembleReviewAttachments collects the changed files, renders the fixed
+// inputs and writes every review attachment into dir (owned by the caller).
+// It returns the upload paths and the coverage plan; a write failure aborts
+// the review because an incomplete attachment set must not be sent silently.
+func assembleReviewAttachments(ctx context.Context, dir, repoRoot, patch string, commits int) ([]string, reviewPlan, error) {
+	var candidates []candidateFile
+	var skipped []string
+	for _, p := range listChangedFiles(ctx, commits) {
+		full := filepath.Join(repoRoot, p)
+		info, statErr := os.Stat(full)
+		if statErr != nil || !info.Mode().IsRegular() || isBinaryFile(full) {
+			// 删除的文件、子模块、二进制文件没有可用的全文附件；git log
+			// 回退路径也会列出这些条目，统一过滤并在覆盖清单里说明。
+			skipped = append(skipped, p)
+			continue
+		}
+		candidates = append(candidates, candidateFile{path: p, size: info.Size()})
+	}
+
+	changed := make([]string, 0, len(candidates))
+	var goFiles []string
+	for _, c := range candidates {
+		changed = append(changed, c.path)
+		if strings.HasSuffix(c.path, ".go") {
+			goFiles = append(goFiles, c.path)
+		}
+	}
+	sort.Strings(changed)
+
+	guide := prompt.RenderPromptForRole(ctx, "review")
+	agents := ""
+	if b, readErr := os.ReadFile(filepath.Join(repoRoot, reviewAgentsName)); readErr == nil {
+		agents = string(b)
+	}
+	gocyclo := runGocyclo(ctx, repoRoot, goFiles)
+
+	plan := reviewPlan{CommitCount: commits, Changed: changed, Skipped: skipped, Agents: agents != ""}
+	// 固定附件优先：guide/patch/AGENTS.md/gocyclo 先占预算，patch 只在自身
+	// 超预算时才按文件区段丢弃（越小越优先保留，覆盖面最大）。
+	patchBody := patch
+	othersBytes := int64(len(guide)) + int64(len(gocyclo))
+	if agents != "" {
+		othersBytes += int64(len(agents))
+	}
+	if othersBytes+int64(len(patchBody)) > int64(lp.WebUploadMaxTotal) {
+		budget := int64(lp.WebUploadMaxTotal) - othersBytes
+		if budget < 0 {
+			budget = 0
+		}
+		patchBody, plan.PatchDropped = truncatePatchToBudget(patchBody, int(budget))
+		plan.PatchTruncated = len(plan.PatchDropped) > 0
+	}
+	fixedBytes := othersBytes + int64(len(patchBody))
+	fixedCount := 3 // guide + patch + gocyclo
+	if agents != "" {
+		fixedCount++
+	}
+	kept, dropped := selectReviewFiles(candidates, lp.WebUploadMaxFiles-fixedCount, int64(lp.WebUploadMaxTotal)-fixedBytes)
+
+	attachments := make([]string, 0, fixedCount+len(kept))
+	for _, f := range []struct{ name, content string }{
+		{reviewGuideName, guide},
+		{reviewPatchName, patchBody},
+		{reviewGocycloName, gocyclo},
+	} {
+		p, werr := writeReviewFile(dir, f.name, f.content)
+		if werr != nil {
+			return nil, reviewPlan{}, werr
+		}
+		attachments = append(attachments, p)
+	}
+	if agents != "" {
+		p, werr := writeReviewFile(dir, reviewAgentsName, agents)
+		if werr != nil {
+			return nil, reviewPlan{}, werr
+		}
+		attachments = append(attachments, p)
+	}
+
+	usedNames := map[string]bool{
+		reviewGuideName:   true,
+		reviewPatchName:   true,
+		reviewGocycloName: true,
+	}
+	if agents != "" {
+		usedNames[reviewAgentsName] = true
+	}
+	attached := make([]string, 0, len(kept))
+	notAttached := make([]string, 0, len(dropped))
+	for _, d := range dropped {
+		notAttached = append(notAttached, d.path)
+	}
+	for _, c := range kept {
+		name := uniqueAttachmentName(usedNames, encodeAttachmentName(c.path))
+		p, cerr := copyReviewFile(dir, name, filepath.Join(repoRoot, c.path))
+		if cerr != nil {
+			fmt.Fprintf(os.Stderr, "⚠️ 附件复制失败: %v\n", cerr)
+			notAttached = append(notAttached, c.path)
+			continue
+		}
+		attachments = append(attachments, p)
+		attached = append(attached, c.path)
+	}
+	sort.Strings(attached)
+	sort.Strings(notAttached)
+	plan.Attached = attached
+	plan.NotAttached = notAttached
+	return attachments, plan, nil
+}
+
 // candidateFile is a changed file that can be attached, with its size on disk.
 type candidateFile struct {
 	path string
@@ -598,6 +625,7 @@ type reviewPlan struct {
 	Skipped        []string // changed entries skipped (deleted, binary, unreadable)
 	Attached       []string // repo paths attached with full content
 	NotAttached    []string // repo paths not attached (attachment budget / read error)
+	Agents         bool     // AGENTS.md was attached
 	PatchDropped   []string // files whose patch section was dropped
 	PatchTruncated bool     // the patch was cut to fit the upload budget
 }
@@ -623,9 +651,16 @@ func buildReviewMessage(summary, commitLog string, plan reviewPlan) string {
 	sb.WriteString("\n\n## Commit Message\n")
 	sb.WriteString(capCommitLog(commitLog))
 	sb.WriteString("\n\n## Review Inputs\n")
-	sb.WriteString("All review inputs are attached to this message: review-guide.md (the review instructions - follow them), ")
-	sb.WriteString("changes.patch (the complete diff), the full content of every changed file, AGENTS.md (project guide) ")
-	sb.WriteString("and gocyclo.txt (cyclomatic complexity of the changed Go files, project threshold 20). ")
+	inputs := []string{
+		"review-guide.md (the review instructions - follow them)",
+		"changes.patch (the complete diff)",
+		"the full content of every changed file",
+	}
+	if plan.Agents {
+		inputs = append(inputs, "AGENTS.md (project guide)")
+	}
+	inputs = append(inputs, "gocyclo.txt (cyclomatic complexity of the changed Go files, project threshold 20)")
+	sb.WriteString("All review inputs are attached to this message: " + strings.Join(inputs, ", ") + ". ")
 	sb.WriteString("Attachment file names encode repo paths: \"internal__lp__webchat.go\" is \"internal/lp/webchat.go\".\n")
 	sb.WriteString("\n## Coverage\n")
 	fmt.Fprintf(&sb, "- Commits under review: %d.\n", plan.CommitCount)
@@ -635,6 +670,9 @@ func buildReviewMessage(summary, commitLog string, plan reviewPlan) string {
 		sb.WriteString("- Not attached: none.\n")
 	} else {
 		fmt.Fprintf(&sb, "- NOT attached (attachment budget): %s\n", strings.Join(plan.NotAttached, ", "))
+	}
+	if !plan.Agents {
+		sb.WriteString("- AGENTS.md not attached (not present in the repository root).\n")
 	}
 	if plan.PatchTruncated {
 		fmt.Fprintf(&sb, "- changes.patch was truncated: patch sections missing for %s\n", strings.Join(plan.PatchDropped, ", "))
