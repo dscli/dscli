@@ -691,6 +691,12 @@ func TestBuildReviewMessage(t *testing.T) {
 		t.Errorf("skipped-only inputs sentence = %q", msg)
 	}
 
+	// With both dropped and skipped files the caveat must survive.
+	msg = buildReviewMessage("s", "l", reviewPlan{NotAttached: []string{"c.go"}, Skipped: []string{"blob.bin"}})
+	if !strings.Contains(msg, "upload budget") || !strings.Contains(msg, "listed as skipped") {
+		t.Errorf("combined-gaps inputs sentence = %q", msg)
+	}
+
 	// Without AGENTS.md the inputs sentence must not claim it, and the
 	// coverage note must state the blind spot.
 	msg = buildReviewMessage("s", "l", reviewPlan{})
@@ -715,6 +721,12 @@ func TestReviewAttachmentWarning(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("warning missing %q: %q", want, got)
 		}
+	}
+
+	// A file-less truncation keeps the 'content omitted' wording.
+	got = reviewAttachmentWarning(reviewPlan{PatchTruncated: true})
+	if !strings.Contains(got, "部分内容已省略") {
+		t.Errorf("file-less truncation warning = %q", got)
 	}
 }
 
@@ -769,7 +781,7 @@ func TestGocycloCmd(t *testing.T) {
 		t.Fatal(err)
 	}
 	got = gocycloCmd(context.Background(), "", []string{"a.go"})
-	if !strings.Contains(got, "boom") || !strings.Contains(got, "may be partial") {
+	if !strings.Contains(got, "boom") || !strings.Contains(got, "may be partial") || !strings.Contains(got, "exit status 1") {
 		t.Errorf("stderr-diagnostics report = %q", got)
 	}
 }
@@ -827,7 +839,8 @@ type capturedReviewCall struct {
 }
 
 // stubReviewExpert replaces askExpertWithRoleFunc with a recording mock that
-// snapshots every attachment and returns [MOCK].
+// snapshots every attachment and returns [MOCK]. The stub mutates a
+// package-level seam, so tests using it must not run in parallel.
 func stubReviewExpert(t *testing.T) *capturedReviewCall {
 	t.Helper()
 	call := &capturedReviewCall{data: map[string]string{}}

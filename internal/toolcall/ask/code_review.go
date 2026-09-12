@@ -303,7 +303,11 @@ func gocycloCmd(ctx context.Context, dir string, files []string) string {
 			report += diagnostics + "\n"
 		}
 		if diagnostics != "" {
-			report += "(gocyclo wrote to stderr; the report may be partial)\n"
+			reason := "wrote to stderr"
+			if err != nil {
+				reason = fmt.Sprintf("exited with %v and wrote to stderr", err)
+			}
+			report += fmt.Sprintf("(gocyclo %s; the report may be partial)\n", reason)
 		} else {
 			report += fmt.Sprintf("(gocyclo exited with %v; the report may be partial)\n", err)
 		}
@@ -714,7 +718,11 @@ func buildReviewMessage(summary, commitLog string, plan reviewPlan) string {
 	}
 	switch {
 	case len(plan.NotAttached) > 0:
-		inputs = append(inputs, "the full content of the changed files that fit the upload budget")
+		claim := "the full content of the changed files that fit the upload budget"
+		if len(plan.Skipped) > 0 {
+			claim += " (deleted and binary files are listed as skipped)"
+		}
+		inputs = append(inputs, claim)
 	case len(plan.Skipped) > 0:
 		inputs = append(inputs, "the full content of every changed text file (deleted and binary files are listed as skipped)")
 	default:
