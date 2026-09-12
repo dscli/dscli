@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dscli/dscli/internal/lp"
 	"github.com/spf13/cobra"
 )
 
@@ -88,14 +87,13 @@ func TestGatherWebchatInputStdinEmpty(t *testing.T) {
 }
 
 // newWebchatOptionsCmd builds a webchat command with the flags
-// webchatOptionsFromFlags reads (keep/model/attach/role), matching the real
+// webchatOptionsFromFlags reads (keep/attach/role), matching the real
 // command's defaults - the contract this test locks.
 func newWebchatOptionsCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "webchat"}
 	var keep string
 	keepFlag := cmd.Flags().VarPF(&keepValue{&keep}, "keep", "", "")
 	keepFlag.NoOptDefVal = "last"
-	cmd.Flags().String("model", "", "")
 	cmd.Flags().StringSlice("attach", nil, "")
 	cmd.Flags().String("role", "", "")
 	return cmd
@@ -111,7 +109,7 @@ func TestWebchatOptionsFromFlags(t *testing.T) {
 	if opts.Role != "" {
 		t.Errorf("default Role = %q, want \"\" (plain chat)", opts.Role)
 	}
-	if opts.Mode != "" || opts.Keep != "" || len(opts.Attachments) != 0 {
+	if opts.Keep != "" || len(opts.Attachments) != 0 {
 		t.Errorf("default options should be empty, got %+v", opts)
 	}
 
@@ -133,11 +131,8 @@ func TestWebchatOptionsFromFlags(t *testing.T) {
 		t.Errorf("empty Role = %q, err = %v; want \"\" (plain chat)", opts.Role, err)
 	}
 
-	// model/keep/attach pass through unchanged.
+	// keep/attach pass through unchanged.
 	cmd = newWebchatOptionsCmd()
-	if err := cmd.Flags().Set("model", "vision"); err != nil {
-		t.Fatal(err)
-	}
 	if err := cmd.Flags().Set("keep", "abc"); err != nil {
 		t.Fatal(err)
 	}
@@ -148,9 +143,9 @@ func TestWebchatOptionsFromFlags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("webchatOptionsFromFlags(all flags): %v", err)
 	}
-	if opts.Mode != lp.Mode("vision") || opts.Keep != "abc" ||
+	if opts.Keep != "abc" ||
 		len(opts.Attachments) != 1 || opts.Attachments[0] != "shot.png" {
-		t.Errorf("options = %+v, want model=vision keep=abc attach=[shot.png]", opts)
+		t.Errorf("options = %+v, want keep=abc attach=[shot.png]", opts)
 	}
 }
 

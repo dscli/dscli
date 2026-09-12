@@ -61,7 +61,7 @@ var codeDevTool = toolcall.ToolDef{
 }
 
 func init() {
-	// WebChat is always available (free DeepSeek V4 Pro) - no API key needed.
+	// WebChat is always available (free DeepSeek Web) - no API key needed.
 	toolcall.RegisterTool(codeDevTool)
 }
 
@@ -144,11 +144,11 @@ func handleCodeDev(ctx context.Context, args toolcall.ToolArgs) (result, warning
 	// demand via read_file, keeping the request under the web-chat input
 	// budget (the dev role prompt already carries project context).
 	structuredRequest, warning := truncateCodeDevRequest(content)
-	outfmt.Printf("📤 发送实现任务到 DeepSeek Web（免费 V4 Pro，角色 dev）...\n%s\n", truncateForDisplay(structuredRequest, 2000))
+	outfmt.Printf("📤 发送实现任务到 DeepSeek Web（免费，角色 dev）...\n%s\n", truncateForDisplay(structuredRequest, 2000))
 
 	// keep continues the SAME developer conversation ("" = new): follow-up
 	// fix instructions keep the full project context the developer built up.
-	reply, convURL, printed, err := askExpertWithRoleFunc(ctx, structuredRequest, "dev", "", "", keep, nil)
+	reply, convURL, printed, err := askExpertWithRoleFunc(ctx, structuredRequest, "dev", "", keep, nil, false)
 	if err != nil {
 		outfmt.Println("❌ 开发会话失败")
 		err = fmt.Errorf("开发会话失败: %w", err)

@@ -159,7 +159,7 @@ func handleQualityAssurance(ctx context.Context, args toolcall.ToolArgs) (result
 		fmt.Fprintf(os.Stderr, "⚠️ test 角色未配置 DSML 工具（默认无工具）：QA 工程师将无法读取文件/运行项目的测试命令，报告限于提交内容。可运行 `dscli role update test --tools shell,read_file,write_file` 启用。\n")
 	}
 	structuredRequest, warning := truncateReviewRequest(summary, fullLog, patch)
-	outfmt.Printf("📤 发送质量保障请求到 DeepSeek Web（免费 V4 Pro）...\n%s\n", structuredRequest)
+	outfmt.Printf("📤 发送质量保障请求到 DeepSeek Web（免费）...\n%s\n", structuredRequest)
 	var convURL string
 	result, convURL, err = AskExpertWithRoleConv(ctx, structuredRequest, "test")
 	if err != nil {

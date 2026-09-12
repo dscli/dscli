@@ -12,12 +12,12 @@ import (
 
 // capturedCall records the arguments passed to askExpertWithRoleFunc.
 type capturedCall struct {
-	input       string
-	role        string
-	system      string
-	mode        string
-	keep        string
-	attachments []string
+	input         string
+	role          string
+	system        string
+	keep          string
+	attachments   []string
+	skipInjection bool
 }
 
 // captureAskExpert replaces askExpertWithRoleFunc with a recording mock and
@@ -27,13 +27,13 @@ func captureAskExpert(t *testing.T) *capturedCall {
 	t.Helper()
 	orig := askExpertWithRoleFunc
 	calls := &capturedCall{}
-	askExpertWithRoleFunc = func(_ context.Context, input, role, system, mode, keep string, attachments []string) (string, string, bool, error) {
+	askExpertWithRoleFunc = func(_ context.Context, input, role, system, keep string, attachments []string, skipInjection bool) (string, string, bool, error) {
 		calls.input = input
 		calls.role = role
 		calls.system = system
-		calls.mode = mode
 		calls.keep = keep
 		calls.attachments = attachments
+		calls.skipInjection = skipInjection
 		return "[MOCK]", "", false, nil
 	}
 	t.Cleanup(func() { askExpertWithRoleFunc = orig })
@@ -69,7 +69,7 @@ func TestAskExpertToolParameters(t *testing.T) {
 	if params == nil {
 		t.Fatal("tool parameters missing properties")
 	}
-	for _, key := range []string{"input", "attachments", "mode", "keep", "timeout", "raw"} {
+	for _, key := range []string{"input", "attachments", "keep", "timeout", "raw"} {
 		if _, ok := params[key]; !ok {
 			t.Errorf("tool parameters missing %q", key)
 		}
@@ -432,33 +432,52 @@ func TestHandleAskExpertTempImageAttachment(t *testing.T) {
 	}
 }
 
-func TestHandleAskExpertMode(t *testing.T) {
-	calls := captureAskExpert(t)
-	args := toolcall.ToolArgs{
-		"input": "Question",
-		"mode":  "flash",
-	}
-
-	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
-		t.Fatalf("handleAskExpert: %v", err)
-	}
-	if calls.mode != "flash" {
-		t.Errorf("mode = %q, want flash", calls.mode)
-	}
-}
-
-func TestHandleAskExpertModeDefaultsToEmpty(t *testing.T) {
+func TestHandleAskExpertKeepAndSkipDefaults(t *testing.T) {
 	calls := captureAskExpert(t)
 	args := toolcall.ToolArgs{"input": "Question"}
 
 	if _, _, err := handleAskExpert(context.Background(), args); err != nil {
 		t.Fatalf("handleAskExpert: %v", err)
 	}
-	if calls.mode != "" {
-		t.Errorf("mode = %q, want empty (auto-select in web chat layer)", calls.mode)
-	}
 	if calls.keep != "" {
 		t.Errorf("keep = %q, want empty (new conversation by default)", calls.keep)
+	}
+	if calls.skipInjection {
+		t.Error("ask_expert must not skip prompt injection (no role is passed)")
+	}
+}
+
+// TestAskExpertFilesSkipsPromptInjection verifies the ask-layer wiring of the
+// file-attachment variant: it suppresses the role prompt injection (the
+// caller ships the role instructions as attachments) while plain role calls
+// keep the injection.
+func TestAskExpertFilesSkipsPromptInjection(t *testing.T) {
+	orig := askExpertWithRoleFunc
+	t.Cleanup(func() { askExpertWithRoleFunc = orig })
+
+	var gotSkip bool
+	var gotAttachments []string
+	askExpertWithRoleFunc = func(_ context.Context, _, _, _, _ string, attachments []string, skip bool) (string, string, bool, error) {
+		gotSkip = skip
+		gotAttachments = attachments
+		return "[MOCK]", "", false, nil
+	}
+
+	if _, err := AskExpertWithRoleFiles(context.Background(), "input", "review", []string{"a.md"}); err != nil {
+		t.Fatalf("AskExpertWithRoleFiles: %v", err)
+	}
+	if !gotSkip {
+		t.Error("AskExpertWithRoleFiles must skip prompt injection")
+	}
+	if len(gotAttachments) != 1 || gotAttachments[0] != "a.md" {
+		t.Errorf("attachments = %v, want [a.md]", gotAttachments)
+	}
+
+	if _, err := AskExpertWithRole(context.Background(), "input", "review"); err != nil {
+		t.Fatalf("AskExpertWithRole: %v", err)
+	}
+	if gotSkip {
+		t.Error("AskExpertWithRole must not skip prompt injection")
 	}
 }
 
@@ -495,7 +514,7 @@ func TestHandleAskExpertLastPassedThrough(t *testing.T) {
 func TestHandleAskExpertConversationIDInResult(t *testing.T) {
 	orig := askExpertWithRoleFunc
 	t.Cleanup(func() { askExpertWithRoleFunc = orig })
-	askExpertWithRoleFunc = func(_ context.Context, _, _, _, _, _ string, _ []string) (string, string, bool, error) {
+	askExpertWithRoleFunc = func(_ context.Context, _, _, _, _ string, _ []string, _ bool) (string, string, bool, error) {
 		return "专家回答", "https://chat.deepseek.com/a/chat/s/conv12345", false, nil
 	}
 
@@ -512,7 +531,7 @@ func TestHandleAskExpertNoConversationURL(t *testing.T) {
 	// When the conversation URL is unknown, the result must not claim an ID.
 	orig := askExpertWithRoleFunc
 	t.Cleanup(func() { askExpertWithRoleFunc = orig })
-	askExpertWithRoleFunc = func(_ context.Context, _, _, _, _, _ string, _ []string) (string, string, bool, error) {
+	askExpertWithRoleFunc = func(_ context.Context, _, _, _, _ string, _ []string, _ bool) (string, string, bool, error) {
 		return "[MOCK]", "", false, nil
 	}
 

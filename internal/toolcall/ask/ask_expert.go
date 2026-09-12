@@ -43,10 +43,6 @@ var askExpertTool = toolcall.ToolDef{
 					"description": "Attachment filename",
 				},
 			},
-			"mode": map[string]any{
-				"type":        "string",
-				"description": "Web chat mode: flash (fast, smart search), pro (expert, default), vision (image uploads). Empty: vision if images attached, else pro.",
-			},
 			"keep": map[string]any{
 				"type":        "string",
 				"description": "Continue a previous conversation (default new). Pass the conversation_id from a previous result, \"last\" (most recent), or a chat.deepseek.com URL; \"list\" lists saved conversations.",
@@ -70,23 +66,24 @@ var askExpertTool = toolcall.ToolDef{
 
 // askExpertWithRoleFunc is the function used to call the expert.
 // It is a package-level variable so tests can replace it with a mock.
-// mode selects the web chat mode ("" = auto: pro, or vision with image
-// uploads); keep continues a previous conversation ("" = new, "last" =
-// most recent, or a conversation ID/URL); attachments are image files
-// uploaded to the web chat. It returns the reply text, the conversation
-// URL (empty when unknown) so callers can continue the conversation later,
-// and printed - the reply was already printed by the DSML tool loop, so
-// callers must not re-print it (it would duplicate the final answer).
+// keep continues a previous conversation ("" = new, "last" = most recent,
+// or a conversation ID/URL); attachments are files (images, text, PDF)
+// uploaded to the web chat; skipPromptInjection suppresses the role prompt
+// injection while keeping the role's other effects (see WebChatOptions).
+// It returns the reply text, the conversation URL (empty when unknown) so
+// callers can continue the conversation later, and printed - the reply was
+// already printed by the DSML tool loop, so callers must not re-print it
+// (it would duplicate the final answer).
 var askExpertWithRoleFunc = askExpertWebChat
 
 func init() {
-	// WebChat is always available (free DeepSeek V4 Pro) — no API key needed.
+	// WebChat is always available (free DeepSeek Web) — no API key needed.
 	// The only prerequisite is Chrome installed and logged in once.
 	toolcall.RegisterTool(askExpertTool)
 
 	// Test optimization: use mock to skip browser automation.
 	if ictx.IsTesting() {
-		askExpertWithRoleFunc = func(_ context.Context, _, _, _, _, _ string, _ []string) (string, string, bool, error) {
+		askExpertWithRoleFunc = func(_ context.Context, _, _, _, _ string, _ []string, _ bool) (string, string, bool, error) {
 			return "[MOCK]", "", false, nil
 		}
 	}
@@ -138,7 +135,6 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 		}
 	}
 
-	mode := toolcall.ToolArgsValue(args, "mode", "")
 	keep := toolcall.ToolArgsValue(args, "keep", "")
 	attachments := toolcall.ToolArgsValue(args, "attachments", []string{})
 	raw := toolcall.ToolArgsValue(args, "raw", false)
@@ -149,11 +145,11 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 		return listConversations()
 	}
 
-	// Split attachments by type: image files are uploaded to the web chat
-	// (flash/vision modes), everything else is inlined as text. Every
-	// attachment is sandboxed to the current directory, the user's home, or
-	// the system temp directory (symlink-resolved), so the model cannot
-	// exfiltrate arbitrary local files.
+	// Split attachments by type: image files are uploaded to the web chat,
+	// everything else is inlined as text. Every attachment is sandboxed to
+	// the current directory, the user's home, or the system temp directory
+	// (symlink-resolved), so the model cannot exfiltrate arbitrary local
+	// files.
 	var uploads, inline []string
 	for _, a := range attachments {
 		// Fail fast on unsafe paths: a path that escapes the sandbox is a
@@ -171,11 +167,7 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 
 	// Show what was asked (truncate long content for display)
 	summaryDisplay := truncateForDisplay(content, 120)
-	if mode != "" {
-		outfmt.Printf("📞 Consulting expert via DeepSeek Web (free, mode=%s)...\n", mode)
-	} else {
-		outfmt.Println("📞 Consulting expert via DeepSeek Web (free V4 Pro)...")
-	}
+	outfmt.Println("📞 Consulting expert via DeepSeek Web (free)...")
 	outfmt.Println("  Question:", summaryDisplay)
 	if len(uploads) > 0 {
 		outfmt.Printf("📎 Uploading %d image attachment(s)...\n", len(uploads))
@@ -196,7 +188,7 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 	// No persona is injected: role and system are both empty, so
 	// askExpertWebChat sends the request verbatim (the caller's own context
 	// carries the expertise). code_review still passes a role directly.
-	result, convURL, printed, err := askExpertWithRoleFunc(ctx, structuredRequest, "", "", mode, keep, uploads)
+	result, convURL, printed, err := askExpertWithRoleFunc(ctx, structuredRequest, "", "", keep, uploads, false)
 	if err != nil {
 		outfmt.Println("❌ Expert consultation failed")
 		return result, warning, err
@@ -241,11 +233,7 @@ func listConversations() (result, warning string, err error) {
 	var b strings.Builder
 	b.WriteString("Saved conversations (most recent first):\n")
 	for _, c := range convs {
-		mode := string(c.Mode)
-		if mode == "" {
-			mode = "?"
-		}
-		fmt.Fprintf(&b, "- %s  [%s]  %s  %s\n", c.ID, mode, c.UpdatedAt, c.URL)
+		fmt.Fprintf(&b, "- %s  %s  %s\n", c.ID, c.UpdatedAt, c.URL)
 	}
 	return b.String(), "", nil
 }
@@ -260,7 +248,7 @@ func truncateForDisplay(s string, maxLen int) string {
 }
 
 // AskExpertWithRole calls the AI model for consultation with a specified
-// role (expert/review/dev) via DeepSeek Web (free V4 Pro).
+// role (expert/review/dev) via DeepSeek Web (free).
 //
 // It renders the role-specific system prompt (e.g. expert.md, review.md),
 // prepends it to the input, and sends the combined message to
@@ -279,7 +267,7 @@ func truncateForDisplay(s string, maxLen int) string {
 func AskExpertWithRole(ctx context.Context, input, role string) (reply string, err error) {
 	// printed is ignored here: the reply is already printed by the DSML
 	// tool loop when the expert used tools (see askExpertWebChat).
-	reply, _, _, err = askExpertWithRoleFunc(ctx, input, role, "", "", "", nil)
+	reply, _, _, err = askExpertWithRoleFunc(ctx, input, role, "", "", nil, false)
 	return reply, err
 }
 
@@ -288,8 +276,18 @@ func AskExpertWithRole(ctx context.Context, input, role string) (reply string, e
 // quality_assurance tool's keep parameter) can surface it. The URL is ""
 // when it could not be determined; the reply text semantics are identical.
 func AskExpertWithRoleConv(ctx context.Context, input, role string) (reply, convURL string, err error) {
-	reply, convURL, _, err = askExpertWithRoleFunc(ctx, input, role, "", "", "", nil)
+	reply, convURL, _, err = askExpertWithRoleFunc(ctx, input, role, "", "", nil, false)
 	return reply, convURL, err
+}
+
+// AskExpertWithRoleFiles is AskExpertWithRole plus file attachments: the
+// files are uploaded to the web chat before the input is sent, and the role
+// prompt is NOT injected into the message - the caller provides the role
+// instructions as one of the attachments (see code_review). Role still
+// gates the DSML tool loop and markup stripping.
+func AskExpertWithRoleFiles(ctx context.Context, input, role string, attachments []string) (reply string, err error) {
+	reply, _, _, err = askExpertWithRoleFunc(ctx, input, role, "", "", attachments, true)
+	return reply, err
 }
 
 // askExpertWebChat is the real implementation: it maps the expert-call
@@ -301,15 +299,18 @@ func AskExpertWithRoleConv(ctx context.Context, input, role string) (reply, conv
 //
 // When both role and system are empty, no persona is injected and the input
 // is sent verbatim (the ask_expert tool relies on the caller's own context;
-// code_review passes a role). keep continues a previous conversation; it is
-// passed through to lp.WebChatOptions.Keep ("" = new, "last", ID, or URL).
-func askExpertWebChat(ctx context.Context, input, role, system, mode, keep string, attachments []string) (reply, convURL string, printed bool, err error) {
+// code_review passes a role). skipPromptInjection suppresses the injection
+// while keeping the role's other effects (DSML gating and markup stripping) -
+// the caller ships the role instructions as attachments instead. keep
+// continues a previous conversation; it is passed through to
+// lp.WebChatOptions.Keep ("" = new, "last", ID, or URL).
+func askExpertWebChat(ctx context.Context, input, role, system, keep string, attachments []string, skipPromptInjection bool) (reply, convURL string, printed bool, err error) {
 	res, err := lp.HandleWebChat(ctx, input, lp.WebChatOptions{
-		Mode:        lp.Mode(mode),
-		Attachments: attachments,
-		Keep:        keep,
-		Role:        role,
-		System:      system,
+		Attachments:         attachments,
+		Keep:                keep,
+		Role:                role,
+		System:              system,
+		SkipPromptInjection: skipPromptInjection,
 	})
 	if err != nil {
 		return "", "", false, err

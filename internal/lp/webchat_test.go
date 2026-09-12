@@ -197,49 +197,37 @@ func TestIsImageFile(t *testing.T) {
 	}
 }
 
-func TestNormalizeWebChatOptions(t *testing.T) {
-	tests := []struct {
-		name string
-		opts WebChatOptions
-		want Mode
-	}{
-		{"new conversation defaults to pro", WebChatOptions{}, ModePro},
-		{"attachments imply vision", WebChatOptions{Attachments: []string{"a.png"}}, ModeVision},
-		{"continued conversation preserves mode", WebChatOptions{Keep: "last"}, ""},
-		{"explicit mode wins", WebChatOptions{Mode: ModeFlash, Attachments: []string{"a.png"}}, ModeFlash},
-		{"explicit pro with keep", WebChatOptions{Mode: ModePro, Keep: "last"}, ModePro},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := normalizeWebChatOptions(tt.opts).Mode; got != tt.want {
-				t.Errorf("normalizeWebChatOptions(%+v).Mode = %q, want %q", tt.opts, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestValidateWebChatOptions(t *testing.T) {
 	dir := t.TempDir()
 	img := filepath.Join(dir, "a.png")
 	if err := os.WriteFile(img, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	txt := filepath.Join(dir, "notes.md")
+	if err := os.WriteFile(txt, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	valid := []WebChatOptions{
-		{Mode: ModePro},
-		{Mode: ModeFlash, Attachments: []string{img}},
-		{Mode: ModeVision, Attachments: []string{img}},
-		{Mode: ""}, // auto
+		{},
+		{Attachments: []string{img}},
+		{Attachments: []string{txt}}, // text attachments are supported
+		{Keep: "last"},
 	}
 	for _, opts := range valid {
 		if err := validateWebChatOptions(opts); err != nil {
 			t.Errorf("validateWebChatOptions(%+v) = %v, want nil", opts, err)
 		}
 	}
-	if err := validateWebChatOptions(WebChatOptions{Mode: "turbo"}); err == nil {
-		t.Error("unknown mode must fail")
-	}
-	if err := validateWebChatOptions(WebChatOptions{Mode: ModePro, Attachments: []string{img}}); err == nil {
-		t.Error("pro with attachments must fail")
+	// Role/System/SkipPromptInjection are HandleWebChat-only: the transport
+	// must reject them explicitly instead of silently ignoring them.
+	for _, opts := range []WebChatOptions{
+		{Role: "review"},
+		{System: "persona"},
+		{SkipPromptInjection: true},
+	} {
+		if err := validateWebChatOptions(opts); err == nil {
+			t.Errorf("validateWebChatOptions(%+v) must fail (handle-only field)", opts)
+		}
 	}
 }
 
@@ -282,7 +270,7 @@ func mustResolve(t *testing.T, files []string) []string {
 
 func TestValidateWebAttachments(t *testing.T) {
 	// Too many files (count check runs before the stat loop).
-	files := make([]string, webUploadMaxFiles+1)
+	files := make([]string, WebUploadMaxFiles+1)
 	for i := range files {
 		files[i] = fmt.Sprintf("f%d.png", i)
 	}
@@ -302,7 +290,7 @@ func TestValidateWebAttachments(t *testing.T) {
 	if err := os.WriteFile(big, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Truncate(big, webUploadMaxTotal+1); err != nil {
+	if err := os.Truncate(big, WebUploadMaxTotal+1); err != nil {
 		t.Fatal(err)
 	}
 	if err := validateWebAttachments([]string{big}); err == nil {
@@ -316,6 +304,15 @@ func TestValidateWebAttachments(t *testing.T) {
 	}
 	if err := validateWebAttachments([]string{small}); err != nil {
 		t.Errorf("small attachment must pass: %v", err)
+	}
+
+	// Text attachments pass the same limits (the page accepts them too).
+	notes := filepath.Join(dir, "notes.md")
+	if err := os.WriteFile(notes, []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateWebAttachments([]string{notes}); err != nil {
+		t.Errorf("text attachment must pass: %v", err)
 	}
 }
 

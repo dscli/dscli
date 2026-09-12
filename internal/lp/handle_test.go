@@ -163,9 +163,9 @@ func TestHandleWebChatResumeMultiTurnReply(t *testing.T) {
 }
 
 func TestWebChatWithOptionsRejectsHandleFields(t *testing.T) {
-	// Role/System are HandleWebChat-only: the transport must fail loudly
-	// instead of silently ignoring them (a caller using the wrong entry
-	// point would get no role prompt and no DSML loop).
+	// Role/System/SkipPromptInjection are HandleWebChat-only: the transport
+	// must fail loudly instead of silently ignoring them (a caller using the
+	// wrong entry point would get no role prompt and no DSML loop).
 	for _, tc := range []struct {
 		name string
 		opts WebChatOptions
@@ -173,6 +173,7 @@ func TestWebChatWithOptionsRejectsHandleFields(t *testing.T) {
 		{"role", WebChatOptions{Role: "expert"}},
 		{"system", WebChatOptions{System: "persona"}},
 		{"both", WebChatOptions{Role: "expert", System: "persona"}},
+		{"skip injection", WebChatOptions{SkipPromptInjection: true}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := WebChatWithOptions(context.Background(), "msg", tc.opts)
@@ -190,6 +191,8 @@ func TestWebChatWithOptionsRejectsHandleFields(t *testing.T) {
 // separator, with the user message preserved after it. Role "dev" relies on
 // roles.DefaultFor("dev") falling back to the dev template, so the separator's
 // presence/absence is the sufficient, stable signal of injection.
+// SkipPromptInjection is the second suppression path: with it set, the first
+// round sends the input verbatim even though Role is non-empty.
 func TestHandleWebChatKeepSkipsPromptInjection(t *testing.T) {
 	const message = "continue the discussion"
 
@@ -198,13 +201,16 @@ func TestHandleWebChatKeepSkipsPromptInjection(t *testing.T) {
 		keep         string
 		role         string
 		system       string
-		wantInjected bool // true = persona injected (first round), false = verbatim (resumed, Keep != "")
+		skip         bool
+		wantInjected bool // true = persona injected (first round); false = verbatim (resumed / SkipPromptInjection)
 	}{
-		{"first round role injected", "", "dev", "", true},
-		{"first round system wins over role", "", "dev", "persona-x", true},
-		{"resume role skipped", "conv123", "dev", "", false},
-		{"resume system skipped", "conv123", "", "persona", false},
-		{"resume last role skipped", "last", "dev", "", false},
+		{"first round role injected", "", "dev", "", false, true},
+		{"first round system wins over role", "", "dev", "persona-x", false, true},
+		{"first round skip suppresses role injection", "", "dev", "", true, false},
+		{"first round skip suppresses system injection", "", "", "persona", true, false},
+		{"resume role skipped", "conv123", "dev", "", false, false},
+		{"resume system skipped", "conv123", "", "persona", false, false},
+		{"resume last role skipped", "last", "dev", "", false, false},
 	}
 
 	for _, tc := range tests {
@@ -219,9 +225,10 @@ func TestHandleWebChatKeepSkipsPromptInjection(t *testing.T) {
 			}
 
 			_, err := HandleWebChat(context.Background(), message, WebChatOptions{
-				Keep:   tc.keep,
-				Role:   tc.role,
-				System: tc.system,
+				Keep:                tc.keep,
+				Role:                tc.role,
+				System:              tc.system,
+				SkipPromptInjection: tc.skip,
 			})
 			if err != nil {
 				t.Fatalf("HandleWebChat: %v", err)
@@ -477,9 +484,6 @@ func TestHandleWebChatToolLoop(t *testing.T) {
 	}
 	if calls[1].Keep != url1 {
 		t.Errorf("round-2 Keep = %q, want %s", calls[1].Keep, url1)
-	}
-	if calls[1].Mode != "" {
-		t.Errorf("round-2 Mode = %q, want empty (preserve conversation mode)", calls[1].Mode)
 	}
 	if calls[1].Role != "" {
 		t.Errorf("round-2 Role = %q, want empty (no re-injection)", calls[1].Role)
@@ -1193,6 +1197,39 @@ func TestHandleWebChatQuotedDSMLNotExecuted(t *testing.T) {
 	}
 	if !strings.Contains(res.Content, "Solid work") || !strings.Contains(res.Content, "End.") {
 		t.Errorf("content lost prose: %q", res.Content)
+	}
+}
+
+// TestHandleWebChatSkipPromptInjectionStripsDSML verifies that
+// SkipPromptInjection only suppresses the persona injection: Role keeps its
+// other effects (DSML markup stripping for role sessions), so a review-style
+// caller that ships its prompt as attachments still receives clean prose
+// while its message goes out verbatim.
+func TestHandleWebChatSkipPromptInjectionStripsDSML(t *testing.T) {
+	orig := handleWebChatSend
+	t.Cleanup(func() { handleWebChatSend = orig })
+
+	// A quoted (fenced) DSML example parses zero executable calls; role
+	// sessions still strip the markup so callers see clean prose.
+	reply := "Answer text.\n\n```xml\n<tool_calls>\n<invoke name=\"read_file\">\n<parameter name=\"path\" string=\"true\">AGENTS.md</parameter>\n</invoke>\n</tool_calls>\n```"
+	var sent string
+	handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
+		sent = msg
+		return WebChatResult{Content: reply, URL: "https://chat.deepseek.com/a/chat/s/convSKIP"}, nil
+	}
+
+	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{Role: "review", SkipPromptInjection: true})
+	if err != nil {
+		t.Fatalf("HandleWebChat: %v", err)
+	}
+	if sent != "input" {
+		t.Errorf("message = %q, want input verbatim (no prompt injection)", sent)
+	}
+	if strings.Contains(res.Content, "<tool_calls>") {
+		t.Errorf("role session must strip the DSML wrapper even with SkipPromptInjection, got %q", res.Content)
+	}
+	if !strings.Contains(res.Content, "Answer text.") {
+		t.Errorf("prose must survive stripping, got %q", res.Content)
 	}
 }
 

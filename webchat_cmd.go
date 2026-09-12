@@ -26,7 +26,7 @@ func init() {
 发送消息：
   dscli webchat "什么是闭包？"
   echo "review 这段代码" | dscli webchat
-  echo "识别图中文字" | dscli webchat --model flash --attach screenshot.png
+  echo "识别图中文字" | dscli webchat --attach screenshot.png
 
 继续会话（--keep）：
   dscli webchat --keep "第一个问题"            # 继续最近一次会话
@@ -35,13 +35,6 @@ func init() {
   dscli webchat --keep=list                     # 列出所有已保存会话
 续会话不会再次注入角色提示词（第一轮已注入）。
 每次回复都会把会话 ID 打印到 stderr（格式 keep:<id>），可直接作为 --keep 参数使用。
-
-模型（--model）：
-  pro    专家模型（V4 Pro，默认），深度思考
-  flash  快速模型（V4 Flash），深度思考 + 智能搜索 + 图片上传
-  vision 识图模型（V4 Vision），深度思考 + 图片上传
-
---keep 且未指定 --model 时保留原会话模型。
 
 角色（--role，与 dscli chat 一致；默认空 = 纯聊天）：
   dscli webchat --role review "review 最近的提交"     # code review 角色
@@ -57,10 +50,10 @@ sudo、curl/wget 外传等被拒绝）；仍建议在可信工作目录使用。
 提示词（回复中的 DSML 工具调用仍会执行）。判定规则：回复中解析出 DSML 工具调用
 （即使格式不严格，例如 wrapper 标签拼写错误）即本地执行并回填；解析失败才会请求重发。
 
-附件（--attach，可多次指定，仅 flash/vision 模型支持）：
-  dscli webchat --model vision --attach screenshot.png "这张截图说明了什么？"
+附件（--attach，可多次指定）：
+  dscli webchat --attach screenshot.png "这张截图说明了什么？"
 
-上传限制：最多 50 个文件、共 100MB，仅识别图片中的文字。`,
+上传限制：最多 50 个文件、共 100MB；支持图片、文本与 PDF 文件。`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: webchatRunE,
 	})
@@ -77,14 +70,13 @@ sudo、curl/wget 外传等被拒绝）；仍建议在可信工作目录使用。
 	var keep string
 	keepFlag := webchatCmd.Flags().VarPF(&keepValue{&keep}, "keep", "", "继续会话：--keep（最近一次）| --keep=<会话ID|会话URL> | --keep=list（列出已保存会话）；默认开新对话")
 	keepFlag.NoOptDefVal = "last"
-	webchatCmd.Flags().String("model", "", "聊天模型: pro (专家/V4 Pro), flash (快速/V4 Flash), vision (识图/V4 Vision)；默认 pro，--keep 时保留原模型")
 	// --attach accepts any user-readable path (absolute included): the CLI
 	// is human-driven and the operator can already read those files. The
 	// ask_expert TOOL is LLM-driven and sandboxes paths to the project
 	// directory, the user's home (~/ or $HOME absolute), or the system
 	// temp dir (/tmp) instead (verifySafePath), since the model is
 	// untrusted.
-	webchatCmd.Flags().StringSlice("attach", nil, "附件图片路径，可多次指定（仅 flash/vision 模型支持）")
+	webchatCmd.Flags().StringSlice("attach", nil, "附件文件路径（图片/文本/PDF），可多次指定")
 	// --role defaults to "" = plain chat (no role prompt injection; DSML
 	// tool calls in replies are still judged and executed when the reply
 	// parses at least one tool call, even if the format is not strict -
@@ -111,16 +103,11 @@ func webchatOptionsFromFlags(cmd *cobra.Command) (lp.WebChatOptions, error) {
 	if err != nil {
 		return lp.WebChatOptions{}, err
 	}
-	modelStr, err := cmd.Flags().GetString("model")
-	if err != nil {
-		return lp.WebChatOptions{}, err
-	}
 	attach, err := cmd.Flags().GetStringSlice("attach")
 	if err != nil {
 		return lp.WebChatOptions{}, err
 	}
 	return lp.WebChatOptions{
-		Mode:        lp.Mode(modelStr),
 		Attachments: attach,
 		Keep:        keep,
 		Role:        role,
@@ -237,11 +224,7 @@ func webchatListConversations() error {
 	}
 	fmt.Println("已保存会话（最新在前），ID 可直接用于 --keep=<ID>：")
 	for _, c := range convs {
-		mode := string(c.Mode)
-		if mode == "" {
-			mode = "-"
-		}
-		fmt.Printf("  %-36s  [%s]  %s\n", c.ID, mode, c.UpdatedAt)
+		fmt.Printf("  %-36s  %s\n", c.ID, c.UpdatedAt)
 		fmt.Printf("      %s\n", c.URL)
 	}
 	return nil

@@ -243,7 +243,7 @@ func handleWebChatRetryWait(ctx context.Context, err error, attempt int) error {
 // truncated follow-up already left its partial answer in the conversation,
 // so the retry sends webChatContinueWarning instead of the original text;
 // busy/rejected sends produced no reply and are re-sent verbatim. opts must
-// carry Mode and Keep (the conversation URL). Permanent errors stay fatal:
+// carry Keep (the conversation URL). Permanent errors stay fatal:
 // retrying mid-conversation is not safe for browser/network failures.
 func handleWebChatFollowUpSend(ctx context.Context, message string, opts WebChatOptions) (WebChatResult, error) {
 	var lastErr error
@@ -292,7 +292,9 @@ var handleWebChatExecDSML = dsml.ExecuteDSMLToolCalls
 //   - Role/system prompt rendering: when opts.Role is non-empty, the
 //     role-specific prompt template (see prompt.RenderPromptForRole) is
 //     prepended; opts.System (raw text) takes precedence over Role. Neither
-//     is injected when both are empty - the message is sent verbatim. In all
+//     is injected when both are empty - the message is sent verbatim.
+//     opts.SkipPromptInjection suppresses the injection while keeping Role's
+//     other effects (DSML gating and markup stripping, role labels). In all
 //     cases, injection happens only on the FIRST round of a conversation:
 //     a non-empty Keep (resume) skips injection because the session history
 //     already carries the persona/tool doc from round one - put any tone or
@@ -356,11 +358,15 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 	// round (see the doc comment above): a resumed session already carries
 	// the persona/tool doc in its history. Within that first round, System
 	// wins over Role, matching the ask layer's previous precedence.
+	// SkipPromptInjection suppresses the injection entirely while keeping
+	// Role's other effects (DSML gating and markup stripping, role labels) -
+	// callers that ship the role instructions as attachments set it.
 	fullMessage := message
 	firstRound := opts.Keep == ""
-	if firstRound && opts.System != "" {
+	injectPrompt := firstRound && !opts.SkipPromptInjection
+	if injectPrompt && opts.System != "" {
 		fullMessage = opts.System + "\n\n---\n\n## User Request\n\n" + message
-	} else if firstRound && opts.Role != "" {
+	} else if injectPrompt && opts.Role != "" {
 		// The DSML tool section is derived from the role's tool config
 		// (role_configs / roles.DefaultFor) at send time - the same source
 		// as GetAllTools. A role without executable tools (expert/review by
@@ -652,7 +658,7 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 			// 同会话发送 MalformedWarning，请模型审视后按严格格式重发。
 			fmt.Fprintf(os.Stderr, "⚠️ %s 的回复包含畸形 DSML 工具调用标记，已请求审视重发（第 %d/%d 轮）…\n",
 				roleName, round, handleWebChatMaxDSMLRounds)
-			followUp := WebChatOptions{Mode: opts.Mode, Keep: convURL}
+			followUp := WebChatOptions{Keep: convURL}
 			res, callErr := handleWebChatFollowUpSend(ctx, dsml.MalformedWarning, followUp)
 			if callErr != nil {
 				return WebChatResult{}, fmt.Errorf("webchat tool loop: malformed DSML re-issue during round %d: %w", round, callErr)
@@ -684,7 +690,7 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 				// 疑似工具调用但解析失败（截断/畸形）：keep 会话并请求重发。
 				fmt.Fprintf(os.Stderr, "⚠️ %s 的回复疑似工具调用但解析失败，已请求按严格格式重发（第 %d/%d 轮）…\n",
 					roleName, round, handleWebChatMaxDSMLRounds)
-				followUp := WebChatOptions{Mode: opts.Mode, Keep: convURL}
+				followUp := WebChatOptions{Keep: convURL}
 				res, callErr := handleWebChatFollowUpSend(ctx, dsml.ReissueWarning, followUp)
 				if callErr != nil {
 					return WebChatResult{}, fmt.Errorf("webchat tool loop: re-issue warning during round %d: %w", round, callErr)
@@ -728,12 +734,12 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 		}
 		feedback := buildWebChatFeedback(outputs)
 
-		// Continue the SAME conversation: same mode, Keep set to the URL
-		// returned by the previous send. Explicit construction (not
-		// copy-and-clear) so future WebChatOptions fields never leak into
-		// follow-ups: no role injection and no re-upload of attachments
-		// here - the expert only gets the tool results.
-		followUp := WebChatOptions{Mode: opts.Mode, Keep: convURL}
+		// Continue the SAME conversation: Keep set to the URL returned by
+		// the previous send. Explicit construction (not copy-and-clear) so
+		// future WebChatOptions fields never leak into follow-ups: no role
+		// injection and no re-upload of attachments here - the expert only
+		// gets the tool results.
+		followUp := WebChatOptions{Keep: convURL}
 		res, callErr := handleWebChatFollowUpSend(ctx, feedback, followUp)
 		if callErr != nil {
 			return WebChatResult{}, fmt.Errorf("webchat tool loop: continue conversation during round %d: %w", round, callErr)
