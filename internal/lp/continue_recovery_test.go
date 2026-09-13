@@ -532,25 +532,26 @@ func TestContinueRecoveryRegenerateStep(t *testing.T) {
 		answer     string
 		wantAction continueAction
 		wantErr    error
-		// wantRegenClicks pins the successful 「重新生成」 counter; -1 skips.
-		wantRegenClicks int
-		// wantAttempts counts clickAt dispatches.
+		// wantAttempts counts clickAt dispatches (successful + failed).
 		wantAttempts int
-		// wantPendingKind pins the pending provenance after the step; -1 skips
-		// (some rows deliberately churn the body, which the gate reads as a
-		// confirmed resume and clears pending).
-		wantPendingKind int
-		// wantRegenRuns asserts the regen detector was consulted; -1 skips.
+		// wantRegenClicks pins the successful 「重新生成」 counter.
+		wantRegenClicks int
+		// wantPendingKind pins the pending provenance after the step.
+		wantPendingKind pendingClick
+		// wantRegenRuns pins how many times the regen detector was consulted.
 		wantRegenRuns int
+		// wantCDPErr asserts the returned error also wraps errProbeCDP (the
+		// double-%w claim for the regen dispatch-failure path).
+		wantCDPErr bool
 	}{
 		{
 			name:            "stopped state and idle clicks regenerate",
 			setup:           func(h *recoveryHarness, r *continueRecovery) { h.regen = regenVisible() },
 			body:            "已停止",
 			wantAction:      continueClicked,
-			wantRegenClicks: 1,
 			wantAttempts:    1,
-			wantPendingKind: int(pendingRegen),
+			wantRegenClicks: 1,
+			wantPendingKind: pendingRegen,
 			wantRegenRuns:   1,
 		},
 		{
@@ -565,9 +566,8 @@ func TestContinueRecoveryRegenerateStep(t *testing.T) {
 			wantRegenRuns: 0,
 		},
 		{
-			// A pending resume whose generation turned active is CONFIRMED: the gate
-			// clears pending and the round proceeds. This is the signal the recovery
-			// exists to produce, so it must not be mistaken for "still broken".
+			// A pending resume whose generation turned active is CONFIRMED:
+			// the gate clears pending and the round proceeds.
 			name: "pending plus active clears the resume",
 			setup: func(h *recoveryHarness, r *continueRecovery) {
 				h.regen = regenVisible()
@@ -577,14 +577,13 @@ func TestContinueRecoveryRegenerateStep(t *testing.T) {
 				if !r.pending || r.pendingKind != pendingRegen {
 					t.Fatalf("seed did not arm a regenerate resume: pending=%v kind=%v", r.pending, r.pendingKind)
 				}
-				// The click is in flight and the generation became active.
 				h.active = true
 			},
 			body:            "已停止",
 			wantAction:      continueNone,
-			wantRegenClicks: 1,
 			wantAttempts:    1,
-			wantPendingKind: int(pendingNone),
+			wantRegenClicks: 1,
+			wantPendingKind: pendingNone,
 			wantRegenRuns:   1,
 		},
 		{
@@ -592,8 +591,9 @@ func TestContinueRecoveryRegenerateStep(t *testing.T) {
 			setup:           func(h *recoveryHarness, r *continueRecovery) { h.regen = regenBlocked() },
 			body:            "已停止",
 			wantAction:      continueHold,
-			wantRegenClicks: 0,
 			wantAttempts:    0,
+			wantRegenClicks: 0,
+			wantPendingKind: pendingNone,
 			wantRegenRuns:   1,
 		},
 		{
@@ -603,14 +603,13 @@ func TestContinueRecoveryRegenerateStep(t *testing.T) {
 				if _, err := r.step(context.Background(), "已停止 v1", func() string { return "" }); err != nil {
 					t.Fatalf("seed step: %v", err)
 				}
-				// The new attempt stopped the same way: still no answer body.
 				h.clock.adv(webChatContinueCooldown)
 			},
 			body:            "已停止 v2",
 			wantAction:      continueClicked,
-			wantRegenClicks: 2,
 			wantAttempts:    2,
-			wantPendingKind: int(pendingRegen),
+			wantRegenClicks: 2,
+			wantPendingKind: pendingRegen,
 			wantRegenRuns:   2,
 		},
 		{
@@ -620,14 +619,13 @@ func TestContinueRecoveryRegenerateStep(t *testing.T) {
 				if _, err := r.step(context.Background(), "已停止", func() string { return "" }); err != nil {
 					t.Fatalf("seed step: %v", err)
 				}
-				// No clock advance: the cooldown still runs. The body is constant, so the
-				// gate cannot read the poll as a confirmed resume.
+				// No clock advance: the cooldown still runs.
 			},
 			body:            "已停止",
 			wantAction:      continueHold,
-			wantRegenClicks: 1,
 			wantAttempts:    1,
-			wantPendingKind: int(pendingRegen),
+			wantRegenClicks: 1,
+			wantPendingKind: pendingRegen,
 			wantRegenRuns:   2,
 		},
 		{
@@ -644,9 +642,9 @@ func TestContinueRecoveryRegenerateStep(t *testing.T) {
 			body:            "已停止",
 			wantErr:         ErrTruncated,
 			wantAction:      continueNone,
-			wantRegenClicks: webChatMaxRegenerates,
 			wantAttempts:    webChatMaxRegenerates,
-			wantPendingKind: int(pendingRegen),
+			wantRegenClicks: webChatMaxRegenerates,
+			wantPendingKind: pendingRegen,
 			wantRegenRuns:   webChatMaxRegenerates + 1,
 		},
 		{
@@ -657,9 +655,9 @@ func TestContinueRecoveryRegenerateStep(t *testing.T) {
 			},
 			body:            "已停止",
 			wantAction:      continueHold,
-			wantRegenClicks: 0,
 			wantAttempts:    1,
-			wantPendingKind: int(pendingNone),
+			wantRegenClicks: 0,
+			wantPendingKind: pendingNone,
 			wantRegenRuns:   1,
 		},
 		{
@@ -677,38 +675,80 @@ func TestContinueRecoveryRegenerateStep(t *testing.T) {
 			body:            "已停止",
 			wantErr:         ErrTruncated,
 			wantAction:      continueNone,
-			wantRegenClicks: 0,
 			wantAttempts:    webChatMaxContinueClickFailures,
+			wantRegenClicks: 0,
+			wantPendingKind: pendingNone,
 			wantRegenRuns:   webChatMaxContinueClickFailures,
+			wantCDPErr:      true,
 		},
 		{
-			name:            "regenerate detect error holds",
+			name:            "regenerate detect error holds below the cap",
 			setup:           func(h *recoveryHarness, r *continueRecovery) { h.regenErr = errors.New("evaluate failed") },
 			body:            "已停止",
 			wantAction:      continueHold,
-			wantRegenClicks: 0,
 			wantAttempts:    0,
+			wantRegenClicks: 0,
+			wantPendingKind: pendingNone,
 			wantRegenRuns:   1,
 		},
 		{
-			// The new attempt produced a body: the stopped state is gone and the
-			// resume is confirmed by the text change.
+			// Item 3a: a PERSISTENT regen-detect error must not hold a
+			// healthy round forever. After the cap the step falls through to
+			// the normal flow.
+			name: "regen detect error past the cap falls through",
+			setup: func(h *recoveryHarness, r *continueRecovery) {
+				h.regenErr = errors.New("evaluate failed")
+				for i := 0; i < webChatMaxRegenDetectFailures-1; i++ {
+					if _, err := r.step(context.Background(), "已停止", func() string { return "" }); err != nil {
+						t.Fatalf("seed error step %d: %v", i, err)
+					}
+				}
+			},
+			body:            "已停止",
+			wantAction:      continueNone,
+			wantAttempts:    0,
+			wantRegenClicks: 0,
+			wantPendingKind: pendingNone,
+			wantRegenRuns:   webChatMaxRegenDetectFailures,
+		},
+		{
+			// Item 3b: while a resume is pending the cap does NOT apply - the
+			// click is in flight and only the resume window may fail it.
+			name: "regen detect error with pending keeps holding past the cap",
+			setup: func(h *recoveryHarness, r *continueRecovery) {
+				h.regen = regenVisible()
+				if _, err := r.step(context.Background(), "已停止", func() string { return "" }); err != nil {
+					t.Fatalf("seed click step: %v", err)
+				}
+				h.regenErr = errors.New("evaluate failed")
+				for i := 0; i < webChatMaxRegenDetectFailures+1; i++ {
+					if _, err := r.step(context.Background(), "已停止", func() string { return "" }); err != nil {
+						t.Fatalf("seed error step %d: %v", i, err)
+					}
+				}
+			},
+			body:            "已停止",
+			wantAction:      continueHold,
+			wantAttempts:    1,
+			wantRegenClicks: 1,
+			wantPendingKind: pendingRegen,
+			wantRegenRuns:   webChatMaxRegenDetectFailures + 3,
+		},
+		{
 			name: "stopped state gone and pending cleared proceeds",
 			setup: func(h *recoveryHarness, r *continueRecovery) {
 				h.regen = regenVisible()
 				if _, err := r.step(context.Background(), "已停止 v1", func() string { return "" }); err != nil {
 					t.Fatalf("seed step: %v", err)
 				}
-				// The new attempt produced a body: the stopped state is gone
-				// and the resume is confirmed.
 				h.regen = regenerateDetect{}
 				h.clock.adv(webChatContinueCooldown)
 			},
 			body:            "完整回复",
 			wantAction:      continueNone,
-			wantRegenClicks: 1,
 			wantAttempts:    1,
-			wantPendingKind: int(pendingNone),
+			wantRegenClicks: 1,
+			wantPendingKind: pendingNone,
 			wantRegenRuns:   2,
 		},
 	}
@@ -721,29 +761,65 @@ func TestContinueRecoveryRegenerateStep(t *testing.T) {
 				tc.setup(h, r)
 			}
 			action, err := r.step(context.Background(), tc.body, func() string { return tc.answer })
-			if tc.wantErr == nil {
-				if err != nil {
-					t.Fatalf("step error = %v, want nil", err)
-				}
-			} else if !errors.Is(err, tc.wantErr) {
-				t.Fatalf("step error = %v, want %v", err, tc.wantErr)
+			// Reuse the shared outcome assertions: wantClicks=0 pins that the
+			// continue counter NEVER advances on a regen row.
+			assertRecoveryOutcome(t, h, r, action, err, tc.wantAction, tc.wantErr,
+				tc.wantAttempts, 0, tc.wantRegenClicks, nil, tc.wantCDPErr)
+			if r.pendingKind != tc.wantPendingKind {
+				t.Errorf("pendingKind = %v, want %v", r.pendingKind, tc.wantPendingKind)
 			}
-			if action != tc.wantAction {
-				t.Errorf("action = %v, want %v", action, tc.wantAction)
-			}
-			if r.regenClicks != tc.wantRegenClicks {
-				t.Errorf("r.regenClicks = %d, want %d", r.regenClicks, tc.wantRegenClicks)
-			}
-			if h.clicks != tc.wantAttempts {
-				t.Errorf("clickAt calls = %d, want %d", h.clicks, tc.wantAttempts)
-			}
-			if tc.wantPendingKind >= 0 && int(r.pendingKind) != tc.wantPendingKind {
-				t.Errorf("pendingKind = %v, want %v", r.pendingKind, pendingClick(tc.wantPendingKind))
-			}
-			if tc.wantRegenRuns >= 0 && h.regenRuns != tc.wantRegenRuns {
+			if h.regenRuns != tc.wantRegenRuns {
 				t.Errorf("regen detector runs = %d, want %d", h.regenRuns, tc.wantRegenRuns)
 			}
 		})
+	}
+}
+
+// TestContinueRecoveryRegenDetectFailureReset pins the other half of item 3:
+// once the regen detector succeeds again, the consecutive-failure counter
+// resets, so a later error gets a fresh cap instead of falling through
+// immediately.
+func TestContinueRecoveryRegenDetectFailureReset(t *testing.T) {
+	h := newRecoveryHarness()
+	r := h.newRecovery()
+
+	// Two errors: below the cap, still holding.
+	h.regenErr = errors.New("evaluate failed")
+	for i := 0; i < webChatMaxRegenDetectFailures-1; i++ {
+		action, err := r.step(context.Background(), "已停止", func() string { return "" })
+		if err != nil {
+			t.Fatalf("error step %d: %v", i, err)
+		}
+		if action != continueHold {
+			t.Fatalf("error step %d action = %v, want hold", i, action)
+		}
+	}
+	if r.regenDetectFailures != webChatMaxRegenDetectFailures-1 {
+		t.Fatalf("regenDetectFailures = %d, want %d", r.regenDetectFailures, webChatMaxRegenDetectFailures-1)
+	}
+
+	// A successful poll resets the counter and re-arms normal detection.
+	h.regenErr = nil
+	h.regen = regenerateDetect{}
+	action, err := r.step(context.Background(), "已停止", func() string { return "" })
+	if err != nil {
+		t.Fatalf("successful step: %v", err)
+	}
+	if action != continueNone {
+		t.Errorf("successful step action = %v, want continueNone (no button)", action)
+	}
+	if r.regenDetectFailures != 0 {
+		t.Errorf("regenDetectFailures = %d after a success, want 0", r.regenDetectFailures)
+	}
+
+	// A fresh error starts a new run: the first error holds again.
+	h.regenErr = errors.New("evaluate failed")
+	action, err = r.step(context.Background(), "已停止", func() string { return "" })
+	if err != nil {
+		t.Fatalf("post-reset error step: %v", err)
+	}
+	if action != continueHold {
+		t.Errorf("post-reset error action = %v, want hold (the cap was reset)", action)
 	}
 }
 

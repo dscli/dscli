@@ -151,6 +151,11 @@ func TestMarkerRangesMergedAndSorted(t *testing.T) {
 	// plain "</invoke>" sits inside the noise match's span boundary.
 	text := badgeOpen("tool_calls") + nl + lt + "/invoke" + gt
 	ranges := MarkerRanges(text)
+	// Guard against a vacuous pass: fewer than two ranges means the loop
+	// below never runs and the test would assert nothing.
+	if len(ranges) < 2 {
+		t.Fatalf("ranges = %v, want at least 2 (the fixture must produce overlapping matches)", ranges)
+	}
 	for i := 1; i < len(ranges); i++ {
 		if ranges[i][0] < ranges[i-1][1] {
 			t.Errorf("ranges %v overlap: %v", i-1, ranges)

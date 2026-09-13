@@ -358,14 +358,19 @@ func TestJudgeResidualMarkers(t *testing.T) {
 // captured reply: the block's script body echoes the captured marker bytes, so
 // the residue sits INSIDE the block span and must not be flagged.
 func TestJudgeResidualMarkersRealSample(t *testing.T) {
-	b, err := os.ReadFile("testdata/case2_write_file.txt")
+	// The byte-exact capture lives in the dsml package's testdata; a
+	// MISSING fixture must fail the test, not skip it (a skip here silently
+	// disabled the whole case in the first review round).
+	b, err := os.ReadFile("../dsml/testdata/case2_write_file.txt")
 	if err != nil {
-		t.Skipf("real sample unavailable: %v", err)
+		t.Fatalf("real sample unavailable: %v", err)
 	}
-	marker := string(b)
-	if len(marker) > 200 {
-		marker = marker[:200]
+	// Slice RUNES, not bytes: a byte cut can split a multi-byte marker.
+	runes := []rune(string(b))
+	if len(runes) > 200 {
+		runes = runes[:200]
 	}
+	marker := string(runes)
 	// Marker inside the body: not residue.
 	inside := strings.Join([]string{"<shell>", "<script>", "cat <<'EOF'", marker, "EOF", "</script>", "</shell>"}, "\n")
 	if v := Judge("", inside); v.ResidualMarkers {

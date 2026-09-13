@@ -45,7 +45,19 @@ func regenerateProbeIcon(id string) string {
 // [avatar, .ds-message bubble, footer action bar]. body non-empty adds a
 // main-content (the reverse fixtures); bar=false omits the action bar.
 func regenerateProbeRow(body string, bar bool) string {
+	return regenerateProbeRowBlocks(body, false, bar)
+}
+
+// regenerateProbeRowBlocks renders a row with an optional EMPTY first
+// main-content block before the (optional) populated one. The phrase fixture
+// needs that shape: the detector must scan EVERY main-content block, so an
+// empty first block plus a second block carrying the phrase must still be
+// rejected (a querySelector-only check would stop at the empty first one).
+func regenerateProbeRowBlocks(body string, emptyFirst, bar bool) string {
 	bubble := `<div class="ds-message"><div class="head"><span>已停止</span></div>`
+	if emptyFirst {
+		bubble += `<div class="ds-assistant-message-main-content"></div>`
+	}
 	if body != "" {
 		bubble += `<div class="ds-assistant-message-main-content">` + body + `</div>`
 	}
@@ -92,9 +104,9 @@ func (e *regenerateProbeEnv) open(t *testing.T, url string) {
 	t.Helper()
 	if err := chromedp.Run(
 		e.tabCtx,
+		chromedp.EmulateViewport(1024, 768),
 		chromedp.Navigate(url),
 		chromedp.WaitReady("body"),
-		chromedp.EmulateViewport(1024, 768),
 		chromedp.Sleep(300*time.Millisecond),
 	); err != nil {
 		t.Fatalf("open %s: %v", url, err)
@@ -227,7 +239,10 @@ func TestLiveRegenerateProbe(t *testing.T) {
 		regenerateProbeRow("这里有正文。", true),
 	))
 	env.phrase = writeContinueProbeFile(t, dir, "regen-phrase.html", regenerateProbePage(
-		regenerateProbeRow("正文里提到了 已停止 这个词。", true),
+		// Empty first block + a second block carrying the phrase: this is
+		// the shape that distinguishes a full querySelectorAll scan from a
+		// first-match querySelector.
+		regenerateProbeRowBlocks("正文里提到了 已停止 这个词。", true, true),
 	))
 	env.noAction = writeContinueProbeFile(t, dir, "regen-noaction.html", regenerateProbePage(
 		regenerateProbeRow("", false),

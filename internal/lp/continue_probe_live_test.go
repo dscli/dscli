@@ -117,9 +117,9 @@ func (e *continueProbeEnv) open(t *testing.T, url string) {
 	t.Helper()
 	if err := chromedp.Run(
 		e.tabCtx,
+		chromedp.EmulateViewport(1024, 768),
 		chromedp.Navigate(url),
 		chromedp.WaitReady("body"),
-		chromedp.EmulateViewport(1024, 768),
 		chromedp.Sleep(300*time.Millisecond),
 	); err != nil {
 		t.Fatalf("open %s: %v", url, err)
