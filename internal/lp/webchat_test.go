@@ -712,6 +712,37 @@ func TestJsResendFailedFmt(t *testing.T) {
 	}
 }
 
+func TestJsContinueGeneration(t *testing.T) {
+	// Regression guard on the continue-generation detector. The site
+	// renders a 「继续生成」 button when a busy server stops a generation
+	// mid-flight; without this matcher webchatWait extracts the truncated
+	// fragment as the round's final answer.
+	for _, want := range []string{
+		"继续生成", "continue",
+		"b.disabled", "aria-disabled", "offsetParent",
+		"getBoundingClientRect", "scrollIntoView", "elementFromPoint",
+		"ds-message",
+	} {
+		if !strings.Contains(jsContinueGeneration, want) {
+			t.Errorf("jsContinueGeneration must contain %q (matcher regression)", want)
+		}
+	}
+	// isTrusted trap: the continue button is the only element in the whole
+	// bundle whose onClick validates isTrusted, so ANY synthetic click
+	// (el.click(), dispatchEvent(new MouseEvent(...))) is silently ignored
+	// and the round would keep returning the interrupted fragment. The
+	// snippet must stay detection-only; the real click is dispatched by
+	// clickTrustedAt through CDP. These literals therefore must NOT appear
+	// in the JS body (they are named here in Go comments only, so the
+	// guards themselves cannot become the string they forbid).
+	forbidden := []string{".click()", "dispatchEvent("}
+	for _, bad := range forbidden {
+		if strings.Contains(jsContinueGeneration, bad) {
+			t.Errorf("jsContinueGeneration must not contain %q: a synthetic click is silently ignored by the isTrusted guard (use clickTrustedAt)", bad)
+		}
+	}
+}
+
 func TestJsChatReadyState(t *testing.T) {
 	// Regression guard on the page-classification snippet: it must detect
 	// the sign-in page (fast ErrLoginRequired instead of a 30s poll) and
