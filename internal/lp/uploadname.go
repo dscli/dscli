@@ -19,10 +19,16 @@ import (
 	"strings"
 )
 
-// verifiedUploadExts lists the lower-case extensions (leading dot included)
-// that the site accepted as-is in the live probes of 2026-09-13: text and
-// document formats, the image formats it reads text from, and PDF. Anything
-// else, including an empty extension, is uploaded with a ".txt" suffix.
+// verifiedUploadExts lists the extensions (leading dot included) that the site
+// accepted as-is in the live probes of 2026-09-13: text and document formats,
+// the image formats it reads text from, and PDF. Anything else, including an
+// empty extension, is uploaded with a ".txt" suffix.
+//
+// The set holds the lower-case spellings the probes exercised, and matching is
+// exact and case-sensitive: an unprobed spelling (".MD", ".PNG") takes the
+// fail-safe rename, because a site that rejects the extension blocks the whole
+// send while a rename only changes the visible name. Widen this (and the
+// probe battery) only on evidence that the site accepts more forms.
 //
 // Re-verify by running TestLiveUploadNameProbe (gated behind
 // DSCLI_LIVE_UPLOAD_PROBE=1) and updating this set from its output. The set is
@@ -44,27 +50,43 @@ var verifiedUploadExts = map[string]bool{
 }
 
 // SafeUploadName returns an upload name the site accepts. A name whose
-// extension is in verifiedUploadExts comes back unchanged with renamed false.
-// Any other name - an unknown extension or no extension at all - gets ".txt"
-// appended with renamed true; the content is untouched, so nothing is lost,
-// and the caller can report the adjustment.
+// extension is in verifiedUploadExts (exact, case-sensitive match) comes back
+// unchanged with renamed false. Any other name - an unknown extension, an
+// unprobed upper-case spelling, or no extension at all - gets ".txt" appended
+// with renamed true; the content is untouched, so nothing is lost, and the
+// caller can report the adjustment.
+//
+// A trailing dot names no format ("foo."), so it is dropped rather than kept
+// in the renamed name: "foo." becomes "foo.txt", not "foo..txt".
 //
 // ".svg" is deliberately NOT verified: the site treats it as an image and
 // reports no extracted text, which is useless for a text review, so an SVG is
 // renamed like any unknown extension.
 func SafeUploadName(name string) (string, bool) {
-	ext := strings.ToLower(filepath.Ext(name))
+	ext := filepath.Ext(name)
+	if ext == "." {
+		name = strings.TrimSuffix(name, ".")
+		ext = ""
+	}
 	if verifiedUploadExts[ext] {
 		return name, false
 	}
 	return name + ".txt", true
 }
 
-// uniqueUploadName inserts a numeric suffix before the extension when an
-// earlier file already claimed the same upload name (x.txt -> x_2.txt), so the
-// ".txt" ending - the part the site inspects - survives deduplication and the
-// name is never handed to SafeUploadName for a second rename.
-func uniqueUploadName(used map[string]bool, name string) string {
+// UniqueUploadName inserts a numeric suffix before the extension when an
+// earlier file already claimed the same upload name (x.go -> x_2.go,
+// Makefile.txt -> Makefile_2.txt). The suffix must precede the extension:
+// both callers hand the result to the site, which decides acceptance by
+// extension, so a name that ended in "_2" would be rejected again.
+//
+// Two callers share it so the rule lives in one place:
+//   - prepareUploadAttachments de-duplicates a normalized upload batch;
+//   - code_review de-duplicates encoded attachment names (a/b__c and a__b/c
+//     both encode to a__b__c).
+//
+// used is updated in place; the caller seeds it with any names already taken.
+func UniqueUploadName(used map[string]bool, name string) string {
 	if !used[name] {
 		used[name] = true
 		return name
@@ -98,7 +120,8 @@ type preparedUploads struct {
 // The caller uploads the returned paths and must run cleanup (nil when
 // nothing was copied, so a clean batch has no side effect). Upload limits are
 // validated on the ORIGINAL paths before this runs, so a rename never changes
-// the file count or the byte budget.
+// the file count or the byte budget. On error the temp dir is removed before
+// returning, so a failed batch leaks nothing.
 func prepareUploadAttachments(files []string) (preparedUploads, error) {
 	prepared := preparedUploads{files: make([]string, len(files))}
 	used := make(map[string]bool, len(files))
@@ -106,7 +129,7 @@ func prepareUploadAttachments(files []string) (preparedUploads, error) {
 	for i, path := range files {
 		base := filepath.Base(path)
 		safe, renamed := SafeUploadName(base)
-		name := uniqueUploadName(used, safe)
+		name := UniqueUploadName(used, safe)
 		if !renamed && name == base {
 			prepared.files[i] = path
 			continue
@@ -131,7 +154,9 @@ func prepareUploadAttachments(files []string) (preparedUploads, error) {
 }
 
 // uploadNote renders the stderr line for one adjusted attachment name, in the
-// style of the surrounding "📎" upload messages.
+// style of the surrounding "📎" upload messages. The two reasons stay
+// distinguishable: the site refuses the extension, or the name collided with
+// an earlier attachment.
 func uploadNote(base, name string, renamed bool) string {
 	if renamed {
 		return fmt.Sprintf("📎 %s 的扩展名网站不支持，已按 %s 上传（内容不变）", base, name)

@@ -18,6 +18,12 @@ package lp
 // It calls webchatAttachFiles, not webchatUpload, on purpose: the probe must
 // send the RAW candidate names, while webchatUpload normalizes them first and
 // the rejected-name cases would never reach the site.
+//
+// The battery must stay within the site's per-batch file cap
+// (WebUploadMaxFiles); TestLiveUploadNameProbeBatterySize guards that.
+// Candidates are the highest-value names, not every extension: the group of
+// site-rejected and silently dropped names, the rename-verification group, and
+// a representative sample of the accepted extensions.
 
 import (
 	"context"
@@ -32,72 +38,88 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
+// liveUploadProbeCandidates is the probe battery, kept as a package-level
+// variable so the size guard can check it without a browser.
+var liveUploadProbeCandidates = []struct{ name, content string }{
+	// Controls: known-good names, and the name from the 09-13 review
+	// incident that the site rejects server-side.
+	{"README.md", "# control\n"},
+	{"main.go", "package main\n"},
+	{"changes.patch", "--- a\n+++ b\n"},
+	{".gitignore", "*.txt\n"},
+	// Config/text extensions.
+	{"data.yml", "a: 1\n"},
+	{"data.json", "{}\n"},
+	{"data.toml", "a = 1\n"},
+	{"data.ini", "a=1\n"},
+	{"data.conf", "a=1\n"},
+	{"data.cfg", "a=1\n"},
+	{"data.log", "line\n"},
+	{"data.csv", "a,b\n"},
+	{"data.tsv", "a\tb\n"},
+	{"data.lock", "lock\n"},
+	{"data.env", "A=1\n"},
+	// Go module and dotfiles (client-side silent drops expected).
+	{"go.mod", "module x\n"},
+	{"go.sum", "x v1\n"},
+	{"go.work", "go 1.27\n"},
+	{".gitattributes", "* text=auto\n"},
+	// Scripts and languages.
+	{"run.sh", "echo hi\n"},
+	{"script.py", "print(1)\n"},
+	{"lib.rs", "fn main() {}\n"},
+	{"app.ts", "let a = 1;\n"},
+	{"app.js", "let a = 1;\n"},
+	{"style.css", "a {}\n"},
+	{"page.html", "<p>x</p>\n"},
+	{"data.xml", "<a/>\n"},
+	{"icon.svg", "<svg/>\n"},
+	{"query.sql", "select 1;\n"},
+	{"msg.proto", "syntax = \"proto3\";\n"},
+	{"notes.org", "* x\n"},
+	{"init.el", "(setq x 1)\n"},
+	{"build.mk", "all:\n"},
+	{"app.rb", "puts 1\n"},
+	{"main.c", "int main(){}\n"},
+	{"tool.cpp", "int main(){}\n"},
+	{"widget.h", "#pragma once\n"},
+	{"App.java", "class App {}\n"},
+	{"Widget.cs", "class W {}\n"},
+	{"App.kt", "fun main() {}\n"},
+	{"App.swift", "print(1)\n"},
+	{"index.php", "<?php ?>\n"},
+	// Extensionless names (client-side silent drops expected).
+	{"Dockerfile", "FROM x\n"},
+	{"Makefile", "all:\n"},
+	{"LICENSE", "MIT\n"},
+	// Rename verification: the ".txt" suffix must make these acceptable.
+	{".gitignore.txt", "*.txt\n"},
+	{"gitignore.txt", "*.txt\n"},
+	{"Makefile.txt", "all:\n"},
+	// Case sensitivity of the accepted extensions: the verified set holds
+	// lower-case spellings only, so these are expected to be renamed. If the
+	// site turns out to accept them as-is, the probe result is the evidence
+	// needed to relax SafeUploadName's exact match.
+	{"README.MD", "# case\n"},
+	{"Icon.PNG", "\x89PNG\r\n"},
+}
+
+// TestLiveUploadNameProbeBatterySize keeps the battery inside the site's
+// per-batch file cap: a probe that exceeds it would fail upload-side and its
+// results would be misleading.
+func TestLiveUploadNameProbeBatterySize(t *testing.T) {
+	if len(liveUploadProbeCandidates) > WebUploadMaxFiles {
+		t.Fatalf("probe battery has %d candidates, want <= %d (WebUploadMaxFiles)", len(liveUploadProbeCandidates), WebUploadMaxFiles)
+	}
+}
+
 func TestLiveUploadNameProbe(t *testing.T) {
 	if os.Getenv("DSCLI_LIVE_UPLOAD_PROBE") != "1" {
 		t.Skip("live upload probe: set DSCLI_LIVE_UPLOAD_PROBE=1 (needs Chrome login)")
 	}
 
 	dir := t.TempDir()
-	candidates := []struct{ name, content string }{
-		// Controls: known-good names, and the name from the 09-13 review
-		// incident that the site rejects server-side.
-		{"README.md", "# control\n"},
-		{"main.go", "package main\n"},
-		{"changes.patch", "--- a\n+++ b\n"},
-		{".gitignore", "*.txt\n"},
-		// Config/text extensions.
-		{"data.yml", "a: 1\n"},
-		{"data.yaml", "a: 1\n"},
-		{"data.json", "{}\n"},
-		{"data.toml", "a = 1\n"},
-		{"data.ini", "a=1\n"},
-		{"data.conf", "a=1\n"},
-		{"data.cfg", "a=1\n"},
-		{"data.log", "line\n"},
-		{"data.csv", "a,b\n"},
-		{"data.tsv", "a\tb\n"},
-		{"data.lock", "lock\n"},
-		{"data.env", "A=1\n"},
-		// Go module and dotfiles (client-side silent drops expected).
-		{"go.mod", "module x\n"},
-		{"go.sum", "x v1\n"},
-		{"go.work", "go 1.27\n"},
-		{".gitattributes", "* text=auto\n"},
-		// Scripts and languages.
-		{"run.sh", "echo hi\n"},
-		{"script.py", "print(1)\n"},
-		{"lib.rs", "fn main() {}\n"},
-		{"app.ts", "let a = 1;\n"},
-		{"app.js", "let a = 1;\n"},
-		{"style.css", "a {}\n"},
-		{"style.scss", "a {}\n"},
-		{"page.html", "<p>x</p>\n"},
-		{"data.xml", "<a/>\n"},
-		{"icon.svg", "<svg/>\n"},
-		{"query.sql", "select 1;\n"},
-		{"msg.proto", "syntax = \"proto3\";\n"},
-		{"notes.org", "* x\n"},
-		{"init.el", "(setq x 1)\n"},
-		{"build.mk", "all:\n"},
-		{"app.rb", "puts 1\n"},
-		{"run.pl", "print 1;\n"},
-		{"main.c", "int main(){}\n"},
-		{"tool.cpp", "int main(){}\n"},
-		{"widget.h", "#pragma once\n"},
-		{"App.java", "class App {}\n"},
-		{"Widget.cs", "class W {}\n"},
-		{"App.kt", "fun main() {}\n"},
-		{"App.swift", "print(1)\n"},
-		{"index.php", "<?php ?>\n"},
-		// Extensionless names (client-side silent drops expected).
-		{"Dockerfile", "FROM x\n"},
-		{"Makefile", "all:\n"},
-		{"LICENSE", "MIT\n"},
-		// Rename verification: the ".txt" suffix must make these acceptable.
-		{".gitignore.txt", "*.txt\n"},
-		{"gitignore.txt", "*.txt\n"},
-		{"Makefile.txt", "all:\n"},
-	}
+	candidates := liveUploadProbeCandidates
 	var paths []string
 	for _, c := range candidates {
 		p := filepath.Join(dir, c.name)
@@ -151,14 +173,26 @@ func TestLiveUploadNameProbe(t *testing.T) {
 	}
 
 	var out map[string]any
+	// Presence detection avoids substring cross-talk between a name and its
+	// ".txt" sibling (Makefile vs Makefile.txt, .gitignore vs .gitignore.txt):
+	// an exact whole-line match wins, otherwise the name must sit on a
+	// word/dot boundary. The matched line and how it matched are logged, so a
+	// surprising result can be judged from the output alone.
 	js := fmt.Sprintf(`(() => {
 		const names = %s;
 		const text = (document.body ? document.body.innerText : '') || '';
 		const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
+		const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 		const present = {};
 		for (const n of names) {
-			const idx = lines.findIndex(l => l === n || l.indexOf(n) !== -1);
-			present[n] = idx === -1 ? null : lines.slice(idx, idx + 2);
+			let idx = lines.findIndex(l => l === n);
+			let how = 'exact-line';
+			if (idx === -1) {
+				const re = new RegExp('(^|[^\w.])' + esc(n) + '($|[^\w.])');
+				idx = lines.findIndex(l => re.test(l));
+				how = 'boundary';
+			}
+			present[n] = idx === -1 ? null : { how: how, line: lines[idx], next: lines[idx + 1] || '' };
 		}
 		const statusRe = /(上传|解析|删除|不支持|提取|异常|失败|重试)/;
 		const statusLines = lines.filter(l => statusRe.test(l)).slice(0, 80);

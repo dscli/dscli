@@ -1,6 +1,6 @@
 # task-upload-names: 附件上传名兼容（网站扩展名策略）
 
-> 状态: 已实现，待 review
+> 状态: 已实现，待 review（review 结论已全部采纳：大小写精确匹配、probe 电池守卫与边界匹配、改名全量表面化、去重收拢到 lp、`foo.` 归一）
 > 依据: 2026-09-13 两次 live probe 实测（本文件 §2）+ 用户当日 review 事故报告
 > 作者: architect（玻尔）
 
@@ -126,10 +126,10 @@ ask_expert 图片、AskExpertWithRoleFiles→code_review）自动获得保护。
 
 ## 4. 验收
 
-- [ ] `go test ./...` 全绿；`make fmt-check` 通过；
-- [ ] live probe 无 env 时 skip、`go vet ./...` 干净；
-- [ ] 一个英文 commit（建议 `fix(lp): upload site-incompatible attachment names with a .txt suffix`
-      或拆分 lp/code_review 两个 commit），工作区干净。
+- [x] `go test ./...` 全绿；`make fmt-check` 通过；
+- [x] live probe 无 env 时 skip、`go vet ./...` 干净；
+- [x] 一个英文 commit（`fix(lp): upload site-incompatible attachment names with a .txt suffix`），工作区干净。
+- [x] 复审修复 commit（大小写精确匹配、probe 电池 ≤50 守卫、`plan.Renamed` 全量记录、去重收拢 `lp.UniqueUploadName`）。
 
 ## 5. 备注
 
@@ -138,6 +138,9 @@ ask_expert 图片、AskExpertWithRoleFiles→code_review）自动获得保护。
 - `verifiedUploadExts` 是「已验证可原样上传」的保守集合；站点列表会漂移，未知一律 `.txt`
   （fail-safe）。集合未来只增不减地按 probe 结果维护。
 - 事故现场：`a84ba1a`（改 `.gitignore`）+ `since=-3` 的 review；复现候选已固化在 probe。
+- 扩展名匹配**精确、大小写敏感**（fail-safe）：`README.MD`、`Icon.PNG` 之类未探测过的拼写一律改名
+  （`README.MD` → `README.MD.txt`）。若未来 probe 证实站点大小写不敏感，再据证据放宽
+  `SafeUploadName` 并同步注释。probe 电池已含大写案例，且整体 ≤ `WebUploadMaxFiles`（有守卫测试）。
 
 ## 6. 操作须知（给 dev）
 

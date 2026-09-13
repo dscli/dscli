@@ -521,21 +521,6 @@ func TestEncodeAttachmentName(t *testing.T) {
 	}
 }
 
-func TestUniqueAttachmentName(t *testing.T) {
-	used := map[string]bool{}
-	for i, want := range []string{"x.go", "x_2.go", "x_3.go"} {
-		if got := uniqueAttachmentName(used, "x.go"); got != want {
-			t.Errorf("collision %d: got %q, want %q", i, got, want)
-		}
-	}
-	// The suffix lands before the extension, so a renamed attachment keeps
-	// the ".txt" ending the upload site inspects.
-	used = map[string]bool{"Makefile.txt": true}
-	if got := uniqueAttachmentName(used, "Makefile.txt"); got != "Makefile_2.txt" {
-		t.Errorf("got %q, want Makefile_2.txt", got)
-	}
-}
-
 func TestSelectReviewFiles(t *testing.T) {
 	files := []candidateFile{
 		{path: "big.go", size: 100},
@@ -685,11 +670,11 @@ func TestBuildReviewMessage(t *testing.T) {
 	// other lists.
 	plan.Renamed = []string{".gitignore → .gitignore.txt", "Makefile → Makefile.txt"}
 	msg = buildReviewMessage("s", "l", plan)
-	if !strings.Contains(msg, "Upload name adjustments (site compatibility, content unchanged): .gitignore → .gitignore.txt, Makefile → Makefile.txt") {
+	if !strings.Contains(msg, "Upload-name adjustments (repo path → attachment name, content unchanged): .gitignore → .gitignore.txt, Makefile → Makefile.txt") {
 		t.Errorf("message must list upload name adjustments:\n%s", msg)
 	}
 	// Without an adjustment the line must not appear at all.
-	if msg := buildReviewMessage("s", "l", reviewPlan{}); strings.Contains(msg, "Upload name adjustments") {
+	if msg := buildReviewMessage("s", "l", reviewPlan{}); strings.Contains(msg, "Upload-name adjustments") {
 		t.Errorf("message must not claim adjustments when nothing was renamed:\n%s", msg)
 	}
 
@@ -1062,8 +1047,98 @@ func TestAssembleReviewAttachmentsRenamesRejectedNames(t *testing.T) {
 	if !slices.Equal(plan.Renamed, want) {
 		t.Errorf("plan.Renamed = %v, want %v (sorted)", plan.Renamed, want)
 	}
+
 	if !slices.Contains(plan.Attached, "main.go") || !slices.Contains(plan.Attached, ".gitignore") {
 		t.Errorf("plan.Attached = %v, want the repo paths (unchanged by the rename)", plan.Attached)
+	}
+}
+
+// TestAssembleReviewAttachmentsCopyFailureNotRenamed: when a changed file
+// cannot be copied, the review must list it as NOT attached and must NOT
+// record an upload-name adjustment for it - the coverage note only claims
+// renames that actually happened. The unreadable file is the injection point
+// (chmod 000 skips the copy at os.Open); running as root bypasses the
+// permission check, so the test skips there.
+func TestAssembleReviewAttachmentsCopyFailureNotRenamed(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	repo := t.TempDir()
+	runGitIn(t, repo, "init", "-q")
+	for _, f := range []struct{ name, content string }{
+		{".gitignore", "*.txt\n"},
+		{"main.go", "package main\n"},
+	} {
+		if err := os.WriteFile(filepath.Join(repo, f.name), []byte(f.content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGitIn(t, repo, "add", "-A")
+	runGitIn(t, repo, "commit", "-qm", "one")
+	// Unreadable after the commit, so the listing still sees it.
+	if err := os.Chmod(filepath.Join(repo, ".gitignore"), 0); err != nil {
+		t.Fatal(err)
+	}
+	stubGocyclo(t, []string{"main.go"})
+	t.Chdir(repo)
+
+	attachments, plan, err := assembleReviewAttachments(context.Background(), t.TempDir(), repo, "", 1)
+	if err != nil {
+		t.Fatalf("assembleReviewAttachments: %v", err)
+	}
+	for _, p := range attachments {
+		if filepath.Base(p) == ".gitignore.txt" {
+			t.Errorf("unreadable file must not be attached (attachments: %v)", attachments)
+		}
+	}
+	if len(plan.Renamed) != 0 {
+		t.Errorf("plan.Renamed = %v, want empty: a failed copy must not be reported as a rename", plan.Renamed)
+	}
+	if !slices.Contains(plan.NotAttached, ".gitignore") {
+		t.Errorf("plan.NotAttached = %v, want the failed file listed", plan.NotAttached)
+	}
+}
+
+// TestAssembleReviewAttachmentsReportsDedupCollision: two repo paths whose
+// encoded names collide must both be uploaded, and the second one must appear
+// in plan.Renamed even though its extension was accepted - the upload name
+// differs from the encoded name, which is what the expert must be told.
+func TestAssembleReviewAttachmentsReportsDedupCollision(t *testing.T) {
+	repo := t.TempDir()
+	runGitIn(t, repo, "init", "-q")
+	for _, f := range []struct{ dir, name string }{
+		{"a", "b__c.go"}, // encodes to a__b__c.go
+		{"a__b", "c.go"}, // encodes to a__b__c.go too
+	} {
+		if err := os.MkdirAll(filepath.Join(repo, f.dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(repo, f.dir, f.name), []byte("package main\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGitIn(t, repo, "add", "-A")
+	runGitIn(t, repo, "commit", "-qm", "one")
+	stubGocyclo(t, []string{"a/b__c.go", "a__b/c.go"})
+	t.Chdir(repo)
+
+	attachments, plan, err := assembleReviewAttachments(context.Background(), t.TempDir(), repo, "", 1)
+	if err != nil {
+		t.Fatalf("assembleReviewAttachments: %v", err)
+	}
+	names := make([]string, 0, len(attachments))
+	for _, p := range attachments {
+		names = append(names, filepath.Base(p))
+	}
+	if !slices.Contains(names, "a__b__c.go") || !slices.Contains(names, "a__b__c_2.go") {
+		t.Errorf("both colliding files must be uploaded (names: %v)", names)
+	}
+	want := []string{"a__b/c.go → a__b__c_2.go"}
+	if !slices.Equal(plan.Renamed, want) {
+		t.Errorf("plan.Renamed = %v, want %v", plan.Renamed, want)
+	}
+	if !slices.Contains(plan.Attached, "a/b__c.go") || !slices.Contains(plan.Attached, "a__b/c.go") {
+		t.Errorf("plan.Attached = %v, want both repo paths", plan.Attached)
 	}
 }
 
