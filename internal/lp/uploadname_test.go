@@ -34,6 +34,10 @@ func TestSafeUploadName(t *testing.T) {
 		"foo.md.":  {"foo.md", true},
 		"a..":      {"a.txt", true},
 		"a...":     {"a.txt", true},
+		// All-dot names normalize to the bare ".txt" (a hidden file with a
+		// verified extension); pin the behavior.
+		"...": {".txt", true},
+		".":   {".txt", true},
 		// A hidden file whose whole name is a verified extension passes
 		// through (known and intentional: the policy keys on the extension).
 		".txt": {".txt", false},
@@ -125,6 +129,66 @@ func TestPrepareUploadAttachmentsRenamesRejectedNames(t *testing.T) {
 	prepared.cleanup()
 	if _, err := os.Stat(copyPath); !os.IsNotExist(err) {
 		t.Errorf("copy survived cleanup (stat err = %v)", err)
+	}
+}
+
+// TestPrepareUploadAttachmentsTrailingDotNote: a name whose only problem is a
+// trailing dot must be reported as a dot normalization, not as an unsupported
+// extension - the two adjustments have different causes, and the note must
+// name the actual one.
+func TestPrepareUploadAttachmentsTrailingDotNote(t *testing.T) {
+	dir := t.TempDir()
+	orig := filepath.Join(dir, "foo.md.")
+	if err := os.WriteFile(orig, []byte("# doc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	prepared, err := prepareUploadAttachments([]string{orig})
+	if err != nil {
+		t.Fatalf("prepareUploadAttachments: %v", err)
+	}
+	if prepared.cleanup == nil {
+		t.Fatal("a trailing-dot rename must carry a cleanup")
+	}
+	defer prepared.cleanup()
+
+	if got := filepath.Base(prepared.files[0]); got != "foo.md" {
+		t.Fatalf("upload name = %q, want foo.md", got)
+	}
+	if len(prepared.notes) != 1 {
+		t.Fatalf("notes = %q, want one line", prepared.notes)
+	}
+	if !strings.Contains(prepared.notes[0], "结尾点已规范化") {
+		t.Errorf("note = %q, want the trailing-dot reason", prepared.notes[0])
+	}
+	if strings.Contains(prepared.notes[0], "扩展名网站不支持") {
+		t.Errorf("note = %q must not claim an unsupported extension", prepared.notes[0])
+	}
+}
+
+// TestUploadNoteReasons pins the three-way classification directly, including
+// the precedence when more than one reason applies.
+func TestUploadNoteReasons(t *testing.T) {
+	cases := []struct {
+		base, safe, name string
+		want             string
+	}{
+		// 1. De-duplication wins: the normalized name was already taken.
+		{"x.txt", "x.txt", "x_2.txt", "与已有附件重名"},
+		// 1. De-duplication even when the original name also ended with a dot.
+		{"foo.", "foo.txt", "foo_2.txt", "与已有附件重名"},
+		// 2. Trailing dot, extension itself accepted.
+		{"foo.md.", "foo.md", "foo.md", "结尾点已规范化"},
+		// 2. Trailing dots on an unverified extension: still a dot fix.
+		{"a..", "a.txt", "a.txt", "结尾点已规范化"},
+		// 3. Plain unsupported extension.
+		{".gitignore", ".gitignore.txt", ".gitignore.txt", "扩展名网站不支持"},
+	}
+	for _, c := range cases {
+		got := uploadNote(c.base, c.safe, c.name)
+		if !strings.Contains(got, c.want) {
+			t.Errorf("uploadNote(%q, %q, %q) = %q, want it to mention %q", c.base, c.safe, c.name, got, c.want)
+		}
 	}
 }
 

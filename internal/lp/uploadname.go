@@ -72,8 +72,9 @@ var verifiedUploadExts = map[string]bool{
 //
 // A hidden file whose whole name is a verified extension (".txt", ".md") is
 // passed through: filepath.Ext sees the whole name as the extension, and the
-// site accepted those names in the probe. This is known and intentional - the
-// policy keys on the extension alone.
+// policy keys on the extension alone. This follows from the extension model
+// rather than from a direct measurement - the probe battery now carries a bare
+// ".md" candidate so the next probe round can confirm it.
 //
 // ".svg" is deliberately NOT verified: the site treats it as an image and
 // reports no extracted text, which is useless for a text review, so an SVG is
@@ -174,20 +175,30 @@ func prepareUploadAttachments(files []string) (preparedUploads, error) {
 			return preparedUploads{}, err
 		}
 		prepared.files[i] = dst
-		prepared.notes = append(prepared.notes, uploadNote(base, name, renamed))
+		prepared.notes = append(prepared.notes, uploadNote(base, safe, name))
 	}
 	return prepared, nil
 }
 
 // uploadNote renders the stderr line for one adjusted attachment name, in the
-// style of the surrounding "📎" upload messages. The two reasons stay
-// distinguishable: the site refuses the extension, or the name collided with
-// an earlier attachment.
-func uploadNote(base, name string, renamed bool) string {
-	if renamed {
+// style of the surrounding "📎" upload messages. The reason is classified in a
+// fixed order so the wording always names the actual cause:
+//
+//  1. de-duplication - the normalized name was already taken (safe != name);
+//  2. trailing dots - the name ended with a dot and was normalized;
+//  3. an extension the site does not accept.
+//
+// A name can be adjusted for more than one reason at once; the first match
+// wins, which keeps the note deterministic.
+func uploadNote(base, safe, name string) string {
+	switch {
+	case name != safe:
+		return fmt.Sprintf("📎 %s 与已有附件重名，已按 %s 上传（内容不变）", base, name)
+	case strings.HasSuffix(base, "."):
+		return fmt.Sprintf("📎 %s 的结尾点已规范化，已按 %s 上传（内容不变）", base, name)
+	default:
 		return fmt.Sprintf("📎 %s 的扩展名网站不支持，已按 %s 上传（内容不变）", base, name)
 	}
-	return fmt.Sprintf("📎 %s 与已有附件重名，已按 %s 上传（内容不变）", base, name)
 }
 
 // copyUploadFile copies src to dst with 0600 permissions: the site only reads

@@ -51,7 +51,10 @@ var liveUploadProbeCandidates = []struct{ name, content string }{
 	{"data.yml", "a: 1\n"},
 	{"data.json", "{}\n"},
 	{"data.toml", "a = 1\n"},
-	{"data.ini", "a=1\n"},
+	// A bare extension as the whole name (hidden file): the extension
+	// model says SafeUploadName passes it through, and this candidate is
+	// what confirms it on the next probe round.
+	{".md", "# hidden\n"},
 	{"data.conf", "a=1\n"},
 	{"data.cfg", "a=1\n"},
 	{"data.log", "line\n"},

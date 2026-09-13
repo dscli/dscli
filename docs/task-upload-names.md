@@ -53,7 +53,8 @@ ask_expert 图片、AskExpertWithRoleFiles→code_review）自动获得保护。
      未探测过的拼写按 fail-safe 改名（`README.MD` → `README.MD.txt`）。**尾点（一个或多个）
      全部去掉**后重新推导扩展：`foo.` → `foo.txt`、`foo.txt.` → `foo.txt`、`a..` → `a.txt`
      （不叠出 `foo..txt`/`foo.txt.txt`/`a..txt`，且计入 renamed）。整名恰为已验证扩展名的隐藏文件
-     （`.txt`/`.md`）按扩展名判定放行（已知且刻意）。
+     （`.txt`/`.md`）按扩展名判定放行（已知且刻意；该结论由扩展名模型推出，
+     并非直接实测——probe 电池已换入裸 `.md` 候选，下一次探测轮即可确认）。
 2. `internal/lp/webchat.go` 的 `webchatUpload`：在 `validateWebAttachments`（50 个/100MB
    限额，仍按原文件校验）之后、上传之前统一归一化（内部函数，建议名
    `prepareUploadAttachments`）：
