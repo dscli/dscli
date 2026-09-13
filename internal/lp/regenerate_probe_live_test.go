@@ -37,7 +37,8 @@ window.__hit = function(id) { window.__hits[id] = (window.__hits[id] || 0) + 1; 
 func regenerateProbeIcon(id string) string {
 	return fmt.Sprintf(
 		`<button id="%s" onclick="__hit('%s')"><svg width="16" height="16"><rect width="16" height="16"/></svg></button>`,
-		id, id)
+		id, id,
+	)
 }
 
 // regenerateProbeRow renders one assistant message row in the site's shape:
