@@ -202,39 +202,39 @@ func MarkerRanges(text string) [][2]int
 ## 6. 测试与验收
 
 A. **字符串回归**（`TestJsRegenerateStopped`，风格同 `TestJsContinueGeneration`）：
-- 必须包含：`已停止`、`stopped`、`ds-message`、`ds-assistant-message-main-content`、`aria-disabled`、`offsetParent`、`getBoundingClientRect`、`scrollIntoView`、`elementFromPoint`、返回字段 `x`/`y`/`buttons`；
-- **必须不包含**：`.click(`、`dispatchEvent(`。
+   - 必须包含：`已停止`、`stopped`、`ds-message`、`ds-assistant-message-main-content`、`aria-disabled`、`offsetParent`、`getBoundingClientRect`、`scrollIntoView`、`elementFromPoint`、返回字段 `x`/`y`/`buttons`；
+   - **必须不包含**：`.click(`、`dispatchEvent(`。
 
 B. **恢复状态机单测**（`continue_recovery_test.go` 扩展，注入 seams，无浏览器）。至少覆盖：
-1. 停止态命中 + 空闲 → 点击 1 次、动作 `continueClicked`、pending 置位（kind=regen）；
-2. `active=true` 时同状态 → **不点**（守卫）；
-3. 「继续生成」present 且停止态也在 → 优先点「继续生成」，regen 不被点；
-4. regen present 但 `clickable=false` → hold、不点；
-5. 冷却内不重点，冷却后且仍 present → 在预算内再点；
-6. 预算 3 次耗尽 → `errors.Is(err, ErrTruncated)`；
-7. 派发失败不计预算、连续 3 次失败 → ErrTruncated（双 %w 可达底层错误）；
-8. 证据：pending + active → 清除；pending + body 变化 → 清除；pending 超窗 → ErrTruncated（文案含「重新生成」）；
-9. 检测错误 → hold + 只告警一次；
-10. 停止态消失且 pending 已清 → `continueNone`。
+   1. 停止态命中 + 空闲 → 点击 1 次、动作 `continueClicked`、pending 置位（kind=regen）；
+   2. `active=true` 时同状态 → **不点**（守卫）；
+   3. 「继续生成」present 且停止态也在 → 优先点「继续生成」，regen 不被点；
+   4. regen present 但 `clickable=false` → hold、不点；
+   5. 冷却内不重点，冷却后且仍 present → 在预算内再点；
+   6. 预算 3 次耗尽 → `errors.Is(err, ErrTruncated)`；
+   7. 派发失败不计预算、连续 3 次失败 → ErrTruncated（双 %w 可达底层错误）；
+   8. 证据：pending + active → 清除；pending + body 变化 → 清除；pending 超窗 → ErrTruncated（文案含「重新生成」）；
+   9. 检测错误 → hold + 只告警一次；
+   10. 停止态消失且 pending 已清 → `continueNone`。
 
 C. **门控夹具探针**（`DSCLI_LIVE_CLICK_PROBE=1`，默认 skip；本机有 chromium）：
-- 夹具页 1（目标）：行结构 `[avatar, .ds-message(气泡内: 头部 div>span「已停止」; 无 main-content), footer: 5 个 icon `<button>`(含 svg) — 第 2 个=regen]`；断言 detector `present=true, clickable=true`、坐标经 `elementFromPoint` 命中第 2 个按钮；`clickTrustedAt` 后按钮计数=1；
-- 夹具页 2（反证）：同结构但 `main-content` 有正文 → `present=false`；
-- 夹具页 3（反证）：「已停止」字样出现在 `main-content` 正文里 → `present=false`；
-- 夹具页 4（反证）：无操作栏 → `present=false`；
-- 交付前本机跑一次并在回报中附输出摘要。
+   - 夹具页 1（目标）：行结构 `[avatar, .ds-message(气泡内: 头部 div>span「已停止」; 无 main-content), footer: 5 个 icon `<button>`(含 svg) — 第 2 个=regen]`；断言 detector `present=true, clickable=true`、坐标经 `elementFromPoint` 命中第 2 个按钮；`clickTrustedAt` 后按钮计数=1；
+   - 夹具页 2（反证）：同结构但 `main-content` 有正文 → `present=false`；
+   - 夹具页 3（反证）：「已停止」字样出现在 `main-content` 正文里 → `present=false`；
+   - 夹具页 4（反证）：无操作栏 → `present=false`；
+   - 交付前本机跑一次并在回报中附输出摘要。
 
 D. **shellblock 判定用例**（`judge_test.go`，样本用转义/运行时构造）：
-1. 合法块 + 尾部残留（fullwidth 与 ASCII 各一）→ `ActionExecute` + `ResidualMarkers=true`；
-2. 合法块（干净）→ `ResidualMarkers=false`；
-3. 残留出现在 **script 正文内**（块 span 内）→ `ResidualMarkers=false`（防误报，本仓库场景）；
-4. 残留出现在**引号代码**内 → `false`；
-5. 无块 + 残留 → 既有 `ActionWarn`（含 dsml note）+ `ResidualMarkers=true`；
-6. 读 `testdata/case2_write_file.txt` 等真实样本构造等价用例（可用子串切片）。
+   1. 合法块 + 尾部残留（fullwidth 与 ASCII 各一）→ `ActionExecute` + `ResidualMarkers=true`；
+   2. 合法块（干净）→ `ResidualMarkers=false`；
+   3. 残留出现在 **script 正文内**（块 span 内）→ `ResidualMarkers=false`（防误报，本仓库场景）；
+   4. 残留出现在**引号代码**内 → `false`；
+   5. 无块 + 残留 → 既有 `ActionWarn`（含 dsml note）+ `ResidualMarkers=true`；
+   6. 读 `testdata/case2_write_file.txt` 等真实样本构造等价用例（可用子串切片）。
 
 E. **shell 循环反馈断言**（`shell_loop_test.go` 扩展）：
-- 带残留的 Execute 轮 → 反馈消息含 `ResidueNote()` 文案；干净轮 → 不含；
-- 既有 `output of scriptN.sh (attached as scriptN.txt):` 前缀断言保持通过（note 在 `\n\n` 之后）。
+   - 带残留的 Execute 轮 → 反馈消息含 `ResidueNote()` 文案；干净轮 → 不含；
+   - 既有 `output of scriptN.sh (attached as scriptN.txt):` 前缀断言保持通过（note 在 `\n\n` 之后）。
 
 F. **全量**：`go test ./...`、`make fmt-check`、`make gofmt` 全绿。
 

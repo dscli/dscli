@@ -233,12 +233,12 @@ Every CLI command follows the same pattern in a `*_cmd.go` file at the project r
 
 ```go
 func init() {
-cmd := AddRootCommand(&cobra.Command{
-Use:   "subcommand <required> [optional]",
-Short: "brief description",
-RunE:  subcommandRunE,
-})
-cmd.Flags().String("flag", "default", "description")
+	cmd := AddRootCommand(&cobra.Command{
+		Use:   "subcommand <required> [optional]",
+		Short: "brief description",
+		RunE:  subcommandRunE,
+	})
+	cmd.Flags().String("flag", "default", "description")
 }
 ```
 
@@ -267,13 +267,13 @@ The `chat` command (`chat.go`) is the core of dscli. Its flow:
 `LoadPrompts()` assembles the final system prompt:
 ```
 embedded template ({role}.md) → project override (.dscli/prompt/) → global override (~/.dscli/prompt/)
-↓
+    ↓
 + skill prompt (BuildSkillPrompt, role-dependent)
-↓
+    ↓
 + note prompt (BuildNotePrompt, recent conversation clues)
-↓
+    ↓
 + unread mail notification
-↓
+    ↓
 + persona (ainame: NameEN / PersonalityEN / DescEN)
 ```
 Role name == template file name: `dev`, `expert`, `review`, `test`, `architect` (chat CLI default).
@@ -292,9 +292,9 @@ for empty/unknown roles (webchat plain chat, role-less code paths) - do not
 - Standard `testing` package: `t.Fatal` for setup errors, `t.Error`/`t.Errorf` for assertions
 - See `go-test` skill: scripts `run.sh`, `lint.sh`, config isolation scaffold
 - **Isolate ambient state** - tests must not touch `~/.dscli/files.json`,
-`~/.dscli/price.json`, or real `DEEPSEEK_*` env vars: inject
-`files-cache-path` (or `WithCachePath`), override `price.cachePath`/
-`fetchPage`, and call `sanitizeDeepSeekEnv` before building a Config.
+  `~/.dscli/price.json`, or real `DEEPSEEK_*` env vars: inject
+  `files-cache-path` (or `WithCachePath`), override `price.cachePath`/
+  `fetchPage`, and call `sanitizeDeepSeekEnv` before building a Config.
 
 ### Test Files
 Tests live alongside their code:
@@ -332,9 +332,9 @@ Tests live alongside their code:
 ## Shell Scripts
 
 - `internal/flycheck/dscli-flycheck.sh` - embedded Emacs flycheck runner:
-1. `emacsclient --eval '(server-running-p)'` when an Emacs server is running (probe is the proof - a failed connect exits 1)
-2. Fallback: `emacs --batch -q` + `dscli-flycheck.el` (found via `DSCLI_EL_ROOT` or an upward directory walk)
-- **Never pass `-a ""` to emacsclient**: it auto-starts a daemon, turning the probe into a side effect that always succeeds
+  1. `emacsclient --eval '(server-running-p)'` when an Emacs server is running (probe is the proof - a failed connect exits 1)
+  2. Fallback: `emacs --batch -q` + `dscli-flycheck.el` (found via `DSCLI_EL_ROOT` or an upward directory walk)
+  - **Never pass `-a ""` to emacsclient**: it auto-starts a daemon, turning the probe into a side effect that always succeeds
 - Skill scripts live in `.dscli/skills/<name>/scripts/` (e.g. `go-test/scripts/run.sh`)
 
 ## Skills System
@@ -365,29 +365,29 @@ Key skills for development (project-local `.dscli/skills/` unless noted):
 ## Key Invariants
 
 - **Tool-call pairing** - `internal/prompt/history.go` pairs assistant `tool_calls`
-with `tool` messages by count and ID (`CleanupReverse`); on any mismatch the
-whole block is dropped on history reload. When adding placeholder `tool`
-messages (e.g. interrupt handling), never trim `tool_calls` - keep the full
-list and matching `ToolCallID`s.
+  with `tool` messages by count and ID (`CleanupReverse`); on any mismatch the
+  whole block is dropped on history reload. When adding placeholder `tool`
+  messages (e.g. interrupt handling), never trim `tool_calls` - keep the full
+  list and matching `ToolCallID`s.
 - **History changes** - verify through the reload path (`LoadHistory`), not just
-raw DB rows: `CleanupReverse` runs at load time and can silently drop blocks
-that look correct in the table.
+  raw DB rows: `CleanupReverse` runs at load time and can silently drop blocks
+  that look correct in the table.
 - **Image blocks are user-message-only** - the OpenAI-compatible protocol
-rejects images in assistant/system messages. The dual-message protocol
-(`internal/toolcall/dual.go`) is the only post-tool-call injection path;
-never re-inject file blocks at the chat layer (`BuildUploadInjection` was
-removed because it double-injected).
+  rejects images in assistant/system messages. The dual-message protocol
+  (`internal/toolcall/dual.go`) is the only post-tool-call injection path;
+  never re-inject file blocks at the chat layer (`BuildUploadInjection` was
+  removed because it double-injected).
 - **Red CI != your change** - when CI fails on a branch, first check whether the
-failure pre-exists on `main` before debugging your branch.
+  failure pre-exists on `main` before debugging your branch.
 
 ## Development Workflow
 
 - Work on a branch (fork for external PRs); rebase onto latest `main` before
-pushing - keep history linear, no merge commits.
+  pushing - keep history linear, no merge commits.
 - Address every review comment; reply with a per-point summary and request
-re-review in the PR thread.
+  re-review in the PR thread.
 - Never modify or delete `sqlite.db` or `dscli.env` - they hold local state and
-secrets.
+  secrets.
 
 - Design decisions and task records live in `docs/` (`docs/task-*.md`, `docs/architecture-*.md`, `docs/*.org`); add one for substantial changes.
 
@@ -400,11 +400,11 @@ architecture, and conventions unique to dscli.
 
 Behavioral rules:
 - **Check unread mail first** - at session start, reviews and decisions may be
-waiting; reply before starting new work.
+  waiting; reply before starting new work.
 - **Ask instead of guessing** - when a requirement is ambiguous, ask the user or
-an expert; never fabricate answers.
+  an expert; never fabricate answers.
 - **Verify before asserting** - check the actual code or run the test before
-claiming behavior in docs, comments, or review replies.
+  claiming behavior in docs, comments, or review replies.
 - **Record lessons** - when a review or test catches a subtle issue, `mem_save`
-the lesson (searchable), and if it must apply to every future session, add it
-to this file. This is how project rules grow.
+  the lesson (searchable), and if it must apply to every future session, add it
+  to this file. This is how project rules grow.
