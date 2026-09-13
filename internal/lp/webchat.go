@@ -98,6 +98,14 @@ const (
 	// instead of a generic timeout.
 	webChatMaxContinueClickFailures = 3
 
+	// webChatMaxRegenDetectFailures caps CONSECUTIVE 「重新生成」 detector
+	// errors. Unlike the continue detector (hold-only by design), a
+	// persistent regen-detector failure must not hold a healthy round
+	// forever: the hold resets stability and forbids extraction, so a
+	// finished answer would become a poll-budget timeout. After this many
+	// errors the step falls through; the next success resets the counter.
+	webChatMaxRegenDetectFailures = 3
+
 	// webChatTextareaWait is how long webchatSend polls for the chat
 	// composer before concluding the page is not a chat page. A new
 	// conversation used to sleep a blind 3s after navigation; a cold
@@ -693,87 +701,90 @@ const (
 	//
 	// This snippet deliberately performs NO click (see jsContinueGeneration).
 	jsRegenerateStopped = `(() => {
-const msgs = document.querySelectorAll('.ds-message');
-if (!msgs.length) return {found: false};
-const bubble = msgs[msgs.length - 1];
-// No answer body: an absent or empty main-content means the reply never
-// produced visible text.
-const main = bubble.querySelector('.ds-assistant-message-main-content');
-if (main && (main.textContent || '').trim() !== '') return {found: false};
-// The stopped marker: a LEAF element whose exact text is 已停止 / stopped,
-// outside the main-content subtree (skipped whole).
-let stopped = false;
-const scan = (el) => {
-if (stopped) return;
-if (el.tagName === 'SCRIPT' || el.tagName === 'STYLE') return;
-if (el.classList && el.classList.contains('ds-assistant-message-main-content')) return;
-const kids = el.children;
-if (kids.length === 0) {
-const t = (el.textContent || '').trim().toLowerCase();
-if (t === '已停止' || t === 'stopped') stopped = true;
-return;
-}
-for (let i = 0; i < kids.length; i++) scan(kids[i]);
-};
-scan(bubble);
-if (!stopped) return {found: false};
-// Ownership: the nearest ancestor that DIRECTLY owns a .ds-message child is
-// the message row (same walk as jsContinueGeneration).
-let row = null;
-let p = bubble.parentElement;
-while (p) {
-const kids = p.children;
-for (let k = 0; k < kids.length; k++) {
-const c = kids[k];
-if (c.classList && c.classList.contains('ds-message')) { row = p; break; }
-}
-if (row) break;
-p = p.parentElement;
-}
-if (!row) return {found: false};
-// Icon-only buttons of one container: no text, an svg child, and visible
-// (position:fixed popovers report offsetParent === null, so the zero-size
-// rect is the display:none truth).
-const iconButtons = (el) => {
-const out = [];
-const kids = el.children;
-for (let i = 0; i < kids.length; i++) {
-const c = kids[i];
-if (c.tagName !== 'BUTTON' && c.getAttribute('role') !== 'button') continue;
-if ((c.textContent || '').trim() !== '') continue;
-if (!c.querySelector('svg')) continue;
-if (c.offsetParent === null) {
-const r0 = c.getBoundingClientRect();
-if (r0.width === 0 || r0.height === 0) continue;
-}
-out.push(c);
-}
-return out;
-};
-// The action bar is the FIRST element OUTSIDE the bubble whose direct
-// children carry >= 4 icon-only buttons: a branch switcher or a text button
-// row never reaches that count, the 5-icon bar does.
-let bar = null;
-const all = row.querySelectorAll('*');
-for (let i = 0; i < all.length; i++) {
-const el = all[i];
-if (el === bubble || bubble.contains(el)) continue;
-const btns = iconButtons(el);
-if (btns.length >= 4) { bar = btns; break; }
-}
-if (!bar || bar.length < 2) return {found: false};
-const b = bar[1];
-if (b.scrollIntoView) b.scrollIntoView({block: 'center'});
-const r = b.getBoundingClientRect();
-const x = r.left + r.width / 2;
-const y = r.top + r.height / 2;
-// A present but disabled or occluded button is reported as such, NOT as
-// absent: folding it into found=false would let the caller read the poll as
-// healthy and extract the stopped round as its answer.
-const enabled = !b.disabled && (b.getAttribute('aria-disabled') || '') !== 'true';
-const hit = document.elementFromPoint(x, y);
-const clickable = enabled && !!hit && (hit === b || b.contains(hit));
-return {found: true, clickable: clickable, x: x, y: y, buttons: bar.length};
+		const msgs = document.querySelectorAll('.ds-message');
+		if (!msgs.length) return {found: false};
+		const bubble = msgs[msgs.length - 1];
+		// No answer body: EVERY main-content block in the bubble must be
+		// empty. querySelector only checks the first, so a second populated
+		// block would be missed and a healthy round misread as stopped.
+		const mains = bubble.querySelectorAll('.ds-assistant-message-main-content');
+		for (let i = 0; i < mains.length; i++) {
+			if ((mains[i].textContent || '').trim() !== '') return {found: false};
+		}
+		// The stopped marker: a LEAF element whose exact text is 已停止 /
+		// stopped, outside the main-content subtree (skipped whole).
+		let stopped = false;
+		const scan = (el) => {
+			if (stopped) return;
+			if (el.tagName === 'SCRIPT' || el.tagName === 'STYLE') return;
+			if (el.classList && el.classList.contains('ds-assistant-message-main-content')) return;
+			const kids = el.children;
+			if (kids.length === 0) {
+				const t = (el.textContent || '').trim().toLowerCase();
+				if (t === '已停止' || t === 'stopped') stopped = true;
+				return;
+			}
+			for (let i = 0; i < kids.length; i++) scan(kids[i]);
+		};
+		scan(bubble);
+		if (!stopped) return {found: false};
+		// Ownership: the nearest ancestor that DIRECTLY owns a .ds-message
+		// child is the message row (same walk as jsContinueGeneration).
+		let row = null;
+		let p = bubble.parentElement;
+		while (p) {
+			const kids = p.children;
+			for (let k = 0; k < kids.length; k++) {
+				const c = kids[k];
+				if (c.classList && c.classList.contains('ds-message')) { row = p; break; }
+			}
+			if (row) break;
+			p = p.parentElement;
+		}
+		if (!row) return {found: false};
+		// Icon-only buttons of one container: no text, an svg child, and
+		// visible (position:fixed popovers report offsetParent === null, so
+		// the zero-size rect is the display:none truth).
+		const iconButtons = (el) => {
+			const out = [];
+			const kids = el.children;
+			for (let i = 0; i < kids.length; i++) {
+				const c = kids[i];
+				if (c.tagName !== 'BUTTON' && c.getAttribute('role') !== 'button') continue;
+				if ((c.textContent || '').trim() !== '') continue;
+				if (!c.querySelector('svg')) continue;
+				if (c.offsetParent === null) {
+					const r0 = c.getBoundingClientRect();
+					if (r0.width === 0 || r0.height === 0) continue;
+				}
+				out.push(c);
+			}
+			return out;
+		};
+		// The action bar is the FIRST element OUTSIDE the bubble whose direct
+		// children carry >= 4 icon-only buttons: a branch switcher or a text
+		// button row never reaches that count, the 5-icon bar does.
+		let bar = null;
+		const all = row.querySelectorAll('*');
+		for (let i = 0; i < all.length; i++) {
+			const el = all[i];
+			if (el === bubble || bubble.contains(el)) continue;
+			const btns = iconButtons(el);
+			if (btns.length >= 4) { bar = btns; break; }
+		}
+		if (!bar || bar.length < 2) return {found: false};
+		const b = bar[1];
+		if (b.scrollIntoView) b.scrollIntoView({block: 'center'});
+		const r = b.getBoundingClientRect();
+		const x = r.left + r.width / 2;
+		const y = r.top + r.height / 2;
+		// A present but disabled or occluded button is reported as such, NOT
+		// as absent: folding it into found=false would let the caller read
+		// the poll as healthy and extract the stopped round as its answer.
+		const enabled = !b.disabled && (b.getAttribute('aria-disabled') || '') !== 'true';
+		const hit = document.elementFromPoint(x, y);
+		const clickable = enabled && !!hit && (hit === b || b.contains(hit));
+		return {found: true, clickable: clickable, x: x, y: y, buttons: bar.length};
 	})()`
 
 	// jsSendEnterOnly dispatches the Enter sequence without the send-button
@@ -1693,13 +1704,17 @@ func webchatWait(ctx context.Context, baseline, mdBaseline, sentMessage string) 
 // production implementation. Tests substitute deterministic stand-ins to
 // exercise the state machine without a browser.
 type continueRecovery struct {
-	clicks      int          // 「继续生成」 clicks dispatched (budget: webChatMaxContinues)
-	regenClicks int          // 「重新生成」 clicks dispatched (budget: webChatMaxRegenerates)
-	lastAt      time.Time    // dispatch time of the last click (cooldown anchor, either button)
-	pending     bool         // a click was dispatched, the resume is unconfirmed
-	pendingKind pendingClick // which button the pending resume came from
-	failures    int          // CONSECUTIVE dispatch failures (see webChatMaxContinueClickFailures)
-	warned      bool         // a detect error was already logged once
+	clicks         int          // 「继续生成」 clicks dispatched (budget: webChatMaxContinues)
+	regenClicks    int          // 「重新生成」 clicks dispatched (budget: webChatMaxRegenerates)
+	lastAt         time.Time    // dispatch time of the last click (cooldown anchor, either button)
+	pending        bool         // a click was dispatched, the resume is unconfirmed
+	pendingKind    pendingClick // which button the pending resume came from
+	failures       int          // CONSECUTIVE dispatch failures (see webChatMaxContinueClickFailures)
+	warnedContinue bool         // the 「继续生成」 detect error was already logged once
+	warnedRegen    bool         // the 「重新生成」 detect error was already logged once
+	// regenDetectFailures counts CONSECUTIVE 「重新生成」 detector errors;
+	// see webChatMaxRegenDetectFailures.
+	regenDetectFailures int
 
 	// base is the resume-evidence baseline captured at click time.
 	// baseFromAnswer records whether it came from the round's assistant
@@ -1844,8 +1859,8 @@ func (r *continueRecovery) step(ctx context.Context, body string, answer func() 
 	}
 	d, derr := r.detectFn(ctx)
 	if derr != nil {
-		if !r.warned {
-			r.warned = true
+		if !r.warnedContinue {
+			r.warnedContinue = true
 			fmt.Fprintf(os.Stderr, "⚠️ 检测「继续生成」按钮失败（将继续轮询）: %v\n", derr)
 		}
 		// Deliberately hold-only, with NO failure cap that fails the round:
@@ -1888,22 +1903,36 @@ func (r *continueRecovery) stepContinue(ctx context.Context, d continueDetect, b
 // click).
 func (r *continueRecovery) stepRegenerate(ctx context.Context, body string, answer func() string) (continueAction, error) {
 	if r.activeFn(ctx) {
-		if r.pending {
-			return continueHold, nil
-		}
+		// No pending check here: the gate clears a pending resume as soon as
+		// the generation is active (resumed() returns true on activeFn), so
+		// pending cannot still be set at this point. A healthy stream just
+		// proceeds to the normal flow.
 		return continueNone, nil
 	}
 	d, derr := r.detectRegenFn(ctx)
 	if derr != nil {
-		if !r.warned {
-			r.warned = true
+		if !r.warnedRegen {
+			r.warnedRegen = true
 			fmt.Fprintf(os.Stderr, "⚠️ 检测「重新生成」按钮失败（将继续轮询）: %v\n", derr)
 		}
-		// Hold-only, exactly like the 「继续生成」 detector error above: a transient
-		// CDP hiccup must never be read as "no interruption", and must never fail a
-		// round whose generation may still be running.
+		r.regenDetectFailures++
+		// A pending resume keeps holding until its deadline: the click is in
+		// flight and only the resume window may fail it.
+		if r.pending {
+			return continueHold, nil
+		}
+		// A PERSISTENT detector failure must not hold a healthy round forever
+		// (the hold resets stability and forbids extraction, turning a
+		// finished answer into a poll-budget timeout). After the cap, fall
+		// through so the normal flow can proceed; a later success resets the
+		// counter. This is deliberately different from the continue
+		// detector, whose hold-only policy is documented above.
+		if r.regenDetectFailures >= webChatMaxRegenDetectFailures {
+			return continueNone, nil
+		}
 		return continueHold, nil
 	}
+	r.regenDetectFailures = 0
 	if d.present {
 		if d.clickable && r.ready() {
 			clicked, err := r.clickRegen(ctx, d, body, answer)
@@ -1990,6 +2019,7 @@ func (r *continueRecovery) click(ctx context.Context, d continueDetect, body str
 		return false, err
 	}
 	r.clicks++
+	r.warnedContinue = false
 	r.armResume(pendingContinue, body, answer)
 	fmt.Fprintf(os.Stderr, "🔄 检测到生成中断（%s），已点击「继续生成」继续（%d/%d）...\n", d.label, r.clicks, webChatMaxContinues)
 	return true, nil
@@ -2008,6 +2038,7 @@ func (r *continueRecovery) clickRegen(ctx context.Context, d regenerateDetect, b
 		return false, err
 	}
 	r.regenClicks++
+	r.warnedRegen = false
 	r.armResume(pendingRegen, body, answer)
 	fmt.Fprintf(os.Stderr, "🔄 检测到生成中断（已停止、无输出），已点击「重新生成」重试（%d/%d）...\n", r.regenClicks, webChatMaxRegenerates)
 	return true, nil
@@ -2032,7 +2063,6 @@ func (r *continueRecovery) dispatchClick(ctx context.Context, what string, x, y 
 		return false, nil
 	}
 	r.failures = 0
-	r.warned = false
 	return true, nil
 }
 
