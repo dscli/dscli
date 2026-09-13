@@ -143,27 +143,31 @@ func TestMarkerRangesRealSamples(t *testing.T) {
 	}
 }
 
-// TestMarkerRangesMergedAndSorted pins that overlapping matches (e.g. the
-// noise arm and the plain-close arm hitting the same span) are merged, so
-// callers can treat the result as a set of disjoint markers.
+// TestMarkerRangesMergedAndSorted pins the merge: the badge noise arm
+// matches a close tag up to its name, and the plain-close arm matches the
+// canonical close IMMEDIATELY after it - adjacent matches must collapse into
+// ONE range, so callers can treat the result as disjoint markers.
 func TestMarkerRangesMergedAndSorted(t *testing.T) {
-	// This text matches both the noise arm and the plain-close arm: the
-	// plain "</invoke>" sits inside the noise match's span boundary.
-	text := badgeOpen("tool_calls") + nl + lt + "/invoke" + gt
+	// Arm 1 matches the badge close through "parameter"; arm 2 matches the
+	// plain "</parameter>" glued to it. The trailing "</invoke>" stays its
+	// own range.
+	text := lt + "/" + fwBar + fwBar + "DSML" + fwBar + fwBar + "parameter" + lt + "/parameter" + gt + nl + lt + "/invoke" + gt
 	ranges := MarkerRanges(text)
-	// Guard against a vacuous pass: fewer than two ranges means the loop
-	// below never runs and the test would assert nothing.
-	if len(ranges) < 2 {
-		t.Fatalf("ranges = %v, want at least 2 (the fixture must produce overlapping matches)", ranges)
+	if len(ranges) != 2 {
+		t.Fatalf("ranges = %v, want exactly 2 (the adjacent arms must merge)", ranges)
 	}
 	for i := 1; i < len(ranges); i++ {
 		if ranges[i][0] < ranges[i-1][1] {
 			t.Errorf("ranges %v overlap: %v", i-1, ranges)
 		}
-	}
-	for i := 1; i < len(ranges); i++ {
 		if ranges[i][0] < ranges[i-1][0] {
 			t.Errorf("ranges not sorted: %v", ranges)
 		}
+	}
+	// The merged first range must span BOTH the badge noise and the plain
+	// close: that slice is what proves the merge happened.
+	merged := text[ranges[0][0]:ranges[0][1]]
+	if !strings.Contains(merged, "DSML") || !strings.Contains(merged, "</parameter>") {
+		t.Errorf("first range %q must span the badge close and the plain close", merged)
 	}
 }
