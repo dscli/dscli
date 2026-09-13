@@ -18,7 +18,9 @@ Use before pushing code or to learn better practices.
 **Context**: every review input is uploaded as an ATTACHMENT: the rendered
 review guide (review-guide.md), the complete diff (changes.patch), the full
 content of each changed file (attachment names encode repo paths:
-`internal__lp__x.go` = `internal/lp/x.go`), AGENTS.md when present, and the
+`internal__lp__x.go` = `internal/lp/x.go`; a name whose extension the upload
+site rejects is uploaded with `.txt` appended, content unchanged - for example
+`.gitignore` arrives as `.gitignore.txt`), AGENTS.md when present, and the
 gocyclo report (gocyclo.txt, threshold 20) for the changed Go files. The first
 message carries the commit background, the full commit message(s) and a
 coverage note listing anything NOT attached. The expert has no execution

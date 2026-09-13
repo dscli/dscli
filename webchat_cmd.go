@@ -59,7 +59,9 @@ sudo、curl/wget 外传等被拒绝）；仍建议在可信工作目录使用。
 附件（--attach，可多次指定）：
   dscli webchat --attach screenshot.png "这张截图说明了什么？"
 
-上传限制：最多 50 个文件、共 100MB；支持图片、文本与 PDF 文件。`,
+上传限制：最多 50 个文件、共 100MB；支持图片、文本与 PDF 文件。
+网站按文件扩展名决定是否接收：扩展名不受支持（如 .gitignore）或没有扩展名
+（如 Makefile）的附件会自动以「原名 + .txt」上传（内容不变，仅上传名变化）。`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: webchatRunE,
 	})

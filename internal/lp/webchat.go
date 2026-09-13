@@ -1075,8 +1075,10 @@ const WebUploadMaxTotal = 100 << 20
 const webUploadReadyWaitAttempts = 10
 
 // validateWebAttachments checks the web chat upload limits: at most 50 files
-// and 100MB total. File types are not restricted: the page accepts images,
-// text and PDF files.
+// and 100MB total, measured on the files as given (a later rename never
+// changes the budget). File types are not restricted here; the page accepts
+// images, text and PDF files, and names it would reject are normalized by
+// prepareUploadAttachments.
 func validateWebAttachments(files []string) error {
 	if len(files) == 0 {
 		return nil
@@ -1128,15 +1130,40 @@ func IsImageFile(path string) bool {
 	return false
 }
 
-// webchatUpload attaches files to the chat via the hidden file input. The
-// direct path sets files on the input node with CDP DOM.setFileInputFiles,
-// which fires React's change handler without opening a native dialog. If
-// the input is missing, the upload button is clicked with file-chooser
-// interception enabled and the opened chooser is completed programmatically.
+// webchatUpload attaches files to the chat: it validates the batch against the
+// site limits, normalizes the names the site would reject (see
+// prepareUploadAttachments), and hands the result to webchatAttachFiles.
 func webchatUpload(ctx context.Context, files []string) error {
 	if err := validateWebAttachments(files); err != nil {
 		return err
 	}
+	// The site decides acceptance by extension: normalize the names (and
+	// de-duplicate them) before anything is handed to Chrome. Limits were
+	// validated on the original files above, so the count and byte budget
+	// are unchanged by a rename.
+	prepared, err := prepareUploadAttachments(files)
+	if err != nil {
+		return err
+	}
+	if prepared.cleanup != nil {
+		defer prepared.cleanup()
+	}
+	for _, note := range prepared.notes {
+		fmt.Fprintln(os.Stderr, note)
+	}
+	return webchatAttachFiles(ctx, prepared.files)
+}
+
+// webchatAttachFiles attaches an already-normalized batch to the chat via the
+// hidden file input. The direct path sets files on the input node with CDP
+// DOM.setFileInputFiles, which fires React's change handler without opening a
+// native dialog. If the input is missing, the upload button is clicked with
+// file-chooser interception enabled and the opened chooser is completed
+// programmatically.
+//
+// Split from webchatUpload so the gated live upload-name probe can send RAW
+// names: normalization would rewrite exactly the names the probe measures.
+func webchatAttachFiles(ctx context.Context, files []string) error {
 	var probe map[string]any
 	if err := chromedp.Evaluate(jsFindFileInput, &probe).Do(ctx); err != nil {
 		return fmt.Errorf("locate file input: %w", err)

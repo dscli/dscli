@@ -523,10 +523,16 @@ func TestEncodeAttachmentName(t *testing.T) {
 
 func TestUniqueAttachmentName(t *testing.T) {
 	used := map[string]bool{}
-	for i, want := range []string{"x.go", "x.go_2", "x.go_3"} {
+	for i, want := range []string{"x.go", "x_2.go", "x_3.go"} {
 		if got := uniqueAttachmentName(used, "x.go"); got != want {
 			t.Errorf("collision %d: got %q, want %q", i, got, want)
 		}
+	}
+	// The suffix lands before the extension, so a renamed attachment keeps
+	// the ".txt" ending the upload site inspects.
+	used = map[string]bool{"Makefile.txt": true}
+	if got := uniqueAttachmentName(used, "Makefile.txt"); got != "Makefile_2.txt" {
+		t.Errorf("got %q, want Makefile_2.txt", got)
 	}
 }
 
@@ -662,6 +668,8 @@ func TestBuildReviewMessage(t *testing.T) {
 		"gocyclo.txt",
 		"AGENTS.md (project guide)",
 		"internal__lp__webchat.go",
+		"When the upload site rejects a name's extension",
+		"\".gitignore\" becomes \".gitignore.txt\"",
 		"## Coverage",
 		"Commits under review: 2.",
 		"Changed files: 3 (1 skipped as deleted/binary/symlink/unreadable).",
@@ -671,6 +679,18 @@ func TestBuildReviewMessage(t *testing.T) {
 		if !strings.Contains(msg, want) {
 			t.Errorf("message missing %q:\n%s", want, msg)
 		}
+	}
+
+	// Renamed attachments are named in the coverage note, capped like the
+	// other lists.
+	plan.Renamed = []string{".gitignore → .gitignore.txt", "Makefile → Makefile.txt"}
+	msg = buildReviewMessage("s", "l", plan)
+	if !strings.Contains(msg, "Upload name adjustments (site compatibility, content unchanged): .gitignore → .gitignore.txt, Makefile → Makefile.txt") {
+		t.Errorf("message must list upload name adjustments:\n%s", msg)
+	}
+	// Without an adjustment the line must not appear at all.
+	if msg := buildReviewMessage("s", "l", reviewPlan{}); strings.Contains(msg, "Upload name adjustments") {
+		t.Errorf("message must not claim adjustments when nothing was renamed:\n%s", msg)
 	}
 
 	// Budget drops and patch truncation are named explicitly.
@@ -974,6 +994,76 @@ func TestHandleCodeReviewAttachments(t *testing.T) {
 	// The temporary attachment directory must be gone after the call.
 	if _, serr := os.Stat(filepath.Dir(call.attachments[0])); !os.IsNotExist(serr) {
 		t.Errorf("attachment dir not cleaned up (stat err = %v)", serr)
+	}
+}
+
+// TestAssembleReviewAttachmentsRenamesRejectedNames drives the assembly step
+// with names the upload site rejects (.gitignore), silently drops (Makefile,
+// go.sum) or accepts (main.go): rejected names must be uploaded as ".txt"
+// copies with their content intact, and every adjustment must be recorded in
+// plan.Renamed so the expert sees it.
+func TestAssembleReviewAttachmentsRenamesRejectedNames(t *testing.T) {
+	repo := t.TempDir()
+	runGitIn(t, repo, "init", "-q")
+	files := []struct{ name, content string }{
+		{".gitignore", "*.txt\n"},
+		{"Makefile", "all:\n"},
+		{"go.sum", "x v1\n"},
+		{"main.go", "package main\n"},
+	}
+	for _, f := range files {
+		if err := os.WriteFile(filepath.Join(repo, f.name), []byte(f.content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGitIn(t, repo, "add", "-A")
+	runGitIn(t, repo, "commit", "-qm", "one")
+	stubGocyclo(t, []string{"main.go"})
+	// The change listing runs `git log` in the process working directory, so
+	// the test must stand inside the throwaway repo.
+	t.Chdir(repo)
+
+	dir := t.TempDir()
+	attachments, plan, err := assembleReviewAttachments(context.Background(), dir, repo, "", 1)
+	if err != nil {
+		t.Fatalf("assembleReviewAttachments: %v", err)
+	}
+
+	names := make([]string, 0, len(attachments))
+	content := map[string]string{}
+	for _, p := range attachments {
+		base := filepath.Base(p)
+		names = append(names, base)
+		b, rerr := os.ReadFile(p)
+		if rerr != nil {
+			t.Fatalf("read attachment %s: %v", p, rerr)
+		}
+		content[base] = string(b)
+	}
+	for _, want := range []string{".gitignore.txt", "Makefile.txt", "go.sum.txt", "main.go"} {
+		if !slices.Contains(names, want) {
+			t.Errorf("attachment %q missing (names: %v)", want, names)
+		}
+	}
+	for _, unexpected := range []string{".gitignore", "Makefile", "go.sum"} {
+		if slices.Contains(names, unexpected) {
+			t.Errorf("site-incompatible name %q must not be uploaded as-is (names: %v)", unexpected, names)
+		}
+	}
+	// The renamed copy carries the original content.
+	if got := content[".gitignore.txt"]; got != "*.txt\n" {
+		t.Errorf(".gitignore.txt content = %q, want the original bytes", got)
+	}
+	if got := content["Makefile.txt"]; got != "all:\n" {
+		t.Errorf("Makefile.txt content = %q, want the original bytes", got)
+	}
+
+	want := []string{".gitignore → .gitignore.txt", "Makefile → Makefile.txt", "go.sum → go.sum.txt"}
+	if !slices.Equal(plan.Renamed, want) {
+		t.Errorf("plan.Renamed = %v, want %v (sorted)", plan.Renamed, want)
+	}
+	if !slices.Contains(plan.Attached, "main.go") || !slices.Contains(plan.Attached, ".gitignore") {
+		t.Errorf("plan.Attached = %v, want the repo paths (unchanged by the rename)", plan.Attached)
 	}
 }
 

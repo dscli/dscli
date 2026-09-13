@@ -532,18 +532,29 @@ func assembleReviewAttachments(ctx context.Context, dir, repoRoot, patch string,
 		notAttached = append(notAttached, d.path)
 	}
 	for _, c := range kept {
-		name := uniqueAttachmentName(usedNames, encodeAttachmentName(c.path))
+		// The upload site accepts only a subset of extensions. Keep a
+		// verified one as-is; otherwise upload the same content under the
+		// encoded name with ".txt" appended (see lp.SafeUploadName). The
+		// adjustment is recorded only after the copy succeeds, so the
+		// coverage note never claims a rename that did not happen.
+		name := encodeAttachmentName(c.path)
+		safe, renamed := lp.SafeUploadName(name)
+		name = uniqueAttachmentName(usedNames, safe)
 		p, cerr := copyReviewFile(dir, name, filepath.Join(repoRoot, c.path))
 		if cerr != nil {
 			fmt.Fprintf(os.Stderr, "⚠️ 附件复制失败: %v\n", cerr)
 			notAttached = append(notAttached, c.path)
 			continue
 		}
+		if renamed {
+			plan.Renamed = append(plan.Renamed, c.path+" → "+name)
+		}
 		attachments = append(attachments, p)
 		attached = append(attached, c.path)
 	}
 	sort.Strings(attached)
 	sort.Strings(notAttached)
+	sort.Strings(plan.Renamed)
 	plan.Attached = attached
 	plan.NotAttached = notAttached
 	return attachments, plan, nil
@@ -598,16 +609,21 @@ func encodeAttachmentName(path string) string {
 	return strings.ReplaceAll(path, "/", "__")
 }
 
-// uniqueAttachmentName appends a numeric suffix when an earlier file already
-// mapped to the same encoded name (a/b__c vs a__b/c both encode to a__b__c),
-// so no attachment silently overwrites another.
+// uniqueAttachmentName inserts a numeric suffix before the extension when an
+// earlier file already mapped to the same encoded name (a/b__c vs a__b/c both
+// encode to a__b__c), so no attachment silently overwrites another. The
+// suffix goes before the extension (x.go -> x_2.go, Makefile.txt ->
+// Makefile_2.txt) so the final name keeps the extension the upload site
+// inspects - the same rule lp uses when it de-duplicates a normalized batch.
 func uniqueAttachmentName(used map[string]bool, name string) string {
 	if !used[name] {
 		used[name] = true
 		return name
 	}
+	ext := filepath.Ext(name)
+	stem := strings.TrimSuffix(name, ext)
 	for i := 2; ; i++ {
-		candidate := fmt.Sprintf("%s_%d", name, i)
+		candidate := fmt.Sprintf("%s_%d%s", stem, i, ext)
 		if !used[candidate] {
 			used[candidate] = true
 			return candidate
@@ -716,6 +732,7 @@ type reviewPlan struct {
 	Skipped        []string // changed entries skipped (deleted, binary, unreadable)
 	Attached       []string // repo paths attached with full content
 	NotAttached    []string // repo paths not attached (attachment budget / read error)
+	Renamed        []string // attached files uploaded under an adjusted name ("repo path → upload name")
 	Agents         bool     // AGENTS.md was attached
 	PatchDropped   []string // files whose patch section was dropped
 	PatchTruncated bool     // the patch was cut to fit the upload budget
@@ -767,7 +784,8 @@ func buildReviewMessage(summary, commitLog string, plan reviewPlan) string {
 	}
 	inputs = append(inputs, "gocyclo.txt (cyclomatic complexity of the changed Go files, project threshold 20)")
 	sb.WriteString("All review inputs are attached to this message: " + strings.Join(inputs, ", ") + ". ")
-	sb.WriteString("Attachment file names encode repo paths: \"internal__lp__webchat.go\" is \"internal/lp/webchat.go\".\n")
+	sb.WriteString("Attachment file names encode repo paths: \"internal__lp__webchat.go\" is \"internal/lp/webchat.go\". ")
+	sb.WriteString("When the upload site rejects a name's extension, the file is uploaded under the same name with \".txt\" appended (content unchanged): \".gitignore\" becomes \".gitignore.txt\".\n")
 	sb.WriteString("\n## Coverage\n")
 	fmt.Fprintf(&sb, "- Commits under review: %d.\n", plan.CommitCount)
 	fmt.Fprintf(&sb, "- Changed files: %d (%d skipped as deleted/binary/symlink/unreadable).\n", len(plan.Changed)+len(plan.Skipped), len(plan.Skipped))
@@ -776,6 +794,9 @@ func buildReviewMessage(summary, commitLog string, plan reviewPlan) string {
 		sb.WriteString("- Not attached: none.\n")
 	} else {
 		fmt.Fprintf(&sb, "- NOT attached (budget or read error): %s\n", strings.Join(plan.NotAttached, ", "))
+	}
+	if len(plan.Renamed) > 0 {
+		fmt.Fprintf(&sb, "- Upload name adjustments (site compatibility, content unchanged): %s\n", cappedList(plan.Renamed))
 	}
 	if !plan.Agents {
 		sb.WriteString("- AGENTS.md not attached (absent, empty, or unreadable).\n")
