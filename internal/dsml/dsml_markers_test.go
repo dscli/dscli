@@ -152,7 +152,9 @@ func TestMarkerRangesMergedAndSorted(t *testing.T) {
 	// plain "</parameter>" glued to it. The trailing "</invoke>" stays its
 	// own range. The EXACT expected ranges document the adjacency-based
 	// merge contract: pair occupies [0, len(pair)) and the plain close of
-	// invoke starts after the newline.
+	// invoke starts after the newline. The fixture relies on nl being a
+	// non-empty separator - an empty nl would make the two arms touch and
+	// collapse into one range.
 	pair := lt + "/" + fwBar + fwBar + "DSML" + fwBar + fwBar + "parameter" + lt + "/parameter" + gt
 	text := pair + nl + lt + "/invoke" + gt
 	want := [][2]int{{0, len(pair)}, {len(pair) + len(nl), len(text)}}

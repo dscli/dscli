@@ -438,7 +438,13 @@ func captureStderr(t *testing.T) func() string {
 	os.Stderr = w
 	// The helper mutates a process-global, so it is NOT safe under
 	// t.Parallel (the package has no parallel tests).
-	t.Cleanup(func() { os.Stderr = orig })
+	// Close is idempotent-safe here (a double close just errors, which
+	// is ignored), so the cleanup may run after the normal drain.
+	t.Cleanup(func() {
+		os.Stderr = orig
+		_ = w.Close()
+		_ = r.Close()
+	})
 	return func() string {
 		os.Stderr = orig
 		_ = w.Close()

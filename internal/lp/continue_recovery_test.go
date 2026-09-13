@@ -943,6 +943,10 @@ func TestContinueRecoveryRegenResumeResetsFailureRun(t *testing.T) {
 	if r.regenDetectFailures <= webChatMaxRegenDetectFailures {
 		t.Fatalf("precondition failed: regenDetectFailures = %d, want > %d", r.regenDetectFailures, webChatMaxRegenDetectFailures)
 	}
+	// The run consumed its once-per-run warning latch.
+	if !r.warnedRegen {
+		t.Fatal("warnedRegen = false after the error run, want true (the latch was consumed)")
+	}
 
 	// 3. The generation becomes active: the gate confirms the resume, clears
 	// pending, and must restart the failure run.
@@ -956,13 +960,20 @@ func TestContinueRecoveryRegenResumeResetsFailureRun(t *testing.T) {
 	if r.regenDetectFailures != 0 {
 		t.Fatalf("regenDetectFailures = %d after a confirmed resume, want 0 (a fresh run)", r.regenDetectFailures)
 	}
+	// A confirmed resume also re-arms the once-per-run warning latch.
+	if r.warnedRegen {
+		t.Fatal("warnedRegen = true after a confirmed resume, want false (a fresh run)")
+	}
 
 	// 4. Back to idle with the detector still broken: the fresh run must hold
 	// for its first two errors and only fall through on the cap-th. The
-	// exact counter values pin the cap arithmetic, not just the sequence.
+	// exact counter values hard-pin the cap arithmetic, so this test breaks
+	// loudly if webChatMaxRegenDetectFailures changes. The captured stderr
+	// pins the observable once-per-run warning contract.
 	h.active = false
 	want := []continueAction{continueHold, continueHold, continueNone}
 	wantFailures := []int{1, 2, webChatMaxRegenDetectFailures}
+	drain := captureStderr(t)
 	for i, exp := range want {
 		action, err := r.step(context.Background(), "已停止", func() string { return "" })
 		if err != nil {
@@ -974,5 +985,12 @@ func TestContinueRecoveryRegenResumeResetsFailureRun(t *testing.T) {
 		if r.regenDetectFailures != wantFailures[i] {
 			t.Errorf("post-reset step %d regenDetectFailures = %d, want %d", i, r.regenDetectFailures, wantFailures[i])
 		}
+		if i == 0 && !r.warnedRegen {
+			t.Error("warnedRegen = false after the first post-reset error, want true (the fresh run logged once)")
+		}
+	}
+	stderr := drain()
+	if got := strings.Count(stderr, "检测「重新生成」按钮失败"); got != 1 {
+		t.Errorf("per-run warning count = %d, want 1 (once per run); stderr:\n%s", got, stderr)
 	}
 }
