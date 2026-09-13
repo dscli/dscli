@@ -14,7 +14,7 @@
 // dsml_doc.go), so a call maps 1:1 to the local tool: what the model writes
 // is what the executor accepts, no translation. Two DSML-layer checks
 // remain, both in normalizeDSMLInvoke: the destructive-command interception
-// for shell calls (dsmlBlockedCmdRe), and the trailing close-tag residue
+// for shell calls (BlockedCmdRe), and the trailing close-tag residue
 // gate (rejectTrailingResidue) that refuses a parameter value which
 // swallowed its call's own close tags.
 package dsml
@@ -175,7 +175,7 @@ var dsmlToolCallsCloseCutRe = regexp.MustCompile(`(?s)</\s*(?:tool_calls|_calls)
 //     with the wrapper close tag, so it stays non-executable; a truncated
 //     emission (opening tag without close) fails ParseDSMLToolCalls
 //     downstream and is never executed. The role's tool allow-set plus
-//     destructive-command interception (dsmlBlockedCmdRe) are the hard
+//     destructive-command interception (BlockedCmdRe) are the hard
 //     safety boundary for whatever does execute.
 func IsDSMLToolCallEnd(text string) bool {
 	return dsmlToolCallsCloseEndRe.MatchString(strings.TrimSpace(normalizeDSMLText(text)))
@@ -408,7 +408,7 @@ func dsmlBlockName(tag string) string {
 	}
 }
 
-// dsmlCodeRanges returns the byte ranges of QUOTED content in text: fenced
+// CodeRanges returns the byte ranges of QUOTED content in text: fenced
 // blocks (``` or ~~~, per CommonMark), inline code spans (a matched pair
 // of backtick RUNS), and <tool_result> blocks (the executor's own feedback
 // wrapper). DSML inside any of them is quoted content - a model showing
@@ -433,7 +433,10 @@ func dsmlBlockName(tag string) string {
 // Runs of a different length are content, not new spans; an unmatched run
 // opens nothing - prose ABOUT backticks ("markdown uses ` for code") must
 // not swallow the rest of the line.
-func dsmlCodeRanges(text string) [][2]int {
+//
+// The shell-block judge (internal/shellblock) reuses this scanner so quoted
+// examples never delimit a <shell> block.
+func CodeRanges(text string) [][2]int {
 	var ranges [][2]int
 	off := 0
 	fence := 0   // active fence run length
@@ -513,10 +516,10 @@ func dsmlCodeRanges(text string) [][2]int {
 	return ranges
 }
 
-// inRanges reports whether pos falls inside any of the sorted [start, end)
+// InRanges reports whether pos falls inside any of the sorted [start, end)
 // byte ranges (quoted code, parameter bodies, ...). The walk stops once past
 // pos, since ranges is sorted by offset.
-func inRanges(ranges [][2]int, pos int) bool {
+func InRanges(ranges [][2]int, pos int) bool {
 	for _, r := range ranges {
 		if r[0] > pos {
 			return false
@@ -555,7 +558,7 @@ func inRanges(ranges [][2]int, pos int) bool {
 //     tokenizer); entity-escaped forms (&lt;/parameter&gt;) are safe
 //     because escaping resolution happens after the scan.
 //   - Quoted code (fenced blocks and inline code spans) is opaque: DSML
-//     inside it is quoted content, not an instruction. See dsmlCodeRanges
+//     inside it is quoted content, not an instruction. See CodeRanges
 //     for the rules.
 //   - A wrapper close tag at the very end (see dsmlToolCallsCloseEndRe)
 //     authorizes an IMPLICIT close for opens whose </invoke> the model
@@ -585,7 +588,7 @@ func dsmlBlockRangesStrict(text string) (blocks []dsmlBlockRange, unclosed int, 
 		kind byte // 'o' invoke open, 'c' invoke close, 'p' param open, 'q' param close
 		end  int  // exclusive end of the matched tag
 	}
-	fences := dsmlCodeRanges(text)
+	fences := CodeRanges(text)
 	events := []ev{}
 	// addOpen collects OPEN tags: quoted-code content and NON-structural
 	// tags (dsmlStructuralTag) are skipped - a tag inside a parameter value
@@ -603,7 +606,7 @@ func dsmlBlockRangesStrict(text string) (blocks []dsmlBlockRange, unclosed int, 
 		// literally) is content, not structure. OPEN invoke tags get no
 		// position gate on purpose: a call after prose on the same line is
 		// still a call.
-		if inRanges(fences, m[0]) {
+		if InRanges(fences, m[0]) {
 			return
 		}
 		if kind == 'p' && (!dsmlStructuralTag(text, m[0]) || !dsmlParamNameRe.MatchString(text[m[0]:m[1]])) {
@@ -612,7 +615,7 @@ func dsmlBlockRangesStrict(text string) (blocks []dsmlBlockRange, unclosed int, 
 		events = append(events, ev{m[0], kind, m[1]})
 	}
 	addClose := func(m []int, kind byte) {
-		if inRanges(fences, m[0]) {
+		if InRanges(fences, m[0]) {
 			return
 		}
 		events = append(events, ev{m[0], kind, m[1]})
@@ -853,7 +856,7 @@ func dsmlRoleAllowSet(ctx context.Context) map[string]bool {
 	return toolcall.RoleToolAllowSet(ctx, role)
 }
 
-// dsmlBlockedCmdRe rejects destructive shell commands the web model could
+// BlockedCmdRe rejects destructive shell commands the web model could
 // emit. The review prompt asks for read-only commands, but a remote model is
 // not a trusted local agent, so clearly destructive patterns are refused
 // outright and the expert is told why (it can adapt its approach).
@@ -865,7 +868,11 @@ func dsmlRoleAllowSet(ctx context.Context) map[string]bool {
 // no pipe or substitution needed. So curl/wget/nc/ncat/telnet/socat are
 // refused in any form. Read-only verification never needs them - the
 // review/expert prompts recommend git/grep/sed/ls.
-var dsmlBlockedCmdRe = regexp.MustCompile(`(?i)(^|\s|;|&&|\|\|)(` +
+//
+// The pattern list is shared with the shell-block channel
+// (internal/shellblock.Blocked): whole scripts are checked before anything
+// is written or executed.
+var BlockedCmdRe = regexp.MustCompile(`(?i)(^|\s|;|&&|\|\|)(` +
 	// Filesystem/data destruction.
 	`rm\s+(-[a-zA-Z]*[rf][a-zA-Z]*\s+)+(/|~)|` +
 	`mkfs|dd\s+[^\n]*of=/dev/|` +
@@ -923,7 +930,7 @@ func rejectTrailingResidue(args toolcall.ToolArgs) error {
 // handler validates everything else.
 //
 // Two DSML-layer checks remain, not avoidable: destructive-command
-// interception for calls targeting the shell tool (dsmlBlockedCmdRe) - a
+// interception for calls targeting the shell tool (BlockedCmdRe) - a
 // remote web model is not a trusted local agent - and the trailing
 // close-tag residue gate (rejectTrailingResidue), which refuses a value that
 // swallowed its call's own close tags.
@@ -941,7 +948,7 @@ func normalizeDSMLInvoke(inv DSMLCall) (name string, args toolcall.ToolArgs, err
 
 	name = inv.Name
 	if name == "shell" {
-		if script, ok := args["script"].(string); ok && dsmlBlockedCmdRe.MatchString(script) {
+		if script, ok := args["script"].(string); ok && BlockedCmdRe.MatchString(script) {
 			return "", nil, fmt.Errorf("destructive command rejected (review is read-only): %q", truncateDSMLSummary(script))
 		}
 	}
@@ -1121,13 +1128,13 @@ func parseDSMLToolCallsStrict(text string) (calls []DSMLCall, strict bool, err e
 	// does not enclose the calls are all tolerated for execution but count
 	// as violations. A plain substring check is not enough: prose carrying
 	// a literal close tag would mask a bare invocation.
-	fences := dsmlCodeRanges(text)
+	fences := CodeRanges(text)
 	openAt := strings.Index(text, "<tool_calls>")
 	closeAt := strings.LastIndex(text, "</tool_calls>")
 	lastBlock := blocks[len(blocks)-1]
 	if openAt < 0 || closeAt < 0 || closeAt < openAt ||
 		openAt > blocks[0].openStart || closeAt < lastBlock.closeEnd ||
-		inRanges(fences, openAt) || inRanges(fences, closeAt) {
+		InRanges(fences, openAt) || InRanges(fences, closeAt) {
 		strict = true
 	}
 	calls, extractStrict := extractDSMLCalls(text, blocks)
@@ -1145,7 +1152,7 @@ func parseDSMLToolCallsStrict(text string) (calls []DSMLCall, strict bool, err e
 // observed along the way (nested-block masking, missing string attribute).
 func extractDSMLCalls(text string, blocks []dsmlBlockRange) (calls []DSMLCall, strict bool) {
 	covered := -1 // closeEnd of the most recently parsed top-level block
-	fences := dsmlCodeRanges(text)
+	fences := CodeRanges(text)
 	for _, b := range blocks {
 		// A block directly nested inside another one (outside any
 		// parameter body - those are opaque to the scan) is a structural
@@ -1413,10 +1420,10 @@ func suspectedForParsed(text string, calls []DSMLCall) bool {
 // (fenced blocks, inline spans, tool_result echoes) and parameter bodies.
 func hasUnquotedInvokeOpen(text string) bool {
 	text = normalizeDSMLText(text)
-	fences := dsmlCodeRanges(text)
+	fences := CodeRanges(text)
 	paramBodies := dsmlParamBodyRanges(text)
 	for _, m := range dsmlNamedInvokeOpenRe.FindAllStringIndex(text, -1) {
-		if !inRanges(fences, m[0]) && !inRanges(paramBodies, m[0]) {
+		if !InRanges(fences, m[0]) && !InRanges(paramBodies, m[0]) {
 			return true
 		}
 	}
@@ -1438,14 +1445,14 @@ func hasUnquotedAttemptShapes(text string) bool {
 	if !dsmlWrapperRe.MatchString(text) {
 		return false // no wrapper marker: nothing to detect, skip the range scans
 	}
-	fences := dsmlCodeRanges(text)
+	fences := CodeRanges(text)
 	paramBodies := dsmlParamBodyRanges(text)
 	// A wrapper marker outside quoted code and parameter VALUES: the
 	// attempt's enclosure. Prose mentioning the wrapper name without the
 	// tag never matches (no real angle-bracket tag).
 	wrapper := false
 	for _, m := range dsmlWrapperRe.FindAllStringIndex(text, -1) {
-		if !inRanges(fences, m[0]) && !inRanges(paramBodies, m[0]) {
+		if !InRanges(fences, m[0]) && !InRanges(paramBodies, m[0]) {
 			wrapper = true
 			break
 		}
@@ -1458,7 +1465,7 @@ func hasUnquotedAttemptShapes(text string) bool {
 	// STARTS at this very open (inRanges is start-inclusive) - an open inside
 	// ANOTHER parameter's value is content, not structure.
 	for _, m := range dsmlParamOpenRe.FindAllStringIndex(text, -1) {
-		if inRanges(fences, m[0]) || !dsmlStructuralTag(text, m[0]) ||
+		if InRanges(fences, m[0]) || !dsmlStructuralTag(text, m[0]) ||
 			!dsmlParamNameRe.MatchString(text[m[0]:m[1]]) {
 			continue
 		}
@@ -1479,7 +1486,7 @@ func hasUnquotedAttemptShapes(text string) bool {
 	// A </invoke> close outside quoted code and parameter values: the model
 	// closed a block whose open tag is gone.
 	for _, m := range dsmlInvokeCloseRe.FindAllStringIndex(text, -1) {
-		if !inRanges(fences, m[0]) && !inRanges(paramBodies, m[0]) {
+		if !InRanges(fences, m[0]) && !InRanges(paramBodies, m[0]) {
 			return true
 		}
 	}
@@ -1497,10 +1504,10 @@ func hasUnquotedAttemptShapes(text string) bool {
 // (implicit close); with no following sibling and no close it contributes
 // no range - the value stops being tracked at the truncated emission.
 func dsmlParamBodyRanges(text string) [][2]int {
-	fences := dsmlCodeRanges(text)
+	fences := CodeRanges(text)
 	var ranges [][2]int
 	for _, m := range dsmlParamOpenRe.FindAllStringIndex(text, -1) {
-		if inRanges(fences, m[0]) ||
+		if InRanges(fences, m[0]) ||
 			!dsmlStructuralTag(text, m[0]) ||
 			!dsmlParamNameRe.MatchString(text[m[0]:m[1]]) {
 			continue
@@ -1516,7 +1523,7 @@ func dsmlParamBodyRanges(text string) [][2]int {
 			}
 			if nextClose == nil || (nextOpen != nil && nextOpen[0] < nextClose[0]) {
 				op := j + nextOpen[0]
-				if inRanges(fences, op) || !dsmlStructuralTag(text, op) {
+				if InRanges(fences, op) || !dsmlStructuralTag(text, op) {
 					j = j + nextOpen[1]
 					continue
 				}
@@ -1538,7 +1545,7 @@ func dsmlParamBodyRanges(text string) [][2]int {
 				continue
 			}
 			cp := j + nextClose[0]
-			if inRanges(fences, cp) {
+			if InRanges(fences, cp) {
 				j = j + nextClose[1]
 				continue
 			}
@@ -1570,10 +1577,10 @@ func dsmlParamBodyRanges(text string) [][2]int {
 // hasUnquotedInvokeOpen.
 func hasTypoInvokeOpen(text string) bool {
 	text = normalizeDSMLText(text)
-	fences := dsmlCodeRanges(text)
+	fences := CodeRanges(text)
 	paramBodies := dsmlParamBodyRanges(text)
 	for _, m := range dsmlTypoInvokeOpenRe.FindAllStringSubmatchIndex(text, -1) {
-		if inRanges(fences, m[0]) || inRanges(paramBodies, m[0]) {
+		if InRanges(fences, m[0]) || InRanges(paramBodies, m[0]) {
 			continue
 		}
 		name := text[m[2]:m[3]]
