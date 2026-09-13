@@ -1712,7 +1712,10 @@ type continueRecovery struct {
 	pendingKind    pendingClick // which button the pending resume came from
 	failures       int          // CONSECUTIVE dispatch failures (see webChatMaxContinueClickFailures)
 	warnedContinue bool         // the 「继续生成」 detect error was already logged once
-	warnedRegen    bool         // the 「重新生成」 detect error was already logged once
+	// warnedRegen logs the 「重新生成」 detect error once PER RUN: the latch
+	// resets on a healthy poll alongside regenDetectFailures (a successful
+	// detect or a confirmed resume); clickRegen keeps its own reset.
+	warnedRegen bool
 	// regenDetectFailures counts the run of CONSECUTIVE 「重新生成」 detector
 	// errors since the last healthy poll (a successful detect or a confirmed
 	// resume); see webChatMaxRegenDetectFailures.
@@ -1935,6 +1938,7 @@ func (r *continueRecovery) stepRegenerate(ctx context.Context, body string, answ
 		return continueHold, nil
 	}
 	r.regenDetectFailures = 0
+	r.warnedRegen = false
 	if d.present {
 		if d.clickable && r.ready() {
 			clicked, err := r.clickRegen(ctx, d, body, answer)
@@ -1966,8 +1970,9 @@ func (r *continueRecovery) gate(ctx context.Context, body string, answer func() 
 		// poll - a success OR a confirmed resume. Errors accumulated during
 		// this pending window (hold-only by design) must not leak into the
 		// next unpended run and trip the cap on its first hiccup, so a
-		// confirmed resume starts a fresh run.
+		// confirmed resume (of either click) starts a fresh run.
 		r.regenDetectFailures = 0
+		r.warnedRegen = false
 		return nil
 	}
 	if r.nowFn().After(r.deadline) {
