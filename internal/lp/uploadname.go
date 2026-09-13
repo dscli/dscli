@@ -34,6 +34,13 @@ import (
 // DSCLI_LIVE_UPLOAD_PROBE=1) and updating this set from its output. The set is
 // deliberately conservative: an unknown extension always gets the suffix, so
 // site drift degrades to a visible rename instead of a blocked send.
+//
+// The probe battery is capped at the site's per-batch file limit, so it is a
+// representative sample, not an exhaustive sweep: several entries here (for
+// example ".yaml", ".scss", ".pl") come from the same 2026-09-13 probe round
+// but are no longer covered by the current battery. On the next probe round,
+// re-check those entries or fold them back into the battery while it stays
+// within WebUploadMaxFiles.
 var verifiedUploadExts = map[string]bool{
 	".md": true, ".go": true, ".patch": true, ".txt": true,
 	".yml": true, ".yaml": true, ".json": true, ".toml": true,
@@ -57,7 +64,16 @@ var verifiedUploadExts = map[string]bool{
 // caller can report the adjustment.
 //
 // A trailing dot names no format ("foo."), so it is dropped rather than kept
-// in the renamed name: "foo." becomes "foo.txt", not "foo..txt".
+// in the renamed name: the extension is re-derived after the trim, so
+// "foo." becomes "foo.txt" and "foo.txt." becomes "foo.txt" - never
+// "foo..txt" or "foo.txt.txt". Dropping the dot already changes the name, so
+// the result is reported as renamed even when the remaining extension is
+// verified.
+//
+// A hidden file whose whole name is a verified extension (".txt", ".md") is
+// passed through: filepath.Ext sees the whole name as the extension, and the
+// site accepted those names in the probe. This is known and intentional - the
+// policy keys on the extension alone.
 //
 // ".svg" is deliberately NOT verified: the site treats it as an image and
 // reports no extracted text, which is useless for a text review, so an SVG is
@@ -66,7 +82,11 @@ func SafeUploadName(name string) (string, bool) {
 	ext := filepath.Ext(name)
 	if ext == "." {
 		name = strings.TrimSuffix(name, ".")
-		ext = ""
+		ext = filepath.Ext(name)
+		if verifiedUploadExts[ext] {
+			return name, true
+		}
+		return name + ".txt", true
 	}
 	if verifiedUploadExts[ext] {
 		return name, false
@@ -102,6 +122,14 @@ func UniqueUploadName(used map[string]bool, name string) string {
 	}
 }
 
+// uploadTempDir creates the private directory that holds the renamed copies.
+// It is a package variable so tests can confine the directory to a test-owned
+// root instead of scanning the system temp directory; production always uses
+// the "dscli-upload-" prefix in os.TempDir.
+var uploadTempDir = func() (string, error) {
+	return os.MkdirTemp("", "dscli-upload-")
+}
+
 // preparedUploads is one normalized attachment batch: the paths to hand to
 // Chrome, a stderr note per adjusted name, and the cleanup that removes the
 // renamed copies.
@@ -135,7 +163,7 @@ func prepareUploadAttachments(files []string) (preparedUploads, error) {
 			continue
 		}
 		if dir == "" {
-			d, err := os.MkdirTemp("", "dscli-upload-")
+			d, err := uploadTempDir()
 			if err != nil {
 				return preparedUploads{}, fmt.Errorf("创建上传临时目录失败: %w", err)
 			}

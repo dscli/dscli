@@ -47,18 +47,23 @@ ask_expert 图片、AskExpertWithRoleFiles→code_review）自动获得保护。
 1. 新增 `internal/lp/uploadname.go`：
    - `verifiedUploadExts`（map/set）：§2「正常接受」列表 + 图片/pdf；注释写明来源日期与
      复核方法（跑 live probe）。
-   - `SafeUploadName(name string) (string, bool)`：纯函数。取 `filepath.Ext` 转小写；
-     扩展名在集合内 → `(name, false)`；否则 → `(name+".txt", true)`。无扩展名同样命中
-     改名分支（`Makefile` → `Makefile.txt`）。
+   - `SafeUploadName(name string) (string, bool)`：纯函数。取 `filepath.Ext`，**精确、大小写
+     敏感**匹配集合（集合只含探测过的小写形式）：命中 → `(name, false)`；否则 →
+     `(name+".txt", true)`。无扩展名同样命中改名分支（`Makefile` → `Makefile.txt`）；
+     未探测过的拼写按 fail-safe 改名（`README.MD` → `README.MD.txt`）。尾部单点
+     （`foo.`）去点后**重新推导扩展**：`foo.` → `foo.txt`、`foo.txt.` → `foo.txt`
+     （不叠出 `foo..txt`/`foo.txt.txt`，且计入 renamed）。整名恰为已验证扩展名的隐藏文件
+     （`.txt`/`.md`）按扩展名判定放行（已知且刻意）。
 2. `internal/lp/webchat.go` 的 `webchatUpload`：在 `validateWebAttachments`（50 个/100MB
    限额，仍按原文件校验）之后、上传之前统一归一化（内部函数，建议名
    `prepareUploadAttachments`）：
    - 输入原路径列表，输出「上传路径列表 + 改名备注 + cleanup」；
-   - 需要改名的文件在临时目录（`os.MkdirTemp`，文件 0600）生成副本，上传用副本路径，
-     `defer cleanup()`（无改名则 cleanup 为 nil，零副作用）；
-   - 去重：以最终基名为键（含未改名项），冲突时在扩展名前插 `_N`
+   - 需要改名的文件在临时目录生成副本（包级缝 `uploadTempDir`，默认 `os.MkdirTemp("", "dscli-upload-")`；
+     文件 0600），上传用副本路径，`defer cleanup()`（无改名则 cleanup 为 nil，零副作用）；
+     出错路径先清理临时目录再返回；
+   - 去重：以最终基名为键（含未改名项），冲突时用 `lp.UniqueUploadName` 在扩展名前插 `_N`
      （`x.txt` → `x_2.txt`；`Makefile` → 改名 `Makefile.txt` → 冲突 `Makefile_2.txt`），
-     保证最终名仍以 `.txt` 结尾、不会被 lp 二次改名；
+     保证最终名仍以 `.txt` 结尾、不会被 lp 二次改名；该函数导出，code_review 侧复用同一实现；
    - 每个改名打印一行 stderr 备注（中文，风格对齐现有 `📎` 行），例如：
      `📎 .gitignore 的扩展名网站不支持，已按 .gitignore.txt 上传（内容不变）`；
    - 探测输入框（direct path）与点击上传（chooser fallback）两条路径都必须使用归一化后的
@@ -70,22 +75,25 @@ ask_expert 图片、AskExpertWithRoleFiles→code_review）自动获得保护。
 
 1. `assembleReviewAttachments`（`internal/toolcall/ask/code_review.go`）：kept 文件装配时
    ```go
-   name := encodeAttachmentName(c.path)
-   safe, renamed := lp.SafeUploadName(name)
-   name = uniqueAttachmentName(usedNames, name)   // 去重后才是最终名
-   if renamed { plan.Renamed = append(plan.Renamed, c.path+" → "+name) }
+   encoded := encodeAttachmentName(c.path)
+   safe, _ := lp.SafeUploadName(encoded)
+   name := lp.UniqueUploadName(usedNames, safe)   // 去重后才是最终名
+   // 复制成功、且最终名与编码名不同时才记录（.txt 改名与去重后缀都算）
+   if name != encoded { plan.Renamed = append(plan.Renamed, c.path+" → "+name) }
    ```
-   然后 `copyReviewFile(dir, name, ...)`。固定附件（review-guide.md / changes.patch /
-   AGENTS.md / gocyclo.txt）均为已验证扩展名，保持原样。
-2. `uniqueAttachmentName`：数字后缀改为**插在扩展名前**（`x.go` → `x_2.go`；
-   `Makefile.txt` → `Makefile_2.txt`），更新注释与单测（原为 `x.go_2`）。
-3. `reviewPlan` 新增字段 `Renamed []string`（`repo path → 上传名`，排序）。
+   然后 `copyReviewFile(dir, name, ...)`；复制失败则不记录改名（仅计入 NotAttached）。
+   名字在复制前已由 `UniqueUploadName` 占用，失败后不回收（保留位语义，调用处有注释）。
+   固定附件（review-guide.md / changes.patch / AGENTS.md / gocyclo.txt）均为已验证扩展名，
+   保持原样。
+2. 去重收拢到 `lp.UniqueUploadName`（导出）：数字后缀**插在扩展名前**（`x.go` → `x_2.go`；
+   `Makefile.txt` → `Makefile_2.txt`），ask 侧不再有本地实现。
+3. `reviewPlan` 新增字段 `Renamed []string`（`repo path → attachment name`，排序）。
 4. `buildReviewMessage`：
    - 编码说明句补 `.txt` 约定（英文，专家可读）：说明「原名扩展名站点不接受时会追加
      `.txt`（内容不变）」，例如 `".gitignore.txt"` 对应 `".gitignore"`；
    - Coverage 区新增一行（仅当 `len(plan.Renamed) > 0`）：
-     `- Upload name adjustments (site compatibility, content unchanged): .gitignore → .gitignore.txt, …`
-     （复用 `cappedList` 截断）。
+     `- Upload-name adjustments (repo path → attachment name, content unchanged): .gitignore → .gitignore.txt, …`
+     （复用 `cappedList` 截断；左侧 repo 路径、右侧附件名）。
    - 本地无需新增打印：消息整体已随 `📤` 输出，专家覆盖区即用户可见。
 5. `internal/toolcall/ask/code_review.md`（工具说明）Context 段补 `.txt` 约定一句。
 
@@ -107,14 +115,20 @@ ask_expert 图片、AskExpertWithRoleFiles→code_review）自动获得保护。
 
 - lp 单测（新文件或 `webchat_test.go`）：
   - `SafeUploadName` 表驱动：`.gitignore`→`.gitignore.txt`；`Makefile`→`Makefile.txt`；
-    `go.sum`→`go.sum.txt`；`Makefile.txt`/`main.go`/`a.txt`/`.github__x.yml`/`README.MD`
-    保持不变；`icon.svg`→`icon.svg.txt`。
+    `go.sum`→`go.sum.txt`；`Makefile.txt`/`main.go`/`a.txt`/`.github__x.yml` 保持不变；
+    **未探测的大写形式 fail-safe 改名**（`README.MD` → `README.MD.txt`、`Icon.PNG` →
+    `Icon.PNG.txt`）；`foo.`→`foo.txt`、`foo.txt.`→`foo.txt`；`icon.svg`→`icon.svg.txt`。
   - `prepareUploadAttachments`：改名者生成 0600 副本且内容一致；未改名者返回原路径；
-    无改名时 cleanup 为 nil；清理后副本消失；重名去重（`x.txt` + `x` → `x.txt` + `x_2.txt`）。
+    无改名时 cleanup 为 nil；清理后副本消失；重名去重（`x.txt` + `x` → `x.txt` + `x_2.txt`，
+    断言重名原因的中文备注）；出错路径（源缺失 / 复制失败）清理临时目录（用 `uploadTempDir`
+    测试缝把计数限定在测试目录内）。
 - code_review 单测：
   - 装配含 `.gitignore`、`Makefile`、`go.sum`、`main.go` 的变更集 → 断言附件文件名与
     `plan.Renamed`；
-  - `uniqueAttachmentName` 新行为；
+  - 编码名冲突（`a/b__c.go` 与 `a__b/c.go`）→ 第二个得 `_2` 且计入 `plan.Renamed`，
+    并断言 `buildReviewMessage` 输出含该条目；
+  - 复制失败 → 不记录改名、列入 NotAttached；
+  - `lp.UniqueUploadName` 新行为（ask 侧本地实现已删除）；
   - `buildReviewMessage`：新增改名行/新句子断言；既有断言不得破坏。
 - 全量：`go test ./...` + `make fmt-check` 通过（提交前）。
 

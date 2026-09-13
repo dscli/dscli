@@ -1140,6 +1140,16 @@ func TestAssembleReviewAttachmentsReportsDedupCollision(t *testing.T) {
 	if !slices.Contains(plan.Attached, "a/b__c.go") || !slices.Contains(plan.Attached, "a__b/c.go") {
 		t.Errorf("plan.Attached = %v, want both repo paths", plan.Attached)
 	}
+
+	// The adjustment must reach the expert, not just the plan: the coverage
+	// note in the request message is the only channel that carries it.
+	msg := buildReviewMessage("dedup collision", "commit body", plan)
+	if !strings.Contains(msg, "a__b/c.go → a__b__c_2.go") {
+		t.Errorf("message must carry the dedup adjustment:\n%s", msg)
+	}
+	if !strings.Contains(msg, "Upload-name adjustments (repo path → attachment name, content unchanged):") {
+		t.Errorf("message must label the adjustment line:\n%s", msg)
+	}
 }
 
 // TestHandleCodeReviewFallbackSkipsBinary forces the `git log --name-only`

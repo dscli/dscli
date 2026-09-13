@@ -26,8 +26,16 @@ func TestSafeUploadName(t *testing.T) {
 		"README.MD": {"README.MD.txt", true},
 		"Icon.PNG":  {"Icon.PNG.txt", true},
 		"Doc.PDF":   {"Doc.PDF.txt", true},
-		// A trailing dot names no format: it is dropped, not doubled.
-		"foo.": {"foo.txt", true},
+		// A trailing dot names no format: it is dropped, not doubled, and
+		// the extension is re-derived, so a verified extension underneath is
+		// kept without stacking another ".txt".
+		"foo.":     {"foo.txt", true},
+		"foo.txt.": {"foo.txt", true},
+		"foo.md.":  {"foo.md", true},
+		// A hidden file whose whole name is a verified extension passes
+		// through (known and intentional: the policy keys on the extension).
+		".txt": {".txt", false},
+		".md":  {".md", false},
 		// An SVG is accepted as an image but yields no text: not verified.
 		"icon.svg": {"icon.svg.txt", true},
 		// Verified names stay untouched.
@@ -213,14 +221,28 @@ func TestPrepareUploadAttachmentsDedupAfterRename(t *testing.T) {
 	}
 }
 
+// TestUploadTempDirUsesPrefix pins the production default: the seam must keep
+// creating "dscli-upload-*" directories, which is what the cleanup contract
+// and the isolated tests below rely on.
+func TestUploadTempDirUsesPrefix(t *testing.T) {
+	dir, err := uploadTempDir()
+	if err != nil {
+		t.Fatalf("uploadTempDir: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	if !strings.HasPrefix(filepath.Base(dir), "dscli-upload-") {
+		t.Errorf("temp dir = %q, want the dscli-upload- prefix", filepath.Base(dir))
+	}
+}
+
 func TestPrepareUploadAttachmentsMissingSource(t *testing.T) {
-	before := countUploadTempDirs(t)
+	count := isolateUploadTempRoot(t)
 	_, err := prepareUploadAttachments([]string{filepath.Join(t.TempDir(), "Makefile")})
 	if err == nil {
 		t.Fatal("a missing source must fail")
 	}
-	if after := countUploadTempDirs(t); after > before {
-		t.Errorf("temp dirs leaked on error: before=%d after=%d", before, after)
+	if n := count(); n != 0 {
+		t.Errorf("temp dirs leaked on error: %d", n)
 	}
 }
 
@@ -228,32 +250,37 @@ func TestPrepareUploadAttachmentsMissingSource(t *testing.T) {
 // branch by naming a directory "Makefile" (open succeeds, the copy does not)
 // and checks that the temp dir is removed before the error is returned.
 func TestPrepareUploadAttachmentsCopyFailureCleansUp(t *testing.T) {
+	count := isolateUploadTempRoot(t)
 	src := filepath.Join(t.TempDir(), "Makefile")
 	if err := os.Mkdir(src, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	before := countUploadTempDirs(t)
 	if _, err := prepareUploadAttachments([]string{src}); err == nil {
 		t.Fatal("copying a directory must fail")
 	}
-	if after := countUploadTempDirs(t); after > before {
-		t.Errorf("temp dirs leaked on error: before=%d after=%d", before, after)
+	if n := count(); n != 0 {
+		t.Errorf("temp dirs leaked on error: %d", n)
 	}
 }
 
-// countUploadTempDirs counts the upload temp dirs currently in the system temp
-// directory, so a test can assert that a failed batch leaks none.
-func countUploadTempDirs(t *testing.T) int {
+// isolateUploadTempRoot confines uploadTempDir to a test-owned root and
+// returns a counter of the upload dirs still present there, so the error-path
+// tests assert the cleanup contract without scanning the system temp
+// directory (other processes share it).
+func isolateUploadTempRoot(t *testing.T) func() int {
 	t.Helper()
-	entries, err := os.ReadDir(os.TempDir())
-	if err != nil {
-		t.Fatalf("read temp dir: %v", err)
+	root := t.TempDir()
+	orig := uploadTempDir
+	t.Cleanup(func() { uploadTempDir = orig })
+	uploadTempDir = func() (string, error) {
+		return os.MkdirTemp(root, "dscli-upload-")
 	}
-	n := 0
-	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), "dscli-upload-") {
-			n++
+	return func() int {
+		t.Helper()
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			t.Fatalf("read temp root: %v", err)
 		}
+		return len(entries)
 	}
-	return n
 }

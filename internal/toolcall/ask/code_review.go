@@ -543,6 +543,12 @@ func assembleReviewAttachments(ctx context.Context, dir, repoRoot, patch string,
 		// happen.
 		encoded := encodeAttachmentName(c.path)
 		safe, _ := lp.SafeUploadName(encoded)
+		// The name is reserved even when the copy below fails: a later file
+		// with the same encoded name then gets the "_2" suffix while no "_1"
+		// attachment exists. That is intentional - reusing the reserved name
+		// would need a rollback the caller cannot observe, and the missing
+		// entry is already reported (the file is listed in plan.NotAttached
+		// and no rename is recorded).
 		name := lp.UniqueUploadName(usedNames, safe)
 		p, cerr := copyReviewFile(dir, name, filepath.Join(repoRoot, c.path))
 		if cerr != nil {
