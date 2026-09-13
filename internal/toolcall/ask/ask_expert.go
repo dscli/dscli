@@ -311,6 +311,10 @@ func askExpertWebChat(ctx context.Context, input, role, system, keep string, att
 		Role:                role,
 		System:              system,
 		SkipPromptInjection: skipPromptInjection,
+		// The dev role speaks the <shell> block protocol on WebChat (see
+		// docs/task-shell-block.md): code_dev sessions run through
+		// handleWebChatShellLoop. Other roles keep the DSML channel.
+		ShellTool: role == "dev",
 	})
 	if err != nil {
 		return "", "", false, err

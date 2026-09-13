@@ -601,6 +601,14 @@ type WebChatOptions struct {
 	// other means, e.g. as an uploaded attachment (see code_review). Only
 	// HandleWebChat consumes it - WebChatWithOptions rejects it.
 	SkipPromptInjection bool
+
+	// ShellTool switches the consultation to the <shell> block channel:
+	// the role prompt carries the shell tool doc in place of the DSML doc,
+	// and HandleWebChat / HandleWebChatResume route replies through the
+	// shell loop (judge, execute locally, feed the merged output back as
+	// an attached scriptN.txt). Only the handle layer consumes it -
+	// WebChatWithOptions rejects it. See docs/task-shell-block.md.
+	ShellTool bool
 }
 
 // WebChatResult is the outcome of a WebChat call: the assistant's visible
@@ -687,12 +695,12 @@ func WebChatWithOptions(ctx context.Context, message string, opts WebChatOptions
 // validateWebChatOptions checks attachment limits before launching a browser,
 // so bad input fails fast without starting Chrome.
 func validateWebChatOptions(opts WebChatOptions) error {
-	// Role/System/SkipPromptInjection are handle-level concerns (prompt
-	// rendering + DSML loop). Rejecting them here (instead of silently
-	// ignoring) makes the layering explicit: a caller that passes them to
-	// the transport is using the wrong entry point.
-	if opts.Role != "" || opts.System != "" || opts.SkipPromptInjection {
-		return fmt.Errorf("Role/System/SkipPromptInjection are only honored by HandleWebChat")
+	// Role/System/SkipPromptInjection/ShellTool are handle-level concerns
+	// (prompt rendering + tool loops). Rejecting them here (instead of
+	// silently ignoring) makes the layering explicit: a caller that passes
+	// them to the transport is using the wrong entry point.
+	if opts.Role != "" || opts.System != "" || opts.SkipPromptInjection || opts.ShellTool {
+		return fmt.Errorf("Role/System/SkipPromptInjection/ShellTool are only honored by HandleWebChat")
 	}
 	return validateWebAttachments(opts.Attachments)
 }

@@ -219,12 +219,14 @@ func TestValidateWebChatOptions(t *testing.T) {
 			t.Errorf("validateWebChatOptions(%+v) = %v, want nil", opts, err)
 		}
 	}
-	// Role/System/SkipPromptInjection are HandleWebChat-only: the transport
-	// must reject them explicitly instead of silently ignoring them.
+	// Role/System/SkipPromptInjection/ShellTool are HandleWebChat-only: the
+	// transport must reject them explicitly instead of silently ignoring
+	// them.
 	for _, opts := range []WebChatOptions{
 		{Role: "review"},
 		{System: "persona"},
 		{SkipPromptInjection: true},
+		{ShellTool: true},
 	} {
 		if err := validateWebChatOptions(opts); err == nil {
 			t.Errorf("validateWebChatOptions(%+v) must fail (handle-only field)", opts)

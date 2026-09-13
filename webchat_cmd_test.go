@@ -87,7 +87,7 @@ func TestGatherWebchatInputStdinEmpty(t *testing.T) {
 }
 
 // newWebchatOptionsCmd builds a webchat command with the flags
-// webchatOptionsFromFlags reads (keep/attach/role), matching the real
+// webchatOptionsFromFlags reads (keep/attach/role/shell), matching the real
 // command's defaults - the contract this test locks.
 func newWebchatOptionsCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "webchat"}
@@ -96,6 +96,7 @@ func newWebchatOptionsCmd() *cobra.Command {
 	keepFlag.NoOptDefVal = "last"
 	cmd.Flags().StringSlice("attach", nil, "")
 	cmd.Flags().String("role", "", "")
+	cmd.Flags().Bool("shell", false, "")
 	return cmd
 }
 
@@ -109,7 +110,7 @@ func TestWebchatOptionsFromFlags(t *testing.T) {
 	if opts.Role != "" {
 		t.Errorf("default Role = %q, want \"\" (plain chat)", opts.Role)
 	}
-	if opts.Keep != "" || len(opts.Attachments) != 0 {
+	if opts.Keep != "" || len(opts.Attachments) != 0 || opts.ShellTool {
 		t.Errorf("default options should be empty, got %+v", opts)
 	}
 
@@ -146,6 +147,15 @@ func TestWebchatOptionsFromFlags(t *testing.T) {
 	if opts.Keep != "abc" ||
 		len(opts.Attachments) != 1 || opts.Attachments[0] != "shot.png" {
 		t.Errorf("options = %+v, want keep=abc attach=[shot.png]", opts)
+	}
+
+	// --shell switches the consultation to the <shell> block channel.
+	cmd = newWebchatOptionsCmd()
+	if err := cmd.Flags().Set("shell", "true"); err != nil {
+		t.Fatal(err)
+	}
+	if opts, err := webchatOptionsFromFlags(cmd); err != nil || !opts.ShellTool {
+		t.Errorf("ShellTool = %v, err = %v; want true", opts.ShellTool, err)
 	}
 }
 

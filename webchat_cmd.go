@@ -18,7 +18,7 @@ import (
 func init() {
 	webchatCmd := AddRootCommand(&cobra.Command{
 		Use:   "webchat [message]",
-		Short: "通过 Chrome 浏览器与 DeepSeek Web 聊天（免费；支持角色与 DSML 工具调用）",
+		Short: "通过 Chrome 浏览器与 DeepSeek Web 聊天（免费；支持角色与工具调用）",
 		Long: `通过 Chrome 浏览器与 https://chat.deepseek.com 交互。
 
 首次使用会自动打开浏览器窗口要求登录（登录状态持久保存）。
@@ -49,6 +49,12 @@ func init() {
 sudo、curl/wget 外传等被拒绝）；仍建议在可信工作目录使用。--role=（空值）即纯聊天：不注入角色
 提示词（回复中的 DSML 工具调用仍会执行）。判定规则：回复中解析出 DSML 工具调用
 （即使格式不严格，例如 wrapper 标签拼写错误）即本地执行并回填；解析失败才会请求重发。
+
+<shell> 块通道（--shell；手动测试用）：
+  dscli webchat --shell --role dev "跑一下 make dev-test"
+开启后角色提示词注册 <shell> 块协议：模型每轮回复一个 bash 脚本块，dscli 本地
+执行（默认 120s、上限 1800s 超时；破坏性命令拦截）并把 stdout+stderr 合并后以
+附件 scriptN.txt 回填到同一会话。code_dev 工具自动启用该通道。
 
 附件（--attach，可多次指定）：
   dscli webchat --attach screenshot.png "这张截图说明了什么？"
@@ -84,6 +90,11 @@ sudo、curl/wget 外传等被拒绝）；仍建议在可信工作目录使用。
 	// selects the role prompt template
 	// (dev/expert/review/test/architect) before the user message.
 	webchatCmd.Flags().String("role", "", "Role: dev (developer), expert (domain expert), review (code review), test (QA engineer), architect (software architect)；空 = 纯聊天（不注入角色提示词；回复中的 DSML 工具调用仍会执行）")
+	// --shell switches the consultation to the <shell> block channel
+	// (docs/task-shell-block.md): the model emits one bash script per
+	// round, executed locally with the merged output attached back. A
+	// manual-test flag; code_dev sessions enable the channel automatically.
+	webchatCmd.Flags().Bool("shell", false, "启用 `<shell>` 块通道：模型每轮发一个 bash 脚本，本地执行（默认 120s，上限 1800s；破坏性命令拦截）并以附件回填输出；手动测试用，建议配合 --role dev")
 }
 
 // webchatOptionsFromFlags builds the HandleWebChat options from parsed CLI
@@ -107,10 +118,15 @@ func webchatOptionsFromFlags(cmd *cobra.Command) (lp.WebChatOptions, error) {
 	if err != nil {
 		return lp.WebChatOptions{}, err
 	}
+	shell, err := cmd.Flags().GetBool("shell")
+	if err != nil {
+		return lp.WebChatOptions{}, err
+	}
 	return lp.WebChatOptions{
 		Attachments: attach,
 		Keep:        keep,
 		Role:        role,
+		ShellTool:   shell,
 	}, nil
 }
 
@@ -156,15 +172,18 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 	startTime := time.Now()
 
 	// A role prompt makes this an agentic consultation: the remote model may
-	// reply with DSML tool calls that HandleWebChat executes locally with the
-	// user's OS permissions. Say so upfront (stderr, so piped stdout stays
-	// clean) - silent local execution from a remote model is the surprise.
-	// Role "" (the default) is plain chat: no role prompt, but DSML tool
-	// calls in replies are still judged and executed when the reply IS one.
-	// The exact tool set comes from the role config (role_configs /
-	// roles.DefaultFor) - the same source that gates GetAllTools, so
-	// `dscli role update --tools` is the single place that decides it.
-	if opts.Role != "" {
+	// reply with DSML tool calls (or, with --shell, a `<shell>` bash script
+	// block) that HandleWebChat executes locally with the user's OS
+	// permissions. Say so upfront (stderr, so piped stdout stays clean) -
+	// silent local execution from a remote model is the surprise. Role ""
+	// (the default) is plain chat: no role prompt, but replies that carry
+	// tool calls are still judged and executed. The exact DSML tool set
+	// comes from the role config (role_configs / roles.DefaultFor) - the
+	// same source that gates GetAllTools, so `dscli role update --tools` is
+	// the single place that decides it.
+	if opts.ShellTool {
+		fmt.Fprintf(os.Stderr, "⚠️ `<shell>` 块通道已启用：远程模型回复中的 bash 脚本将在本地执行（cwd = 项目根；破坏性命令被拦截）。\n")
+	} else if opts.Role != "" {
 		fmt.Fprintf(os.Stderr, "⚠️ 角色 %q 已启用：远程模型回复中的 DSML 工具调用（按角色配置的本地工具）将在本地执行。\n", opts.Role)
 	}
 

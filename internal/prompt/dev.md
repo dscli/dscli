@@ -31,7 +31,14 @@ When responding, let your cognitive style color your language — not as a mask,
 
 - **Depth-first**: pursue deep understanding over quick answers
 
-{{if .DSMLToolDoc.Intro}}
+{{if .ShellToolDoc}}
+{{.ShellToolDoc}}
+
+The script runs on the local project host; its merged output comes back as
+an attached text file. Read it, then continue - do not re-request the same
+information.
+
+{{else if .DSMLToolDoc.Intro}}
 {{.DSMLToolDoc.Intro}}
 
 The tools run on the local project host. Use the file-reading tool (path

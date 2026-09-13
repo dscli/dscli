@@ -14,6 +14,7 @@ import (
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/prompt"
 	"github.com/dscli/dscli/internal/roles"
+	"github.com/dscli/dscli/internal/shellblock"
 	"github.com/nanjj/clog"
 )
 
@@ -210,6 +211,11 @@ var handleWebChatSend = WebChatWithOptions
 // repeating itself - re-sending the feedback verbatim would duplicate it.
 const webChatContinueWarning = "WARNING: your previous reply was cut off mid-generation (truncated output). Continue from where it stopped; do not repeat what you already sent. If you were in the middle of a DSML tool call, re-send that call completely and strictly formatted."
 
+// webChatContinueWarningShell is the shell-channel twin of
+// webChatContinueWarning: the truncated round's pending work is a <shell>
+// block, not a DSML call.
+const webChatContinueWarningShell = "WARNING: your previous reply was cut off mid-generation (truncated output). Continue from where it stopped; do not repeat what you already sent. If you were in the middle of a `<shell>` block, re-send that block completely."
+
 // handleWebChatTransient reports whether err is a transient web-chat failure
 // the retry policy covers: server overload, a rejected send, or a truncated
 // reply. Permanent errors (login, bad arguments) fail immediately.
@@ -263,6 +269,9 @@ func handleWebChatFollowUpSend(ctx context.Context, message string, opts WebChat
 		}
 		if errors.Is(callErr, ErrTruncated) {
 			message = webChatContinueWarning
+			if opts.ShellTool {
+				message = webChatContinueWarningShell
+			}
 		}
 	}
 	return WebChatResult{}, fmt.Errorf("%w (after %d attempts)", lastErr, len(handleWebChatRetryDelays)+1)
@@ -277,18 +286,34 @@ func handleWebChatFollowUpSend(ctx context.Context, message string, opts WebChat
 // is generous. A variable so tests can shrink it.
 var handleWebChatMaxDSMLRounds = 1024
 
+// handleWebChatMaxShellRounds is the shell channel's failsafe round cap
+// (mirrors handleWebChatMaxDSMLRounds). A variable so tests can shrink it.
+var handleWebChatMaxShellRounds = 1024
+
+// handleWebChatMaxShellWarns caps CONSECUTIVE warning rounds in the shell
+// loop: blocked scripts count too. After this many unanswered warnings the
+// next warn-class round aborts the session instead of sending another
+// warning. A variable so tests can shrink it.
+var handleWebChatMaxShellWarns = 3
+
+// handleWebChatExecShell is the shell executor hook; tests replace it with
+// a mock (the real runner writes scriptN.sh/scriptN.txt and needs no
+// browser).
+var handleWebChatExecShell = shellblock.Run
+
 // webChatTransportOptions returns the options reduced to what the transport
-// accepts: Role/System/SkipPromptInjection are HandleWebChat concerns (prompt
-// rendering, DSML gating, injection gating) and are rejected by
-// WebChatWithOptions. Every transport send - the initial send and the
-// DSML-loop follow-ups - goes through this helper, so a new handle-level
-// option cannot leak into the transport (the live smoke test caught exactly
-// that for SkipPromptInjection).
+// accepts: Role/System/SkipPromptInjection/ShellTool are HandleWebChat
+// concerns (prompt rendering, DSML gating, injection gating, the shell
+// channel) and are rejected by WebChatWithOptions. Every transport send -
+// the initial send and the tool-loop follow-ups - goes through this helper,
+// so a new handle-level option cannot leak into the transport (the live
+// smoke test caught exactly that for SkipPromptInjection).
 func webChatTransportOptions(opts WebChatOptions) WebChatOptions {
 	transport := opts
 	transport.Role = ""
 	transport.System = ""
 	transport.SkipPromptInjection = false
+	transport.ShellTool = false
 	return transport
 }
 
@@ -327,7 +352,7 @@ var handleWebChatExecDSML = dsml.ExecuteDSMLToolCalls
 //     malformed - has its underlying dscli tools executed locally, and the
 //     results fed back into the SAME conversation until the expert
 //     produces a final answer. The role tool set plus destructive-command
-//     interception (see dsmlBlockedCmdRe) are the safety boundary: a long
+//     interception (see dsml.BlockedCmdRe) are the safety boundary: a long
 //     answer that merely cites an <invoke> example parses zero calls and
 //     is never executed; role consultations still strip such quotes so
 //     callers see clean prose, while plain chat keeps them verbatim.
@@ -382,13 +407,20 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 	if injectPrompt && opts.System != "" {
 		fullMessage = opts.System + "\n\n---\n\n## User Request\n\n" + message
 	} else if injectPrompt && opts.Role != "" {
-		// The DSML tool section is derived from the role's tool config
-		// (role_configs / roles.DefaultFor) at send time - the same source
-		// as GetAllTools. A role without executable tools (expert/review by
-		// default) gets no registration; a configured role gets exactly the
-		// tools its config allows.
-		doc := dsml.BuildDSMLToolDoc(ctx, opts.Role)
-		fullMessage = prompt.RenderPromptForRoleWithTools(ctx, opts.Role, doc) + "\n\n---\n\n## User Request\n\n" + message
+		if opts.ShellTool {
+			// Shell mode renders the <shell> block tool doc in place of the
+			// DSML section: the dev role's WebChat protocol is one bash
+			// script per round (see docs/task-shell-block.md).
+			fullMessage = prompt.RenderPromptForRoleWithShellTool(ctx, opts.Role, shellblock.BuildToolDoc()) + "\n\n---\n\n## User Request\n\n" + message
+		} else {
+			// The DSML tool section is derived from the role's tool config
+			// (role_configs / roles.DefaultFor) at send time - the same
+			// source as GetAllTools. A role without executable tools
+			// (expert/review by default) gets no registration; a configured
+			// role gets exactly the tools its config allows.
+			doc := dsml.BuildDSMLToolDoc(ctx, opts.Role)
+			fullMessage = prompt.RenderPromptForRoleWithTools(ctx, opts.Role, doc) + "\n\n---\n\n## User Request\n\n" + message
+		}
 	}
 	// The site rejects inputs past its 字数 limit (composer shows "超出字数
 	// 限制"), dropping the send; truncate BEFORE sending so the wait loop never
@@ -441,10 +473,16 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 			// reasoning as fallback - the same selection the loop and
 			// ParseDSMLMessage use, so a draft in the thinking gets its
 			// round.
-			if shouldEnterToolLoop(res.Reasoning, res.Content) {
+			// Shell mode replaces the DSML loop: the reply routes through
+			// shellblock.ShouldEnter (a block to run, or a format warning).
+			if opts.ShellTool {
+				if shellblock.ShouldEnter(res.Reasoning, res.Content) {
+					return handleWebChatShellLoop(ctx, res, opts)
+				}
+			} else if shouldEnterToolLoop(res.Reasoning, res.Content) {
 				return handleWebChatToolLoop(ctx, res, opts)
 			}
-			if opts.Role != "" && dsml.HasDSMLToolCalls(res.Content) {
+			if !opts.ShellTool && opts.Role != "" && dsml.HasDSMLToolCalls(res.Content) {
 				res.Content = dsml.StripDSMLToolCalls(res.Content)
 			}
 			return res, nil
@@ -527,7 +565,13 @@ func HandleWebChatResume(ctx context.Context, opts WebChatOptions) (WebChatResul
 	}
 	fmt.Fprintf(os.Stderr, "🔁 恢复会话: %s（最后一条消息 %d 字符，status=%s）\n", convURL, countRunes(content), status)
 
-	if !shouldEnterToolLoop("", content) {
+	pending := false
+	if opts.ShellTool {
+		pending = shellblock.ShouldEnter("", content)
+	} else {
+		pending = shouldEnterToolLoop("", content)
+	}
+	if !pending {
 		// Multi-turn conversation: the expert already gave a normal reply —
 		// nothing pending, hand the last content to the caller verbatim.
 		// A reply that is still streaming (status != FINISHED) is NOT a
@@ -538,10 +582,14 @@ func HandleWebChatResume(ctx context.Context, opts WebChatOptions) (WebChatResul
 		}
 		return WebChatResult{Content: content, URL: convURL}, nil
 	}
-	// Pending tool-call round: execute and continue until the final answer.
-	// The interrupted round may legitimately be stored non-FINISHED - a cut
-	// close is a pending signal only when accompanied by a genuine unquoted
-	// invoke attempt (see shouldEnterToolLoop), and the loop resolves it.
+	// Pending round: execute and continue until the final answer. The
+	// interrupted round may legitimately be stored non-FINISHED - in DSML
+	// mode a cut close is a pending signal only when accompanied by a
+	// genuine unquoted invoke attempt (see shouldEnterToolLoop), and the
+	// loop resolves it.
+	if opts.ShellTool {
+		return handleWebChatShellLoop(ctx, WebChatResult{Content: content, URL: convURL}, opts)
+	}
 	return handleWebChatToolLoop(ctx, WebChatResult{Content: content, URL: convURL}, opts)
 }
 
@@ -768,4 +816,122 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 	}
 	fmt.Fprintf(os.Stderr, "⚠️ %s 连续工具调用超过 %d 轮上限，已返回中间结果\n", roleName, handleWebChatMaxDSMLRounds)
 	return cleanExitStripped()
+}
+
+// handleWebChatShellLoop continues a WebChat conversation whose replies use
+// the <shell> block channel (opts.ShellTool): every round is judged
+// (shellblock.Judge) as an executable block, a format warning, or the final
+// report. An executable block is run locally - shellblock.Run writes
+// scriptN.sh / scriptN.txt under the project root and kills the process
+// group on timeout - and the merged output is fed back into the SAME
+// conversation as an attached text file, the shape validated in the manual
+// experiment (docs/task-shell-block.md).
+//
+// The skeleton mirrors handleWebChatToolLoop: every round (reasoning +
+// content) is printed, the local-execution warning is printed here (this is
+// the moment a remote model's script runs locally), and the returned result
+// is marked Printed so callers do not re-print it. Destructive-command
+// interception (shellblock.Blocked) runs before anything is written or
+// executed; a blocked script counts as a warn-class round.
+// handleWebChatMaxShellWarns consecutive warnings abort the session;
+// handleWebChatMaxShellRounds is the overall failsafe.
+func handleWebChatShellLoop(ctx context.Context, first WebChatResult, opts WebChatOptions) (WebChatResult, error) {
+	span, ctx := clog.StartSpanFromContext(ctx, "handleWebChatShellLoop")
+	defer span.Finish()
+
+	roleName := roles.DisplayName(opts.Role)
+
+	// The remote model's script is about to run locally with the user's OS
+	// permissions; say so before the first execution (stderr, so piped
+	// stdout stays clean) - silent local execution is the surprise.
+	fmt.Fprintf(os.Stderr, "⚠️ 远程模型回复中的 `<shell>` 脚本将在本地执行（角色 %s；破坏性命令会被拦截）。\n", roleName)
+
+	message := first.Content
+	convURL := first.URL
+	printRound := func(res WebChatResult) {
+		outfmt.PrintContent(ctx, res.Reasoning, res.Content)
+	}
+	// Printed: the final answer was already printed inside the loop, so
+	// callers must not re-print it.
+	cleanExit := func() (WebChatResult, error) {
+		return WebChatResult{Content: message, URL: convURL, Printed: true}, nil
+	}
+	// advance moves the loop to the reply a follow-up send produced.
+	advance := func(res WebChatResult) {
+		message = res.Content
+		if res.URL != "" {
+			convURL = res.URL
+		}
+		printRound(res)
+	}
+	// First round: the reply that entered the loop is equally visible.
+	printRound(first)
+	lastReasoning := first.Reasoning
+
+	consecutiveWarns := 0
+	for round := 1; round <= handleWebChatMaxShellRounds; round++ {
+		verdict := shellblock.Judge(lastReasoning, message)
+		switch verdict.Action {
+		case shellblock.ActionFinal:
+			// No block, long enough to read as a final report: done.
+			return cleanExit()
+		case shellblock.ActionWarn:
+			consecutiveWarns++
+			if consecutiveWarns > handleWebChatMaxShellWarns {
+				return WebChatResult{}, fmt.Errorf("webchat shell loop: %d consecutive warnings during round %d - aborting", consecutiveWarns, round)
+			}
+			fmt.Fprintf(os.Stderr, "⚠️ %s 的回复未通过 `<shell>` 格式判定（%s），已请求重发（第 %d/%d 轮）…\n",
+				roleName, verdict.Issue, round, handleWebChatMaxShellRounds)
+			res, callErr := handleWebChatFollowUpSend(ctx, verdict.Warning, WebChatOptions{Keep: convURL, ShellTool: true})
+			if callErr != nil {
+				return WebChatResult{}, fmt.Errorf("webchat shell loop: warning send during round %d: %w", round, callErr)
+			}
+			lastReasoning = res.Reasoning
+			advance(res)
+			continue
+		case shellblock.ActionExecute:
+			block := verdict.Block
+			if detail, blocked := shellblock.Blocked(block.Script); blocked {
+				// Fail-closed: the script is neither written nor run.
+				consecutiveWarns++
+				if consecutiveWarns > handleWebChatMaxShellWarns {
+					return WebChatResult{}, fmt.Errorf("webchat shell loop: %d consecutive warnings during round %d - aborting", consecutiveWarns, round)
+				}
+				fmt.Fprintf(os.Stderr, "⛔ `<shell>` 脚本命中破坏性命令拦截（%s），已拒绝并请求改写（第 %d/%d 轮）…\n",
+					detail, round, handleWebChatMaxShellRounds)
+				res, callErr := handleWebChatFollowUpSend(ctx, shellblock.BlockedWarning(detail), WebChatOptions{Keep: convURL, ShellTool: true})
+				if callErr != nil {
+					return WebChatResult{}, fmt.Errorf("webchat shell loop: blocked-command refusal during round %d: %w", round, callErr)
+				}
+				lastReasoning = res.Reasoning
+				advance(res)
+				continue
+			}
+			runRes, runErr := handleWebChatExecShell(ctx, dsctx.ProjectRoot, block.Script, block.Timeout)
+			if runErr != nil {
+				return WebChatResult{}, fmt.Errorf("webchat shell loop: run script during round %d: %w", round, runErr)
+			}
+			status := fmt.Sprintf("exit=%d", runRes.ExitCode)
+			if runRes.TimedOut {
+				status = fmt.Sprintf("timeout after %s", runRes.Timeout)
+			}
+			fmt.Fprintf(os.Stderr, "▶ script%d.sh: %s（%s, %s；输出 script%d.txt）\n",
+				runRes.Number, block.Summary, status, runRes.Duration.Round(time.Millisecond), runRes.Number)
+			feedback := fmt.Sprintf("output of script%d.sh (attached as script%d.txt):", runRes.Number, runRes.Number)
+			res, callErr := handleWebChatFollowUpSend(ctx, feedback, WebChatOptions{
+				Keep:        convURL,
+				ShellTool:   true,
+				Attachments: []string{runRes.OutputPath},
+			})
+			if callErr != nil {
+				return WebChatResult{}, fmt.Errorf("webchat shell loop: feedback send during round %d: %w", round, callErr)
+			}
+			consecutiveWarns = 0
+			lastReasoning = res.Reasoning
+			advance(res)
+			continue
+		}
+	}
+	fmt.Fprintf(os.Stderr, "⚠️ %s 的 `<shell>` 块轮次超过 %d 上限，已返回中间结果\n", roleName, handleWebChatMaxShellRounds)
+	return cleanExit()
 }

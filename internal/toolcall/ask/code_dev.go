@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dscli/dscli/internal/dsml"
 	"github.com/dscli/dscli/internal/lp"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/shell"
@@ -34,7 +33,7 @@ var codeDevTool = toolcall.ToolDef{
 			},
 			"keep": map[string]any{
 				"type":        "string",
-				"description": "Continue a previous developer conversation (default new). Pass the conversation_id from a previous result to send follow-up fix instructions to the SAME session (it keeps the full project context; fix instructions should cover only the new changes - not the original task); keep-only resumes an interrupted round - pending tool calls are executed locally and results fed back.",
+				"description": "Continue a previous developer conversation (default new). Pass the conversation_id from a previous result to send follow-up fix instructions to the SAME session (it keeps the full project context; fix instructions should cover only the new changes - not the original task); keep-only resumes an interrupted round - the pending `<shell>` block is executed locally and its output fed back.",
 			},
 			"timeout": map[string]any{
 				"type":        "integer",
@@ -52,7 +51,7 @@ var codeDevTool = toolcall.ToolDef{
 		"additionalProperties": false,
 	},
 	Category: "check",
-	// A development session runs many DSML tool-call rounds (implement →
+	// A development session runs many <shell> block rounds (implement →
 	// test → iterate → commit), each round being a browser session plus a
 	// model reply. code_review needs 30 min for a review pass; implementing
 	// a feature with several test rounds is heavier: 60 min.
@@ -67,9 +66,10 @@ func init() {
 
 // handleCodeDev implements the code_dev tool: it hands an implementation
 // task to the built-in dev role via DeepSeek Web, and the dev works in the
-// local repo through the DSML tool loop (role "dev" defaults to the
-// development tool set — roles.DefaultFor → DevDefaultTools — gated by the
-// same role_configs / roles.DefaultFor source that gates GetAllTools).
+// local repo through the <shell> block channel (role "dev" on WebChat always
+// runs the shell loop: one bash script per round, executed locally with the
+// merged output attached back; see docs/task-shell-block.md). The channel
+// does not depend on the role's registered tool config.
 func handleCodeDev(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "handleCodeDev")
 	defer span.Finish()
@@ -130,14 +130,10 @@ func handleCodeDev(ctx context.Context, args toolcall.ToolArgs) (result, warning
 		outfmt.Println("⚠️  完成后所有更改都必须提交（code_review 需要干净工作区）。")
 	}
 
-	// The dev role defaults to the development tool set (roles.DefaultFor
-	// → DevDefaultTools), but a project may have narrowed it via
-	// `dscli role update dev --tools ...`. Warn explicitly when the role
-	// has no DSML tools instead of letting the session silently degrade
-	// (mirrors code_review / quality_assurance).
-	if doc := dsml.BuildDSMLToolDoc(ctx, "dev"); doc.Intro == "" {
-		fmt.Fprintf(os.Stderr, "⚠️ dev 角色未配置 DSML 工具（role update dev 缩小了工具集）：开发者将无法读取文件/执行命令。可运行 `dscli role reset dev` 恢复默认工具集。\n")
-	}
+	// The dev role runs the <shell> block channel (see the doc comment
+	// above): the channel executes bash scripts directly and does not
+	// depend on the role's registered tool set, so the former DSML
+	// tool-set warning no longer applies here.
 
 	// Compose the request: the task plus the delivery contract. AGENTS.md
 	// and file contents are NOT injected - the developer reads them on
@@ -183,17 +179,17 @@ var devResumeFunc = lp.HandleWebChatResume
 
 // resumeCodeDev continues a saved developer conversation from its last
 // assistant message - the web-chat twin of dscli chat's resume semantics.
-// If that message ends with a tool-call block (the round was interrupted
-// mid tool-call), the pending calls are executed locally and their results
-// fed back into the SAME conversation until the developer produces a final
-// report. If the last message is a normal reply (multi-turn conversation),
-// it is returned as-is - the caller decides whether a follow-up is needed.
+// If that message still carries a `<shell>` block (the round was interrupted
+// mid-execution), the block is executed locally and its output fed back
+// into the SAME conversation until the developer produces a final report.
+// If the last message is a normal reply (multi-turn conversation), it is
+// returned as-is - the caller decides whether a follow-up is needed.
 func resumeCodeDev(ctx context.Context, keep string) (result, warning string, err error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "resumeCodeDev")
 	defer span.Finish()
 
 	outfmt.Printf("🔁 恢复开发会话（keep=%s）...\n", keep)
-	res, resumeErr := devResumeFunc(ctx, lp.WebChatOptions{Keep: keep, Role: "dev"})
+	res, resumeErr := devResumeFunc(ctx, lp.WebChatOptions{Keep: keep, Role: "dev", ShellTool: true})
 	if resumeErr != nil {
 		err = fmt.Errorf("开发会话恢复失败: %w", resumeErr)
 		return result, warning, err

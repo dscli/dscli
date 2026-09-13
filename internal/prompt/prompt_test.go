@@ -226,6 +226,32 @@ func TestMailCheckStepScopedToRolesWithMail(t *testing.T) {
 	}
 }
 
+// TestRenderPromptForRoleWithShellTool locks the shell-channel branch: the
+// dev template renders the shell tool doc in place of the DSML section, and
+// a plain render never carries it.
+func TestRenderPromptForRoleWithShellTool(t *testing.T) {
+	doc := "## 🛠️ Available Tools: `shell`\n\n**Usage: execute bash script**"
+	content := RenderPromptForRoleWithShellTool(t.Context(), "dev", doc)
+	assertMailCheckStripped(t, "webchat shell prompt", content)
+	for _, want := range []string{
+		"0b. **Read AGENTS.md**",
+		"## 🛠️ Available Tools: `shell`",
+		"**Usage: execute bash script**",
+		"attached text file",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("shell prompt missing %q:\n%s", want, content)
+		}
+	}
+	if strings.Contains(content, "prefer read-only commands") {
+		t.Errorf("shell prompt must not render the DSML branch:\n%s", content)
+	}
+	plain := RenderPromptForRole(t.Context(), "dev")
+	if strings.Contains(plain, "Available Tools: `shell`") {
+		t.Errorf("plain dev prompt must not carry the shell section:\n%s", plain)
+	}
+}
+
 // TestRoleCanReadMail verifies the chat-path mail gate: without readmail in
 // the role's tool set (dev by default) RoleCanReadMail is false; architect
 // (all tools) is true. Tests run without a session row, so the fallback

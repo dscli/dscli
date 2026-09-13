@@ -1646,7 +1646,7 @@ func TestHandleWebChatToolLoopAllRejectedStillFeedsBack(t *testing.T) {
 
 	const finalAnswer = "Adapted."
 	// A DESTRUCTIVE command call: it parses (raw calls non-empty) but its
-	// conversion is rejected by normalizeDSMLInvoke (dsmlBlockedCmdRe), so
+	// conversion is rejected by normalizeDSMLInvoke (dsml.BlockedCmdRe), so
 	// msg.ToolCalls stays EMPTY while the raw parse still has the call. Only
 	// this shape exercises the regression: the old len(msg.ToolCalls)==0
 	// routing would exit without feedback.

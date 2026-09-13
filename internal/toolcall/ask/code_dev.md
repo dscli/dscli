@@ -3,10 +3,12 @@
 Implement a feature or fix via the developer role.
 
 Hand a complete implementation task to the built-in `dev` assistant
-(DeepSeek Web, free via Chrome — no API key needed), which works in
-the project repo with the developer's full toolset (shell, read_file,
-write_file, git, ...) through the DSML tool loop. It implements, runs the
-project's tests, and commits the result.
+(DeepSeek Web, free via Chrome - no API key needed), which works in
+the project repo through the `<shell>` block channel: the developer emits
+one bash script per round, dscli runs it locally (default 120s, capped at
+1800s; destructive commands rejected), and the merged output returns as an
+attached `scriptN.txt`. It implements, runs the project's tests, and
+commits the result.
 
 **Parameters**: `task` (required — the implementation task; a value starting
 with `@` reads the task from a file, e.g. `@docs/architecture.md`, safe

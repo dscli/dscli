@@ -103,6 +103,12 @@ type promptConfig struct {
 	// 配置（roles.DefaultFor + role_configs）生成，见 internal/dsml/doc.go。
 	DSMLToolDoc DSMLToolDoc
 
+	// ShellToolDoc 是 shell 通道的工具注册段（`<shell>` 块协议，见
+	// shellblock.BuildToolDoc）。仅当 WebChat 以 ShellTool 模式运行时由
+	// RenderPromptForRoleWithShellTool 填充：dev 角色在网页端以每轮一个
+	// bash 脚本工作，替代 DSML 工具调用（docs/task-shell-block.md）。
+	ShellToolDoc string
+
 	// 模型特定配置
 	ModelID int64
 
@@ -546,6 +552,25 @@ func RenderPromptForRoleWithTools(ctx context.Context, role string, doc DSMLTool
 	// mail-check step is dropped here. This only affects dev: architect.md
 	// keeps its own ungated mail step by design. See the CheckMail field
 	// comment for the full rationale.
+	config.CheckMail = false
+	return config.GeneratePromptWithTemplate(ctx)
+}
+
+// RenderPromptForRoleWithShellTool renders the role prompt with the shell
+// tool section (the <shell> block protocol; doc comes from
+// shellblock.BuildToolDoc) injected in place of the DSML section. Used by
+// the WebChat shell channel (WebChatOptions.ShellTool): the dev role emits
+// one bash script per round instead of DSML tool calls. Only the dev
+// template renders the section; other templates ignore the field.
+func RenderPromptForRoleWithShellTool(ctx context.Context, role, doc string) string {
+	span, ctx := clog.StartSpanFromContext(ctx, "RenderPromptForRoleWithShellTool")
+	defer span.Finish()
+
+	config := newPromptConfig(ctx)
+	config.Role = role
+	config.ShellToolDoc = doc
+	// WebChat sessions are task-scoped one-shot consultations, so the dev
+	// mail-check step is dropped here too (see RenderPromptForRoleWithTools).
 	config.CheckMail = false
 	return config.GeneratePromptWithTemplate(ctx)
 }

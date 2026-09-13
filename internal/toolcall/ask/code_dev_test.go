@@ -75,6 +75,9 @@ func TestHandleCodeDevKeepOnly(t *testing.T) {
 		if opts.Role != "dev" {
 			t.Errorf("expected role dev, got %q", opts.Role)
 		}
+		if !opts.ShellTool {
+			t.Errorf("expected ShellTool true for the dev resume path")
+		}
 		if opts.Keep != "conv-123" {
 			t.Errorf("expected keep conv-123, got %q", opts.Keep)
 		}
