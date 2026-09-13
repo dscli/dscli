@@ -1229,41 +1229,12 @@ func extractDSMLCalls(text string, blocks []dsmlBlockRange) (calls []DSMLCall, s
 			continue
 		}
 		covered = b.closeEnd
-		// Opaque regions inside the block body, as body-relative offsets:
-		// a nested invoke block (a structural accident whose parameters must
-		// not leak into the enclosing call) and quoted code (a fenced block
-		// or inline code span the model pasted into a value - the value must
-		// survive verbatim, nothing inside it is structure).
-		var opaque [][2]int
 		body := text[b.openEnd:b.closeStart]
-		for _, c := range blocks {
-			if c.openStart > b.openStart && c.closeEnd < b.closeEnd {
-				s, e := c.openStart-b.openEnd, c.closeEnd-b.openEnd
-				opaque = append(opaque, [2]int{s, e})
-				strict = true // violation: nested block was masked
-			}
+		opaque, masked := dsmlOpaqueRanges(b, blocks, fences, body)
+		if masked {
+			strict = true // violation: nested block was masked
 		}
-		for _, r := range fences {
-			s, e := r[0]-b.openEnd, r[1]-b.openEnd
-			if e <= 0 || s >= len(body) {
-				continue
-			}
-			if s < 0 {
-				s = 0
-			}
-			if e > len(body) {
-				e = len(body)
-			}
-			opaque = append(opaque, [2]int{s, e})
-		}
-		inOpaque := func(pos int) bool {
-			for _, r := range opaque {
-				if pos >= r[0] && pos < r[1] {
-					return true
-				}
-			}
-			return false
-		}
+		inOpaque := func(pos int) bool { return dsmlInRanges(opaque, pos) }
 		inv := DSMLCall{Name: dsmlBlockName(text[b.openStart:b.openEnd]), Args: map[string]any{}}
 		scan := 0
 		for scan < len(body) {
@@ -1289,62 +1260,12 @@ func extractDSMLCalls(text string, blocks []dsmlBlockRange) (calls []DSMLCall, s
 			if strM == nil {
 				strict = true // violation: parameter without the string attribute
 			}
-			// Find the matching close, skipping nested complete parameter pairs
-			// (a value may embed one) and opaque regions. A missing close is
-			// tolerated in two shapes: the value runs to the end of the body
-			// (the wrapper close authorized the block) or to the next
-			// structural parameter.
-			depth := 0
-			valueEnd := -1
-			j := openEnd
-			for j < len(body) {
-				nextOpen := dsmlParamOpenRe.FindStringIndex(body[j:])
-				nextClose := dsmlParamCloseRe.FindStringIndex(body[j:])
-				if nextOpen == nil && nextClose == nil {
-					break
-				}
-				if nextClose == nil || (nextOpen != nil && nextOpen[0] < nextClose[0]) {
-					op := j + nextOpen[0]
-					if inOpaque(op) || !dsmlStructuralTag(body, op) {
-						j = j + nextOpen[1]
-						continue
-					}
-					if depth == 0 {
-						// Only a NAMED structural parameter closes this one
-						// implicitly: the outer scan already treats a nameless
-						// "<parameter>" as content, so the value must run past
-						// it. A nameless one here is value content - skip it.
-						if !dsmlParamNameRe.MatchString(body[op : j+nextOpen[1]]) {
-							j = j + nextOpen[1]
-							continue
-						}
-						// A new named structural parameter starts before this one
-						// closed: the current one is implicitly closed here.
-						valueEnd = op
-						break
-					}
-					depth++
-					j = j + nextOpen[1]
-				} else {
-					cp := j + nextClose[0]
-					if inOpaque(cp) {
-						j = j + nextClose[1]
-						continue
-					}
-					if depth > 0 {
-						depth--
-						j = j + nextClose[1]
-						continue
-					}
-					valueEnd = cp
-					break
-				}
+			// Pair the value's close tag, skipping nested complete parameter
+			// pairs and opaque regions; see scanDSMLParamValue.
+			val, valueEnd, valStrict := scanDSMLParamValue(body, openEnd, isStr, inOpaque)
+			if valStrict {
+				strict = true
 			}
-			if valueEnd < 0 {
-				valueEnd = len(body)
-				strict = true // violation: parameter close missing
-			}
-			val := decodeDSMLValue(body[openEnd:valueEnd], isStr)
 			if key == "justification" {
 				strict = true // violation: the decorative justification parameter
 			}
@@ -1364,6 +1285,106 @@ func extractDSMLCalls(text string, blocks []dsmlBlockRange) (calls []DSMLCall, s
 		calls = append(calls, inv)
 	}
 	return calls, strict
+}
+
+// dsmlOpaqueRanges collects the regions inside a block BODY that are opaque
+// to the structural scan, as body-relative offsets: a nested invoke block (a
+// structural accident whose parameters must not leak into the enclosing
+// call) and quoted code (a fenced block or inline code span the model pasted
+// into a value - the value must survive verbatim, nothing inside it is
+// structure). masked reports that a nested block was found, which is a
+// strict-format violation.
+func dsmlOpaqueRanges(b dsmlBlockRange, blocks []dsmlBlockRange, fences [][2]int, body string) (opaque [][2]int, masked bool) {
+	for _, c := range blocks {
+		if c.openStart > b.openStart && c.closeEnd < b.closeEnd {
+			opaque = append(opaque, [2]int{c.openStart - b.openEnd, c.closeEnd - b.openEnd})
+			masked = true
+		}
+	}
+	for _, r := range fences {
+		s, e := r[0]-b.openEnd, r[1]-b.openEnd
+		if e <= 0 || s >= len(body) {
+			continue
+		}
+		s = max(s, 0)
+		e = min(e, len(body))
+		opaque = append(opaque, [2]int{s, e})
+	}
+	return opaque, masked
+}
+
+// dsmlInRanges reports whether pos falls inside any [start, end) range.
+func dsmlInRanges(ranges [][2]int, pos int) bool {
+	for _, r := range ranges {
+		if pos >= r[0] && pos < r[1] {
+			return true
+		}
+	}
+	return false
+}
+
+// scanDSMLParamValue finds the value of the parameter whose open tag ends at
+// openEnd: it pairs the close tag, skipping nested complete parameter pairs
+// (a value may embed one) and opaque regions (quoted code, a nested block
+// body). A missing close is tolerated in two shapes: the value runs to the
+// end of the body (the wrapper close authorized the block) or to the next
+// structural parameter.
+//
+// It returns the decoded value, the body offset the caller resumes scanning
+// from, and whether the shape violated the strict format. Extracted from
+// extractDSMLCalls so the outer loop stays a flat per-parameter pass.
+func scanDSMLParamValue(body string, openEnd int, isStr bool, inOpaque func(int) bool) (value any, end int, strict bool) {
+	depth := 0
+	valueEnd := -1
+	j := openEnd
+	for j < len(body) {
+		nextOpen := dsmlParamOpenRe.FindStringIndex(body[j:])
+		nextClose := dsmlParamCloseRe.FindStringIndex(body[j:])
+		if nextOpen == nil && nextClose == nil {
+			break
+		}
+		if nextClose == nil || (nextOpen != nil && nextOpen[0] < nextClose[0]) {
+			op := j + nextOpen[0]
+			if inOpaque(op) || !dsmlStructuralTag(body, op) {
+				j = j + nextOpen[1]
+				continue
+			}
+			if depth == 0 {
+				// Only a NAMED structural parameter closes this one
+				// implicitly: the outer scan already treats a nameless
+				// "<parameter>" as content, so the value must run past it.
+				// A nameless one here is value content - skip it.
+				if !dsmlParamNameRe.MatchString(body[op : j+nextOpen[1]]) {
+					j = j + nextOpen[1]
+					continue
+				}
+				// A new named structural parameter starts before this one
+				// closed: the current one is implicitly closed here.
+				valueEnd = op
+				break
+			}
+			depth++
+			j = j + nextOpen[1]
+			continue
+		}
+		cp := j + nextClose[0]
+		if inOpaque(cp) {
+			j = j + nextClose[1]
+			continue
+		}
+		if depth > 0 {
+			depth--
+			j = j + nextClose[1]
+			continue
+		}
+		valueEnd = cp
+		break
+	}
+	if valueEnd < 0 {
+		valueEnd = len(body)
+		strict = true // violation: parameter close missing
+	}
+	return decodeDSMLValue(body[openEnd:valueEnd], isStr), valueEnd, strict
 }
 
 // CallSource returns the execution source for a reasoning/content pair:
