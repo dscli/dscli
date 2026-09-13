@@ -927,12 +927,11 @@ func TestContinueRecoveryRegenResumeResetsFailureRun(t *testing.T) {
 	}
 
 	// 2. Detector errors while pending: hold-only, and the run grows past the
-	// cap (the cap does not apply inside a pending window).
+	// cap (the cap does not apply inside a pending window). step drives the
+	// gate internally (production path), so no explicit gate call is needed
+	// here.
 	h.regenErr = errors.New("evaluate failed")
 	for i := 0; i < webChatMaxRegenDetectFailures+2; i++ {
-		if err := r.gate(context.Background(), "已停止", func() string { return "" }); err != nil {
-			t.Fatalf("gate round %d: %v", i, err)
-		}
 		action, err := r.step(context.Background(), "已停止", func() string { return "" })
 		if err != nil {
 			t.Fatalf("error step %d: %v", i, err)
@@ -959,9 +958,11 @@ func TestContinueRecoveryRegenResumeResetsFailureRun(t *testing.T) {
 	}
 
 	// 4. Back to idle with the detector still broken: the fresh run must hold
-	// for its first two errors and only fall through on the cap-th.
+	// for its first two errors and only fall through on the cap-th. The
+	// exact counter values pin the cap arithmetic, not just the sequence.
 	h.active = false
 	want := []continueAction{continueHold, continueHold, continueNone}
+	wantFailures := []int{1, 2, webChatMaxRegenDetectFailures}
 	for i, exp := range want {
 		action, err := r.step(context.Background(), "已停止", func() string { return "" })
 		if err != nil {
@@ -969,6 +970,9 @@ func TestContinueRecoveryRegenResumeResetsFailureRun(t *testing.T) {
 		}
 		if action != exp {
 			t.Errorf("post-reset step %d action = %v, want %v", i, action, exp)
+		}
+		if r.regenDetectFailures != wantFailures[i] {
+			t.Errorf("post-reset step %d regenDetectFailures = %d, want %d", i, r.regenDetectFailures, wantFailures[i])
 		}
 	}
 }

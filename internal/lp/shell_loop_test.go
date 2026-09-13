@@ -436,6 +436,9 @@ func captureStderr(t *testing.T) func() string {
 		t.Fatalf("os.Pipe: %v", err)
 	}
 	os.Stderr = w
+	// The helper mutates a process-global, so it is NOT safe under
+	// t.Parallel (the package has no parallel tests).
+	t.Cleanup(func() { os.Stderr = orig })
 	return func() string {
 		os.Stderr = orig
 		_ = w.Close()

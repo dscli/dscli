@@ -150,11 +150,20 @@ func TestMarkerRangesRealSamples(t *testing.T) {
 func TestMarkerRangesMergedAndSorted(t *testing.T) {
 	// Arm 1 matches the badge close through "parameter"; arm 2 matches the
 	// plain "</parameter>" glued to it. The trailing "</invoke>" stays its
-	// own range.
-	text := lt + "/" + fwBar + fwBar + "DSML" + fwBar + fwBar + "parameter" + lt + "/parameter" + gt + nl + lt + "/invoke" + gt
+	// own range. The EXACT expected ranges document the adjacency-based
+	// merge contract: pair occupies [0, len(pair)) and the plain close of
+	// invoke starts after the newline.
+	pair := lt + "/" + fwBar + fwBar + "DSML" + fwBar + fwBar + "parameter" + lt + "/parameter" + gt
+	text := pair + nl + lt + "/invoke" + gt
+	want := [][2]int{{0, len(pair)}, {len(pair) + len(nl), len(text)}}
 	ranges := MarkerRanges(text)
-	if len(ranges) != 2 {
-		t.Fatalf("ranges = %v, want exactly 2 (the adjacent arms must merge)", ranges)
+	if len(ranges) != len(want) {
+		t.Fatalf("ranges = %v, want exactly %v", ranges, want)
+	}
+	for i := range want {
+		if ranges[i] != want[i] {
+			t.Errorf("range %d = %v, want %v", i, ranges[i], want[i])
+		}
 	}
 	for i := 1; i < len(ranges); i++ {
 		if ranges[i][0] < ranges[i-1][1] {
@@ -163,11 +172,5 @@ func TestMarkerRangesMergedAndSorted(t *testing.T) {
 		if ranges[i][0] < ranges[i-1][0] {
 			t.Errorf("ranges not sorted: %v", ranges)
 		}
-	}
-	// The merged first range must span BOTH the badge noise and the plain
-	// close: that slice is what proves the merge happened.
-	merged := text[ranges[0][0]:ranges[0][1]]
-	if !strings.Contains(merged, "DSML") || !strings.Contains(merged, "</parameter>") {
-		t.Errorf("first range %q must span the badge close and the plain close", merged)
 	}
 }
