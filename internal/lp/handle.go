@@ -872,6 +872,16 @@ func handleWebChatShellLoop(ctx context.Context, first WebChatResult, opts WebCh
 	lastReasoning := first.Reasoning
 
 	consecutiveWarns := 0
+	// countWarn advances the consecutive-warning counter and reports the
+	// abort as an error; shared by the format-warning and blocked-refusal
+	// paths so the policy cannot drift.
+	countWarn := func(round int) error {
+		consecutiveWarns++
+		if consecutiveWarns > handleWebChatMaxShellWarns {
+			return fmt.Errorf("webchat shell loop: %d consecutive warnings during round %d - aborting", consecutiveWarns, round)
+		}
+		return nil
+	}
 	for round := 1; round <= handleWebChatMaxShellRounds; round++ {
 		verdict := shellblock.Judge(lastReasoning, message)
 		switch verdict.Action {
@@ -879,9 +889,8 @@ func handleWebChatShellLoop(ctx context.Context, first WebChatResult, opts WebCh
 			// No block, long enough to read as a final report: done.
 			return cleanExit()
 		case shellblock.ActionWarn:
-			consecutiveWarns++
-			if consecutiveWarns > handleWebChatMaxShellWarns {
-				return WebChatResult{}, fmt.Errorf("webchat shell loop: %d consecutive warnings during round %d - aborting", consecutiveWarns, round)
+			if err := countWarn(round); err != nil {
+				return WebChatResult{}, err
 			}
 			fmt.Fprintf(os.Stderr, "⚠️ %s 的回复未通过 `<shell>` 格式判定（%s），已请求重发（第 %d/%d 轮）…\n",
 				roleName, verdict.Issue, round, handleWebChatMaxShellRounds)
@@ -896,9 +905,8 @@ func handleWebChatShellLoop(ctx context.Context, first WebChatResult, opts WebCh
 			block := verdict.Block
 			if detail, blocked := shellblock.Blocked(block.Script); blocked {
 				// Fail-closed: the script is neither written nor run.
-				consecutiveWarns++
-				if consecutiveWarns > handleWebChatMaxShellWarns {
-					return WebChatResult{}, fmt.Errorf("webchat shell loop: %d consecutive warnings during round %d - aborting", consecutiveWarns, round)
+				if err := countWarn(round); err != nil {
+					return WebChatResult{}, err
 				}
 				fmt.Fprintf(os.Stderr, "⛔ `<shell>` 脚本命中破坏性命令拦截（%s），已拒绝并请求改写（第 %d/%d 轮）…\n",
 					detail, round, handleWebChatMaxShellRounds)

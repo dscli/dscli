@@ -108,6 +108,19 @@ func TestJudge(t *testing.T) {
 			wantSummary: "write example", wantTimeout: DefaultTimeout,
 		},
 		{
+			name: "literal </script> in the body ends it",
+			content: strings.Join([]string{
+				"<shell>", "<script>",
+				"cat > x <<EOF", "</script>", "EOF",
+				"</script>", "<summary>cut</summary>", "</shell>",
+			}, "\n"),
+			// The protocol's one hard boundary: the first whole-line
+			// </script> terminates the body, so the prefix is what runs.
+			want:        ActionExecute,
+			wantScript:  "cat > x <<EOF\n",
+			wantSummary: "cut", wantTimeout: DefaultTimeout,
+		},
+		{
 			name: "out of order", content: "<script>\n<shell>\necho x\n</script>\n</shell>",
 			want: ActionWarn, wantIssue: "out of order",
 		},

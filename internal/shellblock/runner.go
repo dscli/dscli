@@ -177,6 +177,9 @@ func runScript(ctx context.Context, dir, scriptPath string, timeout time.Duratio
 		select {
 		case <-outCh:
 		case <-time.After(drainGrace):
+			// A writer escaped the process group and still holds the pipe;
+			// release the read end so nothing accumulates across rounds.
+			_ = pr.Close()
 		}
 		select {
 		case <-waitCh:
@@ -198,7 +201,9 @@ func runScript(ctx context.Context, dir, scriptPath string, timeout time.Duratio
 	// Phase 3: after a kill, collect what the drain produced without
 	// blocking on a writer that escaped the process group; the reader
 	// goroutine ends by itself when the pipe finally closes and its send
-	// lands in the buffered channel.
+	// lands in the buffered channel. If the grace expires, close the read
+	// end so the still-blocked reader (and its FD) cannot accumulate across
+	// rounds; an in-flight read returns ErrClosed and the goroutine exits.
 	if timedOut {
 		select {
 		case waitErr = <-waitCh:
@@ -208,6 +213,7 @@ func runScript(ctx context.Context, dir, scriptPath string, timeout time.Duratio
 			select {
 			case read = <-outCh:
 			case <-time.After(drainGrace):
+				_ = pr.Close()
 			}
 		}
 	}
@@ -285,7 +291,9 @@ func clampTimeout(d time.Duration) time.Duration {
 }
 
 // nextScriptNumber returns the highest existing scriptN.sh number plus one
-// (1 when none exist).
+// (1 when none exist). The shell loop runs one block per round, so a single
+// writer is the working assumption; concurrent Run calls in one directory
+// could pick the same N.
 func nextScriptNumber(dir string) (int, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

@@ -1,7 +1,10 @@
 package shellblock
 
 import (
+	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -193,5 +196,50 @@ func TestRunRefusesBlockedScript(t *testing.T) {
 	_, err := Run(t.Context(), dir, "sudo rm -rf /", 30*time.Second)
 	if err == nil || !strings.Contains(err.Error(), "blocked") {
 		t.Fatalf("err = %v, want the fail-closed blocked refusal", err)
+	}
+}
+
+// TestRunContextCancellation: a cancelled context kills the group and
+// returns promptly with context.Canceled.
+func TestRunContextCancellation(t *testing.T) {
+	dir := t.TempDir()
+	ctx, cancel := context.WithCancel(t.Context())
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		cancel()
+	}()
+	start := time.Now()
+	_, err := Run(ctx, dir, "sleep 30", time.Minute)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Errorf("Run took %v, want a prompt cancel", elapsed)
+	}
+}
+
+// TestRunEscapedWriterDoesNotStall: a writer that escaped the process group
+// (setsid) holds the pipe, but the bounded post-kill drain still returns
+// (and closes the read end so nothing leaks across rounds).
+func TestRunEscapedWriterDoesNotStall(t *testing.T) {
+	if _, err := exec.LookPath("setsid"); err != nil {
+		t.Skip("setsid not available")
+	}
+	dir := t.TempDir()
+	start := time.Now()
+	res, err := Run(t.Context(), dir, "setsid sleep 30 & echo $! > escapee.pid", 300*time.Millisecond)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if pidData, readErr := os.ReadFile(filepath.Join(dir, "escapee.pid")); readErr == nil {
+		if pid := strings.TrimSpace(string(pidData)); pid != "" {
+			t.Cleanup(func() { _ = exec.Command("kill", "-9", pid).Run() })
+		}
+	}
+	if !res.TimedOut {
+		t.Error("TimedOut = false, want true")
+	}
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Errorf("Run took %v, want a bounded return despite the escaped writer", elapsed)
 	}
 }

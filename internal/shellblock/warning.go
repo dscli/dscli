@@ -84,7 +84,8 @@ func appendDSMLNote(b *strings.Builder, dsmlShape bool) {
 
 // truncateDetail caps the matched pattern echoed in BlockedWarning so a
 // verbose regex match (e.g. a long dd invocation) cannot flood the message.
-// The cut is rune-aware: the match can contain non-ASCII text.
+// The cut is rune-aware: the match can contain non-ASCII text. max-3 leaves
+// room for the ellipsis (the constant is well above 3).
 func truncateDetail(detail string) string {
 	const max = 60
 	if utf8.RuneCountInString(detail) <= max {

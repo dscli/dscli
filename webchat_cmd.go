@@ -50,7 +50,7 @@ sudo、curl/wget 外传等被拒绝）；仍建议在可信工作目录使用。
 提示词（回复中的 DSML 工具调用仍会执行）。判定规则：回复中解析出 DSML 工具调用
 （即使格式不严格，例如 wrapper 标签拼写错误）即本地执行并回填；解析失败才会请求重发。
 
-<shell> 块通道（--shell；手动测试用）：
+<shell> 块通道（--shell；手动测试用；必须配合 --role）：
   dscli webchat --shell --role dev "跑一下 make dev-test"
 开启后角色提示词注册 <shell> 块协议：模型每轮回复一个 bash 脚本块，dscli 本地
 执行（默认 120s、上限 1800s 超时；破坏性命令拦截）并把 stdout+stderr 合并后以
@@ -94,7 +94,7 @@ sudo、curl/wget 外传等被拒绝）；仍建议在可信工作目录使用。
 	// (docs/task-shell-block.md): the model emits one bash script per
 	// round, executed locally with the merged output attached back. A
 	// manual-test flag; code_dev sessions enable the channel automatically.
-	webchatCmd.Flags().Bool("shell", false, "启用 `<shell>` 块通道：模型每轮发一个 bash 脚本，本地执行（默认 120s，上限 1800s；破坏性命令拦截）并以附件回填输出；手动测试用，建议配合 --role dev")
+	webchatCmd.Flags().Bool("shell", false, "启用 `<shell>` 块通道（需配合 --role，如 --role dev）：模型每轮发一个 bash 脚本，本地执行（默认 120s，上限 1800s；破坏性命令拦截）并以附件回填输出；手动测试用")
 }
 
 // webchatOptionsFromFlags builds the HandleWebChat options from parsed CLI
@@ -168,6 +168,9 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if opts.ShellTool && opts.Role == "" {
+		return fmt.Errorf("--shell 需要 --role（<shell> 工具文档随角色提示词注入）；例如：dscli webchat --shell --role dev \"任务\"")
+	}
 	var result lp.WebChatResult
 	startTime := time.Now()
 
@@ -181,12 +184,9 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 	// comes from the role config (role_configs / roles.DefaultFor) - the
 	// same source that gates GetAllTools, so `dscli role update --tools` is
 	// the single place that decides it.
-	switch {
-	case opts.ShellTool && opts.Role == "":
-		fmt.Fprintf(os.Stderr, "⚠️ --shell 需要 --role（工具文档随角色提示词注入）：当前为纯聊天，模型未获知 `<shell>` 协议。\n")
-	case opts.ShellTool:
+	if opts.ShellTool {
 		fmt.Fprintf(os.Stderr, "⚠️ `<shell>` 块通道已启用：远程模型回复中的 bash 脚本将在本地执行（cwd = 项目根；破坏性命令被拦截）。\n")
-	case opts.Role != "":
+	} else if opts.Role != "" {
 		fmt.Fprintf(os.Stderr, "⚠️ 角色 %q 已启用：远程模型回复中的 DSML 工具调用（按角色配置的本地工具）将在本地执行。\n", opts.Role)
 	}
 

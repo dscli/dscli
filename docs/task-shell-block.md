@@ -79,7 +79,7 @@ exit status 是信号而不是装饰、把下一步决策所需的信息一次�
 - `<summary>` / `<timeout>` 在 `</script>` 之后、`</shell>` 之前宽松解析（取首个匹配；缺失用默认）；
 - "有 `<shell>` 行" = 存在严格成行的 `<shell>` 且不在引用区域内；徽章残形 / 缩进变体不算块，但要在告警 issue 里点名；
 - 引用剔除只作用于块边界判定；`<script>` 与 `</script>` 之间的正文逐行原样提取（正文内的围栏 / heredoc / 字面量不改写、不参与剔除）；
-- 标签取"首个"成链（首个 `<shell>` → 其后首个 `<script>` → 首个 `</script>` → 首个 `</shell>`）；块体内出现的标签行是数据（不参与结构判定）；`</shell>` 之后再出现 `<shell>` 开头 → 判"多个块"告警；其余块外多余标签行宽容（防止把合法块误判为重复）。
+- 标签取"首个"成链（首个 `<shell>` → 其后首个 `<script>` → 首个 `</script>` → 首个 `</shell>`）；块体内的 `<shell>` / `<script>` 行是数据（不参与结构判定）；首个整行 `</script>` 结束正文——正文内不得出现整行 `</script>`（协议硬边界，行为已由测试钉住）；`</shell>` 之后再出现 `<shell>` 开头 → 判"多个块"告警；其余块外多余标签行宽容（防止把合法块误判为重复）。
 
 告警文案（英文，按 input 回填；结构 = 问题一行 + 四规则 + 示例）：
 
@@ -122,7 +122,7 @@ exit code: N
 | `internal/prompt/dev.md` | dev 角色注入切换（`{{if .ShellToolDoc}}` 优先分支） |
 | `internal/lp/` | `WebChatOptions.ShellTool bool`；入口路由（判定非"最终"才进循环）；`handleWebChatShellLoop`（镜像 handleWebChatToolLoop 骨架：printRound / Printed / 上限 1024 / 连续告警 3 / 本地执行 stderr 警告 / exec mock 变量）；`HandleWebChatResume` 分支；截断续传提示的 shell 变体（指向 `<shell>` 块）；逐轮 attach 回填 |
 | `internal/toolcall/ask/code_dev.go` | 接线（自动启用 shell 模式；跳过 DSML 工具集检查）；`code_dev.md` 契约描述同步 |
-| `webchat_cmd.go` | `--shell` 开关（手动测试用；默认关；建议配 `--role dev`） |
+| `webchat_cmd.go` | `--shell` 开关（手动测试用；默认关；需配 `--role`，缺失即报错） |
 | `docs/` | 本文件 |
 | `AGENTS.md` | 架构表补 `internal/shellblock` 一行；`internal/dsml` 行补共享原语说明；补一句 dev/`code_dev` 走 `<shell>` 块通道（其余角色仍 DSML） |
 

@@ -14,6 +14,7 @@
 package shellblock
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -36,6 +37,20 @@ const (
 	ActionWarn
 )
 
+// String implements fmt.Stringer for logs and error messages.
+func (a Action) String() string {
+	switch a {
+	case ActionFinal:
+		return "final"
+	case ActionExecute:
+		return "execute"
+	case ActionWarn:
+		return "warn"
+	default:
+		return fmt.Sprintf("Action(%d)", int(a))
+	}
+}
+
 // Block is one extracted <shell> block.
 type Block struct {
 	// Script is the verbatim script body between the <script> and </script>
@@ -50,6 +65,7 @@ type Block struct {
 
 // Verdict is the judge's decision for one reply.
 type Verdict struct {
+	// Action is the decision.
 	Action Action
 	// Block is set when Action is ActionExecute.
 	Block *Block
@@ -163,7 +179,10 @@ func indexOfTag(hits []tagLine, tag string, from int) int {
 //     prose and are ignored;
 //   - the first <script> line after it opens the body, and everything up to
 //     the first </script> line after THAT is opaque body - a script that
-//     writes a protocol example may legitimately contain tag lines as data;
+//     writes a protocol example may legitimately contain <shell>/<script>
+//     lines as data. One hard boundary remains: a whole-line </script>
+//     inside the body ends the body there, and the prefix is what runs
+//     (inherent to the line-based protocol; pinned by tests);
 //   - the first </shell> line after the body closes the block; a further
 //     <shell> open after the close means a second attempt and is refused as
 //     "more than once" - the only duplicate check that survives first-match
