@@ -360,7 +360,9 @@ func TestJudgeResidualMarkers(t *testing.T) {
 func TestJudgeResidualMarkersRealSample(t *testing.T) {
 	// The byte-exact capture lives in the dsml package's testdata; a
 	// MISSING fixture must fail the test, not skip it (a skip here silently
-	// disabled the whole case in the first review round).
+	// disabled the whole case in the first review round). The cross-package
+	// read is deliberate: the byte-exact sample beats duplicating it, and a
+	// rename of the fixture fails loudly here.
 	b, err := os.ReadFile("../dsml/testdata/case2_write_file.txt")
 	if err != nil {
 		t.Fatalf("real sample unavailable: %v", err)
