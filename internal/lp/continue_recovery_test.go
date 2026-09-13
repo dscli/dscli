@@ -389,6 +389,32 @@ func TestContinueRecoveryResumeStaysPendingWithoutEvidence(t *testing.T) {
 	}
 }
 
+// TestContinueRecoveryResumeGuardWithoutBodyBase pins the bodyBase != ""
+// guard: a recovery that somehow carries an answer baseline but no body
+// baseline must NOT treat any body text as a resume (that would clear pending
+// on the very first poll). Constructing the struct directly is the only way to
+// reach this state, which is exactly why the guard exists.
+func TestContinueRecoveryResumeGuardWithoutBodyBase(t *testing.T) {
+	h := newRecoveryHarness()
+	r := h.newRecovery()
+	// Hand-built state: answer baseline set, bodyBase deliberately empty.
+	r.pending = true
+	r.base = "answer v1"
+	r.baseFromAnswer = true
+	r.bodyBase = ""
+	r.deadline = h.clock.t.Add(webChatContinueResumeWindow)
+
+	// answer unreadable + body non-empty must NOT resume without a bodyBase.
+	if r.resumed(context.Background(), "some body", func() string { return "" }) {
+		t.Error("resumed() = true with an empty bodyBase; the guard must block the comparison")
+	}
+	// With a bodyBase set the comparison works again.
+	r.bodyBase = "body v1"
+	if !r.resumed(context.Background(), "body v2", func() string { return "" }) {
+		t.Error("resumed() = false for a moved body once bodyBase is set")
+	}
+}
+
 // TestContinueRecoveryBaselineFallback pins the fallback: with no readable
 // assistant content, the body text is the baseline and its change counts.
 func TestContinueRecoveryBaselineFallback(t *testing.T) {

@@ -90,7 +90,13 @@ webChatContinueResumeWindow = 45 * time.Second // 点击后等待"续写已恢�
 - 点击派发失败不计入点击预算，但**连续失败**达 `webChatMaxContinueClickFailures`（3）即返回 `ErrTruncated`，并同时包装最后一次 CDP 错误（`%w` 两次：`errors.Is` 可达 `ErrTruncated` 与原错误），不再以泛化 poll 超时收场。
 - **检测错误只 hold、不设上限**（明确取舍）：检测每轮都跑（含健康轮次），把偶发 CDP 抖动升级为 `ErrTruncated` 会让调用方重试，而重试会在生成可能仍在进行时向同一会话再发消息；因此保持 hold（不提取，由轮询预算兜底）。理由写在 `continueRecovery.step` 的检测错误分支注释中。
 - resend 重启轮次时重置整个 `continueRecovery`（旧轮次的 pending/deadline 不得影响新发送）；该逻辑抽为带 seam 的 `resendStep`（镜像 `continueRecovery` 的可注入写法），由 `webchat_step_test.go` 覆盖。
-- send-ack 阶段抽为带 seam 的 `sendAckStep`，契约以 `webChatAction` 三态表达：`webChatProceed`（已 ack）/ `webChatNextPoll`（重发后继续，调用方**不**更新 `lastText`）/ `webChatAckPending`（未 ack、无重发，调用方**应**刷新 `lastText`）。
+- send-ack 阶段抽为带 seam 的 `sendAckStep`，**动作枚举是唯一事实源**（签名不再返回 `acked`）。契约：
+  - `webChatProceed` + `err=nil`：已 ack（body 变化 / generation active / textarea cleared）；
+  - `webChatAckPending` + `err=nil`：未 ack、无重发，调用方**应**刷新 `lastText`；
+  - `webChatNextPoll` + `err=nil`：刚做过过期 textarea 重发，调用方**不**更新 `lastText`；
+  - `err != nil`：本轮失败，此时动作恒为 `webChatAbort` 且无进一步含义，**调用方先查 `err` 并中止本轮**，不解读动作。
+  动作到循环状态的映射抽为纯函数 `ackLoopEffectFor` 并以表驱动钉住（含 `webChatAbort`/未知动作的穷尽性防护，未知动作返回错误而非静默落到 recovery/stability）。
+- 点击派发失败上限的 `ErrTruncated` 同时用两次 `%w` 包装最后一次 CDP 错误（`errors.Is` 可达两者）。
 
 轮询循环内的顺序（在既有 resend 检查与 send-ack 窗口**之后**、稳定性/提取逻辑**之前**）。核心不变式：**只要「继续生成」按钮可见，或点击后的续写尚未确认恢复，就绝不走提取**（此刻的稳定文本是中断前残段，返回即静默截断）：
 
