@@ -1713,8 +1713,8 @@ type continueRecovery struct {
 	failures       int          // CONSECUTIVE dispatch failures (see webChatMaxContinueClickFailures)
 	warnedContinue bool         // the 「继续生成」 detect error was already logged once
 	// warnedRegen logs the 「重新生成」 detect error once PER RUN: the latch
-	// resets on a healthy poll alongside regenDetectFailures (a successful
-	// detect or a confirmed resume); clickRegen keeps its own reset.
+	// resets together with regenDetectFailures via healthyPoll() (a
+	// successful detect or a confirmed resume).
 	warnedRegen bool
 	// regenDetectFailures counts the run of CONSECUTIVE 「重新生成」 detector
 	// errors since the last healthy poll (a successful detect or a confirmed
@@ -1801,6 +1801,14 @@ func (k pendingClick) String() string {
 	default:
 		return fmt.Sprintf("pendingClick(%d)", int(k))
 	}
+}
+
+// healthyPoll records a healthy poll for the regen detector - a successful
+// detect or a confirmed resume: the consecutive-error run and its
+// once-per-run warning latch both restart. The pair moves together.
+func (r *continueRecovery) healthyPoll() {
+	r.regenDetectFailures = 0
+	r.warnedRegen = false
 }
 
 func (r *continueRecovery) nowFn() time.Time {
@@ -1937,8 +1945,7 @@ func (r *continueRecovery) stepRegenerate(ctx context.Context, body string, answ
 		}
 		return continueHold, nil
 	}
-	r.regenDetectFailures = 0
-	r.warnedRegen = false
+	r.healthyPoll()
 	if d.present {
 		if d.clickable && r.ready() {
 			clicked, err := r.clickRegen(ctx, d, body, answer)
@@ -1971,8 +1978,7 @@ func (r *continueRecovery) gate(ctx context.Context, body string, answer func() 
 		// this pending window (hold-only by design) must not leak into the
 		// next unpended run and trip the cap on its first hiccup, so a
 		// confirmed resume (of either click) starts a fresh run.
-		r.regenDetectFailures = 0
-		r.warnedRegen = false
+		r.healthyPoll()
 		return nil
 	}
 	if r.nowFn().After(r.deadline) {
@@ -2051,7 +2057,6 @@ func (r *continueRecovery) clickRegen(ctx context.Context, d regenerateDetect, b
 		return false, err
 	}
 	r.regenClicks++
-	r.warnedRegen = false
 	r.armResume(pendingRegen, body, answer)
 	fmt.Fprintf(os.Stderr, "🔄 检测到生成中断（已停止、无输出），已点击「重新生成」重试（%d/%d）...\n", r.regenClicks, webChatMaxRegenerates)
 	return true, nil
