@@ -98,12 +98,13 @@ const (
 	// instead of a generic timeout.
 	webChatMaxContinueClickFailures = 3
 
-	// webChatMaxRegenDetectFailures caps CONSECUTIVE 「重新生成」 detector
-	// errors. Unlike the continue detector (hold-only by design), a
+	// webChatMaxRegenDetectFailures caps the run of CONSECUTIVE 「重新生成」
+	// detector errors. Unlike the continue detector (hold-only by design), a
 	// persistent regen-detector failure must not hold a healthy round
 	// forever: the hold resets stability and forbids extraction, so a
 	// finished answer would become a poll-budget timeout. After this many
-	// errors the step falls through; the next success resets the counter.
+	// errors the step falls through. The run restarts on a healthy poll - a
+	// successful detect OR a confirmed resume (gate).
 	webChatMaxRegenDetectFailures = 3
 
 	// webChatTextareaWait is how long webchatSend polls for the chat
@@ -1712,8 +1713,9 @@ type continueRecovery struct {
 	failures       int          // CONSECUTIVE dispatch failures (see webChatMaxContinueClickFailures)
 	warnedContinue bool         // the 「继续生成」 detect error was already logged once
 	warnedRegen    bool         // the 「重新生成」 detect error was already logged once
-	// regenDetectFailures counts CONSECUTIVE 「重新生成」 detector errors;
-	// see webChatMaxRegenDetectFailures.
+	// regenDetectFailures counts the run of CONSECUTIVE 「重新生成」 detector
+	// errors since the last healthy poll (a successful detect or a confirmed
+	// resume); see webChatMaxRegenDetectFailures.
 	regenDetectFailures int
 
 	// base is the resume-evidence baseline captured at click time.
@@ -1960,6 +1962,12 @@ func (r *continueRecovery) gate(ctx context.Context, body string, answer func() 
 	if r.resumed(ctx, body, answer) {
 		r.pending = false
 		r.pendingKind = pendingNone
+		// The cap is consecutive detector errors since the last healthy
+		// poll - a success OR a confirmed resume. Errors accumulated during
+		// this pending window (hold-only by design) must not leak into the
+		// next unpended run and trip the cap on its first hiccup, so a
+		// confirmed resume starts a fresh run.
+		r.regenDetectFailures = 0
 		return nil
 	}
 	if r.nowFn().After(r.deadline) {
