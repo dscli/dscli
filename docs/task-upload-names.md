@@ -50,9 +50,9 @@ ask_expert 图片、AskExpertWithRoleFiles→code_review）自动获得保护。
    - `SafeUploadName(name string) (string, bool)`：纯函数。取 `filepath.Ext`，**精确、大小写
      敏感**匹配集合（集合只含探测过的小写形式）：命中 → `(name, false)`；否则 →
      `(name+".txt", true)`。无扩展名同样命中改名分支（`Makefile` → `Makefile.txt`）；
-     未探测过的拼写按 fail-safe 改名（`README.MD` → `README.MD.txt`）。尾部单点
-     （`foo.`）去点后**重新推导扩展**：`foo.` → `foo.txt`、`foo.txt.` → `foo.txt`
-     （不叠出 `foo..txt`/`foo.txt.txt`，且计入 renamed）。整名恰为已验证扩展名的隐藏文件
+     未探测过的拼写按 fail-safe 改名（`README.MD` → `README.MD.txt`）。**尾点（一个或多个）
+     全部去掉**后重新推导扩展：`foo.` → `foo.txt`、`foo.txt.` → `foo.txt`、`a..` → `a.txt`
+     （不叠出 `foo..txt`/`foo.txt.txt`/`a..txt`，且计入 renamed）。整名恰为已验证扩展名的隐藏文件
      （`.txt`/`.md`）按扩展名判定放行（已知且刻意）。
 2. `internal/lp/webchat.go` 的 `webchatUpload`：在 `validateWebAttachments`（50 个/100MB
    限额，仍按原文件校验）之后、上传之前统一归一化（内部函数，建议名
@@ -117,7 +117,8 @@ ask_expert 图片、AskExpertWithRoleFiles→code_review）自动获得保护。
   - `SafeUploadName` 表驱动：`.gitignore`→`.gitignore.txt`；`Makefile`→`Makefile.txt`；
     `go.sum`→`go.sum.txt`；`Makefile.txt`/`main.go`/`a.txt`/`.github__x.yml` 保持不变；
     **未探测的大写形式 fail-safe 改名**（`README.MD` → `README.MD.txt`、`Icon.PNG` →
-    `Icon.PNG.txt`）；`foo.`→`foo.txt`、`foo.txt.`→`foo.txt`；`icon.svg`→`icon.svg.txt`。
+    `Icon.PNG.txt`）；`foo.`→`foo.txt`、`foo.txt.`→`foo.txt`、`a..`/`a...`→`a.txt`；
+    `icon.svg`→`icon.svg.txt`。
   - `prepareUploadAttachments`：改名者生成 0600 副本且内容一致；未改名者返回原路径；
     无改名时 cleanup 为 nil；清理后副本消失；重名去重（`x.txt` + `x` → `x.txt` + `x_2.txt`，
     断言重名原因的中文备注）；出错路径（源缺失 / 复制失败）清理临时目录（用 `uploadTempDir`

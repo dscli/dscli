@@ -26,12 +26,14 @@ func TestSafeUploadName(t *testing.T) {
 		"README.MD": {"README.MD.txt", true},
 		"Icon.PNG":  {"Icon.PNG.txt", true},
 		"Doc.PDF":   {"Doc.PDF.txt", true},
-		// A trailing dot names no format: it is dropped, not doubled, and
-		// the extension is re-derived, so a verified extension underneath is
-		// kept without stacking another ".txt".
+		// Trailing dots name no format: all of them are dropped, not
+		// doubled, and the extension is re-derived, so a verified extension
+		// underneath is kept without stacking another ".txt".
 		"foo.":     {"foo.txt", true},
 		"foo.txt.": {"foo.txt", true},
 		"foo.md.":  {"foo.md", true},
+		"a..":      {"a.txt", true},
+		"a...":     {"a.txt", true},
 		// A hidden file whose whole name is a verified extension passes
 		// through (known and intentional: the policy keys on the extension).
 		".txt": {".txt", false},
@@ -266,7 +268,8 @@ func TestPrepareUploadAttachmentsCopyFailureCleansUp(t *testing.T) {
 // isolateUploadTempRoot confines uploadTempDir to a test-owned root and
 // returns a counter of the upload dirs still present there, so the error-path
 // tests assert the cleanup contract without scanning the system temp
-// directory (other processes share it).
+// directory (other processes share it). The seam is a package-level variable,
+// so tests using it must not run in parallel (no t.Parallel()).
 func isolateUploadTempRoot(t *testing.T) func() int {
 	t.Helper()
 	root := t.TempDir()

@@ -63,10 +63,10 @@ var verifiedUploadExts = map[string]bool{
 // with renamed true; the content is untouched, so nothing is lost, and the
 // caller can report the adjustment.
 //
-// A trailing dot names no format ("foo."), so it is dropped rather than kept
-// in the renamed name: the extension is re-derived after the trim, so
-// "foo." becomes "foo.txt" and "foo.txt." becomes "foo.txt" - never
-// "foo..txt" or "foo.txt.txt". Dropping the dot already changes the name, so
+// One or more trailing dots name no format ("foo.", "a.."), so they are all
+// dropped and the extension is re-derived from what remains: "foo." becomes
+// "foo.txt", "foo.txt." becomes "foo.txt" (not "foo.txt.txt"), and "a.."
+// becomes "a.txt" (not "a..txt"). Dropping dots already changes the name, so
 // the result is reported as renamed even when the remaining extension is
 // verified.
 //
@@ -80,16 +80,14 @@ var verifiedUploadExts = map[string]bool{
 // renamed like any unknown extension.
 func SafeUploadName(name string) (string, bool) {
 	ext := filepath.Ext(name)
+	renamed := false
 	if ext == "." {
-		name = strings.TrimSuffix(name, ".")
+		name = strings.TrimRight(name, ".")
 		ext = filepath.Ext(name)
-		if verifiedUploadExts[ext] {
-			return name, true
-		}
-		return name + ".txt", true
+		renamed = true
 	}
 	if verifiedUploadExts[ext] {
-		return name, false
+		return name, renamed
 	}
 	return name + ".txt", true
 }
