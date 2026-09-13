@@ -4,11 +4,13 @@
 > 依据: 用户 bug 报告（截图 `屏幕截图_20260913_145522.png`，code_dev 会话）+ 现行站点 bundle 逆向取证（`main.d69e3d8c16.js`，页头 commit-id `5d128f98`，2026-09-13）
 > 日期: 2026-09-13
 >
-> 实测摘要（夹具探针，`DSCLI_LIVE_CLICK_PROBE=1 go test -v -run TestLiveContinueProbe ./internal/lp/`，headless Chromium + `file://` 夹具 + 临时 profile，不触网）：
-> - 探测器 `found=true`，`label="继续生成"`，坐标 `x=177.8, y=29.5`，`elementFromPoint` 命中按钮；
+> 实测摘要（夹具探针，`DSCLI_LIVE_CLICK_PROBE=1 go test -v -run TestLiveContinueProbe ./internal/lp/`，headless Chromium + `file://` 夹具 + 临时 profile，不触网；各断言为独立子测试）：
+> - 探测器 `present=true, clickable=true`，`label="继续生成"`，坐标 `x=177.8, y=29.5`，`elementFromPoint` 命中按钮；
 > - `clickTrustedAt` 后守卫收到 `isTrusted=true` 且可信计数 = 1；
-> - 随后 JS 合成 `el.click()` 被守卫拒绝：可信计数仍为 1、合成计数 = 1、`isTrusted=false`（本设计的直接验证）；
-> - 仅含「重新生成」的诱饵页与空页均 `found=false`。
+> - JS 合成 `el.click()` 被守卫拒绝：可信计数 = 0、合成计数 = 1、`isTrusted=false`（本设计的直接验证）；
+> - 仅含「重新生成」的诱饵页与空页均 `present=false`。
+>
+> 复审跟进（2026-09-13）已落地：检测层区分 present/clickable 且评估错误上抛；恢复基准优先取本轮 assistant 内容；连续点击派发失败 3 次即 `ErrTruncated`；`continueRecovery` 可注入探针 + 表驱动单测；`webchatWait` 机械拆分（gocyclo 33 → 17）。
 >
 > 真机验收（会话外，无法主动复现 busy-stop）：待下一次服务器繁忙自然发生后观察；本条为开放项，见 §6。
 
@@ -52,8 +54,9 @@ chat.deepseek.com 服务器繁忙时，生成会在中途被站点终止：消�
 - 候选：`button, [role="button"]`；跳过 `b.disabled`、`aria-disabled="true"`；可见性沿用重发匹配器的既有口径（`offsetParent === null` 时以零尺寸 rect 判 display:none）。
 - 文本：trim + lowercase 后**精确**匹配 `继续生成` / `continue`（textContent / aria-label / title 三处）；精确匹配天然排除「重新生成 / 重新回答」。
 - 归属校验：从按钮向上走，找到"其父容器拥有直接子级 `.ds-message`"的那一层，取该 `.ds-message` 为所属气泡；无气泡（不在消息行内）→ 不点击。命中多个候选时取 DOM 中**最后一个**（最新消息）。
-- 定位：若按钮不在视口内先 `scrollIntoView({block:'center'})`；取 `getBoundingClientRect` 中心为视口坐标；用 `document.elementFromPoint(x,y)` 复核命中（含子元素），被遮挡则不返回。
-- 返回 `{found, label, x, y}`；**JS 内不做任何点击**（含 `.click()` 字样都不得出现，见 §5 回归断言）。
+- 定位：若按钮不在视口内先 `scrollIntoView({block:'center'})`；取 `getBoundingClientRect` 中心为视口坐标；用 `document.elementFromPoint(x,y)` 复核命中（含子元素）。
+- 返回 `{found:true, clickable, label, x, y}`：**存在但被遮挡**时返回 `clickable:false`（而非 `found:false`）- 把"被遮挡"折叠成"不存在"会让等待层误判本轮健康、在半截文本上走提取。
+- **JS 内不做任何点击**（含 `.click()` 字样都不得出现，见 §5 回归断言）。
 
 ### 3.2 真实点击：Go 侧
 
@@ -79,14 +82,18 @@ webChatContinueCooldown    = 8 * time.Second // 两次点击最小间隔（UI �
 webChatContinueResumeWindow = 45 * time.Second // 点击后等待"续写已恢复"证据的上限
 ```
 
-新增状态：`continueClicks int`、`lastContinueAt time.Time`、`continuePending bool`、`continueBase string`（点击时刻的 body 文本）、`continueDeadline time.Time`。
+恢复状态收拢在 `continueRecovery` 结构中（含 `clicks/lastAt/pending/failures/base/baseFromAnswer/deadline`），并带可注入探针 `now/active/detect/clickAt`（nil = 生产实现），供 `continue_recovery_test.go` 的表驱动单测使用。
+
+- `base` **优先取本轮 assistant 内容**（`cleanBodyResponse(lastAnswerText(...))`，含继续会话的基线剥离），取不到才回退 body 文本；`baseFromAnswer` 记录来源。恢复证据 = `isGenerationActive` 或**同源文本**变化 - 整页 body 会被点击自身引发的 UI 变化（提示行/按钮状态）翻动，用 body 比较可能提前清除 pending。
+- 点击派发失败不计入点击预算，但**连续失败**达 `webChatMaxContinueClickFailures`（3）即返回 `ErrTruncated`（包装最后一次 CDP 错误），不再以泛化 poll 超时收场。
+- resend 重启轮次时重置整个 `continueRecovery`（旧轮次的 pending/deadline 不得影响新发送）。
 
 轮询循环内的顺序（在既有 resend 检查与 send-ack 窗口**之后**、稳定性/提取逻辑**之前**）。核心不变式：**只要「继续生成」按钮可见，或点击后的续写尚未确认恢复，就绝不走提取**（此刻的稳定文本是中断前残段，返回即静默截断）：
 
 1. **恢复证据门**（`continuePending` 时）：`isGenerationActive(ctx) || current != continueBase` → 清除 pending（续写已恢复；文本比较用于捕捉极快的完整续写）；仍未恢复且超过 `continueDeadline` → 返回 `ErrTruncated`（包装说明"点击后生成未恢复"）。
-2. **检测**（每轮都做，不受冷却限制）：命中「继续生成」进入 3/4 分支；未命中且非 pending → 进入既有稳定性/提取逻辑。
-3. **点击**（命中且距 `lastContinueAt` 超过冷却）：`continueClicks >= webChatMaxContinues` → 返回 `ErrTruncated`（包装说明"自动点击 N 次仍未完成"）；未超预算 → `clickTrustedAt`；成功则 `continueClicks++`、更新 `lastContinueAt`、设 `continuePending/continueBase/continueDeadline`、清零 `stableCount/emptyStableCount/lastText`、stderr 打印 `🔄 检测到生成中断（%s），已点击「继续生成」继续（N/3）...`、`continue`；点击失败则打印 warning（不计数、仍更新冷却，下轮重试）。
-4. **保持**（命中但冷却未过 = 刚点过、按钮尚未消失；或未命中但 `continuePending`）：`lastText = current` 后 `continue`，禁止提取。检测每轮都跑而冷却只约束"点击"，正是为了让"按钮仍可见"这一事实无条件压住提取（即使 pending 被 UI 噪声提前清除，可见按钮也不会漏网）。
+2. **检测**（每轮都做，不受冷却限制）：命中「继续生成」（present）进入 3/4 分支；未命中且非 pending → 进入既有稳定性/提取逻辑。**检测评估出错同样 hold**（绝不等价于"无中断"）。
+3. **点击**（`present && clickable` 且距 `lastContinueAt` 超过冷却）：`continueClicks >= webChatMaxContinues` → 返回 `ErrTruncated`（包装说明"自动点击 N 次仍未完成"）；未超预算 → `clickTrustedAt`；成功则 `continueClicks++`、更新 `lastContinueAt`、设 `continuePending/continueBase/continueDeadline`、清零 `stableCount/emptyStableCount/lastText`、stderr 打印 `🔄 检测到生成中断（%s），已点击「继续生成」继续（N/3）...`、`continue`；点击失败则打印 warning（不计数、仍更新冷却，下轮重试）。
+4. **保持**（present 但不可点击、冷却未过 = 刚点过按钮尚未消失；或未命中但 pending；或检测出错）：`lastText = current`、清零 `stableCount/emptyStableCount` 后 `continue`，禁止提取。清零是为了阻止中断前的稳定计数在 hold 结束后直接命中提取。检测每轮都跑而冷却只约束"点击"，正是为了让"按钮仍可见"这一事实无条件压住提取（即使 pending 被 UI 噪声提前清除，可见按钮也不会漏网）。存在但不可点击时持续 hold（下轮 `scrollIntoView` 重试），由轮询预算兜底。
 
 要求：
 - 预算/窗口两类失败一律包装 `ErrTruncated`（既有可重试语义；follow-up 重试会发 `webChatContinueWarning`(Shell)，正是"从断点续写"的正确指令），错误文本口语化说明真实原因（服务器中断续写未完成）。
@@ -99,8 +106,9 @@ webChatContinueResumeWindow = 45 * time.Second // 点击后等待"续写已恢�
 | 文件 | 改动 |
 |---|---|
 | `internal/lp/webchat.go` | `jsContinueGeneration` + `continueGenerationButton` + `clickTrustedAt` + `webchatWait` 接线 + 常量/注释更新 |
-| `internal/lp/webchat_test.go` | `TestJsContinueGeneration` 字符串回归断言 |
-| `internal/lp/continue_probe_live_test.go`（新增） | 门控夹具探针 `TestLiveContinueProbe`（见 §5） |
+| `internal/lp/webchat_test.go` | `TestJsContinueGeneration` 字符串回归断言（含坐标字段断言） |
+| `internal/lp/continue_recovery_test.go`（新增） | `continueRecovery` 表驱动单测（注入 now/active/detect/clickAt） |
+| `internal/lp/continue_probe_live_test.go`（新增） | 门控夹具探针 `TestLiveContinueProbe`（子测试，见 §5） |
 | `docs/task-continue-generation.md` | 本文件 |
 | `AGENTS.md` | `internal/lp/` 表行补一句自动续写（英文） |
 
@@ -111,7 +119,7 @@ webChatContinueResumeWindow = 45 * time.Second // 点击后等待"续写已恢�
    - **必须不包含**：`.click()`、`dispatchEvent(`（isTrusted 陷阱：任何合成点击都会被静默忽略，这是本次最关键的回归防线）。说明文字写在 Go 注释里，不要让字面量进入 JS 正文。
 2. **门控夹具探针**（`DSCLI_LIVE_CLICK_PROBE=1`，默认 skip，不触网、不碰真实登录 profile）：
    - 用 `findChrome()` 启动 headless Chromium（临时 user-data-dir），打开 `file://` 夹具页：完整复刻 §2.2 的行结构（`.ds-message` 气泡 + 其后底部栏按钮）+ 一个"重新生成"诱饵行 + 模拟站点的 isTrusted 守卫（监听器记录 `e.isTrusted` 与可信点击数）；
-   - 断言：探测器 `found=true` 且 `label="继续生成"`；返回坐标经 `elementFromPoint` 命中按钮；`clickTrustedAt` 后守卫收到 `isTrusted=true` 且计数=1；随后 JS 合成 `el.click()` **不**通过守卫（计数不变、`isTrusted=false`，钉死本设计的存在理由）；只有"重新生成"的夹具与空页夹具均 `found=false`。
+   - 断言（各为独立子测试）：探测器 `present=true, clickable=true` 且 `label="继续生成"`；返回坐标经 `elementFromPoint` 命中按钮；`clickTrustedAt` 后守卫收到 `isTrusted=true` 且可信计数=1；JS 合成 `el.click()` **不**通过守卫（可信计数保持 0、合成计数=1、`isTrusted=false`，钉死本设计的存在理由）；只有"重新生成"的夹具与空页夹具均 `present=false`。
    - 交付前必须在本机跑一次并把输出摘要写进回报（本机有 `/usr/bin/chromium`）。
 3. `go test ./...` 与 `make fmt-check` 全绿；`make gofmt`。
 4. **真机验收（会话外，无法主动复现 busy-stop）**：下一次服务器繁忙自然发生后，观察本轮自动续写、不再需要人工点击；可选代理尝试：生成中手动点站点「停止」按钮，若同样出现「继续生成」则也应被自动接管（该路径未实证，仅作线索）。

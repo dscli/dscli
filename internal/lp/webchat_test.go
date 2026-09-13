@@ -741,6 +741,14 @@ func TestJsContinueGeneration(t *testing.T) {
 			t.Errorf("jsContinueGeneration must not contain %q: a synthetic click is silently ignored by the isTrusted guard (use clickTrustedAt)", bad)
 		}
 	}
+	// The detector must return usable coordinates on the found path, not just
+	// a boolean: clickTrustedAt dispatches at the returned x/y, so a dropped
+	// coordinate field would silently click (0,0).
+	for _, want := range []string{"x: x, y: y", "clickable"} {
+		if !strings.Contains(jsContinueGeneration, want) {
+			t.Errorf("jsContinueGeneration must contain %q (coordinate/clickability regression)", want)
+		}
+	}
 }
 
 func TestJsChatReadyState(t *testing.T) {

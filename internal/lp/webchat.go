@@ -77,6 +77,14 @@ const (
 	webChatContinueCooldown     = 8 * time.Second  // minimum gap between two clicks (UI flip time)
 	webChatContinueResumeWindow = 45 * time.Second // budget for the resume to prove itself after a click
 
+	// webChatMaxContinueClickFailures caps CONSECUTIVE CDP dispatch failures
+	// for the continue click. A dispatch failure does not consume the click
+	// budget (see continueRecovery.click), so without this cap a page whose
+	// input pipeline is broken would just poll out; failing fast into
+	// ErrTruncated gives the caller the retryable continue-from-here path
+	// instead of a generic timeout.
+	webChatMaxContinueClickFailures = 3
+
 	// webChatTextareaWait is how long webchatSend polls for the chat
 	// composer before concluding the page is not a chat page. A new
 	// conversation used to sleep a blind 3s after navigation; a cold
@@ -576,7 +584,7 @@ const (
 	//     action bar]. The button lives in the action bar and is therefore a
 	//     SIBLING of the bubble, not a descendant of it. The .ds-message
 	//     class is un-hashed, so "walk up until an ancestor directly owns a
-	//     .ds-message child" is the ownership test — a button that is not
+	//     .ds-message child" is the ownership test - a button that is not
 	//     inside a message row (settings panel, sidebar) never matches.
 	//   - The site itself only renders the button on the LATEST interrupted
 	//     message (status INCOMPLETE, no child messages), so no "which
@@ -586,7 +594,7 @@ const (
 	// the continue button is the ONLY element in the entire bundle whose
 	// onClick validates isTrusted, so every synthetic click (el.click(),
 	// dispatchEvent(new MouseEvent(...))) is silently ignored. The Go side
-	// dispatches a real CDP input event instead — see clickTrustedAt.
+	// dispatches a real CDP input event instead - see clickTrustedAt.
 	jsContinueGeneration = `(() => {
 		const wants = ['继续生成', 'continue'];
 		const cands = document.querySelectorAll('button, [role="button"]');
@@ -635,10 +643,13 @@ const (
 		const x = r.left + r.width / 2;
 		const y = r.top + r.height / 2;
 		// Occlusion check: the caller clicks by coordinate, so a covered
-		// button would send the click somewhere else entirely.
+		// button would send the click somewhere else entirely. A present but
+		// blocked button is reported as such, NOT as absent: folding it into
+		// found=false would let the caller read the poll as healthy and
+		// extract the interrupted fragment.
 		const hit = document.elementFromPoint(x, y);
-		if (!hit || !(hit === b || b.contains(hit))) return {found: false};
-		return {found: true, label: pick.label, x: x, y: y};
+		const clickable = !!hit && (hit === b || b.contains(hit));
+		return {found: true, clickable: clickable, label: pick.label, x: x, y: y};
 	})()`
 
 	// jsSendEnterOnly dispatches the Enter sequence without the send-button
@@ -1399,119 +1410,6 @@ func webchatSetUploadFiles(ctx context.Context, files []string) error {
 // argument), we poll until that deadline instead of the hardcoded
 // webChatMaxPolls — so a caller-passed timeout (e.g. 1200s) genuinely extends
 // the wait for long generations (full 26-question papers can exceed 600s).
-// continueRecovery tracks the auto-continue recovery across polls of a
-// single webchatWait call: how many clicks were spent, when the last one was
-// dispatched, and whether the resume it asked for has been confirmed yet.
-//
-// It is deliberately per-call rather than shared state: a new wait is a new
-// generation and gets a fresh budget.
-type continueRecovery struct {
-	clicks   int       // clicks dispatched so far (budget: webChatMaxContinues)
-	lastAt   time.Time // dispatch time of the last click (cooldown anchor)
-	pending  bool      // a click was dispatched, the resume is unconfirmed
-	base     string    // body text at click time: the resume evidence base
-	deadline time.Time // deadline for the resume to prove itself
-}
-
-// continueAction is the outcome of one recovery step, telling webchatWait how
-// to treat the poll's body text.
-type continueAction int
-
-const (
-	// continueNone: no interrupted generation in sight; the normal
-	// stability/extraction logic may run.
-	continueNone continueAction = iota
-	// continueHold: an interruption is present or a requested resume is
-	// still unconfirmed; keep polling and do NOT extract (the body text is
-	// the pre-interruption fragment).
-	continueHold
-	// continueClicked: a click was just dispatched; keep polling and also
-	// discard the stability counters, since the resume restarts the answer.
-	continueClicked
-)
-
-// step runs one poll's worth of auto-continue recovery, in the order the
-// design mandates:
-//
-//  1. Resume gate: a pending click is cleared once the resume has proven
-//     itself — an active generation, or body text that moved past the
-//     click-time base (this also catches a resume that finished too fast for
-//     the activity signal to appear). A pending resume that outlives
-//     webChatContinueResumeWindow is ErrTruncated: the answer exists but the
-//     site will not finish it.
-//  2. Detect: runs EVERY poll, independent of the click cooldown, so a
-//     visible button suppresses extraction even right after a click while
-//     the UI has not flipped yet.
-//  3. Click: only when a button is visible and the cooldown has elapsed.
-//  4. Hold: a visible button or an unconfirmed resume always wins over
-//     extraction.
-func (r *continueRecovery) step(ctx context.Context, current string) (continueAction, error) {
-	if err := r.gate(ctx, current); err != nil {
-		return continueNone, err
-	}
-	label, x, y, visible := continueGenerationButton(ctx)
-	if visible && r.ready() {
-		clicked, err := r.click(ctx, label, x, y, current)
-		if err != nil {
-			return continueNone, err
-		}
-		if clicked {
-			return continueClicked, nil
-		}
-	}
-	if visible || r.pending {
-		return continueHold, nil
-	}
-	return continueNone, nil
-}
-
-// gate implements step 1: it clears the pending flag once the resume has
-// proven itself, and fails the wait once the resume window has expired.
-func (r *continueRecovery) gate(ctx context.Context, current string) error {
-	if !r.pending {
-		return nil
-	}
-	if isGenerationActive(ctx) || current != r.base {
-		r.pending = false
-		return nil
-	}
-	if time.Now().After(r.deadline) {
-		return fmt.Errorf("%w: 已点击「继续生成」%d 次，生成仍未恢复（服务器中断）", ErrTruncated, r.clicks)
-	}
-	return nil
-}
-
-// ready reports whether a freshly detected button may be clicked now, i.e.
-// the cooldown since the previous click has elapsed. Detection itself runs
-// every poll regardless; this only throttles the click rate.
-func (r *continueRecovery) ready() bool {
-	return time.Since(r.lastAt) >= webChatContinueCooldown
-}
-
-// click implements step 3: it dispatches the real CDP mouse click and arms
-// the resume window. clicked=false with a nil error means the dispatch failed
-// and the caller should keep polling — the failure does not consume budget
-// (a transient CDP hiccup must not burn one of the three attempts), but the
-// cooldown still advances so a broken page is not hammered. An exhausted
-// budget is ErrTruncated.
-func (r *continueRecovery) click(ctx context.Context, label string, x, y float64, current string) (clicked bool, err error) {
-	if r.clicks >= webChatMaxContinues {
-		return false, fmt.Errorf("%w: 自动点击「继续生成」%d 次仍未完成（服务器中断）", ErrTruncated, r.clicks)
-	}
-	if cerr := clickTrustedAt(ctx, x, y); cerr != nil {
-		fmt.Fprintf(os.Stderr, "⚠️ 点击「继续生成」失败: %v\n", cerr)
-		r.lastAt = time.Now()
-		return false, nil
-	}
-	r.clicks++
-	r.lastAt = time.Now()
-	r.pending = true
-	r.base = current
-	r.deadline = time.Now().Add(webChatContinueResumeWindow)
-	fmt.Fprintf(os.Stderr, "🔄 检测到生成中断（%s），已点击「继续生成」继续（%d/%d）...\n", label, r.clicks, webChatMaxContinues)
-	return true, nil
-}
-
 func webchatWait(ctx context.Context, baseline, mdBaseline, sentMessage string) (string, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "webchatWait")
 	defer span.Finish()
@@ -1567,41 +1465,31 @@ func webchatWait(ctx context.Context, baseline, mdBaseline, sentMessage string) 
 				sendAck, ackPolls = false, 0
 				stableCount, emptyStableCount = 0, 0
 				lastText = ""
+				// A resend starts a fresh send, so any in-flight continue
+				// recovery belongs to the abandoned round: dropping it
+				// prevents a stale pending/deadline from failing the new one.
+				cont = continueRecovery{}
 				continue
 			}
 		}
 
 		// Send-ack window: the message must show evidence of submission
-		// within the confirmation window. Any of new body content, an
-		// active generation, or a cleared textarea counts as ack.
-		// While unconfirmed we skip the normal stability logic so a
-		// rejected submit fails fast instead of being misread as an
-		// empty stable page (60s) or timing out.
+		// within the confirmation window. While unconfirmed we skip the
+		// normal stability logic so a rejected submit fails fast instead of
+		// being misread as an empty stable page (60s) or timing out.
 		if !sendAck {
-			sendAck = current != baseline || isGenerationActive(ctx) || textareaCleared(ctx)
-			if !sendAck {
-				ackPolls++
-				// No retry button and the text still sits in the
-				// textarea: the Enter dispatch was ignored entirely.
-				// Re-dispatch once and keep the confirmation window
-				// open — failing immediately would skip the automatic
-				// recovery the caller expects.
-				if ackPolls >= webChatConfirmPolls {
-					if err := resendStaleTextarea(ctx); err != nil {
-						return "", ErrSendRejected
-					}
-					resendCount++
-					if resendCount > webChatMaxResends {
-						return "", fmt.Errorf("%w: 自动重发 %d 次仍失败", ErrSendRejected, resendCount-1)
-					}
-					fmt.Fprintf(os.Stderr, "🔄 消息未被接受，重新发送（%d/%d）...\n", resendCount, webChatMaxResends)
-					ackPolls = 0
-					lastResendAt = time.Now()
-					continue
-				}
+			acked, action, err := sendAckStep(ctx, current, baseline, &ackPolls, &resendCount, &lastResendAt)
+			if err != nil {
+				return "", err
+			}
+			if action == webChatContinue {
+				continue
+			}
+			if !acked {
 				lastText = current
 				continue
 			}
+			sendAck = true
 		}
 
 		// Continue-generation recovery. A busy server can stop a generation
@@ -1612,16 +1500,26 @@ func webchatWait(ctx context.Context, baseline, mdBaseline, sentMessage string) 
 		// round's final answer and the model's remaining work is lost.
 		//
 		// Invariant: while the button is visible, or a dispatched click has
-		// not yet been confirmed as resumed, extraction is forbidden — the
+		// not yet been confirmed as resumed, extraction is forbidden - the
 		// "stable" text at that moment is the pre-interruption fragment.
 
 		// The recovery runs the design's four ordered steps (resume gate →
 		// detect → click → hold) as one call; see continueRecovery.step.
-		act, err := cont.step(ctx, current)
+		// answer lazily reads the round's assistant content: it is the
+		// preferred resume-evidence baseline (the whole-page body churns on
+		// the click's own UI updates), and it is only read when a click is
+		// recorded or a resume is pending.
+		act, err := cont.step(ctx, current, func() string {
+			return cleanBodyResponse(lastAnswerText(ctx, sentMessage))
+		})
 		if err != nil {
 			return "", err
 		}
 		if act == continueHold {
+			// Reset the stability counters too: an interrupted generation
+			// must not let pre-interruption stability carry into an
+			// extraction right after the hold ends.
+			stableCount, emptyStableCount = 0, 0
 			lastText = current
 			continue
 		}
@@ -1633,99 +1531,391 @@ func webchatWait(ctx context.Context, baseline, mdBaseline, sentMessage string) 
 			continue
 		}
 
-		if current == lastText && lastText != "" {
-			stableCount++
-
-			if stableCount >= webChatStablePolls {
-				// Gated extraction: only return when generation appears complete
-				// or the escape hatch fires.
-				canExtract := !isGenerationActive(ctx) ||
-					stableCount >= webChatStablePolls+webChatExtendedPolls
-
-				// Fallback: extract from .ds-markdown elements.
-				// This naturally excludes UI chrome (search info,
-				// toggle labels, footer text). The rendered DOM is
-				// converted back to markdown (code fences, inline-code
-				// backticks, list markers) — innerText alone would lose
-				// all of that structure. NOTE: the current DeepSeek UI
-				// dropped .ds-markdown entirely (hashed classes), so
-				// this path is a compatibility net for other layouts.
-				if resp := getAssistantText(ctx); resp != "" {
-					resp = stripBaselinePrefix(resp, mdBaseline)
-					// Belt-and-braces: strip body-text fallback artifacts
-					// (code-block toolbar labels) in case the markdown
-					// converter was bypassed. No-op for clean output.
-					resp = stripUIChromePrefix(resp)
-					// A short overload notice must never be returned as an
-					// answer — it would poison the caller's decision-making.
-					if isBusyErrorText(resp) {
-						return "", fmt.Errorf("%w: %s", ErrServerBusy, resp)
-					}
-					if canExtract {
-						// A response cut off mid-generation (unclosed code
-						// fence, unterminated JSON) is a distinct, retryable
-						// failure: the answer exists but is unusable, and
-						// polling further will not complete it.
-						if isTruncated(resp) {
-							return "", fmt.Errorf("%w (%d chars)", ErrTruncated, utf8.RuneCountInString(resp))
-						}
-						if isCompleteResponse(resp) {
-							return resp, nil
-						}
-					}
-					// Fragment or generation still active: keep polling.
-					// The model often pauses after emitting a simulated
-					// tool call (<read_file ...>) that the web UI cannot
-					// execute; returning the fragment would lose the rest
-					// of the answer.
-					continue
-				}
-
-				// Fallback 1: the answer block of this round, scoped by
-				// message bubble (after the sent message) — no history,
-				// no deep-think reasoning, no UI chrome.
-				fallback := cleanBodyResponse(lastAnswerText(ctx, sentMessage))
-				if fallback == "" {
-					// Fallback 2: body text after the sent message
-					// (anchored on the deep-think marker / the message
-					// itself), then clean up known artifact patterns.
-					// Only accept clean, complete text; keep polling on
-					// fragments instead of aborting on a mid-response
-					// pause.
-					fallback = cleanBodyResponse(extractAfterMessage(current, sentMessage))
-				}
-				// The body path also picks up code-block toolbar labels;
-				// strip them like the .ds-markdown path does.
-				fallback = stripUIChromePrefix(fallback)
-				if isBusyErrorText(fallback) {
-					return "", fmt.Errorf("%w: %s", ErrServerBusy, fallback)
-				}
-				if canExtract {
-					if isTruncated(fallback) {
-						return "", fmt.Errorf("%w (%d chars)", ErrTruncated, utf8.RuneCountInString(fallback))
-					}
-					if isCompleteResponse(fallback) {
-						return fallback, nil
-					}
-				}
-
-				// Stable page with no answer content: the request stalled
-				// server-side. Count consecutive empty polls and fail fast
-				// instead of waiting out the full 300-poll timeout.
-				emptyStableCount++
-				if emptyStableCount >= webChatEmptyStablePolls {
-					return "", ErrServerBusy
-				}
-				continue
-			}
-		} else {
-			stableCount = 0
-			emptyStableCount = 0
+		done, resp, err := stabilityStep(ctx, stabilityInput{
+			current:          current,
+			lastText:         &lastText,
+			stableCount:      &stableCount,
+			emptyStableCount: &emptyStableCount,
+			mdBaseline:       mdBaseline,
+			sentMessage:      sentMessage,
+		})
+		if err != nil {
+			return "", err
 		}
-		lastText = current
+		if done {
+			return resp, nil
+		}
 	}
 
 	return "", fmt.Errorf("response timeout after %d polls (%.0fs)", maxPolls, float64(maxPolls)*webChatPollInterval.Seconds())
+}
+
+// continueRecovery tracks the auto-continue recovery across polls of a
+// single webchatWait call: how many clicks were spent, when the last one was
+// dispatched, and whether the resume it asked for has been confirmed yet.
+//
+// It is deliberately per-call rather than shared state: a new wait (or a
+// resend, which restarts the round) gets a fresh budget.
+//
+// The now/active/detect/clickAt fields are injectable seams: nil means the
+// production implementation. Tests substitute deterministic stand-ins to
+// exercise the state machine without a browser.
+type continueRecovery struct {
+	clicks   int       // clicks dispatched so far (budget: webChatMaxContinues)
+	lastAt   time.Time // dispatch time of the last click (cooldown anchor)
+	pending  bool      // a click was dispatched, the resume is unconfirmed
+	failures int       // CONSECUTIVE dispatch failures (see webChatMaxContinueClickFailures)
+	warned   bool      // a detect error was already logged once
+
+	// base is the resume-evidence baseline captured at click time. baseAnswer
+	// records whether it came from the round's assistant content (preferred)
+	// rather than the whole-page body text.
+	base           string
+	baseFromAnswer bool
+	deadline       time.Time // deadline for the resume to prove itself
+
+	now     func() time.Time
+	active  func(context.Context) bool
+	detect  func(context.Context) (continueDetect, error)
+	clickAt func(context.Context, float64, float64) error
+}
+
+// continueDetect is the detector's three-way outcome. Absent and blocked are
+// distinct on purpose: a blocked button must suppress extraction exactly like
+// a clickable one, otherwise the interrupted fragment gets extracted.
+type continueDetect struct {
+	label     string
+	x, y      float64
+	present   bool // the button exists in the message row
+	clickable bool // present AND unoccluded, so a coordinate click lands
+}
+
+// continueAction is the outcome of one recovery step, telling webchatWait how
+// to treat the poll's body text.
+type continueAction int
+
+const (
+	// continueNone: no interrupted generation in sight; the normal
+	// stability/extraction logic may run.
+	continueNone continueAction = iota
+	// continueHold: an interruption is present or a requested resume is
+	// still unconfirmed; keep polling and do NOT extract (the body text is
+	// the pre-interruption fragment).
+	continueHold
+	// continueClicked: a click was just dispatched; keep polling and also
+	// discard the stability counters, since the resume restarts the answer.
+	continueClicked
+)
+
+func (r *continueRecovery) nowFn() time.Time {
+	if r.now != nil {
+		return r.now()
+	}
+	return time.Now()
+}
+
+func (r *continueRecovery) activeFn(ctx context.Context) bool {
+	if r.active != nil {
+		return r.active(ctx)
+	}
+	return isGenerationActive(ctx)
+}
+
+func (r *continueRecovery) detectFn(ctx context.Context) (continueDetect, error) {
+	if r.detect != nil {
+		return r.detect(ctx)
+	}
+	return continueGenerationButton(ctx)
+}
+
+func (r *continueRecovery) clickFn(ctx context.Context, x, y float64) error {
+	if r.clickAt != nil {
+		return r.clickAt(ctx, x, y)
+	}
+	return clickTrustedAt(ctx, x, y)
+}
+
+// step runs one poll's worth of auto-continue recovery, in the order the
+// design mandates:
+//
+//  1. Resume gate: a pending click is cleared once the resume has proven
+//     itself (an active generation, or a change in the same text source the
+//     baseline came from). A pending resume that outlives
+//     webChatContinueResumeWindow is ErrTruncated: the answer exists but the
+//     site will not finish it.
+//  2. Detect: runs EVERY poll, independent of the click cooldown, so a
+//     present button suppresses extraction even right after a click while
+//     the UI has not flipped yet. A detection ERROR is never read as "no
+//     interruption" - it holds.
+//  3. Click: only when the button is present AND clickable AND the cooldown
+//     has elapsed.
+//  4. Hold: a present button, an unconfirmed resume, or a failed detection
+//     always wins over extraction.
+//
+// body is the whole-page text; answer lazily yields the round's assistant
+// content (may be empty), and is only consulted when a click is recorded or
+// a resume is pending.
+func (r *continueRecovery) step(ctx context.Context, body string, answer func() string) (continueAction, error) {
+	if err := r.gate(ctx, body, answer); err != nil {
+		return continueNone, err
+	}
+	d, derr := r.detectFn(ctx)
+	if derr != nil {
+		if !r.warned {
+			r.warned = true
+			fmt.Fprintf(os.Stderr, "⚠️ 检测「继续生成」按钮失败（将继续轮询）: %v\n", derr)
+		}
+		return continueHold, nil
+	}
+	if d.present && d.clickable && r.ready() {
+		clicked, err := r.click(ctx, d, body, answer)
+		if err != nil {
+			return continueNone, err
+		}
+		if clicked {
+			return continueClicked, nil
+		}
+	}
+	if d.present || r.pending {
+		return continueHold, nil
+	}
+	return continueNone, nil
+}
+
+// gate implements step 1: it clears the pending flag once the resume has
+// proven itself, and fails the wait once the resume window has expired.
+func (r *continueRecovery) gate(ctx context.Context, body string, answer func() string) error {
+	if !r.pending {
+		return nil
+	}
+	if r.resumed(ctx, body, answer) {
+		r.pending = false
+		return nil
+	}
+	if r.nowFn().After(r.deadline) {
+		return fmt.Errorf("%w: 已点击「继续生成」%d 次，生成仍未恢复（服务器中断）", ErrTruncated, r.clicks)
+	}
+	return nil
+}
+
+// resumed reports whether the clicked resume has visibly taken hold: an
+// active generation, or a change in the SAME text source the baseline came
+// from. Comparing the whole-page body while an assistant-content baseline
+// exists would misfire on the click's own UI churn (toast line, button
+// state), clearing pending before the resume actually started.
+func (r *continueRecovery) resumed(ctx context.Context, body string, answer func() string) bool {
+	if r.activeFn(ctx) {
+		return true
+	}
+	if r.baseFromAnswer {
+		a := answer()
+		return a != "" && a != r.base
+	}
+	return body != r.base
+}
+
+// ready reports whether a freshly detected button may be clicked now, i.e.
+// the cooldown since the previous click has elapsed. Detection itself runs
+// every poll regardless; this only throttles the click rate.
+func (r *continueRecovery) ready() bool {
+	return r.nowFn().Sub(r.lastAt) >= webChatContinueCooldown
+}
+
+// click implements step 3: it dispatches the real CDP mouse click and arms
+// the resume window. clicked=false with a nil error means the dispatch failed
+// and the caller should keep polling - the failure does not consume the click
+// budget (a transient CDP hiccup must not burn one of the three attempts),
+// but the cooldown still advances so a broken page is not hammered. An
+// exhausted click budget, or webChatMaxContinueClickFailures consecutive
+// dispatch failures, is ErrTruncated.
+func (r *continueRecovery) click(ctx context.Context, d continueDetect, body string, answer func() string) (clicked bool, err error) {
+	if r.clicks >= webChatMaxContinues {
+		return false, fmt.Errorf("%w: 自动点击「继续生成」%d 次仍未完成（服务器中断）", ErrTruncated, r.clicks)
+	}
+	if cerr := r.clickFn(ctx, d.x, d.y); cerr != nil {
+		r.failures++
+		r.lastAt = r.nowFn()
+		fmt.Fprintf(os.Stderr, "⚠️ 点击「继续生成」失败（连续第 %d 次）: %v\n", r.failures, cerr)
+		if r.failures >= webChatMaxContinueClickFailures {
+			return false, fmt.Errorf("%w: 点击「继续生成」连续失败 %d 次: %v", ErrTruncated, r.failures, cerr)
+		}
+		return false, nil
+	}
+	r.failures = 0
+	r.warned = false
+	r.clicks++
+	r.lastAt = r.nowFn()
+	r.pending = true
+	// Prefer the round's assistant content as the baseline; fall back to the
+	// whole-page body only when it cannot be read.
+	if a := answer(); a != "" {
+		r.base, r.baseFromAnswer = a, true
+	} else {
+		r.base, r.baseFromAnswer = body, false
+	}
+	r.deadline = r.nowFn().Add(webChatContinueResumeWindow)
+	fmt.Fprintf(os.Stderr, "🔄 检测到生成中断（%s），已点击「继续生成」继续（%d/%d）...\n", d.label, r.clicks, webChatMaxContinues)
+	return true, nil
+}
+
+// webChatAction is a narrow control signal from a webchatWait sub-step back
+// to the poll loop: proceed with the next stage, or continue to the next poll.
+type webChatAction int
+
+const (
+	webChatProceed webChatAction = iota
+	webChatContinue
+)
+
+// sendAckStep runs one poll of the send-ack confirmation window. It returns
+// acked=true once the message shows evidence of submission (new body content,
+// an active generation, or a cleared textarea), action=webChatContinue when
+// the caller should start the next poll (including after a stale-textarea
+// re-dispatch), and a non-nil error when the round must fail.
+//
+// It mutates the shared round state through pointers: ackPolls resets on a
+// re-dispatch, resendCount advances the shared resend budget, and
+// lastResendAt arms the resend cooldown.
+func sendAckStep(
+	ctx context.Context,
+	current, baseline string,
+	ackPolls, resendCount *int,
+	lastResendAt *time.Time,
+) (acked bool, action webChatAction, err error) {
+	if current != baseline || isGenerationActive(ctx) || textareaCleared(ctx) {
+		return true, webChatProceed, nil
+	}
+	*ackPolls++
+	// No retry button and the text still sits in the textarea: the Enter
+	// dispatch was ignored entirely. Re-dispatch once and keep the
+	// confirmation window open - failing immediately would skip the
+	// automatic recovery the caller expects.
+	if *ackPolls >= webChatConfirmPolls {
+		if rerr := resendStaleTextarea(ctx); rerr != nil {
+			return false, webChatProceed, ErrSendRejected
+		}
+		*resendCount++
+		if *resendCount > webChatMaxResends {
+			return false, webChatProceed, fmt.Errorf("%w: 自动重发 %d 次仍失败", ErrSendRejected, *resendCount-1)
+		}
+		fmt.Fprintf(os.Stderr, "🔄 消息未被接受，重新发送（%d/%d）...\n", *resendCount, webChatMaxResends)
+		*ackPolls = 0
+		*lastResendAt = time.Now()
+		return false, webChatContinue, nil
+	}
+	return false, webChatContinue, nil
+}
+
+// stabilityInput carries the per-round state the stability/extraction stage
+// reads and mutates. Everything is a pointer or a value copy so the helper
+// has no hidden coupling to webchatWait's locals.
+type stabilityInput struct {
+	current          string
+	lastText         *string
+	stableCount      *int
+	emptyStableCount *int
+	mdBaseline       string
+	sentMessage      string
+}
+
+// stabilityStep runs one poll of the stability/extraction stage, the block
+// that decides whether the round is finished. It returns done=true with the
+// extracted answer (or the terminal error) when the round ends, and
+// done=false when the caller should keep polling.
+//
+// The body is a mechanical extraction of webchatWait's original inline block:
+// every `continue` became `return false, "", nil`, every `return` became
+// `return true, ...`, and the trailing lastText update keeps its original
+// position (after the inner block, so only the sub-threshold path reaches it).
+func stabilityStep(ctx context.Context, in stabilityInput) (done bool, resp string, err error) {
+	if in.current == *in.lastText && *in.lastText != "" {
+		*in.stableCount++
+
+		if *in.stableCount >= webChatStablePolls {
+			// Gated extraction: only return when generation appears complete
+			// or the escape hatch fires.
+			canExtract := !isGenerationActive(ctx) ||
+				*in.stableCount >= webChatStablePolls+webChatExtendedPolls
+
+			// Fallback: extract from .ds-markdown elements. This naturally
+			// excludes UI chrome (search info, toggle labels, footer text).
+			// The rendered DOM is converted back to markdown (code fences,
+			// inline-code backticks, list markers) - innerText alone would
+			// lose all of that structure. NOTE: the current DeepSeek UI
+			// dropped .ds-markdown entirely (hashed classes), so this path
+			// is a compatibility net for other layouts.
+			if resp := getAssistantText(ctx); resp != "" {
+				resp = stripBaselinePrefix(resp, in.mdBaseline)
+				// Belt-and-braces: strip body-text fallback artifacts
+				// (code-block toolbar labels) in case the markdown converter
+				// was bypassed. No-op for clean output.
+				resp = stripUIChromePrefix(resp)
+				// A short overload notice must never be returned as an
+				// answer - it would poison the caller's decision-making.
+				if isBusyErrorText(resp) {
+					return true, "", fmt.Errorf("%w: %s", ErrServerBusy, resp)
+				}
+				if canExtract {
+					// A response cut off mid-generation (unclosed code
+					// fence, unterminated JSON) is a distinct, retryable
+					// failure: the answer exists but is unusable, and
+					// polling further will not complete it.
+					if isTruncated(resp) {
+						return true, "", fmt.Errorf("%w (%d chars)", ErrTruncated, utf8.RuneCountInString(resp))
+					}
+					if isCompleteResponse(resp) {
+						return true, resp, nil
+					}
+				}
+				// Fragment or generation still active: keep polling. The
+				// model often pauses after emitting a simulated tool call
+				// (<read_file ...>) that the web UI cannot execute;
+				// returning the fragment would lose the rest of the answer.
+				return false, "", nil
+			}
+
+			// Fallback 1: the answer block of this round, scoped by message
+			// bubble (after the sent message) - no history, no deep-think
+			// reasoning, no UI chrome.
+			fallback := cleanBodyResponse(lastAnswerText(ctx, in.sentMessage))
+			if fallback == "" {
+				// Fallback 2: body text after the sent message (anchored on
+				// the deep-think marker / the message itself), then clean up
+				// known artifact patterns. Only accept clean, complete text;
+				// keep polling on fragments instead of aborting on a
+				// mid-response pause.
+				fallback = cleanBodyResponse(extractAfterMessage(in.current, in.sentMessage))
+			}
+			// The body path also picks up code-block toolbar labels; strip
+			// them like the .ds-markdown path does.
+			fallback = stripUIChromePrefix(fallback)
+			if isBusyErrorText(fallback) {
+				return true, "", fmt.Errorf("%w: %s", ErrServerBusy, fallback)
+			}
+			if canExtract {
+				if isTruncated(fallback) {
+					return true, "", fmt.Errorf("%w (%d chars)", ErrTruncated, utf8.RuneCountInString(fallback))
+				}
+				if isCompleteResponse(fallback) {
+					return true, fallback, nil
+				}
+			}
+
+			// Stable page with no answer content: the request stalled
+			// server-side. Count consecutive empty polls and fail fast
+			// instead of waiting out the full poll budget.
+			*in.emptyStableCount++
+			if *in.emptyStableCount >= webChatEmptyStablePolls {
+				return true, "", ErrServerBusy
+			}
+			return false, "", nil
+		}
+	} else {
+		*in.stableCount = 0
+		*in.emptyStableCount = 0
+	}
+	*in.lastText = in.current
+	return false, "", nil
 }
 
 // webChatPollBudget returns the number of polls webchatWait may perform.
@@ -1781,19 +1971,27 @@ func resendFailedMessage(ctx context.Context) (matched string, clicked bool) {
 // site renders on a server-interrupted assistant message, and returns its
 // viewport centre so the caller can dispatch a REAL mouse click there (see
 // clickTrustedAt for why a synthetic click cannot work). found=false means no
-// such button is visible — the normal state of a healthy round.
-func continueGenerationButton(ctx context.Context) (label string, x, y float64, found bool) {
+// such button is visible - the normal state of a healthy round.
+func continueGenerationButton(ctx context.Context) (continueDetect, error) {
 	var result map[string]any
 	if err := chromedp.Evaluate(jsContinueGeneration, &result).Do(ctx); err != nil {
-		return "", 0, 0, false
+		return continueDetect{}, err
 	}
-	if ok, _ := result["found"].(bool); !ok {
-		return "", 0, 0, false
+	if present, _ := result["found"].(bool); !present {
+		return continueDetect{}, nil
 	}
-	label, _ = result["label"].(string)
-	x, _ = result["x"].(float64)
-	y, _ = result["y"].(float64)
-	return label, x, y, true
+	d := continueDetect{present: true}
+	d.label, _ = result["label"].(string)
+	d.clickable, _ = result["clickable"].(bool)
+	// Guarded type assertions: a malformed/partial result must not silently
+	// become the zero coordinates, which would dispatch a click at (0,0).
+	x, okX := result["x"].(float64)
+	y, okY := result["y"].(float64)
+	if !okX || !okY {
+		return continueDetect{}, fmt.Errorf("continue button: non-numeric coordinates in detector result")
+	}
+	d.x, d.y = x, y
+	return d, nil
 }
 
 // clickTrustedAt dispatches a real mouse click at the given viewport
@@ -1809,7 +2007,7 @@ func continueGenerationButton(ctx context.Context) (label string, x, y float64, 
 //	    && u({chatSessionId, messageId, allowParallelStreams})
 //
 // Synthetic events (el.click(), dispatchEvent(new MouseEvent(...))) carry
-// isTrusted=false and are silently dropped: no error, no resume — the round
+// isTrusted=false and are silently dropped: no error, no resume - the round
 // just returns the interrupted fragment. Events injected through CDP
 // Input.dispatchMouseEvent (what chromedp.MouseClickXY uses) travel the
 // browser's input pipeline and carry isTrusted=true. The other auto-click

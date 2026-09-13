@@ -99,6 +99,166 @@ func readContinueProbeGuard(ctx context.Context) (continueProbeGuardState, error
 	return st, nil
 }
 
+// continueProbeEnv carries the shared headless browser and the fixture URLs.
+// The per-case logic lives in methods so each case's complexity is measured
+// on its own (a single function holding every case would blow the gocyclo
+// budget for no reason).
+type continueProbeEnv struct {
+	tabCtx context.Context
+	t      *testing.T
+
+	target string
+	decoy  string
+	empty  string
+}
+
+// open navigates the shared tab to a fixture and waits for layout.
+func (e *continueProbeEnv) open(url string) {
+	e.t.Helper()
+	if err := chromedp.Run(
+		e.tabCtx,
+		chromedp.Navigate(url),
+		chromedp.WaitReady("body"),
+		chromedp.EmulateViewport(1024, 768),
+		chromedp.Sleep(300*time.Millisecond),
+	); err != nil {
+		e.t.Fatalf("open %s: %v", url, err)
+	}
+}
+
+// detect runs the production detector the same way webchatWait does: inside a
+// chromedp action, on the action's own context. The helpers use
+// Evaluate(...).Do(ctx), which only resolves on that context (a raw tab
+// context has no executor attached).
+func (e *continueProbeEnv) detect() continueDetect {
+	e.t.Helper()
+	var d continueDetect
+	if err := chromedp.Run(e.tabCtx, chromedp.ActionFunc(func(ctx context.Context) error {
+		var derr error
+		d, derr = continueGenerationButton(ctx)
+		return derr
+	})); err != nil {
+		e.t.Fatalf("continueGenerationButton: %v", err)
+	}
+	return d
+}
+
+// guard reads the fixture guard's counters.
+func (e *continueProbeEnv) guard() continueProbeGuardState {
+	e.t.Helper()
+	var st continueProbeGuardState
+	if err := chromedp.Run(e.tabCtx, chromedp.ActionFunc(func(ctx context.Context) error {
+		var gerr error
+		st, gerr = readContinueProbeGuard(ctx)
+		return gerr
+	})); err != nil {
+		e.t.Fatalf("read guard state: %v", err)
+	}
+	return st
+}
+
+func (e *continueProbeEnv) settle() {
+	e.t.Helper()
+	if err := chromedp.Run(e.tabCtx, chromedp.Sleep(200*time.Millisecond)); err != nil {
+		e.t.Fatalf("settle: %v", err)
+	}
+}
+
+// caseDetectorFindsButton: the detector locates the button and reports
+// coordinates that actually hit it.
+func (e *continueProbeEnv) caseDetectorFindsButton() {
+	e.open(e.target)
+	d := e.detect()
+	e.t.Logf("detector: present=%v clickable=%v label=%q x=%.1f y=%.1f", d.present, d.clickable, d.label, d.x, d.y)
+	if !d.present {
+		e.t.Fatalf("detector must find the 继续生成 button on the fixture")
+	}
+	if !d.clickable {
+		e.t.Errorf("button must be reported clickable on an unoccluded fixture")
+	}
+	if d.label != "继续生成" {
+		e.t.Errorf("label = %q, want 继续生成", d.label)
+	}
+	var hit bool
+	hitJS := fmt.Sprintf(`(() => {
+		const el = document.elementFromPoint(%.1f, %.1f);
+		return !!el && el.tagName === 'BUTTON';
+	})()`, d.x, d.y)
+	if err := chromedp.Run(e.tabCtx, chromedp.Evaluate(hitJS, &hit)); err != nil {
+		e.t.Fatalf("elementFromPoint: %v", err)
+	}
+	if !hit {
+		e.t.Errorf("reported coordinates (%.1f, %.1f) must hit the button", d.x, d.y)
+	}
+}
+
+// caseTrustedClick: the CDP click reaches the isTrusted guard exactly once.
+func (e *continueProbeEnv) caseTrustedClick() {
+	e.open(e.target)
+	d := e.detect()
+	if !d.present || !d.clickable {
+		e.t.Fatalf("fixture button not clickable: %+v", d)
+	}
+	if err := chromedp.Run(e.tabCtx, chromedp.ActionFunc(func(ctx context.Context) error {
+		return clickTrustedAt(ctx, d.x, d.y)
+	})); err != nil {
+		e.t.Fatalf("clickTrustedAt: %v", err)
+	}
+	e.settle()
+	st := e.guard()
+	e.t.Logf("after clickTrustedAt: trusted=%d synthetic=%d lastTrusted=%v", st.Trusted, st.Synthetic, st.Last)
+	if st.Trusted != 1 {
+		e.t.Errorf("trusted clicks = %d, want 1 (the CDP click must reach the guard)", st.Trusted)
+	}
+	if !st.Last {
+		e.t.Errorf("lastTrusted = %v, want true", st.Last)
+	}
+}
+
+// caseSyntheticClick: a JS click is dropped by the guard - the whole reason
+// clickTrustedAt exists. The click string below is test code, not detector
+// JS; the detector itself stays click-free.
+func (e *continueProbeEnv) caseSyntheticClick() {
+	e.open(e.target)
+	if err := chromedp.Run(e.tabCtx, chromedp.Evaluate(
+		`document.querySelector('button').click()`, nil,
+	)); err != nil {
+		e.t.Fatalf("synthetic click: %v", err)
+	}
+	e.settle()
+	st := e.guard()
+	e.t.Logf("after synthetic click: trusted=%d synthetic=%d lastTrusted=%v", st.Trusted, st.Synthetic, st.Last)
+	if st.Trusted != 0 {
+		e.t.Errorf("trusted clicks = %d after a synthetic click, want 0 (isTrusted guard must reject it)", st.Trusted)
+	}
+	if st.Synthetic != 1 {
+		e.t.Errorf("synthetic clicks = %d, want 1 (the rejected attempt should still be recorded)", st.Synthetic)
+	}
+	if st.Last {
+		e.t.Errorf("lastTrusted = %v after a synthetic click, want false", st.Last)
+	}
+}
+
+// caseDecoy: a row whose only button is 重新生成 must not match.
+func (e *continueProbeEnv) caseDecoy() {
+	e.open(e.decoy)
+	d := e.detect()
+	e.t.Logf("decoy (重新生成 only): present=%v label=%q", d.present, d.label)
+	if d.present {
+		e.t.Errorf("detector must not match the 重新生成 decoy (label=%q)", d.label)
+	}
+}
+
+// caseEmpty: a page without a message row must not match.
+func (e *continueProbeEnv) caseEmpty() {
+	e.open(e.empty)
+	d := e.detect()
+	e.t.Logf("empty page: present=%v label=%q", d.present, d.label)
+	if d.present {
+		e.t.Errorf("detector must not match an empty page (label=%q)", d.label)
+	}
+}
+
 func TestLiveContinueProbe(t *testing.T) {
 	if os.Getenv("DSCLI_LIVE_CLICK_PROBE") != "1" {
 		t.Skip("live click probe: set DSCLI_LIVE_CLICK_PROBE=1 (runs headless Chromium on a local fixture)")
@@ -110,19 +270,20 @@ func TestLiveContinueProbe(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	target := writeContinueProbeFile(t, dir, "target.html", continueProbePage(
+	env := &continueProbeEnv{t: t}
+	env.target = writeContinueProbeFile(t, dir, "target.html", continueProbePage(
 		continueProbeRow("半截回复…", "继续生成"),
 	))
-	decoy := writeContinueProbeFile(t, dir, "decoy.html", continueProbePage(
+	env.decoy = writeContinueProbeFile(t, dir, "decoy.html", continueProbePage(
 		continueProbeRow("完成的回复", "重新生成"),
 	))
-	empty := writeContinueProbeFile(t, dir, "empty.html", continueProbePage(""))
+	env.empty = writeContinueProbeFile(t, dir, "empty.html", continueProbePage(""))
 
 	// Headless, throwaway profile: the probe must never touch the real
-	// logged-in dscli profile, and a file:// fixture needs no network.
-	// The profile dir is a MkdirTemp rather than t.TempDir because
-	// Chromium keeps writing into it after the test body returns, which
-	// makes t.TempDir's strict cleanup fail on a non-empty directory.
+	// logged-in dscli profile, and a file:// fixture needs no network. The
+	// profile dir is a MkdirTemp rather than t.TempDir because Chromium
+	// keeps writing into it after the test body returns, which makes
+	// t.TempDir's strict cleanup fail on a non-empty directory.
 	profileDir, err := os.MkdirTemp("", "dscli-continue-probe-")
 	if err != nil {
 		t.Fatalf("profile dir: %v", err)
@@ -143,124 +304,26 @@ func TestLiveContinueProbe(t *testing.T) {
 	defer cancel()
 	tabCtx, tabCancel := chromedp.NewContext(ctx)
 	defer tabCancel()
+	env.tabCtx = tabCtx
 
-	open := func(url string) {
-		t.Helper()
-		if err := chromedp.Run(
-			tabCtx,
-			chromedp.Navigate(url),
-			chromedp.WaitReady("body"),
-			chromedp.EmulateViewport(1024, 768),
-			chromedp.Sleep(300*time.Millisecond),
-		); err != nil {
-			t.Fatalf("open %s: %v", url, err)
-		}
-	}
-
-	// detect runs the production detector the same way webchatWait does:
-	// inside a chromedp action, on the action's own context. The helpers use
-	// Evaluate(...).Do(ctx), which only resolves on that context (a raw tab
-	// context has no executor attached).
-	detect := func() (label string, x, y float64, found bool) {
-		t.Helper()
-		if err := chromedp.Run(tabCtx, chromedp.ActionFunc(func(ctx context.Context) error {
-			label, x, y, found = continueGenerationButton(ctx)
-			return nil
-		})); err != nil {
-			t.Fatalf("continueGenerationButton: %v", err)
-		}
-		return label, x, y, found
-	}
-
-	// --- 1. detector finds the real button and reports usable coordinates.
-	open(target)
-	label, x, y, found := detect()
-	t.Logf("detector: found=%v label=%q x=%.1f y=%.1f", found, label, x, y)
-	if !found {
-		t.Fatalf("detector must find the 继续生成 button on the fixture")
-	}
-	if label != "继续生成" {
-		t.Errorf("label = %q, want 继续生成", label)
-	}
-	var hit bool
-	hitJS := fmt.Sprintf(`(() => {
-		const el = document.elementFromPoint(%.1f, %.1f);
-		return !!el && el.tagName === 'BUTTON';
-	})()`, x, y)
-	if err := chromedp.Run(tabCtx, chromedp.Evaluate(hitJS, &hit)); err != nil {
-		t.Fatalf("elementFromPoint: %v", err)
-	}
-	if !hit {
-		t.Errorf("reported coordinates (%.1f, %.1f) must hit the button", x, y)
-	}
-
-	// --- 2. the CDP click goes through the guard.
-	if err := chromedp.Run(tabCtx, chromedp.ActionFunc(func(ctx context.Context) error {
-		return clickTrustedAt(ctx, x, y)
-	})); err != nil {
-		t.Fatalf("clickTrustedAt: %v", err)
-	}
-	if err := chromedp.Run(tabCtx, chromedp.Sleep(200*time.Millisecond)); err != nil {
-		t.Fatalf("settle: %v", err)
-	}
-	var st continueProbeGuardState
-	if err := chromedp.Run(tabCtx, chromedp.ActionFunc(func(ctx context.Context) error {
-		var err error
-		st, err = readContinueProbeGuard(ctx)
-		return err
-	})); err != nil {
-		t.Fatalf("read guard state: %v", err)
-	}
-	t.Logf("after clickTrustedAt: trusted=%d synthetic=%d lastTrusted=%v", st.Trusted, st.Synthetic, st.Last)
-	if st.Trusted != 1 {
-		t.Errorf("trusted clicks = %d, want 1 (the CDP click must reach the guard)", st.Trusted)
-	}
-	if !st.Last {
-		t.Errorf("lastTrusted = %v, want true", st.Last)
-	}
-
-	// --- 3. the synthetic click is rejected: this is the whole reason
-	// clickTrustedAt exists. The string below is test code, not detector
-	// JS - the detector itself must stay click-free.
-	if err := chromedp.Run(tabCtx, chromedp.Evaluate(
-		`document.querySelector('button').click()`, nil,
-	)); err != nil {
-		t.Fatalf("synthetic click: %v", err)
-	}
-	if err := chromedp.Run(tabCtx, chromedp.Sleep(200*time.Millisecond)); err != nil {
-		t.Fatalf("settle: %v", err)
-	}
-	if err := chromedp.Run(tabCtx, chromedp.ActionFunc(func(ctx context.Context) error {
-		var err error
-		st, err = readContinueProbeGuard(ctx)
-		return err
-	})); err != nil {
-		t.Fatalf("read guard state: %v", err)
-	}
-	t.Logf("after synthetic click: trusted=%d synthetic=%d lastTrusted=%v", st.Trusted, st.Synthetic, st.Last)
-	if st.Trusted != 1 {
-		t.Errorf("trusted clicks = %d after a synthetic click, want 1 (isTrusted guard must reject it)", st.Trusted)
-	}
-	if st.Synthetic != 1 {
-		t.Errorf("synthetic clicks = %d, want 1 (the rejected attempt should still be recorded)", st.Synthetic)
-	}
-	if st.Last {
-		t.Errorf("lastTrusted = %v after a synthetic click, want false", st.Last)
-	}
-
-	// --- 4. a row whose only button is 重新生成 must not match.
-	open(decoy)
-	label, _, _, found = detect()
-	t.Logf("decoy (重新生成 only): found=%v label=%q", found, label)
-	if found {
-		t.Errorf("detector must not match the 重新生成 decoy (label=%q)", label)
-	}
-
-	// --- 5. an empty page must not match.
-	open(empty)
-	label, _, _, found = detect()
-	t.Logf("empty page: found=%v label=%q", found, label)
-	if found {
-		t.Errorf("detector must not match an empty page (label=%q)", label)
-	}
+	t.Run("detector finds the button", func(t *testing.T) {
+		env.t = t
+		env.caseDetectorFindsButton()
+	})
+	t.Run("trusted click reaches the guard", func(t *testing.T) {
+		env.t = t
+		env.caseTrustedClick()
+	})
+	t.Run("synthetic click is rejected", func(t *testing.T) {
+		env.t = t
+		env.caseSyntheticClick()
+	})
+	t.Run("regenerate decoy does not match", func(t *testing.T) {
+		env.t = t
+		env.caseDecoy()
+	})
+	t.Run("empty page does not match", func(t *testing.T) {
+		env.t = t
+		env.caseEmpty()
+	})
 }
