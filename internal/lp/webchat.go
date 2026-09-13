@@ -1448,29 +1448,21 @@ func webchatWait(ctx context.Context, baseline, mdBaseline, sentMessage string) 
 		}
 
 		// Failed-send retry: a rejected message renders a "重发" button
-		// next to the failed bubble. A rejected send ALSO changes the
-		// body text (the bubble appears), so the send-ack check below
-		// alone cannot distinguish it from success — the retry button
-		// is the reliable signal. Click it and restart the round state,
-		// since the retry is a fresh send. Cooldown keeps a slow UI
-		// from being clicked twice in a row.
-		if time.Since(lastResendAt) >= webChatResendCooldown {
-			if matched, clicked := resendFailedMessage(ctx); clicked {
-				resendCount++
-				if resendCount > webChatMaxResends {
-					return "", fmt.Errorf("%w: 自动重发 %d 次仍失败（%s）", ErrServerBusy, resendCount-1, matched)
-				}
-				lastResendAt = time.Now()
-				fmt.Fprintf(os.Stderr, "🔄 检测到发送失败（%s），自动重发（%d/%d）...\n", matched, resendCount, webChatMaxResends)
-				sendAck, ackPolls = false, 0
-				stableCount, emptyStableCount = 0, 0
-				lastText = ""
-				// A resend starts a fresh send, so any in-flight continue
-				// recovery belongs to the abandoned round: dropping it
-				// prevents a stale pending/deadline from failing the new one.
-				cont = continueRecovery{}
-				continue
-			}
+		// next to the failed bubble; clicking it restarts the round state.
+		// See resendStep for the full rationale.
+		if handled, err := resendStep(ctx, resendSeams{}, resendInput{
+			resendCount:      &resendCount,
+			lastResendAt:     &lastResendAt,
+			ackPolls:         &ackPolls,
+			stableCount:      &stableCount,
+			emptyStableCount: &emptyStableCount,
+			lastText:         &lastText,
+			cont:             &cont,
+		}); err != nil {
+			return "", err
+		} else if handled {
+			sendAck = false
+			continue
 		}
 
 		// Send-ack window: the message must show evidence of submission
@@ -1478,18 +1470,25 @@ func webchatWait(ctx context.Context, baseline, mdBaseline, sentMessage string) 
 		// normal stability logic so a rejected submit fails fast instead of
 		// being misread as an empty stable page (60s) or timing out.
 		if !sendAck {
-			acked, action, err := sendAckStep(ctx, current, baseline, &ackPolls, &resendCount, &lastResendAt)
+			_, action, err := sendAckStep(ctx, sendAckSeams{}, current, baseline, &ackPolls, &resendCount, &lastResendAt)
 			if err != nil {
 				return "", err
 			}
-			if action == webChatContinue {
+			switch action {
+			case webChatProceed:
+				// Submission acknowledged; fall through to the recovery and
+				// stability stages below with sendAck latched true.
+				sendAck = true
+			case webChatNextPoll:
+				// Stale-textarea re-dispatch: the original code did a bare
+				// continue, deliberately leaving lastText untouched.
 				continue
-			}
-			if !acked {
+			case webChatAckPending:
+				// Still unconfirmed, nothing re-dispatched: the original code
+				// refreshed lastText before continuing.
 				lastText = current
 				continue
 			}
-			sendAck = true
 		}
 
 		// Continue-generation recovery. A busy server can stop a generation
@@ -1567,11 +1566,15 @@ type continueRecovery struct {
 	failures int       // CONSECUTIVE dispatch failures (see webChatMaxContinueClickFailures)
 	warned   bool      // a detect error was already logged once
 
-	// base is the resume-evidence baseline captured at click time. baseAnswer
-	// records whether it came from the round's assistant content (preferred)
-	// rather than the whole-page body text.
+	// base is the resume-evidence baseline captured at click time.
+	// baseFromAnswer records whether it came from the round's assistant
+	// content (preferred) rather than the whole-page body text. bodyBase is
+	// always recorded, so a later unreadable answer (evaluation failure, lost
+	// anchor) can fall back to the body comparison instead of stalling the
+	// resume window.
 	base           string
 	baseFromAnswer bool
+	bodyBase       string
 	deadline       time.Time // deadline for the resume to prove itself
 
 	now     func() time.Time
@@ -1665,6 +1668,12 @@ func (r *continueRecovery) step(ctx context.Context, body string, answer func() 
 			r.warned = true
 			fmt.Fprintf(os.Stderr, "⚠️ 检测「继续生成」按钮失败（将继续轮询）: %v\n", derr)
 		}
+		// Deliberately hold-only, with NO failure cap that fails the round:
+		// detection runs on every poll, including healthy ones, so escalating
+		// a transient CDP hiccup on a healthy round into ErrTruncated would
+		// make the caller retry - and that retry posts another message into a
+		// conversation whose generation may still be running. Holding (never
+		// extracting, bounded by the poll budget) is the safe trade.
 		return continueHold, nil
 	}
 	if d.present && d.clickable && r.ready() {
@@ -1708,8 +1717,13 @@ func (r *continueRecovery) resumed(ctx context.Context, body string, answer func
 		return true
 	}
 	if r.baseFromAnswer {
-		a := answer()
-		return a != "" && a != r.base
+		// Answer unreadable right now (evaluation failure, anchor lost):
+		// fall back to the body baseline rather than stalling pending until
+		// the deadline. Only when neither source is usable does pending stay.
+		if a := answer(); a != "" {
+			return a != r.base
+		}
+		return body != r.bodyBase
 	}
 	return body != r.base
 }
@@ -1737,7 +1751,9 @@ func (r *continueRecovery) click(ctx context.Context, d continueDetect, body str
 		r.lastAt = r.nowFn()
 		fmt.Fprintf(os.Stderr, "⚠️ 点击「继续生成」失败（连续第 %d 次）: %v\n", r.failures, cerr)
 		if r.failures >= webChatMaxContinueClickFailures {
-			return false, fmt.Errorf("%w: 点击「继续生成」连续失败 %d 次: %v", ErrTruncated, r.failures, cerr)
+			// Wrap BOTH the retryable sentinel and the last CDP error so
+			// errors.Is can reach either one.
+			return false, fmt.Errorf("%w: 点击「继续生成」连续失败 %d 次: %w", ErrTruncated, r.failures, cerr)
 		}
 		return false, nil
 	}
@@ -1748,6 +1764,7 @@ func (r *continueRecovery) click(ctx context.Context, d continueDetect, body str
 	r.pending = true
 	// Prefer the round's assistant content as the baseline; fall back to the
 	// whole-page body only when it cannot be read.
+	r.bodyBase = body
 	if a := answer(); a != "" {
 		r.base, r.baseFromAnswer = a, true
 	} else {
@@ -1759,30 +1776,77 @@ func (r *continueRecovery) click(ctx context.Context, d continueDetect, body str
 }
 
 // webChatAction is a narrow control signal from a webchatWait sub-step back
-// to the poll loop: proceed with the next stage, or continue to the next poll.
+// to the poll loop.
 type webChatAction int
 
 const (
+	// webChatProceed: this stage is satisfied; the caller moves on (for the
+	// ack stage that means sendAck is now true).
 	webChatProceed webChatAction = iota
-	webChatContinue
+	// webChatNextPoll: start the next poll WITHOUT touching lastText. Used by
+	// the stale-textarea re-dispatch, whose original inline code did a bare
+	// `continue` and deliberately left lastText alone.
+	webChatNextPoll
+	// webChatAckPending: the send is still unconfirmed and nothing was
+	// re-dispatched; start the next poll AND refresh lastText with the
+	// current body text (the original sub-threshold path did exactly that).
+	webChatAckPending
 )
 
-// sendAckStep runs one poll of the send-ack confirmation window. It returns
-// acked=true once the message shows evidence of submission (new body content,
-// an active generation, or a cleared textarea), action=webChatContinue when
-// the caller should start the next poll (including after a stale-textarea
-// re-dispatch), and a non-nil error when the round must fail.
+// sendAckSeams holds the injectable dependencies of sendAckStep. A nil field
+// means the production implementation; tests substitute deterministic
+// stand-ins to exercise the window without a browser.
+type sendAckSeams struct {
+	active  func(context.Context) bool
+	cleared func(context.Context) bool
+	resend  func(context.Context) error
+}
+
+func (s sendAckSeams) isActive(ctx context.Context) bool {
+	if s.active != nil {
+		return s.active(ctx)
+	}
+	return isGenerationActive(ctx)
+}
+
+func (s sendAckSeams) isCleared(ctx context.Context) bool {
+	if s.cleared != nil {
+		return s.cleared(ctx)
+	}
+	return textareaCleared(ctx)
+}
+
+func (s sendAckSeams) redispatch(ctx context.Context) error {
+	if s.resend != nil {
+		return s.resend(ctx)
+	}
+	return resendStaleTextarea(ctx)
+}
+
+// sendAckStep runs one poll of the send-ack confirmation window, the stage
+// that decides whether the submit was accepted.
+//
+// Contract:
+//   - acked=true, action=webChatProceed: evidence of submission was seen
+//     (new body content, an active generation, or a cleared textarea).
+//   - acked=false, action=webChatAckPending: still unconfirmed and nothing was
+//     re-dispatched. The caller must start the next poll AND set lastText to
+//     the current body text.
+//   - acked=false, action=webChatNextPoll: a stale-textarea re-dispatch just
+//     happened. The caller must start the next poll WITHOUT touching lastText.
+//   - error non-nil: the round must fail.
 //
 // It mutates the shared round state through pointers: ackPolls resets on a
 // re-dispatch, resendCount advances the shared resend budget, and
 // lastResendAt arms the resend cooldown.
 func sendAckStep(
 	ctx context.Context,
+	seams sendAckSeams,
 	current, baseline string,
 	ackPolls, resendCount *int,
 	lastResendAt *time.Time,
 ) (acked bool, action webChatAction, err error) {
-	if current != baseline || isGenerationActive(ctx) || textareaCleared(ctx) {
+	if current != baseline || seams.isActive(ctx) || seams.isCleared(ctx) {
 		return true, webChatProceed, nil
 	}
 	*ackPolls++
@@ -1791,7 +1855,7 @@ func sendAckStep(
 	// confirmation window open - failing immediately would skip the
 	// automatic recovery the caller expects.
 	if *ackPolls >= webChatConfirmPolls {
-		if rerr := resendStaleTextarea(ctx); rerr != nil {
+		if rerr := seams.redispatch(ctx); rerr != nil {
 			return false, webChatProceed, ErrSendRejected
 		}
 		*resendCount++
@@ -1801,9 +1865,76 @@ func sendAckStep(
 		fmt.Fprintf(os.Stderr, "🔄 消息未被接受，重新发送（%d/%d）...\n", *resendCount, webChatMaxResends)
 		*ackPolls = 0
 		*lastResendAt = time.Now()
-		return false, webChatContinue, nil
+		return false, webChatNextPoll, nil
 	}
-	return false, webChatContinue, nil
+	return false, webChatAckPending, nil
+}
+
+// resendSeams holds the injectable dependencies of resendStep. A nil field
+// means the production implementation.
+type resendSeams struct {
+	detect func(context.Context) (string, bool)
+	now    func() time.Time
+}
+
+func (s resendSeams) failed(ctx context.Context) (string, bool) {
+	if s.detect != nil {
+		return s.detect(ctx)
+	}
+	return resendFailedMessage(ctx)
+}
+
+func (s resendSeams) nowFn() time.Time {
+	if s.now != nil {
+		return s.now()
+	}
+	return time.Now()
+}
+
+// resendInput is the round state resendStep reads and mutates. Everything is
+// a pointer so the helper has no hidden coupling to webchatWait's locals.
+type resendInput struct {
+	resendCount      *int
+	lastResendAt     *time.Time
+	ackPolls         *int
+	stableCount      *int
+	emptyStableCount *int
+	lastText         *string
+	cont             *continueRecovery
+}
+
+// resendStep runs one poll of the failed-send retry stage: a rejected message
+// renders a "重发" button next to the failed bubble. A rejected send ALSO
+// changes the body text (the bubble appears), so the send-ack stage alone
+// cannot distinguish it from success - the retry button is the reliable
+// signal. Clicking it restarts the round state, since the retry is a fresh
+// send; the cooldown keeps a slow UI from being clicked twice in a row.
+//
+// It returns handled=true when a resend happened and the caller must start the
+// next poll, and a non-nil error when the resend budget is exhausted.
+func resendStep(ctx context.Context, seams resendSeams, in resendInput) (handled bool, err error) {
+	if seams.nowFn().Sub(*in.lastResendAt) < webChatResendCooldown {
+		return false, nil
+	}
+	matched, clicked := seams.failed(ctx)
+	if !clicked {
+		return false, nil
+	}
+	*in.resendCount++
+	if *in.resendCount > webChatMaxResends {
+		return false, fmt.Errorf("%w: 自动重发 %d 次仍失败（%s）", ErrServerBusy, *in.resendCount-1, matched)
+	}
+	*in.lastResendAt = seams.nowFn()
+	fmt.Fprintf(os.Stderr, "🔄 检测到发送失败（%s），自动重发（%d/%d）...\n", matched, *in.resendCount, webChatMaxResends)
+	*in.ackPolls = 0
+	*in.stableCount = 0
+	*in.emptyStableCount = 0
+	*in.lastText = ""
+	// A resend starts a fresh send, so any in-flight continue recovery
+	// belongs to the abandoned round: dropping it prevents a stale
+	// pending/deadline from failing the new one.
+	*in.cont = continueRecovery{}
+	return true, nil
 }
 
 // stabilityInput carries the per-round state the stability/extraction stage
@@ -1829,7 +1960,7 @@ type stabilityInput struct {
 // position (after the inner block, so only the sub-threshold path reaches it).
 func stabilityStep(ctx context.Context, in stabilityInput) (done bool, resp string, err error) {
 	if in.current == *in.lastText && *in.lastText != "" {
-		*in.stableCount++
+		*in.stableCount += 1
 
 		if *in.stableCount >= webChatStablePolls {
 			// Gated extraction: only return when generation appears complete

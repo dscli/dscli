@@ -64,7 +64,8 @@ chat.deepseek.com 服务器繁忙时，生成会在中途被站点终止：消�
 
 ```go
 // continueGenerationButton 检测+定位（Evaluate jsContinueGeneration）
-func continueGenerationButton(ctx context.Context) (label string, x, y float64, found bool)
+// 返回三态：present（按钮存在）/ clickable（存在且未被遮挡），Evaluate 错误上抛。
+func continueGenerationButton(ctx context.Context) (continueDetect, error)
 
 // clickTrustedAt 派发真实鼠标事件：MouseMoved + MouseClickXY
 func clickTrustedAt(ctx context.Context, x, y float64) error
@@ -82,11 +83,14 @@ webChatContinueCooldown    = 8 * time.Second // 两次点击最小间隔（UI �
 webChatContinueResumeWindow = 45 * time.Second // 点击后等待"续写已恢复"证据的上限
 ```
 
-恢复状态收拢在 `continueRecovery` 结构中（含 `clicks/lastAt/pending/failures/base/baseFromAnswer/deadline`），并带可注入探针 `now/active/detect/clickAt`（nil = 生产实现），供 `continue_recovery_test.go` 的表驱动单测使用。
+恢复状态收拢在 `continueRecovery` 结构中（字段 `clicks` / `lastAt` / `pending` / `failures` / `warned` / `base` / `baseFromAnswer` / `bodyBase` / `deadline`），并带可注入探针 `now/active/detect/clickAt`（nil = 生产实现），供 `continue_recovery_test.go` 的表驱动单测使用。
 
-- `base` **优先取本轮 assistant 内容**（`cleanBodyResponse(lastAnswerText(...))`，含继续会话的基线剥离），取不到才回退 body 文本；`baseFromAnswer` 记录来源。恢复证据 = `isGenerationActive` 或**同源文本**变化 - 整页 body 会被点击自身引发的 UI 变化（提示行/按钮状态）翻动，用 body 比较可能提前清除 pending。
-- 点击派发失败不计入点击预算，但**连续失败**达 `webChatMaxContinueClickFailures`（3）即返回 `ErrTruncated`（包装最后一次 CDP 错误），不再以泛化 poll 超时收场。
-- resend 重启轮次时重置整个 `continueRecovery`（旧轮次的 pending/deadline 不得影响新发送）。
+- `base` **优先取本轮 assistant 内容**（`cleanBodyResponse(lastAnswerText(...))`，含继续会话的基线剥离），取不到才回退 body 文本；`baseFromAnswer` 记录来源，`bodyBase` **始终**记录。恢复证据 = `isGenerationActive` 或**同源文本**变化 - 整页 body 会被点击自身引发的 UI 变化（提示行/按钮状态）翻动，用 body 比较可能提前清除 pending。
+- **证据回退**：`baseFromAnswer` 为真但此刻 answer 读取为空（评估失败 / 锚点丢失）时，退回 `body != bodyBase` 比较；两者都不可用才保持 pending（不提前判失败，等恢复窗口）。
+- 点击派发失败不计入点击预算，但**连续失败**达 `webChatMaxContinueClickFailures`（3）即返回 `ErrTruncated`，并同时包装最后一次 CDP 错误（`%w` 两次：`errors.Is` 可达 `ErrTruncated` 与原错误），不再以泛化 poll 超时收场。
+- **检测错误只 hold、不设上限**（明确取舍）：检测每轮都跑（含健康轮次），把偶发 CDP 抖动升级为 `ErrTruncated` 会让调用方重试，而重试会在生成可能仍在进行时向同一会话再发消息；因此保持 hold（不提取，由轮询预算兜底）。理由写在 `continueRecovery.step` 的检测错误分支注释中。
+- resend 重启轮次时重置整个 `continueRecovery`（旧轮次的 pending/deadline 不得影响新发送）；该逻辑抽为带 seam 的 `resendStep`（镜像 `continueRecovery` 的可注入写法），由 `webchat_step_test.go` 覆盖。
+- send-ack 阶段抽为带 seam 的 `sendAckStep`，契约以 `webChatAction` 三态表达：`webChatProceed`（已 ack）/ `webChatNextPoll`（重发后继续，调用方**不**更新 `lastText`）/ `webChatAckPending`（未 ack、无重发，调用方**应**刷新 `lastText`）。
 
 轮询循环内的顺序（在既有 resend 检查与 send-ack 窗口**之后**、稳定性/提取逻辑**之前**）。核心不变式：**只要「继续生成」按钮可见，或点击后的续写尚未确认恢复，就绝不走提取**（此刻的稳定文本是中断前残段，返回即静默截断）：
 
@@ -110,7 +114,8 @@ webChatContinueResumeWindow = 45 * time.Second // 点击后等待"续写已恢�
 | `internal/lp/continue_recovery_test.go`（新增） | `continueRecovery` 表驱动单测（注入 now/active/detect/clickAt） |
 | `internal/lp/continue_probe_live_test.go`（新增） | 门控夹具探针 `TestLiveContinueProbe`（子测试，见 §5） |
 | `docs/task-continue-generation.md` | 本文件 |
-| `AGENTS.md` | `internal/lp/` 表行补一句自动续写（英文） |
+| `AGENTS.md` | `internal/lp/` 表行补一句自动续写（英文；已于前一提交 `e62577f` 落地，本轮无改动） |
+| `internal/lp/webchat_step_test.go`（新增） | `sendAckStep` / `resendStep` 表驱动单测（注入 seams） |
 
 ## 5. 测试与验收
 
