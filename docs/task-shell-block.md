@@ -1,6 +1,6 @@
 # task-shell-block: `<shell>` 块工具（网页模型工具调用）
 
-> 状态: 已实现（本仓库直接开发，见 §11）；待真机验收（§7）
+> 状态: 已实现（本仓库直接开发，见 §11）；真机冒烟通过（§7），待 code_dev 真任务验收
 > 依据: `scripts.txt`（64 轮手工实验完整对话，12127 行）+ `codereview.md`（现行工具文档）
 > 日期: 2026-09-13
 > 修订: 开工前核对完成；用户确认 attach 回填、dscli-shell 不构成规范；档案补证（围栏引用 / 拦截 / 分级）落库为 §10
@@ -132,7 +132,7 @@ exit code: N
 
 - 包测试：判定表全分支；提取边界（徽章残形 / 堆叠开标签 / 第二整块 / 体内字面标签行 / 乱序 / 围栏 / heredoc / `<script.sh>` 字面量）；引用区域剔除（围栏内块不执行 / 围栏示例后跟真块 / 行内代码 / 未闭合围栏吞块）；拦截拒收（不执行、不落文件；`Run` 内置兜底）；告警文案（含 DSML 形状追加句）；runner 超时（含后台子进程持管道）/ 退出码 / 合并输出 / 截断。
 - lp 集成：mock transport 覆盖 入口路由 → 执行 → 附件回填 → 告警（格式 / 拦截）→ 上限 → resume；截断续传变体。
-- 真机：`make install` 后 `dscli webchat --shell --role dev` 跑一个小任务；通过后由 code_dev 做一次真任务验收。
+- 真机：`make install`（v0.9.3-25-gf59716c）后 `dscli webchat --shell --role dev` 冒烟通过（2026-09-13 14:13：只读 git 任务 → script65.sh 执行 → script65.txt 附件回填 → 纯散文终报；34s；会话 keep:b9dd7edb）；待重启会话后由 code_dev 做一次真任务验收。
 - `go test ./...` + `make fmt-check` 全绿。
 
 ## 8. 提交计划（英文，codedev 分支）
