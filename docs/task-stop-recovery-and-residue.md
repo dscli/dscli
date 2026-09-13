@@ -12,6 +12,15 @@
 > - 执行路径残留提醒已随反馈发出（`shell_loop_test` 断言带残留→含 `ResidueNote()`，干净→不含，且 `output of scriptN.sh` 前缀不变）。
 >
 > 真机验收（会话外，无法主动复现 busy-stop）：待下一次服务器繁忙自然发生后观察；开放项，见 §6.G。
+>
+> 复审跟进（2026-09-13，第 1 轮 code review）：
+> - ITEM 2：`TestJudgeResidualMarkersRealSample` 原先静默 skip（读了不存在的 `internal/shellblock/testdata/`）——改读 `../dsml/testdata/case2_write_file.txt`，缺失即 `t.Fatalf`，按 RUNE 切片（避免切断多字节标记）；用例现已真实执行并通过。
+> - ITEM 3：新增 `webChatMaxRegenDetectFailures = 3` 与 `regenDetectFailures` 计数器——`!pending` 时连续 3 次「重新生成」检测错误后 fall through（`continueNone`），避免健康轮被永久 hold 成轮询超时；`pending` 时仍 hold（由恢复窗口裁决）；成功即清零。continue 检测器的 hold-only 策略不变（仍为有意取舍）。
+> - ITEM 4：`extractDSMLCalls` gocyclo 37 → <20，抽出 `scanDSMLParamValue`（参数值配对）与 `dsmlOpaqueRanges`/`dsmlInRanges`（不透明区构造）；行为不变，dsml 全测通过。
+> - ITEM 5：`TestContinueRecoveryRegenerateStep` 复用 `assertRecoveryOutcome`（含 regen 计数与 kind），补齐 `r.clicks == 0` 与 `errors.Is(err, errProbeCDP)`（双 %w）断言；移除 `-1` 跳过约定，改为显式字段。
+> - ITEM 6：`jsRegenerateStopped` 用 `querySelectorAll` 检查**每个** main-content 块（原 `querySelector` 只看第一个）；探针 phrase 夹具改为「空首块 + 带短语次块」，真正覆盖子树跳过。
+> - ITEM 7：探针 `EmulateViewport` 提到 `Navigate` 前；删除 `stepRegenerate` 在 `activeFn` 下不可达的 `pending` 分支（gate 已清除）；两个检测器各持 `warnedContinue`/`warnedRegen` 告警闩；合并排序用例加 `len < 2` 防空洞通过；提交信息注明 `hasDSMLShape` 现也匹配 plain close（有意变更）。
+> - 遗留（DEFERRED，改动文件上暴露的既有高复杂度，未动）：`dsmlBlockRangesStrict` gocyclo 24、`CodeRanges` gocyclo 23。
 > 依据: 用户 bug 报告（截图 `屏幕截图_20260913_165129.png`、`屏幕截图_20260913_161743.png`，2026-09-13 真实 code_dev/shell 会话）+ 现行站点 bundle 逆向取证（`main.d69e3d8c16.js`，页头 commit-id `5d128f98`，2026-09-13；取证缓存 `/tmp/dsk-bundle/`，若已丢失以本文档记载的事实为准）
 > 前置: `docs/task-continue-generation.md`（「继续生成」自动续写，已实现）——本任务扩展同一恢复状态机，并补齐 shell 通道的 DSML 残留告警
 > 日期: 2026-09-13
