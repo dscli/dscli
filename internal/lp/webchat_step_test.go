@@ -7,6 +7,12 @@ import (
 	"time"
 )
 
+// errProbeRedispatch is the injected stale-textarea re-dispatch failure.
+// Using one package-level value (rather than an inline errors.New) lets the
+// table assert that the rejected-send error wraps exactly this error as well
+// as ErrSendRejected.
+var errProbeRedispatch = errors.New("probe redispatch failure")
+
 // TestSendAckStep pins the send-ack stage's contract: the action is the
 // single source of truth (no acked flag), the three ack routes, the
 // sub-threshold path, the stale-textarea re-dispatch, budget exhaustion, and a
@@ -14,16 +20,18 @@ import (
 // webChatAbort must never appear with a nil error.
 func TestSendAckStep(t *testing.T) {
 	tests := []struct {
-		name         string
-		current      string
-		baseline     string
-		active       bool
-		cleared      bool
-		resendErr    error
-		ackPolls     int
-		resendCount  int
-		wantAction   webChatAction
-		wantErr      error
+		name        string
+		current     string
+		baseline    string
+		active      bool
+		cleared     bool
+		resendErr   error
+		ackPolls    int
+		resendCount int
+		wantAction  webChatAction
+		wantErr     error
+		// wantWrapErr asserts the returned error also wraps errProbeRedispatch.
+		wantWrapErr  bool
 		wantResends  int
 		wantAckPolls int
 	}{
@@ -72,11 +80,12 @@ func TestSendAckStep(t *testing.T) {
 			current:   "同一内容",
 			baseline:  "同一内容",
 			ackPolls:  webChatConfirmPolls - 1,
-			resendErr: errors.New("no textarea"),
+			resendErr: errProbeRedispatch,
 			// webChatAbort is the documented error-path action; the error is
 			// the authoritative signal.
 			wantAction:  webChatAbort,
 			wantErr:     ErrSendRejected,
+			wantWrapErr: true,
 			wantResends: 0,
 			// ackPolls was incremented before the failure and is not reset
 			// on the error path (the original inline code did the same).
@@ -121,6 +130,9 @@ func TestSendAckStep(t *testing.T) {
 			} else {
 				if !errors.Is(err, tc.wantErr) {
 					t.Fatalf("err = %v, want %v", err, tc.wantErr)
+				}
+				if tc.wantWrapErr && !errors.Is(err, errProbeRedispatch) {
+					t.Errorf("err = %v, want it to wrap the injected redispatch error %v", err, errProbeRedispatch)
 				}
 				if action != webChatAbort {
 					t.Errorf("action = %v on the error path, want webChatAbort", action)
@@ -175,7 +187,7 @@ func TestAckLoopEffectFor(t *testing.T) {
 			wantRefreshText: true,
 		},
 		{
-			name:    "abort without an error is a caller bug",
+			name:    "abort without an error is rejected",
 			action:  webChatAbort,
 			wantErr: true,
 		},

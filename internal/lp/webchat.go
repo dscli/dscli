@@ -1883,8 +1883,10 @@ func sendAckStep(
 	// automatic recovery the caller expects.
 	if *ackPolls >= webChatConfirmPolls {
 		if rerr := seams.redispatch(ctx); rerr != nil {
-			// Wrap the underlying dispatch error alongside the sentinel, so
-			// errors.Is reaches both (matching the click-failure path).
+			// Two %w verbs, two distinct consumers: ErrSendRejected is the
+			// sentinel the caller's retry policy matches (errors.Is), while the
+			// underlying dispatch error is kept for diagnostics - errors.Is
+			// reaches the real cause instead of only the sentinel.
 			return webChatAbort, fmt.Errorf("%w: 消息重发失败: %w", ErrSendRejected, rerr)
 		}
 		*resendCount += 1
