@@ -88,8 +88,24 @@ func TestJudge(t *testing.T) {
 			want: ActionWarn, wantIssue: "the `<script>` line is missing",
 		},
 		{
-			name: "duplicate tags", content: "<shell>\n<shell>\n<script>\necho x\n</script>\n</shell>",
-			want: ActionWarn, wantIssue: "more than once",
+			name: "stacked open tags are tolerated", content: "<shell>\n<shell>\n<script>\necho x\n</script>\n</shell>",
+			want: ActionExecute, wantScript: "echo x\n", wantSummary: "", wantTimeout: DefaultTimeout,
+		},
+		{
+			name:    "second full block refused",
+			content: "<shell>\n<script>\necho a\n</script>\n</shell>\n<shell>\n<script>\necho b\n</script>\n</shell>",
+			want:    ActionWarn, wantIssue: "more than once",
+		},
+		{
+			name: "body may contain literal tag lines",
+			content: strings.Join([]string{
+				"<shell>", "<script>",
+				"cat > example.txt <<EOF", "<shell>", "<script>", "EOF",
+				"</script>", "<summary>write example</summary>", "</shell>",
+			}, "\n"),
+			want:        ActionExecute,
+			wantScript:  "cat > example.txt <<EOF\n<shell>\n<script>\nEOF\n",
+			wantSummary: "write example", wantTimeout: DefaultTimeout,
 		},
 		{
 			name: "out of order", content: "<script>\n<shell>\necho x\n</script>\n</shell>",

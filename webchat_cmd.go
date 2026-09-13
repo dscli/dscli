@@ -181,9 +181,12 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 	// comes from the role config (role_configs / roles.DefaultFor) - the
 	// same source that gates GetAllTools, so `dscli role update --tools` is
 	// the single place that decides it.
-	if opts.ShellTool {
+	switch {
+	case opts.ShellTool && opts.Role == "":
+		fmt.Fprintf(os.Stderr, "⚠️ --shell 需要 --role（工具文档随角色提示词注入）：当前为纯聊天，模型未获知 `<shell>` 协议。\n")
+	case opts.ShellTool:
 		fmt.Fprintf(os.Stderr, "⚠️ `<shell>` 块通道已启用：远程模型回复中的 bash 脚本将在本地执行（cwd = 项目根；破坏性命令被拦截）。\n")
-	} else if opts.Role != "" {
+	case opts.Role != "":
 		fmt.Fprintf(os.Stderr, "⚠️ 角色 %q 已启用：远程模型回复中的 DSML 工具调用（按角色配置的本地工具）将在本地执行。\n", opts.Role)
 	}
 

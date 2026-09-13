@@ -167,3 +167,31 @@ func TestClampTimeout(t *testing.T) {
 		t.Errorf("clampTimeout(300s) = %v, want 300s", got)
 	}
 }
+
+// TestRunBackgroundChildDoesNotOutliveTimeout pins the drain fix: a script
+// that leaves a background child holding the stdout/stderr pipe must still
+// return at the timeout, not at the child's exit.
+func TestRunBackgroundChildDoesNotOutliveTimeout(t *testing.T) {
+	dir := t.TempDir()
+	start := time.Now()
+	res, err := Run(t.Context(), dir, "sleep 30 &", 300*time.Millisecond)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !res.TimedOut {
+		t.Error("TimedOut = false, want true")
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Errorf("Run took %v, want a prompt return despite the background child", elapsed)
+	}
+}
+
+// TestRunRefusesBlockedScript locks the fail-closed backstop: the runner
+// itself never executes a destructive match.
+func TestRunRefusesBlockedScript(t *testing.T) {
+	dir := t.TempDir()
+	_, err := Run(t.Context(), dir, "sudo rm -rf /", 30*time.Second)
+	if err == nil || !strings.Contains(err.Error(), "blocked") {
+		t.Fatalf("err = %v, want the fail-closed blocked refusal", err)
+	}
+}

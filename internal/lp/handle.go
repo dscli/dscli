@@ -834,7 +834,10 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 // interception (shellblock.Blocked) runs before anything is written or
 // executed; a blocked script counts as a warn-class round.
 // handleWebChatMaxShellWarns consecutive warnings abort the session;
-// handleWebChatMaxShellRounds is the overall failsafe.
+// handleWebChatMaxShellRounds is the overall failsafe. The final answer is
+// returned verbatim (no DSML-style strip): the judge already refuses DSML
+// call shapes, and a long report that merely mentions markup is content,
+// not a command.
 func handleWebChatShellLoop(ctx context.Context, first WebChatResult, opts WebChatOptions) (WebChatResult, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "handleWebChatShellLoop")
 	defer span.Finish()
@@ -930,6 +933,8 @@ func handleWebChatShellLoop(ctx context.Context, first WebChatResult, opts WebCh
 			lastReasoning = res.Reasoning
 			advance(res)
 			continue
+		default:
+			return WebChatResult{}, fmt.Errorf("webchat shell loop: unexpected judge action %v during round %d", verdict.Action, round)
 		}
 	}
 	fmt.Fprintf(os.Stderr, "⚠️ %s 的 `<shell>` 块轮次超过 %d 上限，已返回中间结果\n", roleName, handleWebChatMaxShellRounds)

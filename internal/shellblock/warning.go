@@ -3,6 +3,7 @@ package shellblock
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/dscli/dscli/internal/dsml"
 )
@@ -83,12 +84,14 @@ func appendDSMLNote(b *strings.Builder, dsmlShape bool) {
 
 // truncateDetail caps the matched pattern echoed in BlockedWarning so a
 // verbose regex match (e.g. a long dd invocation) cannot flood the message.
+// The cut is rune-aware: the match can contain non-ASCII text.
 func truncateDetail(detail string) string {
 	const max = 60
-	if len(detail) <= max {
+	if utf8.RuneCountInString(detail) <= max {
 		return detail
 	}
-	return detail[:max-3] + "..."
+	runes := []rune(detail)
+	return string(runes[:max-3]) + "..."
 }
 
 // Blocked reports whether script matches the shared destructive-command

@@ -3,6 +3,7 @@ package shellblock
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestMalformedWarning(t *testing.T) {
@@ -69,9 +70,12 @@ func TestBlockedWarning(t *testing.T) {
 			t.Errorf("BlockedWarning misses %q:\n%s", want, got)
 		}
 	}
-	long := BlockedWarning(strings.Repeat("x", 200))
+	long := BlockedWarning(strings.Repeat("汉", 200))
 	if !strings.Contains(long, "...") {
 		t.Errorf("BlockedWarning must truncate a long detail:\n%s", long)
+	}
+	if !utf8.ValidString(long) {
+		t.Error("BlockedWarning truncation must not split a multi-byte rune")
 	}
 }
 

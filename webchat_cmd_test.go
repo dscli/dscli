@@ -148,14 +148,20 @@ func TestWebchatOptionsFromFlags(t *testing.T) {
 		len(opts.Attachments) != 1 || opts.Attachments[0] != "shot.png" {
 		t.Errorf("options = %+v, want keep=abc attach=[shot.png]", opts)
 	}
+}
 
-	// --shell switches the consultation to the <shell> block channel.
-	cmd = newWebchatOptionsCmd()
+// TestWebchatOptionsFromFlagsShell locks the --shell pass-through.
+func TestWebchatOptionsFromFlagsShell(t *testing.T) {
+	cmd := newWebchatOptionsCmd()
 	if err := cmd.Flags().Set("shell", "true"); err != nil {
 		t.Fatal(err)
 	}
-	if opts, err := webchatOptionsFromFlags(cmd); err != nil || !opts.ShellTool {
-		t.Errorf("ShellTool = %v, err = %v; want true", opts.ShellTool, err)
+	opts, err := webchatOptionsFromFlags(cmd)
+	if err != nil {
+		t.Fatalf("webchatOptionsFromFlags(--shell): %v", err)
+	}
+	if !opts.ShellTool {
+		t.Error("ShellTool = false, want true")
 	}
 }
 

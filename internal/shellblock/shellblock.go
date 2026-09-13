@@ -122,60 +122,87 @@ func ShouldEnter(reasoning, content string) bool {
 	return Judge(reasoning, content).Action != ActionFinal
 }
 
-// tagHit is one exact tag line: its start offset and the offset just past
-// its line (including the newline, when present).
-type tagHit struct {
-	start int
-	end   int
+// tagLine is one exact tag line: the tag it matched, its start offset, and
+// the offset just past its line (including the newline, when present).
+type tagLine struct {
+	tag        string
+	start, end int
 }
 
-// extract scans for exactly one well-formed block. It returns the block on
-// success, or a non-empty issue naming the malformed shape. An empty issue
-// means "no block attempt at all": the reply then falls through to the
-// final-report judgement.
-func extract(text string, quoted [][2]int) (*Block, string) {
-	var shellOpens, scriptOpens, scriptCloses, shellCloses []tagHit
+// collectTagLines returns the exact tag lines (strict whole-line equality)
+// that are not inside quoted content, in text order.
+func collectTagLines(text string, quoted [][2]int) []tagLine {
+	var hits []tagLine
 	off := 0
 	for _, line := range strings.SplitAfter(text, "\n") {
 		if !dsml.InRanges(quoted, off) {
-			hit := tagHit{start: off, end: off + len(line)}
-			switch strings.TrimRight(line, " \t\r\n") {
-			case "<shell>":
-				shellOpens = append(shellOpens, hit)
-			case "<script>":
-				scriptOpens = append(scriptOpens, hit)
-			case "</script>":
-				scriptCloses = append(scriptCloses, hit)
-			case "</shell>":
-				shellCloses = append(shellCloses, hit)
+			switch tag := strings.TrimRight(line, " \t\r\n"); tag {
+			case "<shell>", "<script>", "</script>", "</shell>":
+				hits = append(hits, tagLine{tag: tag, start: off, end: off + len(line)})
 			}
 		}
 		off += len(line)
 	}
-	total := len(shellOpens) + len(scriptOpens) + len(scriptCloses) + len(shellCloses)
-	if total == 0 {
+	return hits
+}
+
+// indexOfTag returns the index of the first hit with the given tag at or
+// after from, or -1.
+func indexOfTag(hits []tagLine, tag string, from int) int {
+	for i := from; i < len(hits); i++ {
+		if hits[i].tag == tag {
+			return i
+		}
+	}
+	return -1
+}
+
+// extract scans for exactly one well-formed block on a first-match basis:
+//
+//   - the first <shell> line opens the block; tag-shaped lines before it are
+//     prose and are ignored;
+//   - the first <script> line after it opens the body, and everything up to
+//     the first </script> line after THAT is opaque body - a script that
+//     writes a protocol example may legitimately contain tag lines as data;
+//   - the first </shell> line after the body closes the block; a further
+//     <shell> open after the close means a second attempt and is refused as
+//     "more than once" - the only duplicate check that survives first-match
+//     semantics (stray duplicate lines elsewhere are tolerated, so a valid
+//     block is never false-rejected).
+//
+// It returns the block on success, or a non-empty issue naming the
+// malformed shape. An empty issue means "no block attempt at all": the
+// reply then falls through to the final-report judgement.
+func extract(text string, quoted [][2]int) (*Block, string) {
+	hits := collectTagLines(text, quoted)
+	if len(hits) == 0 {
 		return nil, variantIssue(text, quoted)
 	}
-	if len(shellOpens) > 1 || len(scriptOpens) > 1 || len(scriptCloses) > 1 || len(shellCloses) > 1 {
-		return nil, "the tags appear more than once - send exactly one block"
-	}
-	switch {
-	case len(shellOpens) == 0:
+	iShell := indexOfTag(hits, "<shell>", 0)
+	if iShell < 0 {
 		return nil, "the `<shell>` line is missing"
-	case len(scriptOpens) == 0:
-		return nil, "the `<script>` line is missing"
-	case len(scriptCloses) == 0:
-		return nil, "the `</script>` line is missing"
-	case len(shellCloses) == 0:
-		return nil, "the `</shell>` line is missing"
 	}
-	shellOpen, scriptOpen := shellOpens[0], scriptOpens[0]
-	scriptClose, shellClose := scriptCloses[0], shellCloses[0]
-	if !(shellOpen.start < scriptOpen.start &&
-		scriptOpen.start < scriptClose.start &&
-		scriptClose.start < shellClose.start) {
+	// A <script> before the <shell> is an ordering error, not a missing line.
+	if i := indexOfTag(hits, "<script>", 0); i >= 0 && i < iShell {
 		return nil, "the tags are out of order"
 	}
+	iScript := indexOfTag(hits, "<script>", iShell+1)
+	if iScript < 0 {
+		return nil, "the `<script>` line is missing"
+	}
+	iCloseScript := indexOfTag(hits, "</script>", iScript+1)
+	if iCloseScript < 0 {
+		return nil, "the `</script>` line is missing"
+	}
+	iCloseShell := indexOfTag(hits, "</shell>", iCloseScript+1)
+	if iCloseShell < 0 {
+		return nil, "the `</shell>` line is missing"
+	}
+	if indexOfTag(hits, "<shell>", iCloseShell+1) >= 0 {
+		return nil, "the tags appear more than once - send exactly one block"
+	}
+	scriptOpen, scriptClose := hits[iScript], hits[iCloseScript]
+	shellClose := hits[iCloseShell]
 	body := text[scriptOpen.end:scriptClose.start]
 	if strings.TrimSpace(body) == "" {
 		return nil, "the script body is empty"
@@ -202,7 +229,7 @@ func variantIssue(text string, quoted [][2]int) string {
 			off += len(line)
 			continue
 		}
-		trimmed := strings.TrimSpace(strings.TrimRight(line, " \t\r\n"))
+		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
 			off += len(line)
 			continue

@@ -22,6 +22,11 @@ import (
 // design's ~256KB); the file still records that a truncation happened.
 const maxOutputBytes = 256 * 1024
 
+// drainGrace bounds the post-kill drain: after the process group is killed
+// the pipe closes at once, but a writer that escaped the group (setsid and
+// friends) could hold it - the round must still return.
+const drainGrace = 2 * time.Second
+
 // scriptNameRE matches the generated script files; the next number is the
 // highest existing one plus one (the manual experiment left script1..64).
 var scriptNameRE = regexp.MustCompile(`^script([0-9]+)[.]sh$`)
@@ -49,10 +54,15 @@ type RunResult struct {
 }
 
 // Run executes one extracted block: the script is written verbatim to the
-// next scriptN.sh under dir, run with bash (working directory dir) with its
-// own process group, and the merged stdout+stderr is written to scriptN.txt
-// with the backfill wrapper. A timeout kills the whole process group, so
-// grandchildren (compilers, make's children) cannot outlive the round.
+// next scriptN.sh under dir (mode 0600), run with bash (working directory
+// dir) in its own process group, and the merged stdout+stderr is written to
+// scriptN.txt (mode 0600) with the backfill wrapper. A timeout kills the
+// whole process group, so grandchildren (compilers, make's children) cannot
+// outlive the round.
+//
+// Run refuses a script that matches the shared destructive-command
+// interception (Blocked) - a fail-closed backstop behind the loop's
+// model-facing refusal.
 //
 // dir is the project root; "" means the current directory.
 func Run(ctx context.Context, dir, script string, timeout time.Duration) (*RunResult, error) {
@@ -60,6 +70,12 @@ func Run(ctx context.Context, dir, script string, timeout time.Duration) (*RunRe
 	defer span.Finish()
 	if strings.TrimSpace(script) == "" {
 		return nil, fmt.Errorf("shellblock: empty script")
+	}
+	// Fail-closed backstop: the loop refuses a blocked script with a
+	// model-facing warning before calling Run, but the runner itself must
+	// never execute a destructive match either (see Blocked).
+	if detail, blocked := Blocked(script); blocked {
+		return nil, fmt.Errorf("shellblock: script blocked (destructive command %q)", detail)
 	}
 	if dir == "" {
 		dir = "."
@@ -73,7 +89,7 @@ func Run(ctx context.Context, dir, script string, timeout time.Duration) (*RunRe
 		scriptText += "\n"
 	}
 	scriptPath := filepath.Join(dir, fmt.Sprintf("script%d.sh", n))
-	if err := os.WriteFile(scriptPath, []byte(scriptText), 0o644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(scriptText), 0o600); err != nil {
 		return nil, fmt.Errorf("shellblock: write script: %w", err)
 	}
 	exec, err := runScript(ctx, dir, scriptPath, timeout)
@@ -91,7 +107,7 @@ func Run(ctx context.Context, dir, script string, timeout time.Duration) (*RunRe
 		Timeout:    exec.timeout,
 		Duration:   exec.duration,
 	}
-	if err := os.WriteFile(res.OutputPath, []byte(FormatBackfill(n, scriptText, res)), 0o644); err != nil {
+	if err := os.WriteFile(res.OutputPath, []byte(FormatBackfill(n, scriptText, res)), 0o600); err != nil {
 		return nil, fmt.Errorf("shellblock: write output backfill: %w", err)
 	}
 	return res, nil
@@ -109,6 +125,11 @@ type scriptResult struct {
 
 // runScript runs scriptPath with bash, merging stdout and stderr through a
 // single pipe (so the interleaving is the kernel's, like `bash s.sh 2>&1`).
+// The timeout bounds the whole round: it guards the pipe drain, not just the
+// process wait - a background child can hold the pipe long past bash's own
+// exit - and kills the process group; the post-kill drain is bounded by
+// drainGrace so even a writer that escaped the group cannot stall the
+// return.
 func runScript(ctx context.Context, dir, scriptPath string, timeout time.Duration) (*scriptResult, error) {
 	timeout = clampTimeout(timeout)
 	start := time.Now()
@@ -133,21 +154,63 @@ func runScript(ctx context.Context, dir, scriptPath string, timeout time.Duratio
 	waitCh := make(chan error, 1)
 	go func() { waitCh <- cmd.Wait() }()
 
-	var waitErr error
-	var timedOut bool
+	var (
+		read     readResult
+		waitErr  error
+		gotRead  bool
+		timedOut bool
+	)
+	deadline := time.Now().Add(timeout)
+	// Phase 1: wait for the pipe to close. It closes only after EVERY
+	// writer is gone - bash AND any background child that inherited it.
+	// Bash exiting alone is not enough: a child (`sleep 300 &`) can hold
+	// the pipe long past its parent's exit, so the timeout must guard the
+	// drain, not just the process wait.
 	select {
-	case waitErr = <-waitCh:
-	case <-time.After(timeout):
+	case read = <-outCh:
+		gotRead = true
+	case <-time.After(time.Until(deadline)):
 		timedOut = true
 		killProcessGroup(cmd)
-		waitErr = <-waitCh
 	case <-ctx.Done():
 		killProcessGroup(cmd)
-		<-waitCh
-		<-outCh
+		select {
+		case <-outCh:
+		case <-time.After(drainGrace):
+		}
+		select {
+		case <-waitCh:
+		case <-time.After(drainGrace):
+		}
 		return nil, ctx.Err()
 	}
-	read := <-outCh
+	// Phase 2: reap bash. Normally instantaneous once the pipe closed; a
+	// script that closed its stdio early but kept running stays bounded by
+	// the same deadline.
+	if !timedOut {
+		select {
+		case waitErr = <-waitCh:
+		case <-time.After(time.Until(deadline)):
+			timedOut = true
+			killProcessGroup(cmd)
+		}
+	}
+	// Phase 3: after a kill, collect what the drain produced without
+	// blocking on a writer that escaped the process group; the reader
+	// goroutine ends by itself when the pipe finally closes and its send
+	// lands in the buffered channel.
+	if timedOut {
+		select {
+		case waitErr = <-waitCh:
+		case <-time.After(drainGrace):
+		}
+		if !gotRead {
+			select {
+			case read = <-outCh:
+			case <-time.After(drainGrace):
+			}
+		}
+	}
 	res := &scriptResult{
 		output:    read.data,
 		exitCode:  exitCodeFrom(waitErr),
