@@ -760,6 +760,9 @@ func TestJsRegenerateStopped(t *testing.T) {
 	for _, want := range []string{
 		"已停止", "stopped",
 		"ds-message", "ds-assistant-message-main-content",
+		// The every-block scan: querySelectorAll over ALL main-content
+		// blocks (querySelector alone would stop at the first one).
+		"querySelectorAll", "mains.length",
 		"aria-disabled", "offsetParent",
 		"getBoundingClientRect", "scrollIntoView", "elementFromPoint",
 	} {

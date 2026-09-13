@@ -2,6 +2,8 @@ package lp
 
 import (
 	"context"
+	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -418,6 +420,85 @@ func TestHandleWebChatShellLoopResidueReminder(t *testing.T) {
 			}
 			if tt.wantResidue && !strings.Contains(feedback, "\n\n") {
 				t.Errorf("residue note must ride after a blank line:\n%s", feedback)
+			}
+		})
+	}
+}
+
+// captureStderr swaps os.Stderr for a pipe and returns a func that restores
+// it and yields everything written. The writes in the shell loop are tiny,
+// so a single ReadAll after closing the writer cannot deadlock.
+func captureStderr(t *testing.T) func() string {
+	t.Helper()
+	orig := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stderr = w
+	return func() string {
+		os.Stderr = orig
+		_ = w.Close()
+		b, _ := io.ReadAll(r)
+		_ = r.Close()
+		return string(b)
+	}
+}
+
+// finalResidueReport builds a long block-less reply (an ActionFinal report)
+// followed by a plain ASCII DSML close tag. The close tag is built from rune
+// helpers, and it is deliberately a PLAIN close (no fullwidth bars, no
+// <invoke): hasDSMLCallShape stays false, so the route really is ActionFinal
+// and only the residue stderr note may fire.
+func finalResidueReport() string {
+	lt := string(rune(60))
+	gt := string(rune(62))
+	return shellFinalTest + "\n" + lt + "/invoke" + gt
+}
+
+// TestHandleWebChatShellLoopFinalResidueNote pins the ActionFinal residue
+// stderr branch: a final report that carries DSML marker residue prints the
+// note but is NOT routed into another round.
+func TestHandleWebChatShellLoopFinalResidueNote(t *testing.T) {
+	tests := []struct {
+		name        string
+		first       string
+		wantResidue bool
+	}{
+		{name: "final report with residue", first: finalResidueReport(), wantResidue: true},
+		{name: "clean final report", first: shellFinalTest, wantResidue: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origSend := handleWebChatSend
+			t.Cleanup(func() { handleWebChatSend = origSend })
+
+			sends := 0
+			handleWebChatSend = func(_ context.Context, _ string, _ WebChatOptions) (WebChatResult, error) {
+				sends++
+				return WebChatResult{Content: shellFinalTest}, nil
+			}
+
+			drain := captureStderr(t)
+			res, err := handleWebChatShellLoop(context.Background(),
+				WebChatResult{Content: tt.first},
+				WebChatOptions{Role: "dev", ShellTool: true})
+			stderr := drain()
+			if err != nil {
+				t.Fatalf("shell loop: %v", err)
+			}
+			// The final route must NOT send a follow-up round.
+			if sends != 0 {
+				t.Errorf("sends = %d, want 0 (a final report must not be re-sent)", sends)
+			}
+			if !res.Printed {
+				t.Error("the final result must be marked Printed")
+			}
+			// The loop always writes the "will run locally" line first, so
+			// assert substrings, never equality.
+			hasNote := strings.Contains(stderr, "最终回复携带 DSML 标记残留")
+			if hasNote != tt.wantResidue {
+				t.Errorf("stderr carries the final-residue note = %v, want %v:\n%s", hasNote, tt.wantResidue, stderr)
 			}
 		})
 	}

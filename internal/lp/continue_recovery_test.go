@@ -104,8 +104,7 @@ func TestContinueRecoveryStep(t *testing.T) {
 		// dispatch failure must show up in the first and NOT the second.
 		wantAttempts int
 		wantClicks   int
-		// wantRegenClicks, when non-negative, pins the 「重新生成」 counter. -1
-		// means "not asserted".
+		// wantRegenClicks pins the 「重新生成」 counter (no row skips it).
 		wantRegenClicks int
 		// wantFailures, when set, pins the consecutive-failure counter.
 		wantFailures *int
@@ -372,7 +371,7 @@ func assertRecoveryOutcome(
 	if r.clicks != wantClicks {
 		t.Errorf("r.clicks = %d, want %d", r.clicks, wantClicks)
 	}
-	if wantRegenClicks >= 0 && r.regenClicks != wantRegenClicks {
+	if r.regenClicks != wantRegenClicks {
 		t.Errorf("r.regenClicks = %d, want %d", r.regenClicks, wantRegenClicks)
 	}
 	if wantFailures != nil && r.failures != *wantFailures {
@@ -905,5 +904,71 @@ func TestContinueRecoveryRegenerateTimeoutNamesAction(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "重新生成") {
 		t.Errorf("error = %v, want it to name 「重新生成」", err)
+	}
+}
+
+// TestContinueRecoveryRegenResumeResetsFailureRun pins QA condition 1: a
+// CONFIRMED resume (the gate clearing a pending click because the generation
+// became active) restarts the regen-detect failure run. Errors accumulated
+// during the pending window are hold-only by design; without the reset they
+// would leak into the next unpended run and trip the cap on its first hiccup.
+func TestContinueRecoveryRegenResumeResetsFailureRun(t *testing.T) {
+	h := newRecoveryHarness()
+	r := h.newRecovery()
+
+	// 1. Seed a regen click: the stopped state with an idle generation.
+	h.regen = regenVisible()
+	action, err := r.step(context.Background(), "已停止", func() string { return "" })
+	if err != nil {
+		t.Fatalf("seed step: %v", err)
+	}
+	if action != continueClicked || !r.pending || r.pendingKind != pendingRegen {
+		t.Fatalf("seed = (action %v, pending %v, kind %v), want a pending regen click", action, r.pending, r.pendingKind)
+	}
+
+	// 2. Detector errors while pending: hold-only, and the run grows past the
+	// cap (the cap does not apply inside a pending window).
+	h.regenErr = errors.New("evaluate failed")
+	for i := 0; i < webChatMaxRegenDetectFailures+2; i++ {
+		if err := r.gate(context.Background(), "已停止", func() string { return "" }); err != nil {
+			t.Fatalf("gate round %d: %v", i, err)
+		}
+		action, err := r.step(context.Background(), "已停止", func() string { return "" })
+		if err != nil {
+			t.Fatalf("error step %d: %v", i, err)
+		}
+		if action != continueHold {
+			t.Fatalf("error step %d action = %v, want hold (pending keeps holding)", i, action)
+		}
+	}
+	if r.regenDetectFailures <= webChatMaxRegenDetectFailures {
+		t.Fatalf("precondition failed: regenDetectFailures = %d, want > %d", r.regenDetectFailures, webChatMaxRegenDetectFailures)
+	}
+
+	// 3. The generation becomes active: the gate confirms the resume, clears
+	// pending, and must restart the failure run.
+	h.active = true
+	if err := r.gate(context.Background(), "已停止", func() string { return "" }); err != nil {
+		t.Fatalf("resume gate: %v", err)
+	}
+	if r.pending {
+		t.Fatal("pending must be cleared by a confirmed resume")
+	}
+	if r.regenDetectFailures != 0 {
+		t.Fatalf("regenDetectFailures = %d after a confirmed resume, want 0 (a fresh run)", r.regenDetectFailures)
+	}
+
+	// 4. Back to idle with the detector still broken: the fresh run must hold
+	// for its first two errors and only fall through on the cap-th.
+	h.active = false
+	want := []continueAction{continueHold, continueHold, continueNone}
+	for i, exp := range want {
+		action, err := r.step(context.Background(), "已停止", func() string { return "" })
+		if err != nil {
+			t.Fatalf("post-reset step %d: %v", i, err)
+		}
+		if action != exp {
+			t.Errorf("post-reset step %d action = %v, want %v", i, action, exp)
+		}
 	}
 }
