@@ -73,6 +73,15 @@ func BlockedWarning(detail string) string {
 	return fmt.Sprintf("Your `<shell>` block was NOT executed: it contains a blocked destructive command pattern (`%s`). Destructive commands (`rm -rf /` or `~`, `mkfs`, `dd of=/dev/`, `sudo`, `shutdown`/`reboot`), outbound-network tools (`curl`, `wget`, `nc`, `ncat`, `telnet`, `socat`), and git history-rewriting operations (`git reset --hard`, `git clean -fd`, `git stash`, `git checkout --`, forced push) are rejected outright. Rewrite the script without them and re-send the block.\n", truncateDetail(detail))
 }
 
+// ResidueNote is appended to the execution feedback when the reply carried
+// DSML marker residue OUTSIDE the executed block. The block still ran, so
+// this is a reminder, not a refusal: the site badges and mangles that markup,
+// and the residue usually means the model tried to emit a second call shape
+// after its <shell> block.
+func ResidueNote() string {
+	return "Note: your reply carried DSML marker residue (the site badges and mangles such markup). The `<shell>` block above was executed normally - keep sending exactly ONE `<shell>` block per round and no DSML markup."
+}
+
 // appendDSMLNote appends the DSML note when the reply carried DSML shapes.
 func appendDSMLNote(b *strings.Builder, dsmlShape bool) {
 	if dsmlShape {

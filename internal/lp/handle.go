@@ -886,7 +886,13 @@ func handleWebChatShellLoop(ctx context.Context, first WebChatResult, opts WebCh
 		verdict := shellblock.Judge(lastReasoning, message)
 		switch verdict.Action {
 		case shellblock.ActionFinal:
-			// No block, long enough to read as a final report: done.
+			// No block, long enough to read as a final report: done. The route is
+			// unchanged even when residue is present (a final reply that merely
+			// quotes the markup is content, not a command) - only the stderr note
+			// fires, so a human sees the site's badge mangling.
+			if verdict.ResidualMarkers {
+				fmt.Fprintf(os.Stderr, "⚠️ 最终回复携带 DSML 标记残留（站点会打徽章/篡改这类标记）\n")
+			}
 			return cleanExit()
 		case shellblock.ActionWarn:
 			if err := countWarn(round); err != nil {
@@ -929,6 +935,13 @@ func handleWebChatShellLoop(ctx context.Context, first WebChatResult, opts WebCh
 			fmt.Fprintf(os.Stderr, "▶ script%d.sh: %s（%s, %s；输出 script%d.txt）\n",
 				runRes.Number, block.Summary, status, runRes.Duration.Round(time.Millisecond), runRes.Number)
 			feedback := fmt.Sprintf("output of script%d.sh (attached as script%d.txt):", runRes.Number, runRes.Number)
+			if verdict.ResidualMarkers {
+				// The block ran fine, but the reply carried DSML marker residue
+				// outside it (the site badges/mangles such markup). Ride the reminder
+				// along with this round's feedback instead of spending an extra round.
+				feedback += "\n\n" + shellblock.ResidueNote()
+				fmt.Fprintf(os.Stderr, "⚠️ 回复携带 DSML 标记残留（块已执行；提醒已随反馈发出）\n")
+			}
 			res, callErr := handleWebChatFollowUpSend(ctx, feedback, WebChatOptions{
 				Keep:        convURL,
 				ShellTool:   true,

@@ -516,6 +516,73 @@ func CodeRanges(text string) [][2]int {
 	return ranges
 }
 
+// Marker ranges (see MarkerRanges).
+var (
+	// dsmlMarkerNoiseRe is arm 1: a DSML tag name preceded by badge noise - bars
+	// (ASCII or full-width) and/or the literal DSML, whitespace tolerated between
+	// tokens. This is the form chat.deepseek.com STORES in IndexedDB once it has
+	// rendered the markup as a badge, e.g. "</" + bar*2 + "DSML" + bar*2 +
+	// "parameter". The known-name guard (the trailing group) is what keeps a bare
+	// bar in prose from matching.
+	dsmlMarkerNoiseRe = regexp.MustCompile(`(?i)</?(?:[\x7c\x{FF5C}]\s*|d\s*s\s*m\s*l\s*)+(?:invoke|parameter|tool_calls|_calls|calls)\b\s*>?`)
+	// dsmlMarkerCloseRe is arm 2: a plain close tag, whitespace tolerated.
+	dsmlMarkerCloseRe = regexp.MustCompile(`(?i)</\s*(?:invoke|parameter|tool_calls|_calls)\s*>`)
+	// dsmlMarkerOpenRe is arm 3: a plain open tag up to a word boundary, so
+	// "<invokes" (prose) does not match while "<invoke name=..." does.
+	dsmlMarkerOpenRe = regexp.MustCompile(`(?i)<(?:invoke|tool_calls)\b`)
+)
+
+// MarkerRanges reports DSML marker shapes in text as byte ranges [start,end),
+// in RAW coordinates so callers can filter by their own ranges (quoted code,
+// an executed shell block). Detection arms (case-insensitive):
+//
+//  1. noise-prefixed open/close: `</?`, then one or more noise tokens, then a
+//     tag name (`invoke|parameter|tool_calls|_calls|calls`). A noise token is
+//     a bar (ASCII `|` or full-width U+FF5C) or the literal `DSML` (letters may
+//     be whitespace-separated); whitespace between tokens is tolerated. Real
+//     stored form (see testdata): `</` + bar*2 + `DSML` + bar*2 + `parameter`.
+//  2. plain closes: `</invoke>`, `</parameter>`, `</tool_calls>`, `</_calls>`
+//     (whitespace tolerated).
+//  3. plain opens: `<invoke` / `<tool_calls` (word boundary).
+//
+// A bare bar in prose never matches: arm 1 requires a tag name after the
+// noise. The result is sorted by start offset and merged, so callers can walk
+// it as a set of disjoint markers (dsml.InRanges works on it unchanged).
+func MarkerRanges(text string) [][2]int {
+	// Fast path: every arm needs a '<'. Callers scan whole replies on every
+	// judge, and most replies carry no markup at all.
+	if !strings.Contains(text, "<") {
+		return nil
+	}
+	var out [][2]int
+	for _, re := range []*regexp.Regexp{dsmlMarkerNoiseRe, dsmlMarkerCloseRe, dsmlMarkerOpenRe} {
+		for _, m := range re.FindAllStringIndex(text, -1) {
+			out = append(out, [2]int{m[0], m[1]})
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i][0] != out[j][0] {
+			return out[i][0] < out[j][0]
+		}
+		return out[i][1] < out[j][1]
+	})
+	merged := out[:1]
+	for _, r := range out[1:] {
+		last := &merged[len(merged)-1]
+		if r[0] <= last[1] {
+			if r[1] > last[1] {
+				last[1] = r[1]
+			}
+			continue
+		}
+		merged = append(merged, r)
+	}
+	return merged
+}
+
 // InRanges reports whether pos falls inside any of the sorted [start, end)
 // byte ranges (quoted code, parameter bodies, ...). The walk stops once past
 // pos, since ranges is sorted by offset.
@@ -787,7 +854,7 @@ func StripDSMLToolCalls(text string) string {
 	for _, s := range strays {
 		switch {
 		case s.pos >= end:
-			// Entirely after the chop point: residue tail, dropped with it.
+		// Entirely after the chop point: residue tail, dropped with it.
 		case s.end <= end:
 			// closeStart stays zero: a stray is not a paired block, the
 			// merge loop only reads openStart/closeEnd.

@@ -74,6 +74,11 @@ type Verdict struct {
 	Warning string
 	// Issue names the malformed shape for logs (warn verdicts only).
 	Issue string
+	// ResidualMarkers reports DSML marker shapes in the reply OUTSIDE quoted code
+	// and (for an executable block) outside the block span. The site badges and
+	// mangles such markup, so the shell loop warns about it even though the block
+	// itself executed normally. Computed for EVERY verdict.
+	ResidualMarkers bool
 }
 
 const (
@@ -112,22 +117,49 @@ func Judge(reasoning, content string) Verdict {
 		text = reasoning
 	}
 	quoted := dsml.CodeRanges(text)
-	if block, issue := extract(text, quoted); block != nil {
-		return Verdict{Action: ActionExecute, Block: block}
+	if block, issue, span := extract(text, quoted); block != nil {
+		// The block span (open line through close line) is script CONTENT: a script
+		// may legitimately write or echo DSML tag shapes (this repository's own test
+		// fixtures do), so only markers OUTSIDE it count as residue.
+		return Verdict{Action: ActionExecute, Block: block, ResidualMarkers: markersOutside(text, quoted, span)}
 	} else if issue != "" {
 		return Verdict{
-			Action:  ActionWarn,
-			Issue:   issue,
-			Warning: MalformedWarning(issue, hasDSMLShape(text)),
+			Action:          ActionWarn,
+			Issue:           issue,
+			Warning:         MalformedWarning(issue, hasDSMLShape(text)),
+			ResidualMarkers: markersOutside(text, quoted, nil),
 		}
 	}
 	if hasDSMLCallShape(text) {
-		return Verdict{Action: ActionWarn, Issue: "dsml-shape", Warning: DSMLShapeWarning()}
+		return Verdict{Action: ActionWarn, Issue: "dsml-shape", Warning: DSMLShapeWarning(), ResidualMarkers: markersOutside(text, quoted, nil)}
 	}
 	if utf8.RuneCountInString(text) <= minFinalRunes {
-		return Verdict{Action: ActionWarn, Issue: "no-block-short", Warning: NoBlockWarning(hasDSMLShape(text))}
+		return Verdict{Action: ActionWarn, Issue: "no-block-short", Warning: NoBlockWarning(hasDSMLShape(text)), ResidualMarkers: markersOutside(text, quoted, nil)}
 	}
-	return Verdict{Action: ActionFinal}
+	return Verdict{Action: ActionFinal, ResidualMarkers: markersOutside(text, quoted, nil)}
+}
+
+// markersOutside reports whether text carries a DSML marker outside every
+// excluded range: the quoted-code ranges plus, for an executable block, the
+// block's own span (script bodies may legitimately contain marker shapes).
+// blockSpan is nil when no block was extracted.
+func markersOutside(text string, quoted [][2]int, blockSpan []int) bool {
+	markers := dsml.MarkerRanges(text)
+	if len(markers) == 0 {
+		return false
+	}
+	for _, m := range markers {
+		if !dsml.InRanges(quoted, m[0]) && !inSpan(blockSpan, m[0]) {
+			return true
+		}
+	}
+	return false
+}
+
+// inSpan reports whether pos falls inside the [start, end) span; a nil span
+// excludes nothing.
+func inSpan(span []int, pos int) bool {
+	return span != nil && pos >= span[0] && pos < span[1]
 }
 
 // ShouldEnter reports whether a reply routes into the shell loop: any
@@ -173,7 +205,10 @@ func indexOfTag(hits []tagLine, tag string, from int) int {
 	return -1
 }
 
-// extract scans for exactly one well-formed block on a first-match basis:
+// extract scans for exactly one well-formed block on a first-match basis. It
+// returns the block and its byte span (open line through close line,
+// inclusive) on success, so Judge can exclude script CONTENT from marker
+// residue detection:
 //
 //   - the first <shell> line opens the block; tag-shaped lines before it are
 //     prose and are ignored;
@@ -192,39 +227,39 @@ func indexOfTag(hits []tagLine, tag string, from int) int {
 // It returns the block on success, or a non-empty issue naming the
 // malformed shape. An empty issue means "no block attempt at all": the
 // reply then falls through to the final-report judgement.
-func extract(text string, quoted [][2]int) (*Block, string) {
+func extract(text string, quoted [][2]int) (*Block, string, []int) {
 	hits := collectTagLines(text, quoted)
 	if len(hits) == 0 {
-		return nil, variantIssue(text, quoted)
+		return nil, variantIssue(text, quoted), nil
 	}
 	iShell := indexOfTag(hits, "<shell>", 0)
 	if iShell < 0 {
-		return nil, "the `<shell>` line is missing"
+		return nil, "the `<shell>` line is missing", nil
 	}
 	// A <script> before the <shell> is an ordering error, not a missing line.
 	if i := indexOfTag(hits, "<script>", 0); i >= 0 && i < iShell {
-		return nil, "the tags are out of order"
+		return nil, "the tags are out of order", nil
 	}
 	iScript := indexOfTag(hits, "<script>", iShell+1)
 	if iScript < 0 {
-		return nil, "the `<script>` line is missing"
+		return nil, "the `<script>` line is missing", nil
 	}
 	iCloseScript := indexOfTag(hits, "</script>", iScript+1)
 	if iCloseScript < 0 {
-		return nil, "the `</script>` line is missing"
+		return nil, "the `</script>` line is missing", nil
 	}
 	iCloseShell := indexOfTag(hits, "</shell>", iCloseScript+1)
 	if iCloseShell < 0 {
-		return nil, "the `</shell>` line is missing"
+		return nil, "the `</shell>` line is missing", nil
 	}
 	if indexOfTag(hits, "<shell>", iCloseShell+1) >= 0 {
-		return nil, "the tags appear more than once - send exactly one block"
+		return nil, "the tags appear more than once - send exactly one block", nil
 	}
 	scriptOpen, scriptClose := hits[iScript], hits[iCloseScript]
 	shellClose := hits[iCloseShell]
 	body := text[scriptOpen.end:scriptClose.start]
 	if strings.TrimSpace(body) == "" {
-		return nil, "the script body is empty"
+		return nil, "the script body is empty", nil
 	}
 	// <summary>/<timeout> are parsed loosely in the window between the
 	// </script> line and the </shell> line; a missing or invalid value
@@ -234,7 +269,7 @@ func extract(text string, quoted [][2]int) (*Block, string) {
 		Script:  body,
 		Summary: fieldValue(window, "summary"),
 		Timeout: parseTimeout(window),
-	}, ""
+	}, "", []int{hits[iShell].start, shellClose.end}
 }
 
 // variantIssue names the tag-shaped lines that are not exact tags: an
@@ -309,7 +344,8 @@ func parseTimeout(window string) time.Duration {
 func hasDSMLShape(text string) bool {
 	return strings.Contains(text, "<invoke") ||
 		strings.Contains(text, "<tool_calls") ||
-		strings.Contains(text, "\uff5c")
+		strings.Contains(text, "\uff5c") ||
+		len(dsml.MarkerRanges(text)) > 0
 }
 
 // hasDSMLCallShape is the strong subset of hasDSMLShape: an actual call
