@@ -8,6 +8,14 @@ import (
 	"time"
 )
 
+// errProbeCDP is the injected click-dispatch failure. Using one package-level
+// value (rather than an inline errors.New) lets the table assert that the
+// capped error wraps exactly this error as well as ErrTruncated.
+var errProbeCDP = errors.New("probe cdp failure")
+
+// intPtr returns a pointer to v, for optional table expectations.
+func intPtr(v int) *int { return &v }
+
 // fakeClock drives continueRecovery's injected now() so cooldowns and resume
 // deadlines are exercised deterministically (no sleeps).
 type fakeClock struct{ t time.Time }
@@ -71,6 +79,10 @@ func TestContinueRecoveryStep(t *testing.T) {
 		// dispatch failure must show up in the first and NOT the second.
 		wantAttempts int
 		wantClicks   int
+		// wantFailures, when set, pins the consecutive-failure counter.
+		wantFailures *int
+		// wantCDPErr asserts the returned error also wraps errProbeCDP.
+		wantCDPErr bool
 	}{
 		{
 			name:         "click then hold while pending",
@@ -178,7 +190,7 @@ func TestContinueRecoveryStep(t *testing.T) {
 			name: "dispatch failure holds and does not consume budget",
 			setup: func(h *recoveryHarness, r *continueRecovery) {
 				h.detect = visible()
-				h.clickErr = errors.New("cdp boom")
+				h.clickErr = errProbeCDP
 			},
 			body:         "半截回复",
 			hasAnswer:    true,
@@ -186,12 +198,13 @@ func TestContinueRecoveryStep(t *testing.T) {
 			wantAction:   continueHold,
 			wantAttempts: 1,
 			wantClicks:   0,
+			wantFailures: intPtr(1),
 		},
 		{
 			name: "consecutive dispatch failures end in ErrTruncated",
 			setup: func(h *recoveryHarness, r *continueRecovery) {
 				h.detect = visible()
-				h.clickErr = errors.New("cdp boom")
+				h.clickErr = errProbeCDP
 				for i := 0; i < webChatMaxContinueClickFailures-1; i++ {
 					if _, err := r.step(context.Background(), "半截回复", func() string { return "半截回复" }); err != nil {
 						t.Fatalf("seed failure step %d: %v", i, err)
@@ -206,12 +219,16 @@ func TestContinueRecoveryStep(t *testing.T) {
 			wantAction:   continueNone,
 			wantAttempts: webChatMaxContinueClickFailures,
 			wantClicks:   0,
+			wantFailures: intPtr(webChatMaxContinueClickFailures),
+			// Pins the archive's claim that errors.Is reaches BOTH the
+			// retryable sentinel and the last CDP error.
+			wantCDPErr: true,
 		},
 		{
 			name: "dispatch failure then success resets failures",
 			setup: func(h *recoveryHarness, r *continueRecovery) {
 				h.detect = visible()
-				h.clickErr = errors.New("cdp boom")
+				h.clickErr = errProbeCDP
 				// One failure (below the cap) leaves failures=1.
 				if _, err := r.step(context.Background(), "半截回复", func() string { return "半截回复" }); err != nil {
 					t.Fatalf("failure step: %v", err)
@@ -230,6 +247,8 @@ func TestContinueRecoveryStep(t *testing.T) {
 			wantAction:   continueClicked,
 			wantAttempts: 2,
 			wantClicks:   1,
+			// The successful click must clear the failure counter.
+			wantFailures: intPtr(0),
 		},
 		{
 			name:         "present but blocked holds",
@@ -279,26 +298,56 @@ func TestContinueRecoveryStep(t *testing.T) {
 				return tc.answer
 			}
 			action, err := r.step(context.Background(), tc.body, answer)
-			if tc.wantErr == nil {
-				if err != nil {
-					t.Fatalf("step error = %v, want nil", err)
-				}
-			} else if !errors.Is(err, tc.wantErr) {
-				t.Fatalf("step error = %v, want %v", err, tc.wantErr)
-			}
-			if action != tc.wantAction {
-				t.Errorf("action = %v, want %v", action, tc.wantAction)
-			}
-			// Assert both layers, unconditionally (no zero-value skip): a
-			// dispatch attempt is not a click, so a failed dispatch must show
-			// in wantAttempts while wantClicks stays at the successful count.
-			if h.clicks != tc.wantAttempts {
-				t.Errorf("clickAt calls = %d, want %d", h.clicks, tc.wantAttempts)
-			}
-			if r.clicks != tc.wantClicks {
-				t.Errorf("r.clicks = %d, want %d", r.clicks, tc.wantClicks)
-			}
+			assertRecoveryOutcome(t, h, r, action, err, tc.wantAction, tc.wantErr,
+				tc.wantAttempts, tc.wantClicks, tc.wantFailures, tc.wantCDPErr)
 		})
+	}
+}
+
+// assertRecoveryOutcome checks one table row's outcome. Extracted so the table
+// loop stays simple (gocyclo) while the assertions remain exhaustive:
+//
+//   - the step error is nil exactly when wanted, and wraps wantedErr;
+//   - the action matches;
+//   - the seam's dispatch count and the recovery's successful-click count are
+//     asserted separately, so a failed dispatch cannot hide in either;
+//   - the consecutive-failure counter, when pinned, matches;
+//   - when wanted, the error also wraps the injected CDP error (pinning the
+//     double-%w claim).
+func assertRecoveryOutcome(
+	t *testing.T,
+	h *recoveryHarness,
+	r *continueRecovery,
+	action continueAction,
+	err error,
+	wantAction continueAction,
+	wantErr error,
+	wantAttempts, wantClicks int,
+	wantFailures *int,
+	wantCDPErr bool,
+) {
+	t.Helper()
+	if wantErr == nil {
+		if err != nil {
+			t.Fatalf("step error = %v, want nil", err)
+		}
+	} else if !errors.Is(err, wantErr) {
+		t.Fatalf("step error = %v, want %v", err, wantErr)
+	}
+	if action != wantAction {
+		t.Errorf("action = %v, want %v", action, wantAction)
+	}
+	if h.clicks != wantAttempts {
+		t.Errorf("clickAt calls = %d, want %d", h.clicks, wantAttempts)
+	}
+	if r.clicks != wantClicks {
+		t.Errorf("r.clicks = %d, want %d", r.clicks, wantClicks)
+	}
+	if wantFailures != nil && r.failures != *wantFailures {
+		t.Errorf("r.failures = %d, want %d", r.failures, *wantFailures)
+	}
+	if wantCDPErr && !errors.Is(err, errProbeCDP) {
+		t.Errorf("err = %v, want it to wrap the injected CDP error %v", err, errProbeCDP)
 	}
 }
 
