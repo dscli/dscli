@@ -854,7 +854,7 @@ func StripDSMLToolCalls(text string) string {
 	for _, s := range strays {
 		switch {
 		case s.pos >= end:
-		// Entirely after the chop point: residue tail, dropped with it.
+			// Entirely after the chop point: residue tail, dropped with it.
 		case s.end <= end:
 			// closeStart stays zero: a stray is not a paired block, the
 			// merge loop only reads openStart/closeEnd.

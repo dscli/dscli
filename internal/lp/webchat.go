@@ -124,16 +124,16 @@ const (
 	// JS snippet to set a textarea's value via the native setter (triggers
 	// message string.
 	jsSetTextareaFmt = `(() => {
-const ta = document.querySelector('textarea');
-if (!ta || ta.offsetParent === null) {
-return {error: 'no visible textarea — login required'};
-}
-const setter = Object.getOwnPropertyDescriptor(
-HTMLTextAreaElement.prototype, 'value'
-).set;
-setter.call(ta, %s);
-ta.dispatchEvent(new Event('input', {bubbles: true}));
-return {success: true};
+	const ta = document.querySelector('textarea');
+	if (!ta || ta.offsetParent === null) {
+		return {error: 'no visible textarea — login required'};
+	}
+	const setter = Object.getOwnPropertyDescriptor(
+		HTMLTextAreaElement.prototype, 'value'
+	).set;
+	setter.call(ta, %s);
+	ta.dispatchEvent(new Event('input', {bubbles: true}));
+	return {success: true};
 })()`
 
 	// jsChatReadyState classifies the page while the chat composer is
@@ -146,44 +146,44 @@ return {success: true};
 	// distinguished from login by the absence alone, so the sign-in
 	// marker gives the fast path while a slow chat page keeps polling.
 	jsChatReadyState = `(() => {
-const ta = document.querySelector('textarea');
-if (ta) {
-if (ta.offsetParent !== null) return 'ok';
-const r = ta.getBoundingClientRect();
-if (r.width > 0 && r.height > 0) return 'ok';
-}
-if (document.querySelector('.ds-sign-in-form-wrapper, .ds-sign-in-form')) return 'login';
-return 'waiting';
-})()`
+		const ta = document.querySelector('textarea');
+		if (ta) {
+			if (ta.offsetParent !== null) return 'ok';
+			const r = ta.getBoundingClientRect();
+			if (r.width > 0 && r.height > 0) return 'ok';
+		}
+		if (document.querySelector('.ds-sign-in-form-wrapper, .ds-sign-in-form')) return 'login';
+		return 'waiting';
+	})()`
 
 	// jsFindFileInput reports whether the chat page has a file input in the
 	// DOM. Modern chat UIs pre-render a hidden <input type="file"> and open
 	// it from the paperclip button, so uploads usually need no click at all.
 	jsFindFileInput = `(() => {
-return {found: !!document.querySelector('input[type="file"]')};
-})()`
+		return {found: !!document.querySelector('input[type="file"]')};
+	})()`
 
 	// jsClickUploadBtnFmt clicks the upload (paperclip) button by
 	// aria-label/title/text heuristics. Used when the file input is not in
 	// the DOM and must be revealed by the button.
 	jsClickUploadBtnFmt = `(() => {
-const keys = ['上传', '附件', 'upload', 'attachment', 'paperclip'];
-const els = document.querySelectorAll('button, [role="button"], [aria-label], [title]');
-for (const el of els) {
-if (el.offsetParent === null) continue;
-const t = (el.textContent || '').trim();
-if (t.length > 20) continue;
-const aria = ((el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('title') || '')).toLowerCase();
-const txt = t.toLowerCase();
-for (const k of keys) {
-if (aria.indexOf(k) !== -1 || txt.indexOf(k) !== -1) {
-el.click();
-return {success: true, matched: k};
-}
-}
-}
-return {success: false, error: 'upload button not found'};
-})()`
+		const keys = ['上传', '附件', 'upload', 'attachment', 'paperclip'];
+		const els = document.querySelectorAll('button, [role="button"], [aria-label], [title]');
+		for (const el of els) {
+			if (el.offsetParent === null) continue;
+			const t = (el.textContent || '').trim();
+			if (t.length > 20) continue;
+			const aria = ((el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('title') || '')).toLowerCase();
+			const txt = t.toLowerCase();
+			for (const k of keys) {
+				if (aria.indexOf(k) !== -1 || txt.indexOf(k) !== -1) {
+					el.click();
+					return {success: true, matched: k};
+				}
+			}
+		}
+		return {success: false, error: 'upload button not found'};
+	})()`
 
 	// jsUploadReadyCountFmt counts upload-ready confirmations for the given
 	// file names (%s is a JSON array of file base names, injected by
@@ -198,15 +198,15 @@ return {success: false, error: 'upload button not found'};
 	// text, can confirm early - the send retry and the fall-through warning
 	// make this best-effort, not a guarantee.
 	jsUploadReadyCountFmt = `(() => {
-const names = %s;
-const text = (document.body ? document.body.innerText : '') || '';
-let named = 0;
-for (const n of names) {
-if (n && text.indexOf(n) !== -1) named++;
-}
-const images = document.querySelectorAll('img[src^="blob:"], img[src^="data:image/"]').length;
-return {count: Math.min(named + images, names.length), named: named, images: images};
-})()`
+		const names = %s;
+		const text = (document.body ? document.body.innerText : '') || '';
+		let named = 0;
+		for (const n of names) {
+			if (n && text.indexOf(n) !== -1) named++;
+		}
+		const images = document.querySelectorAll('img[src^="blob:"], img[src^="data:image/"]').length;
+		return {count: Math.min(named + images, names.length), named: named, images: images};
+	})()`
 
 	// jsGetAssistantText extracts all assistant response HTML from
 	// .ds-assistant-message-main-content elements — the stable, un-hashed
@@ -226,37 +226,37 @@ return {count: Math.min(named + images, names.length), named: named, images: ima
 	// NOTE: the result may include pre-existing conversation history
 	// (continued conversations); webchatWait strips it via mdBaseline.
 	jsGetAssistantText = `(() => {
-const main = document.querySelectorAll('.ds-assistant-message-main-content');
-const all = main.length ? main : document.querySelectorAll('.ds-markdown');
-// Filter out elements that live in the sidebar/navigation panel.
-const els = Array.from(all).filter(function(el) {
-var p = el.parentElement;
-while (p) {
-var c = (p.className || '');
-var r = p.getAttribute && p.getAttribute('role') || '';
-if (/\b(sidebar|navigation)\b/i.test(c) || r === 'navigation') {
-return false;
-}
-p = p.parentElement;
-}
-if (!main.length) {
-// Fallback mode: drop the deep-think block. Its reasoning
-// text carries the status span "已思考（用时 N 秒）" — a
-// rendered answer never contains such a span.
-var spans = el.querySelectorAll('span');
-for (var i = 0; i < spans.length; i++) {
-var t = (spans[i].textContent || '').trim();
-if (/^已思考[（(]?/.test(t) && /[（(]?用时\s*\d+|\d+\s*秒/.test(t)) {
-return false;
-}
-}
-}
-return true;
-});
-if (els.length === 0) return [];
-// Concatenate ALL matched elements, not just the last one: streaming
-// responses may be split across multiple blocks.
-return els.map(function(el) { return el.innerHTML; });
+	const main = document.querySelectorAll('.ds-assistant-message-main-content');
+	const all = main.length ? main : document.querySelectorAll('.ds-markdown');
+	// Filter out elements that live in the sidebar/navigation panel.
+	const els = Array.from(all).filter(function(el) {
+		var p = el.parentElement;
+		while (p) {
+			var c = (p.className || '');
+			var r = p.getAttribute && p.getAttribute('role') || '';
+			if (/\b(sidebar|navigation)\b/i.test(c) || r === 'navigation') {
+				return false;
+			}
+			p = p.parentElement;
+		}
+		if (!main.length) {
+			// Fallback mode: drop the deep-think block. Its reasoning
+			// text carries the status span "已思考（用时 N 秒）" — a
+			// rendered answer never contains such a span.
+			var spans = el.querySelectorAll('span');
+			for (var i = 0; i < spans.length; i++) {
+				var t = (spans[i].textContent || '').trim();
+				if (/^已思考[（(]?/.test(t) && /[（(]?用时\s*\d+|\d+\s*秒/.test(t)) {
+					return false;
+				}
+			}
+		}
+		return true;
+	});
+	if (els.length === 0) return [];
+	// Concatenate ALL matched elements, not just the last one: streaming
+	// responses may be split across multiple blocks.
+	return els.map(function(el) { return el.innerHTML; });
 })()`
 	// jsLastAnswerAfterFmt returns the innerText of THIS round's answer
 	// block: the last .ds-assistant-message-main-content that appears in
@@ -266,23 +266,23 @@ return els.map(function(el) { return el.innerHTML; });
 	// block) and previous rounds' history (they sit BEFORE the sent
 	// message). %s is the sent message.
 	jsLastAnswerAfterFmt = `(() => {
-const want = %s;
-const bubbles = Array.from(document.querySelectorAll('.ds-message'));
-const ord = new Map();
-bubbles.forEach(function(b, i) { ord.set(b, i); });
-let anchor = -1;
-for (let i = bubbles.length - 1; i >= 0; i--) {
-const t = (bubbles[i].innerText || '');
-const firstLine = t.split('\n')[0].trim();
-if (firstLine === want || t.trim().indexOf(want) === 0) { anchor = i; break; }
-}
-if (anchor < 0) return '';
-const mains = Array.from(document.querySelectorAll('.ds-message .ds-assistant-message-main-content'));
-for (let i = mains.length - 1; i >= 0; i--) {
-const b = mains[i].closest('.ds-message');
-if (b && (ord.get(b) || 0) > anchor) return mains[i].innerText;
-}
-return '';
+	const want = %s;
+	const bubbles = Array.from(document.querySelectorAll('.ds-message'));
+	const ord = new Map();
+	bubbles.forEach(function(b, i) { ord.set(b, i); });
+	let anchor = -1;
+	for (let i = bubbles.length - 1; i >= 0; i--) {
+		const t = (bubbles[i].innerText || '');
+		const firstLine = t.split('\n')[0].trim();
+		if (firstLine === want || t.trim().indexOf(want) === 0) { anchor = i; break; }
+	}
+	if (anchor < 0) return '';
+	const mains = Array.from(document.querySelectorAll('.ds-message .ds-assistant-message-main-content'));
+	for (let i = mains.length - 1; i >= 0; i--) {
+		const b = mains[i].closest('.ds-message');
+		if (b && (ord.get(b) || 0) > anchor) return mains[i].innerText;
+	}
+	return '';
 })()`
 	// jsIDBGetAnswerFmt reads the assistant's answer from the site's own
 	// IndexedDB conversation cache (database "deepseek-chat", object store
@@ -322,77 +322,77 @@ return '';
 	// index 0 - scanning from the tail would pick the FIRST round of a
 	// continued conversation and fail the user-message guard.
 	jsIDBGetAnswerFmt = `(async () => {
-try {
-const wantMsg = %s;
-const notBefore = %d;
-const m = location.pathname.match(/\/a\/chat\/s\/([A-Za-z0-9_-]+)/);
-if (!m) return {found: false, reason: 'no conversation id in url'};
-const db = await new Promise(function(res, rej) {
-const req = indexedDB.open('deepseek-chat');
-req.onsuccess = function() { res(req.result); };
-req.onerror = function() { rej(req.error); };
-});
-const rec = await new Promise(function(res, rej) {
-const tx = db.transaction('history-message', 'readonly');
-const r = tx.objectStore('history-message').get(m[1]);
-r.onsuccess = function() { res(r.result); };
-r.onerror = function() { rej(r.error); };
-});
-db.close();
-if (!rec) return {found: false, reason: 'no idb record'};
-if (typeof rec.timestamp !== 'number' || rec.timestamp < notBefore - 120000) {
-return {found: false, reason: 'idb record stale (before send)'};
-}
-const msgs = (rec.data && rec.data.chat_messages) || [];
-// Newest-first: this round's messages are at the front.
-let lastUser = null;
-let last = null;
-for (let i = 0; i < msgs.length; i++) {
-if (msgs[i].role === 'USER' && !lastUser) lastUser = msgs[i];
-if (msgs[i].role === 'ASSISTANT' && !last) last = msgs[i];
-}
-// The record must already contain THIS round's user message —
-// otherwise it is the pre-send snapshot of a continued
-// conversation and its FINISHED assistant message is stale.
-const userParts = [];
-if (lastUser) {
-for (const f of (lastUser.fragments || [])) {
-if (f && f.type === 'REQUEST' && typeof f.content === 'string') userParts.push(f.content);
-}
-}
-if (userParts.join('\n\n').trim() !== wantMsg.trim()) {
-return {found: false, reason: 'idb record predates this round'};
-}
-if (!last) return {found: false, reason: 'no assistant message yet'};
-const frags = last.fragments || [];
-const parts = [];
-const thinkParts = [];
-for (const f of frags) {
-if (f && typeof f.content === 'string' && f.content.trim() === '') continue;
-if (f && f.type === 'RESPONSE') parts.push(f.content);
-if (f && f.type === 'THINK') thinkParts.push(f.content);
-}
-// 本轮回复的 token 数 = 同轮 USER 与 ASSISTANT 消息的累计用量之差
-// （站点自己的运行计数器，与页面头部显示的数字一致；任一侧缺失
-// 或差值为负时按 0 处理，绝不伪造计数）。
-let tokens = 0;
-const uAtu = lastUser && lastUser.accumulated_token_usage;
-const aAtu = last && last.accumulated_token_usage;
-if (typeof uAtu === 'number' && typeof aAtu === 'number' && aAtu >= uAtu) {
-tokens = aAtu - uAtu;
-}
-return {
-found: true,
-status: last.status || '',
-text: parts.join('\n\n'),
-reason: thinkParts.join('\n\n'),
-respCount: parts.length,
-thinkCount: thinkParts.length,
-tokens: tokens,
-};
-} catch (e) {
-return {found: false, reason: String((e && e.message) || e)};
-}
+	try {
+		const wantMsg = %s;
+		const notBefore = %d;
+		const m = location.pathname.match(/\/a\/chat\/s\/([A-Za-z0-9_-]+)/);
+		if (!m) return {found: false, reason: 'no conversation id in url'};
+		const db = await new Promise(function(res, rej) {
+			const req = indexedDB.open('deepseek-chat');
+			req.onsuccess = function() { res(req.result); };
+			req.onerror = function() { rej(req.error); };
+		});
+		const rec = await new Promise(function(res, rej) {
+			const tx = db.transaction('history-message', 'readonly');
+			const r = tx.objectStore('history-message').get(m[1]);
+			r.onsuccess = function() { res(r.result); };
+			r.onerror = function() { rej(r.error); };
+		});
+		db.close();
+		if (!rec) return {found: false, reason: 'no idb record'};
+		if (typeof rec.timestamp !== 'number' || rec.timestamp < notBefore - 120000) {
+			return {found: false, reason: 'idb record stale (before send)'};
+		}
+		const msgs = (rec.data && rec.data.chat_messages) || [];
+		// Newest-first: this round's messages are at the front.
+		let lastUser = null;
+		let last = null;
+		for (let i = 0; i < msgs.length; i++) {
+			if (msgs[i].role === 'USER' && !lastUser) lastUser = msgs[i];
+			if (msgs[i].role === 'ASSISTANT' && !last) last = msgs[i];
+		}
+		// The record must already contain THIS round's user message —
+		// otherwise it is the pre-send snapshot of a continued
+		// conversation and its FINISHED assistant message is stale.
+		const userParts = [];
+		if (lastUser) {
+			for (const f of (lastUser.fragments || [])) {
+				if (f && f.type === 'REQUEST' && typeof f.content === 'string') userParts.push(f.content);
+			}
+		}
+		if (userParts.join('\n\n').trim() !== wantMsg.trim()) {
+			return {found: false, reason: 'idb record predates this round'};
+		}
+		if (!last) return {found: false, reason: 'no assistant message yet'};
+		const frags = last.fragments || [];
+		const parts = [];
+		const thinkParts = [];
+		for (const f of frags) {
+			if (f && typeof f.content === 'string' && f.content.trim() === '') continue;
+			if (f && f.type === 'RESPONSE') parts.push(f.content);
+			if (f && f.type === 'THINK') thinkParts.push(f.content);
+		}
+		// 本轮回复的 token 数 = 同轮 USER 与 ASSISTANT 消息的累计用量之差
+		// （站点自己的运行计数器，与页面头部显示的数字一致；任一侧缺失
+		// 或差值为负时按 0 处理，绝不伪造计数）。
+		let tokens = 0;
+		const uAtu = lastUser && lastUser.accumulated_token_usage;
+		const aAtu = last && last.accumulated_token_usage;
+		if (typeof uAtu === 'number' && typeof aAtu === 'number' && aAtu >= uAtu) {
+			tokens = aAtu - uAtu;
+		}
+		return {
+			found: true,
+			status: last.status || '',
+			text: parts.join('\n\n'),
+			reason: thinkParts.join('\n\n'),
+			respCount: parts.length,
+			thinkCount: thinkParts.length,
+			tokens: tokens,
+		};
+	} catch (e) {
+		return {found: false, reason: String((e && e.message) || e)};
+	}
 })()`
 	// jsIDBGetLastAssistantFmt reads the LAST assistant message of the
 	// CURRENT conversation from the site's IndexedDB conversation cache —
@@ -405,71 +405,71 @@ return {found: false, reason: String((e && e.message) || e)};
 	// newest-first so the last assistant message is the FIRST role=ASSISTANT
 	// entry scanning from index 0).
 	jsIDBGetLastAssistantFmt = `(async () => {
-try {
-const m = location.pathname.match(/\/a\/chat\/s\/([A-Za-z0-9_-]+)/);
-if (!m) return {found: false, reason: 'no conversation id in url'};
-const db = await new Promise(function(res, rej) {
-const req = indexedDB.open('deepseek-chat');
-req.onsuccess = function() { res(req.result); };
-req.onerror = function() { rej(req.error); };
-});
-const rec = await new Promise(function(res, rej) {
-const tx = db.transaction('history-message', 'readonly');
-const r = tx.objectStore('history-message').get(m[1]);
-r.onsuccess = function() { res(r.result); };
-r.onerror = function() { rej(r.error); };
-});
-db.close();
-if (!rec) return {found: false, reason: 'no idb record'};
-const msgs = (rec.data && rec.data.chat_messages) || [];
-let last = null;
-for (let i = 0; i < msgs.length; i++) {
-if (msgs[i].role === 'ASSISTANT') { last = msgs[i]; break; }
-}
-if (!last) return {found: false, reason: 'no assistant message'};
-const frags = last.fragments || [];
-const parts = [];
-for (const f of frags) {
-if (f && typeof f.content === 'string' && f.content.trim() === '') continue;
-if (f && f.type === 'RESPONSE') parts.push(f.content);
-}
-return {found: true, status: last.status || '', text: parts.join('\n\n')};
-} catch (e) {
-return {found: false, reason: String((e && e.message) || e)};
-}
+	try {
+		const m = location.pathname.match(/\/a\/chat\/s\/([A-Za-z0-9_-]+)/);
+		if (!m) return {found: false, reason: 'no conversation id in url'};
+		const db = await new Promise(function(res, rej) {
+			const req = indexedDB.open('deepseek-chat');
+			req.onsuccess = function() { res(req.result); };
+			req.onerror = function() { rej(req.error); };
+		});
+		const rec = await new Promise(function(res, rej) {
+			const tx = db.transaction('history-message', 'readonly');
+			const r = tx.objectStore('history-message').get(m[1]);
+			r.onsuccess = function() { res(r.result); };
+			r.onerror = function() { rej(r.error); };
+		});
+		db.close();
+		if (!rec) return {found: false, reason: 'no idb record'};
+		const msgs = (rec.data && rec.data.chat_messages) || [];
+		let last = null;
+		for (let i = 0; i < msgs.length; i++) {
+			if (msgs[i].role === 'ASSISTANT') { last = msgs[i]; break; }
+		}
+		if (!last) return {found: false, reason: 'no assistant message'};
+		const frags = last.fragments || [];
+		const parts = [];
+		for (const f of frags) {
+			if (f && typeof f.content === 'string' && f.content.trim() === '') continue;
+			if (f && f.type === 'RESPONSE') parts.push(f.content);
+		}
+		return {found: true, status: last.status || '', text: parts.join('\n\n')};
+	} catch (e) {
+		return {found: false, reason: String((e && e.message) || e)};
+	}
 })()`
 	// jsIsGenerationActive checks whether the AI is still generating a response.
 	// Returns true if a stop/cancel button is visible or the textarea is disabled
 	// (both signals that generation is in progress). Used to distinguish between
 	// genuine completion and a streaming pause.
 	jsIsGenerationActive = `(() => {
-// Signal 1: a visible stop/cancel button during generation.
-var btns = document.querySelectorAll('button, [role="button"]');
-for (var i = 0; i < btns.length; i++) {
-var b = btns[i];
-if (b.offsetParent === null) continue;
-var txt = (b.textContent || '').trim().toLowerCase();
-var aria = (b.getAttribute('aria-label') || '').toLowerCase();
-if (txt.indexOf('stop') !== -1 || txt.indexOf('停止') !== -1 ||
-txt.indexOf('cancel') !== -1 || txt.indexOf('取消') !== -1 ||
-aria === 'stop' || aria === '停止') {
-return true;
-}
-}
-// Signal 2: textarea disabled during generation.
-var ta = document.querySelector('textarea');
-if (ta && ta.disabled) return true;
-return false;
-})()`
+		// Signal 1: a visible stop/cancel button during generation.
+		var btns = document.querySelectorAll('button, [role="button"]');
+		for (var i = 0; i < btns.length; i++) {
+			var b = btns[i];
+			if (b.offsetParent === null) continue;
+			var txt = (b.textContent || '').trim().toLowerCase();
+			var aria = (b.getAttribute('aria-label') || '').toLowerCase();
+			if (txt.indexOf('stop') !== -1 || txt.indexOf('停止') !== -1 ||
+				txt.indexOf('cancel') !== -1 || txt.indexOf('取消') !== -1 ||
+				aria === 'stop' || aria === '停止') {
+				return true;
+			}
+		}
+		// Signal 2: textarea disabled during generation.
+		var ta = document.querySelector('textarea');
+		if (ta && ta.disabled) return true;
+		return false;
+	})()`
 
 	// jsTextareaCleared reports whether the chat textarea has been emptied.
 	// After a successful send the React-controlled textarea clears
 	// immediately, so a non-empty textarea inside the confirmation window
 	// means the submit was rejected (typically server overload).
 	jsTextareaCleared = `(() => {
-const ta = document.querySelector('textarea');
-return !!ta && ta.value.trim() === '';
-})()`
+		const ta = document.querySelector('textarea');
+		return !!ta && ta.value.trim() === '';
+	})()`
 
 	// jsEnterDispatchBase is the shared Enter keydown → keypress → keyup
 	// dispatch sequence used by both jsSendEnter and jsSendEnterOnly.
@@ -481,48 +481,48 @@ return !!ta && ta.value.trim() === '';
 	// The IIFE is closed by each concatenated suffix, which also carries
 	// its own return/fallback tail.
 	jsEnterDispatchBase = `(() => {
-const ta = document.querySelector('textarea');
-if (!ta) return {error: 'no textarea'};
-if (ta.offsetParent === null) return {error: 'textarea not visible'};
-// Ensure the textarea has focus before dispatching keyboard events.
-// This is critical when the page loads with focus on the left sidebar
-// conversation list instead of the textarea.
-ta.click();
-ta.focus({preventScroll: true});
-if (document.activeElement !== ta) {
-ta.select();
-}
-var opts = {
-key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
-bubbles: true, cancelable: true,
-};
-ta.dispatchEvent(new KeyboardEvent('keydown', opts));
-ta.dispatchEvent(new KeyboardEvent('keypress', opts));
-ta.dispatchEvent(new KeyboardEvent('keyup', opts));
-`
+		const ta = document.querySelector('textarea');
+		if (!ta) return {error: 'no textarea'};
+		if (ta.offsetParent === null) return {error: 'textarea not visible'};
+		// Ensure the textarea has focus before dispatching keyboard events.
+		// This is critical when the page loads with focus on the left sidebar
+		// conversation list instead of the textarea.
+		ta.click();
+		ta.focus({preventScroll: true});
+		if (document.activeElement !== ta) {
+			ta.select();
+		}
+		var opts = {
+			key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+			bubbles: true, cancelable: true,
+		};
+		ta.dispatchEvent(new KeyboardEvent('keydown', opts));
+		ta.dispatchEvent(new KeyboardEvent('keypress', opts));
+		ta.dispatchEvent(new KeyboardEvent('keyup', opts));
+	`
 	// jsSendEnter additionally clicks the send button as a fallback to
 	// ensure the message is submitted even if the KeyboardEvent dispatch
 	// doesn't trigger React's submit handler (e.g. when focus is on the
 	// left sidebar conversation list and the textarea isn't the active
 	// element).
 	jsSendEnter = jsEnterDispatchBase + `
-// Async fallback: React 18 batches state updates, so a synchronous
-// check right after dispatchEvent still sees the old textarea value
-// and would click the send button on top of a successfully
-// submitted Enter — double-sending the message (two identical user
-// messages observed in a real session). A macrotask window lets
-// React flush the controlled component first; only then is a stale
-// value a genuine "Enter was ignored" signal.
-setTimeout(function() {
-if (ta.value.trim() !== '') {
-var sendBtn = document.querySelector('[role="button"].ds-button--primary');
-if (sendBtn && sendBtn.offsetParent !== null) {
-sendBtn.click();
-}
-}
-}, 300);
-return {success: true};
-})()`
+		// Async fallback: React 18 batches state updates, so a synchronous
+		// check right after dispatchEvent still sees the old textarea value
+		// and would click the send button on top of a successfully
+		// submitted Enter — double-sending the message (two identical user
+		// messages observed in a real session). A macrotask window lets
+		// React flush the controlled component first; only then is a stale
+		// value a genuine "Enter was ignored" signal.
+		setTimeout(function() {
+			if (ta.value.trim() !== '') {
+				var sendBtn = document.querySelector('[role="button"].ds-button--primary');
+				if (sendBtn && sendBtn.offsetParent !== null) {
+					sendBtn.click();
+				}
+			}
+		}, 300);
+		return {success: true};
+	})()`
 
 	// jsResendFailedFmt detects the failed-send retry button and clicks it.
 	// When the server rejects a message (overload, network error), the site
@@ -548,42 +548,42 @@ return {success: true};
 	// answers, so clicking there cannot corrupt a successful round into a
 	// duplicate.
 	jsResendFailedFmt = `(() => {
-const reExact = /^(重发|重试|重新发送|再次发送|重发消息|重新发送消息|发送失败[^]{0,10}(重发|重试)|resend|retry)$/;
-const reLoose = /(重发|重试|重新发送|再次发送|发送失败|resend|retry)/;
-const reExclude = /(重新(回答|生成|思考|加载)|regenerate|re-?answer|reload|refresh)/;
-const cands = document.querySelectorAll('button, [role="button"]');
-for (let i = 0; i < cands.length; i++) {
-const b = cands[i];
-// Disabled retries (a generation is running) must never be
-// clicked, on either path.
-if (b.disabled) continue;
-// Position:fixed elements (and popover/portal containers)
-// report offsetParent === null while being fully visible, so
-// offsetParent alone is not a visibility truth; the zero-size
-// rect check catches display:none / not-yet-laid-out.
-if (b.offsetParent === null) {
-const r = b.getBoundingClientRect();
-if (r.width === 0 || r.height === 0) continue;
-}
-const t = (b.textContent || '').trim().toLowerCase();
-const aria = (b.getAttribute('aria-label') || '').trim().toLowerCase();
-const title = (b.getAttribute('title') || '').trim().toLowerCase();
-if (reExclude.test(aria) || reExclude.test(title) || reExclude.test(t)) continue;
-if (t || aria || title) {
-const hit = reExact.test(t) || reLoose.test(aria) || reLoose.test(title);
-if (hit) {
-b.click();
-return {found: true, matched: t || aria || title || 'button'};
-}
-}
-// Icon-only retry (current UI): filled warning circle + SVG.
-if (b.classList.contains('ds-button--warning') && b.querySelector('svg')) {
-b.click();
-return {found: true, matched: 'icon retry (ds-button--warning)'};
-}
-}
-return {found: false};
-})()`
+		const reExact = /^(重发|重试|重新发送|再次发送|重发消息|重新发送消息|发送失败[^]{0,10}(重发|重试)|resend|retry)$/;
+		const reLoose = /(重发|重试|重新发送|再次发送|发送失败|resend|retry)/;
+		const reExclude = /(重新(回答|生成|思考|加载)|regenerate|re-?answer|reload|refresh)/;
+		const cands = document.querySelectorAll('button, [role="button"]');
+		for (let i = 0; i < cands.length; i++) {
+			const b = cands[i];
+			// Disabled retries (a generation is running) must never be
+			// clicked, on either path.
+			if (b.disabled) continue;
+			// Position:fixed elements (and popover/portal containers)
+			// report offsetParent === null while being fully visible, so
+			// offsetParent alone is not a visibility truth; the zero-size
+			// rect check catches display:none / not-yet-laid-out.
+			if (b.offsetParent === null) {
+				const r = b.getBoundingClientRect();
+				if (r.width === 0 || r.height === 0) continue;
+			}
+			const t = (b.textContent || '').trim().toLowerCase();
+			const aria = (b.getAttribute('aria-label') || '').trim().toLowerCase();
+			const title = (b.getAttribute('title') || '').trim().toLowerCase();
+			if (reExclude.test(aria) || reExclude.test(title) || reExclude.test(t)) continue;
+			if (t || aria || title) {
+				const hit = reExact.test(t) || reLoose.test(aria) || reLoose.test(title);
+				if (hit) {
+					b.click();
+					return {found: true, matched: t || aria || title || 'button'};
+				}
+			}
+			// Icon-only retry (current UI): filled warning circle + SVG.
+			if (b.classList.contains('ds-button--warning') && b.querySelector('svg')) {
+				b.click();
+				return {found: true, matched: 'icon retry (ds-button--warning)'};
+			}
+		}
+		return {found: false};
+	})()`
 
 	// jsContinueGeneration detects the site's 「继续生成」 (Continue) button
 	// on a server-interrupted assistant message and reports its viewport
@@ -609,60 +609,60 @@ return {found: false};
 	// dispatchEvent(new MouseEvent(...))) is silently ignored. The Go side
 	// dispatches a real CDP input event instead - see clickTrustedAt.
 	jsContinueGeneration = `(() => {
-const wants = ['继续生成', 'continue'];
-const cands = document.querySelectorAll('button, [role="button"]');
-let pick = null;
-for (let i = 0; i < cands.length; i++) {
-const b = cands[i];
-if (b.disabled) continue;
-if ((b.getAttribute('aria-disabled') || '') === 'true') continue;
-// position:fixed popovers report offsetParent === null while
-// being visible, so the zero-size rect is the display:none
-// truth (same visibility convention as jsResendFailedFmt).
-if (b.offsetParent === null) {
-const r0 = b.getBoundingClientRect();
-if (r0.width === 0 || r0.height === 0) continue;
-}
-const t = (b.textContent || '').trim().toLowerCase();
-const aria = (b.getAttribute('aria-label') || '').trim().toLowerCase();
-const title = (b.getAttribute('title') || '').trim().toLowerCase();
-// EXACT match: 重新生成 / 重新回答 (regenerate) must never hit.
-let label = '';
-if (wants.indexOf(t) !== -1) label = t;
-else if (wants.indexOf(aria) !== -1) label = aria;
-else if (wants.indexOf(title) !== -1) label = title;
-if (!label) continue;
-// Ownership: nearest ancestor that directly owns a .ds-message
-// bubble is the button's own message row.
-let owned = false;
-let p = b.parentElement;
-while (p) {
-const kids = p.children;
-for (let k = 0; k < kids.length; k++) {
-const c = kids[k];
-if (c.classList && c.classList.contains('ds-message')) { owned = true; break; }
-}
-if (owned) break;
-p = p.parentElement;
-}
-if (!owned) continue;
-// Keep the LAST match: document order ends at the newest row.
-pick = {b: b, label: label};
-}
-if (!pick) return {found: false};
-const b = pick.b;
-if (b.scrollIntoView) b.scrollIntoView({block: 'center'});
-const r = b.getBoundingClientRect();
-const x = r.left + r.width / 2;
-const y = r.top + r.height / 2;
-// Occlusion check: the caller clicks by coordinate, so a covered
-// button would send the click somewhere else entirely. A present but
-// blocked button is reported as such, NOT as absent: folding it into
-// found=false would let the caller read the poll as healthy and
-// extract the interrupted fragment.
-const hit = document.elementFromPoint(x, y);
-const clickable = !!hit && (hit === b || b.contains(hit));
-return {found: true, clickable: clickable, label: pick.label, x: x, y: y};
+		const wants = ['继续生成', 'continue'];
+		const cands = document.querySelectorAll('button, [role="button"]');
+		let pick = null;
+		for (let i = 0; i < cands.length; i++) {
+			const b = cands[i];
+			if (b.disabled) continue;
+			if ((b.getAttribute('aria-disabled') || '') === 'true') continue;
+			// position:fixed popovers report offsetParent === null while
+			// being visible, so the zero-size rect is the display:none
+			// truth (same visibility convention as jsResendFailedFmt).
+			if (b.offsetParent === null) {
+				const r0 = b.getBoundingClientRect();
+				if (r0.width === 0 || r0.height === 0) continue;
+			}
+			const t = (b.textContent || '').trim().toLowerCase();
+			const aria = (b.getAttribute('aria-label') || '').trim().toLowerCase();
+			const title = (b.getAttribute('title') || '').trim().toLowerCase();
+			// EXACT match: 重新生成 / 重新回答 (regenerate) must never hit.
+			let label = '';
+			if (wants.indexOf(t) !== -1) label = t;
+			else if (wants.indexOf(aria) !== -1) label = aria;
+			else if (wants.indexOf(title) !== -1) label = title;
+			if (!label) continue;
+			// Ownership: nearest ancestor that directly owns a .ds-message
+			// bubble is the button's own message row.
+			let owned = false;
+			let p = b.parentElement;
+			while (p) {
+				const kids = p.children;
+				for (let k = 0; k < kids.length; k++) {
+					const c = kids[k];
+					if (c.classList && c.classList.contains('ds-message')) { owned = true; break; }
+				}
+				if (owned) break;
+				p = p.parentElement;
+			}
+			if (!owned) continue;
+			// Keep the LAST match: document order ends at the newest row.
+			pick = {b: b, label: label};
+		}
+		if (!pick) return {found: false};
+		const b = pick.b;
+		if (b.scrollIntoView) b.scrollIntoView({block: 'center'});
+		const r = b.getBoundingClientRect();
+		const x = r.left + r.width / 2;
+		const y = r.top + r.height / 2;
+		// Occlusion check: the caller clicks by coordinate, so a covered
+		// button would send the click somewhere else entirely. A present but
+		// blocked button is reported as such, NOT as absent: folding it into
+		// found=false would let the caller read the poll as healthy and
+		// extract the interrupted fragment.
+		const hit = document.elementFromPoint(x, y);
+		const clickable = !!hit && (hit === b || b.contains(hit));
+		return {found: true, clickable: clickable, label: pick.label, x: x, y: y};
 })()`
 
 	// jsRegenerateStopped detects the 「重新生成」 (Regenerate) button on the
@@ -774,15 +774,15 @@ const enabled = !b.disabled && (b.getAttribute('aria-disabled') || '') !== 'true
 const hit = document.elementFromPoint(x, y);
 const clickable = enabled && !!hit && (hit === b || b.contains(hit));
 return {found: true, clickable: clickable, x: x, y: y, buttons: bar.length};
-})()`
+	})()`
 
 	// jsSendEnterOnly dispatches the Enter sequence without the send-button
 	// fallback. Used by the resend loop when the message is still sitting in
 	// the textarea (submit rejected and the site restored the text): the
 	// async fallback inside jsSendEnter could race the resend state reset.
 	jsSendEnterOnly = jsEnterDispatchBase + `
-return {success: true};
-})()`
+		return {success: true};
+	})()`
 )
 
 // WebChatOptions configures a WebChat call.
