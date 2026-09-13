@@ -17,9 +17,9 @@ make test-coverage                # Coverage: coverage.out / coverage.html / tes
 ```
 
 **Which test command to use:**
-- `make dev-test` — during development: runs `go test -v ./...`, skips formatting
-- `go test ./...` — before committing: CI-equivalent, no verbose output
-- `go test -v -run '^TestX$' ./...` — single test: use `^` and `$` to avoid matching `TestXyz`
+- `make dev-test` - during development: runs `go test -v ./...`, skips formatting
+- `go test ./...` - before committing: CI-equivalent, no verbose output
+- `go test -v -run '^TestX$' ./...` - single test: use `^` and `$` to avoid matching `TestXyz`
 
 **Before committing, ensure tests pass:**
 ```bash
@@ -33,12 +33,12 @@ make fmt-check
 # the code_review role also checks cyclomatic complexity (gocyclo -over 20 on changed .go files, attached as gocyclo.txt)
 # Recommended: code_review(summary="<describe the change>")
 ```
-- `code_review` before `git push` — fix issues before they reach remote
+- `code_review` before `git push` - fix issues before they reach remote
 - No need to do it during development; only before push
 
 **⚠️ Embedded assets are compile-time snapshots**: scripts and templates are
 embedded via `go:embed` (see below). Editing them does NOT affect an installed
-binary — you must rebuild and reinstall. `make install` checks the installed
+binary - you must rebuild and reinstall. `make install` checks the installed
 binary's embedded commit against HEAD and warns on mismatch.
 
 ## Architecture
@@ -50,13 +50,13 @@ Top-level `*_cmd.go` files are CLI command implementations registered via
 `AddRootCommand()` in their `init()` functions.
 
 Packages use `init()` + `sqlite.Register*Schema` for declarative dependency
-wiring — `sqlite.OpenDB()` executes all registered DDL on first open (sync.Once).
+wiring - `sqlite.OpenDB()` executes all registered DDL on first open (sync.Once).
 Four registrars, executed in this order:
 
-1. `RegisterTableSchema` — CREATE TABLE / CREATE VIRTUAL TABLE (fatal on error)
-2. `RegisterIndexSchema` — CREATE INDEX (fatal on error)
-3. `RegisterUpgradeSchema` — ALTER TABLE / migration SQL (best-effort)
-4. `RegisterPostInitHook` — `func(*DB) error` callbacks (best-effort)
+1. `RegisterTableSchema` - CREATE TABLE / CREATE VIRTUAL TABLE (fatal on error)
+2. `RegisterIndexSchema` - CREATE INDEX (fatal on error)
+3. `RegisterUpgradeSchema` - ALTER TABLE / migration SQL (best-effort)
+4. `RegisterPostInitHook` - `func(*DB) error` callbacks (best-effort)
 
 Tests get an isolated database: `context.IsTesting()` → `/tmp/dscli-test-<binary>-<pid>.db`.
 
@@ -87,6 +87,8 @@ Tests get an isolated database: `context.IsTesting()` → `/tmp/dscli-test-<bina
 | `internal/editor/` | External editor integration (emacsclient-aware) |
 | `internal/shell/` | Safe shell execution via mvdan/sh |
 | `internal/lp/` | Web page reading via `lightpanda fetch` CLI (DeepSeek share links read the full conversation from the share-content API: the page's virtualized message list truncates DOM dumps; see `share.go`), DeepSeek web login/chat (chromedp) with overload/truncation detection and conversation registry; `HandleWebChat` is the high-level entry point (retry + DSML tool loop) shared by ask_expert and the webchat CLI |
+| `internal/dsml/` | DSML tool-call protocol for WebChat: parse and judge replies (`ParseDSMLMessage`), render the role's tool doc (`BuildDSMLToolDoc`), execute parsed calls (`ExecuteDSMLToolCalls`); no separate whitelist - the role's `role_configs` tool set gates execution. Exports `CodeRanges`/`InRanges` (quoted-content scanner) and `BlockedCmdRe` (destructive-command policy) for `internal/shellblock` |
+| `internal/shellblock/` | `<shell>` block protocol for WebChat (the dev role / code_dev channel): judge + warnings (`Judge`, `ShouldEnter`), destructive-command interception (`Blocked`, shared with dsml), local runner (`Run`: scriptN.sh / scriptN.txt, process-group timeout, 256KB output cap), tool doc builder (`BuildToolDoc`); see `docs/task-shell-block.md` |
 | `internal/mcphub/` | Multi-MCP-server connections; dispatches unknown tools |
 | `internal/memories/` | Persistent cross-session memory with FTS5 |
 | `internal/tokenizer/` | Chinese+English segmentation for FTS5 (gse) |
@@ -116,7 +118,7 @@ block right after a tool call (OpenAI-compatible APIs allow images only in
 user messages).
 
 DSML tool calls from WebChat: chat.deepseek.com replies (role-driven
-consultations like `dev` via code_dev, and plain chat alike) may embed
+consultations of the non-dev roles, and plain chat alike) may embed
 DSML markup (`<invoke name="shell">` with `<parameter>` children) - it is the
 web model's native tool protocol. Judgement and parsing now live in the
 dedicated `internal/dsml` package: `dsml.ParseDSMLMessage(reasoning, content)`
@@ -166,7 +168,7 @@ because its partial answer already sits in the conversation. Reply
 truncation detection is line-anchored (a markdown fence opens/closes only at
 line start, CommonMark), so a complete answer that quotes a fence is not
 misjudged as cut off. The loop prints every round it receives (reasoning + content via
-outfmt.PrintContent, with the header shown per role — icon + role·label —
+outfmt.PrintContent, with the header shown per role - icon + role·label -
 and no token count) and marks the final result `Printed` so callers do not
 re-print it. The `webchat` CLI defaults to `--role ""` (plain
 chat: no role injection; DSML tool-call replies are still executed - default
@@ -188,9 +190,20 @@ parameter, no extra attributes such as justification, every tag closed).
 `GetSystemPrompt` (dscli chat path, which registers tools through the API
 `tools` parameter instead) leave it out entirely. A role without executable
 tools (expert/review/test by default; dev defaults to the development tool
-set — DevDefaultTools, no mail/communication/ai/check categories — and
+set - DevDefaultTools, no mail/communication/ai/check categories - and
 architect has all tools, so both do get a section) gets no DSML section at
 all.
+
+The `<shell>` block channel (`internal/shellblock`) is the WebChat protocol
+for the dev role and `code_dev`: the web model emits ONE bash script per
+round inside a `<shell>` block; `handleWebChatShellLoop` judges it (quoted
+examples never execute, malformed shapes get a format-contract warning, DSML
+shapes are refused), runs it locally through the shared destructive-command
+interception (`dsml.BlockedCmdRe`) with a process-group timeout, and feeds
+the merged output back as an attached `scriptN.txt`. `WebChatOptions.ShellTool`
+selects the channel; `code_dev` enables it for the dev role automatically
+and `dscli webchat --shell` exposes it for manual testing. See
+`docs/task-shell-block.md`.
 
 code_review uploads its review inputs as attachments: the rendered review
 guide (review-guide.md, from internal/prompt/review.md), the complete diff
@@ -206,7 +219,7 @@ these inputs.
 
 | Asset | Location |
 |-------|----------|
-| `dscli-flycheck.sh` | `internal/flycheck/` — Emacs syntax check runner |
+| `dscli-flycheck.sh` | `internal/flycheck/` - Emacs syntax check runner |
 | Prompt templates | `internal/prompt/{dev,expert,review,test,architect}.md` |
 | Tool docs | `internal/toolcall/*/*.md` (one per tool) |
 | Skill docs | `internal/skills/*.md` |
@@ -289,7 +302,8 @@ Tests live alongside their code:
 - `history.go` → `history_test.go`
 - `prompt.go` → `prompt_test.go`
 - `project_cmd.go` → `project_cmd_test.go`
-- `role_cmd.go` → `role_cmd_test.go`
+- `version.go` → `version_test.go`
+- `webchat_cmd.go` → `webchat_cmd_test.go`
 - `internal/prompt/prompt.go` → `internal/prompt/prompt_test.go`
 - `internal/toolcall/tool.go` → `internal/toolcall/tool_test.go`
 
@@ -304,7 +318,7 @@ Tests live alongside their code:
 
 ## Commit Convention
 
-- **English only** — commit messages must be in English. This project lives at `github.com/dscli/dscli`; developers worldwide should understand the history. Never use Chinese or other languages in commit messages.
+- **English only** - commit messages must be in English. This project lives at `github.com/dscli/dscli`; developers worldwide should understand the history. Never use Chinese or other languages in commit messages.
 - **Conventional Commits** preferred: `type(scope): description` (e.g. `feat(chat): add streaming`, `fix(lp): handle nil context`)
 - **Imperative mood**, first line ≤72 chars
 
@@ -317,20 +331,20 @@ Tests live alongside their code:
 
 ## Shell Scripts
 
-- `internal/flycheck/dscli-flycheck.sh` — embedded Emacs flycheck runner:
-  1. `emacsclient --eval '(server-running-p)'` when an Emacs server is running (probe is the proof — a failed connect exits 1)
+- `internal/flycheck/dscli-flycheck.sh` - embedded Emacs flycheck runner:
+  1. `emacsclient --eval '(server-running-p)'` when an Emacs server is running (probe is the proof - a failed connect exits 1)
   2. Fallback: `emacs --batch -q` + `dscli-flycheck.el` (found via `DSCLI_EL_ROOT` or an upward directory walk)
   - **Never pass `-a ""` to emacsclient**: it auto-starts a daemon, turning the probe into a side effect that always succeeds
 - Skill scripts live in `.dscli/skills/<name>/scripts/` (e.g. `go-test/scripts/run.sh`)
 
 ## Skills System
 
-Skills are reusable recipes in `.dscli/skills/<name>/SKILL.md`, registered in `.dscli/skills/skills.yaml`:
+Skills are reusable recipes (`<name>/SKILL.md` plus a `skills.yaml` index), resolved from three merged stores - built-in embedded skills (`internal/skills/*.md`), the user-global `~/.dscli/skills/` (plus cross-client `~/.agents/skills/`), and the project-local `.dscli/skills/`:
 - Discoverable via `skill_search`/`dscli skill query`
 - Loadable on demand via `skill_by_name`
 - Auto-injectable per-role via `skill_set_auto_inject`
 
-Key skills for development:
+Key skills for development (project-local `.dscli/skills/` unless noted):
 - `cobra-use-convention` - Cobra Use field conventions
 - `use-modern-go` - Modern Go syntax (1.22–1.27)
 - `go-test` - Go testing best practices + scripts
@@ -342,11 +356,11 @@ Key skills for development:
 - `fix-dup-comments` - Remove duplicate comment lines
 - `pkgsite-api` - Query pkg.go.dev API
 - `gh` - GitHub CLI patterns
-- `issue-pr-response` - Issue/PR response best practices
-- `emacs-client` - Query a running Emacs via emacsclient
 - `jaeger-query` - Query Jaeger traces (via slingshot)
 - `incus` - Incus container lifecycle for test environments
-- `dscli` - dscli core concepts (prompt, history, skills, memory, mail)
+- `site-zine` - Zine static-site build/deploy recipes
+- `emacs-client` - Query a running Emacs via emacsclient (user-global: `~/.dscli/skills/`)
+- `dscli` - dscli core concepts, prompt/history/skills/memory/mail (built-in, embedded from `internal/skills/dscli-skill.md`)
 
 ## Key Invariants
 
@@ -374,6 +388,8 @@ Key skills for development:
   re-review in the PR thread.
 - Never modify or delete `sqlite.db` or `dscli.env` - they hold local state and
   secrets.
+
+- Design decisions and task records live in `docs/` (`docs/task-*.md`, `docs/architecture-*.md`, `docs/*.org`); add one for substantial changes.
 
 ## AI Assistant Context
 

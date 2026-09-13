@@ -1,5 +1,6 @@
 # 二进制文件
 script*.sh
+script*.txt
 output*.txt
 codereview.md
 *.patch
@@ -52,6 +53,8 @@ temp/
 *.swp
 *.swo
 *~
+\#*#
+.#*
 
 # Go相关
 # 依赖目录
