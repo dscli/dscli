@@ -925,6 +925,11 @@ func TestContinueRecoveryRegenResumeResetsFailureRun(t *testing.T) {
 	if action != continueClicked || !r.pending || r.pendingKind != pendingRegen {
 		t.Fatalf("seed = (action %v, pending %v, kind %v), want a pending regen click", action, r.pending, r.pendingKind)
 	}
+	// The successful click must leave the once-per-run latch disarmed
+	// (healthyRegenPoll ran on the successful detect just before it).
+	if r.warnedRegen {
+		t.Fatal("warnedRegen = true after a successful regen click, want false")
+	}
 
 	// 2. Detector errors while pending: hold-only, and the run grows past the
 	// cap (the cap does not apply inside a pending window). step drives the
@@ -965,15 +970,22 @@ func TestContinueRecoveryRegenResumeResetsFailureRun(t *testing.T) {
 		t.Fatal("warnedRegen = true after a confirmed resume, want false (a fresh run)")
 	}
 
-	// 4. Back to idle with the detector still broken: the fresh run must hold
-	// for its first two errors and only fall through on the cap-th. The
-	// exact counter values hard-pin the cap arithmetic, so this test breaks
-	// loudly if webChatMaxRegenDetectFailures changes. The captured stderr
-	// pins the observable once-per-run warning contract.
+	// 4. Back to idle with the detector still broken: the fresh run is
+	// pinned by the helper (hold twice, then fall through on the cap-th).
 	h.active = false
+	assertPostResumeRegenRun(t, r)
+}
+
+// assertPostResumeRegenRun pins the fresh run after a confirmed resume: the
+// first two post-reset detector errors hold and the cap-th falls through,
+// the counter follows 1/2/cap exactly (hard-pinning the cap arithmetic, so
+// this breaks loudly if webChatMaxRegenDetectFailures changes), and the
+// once-per-run warning is emitted exactly once (captured stderr).
+func assertPostResumeRegenRun(t *testing.T, r *continueRecovery) {
+	t.Helper()
+	drain := captureStderr(t)
 	want := []continueAction{continueHold, continueHold, continueNone}
 	wantFailures := []int{1, 2, webChatMaxRegenDetectFailures}
-	drain := captureStderr(t)
 	for i, exp := range want {
 		action, err := r.step(context.Background(), "已停止", func() string { return "" })
 		if err != nil {
