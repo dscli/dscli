@@ -1,6 +1,7 @@
 package shellblock
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -275,5 +276,104 @@ func TestBlocked(t *testing.T) {
 				t.Errorf("detail = %q, want %q", detail, tt.detail)
 			}
 		})
+	}
+}
+
+// DSML marker residue samples are built at runtime: a literal full-width bar
+// sequence in the source would be mangled by the transport channel (the same
+// reason internal/dsml/dsml_strayclose_test.go builds its brackets at runtime).
+var (
+	angleLT = string(rune(60))
+	angleGT = string(rune(62))
+	fwPipe  = string(rune(0xFF5C))
+)
+
+// badgeResidue renders the site's stored (badge-rendered) close tag for name:
+// "</" + full-width bars + "DSML" + full-width bars + name + ">".
+func badgeResidue(name string) string {
+	return angleLT + "/" + fwPipe + fwPipe + "DSML" + fwPipe + fwPipe + name + angleGT
+}
+
+// asciiResidue is the half-width bar variant: "</||DSML||name>".
+func asciiResidue(name string) string {
+	return angleLT + "/||DSML||" + name + angleGT
+}
+
+// TestJudgeResidualMarkers pins the marker-residue flag: a reply that carries
+// DSML marker shapes OUTSIDE its executed block gets ResidualMarkers=true so
+// the shell loop can remind the model, while markers inside the block span or
+// inside quoted code stay unflagged (script bodies legitimately contain them).
+func TestJudgeResidualMarkers(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{
+			name: "block then fullwidth residue",
+			text: wellFormed + "\n" + badgeResidue("parameter") + "\n" + badgeResidue("invoke") + "\n" + badgeResidue("calls"),
+			want: true,
+		},
+		{
+			name: "block then ascii residue",
+			text: wellFormed + "\n" + asciiResidue("invoke"),
+			want: true,
+		},
+		{
+			name: "clean block",
+			text: wellFormed,
+			want: false,
+		},
+		{
+			name: "marker inside the script body is content",
+			text: strings.Join([]string{
+				"<shell>", "<script>",
+				"printf '%s' '" + badgeResidue("parameter") + "'",
+				"</script>", "<summary>echo marker</summary>", "</shell>",
+			}, "\n"),
+			want: false,
+		},
+		{
+			name: "marker inside quoted code",
+			text: "Example:\n```\n" + badgeResidue("invoke") + "\n```\n" + longFinal,
+			want: false,
+		},
+		{
+			name: "no block short reply with residue",
+			text: "oops " + badgeResidue("invoke"),
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			verdict := Judge("", tt.text)
+			if verdict.ResidualMarkers != tt.want {
+				t.Errorf("ResidualMarkers = %v, want %v (action %v issue %q)", verdict.ResidualMarkers, tt.want, verdict.Action, verdict.Issue)
+			}
+		})
+	}
+}
+
+// TestJudgeResidualMarkersRealSample builds an equivalent case from a real
+// captured reply: the block's script body echoes the captured marker bytes, so
+// the residue sits INSIDE the block span and must not be flagged.
+func TestJudgeResidualMarkersRealSample(t *testing.T) {
+	b, err := os.ReadFile("testdata/case2_write_file.txt")
+	if err != nil {
+		t.Skipf("real sample unavailable: %v", err)
+	}
+	marker := string(b)
+	if len(marker) > 200 {
+		marker = marker[:200]
+	}
+	// Marker inside the body: not residue.
+	inside := strings.Join([]string{"<shell>", "<script>", "cat <<'EOF'", marker, "EOF", "</script>", "</shell>"}, "\n")
+	if v := Judge("", inside); v.ResidualMarkers {
+		t.Errorf("marker inside the block body was flagged as residue (action %v)", v.Action)
+	}
+	// The same marker after a clean block: residue.
+	outside := wellFormed + "\n" + marker
+	if v := Judge("", outside); !v.ResidualMarkers {
+		t.Errorf("marker after the block was not flagged as residue (action %v)", v.Action)
 	}
 }

@@ -359,3 +359,66 @@ func TestHandleWebChatResumeShellMultiTurn(t *testing.T) {
 		t.Error("a multi-turn resume must not be marked Printed")
 	}
 }
+
+// residueAfterBlock is a well-formed block followed by badge-rendered DSML
+// marker residue: the shape the site stores after it badges the markup.
+func residueAfterBlock() string {
+	lt := string(rune(60))
+	gt := string(rune(62))
+	bar := string(rune(0xFF5C))
+	residue := lt + "/" + bar + bar + "DSML" + bar + bar + "invoke" + gt
+	return shellBlockTest + "\n" + residue
+}
+
+// TestHandleWebChatShellLoopResidueReminder pins the residue feedback: an
+// executed block whose reply carries DSML marker residue OUTSIDE the block
+// still runs, and the round's feedback message gets ResidueNote appended; a
+// clean round's feedback must NOT carry it.
+func TestHandleWebChatShellLoopResidueReminder(t *testing.T) {
+	tests := []struct {
+		name        string
+		first       string
+		wantResidue bool
+	}{
+		{name: "residue after the block", first: residueAfterBlock(), wantResidue: true},
+		{name: "clean block", first: shellBlockTest, wantResidue: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origSend, origExec := handleWebChatSend, handleWebChatExecShell
+			t.Cleanup(func() { handleWebChatSend, handleWebChatExecShell = origSend, origExec })
+
+			const convURL = "https://chat.deepseek.com/a/chat/s/convSHELL"
+			var messages []string
+			handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
+				messages = append(messages, msg)
+				return WebChatResult{Content: shellFinalTest, URL: convURL}, nil
+			}
+			handleWebChatExecShell = func(_ context.Context, _ string, _ string, timeout time.Duration) (*shellblock.RunResult, error) {
+				return &shellblock.RunResult{Number: 7, OutputPath: "/tmp/script7.txt", ExitCode: 0, Timeout: timeout}, nil
+			}
+
+			if _, err := handleWebChatShellLoop(context.Background(),
+				WebChatResult{Content: tt.first, URL: convURL},
+				WebChatOptions{Role: "dev", ShellTool: true}); err != nil {
+				t.Fatalf("shell loop: %v", err)
+			}
+			if len(messages) != 1 {
+				t.Fatalf("sends = %d, want 1 (the feedback)", len(messages))
+			}
+			feedback := messages[0]
+			// The existing prefix assertion must keep holding: the note rides
+			// after a blank line.
+			if !strings.HasPrefix(feedback, "output of script7.sh (attached as script7.txt):") {
+				t.Errorf("feedback = %q, want the script prefix preserved", feedback)
+			}
+			hasNote := strings.Contains(feedback, shellblock.ResidueNote())
+			if hasNote != tt.wantResidue {
+				t.Errorf("feedback carries ResidueNote = %v, want %v:\n%s", hasNote, tt.wantResidue, feedback)
+			}
+			if tt.wantResidue && !strings.Contains(feedback, "\n\n") {
+				t.Errorf("residue note must ride after a blank line:\n%s", feedback)
+			}
+		})
+	}
+}
