@@ -96,7 +96,6 @@ webChatContinueResumeWindow = 45 * time.Second // 点击后等待"续写已恢�
   - `webChatNextPoll` + `err=nil`：刚做过过期 textarea 重发，调用方**不**更新 `lastText`；
   - `err != nil`：本轮失败，此时动作恒为 `webChatAbort` 且无进一步含义，**调用方先查 `err` 并中止本轮**，不解读动作。
   动作到循环状态的映射抽为纯函数 `ackLoopEffectFor` 并以表驱动钉住（含 `webChatAbort`/未知动作的穷尽性防护，未知动作返回错误而非静默落到 recovery/stability）。
-- 点击派发失败上限的 `ErrTruncated` 同时用两次 `%w` 包装最后一次 CDP 错误（`errors.Is` 可达两者）。
 
 轮询循环内的顺序（在既有 resend 检查与 send-ack 窗口**之后**、稳定性/提取逻辑**之前**）。核心不变式：**只要「继续生成」按钮可见，或点击后的续写尚未确认恢复，就绝不走提取**（此刻的稳定文本是中断前残段，返回即静默截断）：
 

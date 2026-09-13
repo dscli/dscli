@@ -1923,6 +1923,11 @@ func ackLoopEffectFor(action webChatAction, current string) (ackLoopEffect, erro
 	case webChatAckPending:
 		return ackLoopEffect{nextPoll: true, refreshLastText: true, text: current}, nil
 	case webChatAbort:
+		// Defence in depth: webChatAbort is only meaningful alongside a
+		// non-nil error, and the production caller checks err first. This
+		// branch exists for a future caller that ignores err, so the mistake
+		// surfaces as an error here instead of a silent fall-through into the
+		// recovery/stability stages.
 		return ackLoopEffect{}, fmt.Errorf("send-ack step returned webChatAbort without an error")
 	default:
 		// Exhaustiveness guard: a future action added to the enum must be

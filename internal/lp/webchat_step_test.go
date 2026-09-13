@@ -207,8 +207,15 @@ func TestAckLoopEffectFor(t *testing.T) {
 			if eff.refreshLastText != tc.wantRefreshText {
 				t.Errorf("refreshLastText = %v, want %v", eff.refreshLastText, tc.wantRefreshText)
 			}
-			if tc.wantRefreshText && eff.text != "body" {
-				t.Errorf("text = %q, want %q", eff.text, "body")
+			if tc.wantRefreshText {
+				if eff.text != "body" {
+					t.Errorf("text = %q, want %q", eff.text, "body")
+				}
+			} else if eff.text != "" {
+				// Only the ack-pending path carries text; proceed and
+				// nextPoll must leave it empty so no caller can accidentally
+				// refresh lastText from them.
+				t.Errorf("text = %q, want empty for action %d", eff.text, int(tc.action))
 			}
 		})
 	}
@@ -233,7 +240,10 @@ func assertResendState(t *testing.T, handled bool, s resendState) {
 			t.Errorf("no-op mutated state: ackPolls=%d stable=%d empty=%d lastText=%q",
 				s.ackPolls, s.stableCount, s.emptyStableCount, s.lastText)
 		}
-		if !s.cont.pending || s.cont.clicks != 2 {
+		// A no-op must leave the whole continue recovery untouched, including
+		// its baseline and deadline (the seed sets base="old" and a zero
+		// deadline).
+		if !s.cont.pending || s.cont.clicks != 2 || s.cont.base != "old" || !s.cont.deadline.IsZero() {
 			t.Errorf("no-op mutated continue recovery: %+v", s.cont)
 		}
 		return
