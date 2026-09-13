@@ -751,6 +751,41 @@ func TestJsContinueGeneration(t *testing.T) {
 	}
 }
 
+// TestJsRegenerateStopped is the regression guard on the stopped-state
+// detector. The site renders 「已停止」 with no answer body and no
+// 「继续生成」 button when a busy server kills a round during thinking; without
+// this matcher webchatWait polls out (or the caller re-sends the whole
+// request, redoing the model's work).
+func TestJsRegenerateStopped(t *testing.T) {
+	for _, want := range []string{
+		"已停止", "stopped",
+		"ds-message", "ds-assistant-message-main-content",
+		"aria-disabled", "offsetParent",
+		"getBoundingClientRect", "scrollIntoView", "elementFromPoint",
+	} {
+		if !strings.Contains(jsRegenerateStopped, want) {
+			t.Errorf("jsRegenerateStopped must contain %q (matcher regression)", want)
+		}
+	}
+	// The detector must return usable coordinates and the button count on the
+	// found path: clickTrustedAt dispatches at the returned x/y, so a dropped
+	// coordinate field would silently click (0,0).
+	for _, want := range []string{"x: x, y: y", "buttons: bar.length", "clickable"} {
+		if !strings.Contains(jsRegenerateStopped, want) {
+			t.Errorf("jsRegenerateStopped must contain %q (coordinate/field regression)", want)
+		}
+	}
+	// Detection-only discipline: this snippet must never gain a click. The
+	// regenerate button has no isTrusted guard today, but the click still
+	// goes through clickTrustedAt so the event travels the browser's input
+	// pipeline - and a future guard must not be able to catch it.
+	for _, bad := range []string{".click(", "dispatchEvent("} {
+		if strings.Contains(jsRegenerateStopped, bad) {
+			t.Errorf("jsRegenerateStopped must not contain %q: the real click is dispatched by clickTrustedAt", bad)
+		}
+	}
+}
+
 func TestJsChatReadyState(t *testing.T) {
 	// Regression guard on the page-classification snippet: it must detect
 	// the sign-in page (fast ErrLoginRequired instead of a 30s poll) and

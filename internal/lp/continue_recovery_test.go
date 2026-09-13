@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -31,8 +32,16 @@ type recoveryHarness struct {
 	detErr   error
 	clickErr error
 
-	detects int
-	clicks  int
+	// regen is the stopped-state detector's outcome. regenDetected records
+	// whether that seam was consulted at all, so a case can assert that the
+	// priority rule really short-circuits the 「重新生成」 branch.
+	regen         regenerateDetect
+	regenErr      error
+	regenDetected bool
+
+	detects   int
+	regenRuns int
+	clicks    int
 }
 
 func newRecoveryHarness() *recoveryHarness {
@@ -47,6 +56,11 @@ func (h *recoveryHarness) newRecovery() *continueRecovery {
 		detect: func(context.Context) (continueDetect, error) {
 			h.detects++
 			return h.detect, h.detErr
+		},
+		detectRegen: func(context.Context) (regenerateDetect, error) {
+			h.regenRuns++
+			h.regenDetected = true
+			return h.regen, h.regenErr
 		},
 		clickAt: func(context.Context, float64, float64) error {
 			h.clicks++
@@ -65,6 +79,17 @@ func blocked() continueDetect {
 	return continueDetect{present: true, clickable: false, label: "继续生成", x: 10, y: 20}
 }
 
+// regenVisible is the common "regen button present and clickable" outcome:
+// the stopped state with an idle generation.
+func regenVisible() regenerateDetect {
+	return regenerateDetect{present: true, clickable: true, x: 30, y: 40, buttons: 5}
+}
+
+// regenBlocked is a present but disabled/occluded regen button.
+func regenBlocked() regenerateDetect {
+	return regenerateDetect{present: true, clickable: false, x: 30, y: 40, buttons: 5}
+}
+
 func TestContinueRecoveryStep(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -79,6 +104,9 @@ func TestContinueRecoveryStep(t *testing.T) {
 		// dispatch failure must show up in the first and NOT the second.
 		wantAttempts int
 		wantClicks   int
+		// wantRegenClicks, when non-negative, pins the 「重新生成」 counter. -1
+		// means "not asserted".
+		wantRegenClicks int
 		// wantFailures, when set, pins the consecutive-failure counter.
 		wantFailures *int
 		// wantCDPErr asserts the returned error also wraps errProbeCDP.
@@ -299,7 +327,7 @@ func TestContinueRecoveryStep(t *testing.T) {
 			}
 			action, err := r.step(context.Background(), tc.body, answer)
 			assertRecoveryOutcome(t, h, r, action, err, tc.wantAction, tc.wantErr,
-				tc.wantAttempts, tc.wantClicks, tc.wantFailures, tc.wantCDPErr)
+				tc.wantAttempts, tc.wantClicks, tc.wantRegenClicks, tc.wantFailures, tc.wantCDPErr)
 		})
 	}
 }
@@ -323,6 +351,7 @@ func assertRecoveryOutcome(
 	wantAction continueAction,
 	wantErr error,
 	wantAttempts, wantClicks int,
+	wantRegenClicks int,
 	wantFailures *int,
 	wantCDPErr bool,
 ) {
@@ -342,6 +371,9 @@ func assertRecoveryOutcome(
 	}
 	if r.clicks != wantClicks {
 		t.Errorf("r.clicks = %d, want %d", r.clicks, wantClicks)
+	}
+	if wantRegenClicks >= 0 && r.regenClicks != wantRegenClicks {
+		t.Errorf("r.regenClicks = %d, want %d", r.regenClicks, wantRegenClicks)
 	}
 	if wantFailures != nil && r.failures != *wantFailures {
 		t.Errorf("r.failures = %d, want %d", r.failures, *wantFailures)
@@ -485,5 +517,317 @@ func TestContinueRecoveryBaselineFallback(t *testing.T) {
 	}
 	if action != continueNone || r.pending {
 		t.Errorf("action = %v, pending = %v; body change must clear pending in fallback mode", action, r.pending)
+	}
+}
+
+// TestContinueRecoveryRegenerateStep covers the 「重新生成」 branch: the
+// stopped-with-no-output state where the site renders no 「继续生成」 button.
+// The 「继续生成」 branch itself is covered by TestContinueRecoveryStep; here
+// the continue detector reports absent so the step falls through.
+func TestContinueRecoveryRegenerateStep(t *testing.T) {
+	tests := []struct {
+		name       string
+		setup      func(h *recoveryHarness, r *continueRecovery)
+		body       string
+		answer     string
+		wantAction continueAction
+		wantErr    error
+		// wantRegenClicks pins the successful 「重新生成」 counter; -1 skips.
+		wantRegenClicks int
+		// wantAttempts counts clickAt dispatches.
+		wantAttempts int
+		// wantPendingKind pins the pending provenance after the step; -1 skips
+		// (some rows deliberately churn the body, which the gate reads as a
+		// confirmed resume and clears pending).
+		wantPendingKind int
+		// wantRegenRuns asserts the regen detector was consulted; -1 skips.
+		wantRegenRuns int
+	}{
+		{
+			name:            "stopped state and idle clicks regenerate",
+			setup:           func(h *recoveryHarness, r *continueRecovery) { h.regen = regenVisible() },
+			body:            "已停止",
+			wantAction:      continueClicked,
+			wantRegenClicks: 1,
+			wantAttempts:    1,
+			wantPendingKind: int(pendingRegen),
+			wantRegenRuns:   1,
+		},
+		{
+			name: "active generation never clicks regenerate",
+			setup: func(h *recoveryHarness, r *continueRecovery) {
+				h.regen = regenVisible()
+				h.active = true
+			},
+			body:          "已停止 但生成活跃",
+			wantAction:    continueNone,
+			wantAttempts:  0,
+			wantRegenRuns: 0,
+		},
+		{
+			// A pending resume whose generation turned active is CONFIRMED: the gate
+			// clears pending and the round proceeds. This is the signal the recovery
+			// exists to produce, so it must not be mistaken for "still broken".
+			name: "pending plus active clears the resume",
+			setup: func(h *recoveryHarness, r *continueRecovery) {
+				h.regen = regenVisible()
+				if _, err := r.step(context.Background(), "已停止", func() string { return "" }); err != nil {
+					t.Fatalf("seed step: %v", err)
+				}
+				if !r.pending || r.pendingKind != pendingRegen {
+					t.Fatalf("seed did not arm a regenerate resume: pending=%v kind=%v", r.pending, r.pendingKind)
+				}
+				// The click is in flight and the generation became active.
+				h.active = true
+			},
+			body:            "已停止",
+			wantAction:      continueNone,
+			wantRegenClicks: 1,
+			wantAttempts:    1,
+			wantPendingKind: int(pendingNone),
+			wantRegenRuns:   1,
+		},
+		{
+			name:            "present but blocked holds without clicking",
+			setup:           func(h *recoveryHarness, r *continueRecovery) { h.regen = regenBlocked() },
+			body:            "已停止",
+			wantAction:      continueHold,
+			wantRegenClicks: 0,
+			wantAttempts:    0,
+			wantRegenRuns:   1,
+		},
+		{
+			name: "cooldown elapsed clicks again within budget",
+			setup: func(h *recoveryHarness, r *continueRecovery) {
+				h.regen = regenVisible()
+				if _, err := r.step(context.Background(), "已停止 v1", func() string { return "" }); err != nil {
+					t.Fatalf("seed step: %v", err)
+				}
+				// The new attempt stopped the same way: still no answer body.
+				h.clock.adv(webChatContinueCooldown)
+			},
+			body:            "已停止 v2",
+			wantAction:      continueClicked,
+			wantRegenClicks: 2,
+			wantAttempts:    2,
+			wantPendingKind: int(pendingRegen),
+			wantRegenRuns:   2,
+		},
+		{
+			name: "cooldown not elapsed holds",
+			setup: func(h *recoveryHarness, r *continueRecovery) {
+				h.regen = regenVisible()
+				if _, err := r.step(context.Background(), "已停止", func() string { return "" }); err != nil {
+					t.Fatalf("seed step: %v", err)
+				}
+				// No clock advance: the cooldown still runs. The body is constant, so the
+				// gate cannot read the poll as a confirmed resume.
+			},
+			body:            "已停止",
+			wantAction:      continueHold,
+			wantRegenClicks: 1,
+			wantAttempts:    1,
+			wantPendingKind: int(pendingRegen),
+			wantRegenRuns:   2,
+		},
+		{
+			name: "regenerate budget exhausted is ErrTruncated",
+			setup: func(h *recoveryHarness, r *continueRecovery) {
+				h.regen = regenVisible()
+				for i := 0; i < webChatMaxRegenerates; i++ {
+					if _, err := r.step(context.Background(), "已停止", func() string { return "" }); err != nil {
+						t.Fatalf("seed step %d: %v", i, err)
+					}
+					h.clock.adv(webChatContinueCooldown)
+				}
+			},
+			body:            "已停止",
+			wantErr:         ErrTruncated,
+			wantAction:      continueNone,
+			wantRegenClicks: webChatMaxRegenerates,
+			wantAttempts:    webChatMaxRegenerates,
+			wantPendingKind: int(pendingRegen),
+			wantRegenRuns:   webChatMaxRegenerates + 1,
+		},
+		{
+			name: "regenerate dispatch failure does not consume budget",
+			setup: func(h *recoveryHarness, r *continueRecovery) {
+				h.regen = regenVisible()
+				h.clickErr = errProbeCDP
+			},
+			body:            "已停止",
+			wantAction:      continueHold,
+			wantRegenClicks: 0,
+			wantAttempts:    1,
+			wantPendingKind: int(pendingNone),
+			wantRegenRuns:   1,
+		},
+		{
+			name: "consecutive regenerate dispatch failures end in ErrTruncated",
+			setup: func(h *recoveryHarness, r *continueRecovery) {
+				h.regen = regenVisible()
+				h.clickErr = errProbeCDP
+				for i := 0; i < webChatMaxContinueClickFailures-1; i++ {
+					if _, err := r.step(context.Background(), "已停止", func() string { return "" }); err != nil {
+						t.Fatalf("seed failure step %d: %v", i, err)
+					}
+					h.clock.adv(webChatContinueCooldown)
+				}
+			},
+			body:            "已停止",
+			wantErr:         ErrTruncated,
+			wantAction:      continueNone,
+			wantRegenClicks: 0,
+			wantAttempts:    webChatMaxContinueClickFailures,
+			wantRegenRuns:   webChatMaxContinueClickFailures,
+		},
+		{
+			name:            "regenerate detect error holds",
+			setup:           func(h *recoveryHarness, r *continueRecovery) { h.regenErr = errors.New("evaluate failed") },
+			body:            "已停止",
+			wantAction:      continueHold,
+			wantRegenClicks: 0,
+			wantAttempts:    0,
+			wantRegenRuns:   1,
+		},
+		{
+			// The new attempt produced a body: the stopped state is gone and the
+			// resume is confirmed by the text change.
+			name: "stopped state gone and pending cleared proceeds",
+			setup: func(h *recoveryHarness, r *continueRecovery) {
+				h.regen = regenVisible()
+				if _, err := r.step(context.Background(), "已停止 v1", func() string { return "" }); err != nil {
+					t.Fatalf("seed step: %v", err)
+				}
+				// The new attempt produced a body: the stopped state is gone
+				// and the resume is confirmed.
+				h.regen = regenerateDetect{}
+				h.clock.adv(webChatContinueCooldown)
+			},
+			body:            "完整回复",
+			wantAction:      continueNone,
+			wantRegenClicks: 1,
+			wantAttempts:    1,
+			wantPendingKind: int(pendingNone),
+			wantRegenRuns:   2,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newRecoveryHarness()
+			r := h.newRecovery()
+			if tc.setup != nil {
+				tc.setup(h, r)
+			}
+			action, err := r.step(context.Background(), tc.body, func() string { return tc.answer })
+			if tc.wantErr == nil {
+				if err != nil {
+					t.Fatalf("step error = %v, want nil", err)
+				}
+			} else if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("step error = %v, want %v", err, tc.wantErr)
+			}
+			if action != tc.wantAction {
+				t.Errorf("action = %v, want %v", action, tc.wantAction)
+			}
+			if r.regenClicks != tc.wantRegenClicks {
+				t.Errorf("r.regenClicks = %d, want %d", r.regenClicks, tc.wantRegenClicks)
+			}
+			if h.clicks != tc.wantAttempts {
+				t.Errorf("clickAt calls = %d, want %d", h.clicks, tc.wantAttempts)
+			}
+			if tc.wantPendingKind >= 0 && int(r.pendingKind) != tc.wantPendingKind {
+				t.Errorf("pendingKind = %v, want %v", r.pendingKind, pendingClick(tc.wantPendingKind))
+			}
+			if tc.wantRegenRuns >= 0 && h.regenRuns != tc.wantRegenRuns {
+				t.Errorf("regen detector runs = %d, want %d", h.regenRuns, tc.wantRegenRuns)
+			}
+		})
+	}
+}
+
+// TestContinueRecoveryRegenerateBudgetSeparate pins that the two budgets are
+// independent: spending the continue budget must not shrink the regenerate
+// budget, and vice versa. Sharing one counter would let a flapping round
+// exhaust the wrong allowance.
+func TestContinueRecoveryRegenerateBudgetSeparate(t *testing.T) {
+	h := newRecoveryHarness()
+	r := h.newRecovery()
+
+	// Spend the regenerate budget entirely on the stopped state.
+	h.detect = continueDetect{}
+	h.regen = regenVisible()
+	for i := 0; i < webChatMaxRegenerates; i++ {
+		if _, err := r.step(context.Background(), "已停止", func() string { return "" }); err != nil {
+			t.Fatalf("seed regen step %d: %v", i, err)
+		}
+		h.clock.adv(webChatContinueCooldown)
+	}
+	if r.regenClicks != webChatMaxRegenerates {
+		t.Fatalf("regenClicks = %d, want %d", r.regenClicks, webChatMaxRegenerates)
+	}
+
+	// The continue budget is untouched: an INCOMPLETE round can still resume
+	// up to webChatMaxContinues times.
+	h.detect = visible()
+	h.regen = regenerateDetect{}
+	h.clock.adv(webChatContinueCooldown)
+	action, err := r.step(context.Background(), "半截回复", func() string { return "半截回复" })
+	if err != nil {
+		t.Fatalf("continue step after regen budget: %v", err)
+	}
+	if action != continueClicked || r.clicks != 1 {
+		t.Errorf("action = %v, clicks = %d; the continue budget must be independent of the regen budget", action, r.clicks)
+	}
+}
+
+// TestContinueRecoveryPriorityContinueWins pins the recovery priority: when
+// BOTH buttons are present, 「继续生成」 (a same-message resume) is clicked and
+// the 「重新生成」 detector is never even consulted.
+func TestContinueRecoveryPriorityContinueWins(t *testing.T) {
+	h := newRecoveryHarness()
+	h.detect = visible()
+	h.regen = regenVisible()
+	r := h.newRecovery()
+
+	action, err := r.step(context.Background(), "半截回复", func() string { return "半截回复" })
+	if err != nil {
+		t.Fatalf("step: %v", err)
+	}
+	if action != continueClicked {
+		t.Fatalf("action = %v, want continueClicked", action)
+	}
+	if r.clicks != 1 || r.regenClicks != 0 {
+		t.Errorf("clicks = %d, regenClicks = %d; the continue button must win", r.clicks, r.regenClicks)
+	}
+	if r.pendingKind != pendingContinue {
+		t.Errorf("pendingKind = %v, want continue", r.pendingKind)
+	}
+	if h.regenDetected {
+		t.Error("the regenerate detector must not be consulted while the continue button is present")
+	}
+}
+
+// TestContinueRecoveryRegenerateTimeoutNamesAction pins the timeout text: a
+// pending 「重新生成」 resume that outlives the window must say so, not claim a
+// 「继续生成」 click.
+func TestContinueRecoveryRegenerateTimeoutNamesAction(t *testing.T) {
+	h := newRecoveryHarness()
+	h.regen = regenVisible()
+	r := h.newRecovery()
+
+	if _, err := r.step(context.Background(), "已停止", func() string { return "" }); err != nil {
+		t.Fatalf("seed step: %v", err)
+	}
+	// The new attempt stopped the same way: no body, no active generation.
+	h.regen = regenerateDetect{}
+	h.clock.adv(webChatContinueResumeWindow + time.Second)
+	_, err := r.step(context.Background(), "已停止", func() string { return "" })
+	if !errors.Is(err, ErrTruncated) {
+		t.Fatalf("step error = %v, want ErrTruncated", err)
+	}
+	if !strings.Contains(err.Error(), "重新生成") {
+		t.Errorf("error = %v, want it to name 「重新生成」", err)
 	}
 }
