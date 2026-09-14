@@ -87,8 +87,9 @@ func TestGatherWebchatInputStdinEmpty(t *testing.T) {
 }
 
 // newWebchatOptionsCmd builds a webchat command with the flags
-// webchatOptionsFromFlags reads (keep/attach/role/shell), matching the real
-// command's defaults - the contract this test locks.
+// webchatOptionsFromFlags reads (keep/attach/role), matching the real
+// command's defaults - the contract this test locks. There is no shell flag:
+// the shell channel is always on.
 func newWebchatOptionsCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "webchat"}
 	var keep string
@@ -96,12 +97,12 @@ func newWebchatOptionsCmd() *cobra.Command {
 	keepFlag.NoOptDefVal = "last"
 	cmd.Flags().StringSlice("attach", nil, "")
 	cmd.Flags().String("role", "", "")
-	cmd.Flags().Bool("shell", false, "")
 	return cmd
 }
 
 func TestWebchatOptionsFromFlags(t *testing.T) {
-	// Defaults: Role "" = plain chat (no role prompt; DSML replies still judged).
+	// Defaults: Role "" = plain chat (no role prompt injection); ShellTool
+	// is not a flag - the shell channel is always on.
 	cmd := newWebchatOptionsCmd()
 	opts, err := webchatOptionsFromFlags(cmd)
 	if err != nil {
@@ -110,8 +111,11 @@ func TestWebchatOptionsFromFlags(t *testing.T) {
 	if opts.Role != "" {
 		t.Errorf("default Role = %q, want \"\" (plain chat)", opts.Role)
 	}
-	if opts.Keep != "" || len(opts.Attachments) != 0 || opts.ShellTool {
-		t.Errorf("default options should be empty, got %+v", opts)
+	if !opts.ShellTool {
+		t.Error("ShellTool = false, want true (the shell channel is always on)")
+	}
+	if opts.Keep != "" || len(opts.Attachments) != 0 {
+		t.Errorf("default keep/attachments should be empty, got %+v", opts)
 	}
 
 	// --role review passes through.
@@ -150,18 +154,41 @@ func TestWebchatOptionsFromFlags(t *testing.T) {
 	}
 }
 
-// TestWebchatOptionsFromFlagsShell locks the --shell pass-through.
-func TestWebchatOptionsFromFlagsShell(t *testing.T) {
+// TestWebchatOptionsShellAlwaysOn locks the no-flag contract: the shell
+// channel is not switchable on the webchat CLI - ShellTool must be true
+// with defaults and stay true when a role is set.
+func TestWebchatOptionsShellAlwaysOn(t *testing.T) {
 	cmd := newWebchatOptionsCmd()
-	if err := cmd.Flags().Set("shell", "true"); err != nil {
-		t.Fatal(err)
-	}
 	opts, err := webchatOptionsFromFlags(cmd)
 	if err != nil {
-		t.Fatalf("webchatOptionsFromFlags(--shell): %v", err)
+		t.Fatalf("webchatOptionsFromFlags(defaults): %v", err)
 	}
 	if !opts.ShellTool {
-		t.Error("ShellTool = false, want true")
+		t.Error("ShellTool = false, want true (always on)")
+	}
+
+	cmd = newWebchatOptionsCmd()
+	if err := cmd.Flags().Set("role", "dev"); err != nil {
+		t.Fatal(err)
+	}
+	if opts, err = webchatOptionsFromFlags(cmd); err != nil {
+		t.Fatalf("webchatOptionsFromFlags(--role dev): %v", err)
+	}
+	if !opts.ShellTool {
+		t.Error("ShellTool = false with --role dev, want true")
+	}
+}
+
+// TestWebchatCmdHasNoShellFlag locks the CLI surface: the real webchat
+// command must not expose --shell - the channel is not optional
+// (docs/task-shell-block.md).
+func TestWebchatCmdHasNoShellFlag(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"webchat"})
+	if err != nil || cmd == nil || cmd.Name() != "webchat" {
+		t.Fatalf("webchat command not found under rootCmd (cmd=%v, err=%v)", cmd, err)
+	}
+	if f := cmd.Flags().Lookup("shell"); f != nil {
+		t.Errorf("webchat must not expose --shell (the shell channel is always on); found: %+v", f)
 	}
 }
 

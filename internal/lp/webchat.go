@@ -842,7 +842,9 @@ type WebChatOptions struct {
 	// and HandleWebChat / HandleWebChatResume route replies through the
 	// shell loop (judge, execute locally, feed the merged output back as
 	// an attached scriptN.txt). Only the handle layer consumes it -
-	// WebChatWithOptions rejects it. See docs/task-shell-block.md.
+	// WebChatWithOptions rejects it. See docs/task-shell-block.md. The
+	// webchat CLI always sets it (no flag - the command's only tool
+	// channel); code_dev sets it for the dev role.
 	ShellTool bool
 }
 
