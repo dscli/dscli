@@ -173,12 +173,13 @@ and no token count) and marks the final result `Printed` so callers do not
 re-print it. The `webchat` CLI always runs the shell channel (there is no
 `--shell` flag - `<shell>` is the command's only tool channel): replies
 route through `handleWebChatShellLoop`, and the DSML loop is entered by the
-ask bridge for the non-dev roles only. Role "" (the default) is still plain
-chat - no role injection; without the dev tool doc the model is not asked
-for a block. A stderr warning fires whenever
-the tool loop actually runs (any mode), and role sessions additionally get a
-role-specific warning up front, since the remote model's script will run
-locally. Role templates (internal/prompt/*.md) render a DSML tool section
+ask bridge for the non-dev roles only. Tool invocation is decoupled from
+role injection: Role "" (the default) is still plain chat - no role prompt
+is injected, and the tool doc is not registered automatically; a session
+that needs it carries the doc in the message itself (positional argument or
+`--input` file). An upfront stderr warning fires on every send, and the
+shell loop prints another when it starts executing, since the remote model's
+script will run locally. Role templates (internal/prompt/*.md) render a DSML tool section
 for WebChat via a `{{if .DSMLToolDoc.Intro}}` block: the section content
 (`dsml.BuildDSMLToolDoc`, see internal/dsml/doc.go) is derived
 from the role's tool config (roles.DefaultFor + role_configs), formatting

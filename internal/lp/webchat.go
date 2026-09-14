@@ -837,14 +837,16 @@ type WebChatOptions struct {
 	// HandleWebChat consumes it - WebChatWithOptions rejects it.
 	SkipPromptInjection bool
 
-	// ShellTool switches the consultation to the <shell> block channel:
-	// the role prompt carries the shell tool doc in place of the DSML doc,
-	// and HandleWebChat / HandleWebChatResume route replies through the
-	// shell loop (judge, execute locally, feed the merged output back as
-	// an attached scriptN.txt). Only the handle layer consumes it -
-	// WebChatWithOptions rejects it. See docs/task-shell-block.md. The
-	// webchat CLI always sets it (no flag - the command's only tool
-	// channel); code_dev sets it for the dev role.
+	// ShellTool switches the consultation to the <shell> block channel
+	// (docs/task-shell-block.md): HandleWebChat / HandleWebChatResume route
+	// replies through the shell loop (judge, execute locally, feed the
+	// merged output back as an attached scriptN.txt). Tool invocation is
+	// decoupled from role injection: the dev role path carries the tool doc
+	// in its role prompt, while a session without a role carries it in the
+	// message itself when needed. Only the handle layer consumes it -
+	// WebChatWithOptions rejects it. The webchat CLI always sets it (no
+	// flag - the command's only tool channel); code_dev sets it for the
+	// dev role.
 	ShellTool bool
 }
 

@@ -44,13 +44,15 @@ func init() {
   dscli webchat "随便聊聊"                           # 默认纯聊天：无角色注入
 非空角色会前置角色提示词。
 
-<shell> 块通道（webchat 的工具通道，始终启用）：
+<shell> 块通道（webchat 的工具通道，始终启用；工具调用与角色注入解耦）：
   dscli webchat --role dev "跑一下 make dev-test"
-dev 角色的提示词注册 <shell> 块协议：模型每轮回复一个 bash 脚本块，dscli 本地
-执行（默认 120s、上限 1800s 超时；破坏性命令拦截：rm -rf、sudo、curl/wget 外传
-等被拒绝）并把 stdout+stderr 合并后以附件 scriptN.txt 回填到同一会话（同
-code_dev 工具）。这是远程模型在本地执行命令的会话：角色会话开始前会打印警告；
-仍建议在可信工作目录使用。WebChat 不执行 DSML 工具调用：<shell> 块是唯一工具通道。
+dev 角色会话由角色提示词注册 <shell> 块协议：模型每轮回复一个 bash 脚本块，
+dscli 本地执行（默认 120s、上限 1800s 超时；破坏性命令拦截：rm -rf、sudo、
+curl/wget 外传等被拒绝）并把 stdout+stderr 合并后以附件 scriptN.txt 回填到
+同一会话（同 code_dev 工具）。无角色会话需要该协议时，可把协议文档随消息自行
+注入（位置参数或 --input 文件）。这是远程模型在本地执行命令的会话：发送前会
+打印警告；仍建议在可信工作目录使用。WebChat 不执行 DSML 工具调用：<shell> 块
+是唯一工具通道。
 
 附件（--attach，可多次指定）：
   dscli webchat --attach screenshot.png "这张截图说明了什么？"
@@ -163,18 +165,15 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 	var result lp.WebChatResult
 	startTime := time.Now()
 
-	// A role prompt makes this an agentic consultation: the remote model may
-	// reply with a `<shell>` bash script block that HandleWebChat executes
-	// locally with the user's OS permissions. Say so upfront (stderr, so
-	// piped stdout stays clean) - silent local execution from a remote model
-	// is the surprise. Role "" (the default) is plain chat: no role prompt
-	// is injected; the shell channel is still armed, but without the dev
-	// tool doc the model is not asked for a block. The command always runs
-	// the shell channel - <shell> is its only tool channel
-	// (docs/task-shell-block.md).
-	if opts.Role != "" {
-		fmt.Fprintf(os.Stderr, "⚠️ 角色 %q 已启用（`<shell>` 块通道）：远程模型回复中的 bash 脚本将在本地执行（cwd = 项目根；破坏性命令被拦截）。\n", opts.Role)
-	}
+	// The webchat CLI always runs the shell channel, and a reply carrying a
+	// `<shell>` block runs locally whatever the role: tool invocation is
+	// decoupled from role injection (docs/task-shell-block.md). Say so
+	// upfront (stderr, so piped stdout stays clean) - silent local execution
+	// from a remote model is the surprise. Role "" (the default) is plain
+	// chat: no role prompt is injected, and the tool doc is not registered
+	// automatically - a session that needs it carries the doc in the message
+	// itself (positional argument or --input file).
+	fmt.Fprintf(os.Stderr, "⚠️ `<shell>` 块通道已启用：远程模型回复中的 bash 脚本将在本地执行（cwd = 项目根；破坏性命令被拦截）。\n")
 
 	outfmt.Printf("📤 发送到 DeepSeek Web ...\n")
 	// HandleWebChat shares the ask_expert entry point: transient server
