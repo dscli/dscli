@@ -3,7 +3,7 @@
 > 状态: 已实现（本仓库直接开发，见 §11）；真机冒烟通过（§7），待 code_dev 真任务验收
 > 依据: `scripts.txt`（64 轮手工实验完整对话，12127 行）+ `codereview.md`（现行工具文档）
 > 日期: 2026-09-13
-> 修订: 开工前核对完成；用户确认 attach 回填、dscli-shell 不构成规范；档案补证（围栏引用 / 拦截 / 分级）落库为 §10
+> 修订: 开工前核对完成；用户确认 attach 回填、dscli-shell 不构成规范；档案补证（围栏引用 / 拦截 / 分级）落库为 §10；2026-09-14 决策：移除 `--shell` 开关，`dscli webchat` 恒定启用 `<shell>` 块通道（webchat 的工具只保证 shell 一个）
 
 ## 1. 目标与背景
 
@@ -13,7 +13,7 @@
 2. 工具精简为一个 `shell`，提高工具调用稳定性；
 3. 目标是"能用、稳定"，不追求强。
 
-使用者：`code_dev`（开发助理，自动启用）；辅助：`dscli webchat --shell`（手动测试）。
+使用者：`code_dev`（开发助理，自动启用）；`dscli webchat`（恒定启用；2026-09-14 起无开关——webchat 的工具通道只保证 `<shell>` 一个）。
 code_review 走无工具的检视流（`codereview.md`），不在本任务范围。
 
 ## 2. 协议契约（模型侧）
@@ -122,11 +122,11 @@ exit code: N
 | `internal/prompt/dev.md` | dev 角色注入切换（`{{if .ShellToolDoc}}` 优先分支） |
 | `internal/lp/` | `WebChatOptions.ShellTool bool`；入口路由（判定非"最终"才进循环）；`handleWebChatShellLoop`（镜像 handleWebChatToolLoop 骨架：printRound / Printed / 上限 1024 / 连续告警 3 / 本地执行 stderr 警告 / exec mock 变量）；`HandleWebChatResume` 分支；截断续传提示的 shell 变体（指向 `<shell>` 块）；逐轮 attach 回填 |
 | `internal/toolcall/ask/code_dev.go` | 接线（自动启用 shell 模式；跳过 DSML 工具集检查）；`code_dev.md` 契约描述同步 |
-| `webchat_cmd.go` | `--shell` 开关（手动测试用；默认关；需配 `--role`，缺失即报错） |
+| `webchat_cmd.go` | 无开关：恒启用 `<shell>` 块通道（2026-09-14 决策移除 `--shell`；原为手动测试开关） |
 | `docs/` | 本文件 |
 | `AGENTS.md` | 架构表补 `internal/shellblock` 一行；`internal/dsml` 行补共享原语说明；补一句 dev/`code_dev` 走 `<shell>` 块通道（其余角色仍 DSML） |
 
-默认方案 A：code_dev 自动带；webchat 手动 `--shell`；其它入口行为不变。
+默认方案 A（2026-09-14 修订）：code_dev 自动带；`dscli webchat` 恒定带（无开关）；其它入口（ask 桥非 dev 角色）行为不变。
 
 ## 7. 测试与验收
 

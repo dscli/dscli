@@ -170,12 +170,14 @@ line start, CommonMark), so a complete answer that quotes a fence is not
 misjudged as cut off. The loop prints every round it receives (reasoning + content via
 outfmt.PrintContent, with the header shown per role - icon + role·label -
 and no token count) and marks the final result `Printed` so callers do not
-re-print it. The `webchat` CLI defaults to `--role ""` (plain
-chat: no role injection; DSML tool-call replies are still executed - default
-dev profile, i.e. the development tool set); a stderr warning fires whenever
-the tool loop
-actually runs (any mode), and role sessions additionally get a role-specific
-warning up front, since the remote model's DSML tool calls will run
+re-print it. The `webchat` CLI always runs the shell channel (there is no
+`--shell` flag - `<shell>` is the command's only tool channel): replies
+route through `handleWebChatShellLoop`, and the DSML loop is entered by the
+ask bridge for the non-dev roles only. Role "" (the default) is still plain
+chat - no role injection; without the dev tool doc the model is not asked
+for a block. A stderr warning fires whenever
+the tool loop actually runs (any mode), and role sessions additionally get a
+role-specific warning up front, since the remote model's script will run
 locally. Role templates (internal/prompt/*.md) render a DSML tool section
 for WebChat via a `{{if .DSMLToolDoc.Intro}}` block: the section content
 (`dsml.BuildDSMLToolDoc`, see internal/dsml/doc.go) is derived
@@ -201,9 +203,9 @@ examples never execute, malformed shapes get a format-contract warning, DSML
 shapes are refused), runs it locally through the shared destructive-command
 interception (`dsml.BlockedCmdRe`) with a process-group timeout, and feeds
 the merged output back as an attached `scriptN.txt`. `WebChatOptions.ShellTool`
-selects the channel; `code_dev` enables it for the dev role automatically
-and `dscli webchat --shell` exposes it for manual testing. See
-`docs/task-shell-block.md`.
+selects the channel; `code_dev` enables it for the dev role automatically,
+and the `dscli webchat` command always runs it (no `--shell` flag - the
+channel is not optional). See `docs/task-shell-block.md`.
 
 code_review uploads its review inputs as attachments: the rendered review
 guide (review-guide.md, from internal/prompt/review.md), the complete diff
