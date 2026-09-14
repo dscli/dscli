@@ -92,9 +92,7 @@ func TestGatherWebchatInputStdinEmpty(t *testing.T) {
 // the shell channel is always on.
 func newWebchatOptionsCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "webchat"}
-	var keep string
-	keepFlag := cmd.Flags().VarPF(&keepValue{&keep}, "keep", "", "")
-	keepFlag.NoOptDefVal = "last"
+	cmd.Flags().String("keep", "", "")
 	cmd.Flags().StringSlice("attach", nil, "")
 	cmd.Flags().String("role", "", "")
 	return cmd
@@ -189,6 +187,67 @@ func TestWebchatCmdHasNoShellFlag(t *testing.T) {
 	}
 	if f := cmd.Flags().Lookup("shell"); f != nil {
 		t.Errorf("webchat must not expose --shell (the shell channel is always on); found: %+v", f)
+	}
+}
+
+// TestWebchatKeepTakesExplicitValue pins the --keep grammar on the REAL
+// command: like dscli chat's flags, --keep takes an explicit value, so both
+// "--keep <id>" and "--keep=<id>" set it while the message stays a positional
+// argument. Regression: the old NoOptDefVal ("last") fallback left the flag
+// unset when the value was written with a space, silently sending the
+// conversation ID as the message body.
+func TestWebchatKeepTakesExplicitValue(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"webchat"})
+	if err != nil || cmd == nil || cmd.Name() != "webchat" {
+		t.Fatalf("webchat command not found under rootCmd (cmd=%v, err=%v)", cmd, err)
+	}
+	t.Cleanup(func() {
+		// rootCmd.Find returns the shared command: reset the flag this test
+		// parsed so later tests still see the default (new conversation).
+		_ = cmd.Flags().Set("keep", "")
+	})
+
+	const id = "ff6ac088-4397-4f55-9c17-17cc5fb6719a"
+
+	// "--keep <id> <message>": the id is the flag value (not the message) and
+	// the space-joined positionals are the message, as in dscli chat.
+	if err := cmd.ParseFlags([]string{"--keep", id, "继续", "讨论"}); err != nil {
+		t.Fatalf("ParseFlags(--keep <id> <message>): %v", err)
+	}
+	opts, err := webchatOptionsFromFlags(cmd)
+	if err != nil {
+		t.Fatalf("webchatOptionsFromFlags: %v", err)
+	}
+	if opts.Keep != id {
+		t.Errorf("Keep = %q, want %q (the space form must set the value)", opts.Keep, id)
+	}
+	msg, err := gatherWebchatInput(cmd, cmd.Flags().Args())
+	if err != nil {
+		t.Fatalf("gatherWebchatInput: %v", err)
+	}
+	if msg != "继续 讨论" {
+		t.Errorf("message = %q, want %q", msg, "继续 讨论")
+	}
+
+	// "--keep=<id>": the equals form sets the same value.
+	if err := cmd.ParseFlags([]string{"--keep=" + id, "继续"}); err != nil {
+		t.Fatalf("ParseFlags(--keep=<id>): %v", err)
+	}
+	if opts, err = webchatOptionsFromFlags(cmd); err != nil || opts.Keep != id {
+		t.Errorf("Keep = %q, err = %v; want %q", opts.Keep, err, id)
+	}
+
+	// "--keep=last": "last" is an explicit value, not a bare-flag default.
+	if err := cmd.ParseFlags([]string{"--keep=last"}); err != nil {
+		t.Fatalf("ParseFlags(--keep=last): %v", err)
+	}
+	if opts, err = webchatOptionsFromFlags(cmd); err != nil || opts.Keep != "last" {
+		t.Errorf("Keep = %q, err = %v; want \"last\"", opts.Keep, err)
+	}
+
+	// A bare --keep without a value is a hard error, not a silent "last".
+	if err := cmd.ParseFlags([]string{"--keep"}); err == nil {
+		t.Error("ParseFlags(--keep) must fail: --keep needs an explicit value")
 	}
 }
 

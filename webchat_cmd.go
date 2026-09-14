@@ -28,11 +28,14 @@ func init() {
   echo "review 这段代码" | dscli webchat
   echo "识别图中文字" | dscli webchat --attach screenshot.png
 
-继续会话（--keep）：
-  dscli webchat --keep "第一个问题"            # 继续最近一次会话
-  dscli webchat --keep=<会话ID> "继续讨论..."   # 继续指定会话
-  dscli webchat --keep=<会话URL> "继续讨论..."  # 继续浏览器中打开的会话
-  dscli webchat --keep=list                     # 列出所有已保存会话
+继续会话（--keep=<会话ID|会话URL|last>；last = 最近一次会话）：
+  dscli webchat --keep=last "第一个问题"           # 继续最近一次会话
+  dscli webchat --keep=<会话ID> "继续讨论..."       # 继续指定会话
+  dscli webchat --keep=<会话URL> "继续讨论..."      # 继续浏览器中打开的会话
+  dscli webchat --keep=list                         # 列出所有已保存会话
+--keep 需要显式取值（--keep <值> 与 --keep=<值> 等价，与 dscli chat 的取值语法一致）：
+消息写在取值之后的位置参数或经 --input/stdin 传入；直接跟在 --keep 后面的文本会被
+当成会话取值，而不是消息。
 续会话不会再次注入角色提示词（第一轮已注入）。
 每次回复都会把会话 ID 打印到 stderr（格式 keep:<id>），可直接作为 --keep 参数使用。
 
@@ -60,7 +63,6 @@ curl/wget 外传等被拒绝）并把 stdout+stderr 合并后以附件 scriptN.t
 上传限制：最多 50 个文件、共 100MB；支持图片、文本与 PDF 文件。
 网站按文件扩展名决定是否接收：扩展名不受支持（如 .gitignore）或没有扩展名
 （如 Makefile）的附件会自动以「原名 + .txt」上传（内容不变，仅上传名变化）。`,
-		Args: cobra.MaximumNArgs(1),
 		RunE: webchatRunE,
 	})
 
@@ -68,14 +70,14 @@ curl/wget 外传等被拒绝）并把 stdout+stderr 合并后以附件 scriptN.t
 	// channel (echo "msg" | dscli webchat). A terminal stdin is rejected in
 	// gatherWebchatInput with a helpful error instead of hanging on EOF.
 	webchatCmd.Flags().String("input", "-", "从文件读取消息（默认 - 从 stdin 管道读取；终端下请提供位置参数或 --input 文件）")
-	// --keep is a custom string flag with NoOptDefVal="last": a bare
-	// "--keep" continues the most recent conversation (backwards compatible
-	// with the old boolean flag and the "--keep 消息" usage, where the next
-	// argument remains the message), while "--keep=<id|url>" targets a
-	// specific conversation and "--keep=list" lists saved ones.
-	var keep string
-	keepFlag := webchatCmd.Flags().VarPF(&keepValue{&keep}, "keep", "", "继续会话：--keep（最近一次）| --keep=<会话ID|会话URL> | --keep=list（列出已保存会话）；默认开新对话")
-	keepFlag.NoOptDefVal = "last"
+	// --keep takes an explicit value, like the other flags (and dscli
+	// chat): both "--keep <值>" and "--keep=<值>" set it - a conversation
+	// ID, "last" (the most recent conversation), a conversation URL, or
+	// "list" (list saved conversations). Plain string flag on purpose: the
+	// old NoOptDefVal="last" fallback left the value unset when it was
+	// written with a space, silently sending the conversation ID as the
+	// message body.
+	webchatCmd.Flags().String("keep", "", "继续会话：--keep=<会话ID|会话URL|last>（last = 最近一次）| --keep=list（列出已保存会话）；默认开新对话")
 	// --attach accepts any user-readable path (absolute included): the CLI
 	// is human-driven and the operator can already read those files. The
 	// ask_expert TOOL is LLM-driven and sandboxes paths to the project
@@ -123,22 +125,6 @@ func webchatOptionsFromFlags(cmd *cobra.Command) (lp.WebChatOptions, error) {
 		ShellTool:   true,
 	}, nil
 }
-
-// keepValue is a pflag.Value for --keep. Type() returns "string" so
-// cmd.Flags().GetString("keep") works; the NoOptDefVal semantics (bare
-// --keep = "last") are set at registration time.
-type keepValue struct{ v *string }
-
-func (k keepValue) String() string {
-	if k.v == nil || *k.v == "" {
-		return ""
-	}
-	return *k.v
-}
-
-func (k keepValue) Set(s string) error { *k.v = s; return nil }
-
-func (k keepValue) Type() string { return "string" }
 
 func webchatRunE(cmd *cobra.Command, args []string) error {
 	span, ctx := clog.StartSpanFromContext(cmd.Context(), "webchatRunE")
@@ -238,13 +224,14 @@ func webchatListConversations() error {
 }
 
 // gatherWebchatInput collects the message from args or --input flag.
-// Priority: positional args > --input flag (file path or "-" for stdin).
+// Priority: positional args (space-joined) > --input flag (file path or "-"
+// for stdin) - the same input grammar as dscli chat's gatherInput.
 // The flag defaults to "-", so a piped stdin (echo ... | dscli webchat)
 // works without any argument; a terminal stdin is rejected with a helpful
 // error instead of hanging on EOF.
 func gatherWebchatInput(cmd *cobra.Command, args []string) (string, error) {
 	if len(args) > 0 {
-		return args[0], nil
+		return strings.Join(args, " "), nil
 	}
 
 	input, _ := cmd.Flags().GetString("input")
