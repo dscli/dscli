@@ -862,6 +862,8 @@ func TestJsFetchTailFmt(t *testing.T) {
 		"authorization: auth",
 		"best.message_id",
 		"msgs[msgs.length - 1]",
+		"delta(baseV - 1)",
+		"delta(0)",
 	} {
 		if !strings.Contains(jsFetchTailFmt, want) {
 			t.Errorf("jsFetchTailFmt must contain %q (regression)", want)

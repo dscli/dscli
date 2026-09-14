@@ -467,10 +467,12 @@ const (
 			return {msgs: ((j.data || {}).biz_data || {}).chat_messages || []};
 		}
 		let res = await delta(baseV);
+		if (res.error && baseV > 0) res = await delta(0);
 		if (res.error) return {found: false, reason: res.error};
 		let msgs = res.msgs;
 		if (msgs.length === 0 && baseV > 0) {
 			res = await delta(baseV - 1);
+			if (res.error) res = await delta(0);
 			if (res.error) return {found: false, reason: res.error};
 			msgs = res.msgs;
 		}
@@ -2763,10 +2765,16 @@ func fetchServerTail(ctx context.Context, conversationID string, version, cacheR
 		}
 		return "", "", "", reason, false
 	}
-	tail, _ := result["tail"].(map[string]any)
+	tail, okTail := result["tail"].(map[string]any)
+	if !okTail {
+		return "", "", "", "tail fetch returned no tail object", false
+	}
 	content, _ = tail["content"].(string)
 	status, _ = tail["status"].(string)
 	tailRole, _ = tail["role"].(string)
+	if tailRole == "" {
+		return "", "", "", "tail fetch returned a message without a role", false
+	}
 	return content, status, tailRole, "", true
 }
 
@@ -2926,7 +2934,7 @@ func webchatReadTail(ctx context.Context, conversationURL string) (content, stat
 			}
 			select {
 			case <-actCtx.Done():
-				return nil
+				return actCtx.Err()
 			case <-time.After(500 * time.Millisecond):
 			}
 		}
@@ -3561,7 +3569,7 @@ var conversationIDShapeRE = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 // site could serve. "list" (the CLI listing action) is excluded so it can
 // never turn into a URL.
 func canBeConversationID(keep string) bool {
-	return keep != "list" && conversationIDShapeRE.MatchString(keep)
+	return !strings.EqualFold(keep, "list") && conversationIDShapeRE.MatchString(keep)
 }
 
 // constructConversationURL returns the canonical site URL for a

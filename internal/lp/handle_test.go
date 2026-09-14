@@ -155,6 +155,28 @@ func TestHandleWebChatResumeConfirmReadGate(t *testing.T) {
 			t.Errorf("reads = %d, want 2 (initial + confirmation)", calls)
 		}
 	})
+
+	t.Run("confirmation read shows a user tail", func(t *testing.T) {
+		calls := 0
+		handleWebChatResumeRead = func(_ context.Context, _ string) (string, string, string, string, bool) {
+			calls++
+			if calls == 1 {
+				return shellBlockTest, "FINISHED", "ASSISTANT", "", true
+			}
+			return "waiting for a reply", "FINISHED", "USER", "", true
+		}
+		handleWebChatExecShell = func(_ context.Context, _ string, _ string, _ time.Duration) (*shellblock.RunResult, error) {
+			t.Fatal("a conversation whose tail turned into a user message must not execute")
+			return nil, nil
+		}
+		_, err := HandleWebChatResume(context.Background(), WebChatOptions{Keep: "convRACE", Role: "dev", ShellTool: true})
+		if err == nil || !strings.Contains(err.Error(), "now a") {
+			t.Fatalf("err = %v, want user-tail refusal", err)
+		}
+		if calls != 2 {
+			t.Errorf("reads = %d, want 2 (initial + confirmation)", calls)
+		}
+	})
 }
 
 func TestHandleWebChatResumePendingToolCalls(t *testing.T) {
