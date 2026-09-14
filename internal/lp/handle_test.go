@@ -31,22 +31,22 @@ const interruptedRound = `<tool_calls>
 </tool_calls>`
 
 // resumeReadReply returns a mock read for handleWebChatResumeRead and a
-// cleanup that restores it. The content is the "last assistant message" the
-// resumed conversation was interrupted on; newestRole defaults to
-// "ASSISTANT" (the picked message is the conversation tail) and the refusal
-// reason is empty - mockResumeReadFull covers the other shapes.
+// cleanup that restores it. The content is the conversation tail the resumed
+// round was interrupted on; tailRole defaults to "ASSISTANT" (the tail is
+// the assistant's reply) and the refusal reason is empty - mockResumeReadFull
+// covers the other shapes.
 func mockResumeRead(t *testing.T, content, status string, ok bool) {
 	t.Helper()
 	mockResumeReadFull(t, content, status, "ASSISTANT", "", ok)
 }
 
-// mockResumeReadFull is mockResumeRead with explicit newestRole and refusal
+// mockResumeReadFull is mockResumeRead with explicit tailRole and refusal
 // reason values (the tail-guard and diagnostics cases).
-func mockResumeReadFull(t *testing.T, content, status, newestRole, reason string, ok bool) {
+func mockResumeReadFull(t *testing.T, content, status, tailRole, reason string, ok bool) {
 	t.Helper()
 	orig := handleWebChatResumeRead
 	handleWebChatResumeRead = func(_ context.Context, _ string) (string, string, string, string, bool) {
-		return content, status, newestRole, reason, ok
+		return content, status, tailRole, reason, ok
 	}
 	t.Cleanup(func() { handleWebChatResumeRead = orig })
 }
@@ -75,7 +75,7 @@ func TestHandleWebChatResumeReadFailure(t *testing.T) {
 	mockResumeResolve(t, "https://chat.deepseek.com/a/chat/s/conv123")
 	mockResumeRead(t, "", "no-idb", false)
 	_, err := HandleWebChatResume(context.Background(), WebChatOptions{Keep: "conv123"})
-	if err == nil || !strings.Contains(err.Error(), "cannot read last assistant message") {
+	if err == nil || !strings.Contains(err.Error(), "cannot read the conversation tail") {
 		t.Fatalf("err = %v, want read-failure error", err)
 	}
 }

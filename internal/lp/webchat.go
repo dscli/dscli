@@ -130,15 +130,6 @@ const (
 	webChatIDBPollWindow   = 15 * time.Second // read window per reload attempt
 	webChatIDBReadAttempts = 3                // reload+read attempts before DOM fallback
 
-	// webChatResumeRecordSkew is the tolerance of the resume read's
-	// freshness anchor (rec.timestamp >= navigation start - skew). The
-	// skew must stay SMALLER than the gap between the two reads of one
-	// resume (the initial read and the pre-execution confirmation): a
-	// bigger skew could let the confirmation accept the record written by
-	// the initial read's own page load, silently voiding the "has the
-	// conversation moved?" check.
-	webChatResumeRecordSkew = 2 * time.Second
-
 	// JS snippet to set a textarea's value via the native setter (triggers
 	// message string.
 	jsSetTextareaFmt = `(() => {
@@ -412,32 +403,16 @@ const (
 		return {found: false, reason: String((e && e.message) || e)};
 	}
 })()`
-	// jsIDBGetLastAssistantFmt reads the LAST assistant message of the
-	// CURRENT conversation from the site's IndexedDB conversation cache —
-	// the continuation point of a resumed conversation (HandleWebChatResume).
-	//
-	// Unlike jsIDBGetAnswerFmt it does NOT need a sent-message anchor:
-	// there is no "this round" - the caller wants whatever the expert last
-	// said, whether it is a final answer (multi-turn resume) or a pending
-	// tool-call block (interrupted round, chat_messages is newest-first so
-	// the last assistant message is the FIRST role=ASSISTANT entry scanning
-	// from index 0).
-	//
-	// It DOES need a freshness anchor, for the opposite reason: a
-	// conversation is shared state and may be continued anywhere (the
-	// user's own browser, another dscli process). The site refreshes
-	// rec.timestamp on every page load, so %d (the navigation start minus a
-	// small skew) refuses records that this page load did not (re)write;
-	// the caller keeps polling until the fresh write lands and fails
-	// loudly on timeout instead of trusting a leftover record.
-	//
-	// newestRole reports the role of the newest message: "ASSISTANT" means
-	// the picked message IS the conversation tail; anything else (typically
-	// "USER": a browser-side message with no reply yet) means an older
-	// assistant message is NOT the continuation point.
-	jsIDBGetLastAssistantFmt = `(async () => {
+	// jsIDBTailCursorFmt reads the conversation's IndexedDB sync CURSOR:
+	// the record's cache_version and cache_reset_at. The cursor is the ONLY
+	// thing the resume read takes from the local store - it means "this
+	// browser already holds everything up to version N" and is exactly the
+	// delta base the site's own client uses. The record CONTENT is never
+	// trusted: the tail comes from the server (jsFetchTailFmt), so a
+	// conversation continued anywhere (the user's own browser, another
+	// machine) is seen as the server currently has it.
+	jsIDBTailCursorFmt = `(async () => {
 	try {
-		const minTimestamp = %d;
 		const m = location.pathname.match(/\/a\/chat\/s\/([A-Za-z0-9_-]+)/);
 		if (!m) return {found: false, reason: 'no conversation id in url'};
 		const db = await new Promise(function(res, rej) {
@@ -452,24 +427,68 @@ const (
 			r.onerror = function() { rej(r.error); };
 		});
 		db.close();
-		if (!rec) return {found: false, reason: 'no idb record'};
-		if (typeof rec.timestamp !== 'number' || rec.timestamp < minTimestamp) {
-			return {found: false, reason: 'idb record stale for this page load (recordAt=' + rec.timestamp + ', min=' + minTimestamp + ')'};
+		if (!rec) return {found: false, reason: 'no idb record yet'};
+		return {found: true, version: (rec.version | 0), cacheResetAt: (rec.cacheResetAt | 0)};
+	} catch (e) {
+		return {found: false, reason: String((e && e.message) || e)};
+	}
+})()`
+	// jsFetchTailFmt reads the conversation TAIL from the server through the
+	// site's own history_messages delta sync (the same endpoint the web
+	// client calls on every conversation load), authenticated with the
+	// page's user token. The local record is only the delta base: %d
+	// (cache_version) and %d (cache_reset_at). An empty delta(N) response
+	// means "nothing newer than the record", so the tail is re-fetched
+	// from N-1 (that response carries the newest message itself).
+	//
+	// The response lists messages oldest-first; the newest message is
+	// picked by the largest numeric message_id (the element that would win
+	// any ordering race), falling back to the last array element when the
+	// ids are not numeric. The returned fields mirror what the site's
+	// client stores: role, status, content (the markdown the model wrote,
+	// including any tool-call block) and thinking_content (the reasoning).
+	jsFetchTailFmt = `(async () => {
+	try {
+		const id = %s;
+		const baseV = %d;
+		const baseR = %d;
+		const ut = localStorage.getItem('userToken') || '';
+		let tok = ut;
+		try { const j = JSON.parse(ut); if (j && typeof j.value === 'string') tok = j.value; } catch (e) {}
+		if (!tok) return {found: false, reason: 'no user token in localStorage (login required?)'};
+		const auth = tok.indexOf('Bearer') === 0 ? tok : 'Bearer ' + tok;
+		async function delta(cv) {
+			let qs = 'chat_session_id=' + id + '&cache_version=' + cv;
+			if (baseR > 0) qs += '&cache_reset_at=' + baseR;
+			const r = await fetch('/api/v0/chat/history_messages?' + qs, {credentials: 'include', headers: {authorization: auth}});
+			if (r.status !== 200) return {error: 'http ' + r.status};
+			const j = await r.json();
+			if (j.code !== 0) return {error: 'chat code ' + j.code + ': ' + (j.msg || '')};
+			return {msgs: ((j.data || {}).biz_data || {}).chat_messages || []};
 		}
-		const msgs = (rec.data && rec.data.chat_messages) || [];
-		const newestRole = (msgs[0] && msgs[0].role) || '';
-		let last = null;
-		for (let i = 0; i < msgs.length; i++) {
-			if (msgs[i].role === 'ASSISTANT') { last = msgs[i]; break; }
+		let res = await delta(baseV);
+		if (res.error) return {found: false, reason: res.error};
+		let msgs = res.msgs;
+		if (msgs.length === 0 && baseV > 0) {
+			res = await delta(baseV - 1);
+			if (res.error) return {found: false, reason: res.error};
+			msgs = res.msgs;
 		}
-		if (!last) return {found: false, reason: 'no assistant message'};
-		const frags = last.fragments || [];
-		const parts = [];
-		for (const f of frags) {
-			if (f && typeof f.content === 'string' && f.content.trim() === '') continue;
-			if (f && f.type === 'RESPONSE') parts.push(f.content);
+		if (msgs.length === 0) return {found: false, reason: 'conversation has no messages'};
+		let best = null;
+		let bestID = -Infinity;
+		for (const msg of msgs) {
+			const nid = Number(msg.message_id);
+			if (!isNaN(nid) && nid >= bestID) { bestID = nid; best = msg; }
 		}
-		return {found: true, status: last.status || '', text: parts.join('\n\n'), newestRole: newestRole};
+		if (best === null) best = msgs[msgs.length - 1];
+		return {found: true, tail: {
+			mid: String(best.message_id || ''),
+			role: best.role || '',
+			status: best.status || '',
+			content: best.content || '',
+			thinking: best.thinking_content || '',
+		}};
 	} catch (e) {
 		return {found: false, reason: String((e && e.message) || e)};
 	}
@@ -2696,27 +2715,14 @@ func idbGetAssistant(ctx context.Context, sentMessage string, notBeforeMS int64)
 	return text, reasoning, status, tokens, true
 }
 
-// idbGetLastAssistant reads the LAST assistant message of the CURRENT
-// conversation from the site's IndexedDB conversation cache — the
-// continuation point of a resumed conversation (HandleWebChatResume). No
-// sent-message anchor: there is no "this round", the caller wants whatever
-// the expert last said.
-//
-// The record must have been (re)written at or after minTimestampMS (Unix ms,
-// captured from the navigation start minus a skew): a conversation can be
-// continued elsewhere, and a record left behind by an earlier page load may
-// be stale - it is refused so the caller's poll keeps waiting for this
-// load's write. Returns the original markdown (RESPONSE fragments), the
-// message status, the role of the newest message (newestRole - "ASSISTANT"
-// means the picked message is the conversation tail) and the last refusal
-// reason (diagnostics for the caller's timeout; "" when ok). ok=false also
-// covers unreadable records and conversations without an assistant message
-// yet.
-func idbGetLastAssistant(ctx context.Context, minTimestampMS int64) (text, status, newestRole, reason string, ok bool) {
-	js := fmt.Sprintf(jsIDBGetLastAssistantFmt, minTimestampMS)
+// idbTailCursor reads the conversation's IndexedDB sync cursor - the
+// record's cache_version and cache_reset_at. The cursor is the only local
+// input of the resume read (a delta base, not content): ok=false means the
+// record cannot be read yet; reason carries the diagnostic.
+func idbTailCursor(ctx context.Context) (version, cacheResetAt int64, reason string, ok bool) {
 	var result map[string]any
-	if err := evaluateAwait(ctx, js, &result); err != nil {
-		return "", "", "", "idb read failed: " + err.Error(), false
+	if err := evaluateAwait(ctx, jsIDBTailCursorFmt, &result); err != nil {
+		return 0, 0, "idb read failed: " + err.Error(), false
 	}
 	found, _ := result["found"].(bool)
 	if !found {
@@ -2724,12 +2730,44 @@ func idbGetLastAssistant(ctx context.Context, minTimestampMS int64) (text, statu
 		if reason == "" {
 			reason = "idb record unreadable"
 		}
+		return 0, 0, reason, false
+	}
+	if v, okv := result["version"].(float64); okv {
+		version = int64(v)
+	}
+	if r, okr := result["cacheResetAt"].(float64); okr {
+		cacheResetAt = int64(r)
+	}
+	return version, cacheResetAt, "", true
+}
+
+// fetchServerTail reads the conversation's newest message from the server
+// through the site's own history_messages delta sync, with the local record
+// as the delta base (version, cacheResetAt; a zero version means "fetch from
+// scratch"). Nothing about the tail comes from the local cache, so a
+// conversation continued elsewhere is seen as the server has it. Returns the
+// tail's markdown, status and role (tailRole - "ASSISTANT" means the
+// conversation ends with a reply, anything else, typically "USER", means a
+// message is waiting for one); ok=false carries the refusal reason.
+func fetchServerTail(ctx context.Context, conversationID string, version, cacheResetAt int64) (content, status, tailRole, reason string, ok bool) {
+	js := fmt.Sprintf(jsFetchTailFmt, quoteJS(conversationID), version, cacheResetAt)
+	var result map[string]any
+	if err := evaluateAwait(ctx, js, &result); err != nil {
+		return "", "", "", "tail fetch failed: " + err.Error(), false
+	}
+	found, _ := result["found"].(bool)
+	if !found {
+		reason, _ = result["reason"].(string)
+		if reason == "" {
+			reason = "tail fetch returned nothing"
+		}
 		return "", "", "", reason, false
 	}
-	status, _ = result["status"].(string)
-	newestRole, _ = result["newestRole"].(string)
-	text, _ = result["text"].(string)
-	return text, status, newestRole, "", true
+	tail, _ := result["tail"].(map[string]any)
+	content, _ = tail["content"].(string)
+	status, _ = tail["status"].(string)
+	tailRole, _ = tail["role"].(string)
+	return content, status, tailRole, "", true
 }
 
 // webchatExtractReloadedIDB reloads the conversation page and reads THIS
@@ -2792,98 +2830,99 @@ func webchatExtractReloadedIDB(ctx context.Context, conversationURL, sentMessage
 	}
 }
 
-// ReadLastAssistant navigates the session's browser to the conversation and
-// reads the LAST assistant message's original markdown from the site's
-// IndexedDB cache — the continuation point of a resumed conversation. Unlike
-// Send it sends nothing: this is a read-only probe (HandleWebChatResume).
-// The read is anchored to its own page load: a record left behind by an
-// earlier load is refused, because the conversation may have been continued
-// elsewhere since (the user's own browser, another dscli process).
+// ReadTail navigates the session's browser to the conversation and reads
+// the conversation TAIL (the newest message) from the SERVER through the
+// site's own history_messages sync - never from the local cache, which is
+// only used as the sync cursor. Unlike Send it sends nothing: this is a
+// read-only probe (HandleWebChatResume). A conversation continued anywhere
+// else (the user's own browser, another machine) is therefore seen as the
+// server currently has it.
 //
-// ok=false means the record is unreadable (URL missing, login lost, no
-// assistant message yet, or this load's fresh record never landed within
-// the poll window); reason carries the last refusal for diagnostics.
-func (s *webChatSession) ReadLastAssistant(ctx context.Context, conversationURL string) (content, status, newestRole, reason string, ok bool) {
-	span, ctx := clog.StartSpanFromContext(ctx, "webChatSessionReadLast")
+// ok=false means the tail is unreadable (URL missing, login lost, no
+// messages yet, or the site refused the query); reason carries the
+// diagnostic.
+func (s *webChatSession) ReadTail(ctx context.Context, conversationURL string) (content, status, tailRole, reason string, ok bool) {
+	span, ctx := clog.StartSpanFromContext(ctx, "webChatSessionReadTail")
 	defer span.Finish()
 	tabCtx, err := s.ensureTab(ctx)
 	if err != nil {
 		return "", "", "", "browser tab unavailable: " + err.Error(), false
 	}
-	return webchatReadLastAssistant(tabCtx, conversationURL)
+	return webchatReadTail(tabCtx, conversationURL)
 }
 
-// webchatReadLastAssistant is the transport-level read of the last assistant
-// message: navigate to the conversation, wait for the composer, then poll the
-// IDB record for an assistant message written by THIS page load (the record
-// write trails the navigation, so a single immediate read can miss it - same
-// window as webchatExtractReloadedIDB). No sent-message anchoring: a resumed
-// conversation has no "this round" yet, so the newest-first FIRST
-// role=ASSISTANT entry IS the continuation point (see
-// jsIDBGetLastAssistantFmt).
+// webchatReadTail is the transport-level read of a conversation's newest
+// message: navigate to the conversation, wait for the composer, then read
+// the server through the site's own history_messages sync (jsFetchTailFmt),
+// using the local record only as the delta cursor (jsIDBTailCursorFmt, with
+// a bounded poll - a conversation loaded for the first time gets its record
+// written by the app a moment after the load).
 //
-// The freshness anchor is the point of this read: a record left behind by
-// an earlier page load is refused, because the conversation may have been
-// continued elsewhere since (the user's own browser, another dscli
-// process). The poll keeps waiting for this load's write; on timeout it
-// returns the last refusal reason so the caller fails loudly instead of
-// acting on a stale record.
+// Nothing about the tail comes from the local cache: the server response IS
+// the conversation, so a conversation continued elsewhere is seen as it
+// currently is, and the caller's confirmation read sees changes made
+// between the two reads. An unreadable cursor falls back to a from-scratch
+// fetch; failures return the last refusal reason so the caller fails loudly
+// instead of acting on stale state.
 //
-// The IDB poll MUST run inside a chromedp action: cdp.Execute resolves the
-// message executor from the action context that chromedp.Run injects (via
-// cdp.WithExecutor); after Run returns, a bare tab context carries no
+// The browser steps MUST run inside chromedp actions: cdp.Execute resolves
+// the message executor from the action context that chromedp.Run injects
+// (via cdp.WithExecutor); after Run returns, a bare tab context carries no
 // executor and every evaluateAwait call fails with ErrInvalidContext, so
-// the poll is a second Run with its own deadline rather than a loop after
-// the first one.
+// the cursor/fetch work is a second Run with its own deadline rather than a
+// loop after the first one.
 //
 // The FIRST Run must take the LONG-LIVED tab context, never a derived
 // deadline context: chromedp binds the target's CDP connection to the
 // context of the first Run, and cancelling that context later tears the
-// connection down — every later Run (the poll below and every follow-up
+// connection down — every later Run (the read below and every follow-up
 // Send in the tool loop) then fails with "context canceled" even though
 // the tab context is still alive. Per-step timeouts live inside the actions
 // (waitForChatTextarea's 60s bound), mirroring webchatSend.
-func webchatReadLastAssistant(ctx context.Context, conversationURL string) (content, status, newestRole, reason string, ok bool) {
+func webchatReadTail(ctx context.Context, conversationURL string) (content, status, tailRole, reason string, ok bool) {
 	if conversationURL == "" {
 		return "", "", "", "empty conversation URL", false
 	}
-	// Freshness anchor: the site refreshes rec.timestamp on every page
-	// load; a record older than this navigation (minus a small skew for
-	// clock jitter) was left by an earlier load and may be stale for a
-	// conversation that moved on elsewhere.
-	minTimestampMS := time.Now().Add(-webChatResumeRecordSkew).UnixMilli()
+	conversationID := ConversationIDFromURL(conversationURL)
+	if conversationID == "" {
+		return "", "", "", "cannot extract a conversation id from " + conversationURL, false
+	}
 	actions := []chromedp.Action{
 		chromedp.Navigate(conversationURL),
 		chromedp.WaitReady("body"),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			return waitForChatTextarea(ctx)
 		}),
-		// Let React finish rendering before poking IndexedDB; mirrors
-		// webchatSend's settle delay.
-		chromedp.Sleep(3 * time.Second),
 	}
 	if err := chromedp.Run(ctx, actions...); err != nil {
 		return "", "", "", "navigation failed: " + err.Error(), false
 	}
-	// Second Run: the poll window gets its own budget so a slow composer can
-	// never eat into it, and this is where the action context supplies the
-	// cdp executor the IDB read needs. The deadline context here only scopes
-	// the actions; the target connection stays bound to the first Run's
-	// long-lived context.
-	pctx, pcancel := context.WithTimeout(ctx, webChatIDBPollWindow+5*time.Second)
+	// Second Run: the cursor poll and the server fetch share one budget, and
+	// this is where the action context supplies the cdp executor the reads
+	// need. The deadline context here only scopes the actions; the target
+	// connection stays bound to the first Run's long-lived context.
+	pctx, pcancel := context.WithTimeout(ctx, 2*webChatIDBPollWindow)
 	defer pcancel()
+	var gotContent, gotStatus, gotRole string
+	var got bool
 	var lastReason string
 	if err := chromedp.Run(pctx, chromedp.ActionFunc(func(actCtx context.Context) error {
+		// Cursor: the local record's sync version is the delta base; poll
+		// for it because a first-time load writes the record a moment
+		// after navigation. A timeout falls back to a from-scratch fetch
+		// (version 0), which the server answers with the full history.
+		var version, cacheResetAt int64
 		deadline := time.Now().Add(webChatIDBPollWindow)
 		for {
-			t, s, nr, r, f := idbGetLastAssistant(actCtx, minTimestampMS)
-			if f {
-				content, status, newestRole, ok = t, s, nr, true
-				return nil
+			v, r, why, found := idbTailCursor(actCtx)
+			if found {
+				version, cacheResetAt = v, r
+				break
 			}
-			lastReason = r
+			lastReason = why
 			if time.Now().After(deadline) {
-				return nil
+				version, cacheResetAt = 0, 0
+				break
 			}
 			select {
 			case <-actCtx.Done():
@@ -2891,19 +2930,26 @@ func webchatReadLastAssistant(ctx context.Context, conversationURL string) (cont
 			case <-time.After(500 * time.Millisecond):
 			}
 		}
+		c, st, role, why, found := fetchServerTail(actCtx, conversationID, version, cacheResetAt)
+		if !found {
+			lastReason = why
+			return nil
+		}
+		gotContent, gotStatus, gotRole, got = c, st, role, true
+		return nil
 	})); err != nil {
 		if lastReason != "" {
-			return "", "", "", fmt.Sprintf("idb poll failed: %v (last: %s)", err, lastReason), false
+			return "", "", "", fmt.Sprintf("tail read failed: %v (last: %s)", err, lastReason), false
 		}
-		return "", "", "", "idb poll failed: " + err.Error(), false
+		return "", "", "", "tail read failed: " + err.Error(), false
 	}
-	if !ok {
+	if !got {
 		if lastReason == "" {
-			lastReason = "no readable IndexedDB record within the poll window"
+			lastReason = "no tail available"
 		}
 		return "", "", "", lastReason, false
 	}
-	return content, status, newestRole, "", true
+	return gotContent, gotStatus, gotRole, "", true
 }
 
 // evaluateAwait evaluates a JS expression and awaits the resulting promise.

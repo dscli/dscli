@@ -501,19 +501,18 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 // the user's Chrome profile directory).
 var handleWebChatResolveConversation = resolveConversation
 
-// handleWebChatResumeRead reads the conversation's last assistant message
-// via the shared session attached to ctx. The read is anchored to its own
-// page load (see webchatReadLastAssistant): a record written by an earlier
-// load is refused, because the conversation may have been continued
-// elsewhere since (the user's own browser, another dscli process). A
-// package variable so tests can replace it with a mock (skip browser
-// automation).
-var handleWebChatResumeRead = func(ctx context.Context, conversationURL string) (content, status, newestRole, reason string, ok bool) {
+// handleWebChatResumeRead reads the conversation tail via the shared session
+// attached to ctx. The tail comes from the SERVER (see webchatReadTail): the
+// local record is only the sync cursor, so a conversation continued
+// elsewhere (the user's own browser, another machine) is seen as the server
+// currently has it. A package variable so tests can replace it with a mock
+// (skip browser automation).
+var handleWebChatResumeRead = func(ctx context.Context, conversationURL string) (content, status, tailRole, reason string, ok bool) {
 	sess := webChatSessionFrom(ctx)
 	if sess == nil {
 		return "", "", "", "no browser session", false
 	}
-	return sess.ReadLastAssistant(ctx, conversationURL)
+	return sess.ReadTail(ctx, conversationURL)
 }
 
 // HandleWebChatResume continues a saved conversation that ended with a
@@ -521,11 +520,11 @@ var handleWebChatResumeRead = func(ctx context.Context, conversationURL string) 
 // semantics ("last message has tool calls → execute and feed the results
 // back; otherwise it's a normal multi-turn conversation"):
 //
-//   - The conversation's LAST assistant message is read from the site's
-//     IndexedDB cache (the continuation point; nothing is sent yet). The
-//     read never trusts a leftover record: it is anchored to a fresh page
-//     load, because the conversation may have been continued elsewhere
-//     (the user's own browser, another dscli process).
+//   - The conversation's TAIL (newest message) is read from the SERVER
+//     through the site's own history_messages sync (nothing is sent yet).
+//     The local record only supplies the sync cursor, so a conversation
+//     continued elsewhere (the user's own browser, another machine) is
+//     seen as the server currently has it.
 //   - The assistant message must be the TAIL of the conversation (newest
 //     message): when the newest message is a USER message (typed in the
 //     user's browser, no reply landed yet), an older assistant block is
@@ -573,22 +572,21 @@ func HandleWebChatResume(ctx context.Context, opts WebChatOptions) (WebChatResul
 	defer sess.Close()
 	ctx = withWebChatSession(ctx, sess)
 
-	content, status, newestRole, reason, ok := handleWebChatResumeRead(ctx, convURL)
+	content, status, tailRole, reason, ok := handleWebChatResumeRead(ctx, convURL)
 	if !ok {
 		if reason == "" {
-			reason = "unreadable IndexedDB record"
+			reason = "no readable conversation tail"
 		}
-		return WebChatResult{}, fmt.Errorf("webchat resume: cannot read last assistant message (%s); the conversation may be gone, or its page did not finish a fresh load", reason)
+		return WebChatResult{}, fmt.Errorf("webchat resume: cannot read the conversation tail (%s); the conversation may be gone, or the site did not answer", reason)
 	}
-	fmt.Fprintf(os.Stderr, "🔁 恢复会话: %s（最后一条消息 %d 字符，status=%s）\n", convURL, countRunes(content), status)
+	fmt.Fprintf(os.Stderr, "🔁 恢复会话: %s（最新消息 %d 字符，status=%s，role=%s）\n", convURL, countRunes(content), status, tailRole)
 
-	// Tail guard: the assistant message we read must BE the newest message.
-	// A USER message on top (typed in the user's own browser, reply not
-	// landed yet) means an older assistant block is not the continuation
-	// point - executing it could run a script the user has already moved
-	// past.
-	if newestRole != "ASSISTANT" {
-		return WebChatResult{}, fmt.Errorf("webchat resume: the newest message is not an assistant reply (role %q); nothing safe to resume (retry after the reply lands)", newestRole)
+	// Tail guard: the message we read must BE the conversation tail. A USER
+	// message on top (typed in the user's own browser, reply not landed
+	// yet) means an older assistant block is not the continuation point -
+	// executing it could run a script the user has already moved past.
+	if tailRole != "ASSISTANT" {
+		return WebChatResult{}, fmt.Errorf("webchat resume: the newest message is not an assistant reply (role %q); nothing safe to resume (retry after the reply lands)", tailRole)
 	}
 
 	pending := false
@@ -619,17 +617,17 @@ func HandleWebChatResume(ctx context.Context, opts WebChatOptions) (WebChatResul
 	// independent second read still shows the same tail; a conversation
 	// that moved on must never run a stale block.
 	fmt.Fprintf(os.Stderr, "🔎 二次读取确认会话尾部（其他端可能继续过该会话）...\n")
-	content2, _, newestRole2, reason2, ok2 := handleWebChatResumeRead(ctx, convURL)
-	if !ok2 || newestRole2 != "ASSISTANT" || strings.TrimSpace(content2) != strings.TrimSpace(content) {
+	content2, _, tailRole2, reason2, ok2 := handleWebChatResumeRead(ctx, convURL)
+	if !ok2 || tailRole2 != "ASSISTANT" || strings.TrimSpace(content2) != strings.TrimSpace(content) {
 		why := "the conversation changed between the two reads"
 		switch {
 		case !ok2:
 			if reason2 == "" {
-				reason2 = "unreadable IndexedDB record"
+				reason2 = "no readable conversation tail"
 			}
 			why = fmt.Sprintf("the confirmation read failed (%s)", reason2)
-		case newestRole2 != "ASSISTANT":
-			why = fmt.Sprintf("the newest message is now a %q message", newestRole2)
+		case tailRole2 != "ASSISTANT":
+			why = fmt.Sprintf("the newest message is now a %q message", tailRole2)
 		}
 		return WebChatResult{}, fmt.Errorf("webchat resume: %s; nothing was executed - retry to resume the new state", why)
 	}

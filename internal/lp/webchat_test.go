@@ -850,25 +850,37 @@ func TestJsChatReadyState(t *testing.T) {
 	}
 }
 
-func TestJsIDBGetLastAssistantFmtFreshness(t *testing.T) {
-	// The resume read must be anchored to ITS OWN page load: the record
-	// timestamp check refuses records written by an earlier load, and
-	// newestRole distinguishes "the assistant message is the tail" from
-	// "something newer (typically a user message) sits on top".
+func TestJsFetchTailFmt(t *testing.T) {
+	// The resume tail must come from the SERVER's own sync endpoint, never
+	// from the local cache: the fetch carries the page's user token, asks
+	// for the messages after the local cursor, and picks the newest
+	// message by the largest message_id.
 	for _, want := range []string{
-		"const minTimestamp = %d;",
-		"rec.timestamp < minTimestamp",
-		"newestRole: newestRole",
-		"for (let i = 0; i < msgs.length; i++)",
+		"localStorage.getItem('userToken')",
+		"/api/v0/chat/history_messages",
+		"&cache_version=",
+		"authorization: auth",
+		"best.message_id",
+		"msgs[msgs.length - 1]",
 	} {
-		if !strings.Contains(jsIDBGetLastAssistantFmt, want) {
-			t.Errorf("jsIDBGetLastAssistantFmt must contain %q (regression)", want)
+		if !strings.Contains(jsFetchTailFmt, want) {
+			t.Errorf("jsFetchTailFmt must contain %q (regression)", want)
 		}
 	}
-	// Exactly one formatting verb: the min-timestamp placeholder. A stray
-	// %-sign would corrupt the Sprintf and silently break the read.
-	if got := strings.Count(jsIDBGetLastAssistantFmt, "%"); got != 1 {
-		t.Errorf("format verbs = %d, want 1 (the %%d min-timestamp placeholder)", got)
+	// Exactly three formatting verbs: the id and the two cursor numbers. A
+	// stray %-sign would corrupt the Sprintf and silently break the read.
+	if got := strings.Count(jsFetchTailFmt, "%"); got != 3 {
+		t.Errorf("format verbs = %d, want 3 (id, cache_version, cache_reset_at)", got)
+	}
+}
+
+func TestJsIDBTailCursorFmt(t *testing.T) {
+	// The cursor snippet reads ONLY the sync cursor (version and reset
+	// time), never message content: the tail is server-side.
+	for _, want := range []string{"rec.version", "rec.cacheResetAt"} {
+		if !strings.Contains(jsIDBTailCursorFmt, want) {
+			t.Errorf("jsIDBTailCursorFmt must contain %q (regression)", want)
+		}
 	}
 }
 
