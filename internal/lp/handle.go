@@ -866,10 +866,11 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 // the <shell> block channel (opts.ShellTool): every round is judged
 // (shellblock.Judge) as an executable block, a format warning, or the final
 // report. An executable block is run locally - shellblock.Run writes
-// scriptN.sh / scriptN.txt under the project root and kills the process
-// group on timeout - and the merged output is fed back into the SAME
-// conversation as an attached text file, the shape validated in the manual
-// experiment (docs/task-shell-block.md).
+// scriptN.sh / scriptN.txt under the project root and executes the bash or
+// python script (or scans the file list of an `#!attach` block) - and the
+// round's artifacts are fed back into the SAME conversation as attachments:
+// scriptN.txt first, then every `#!attach` file in the listed order (see
+// docs/task-shell-block.md §5 and §12).
 //
 // The skeleton mirrors handleWebChatToolLoop: every round (reasoning +
 // content) is printed, the local-execution warning is printed here (this is
@@ -976,8 +977,12 @@ func handleWebChatShellLoop(ctx context.Context, first WebChatResult, opts WebCh
 			if runRes.TimedOut {
 				status = fmt.Sprintf("timeout after %s", runRes.Timeout)
 			}
-			fmt.Fprintf(os.Stderr, "▶ script%d.sh: %s（%s, %s；输出 script%d.txt）\n",
-				runRes.Number, block.Summary, status, runRes.Duration.Round(time.Millisecond), runRes.Number)
+			attachNote := ""
+			if len(runRes.Attachments) > 0 {
+				attachNote = fmt.Sprintf("；附件 %d 个", len(runRes.Attachments))
+			}
+			fmt.Fprintf(os.Stderr, "▶ script%d.sh: %s（%s, %s；输出 script%d.txt%s）\n",
+				runRes.Number, block.Summary, status, runRes.Duration.Round(time.Millisecond), runRes.Number, attachNote)
 			feedback := fmt.Sprintf("output of script%d.sh (attached as script%d.txt):", runRes.Number, runRes.Number)
 			if verdict.ResidualMarkers {
 				// The block ran fine, but the reply carried DSML marker residue
@@ -986,10 +991,14 @@ func handleWebChatShellLoop(ctx context.Context, first WebChatResult, opts WebCh
 				feedback += "\n\n" + shellblock.ResidueNote()
 				fmt.Fprintf(os.Stderr, "⚠️ 回复携带 DSML 标记残留（块已执行；提醒已随反馈发出）\n")
 			}
+			// The round's artifacts ride back as attachments: scriptN.txt
+			// (the output backfill) first, then every file an `#!attach`
+			// block requested, in the listed order.
+			attachments := append([]string{runRes.OutputPath}, runRes.Attachments...)
 			res, callErr := handleWebChatFollowUpSend(ctx, feedback, WebChatOptions{
 				Keep:        convURL,
 				ShellTool:   true,
-				Attachments: []string{runRes.OutputPath},
+				Attachments: attachments,
 			})
 			if callErr != nil {
 				return WebChatResult{}, fmt.Errorf("webchat shell loop: feedback send during round %d: %w", round, callErr)

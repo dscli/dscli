@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	dsctx "github.com/dscli/dscli/internal/context"
 )
 
 func TestRunWritesAndExecutes(t *testing.T) {
@@ -144,6 +146,174 @@ func TestRunOutputTruncation(t *testing.T) {
 func TestRunEmptyScript(t *testing.T) {
 	if _, err := Run(t.Context(), t.TempDir(), "   \n", 30*time.Second); err == nil {
 		t.Error("Run with an empty script must fail")
+	}
+}
+
+// TestDetectScriptMode pins the first-line marker table, tolerance rules
+// included: a stray space must never flip the interpreter.
+func TestDetectScriptMode(t *testing.T) {
+	tests := []struct {
+		name   string
+		script string
+		want   scriptMode
+	}{
+		{name: "no shebang defaults to bash", script: "echo x\ntrue", want: modeBash},
+		{name: "bash shebang", script: "#!/bin/bash\necho x", want: modeBash},
+		{name: "sh shebang stays bash", script: "#!/bin/sh\necho x", want: modeBash},
+		{name: "plain python word is not a marker", script: "echo python\ntrue", want: modeBash},
+		{name: "python shebang", script: "#!/usr/bin/python\nprint(1)", want: modePython},
+		{name: "env python shebang", script: "#!/usr/bin/env python\nprint(1)", want: modePython},
+		{name: "python3 shebang", script: "#!/usr/bin/env python3\nprint(1)", want: modePython},
+		{name: "indented python shebang", script: "  #!/usr/bin/python\nprint(1)", want: modePython},
+		{name: "python shebang with trailing space", script: "#!/usr/bin/python \nprint(1)", want: modePython},
+		{name: "python2 is not a marker", script: "#!/usr/bin/python2\nprint(1)", want: modeBash},
+		{name: "attach marker", script: "#!attach\nf.txt", want: modeAttach},
+		{name: "attach marker with trailing space", script: "#!attach \nf.txt", want: modeAttach},
+		{name: "attach marker alone", script: "#!attach", want: modeAttach},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := detectScriptMode(tt.script); got != tt.want {
+				t.Errorf("detectScriptMode(%q) = %v, want %v", tt.script, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestRunPythonScript runs a real python script end to end; it skips when no
+// interpreter exists.
+func TestRunPythonScript(t *testing.T) {
+	if _, err := pythonInterpreter(); err != nil {
+		t.Skipf("no python interpreter: %v", err)
+	}
+	dir := t.TempDir()
+	res, err := Run(t.Context(), dir, "#!/usr/bin/env python3\nimport sys\nprint(\"hello from python\")\nsys.exit(2)", 30*time.Second)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.ExitCode != 2 {
+		t.Errorf("exit code = %d, want 2", res.ExitCode)
+	}
+	if !strings.Contains(res.Output, "hello from python") {
+		t.Errorf("output = %q, want the python print", res.Output)
+	}
+	if res.Attachments != nil {
+		t.Errorf("attachments = %v, want nil for a python round", res.Attachments)
+	}
+	backfill, err := os.ReadFile(res.OutputPath)
+	if err != nil {
+		t.Fatalf("read backfill: %v", err)
+	}
+	for _, want := range []string{"python script1.sh:", "#!/usr/bin/env python3", "exit code: 2"} {
+		if !strings.Contains(string(backfill), want) {
+			t.Errorf("backfill misses %q:\n%s", want, backfill)
+		}
+	}
+}
+
+// TestRunAttachBlock pins the attach semantics: one status line per path,
+// attachments resolved against dir in listed order, exit code 0, and the
+// usual scriptN.sh / scriptN.txt pair for audit consistency.
+func TestRunAttachBlock(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sub", "b.bin"), []byte("y"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	script := "#!attach\na.txt\nsub/b.bin\nmissing.txt\nsub\n"
+	res, err := Run(t.Context(), dir, script, 30*time.Second)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.ExitCode != 0 {
+		t.Errorf("exit code = %d, want 0", res.ExitCode)
+	}
+	wantOutput := "a.txt attached\nsub/b.bin attached\nmissing.txt not exist\nsub not a regular file\n"
+	if res.Output != wantOutput {
+		t.Errorf("output = %q, want %q", res.Output, wantOutput)
+	}
+	wantAttachments := []string{filepath.Join(dir, "a.txt"), filepath.Join(dir, "sub", "b.bin")}
+	if len(res.Attachments) != len(wantAttachments) {
+		t.Fatalf("attachments = %v, want %v", res.Attachments, wantAttachments)
+	}
+	for i, want := range wantAttachments {
+		if res.Attachments[i] != want {
+			t.Errorf("attachment[%d] = %q, want %q", i, res.Attachments[i], want)
+		}
+	}
+	scriptFile, err := os.ReadFile(res.ScriptPath)
+	if err != nil {
+		t.Fatalf("read script file: %v", err)
+	}
+	if string(scriptFile) != script {
+		t.Errorf("script file = %q, want %q", scriptFile, script)
+	}
+	backfill, err := os.ReadFile(res.OutputPath)
+	if err != nil {
+		t.Fatalf("read backfill: %v", err)
+	}
+	for _, want := range []string{"attach script1.sh:", "#!attach", "missing.txt not exist"} {
+		if !strings.Contains(string(backfill), want) {
+			t.Errorf("backfill misses %q:\n%s", want, backfill)
+		}
+	}
+}
+
+// TestRunAttachAbsolutePath: an absolute path bypasses dir resolution and is
+// attached as-is.
+func TestRunAttachAbsolutePath(t *testing.T) {
+	abs := filepath.Join(t.TempDir(), "x.png")
+	if err := os.WriteFile(abs, []byte("png"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	res, err := Run(t.Context(), dir, "#!attach\n"+abs+"\n", 30*time.Second)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(res.Attachments) != 1 || res.Attachments[0] != abs {
+		t.Errorf("attachments = %v, want [%s]", res.Attachments, abs)
+	}
+	if res.Output != abs+" attached\n" {
+		t.Errorf("output = %q, want %q", res.Output, abs+" attached\n")
+	}
+}
+
+// TestRunDefaultDir: an empty dir lands under PROJECT_ROOT/.dscli/tmp
+// (created on demand) instead of ".".
+func TestRunDefaultDir(t *testing.T) {
+	orig := dsctx.ProjectRoot
+	dsctx.ProjectRoot = t.TempDir()
+	t.Cleanup(func() { dsctx.ProjectRoot = orig })
+
+	res, err := Run(t.Context(), "", "#!/bin/bash\necho hi", 30*time.Second)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	wantScript := filepath.Join(dsctx.ProjectRoot, ".dscli", "tmp", "script1.sh")
+	if res.ScriptPath != wantScript {
+		t.Errorf("script path = %q, want %q", res.ScriptPath, wantScript)
+	}
+	if _, err := os.Stat(wantScript); err != nil {
+		t.Errorf("script file not created: %v", err)
+	}
+	if !strings.Contains(res.Output, "hi") {
+		t.Errorf("output = %q, want the echo", res.Output)
+	}
+}
+
+// TestFormatBackfillModeLabels: the header carries the detected mode.
+func TestFormatBackfillModeLabels(t *testing.T) {
+	if got := FormatBackfill(2, "#!/usr/bin/python\nprint(1)\n", &RunResult{ExitCode: 0}); !strings.Contains(got, "python script2.sh:") {
+		t.Errorf("python backfill misses the mode header:\n%s", got)
+	}
+	if got := FormatBackfill(3, "#!attach\nfoo.txt\n", &RunResult{ExitCode: 0}); !strings.Contains(got, "attach script3.sh:") {
+		t.Errorf("attach backfill misses the mode header:\n%s", got)
 	}
 }
 

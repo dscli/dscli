@@ -28,6 +28,28 @@ echo hello
 <timeout>120</timeout>
 </shell>`
 
+// pythonExample is the python form of the block: the shebang line selects
+// the interpreter.
+const pythonExample = `<shell>
+<script>
+#!/usr/bin/python
+print("hello from python")
+</script>
+<summary>run a python script</summary>
+<timeout>120</timeout>
+</shell>`
+
+// attachExample shows the file-attachment form: the body is a path list,
+// not a script.
+const attachExample = `<shell>
+<script>
+#!attach
+outputs/report.png
+docs/design.md
+</script>
+<summary>attach the report and the design doc</summary>
+</shell>`
+
 // dsmlNote is appended to warnings when the reply carries DSML shapes: the
 // site badges and mangles them, so the fix is a plain <shell> block.
 const dsmlNote = "Do not use the DSML shape (`<tool_calls>`/`<invoke>`/fullwidth bars): this channel badges and mangles it - use a `<shell>` block instead."
@@ -125,10 +147,23 @@ func Blocked(script string) (string, bool) {
 func BuildToolDoc() string {
 	var b strings.Builder
 	b.WriteString("## 🛠️ Available Tools: `shell`\n\n")
-	b.WriteString("**Usage: execute bash script**\n")
+	b.WriteString("**Usage: run a bash or python script, or attach files**\n")
 	b.WriteString(formatExample)
 	b.WriteString("\n\nThe format rules you MUST follow are:\n\n")
 	b.WriteString(formatRules)
+	b.WriteString("\n\n**Script forms** - the first line of the script body picks the form:\n\n")
+	b.WriteString("- `#!/bin/bash` (or no shebang): run with bash.\n")
+	b.WriteString("- A `#!` line ending in `python` or `python3` (e.g. `#!/usr/bin/python`):\n")
+	b.WriteString("  run with the python interpreter.\n")
+	b.WriteString("- `#!attach`: run nothing; every following non-empty line is a file path\n")
+	b.WriteString("  (relative paths resolve against the project root, absolute paths are\n")
+	b.WriteString("  used as-is). Each existing file is uploaded as an attachment to your\n")
+	b.WriteString("  next round, and every listed path gets one output line (`attached` /\n")
+	b.WriteString("  `not exist` / `not a regular file`).\n")
+	b.WriteString("\nPython example:\n\n")
+	b.WriteString(pythonExample)
+	b.WriteString("\n\nAttach example:\n\n")
+	b.WriteString(attachExample)
 	b.WriteString("\n\n**Iterate inside the script, not across rounds**\n\n")
 	b.WriteString("Every `<shell>` block is one remote round-trip, and the channel can drop,\n")
 	b.WriteString("truncate, or garble any of them. So make each script carry the whole loop:\n\n")
@@ -141,7 +176,8 @@ func BuildToolDoc() string {
 	b.WriteString("a signal, not decoration. Print everything the next decision needs (command,\n")
 	b.WriteString("exit code, relevant output) in one shot.\n\n")
 	b.WriteString("The script runs on the local project host with the user's permissions; its\n")
-	b.WriteString("merged stdout+stderr returns as an attached `scriptN.txt` file. The block is\n")
+	b.WriteString("merged stdout+stderr returns as an attached `scriptN.txt` file, and an\n")
+	b.WriteString("`#!attach` block's files ride back as attachments alongside it. The block is\n")
 	b.WriteString("rejected outright - nothing runs - when the script contains: destructive\n")
 	b.WriteString("commands (`rm -rf /` or `~`, `mkfs`, `dd of=/dev/`, `sudo`,\n")
 	b.WriteString("`shutdown`/`reboot`), outbound-network tools (`curl`, `wget`, `nc`, `ncat`,\n")

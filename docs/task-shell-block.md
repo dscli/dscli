@@ -3,7 +3,7 @@
 > 状态: 已实现（本仓库直接开发，见 §11）；真机冒烟通过（§7），待 code_dev 真任务验收
 > 依据: `scripts.txt`（64 轮手工实验完整对话，12127 行）+ `codereview.md`（现行工具文档）
 > 日期: 2026-09-13
-> 修订: 开工前核对完成；用户确认 attach 回填、dscli-shell 不构成规范；档案补证（围栏引用 / 拦截 / 分级）落库为 §10；2026-09-14 决策：移除 `--shell` 开关，`dscli webchat` 恒定启用 `<shell>` 块通道（webchat 的工具只保证 shell 一个）；同日续：工具文档注入与角色注入解耦——dev 会话由角色提示词携带，无角色/自定义会话不自动注入，由使用者在消息里自行注入（`--input`）
+> 修订: 开工前核对完成；用户确认 attach 回填、dscli-shell 不构成规范；档案补证（围栏引用 / 拦截 / 分级）落库为 §10；2026-09-14 决策：移除 `--shell` 开关，`dscli webchat` 恒定启用 `<shell>` 块通道（webchat 的工具只保证 shell 一个）；同日续：工具文档注入与角色注入解耦——dev 会话由角色提示词携带，无角色/自定义会话不自动注入，由使用者在消息里自行注入（`--input`）；2026-09-15 续：扩展 python / `#!attach` 两种脚本形态，`Run` 空 dir 默认落 `PROJECT_ROOT/.dscli/tmp`（§12）
 
 ## 1. 目标与背景
 
@@ -162,3 +162,23 @@ exit code: N
 - 工作区已有未提交改动（`.gitignore`、`AGENTS.md` 审计修正、本文件）——保留，纳入 §8 提交计划。
 - 会话内完成 build + 单元 / mock 集成测试，`go test ./...` 与 `make fmt-check` 全绿；测试隔离 ambient state（见 AGENTS.md）。真机两段（§7 末两条：webchat 冒烟 + code_dev 真任务）在 dev 会话之外进行，勿在会话内跑实时网页会话。
 - 三笔提交（§8），英文 message；完成后工作区必须干净；回报实现内容 / 测试结果 / 提交哈希 / conversation_id。
+
+## 12. 扩展：python / attach / 默认运行目录（2026-09-15）
+
+网页模型除 bash 外需要跑 python、并主动索取本地文件（附件回传）。改动（本仓库直接开发，同 §11 先例）：
+
+- **模式判定**（`shellblock.Run`；取脚本首行，`TrimSpace` 后判定）：
+  - `#!attach` → attach 模式；
+  - `#!` 开头且以 `python` 或 `python3` 结尾 → python 模式（解释器：`python3` 优先、缺失回退 `python`；在写文件前解析，缺解释器时不落任何产物）；
+  - 其余（无 shebang、`#!/bin/bash`、未知 shebang）→ bash 模式，原行为不变。
+  - 宽容规则：判定行允许尾随空白（模型本不该发，但一个空格不能把 python 脚本翻成 bash 误执行）；非 `#!` 首行（如 `echo python`）不触发 python。
+- **attach 模式**：不执行任何进程。首行之后每个非空行 = 一个文件路径；相对路径按 `dir` 解析（webchat 通道 = 项目根），绝对路径原样。每个路径恰好一行 output：
+  - 存在且为普通文件 → 记入 `RunResult.Attachments`（解析后路径）并输出 `<path> attached`；
+  - 不存在 → `<path> not exist`；
+  - 目录 / 特殊文件 → `<path> not a regular file`（防护而非协议：目录混入附件批会让整批上传失败，单个坏路径不得毒化其他文件）。
+  - `scriptN.sh` / `scriptN.txt` 照常落盘（审计一致性）；exit code 0；`<timeout>` 不参与（无进程）。
+- **回填头**：`bash scriptN.sh:` → `<mode> scriptN.sh:`（bash / python / attach）。
+- **回传顺序**（`handleWebChatShellLoop`）：附件列表 = `scriptN.txt` 在前，`#!attach` 文件按列出顺序随后；stderr 审计行在附件非空时追加 `；附件 N 个`。
+- **dir 默认值**：`Run` 的 `dir == ""` 不再默认 `.`，改为 `PROJECT_ROOT/.dscli/tmp/`（按需 `MkdirAll`）；webchat 循环仍显式传项目根，脚本 cwd 语义不变。
+- **工具文档**（`BuildToolDoc`）：usage 行改为 bash / python / attach 三形态，新增 "Script forms" 段与 python、attach 两个示例。
+- 测试：runner（模式判定表 / python 实跑 / attach 存在、缺失、目录、绝对路径 / 默认目录 / 回填头）；lp（附件顺序 + stderr 计数）。`go test ./...` + `make fmt-check` 全绿。

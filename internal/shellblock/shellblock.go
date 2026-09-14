@@ -1,9 +1,11 @@
 // Package shellblock implements the <shell> block tool protocol for WebChat:
-// the web model emits one bash script per round inside a <shell> block, the
-// judge decides whether to execute the block, warn about its format, or
-// accept the reply as the final answer, and the runner executes the script
-// locally (scriptN.sh / scriptN.txt under the project root) and feeds the
-// merged output back into the conversation as an attached text file.
+// the web model emits one block per round inside a <shell> block - a bash or
+// python script, or an `#!attach` file list - the judge decides whether to
+// execute the block, warn about its format, or accept the reply as the final
+// answer, and the runner executes the script locally (scriptN.sh /
+// scriptN.txt under the project root) and feeds the merged output back into
+// the conversation as an attached text file (an `#!attach` block feeds the
+// named files back as attachments instead).
 //
 // The protocol and its judgement rules were validated in a 64-round manual
 // experiment; docs/task-shell-block.md records the contract and the archive

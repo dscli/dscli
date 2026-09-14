@@ -83,9 +83,12 @@ func TestBuildToolDoc(t *testing.T) {
 	doc := BuildToolDoc()
 	for _, want := range []string{
 		"## 🛠️ Available Tools: `shell`",
-		"**Usage: execute bash script**",
+		"**Usage: run a bash or python script, or attach files**",
 		"1. `<shell>` must be the leading line of the shell block and it fills the whole line,",
 		"4. `</script>` must be the ending line of the script block and it fills the whole line.",
+		"**Script forms**",
+		pythonExample,
+		attachExample,
 		"**Iterate inside the script, not across rounds**",
 		"set -euo pipefail",
 		"exit status is",

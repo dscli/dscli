@@ -92,6 +92,56 @@ func TestHandleWebChatShellLoopExecutesAndFeedsBack(t *testing.T) {
 	}
 }
 
+// TestHandleWebChatShellLoopAttachesBlockFiles pins the `#!attach`
+// passthrough: the round's scriptN.txt leads the attachment batch and the
+// requested files follow in the listed order, and the stderr audit line
+// counts them.
+func TestHandleWebChatShellLoopAttachesBlockFiles(t *testing.T) {
+	origSend, origExec := handleWebChatSend, handleWebChatExecShell
+	t.Cleanup(func() { handleWebChatSend, handleWebChatExecShell = origSend, origExec })
+
+	const convURL = "https://chat.deepseek.com/a/chat/s/convSHELL"
+	var sentOpts []WebChatOptions
+	handleWebChatSend = func(_ context.Context, _ string, opts WebChatOptions) (WebChatResult, error) {
+		sentOpts = append(sentOpts, opts)
+		return WebChatResult{Content: shellFinalTest, URL: convURL}, nil
+	}
+	handleWebChatExecShell = func(_ context.Context, _ string, _ string, timeout time.Duration) (*shellblock.RunResult, error) {
+		return &shellblock.RunResult{
+			Number:      5,
+			OutputPath:  "/tmp/script5.txt",
+			Attachments: []string{"/tmp/a.png", "/tmp/b.pdf"},
+			ExitCode:    0,
+			Timeout:     timeout,
+		}, nil
+	}
+
+	drain := captureStderr(t)
+	if _, err := handleWebChatShellLoop(context.Background(),
+		WebChatResult{Content: shellBlockTest, URL: convURL},
+		WebChatOptions{Role: "dev", ShellTool: true}); err != nil {
+		t.Fatalf("shell loop: %v", err)
+	}
+	stderr := drain()
+
+	if len(sentOpts) != 1 {
+		t.Fatalf("sends = %d, want 1 (feedback only)", len(sentOpts))
+	}
+	want := []string{"/tmp/script5.txt", "/tmp/a.png", "/tmp/b.pdf"}
+	got := sentOpts[0].Attachments
+	if len(got) != len(want) {
+		t.Fatalf("attachments = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("attachment[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	if !strings.Contains(stderr, "附件 2 个") {
+		t.Errorf("stderr misses the attachment count:\n%s", stderr)
+	}
+}
+
 func TestHandleWebChatShellLoopWarnsThenExecutes(t *testing.T) {
 	origSend, origExec := handleWebChatSend, handleWebChatExecShell
 	t.Cleanup(func() { handleWebChatSend, handleWebChatExecShell = origSend, origExec })

@@ -15,6 +15,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	dsctx "github.com/dscli/dscli/internal/context"
+
 	"github.com/nanjj/clog"
 )
 
@@ -39,6 +41,12 @@ type RunResult struct {
 	// root.
 	ScriptPath string
 	OutputPath string
+
+	// Attachments lists files an `#!attach` block asked for: existing
+	// regular files in the order listed, resolved against dir (absolute
+	// paths stay as they are) and uploaded by the shell loop alongside
+	// OutputPath. Nil for bash and python rounds.
+	Attachments []string
 	// Output is the merged stdout+stderr, truncated at maxOutputBytes.
 	Output string
 	// ExitCode is the process exit code, -1 when killed.
@@ -53,18 +61,97 @@ type RunResult struct {
 	Duration time.Duration
 }
 
+// scriptMode selects how Run executes one block; the first line of the
+// script body carries the marker.
+type scriptMode int
+
+const (
+	// modeBash runs the script with bash: the protocol's original form and
+	// the fallback for every script without a recognized marker.
+	modeBash scriptMode = iota
+	// modePython runs the script with the python interpreter (a `#!` line
+	// ending in python / python3).
+	modePython
+	// modeAttach attaches files instead of executing: every line after the
+	// marker names one (attachResult).
+	modeAttach
+)
+
+// String implements fmt.Stringer; the value labels the backfill header.
+func (m scriptMode) String() string {
+	switch m {
+	case modePython:
+		return "python"
+	case modeAttach:
+		return "attach"
+	default:
+		return "bash"
+	}
+}
+
+// detectScriptMode reads the mode marker from the first line of the script.
+// Leading and trailing whitespace is tolerated - the model is asked to emit
+// the marker exactly, but a stray space must not silently turn a python
+// script into a bash one (bash would garble it). The marker must be a `#!`
+// line, so a plain first line that merely ends in "python" stays bash.
+func detectScriptMode(script string) scriptMode {
+	first := script
+	if i := strings.IndexByte(first, '\n'); i >= 0 {
+		first = first[:i]
+	}
+	first = strings.TrimSpace(first)
+	switch {
+	case first == "#!attach":
+		return modeAttach
+	case strings.HasPrefix(first, "#!") &&
+		(strings.HasSuffix(first, "python") || strings.HasSuffix(first, "python3")):
+		return modePython
+	default:
+		return modeBash
+	}
+}
+
+// defaultDir is where a block with no explicit dir lands: the project's
+// scratch directory under .dscli/tmp (created on demand). The old default
+// was ".", which made the landing spot depend on wherever dscli happened to
+// run.
+func defaultDir() string {
+	return filepath.Join(dsctx.ProjectRoot, ".dscli", "tmp")
+}
+
+// pythonInterpreter locates the python binary for modePython: python3 first
+// (the name current systems ship), python as the fallback. The interpreter
+// is resolved before the script file is written, so a missing python fails
+// the round without leaving artifacts behind.
+func pythonInterpreter() (string, error) {
+	for _, name := range []string{"python3", "python"} {
+		if path, err := exec.LookPath(name); err == nil {
+			return path, nil
+		}
+	}
+	return "", fmt.Errorf("shellblock: python interpreter not found (tried python3 and python)")
+}
+
 // Run executes one extracted block: the script is written verbatim to the
-// next scriptN.sh under dir (mode 0600), run with bash (working directory
-// dir) in its own process group, and the merged stdout+stderr is written to
-// scriptN.txt (mode 0600) with the backfill wrapper. A timeout kills the
-// whole process group, so grandchildren (compilers, make's children) cannot
-// outlive the round.
+// next scriptN.sh under dir (mode 0600).
+//
+// The first script line selects the mode (detectScriptMode): bash (the
+// default, also `#!/bin/bash`), python (a `#!` line ending in python /
+// python3), or an `#!attach` file list. bash and python scripts run with
+// their interpreter (working directory dir) in their own process group, and
+// the merged stdout+stderr is written to scriptN.txt (mode 0600) with the
+// backfill wrapper; a timeout kills the whole process group, so
+// grandchildren (compilers, make's children) cannot outlive the round. An
+// `#!attach` block runs nothing: every listed path that exists as a regular
+// file is resolved against dir and appended to RunResult.Attachments, and
+// one status line per path lands in the output.
 //
 // Run refuses a script that matches the shared destructive-command
 // interception (Blocked) - a fail-closed backstop behind the loop's
 // model-facing refusal.
 //
-// dir is the project root; "" means the current directory.
+// dir is the working directory (the project root in the WebChat channel);
+// "" means PROJECT_ROOT/.dscli/tmp, created on demand.
 func Run(ctx context.Context, dir, script string, timeout time.Duration) (*RunResult, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "shellblock.Run")
 	defer span.Finish()
@@ -78,7 +165,19 @@ func Run(ctx context.Context, dir, script string, timeout time.Duration) (*RunRe
 		return nil, fmt.Errorf("shellblock: script blocked (destructive command %q)", detail)
 	}
 	if dir == "" {
-		dir = "."
+		dir = defaultDir()
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return nil, fmt.Errorf("shellblock: create default dir: %w", err)
+		}
+	}
+	mode := detectScriptMode(script)
+	interp := "bash"
+	if mode == modePython {
+		var err error
+		interp, err = pythonInterpreter()
+		if err != nil {
+			return nil, err
+		}
 	}
 	n, err := nextScriptNumber(dir)
 	if err != nil {
@@ -92,20 +191,26 @@ func Run(ctx context.Context, dir, script string, timeout time.Duration) (*RunRe
 	if err := os.WriteFile(scriptPath, []byte(scriptText), 0o600); err != nil {
 		return nil, fmt.Errorf("shellblock: write script: %w", err)
 	}
-	exec, err := runScript(ctx, dir, scriptPath, timeout)
-	if err != nil {
-		return nil, err
+	var execRes *scriptResult
+	if mode == modeAttach {
+		execRes = attachResult(dir, scriptText)
+	} else {
+		execRes, err = runScript(ctx, dir, scriptPath, interp, timeout)
+		if err != nil {
+			return nil, err
+		}
 	}
 	res := &RunResult{
-		Number:     n,
-		ScriptPath: scriptPath,
-		OutputPath: filepath.Join(dir, fmt.Sprintf("script%d.txt", n)),
-		Output:     exec.output,
-		ExitCode:   exec.exitCode,
-		TimedOut:   exec.timedOut,
-		Truncated:  exec.truncated,
-		Timeout:    exec.timeout,
-		Duration:   exec.duration,
+		Number:      n,
+		ScriptPath:  scriptPath,
+		OutputPath:  filepath.Join(dir, fmt.Sprintf("script%d.txt", n)),
+		Attachments: execRes.attachments,
+		Output:      execRes.output,
+		ExitCode:    execRes.exitCode,
+		TimedOut:    execRes.timedOut,
+		Truncated:   execRes.truncated,
+		Timeout:     execRes.timeout,
+		Duration:    execRes.duration,
 	}
 	if err := os.WriteFile(res.OutputPath, []byte(FormatBackfill(n, scriptText, res)), 0o600); err != nil {
 		return nil, fmt.Errorf("shellblock: write output backfill: %w", err)
@@ -113,27 +218,29 @@ func Run(ctx context.Context, dir, script string, timeout time.Duration) (*RunRe
 	return res, nil
 }
 
-// scriptResult is the raw outcome of one bash invocation.
+// scriptResult is the raw outcome of one block execution: a bash or python
+// invocation, or an `#!attach` scan.
 type scriptResult struct {
-	output    string
-	exitCode  int
-	timedOut  bool
-	truncated bool
-	timeout   time.Duration
-	duration  time.Duration
+	output      string
+	attachments []string
+	exitCode    int
+	timedOut    bool
+	truncated   bool
+	timeout     time.Duration
+	duration    time.Duration
 }
 
-// runScript runs scriptPath with bash, merging stdout and stderr through a
-// single pipe (so the interleaving is the kernel's, like `bash s.sh 2>&1`).
-// The timeout bounds the whole round: it guards the pipe drain, not just the
-// process wait - a background child can hold the pipe long past bash's own
-// exit - and kills the process group; the post-kill drain is bounded by
-// drainGrace so even a writer that escaped the group cannot stall the
-// return.
-func runScript(ctx context.Context, dir, scriptPath string, timeout time.Duration) (*scriptResult, error) {
+// runScript runs scriptPath with the given interpreter, merging stdout and
+// stderr through a single pipe (so the interleaving is the kernel's, like
+// `bash s.sh 2>&1`). The timeout bounds the whole round: it guards the pipe
+// drain, not just the process wait - a background child can hold the pipe
+// long past the interpreter's own exit - and kills the process group; the
+// post-kill drain is bounded by drainGrace so even a writer that escaped
+// the group cannot stall the return.
+func runScript(ctx context.Context, dir, scriptPath, interp string, timeout time.Duration) (*scriptResult, error) {
 	timeout = clampTimeout(timeout)
 	start := time.Now()
-	cmd := exec.Command("bash", scriptPath)
+	cmd := exec.Command(interp, scriptPath)
 	cmd.Dir = dir
 	pr, pw, err := os.Pipe()
 	if err != nil {
@@ -145,7 +252,7 @@ func runScript(ctx context.Context, dir, scriptPath string, timeout time.Duratio
 	if err := cmd.Start(); err != nil {
 		_ = pw.Close()
 		_ = pr.Close()
-		return nil, fmt.Errorf("shellblock: start bash (is bash installed?): %w", err)
+		return nil, fmt.Errorf("shellblock: start %s (is it installed?): %w", interp, err)
 	}
 	// The child holds the only writer; the reader sees EOF when it exits.
 	_ = pw.Close()
@@ -229,6 +336,55 @@ func runScript(ctx context.Context, dir, scriptPath string, timeout time.Duratio
 		res.exitCode = -1
 	}
 	return res, nil
+}
+
+// attachResult builds the result of an `#!attach` block without running
+// anything. Every non-empty line after the marker names a file; the path is
+// resolved against dir (absolute paths stay as they are) and gets exactly
+// one output line:
+//
+//	<path> attached           - existing regular file, appended to Attachments
+//	<path> not exist          - nothing at the path
+//	<path> not a regular file - a directory or special file, skipped
+//
+// The last case is a guard, not protocol: a directory in the upload batch
+// would fail the whole attachment send, so one bad path must not poison it.
+// The output echoes the path as listed (not the resolved one) so the model
+// can correct its own line; a list with no usable lines produces an empty
+// output.
+func attachResult(dir, scriptText string) *scriptResult {
+	start := time.Now()
+	body := scriptText
+	if i := strings.IndexByte(body, '\n'); i >= 0 {
+		body = body[i+1:]
+	} else {
+		body = ""
+	}
+	res := &scriptResult{}
+	var b strings.Builder
+	for _, line := range strings.Split(body, "\n") {
+		path := strings.TrimSpace(line)
+		if path == "" {
+			continue
+		}
+		target := path
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(dir, target)
+		}
+		info, err := os.Stat(target)
+		switch {
+		case err != nil:
+			fmt.Fprintf(&b, "%s not exist\n", path)
+		case !info.Mode().IsRegular():
+			fmt.Fprintf(&b, "%s not a regular file\n", path)
+		default:
+			res.attachments = append(res.attachments, target)
+			fmt.Fprintf(&b, "%s attached\n", path)
+		}
+	}
+	res.output = b.String()
+	res.duration = time.Since(start)
+	return res
 }
 
 // readResult is the bounded merged output drained from the pipe.
@@ -316,13 +472,13 @@ func nextScriptNumber(dir string) (int, error) {
 }
 
 // FormatBackfill renders the scriptN.txt wrapper sent back to the model: the
-// real command line, the script verbatim in a fenced block, the merged
-// output, and the exit status. The shape follows the manual-verification
-// backfill (the dscli-shell harness), with the real command line and an
+// mode-prefixed command line, the script verbatim in a fenced block, the
+// merged output, and the exit status. The shape follows the manual-
+// verification backfill (the dscli-shell harness), with the mode and an
 // explicit exit code added.
 func FormatBackfill(n int, scriptText string, res *RunResult) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "bash script%d.sh:\n```xml\n", n)
+	fmt.Fprintf(&b, "%s script%d.sh:\n```xml\n", detectScriptMode(scriptText), n)
 	b.WriteString(scriptText)
 	b.WriteString("```\noutput:\n")
 	out := res.Output
