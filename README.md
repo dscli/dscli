@@ -57,13 +57,13 @@ Simply put: **dscli = AI assistant + dev tools + session memory + CLI efficiency
 - **`dscli fim`** — Code completion (Fill-in-the-Middle), boost coding efficiency
 - **`dscli models`** — List AI models with current token prices
 - **`dscli balance`** — Check API balance and usage
-- **`dscli chat --attach <img>`** — Image input with vision models (e.g. `deepseek-v4-flash-vision-exp`), uploaded via the DeepSeek Files API
+- **`dscli chat --attach <img>`** — Image input with vision models (e.g. `deepseek-flash`), uploaded via the DeepSeek Files API
 - **`dscli webchat`** — Free chat through Chrome with chat.deepseek.com: `--role` dev/expert/review/test/architect personas, `--attach` uploads images/text/PDF files, `--keep` resumes saved conversations; DSML tool calls inside replies are executed locally (file ops, shell, code_review…) with per-round output
 
 ### 🖼️ Vision & Files
 
 - **`dscli file`** — Manage DeepSeek Files API files (upload / list / info / delete) with a local content cache (`~/.dscli/files.json`): identical content reuses the same `file_id` with zero network requests
-- **Vision model support** — `dscli chat --model deepseek-v4-flash-vision-exp --attach screenshot.png "图中有什么？"`
+- **Vision model support** — `dscli chat --model deepseek-flash --attach screenshot.png "图中有什么？"`
 - **Vision file tools** — Models can read/upload images themselves: `vision_file_read` (injects the image into the conversation in the same round), `vision_file_list` / `vision_file_info` / `vision_file_delete`
 
 ### 📝 Session Management
@@ -149,7 +149,7 @@ echo "Explain the time complexity of this algorithm" | dscli chat --org
 echo "def fibonacci(n):" | dscli fim
 
 # Image input with a vision model (uploads via Files API)
-dscli chat --model deepseek-v4-flash-vision-exp --attach screenshot.png "图中有什么？"
+dscli chat --model deepseek-flash --attach screenshot.png "图中有什么？"
 ```
 
 ### 2. Session Management
@@ -325,7 +325,7 @@ dscli file info file-api-xxxxxxxxxxxxxxxx
 dscli file delete file-api-xxxxxxxxxxxxxxxx
 
 # Ask a vision model about a local image
-dscli chat --model deepseek-v4-flash-vision-exp --attach screenshot.png "图中有什么？"
+dscli chat --model deepseek-flash --attach screenshot.png "图中有什么？"
 ```
 
 ### 10. Configuration File

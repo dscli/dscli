@@ -2,6 +2,12 @@
 #+date: <2026-08-22 六>
 #+startup: linkpreviews
 
+*2026-09-14 更新*：flash / pro / vision 三模型已合并，图像理解改由
+=deepseek-flash=（V4.1-Flash）承载；=deepseek-v4-pro= 官方不支持图像理解，
+CLI 继续拦截。旧名 =deepseek-v4-flash=、=deepseek-v4-flash-vision-exp= 仍可
+调用（由 V4.1-Flash 提供服务），=IsVisionModel= 按 flash / vision 家族名
+放行（大小写不敏感）。
+
 deepseek 推出 deepseek-v4-flash-vision-exp 可以图像理解。
 
 价格参见 ：https://api-docs.deepseek.com/zh-cn/quick_start/pricing/
