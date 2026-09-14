@@ -177,11 +177,22 @@ func TestHandleWebChatShellLoopNoPythonWarning(t *testing.T) {
 	if calls != 1 {
 		t.Fatalf("sends = %d, want 1 (the python-unavailable warning)", calls)
 	}
-	if !strings.Contains(messages[0], "no python interpreter") {
+	if !strings.Contains(messages[0], "no matching python interpreter") {
 		t.Errorf("warning message = %q, want the python-unavailable warning", messages[0])
 	}
 	if res.Content != shellFinalTest {
 		t.Errorf("content = %q, want the final report", res.Content)
+	}
+}
+
+// TestWebUploadBatchFitsAttachCap pins the cross-package invariant behind
+// shellblock.MaxAttachFiles: one attach round uploads scriptN.txt plus at
+// most MaxAttachFiles files, and the batch must stay within the site's
+// WebUploadMaxFiles limit.
+func TestWebUploadBatchFitsAttachCap(t *testing.T) {
+	if shellblock.MaxAttachFiles+1 > WebUploadMaxFiles {
+		t.Errorf("shellblock.MaxAttachFiles(%d) + scriptN.txt exceeds WebUploadMaxFiles(%d)",
+			shellblock.MaxAttachFiles, WebUploadMaxFiles)
 	}
 }
 

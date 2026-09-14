@@ -96,11 +96,12 @@ func BlockedWarning(detail string) string {
 }
 
 // NoPythonWarning is sent when a python script cannot run because the host
-// has no python interpreter: nothing was executed, and the model is told to
-// fall back to bash (the conversation stays alive, unlike other runner
-// failures).
+// has no matching interpreter: nothing was executed, and the model is told
+// to fall back to bash (the conversation stays alive, unlike other runner
+// failures). "Matching" honors the shebang token first; a python2 name is
+// never substituted with python3.
 func NoPythonWarning() string {
-	return "Your `<shell>` block was NOT executed: no python interpreter (`python3` or `python`) is available on this host. Rewrite the step as a bash script and re-send it in the same format.\n"
+	return "Your `<shell>` block was NOT executed: no matching python interpreter is available on this host. Rewrite the step as a bash script and re-send it in the same format.\n"
 }
 
 // ResidueNote is appended to the execution feedback when the reply carried
@@ -169,13 +170,14 @@ func BuildToolDoc() string {
 	b.WriteString("- `#!/bin/bash` (or no shebang): run with bash.\n")
 	b.WriteString("- A `#!` line naming python (`python`, `python3`, `python3.11`, ...;\n")
 	b.WriteString("  e.g. `#!/usr/bin/python` or `#!/usr/bin/env python3`): run with the\n")
-	b.WriteString("  python interpreter (`python3`, falling back to `python`; the shebang\n")
-	b.WriteString("  path itself is not used).\n")
+	b.WriteString("  python interpreter - a versioned name (`python3.11`) is looked up\n")
+	b.WriteString("  first, then `python3`, then `python`; the shebang path itself is not\n")
+	b.WriteString("  used.\n")
 	b.WriteString("- `#!attach [path]`: run nothing; the marker line may carry the first\n")
 	b.WriteString("  path, every following non-empty line is another (relative paths\n")
 	b.WriteString("  resolve against the project root, absolute paths are used as-is).\n")
 	b.WriteString("  Each existing file is uploaded as an attachment to your next round\n")
-	b.WriteString("  (at most 49 files per block), and every listed path gets one output\n")
+	fmt.Fprintf(&b, "  (at most %d files per block), and every listed path gets one output\n", MaxAttachFiles)
 	b.WriteString("  line (`attached` / `not exist` / `not a regular file`).\n")
 	b.WriteString("\nPython example:\n\n")
 	b.WriteString(pythonExample)

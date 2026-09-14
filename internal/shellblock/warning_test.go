@@ -100,7 +100,7 @@ func TestBlockedSkipsAttachBlocks(t *testing.T) {
 // TestNoPythonWarning pins the fallback contract for a host without python.
 func TestNoPythonWarning(t *testing.T) {
 	got := NoPythonWarning()
-	for _, want := range []string{"NOT executed", "no python interpreter", "bash"} {
+	for _, want := range []string{"NOT executed", "no matching python interpreter", "bash"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("NoPythonWarning misses %q:\n%s", want, got)
 		}

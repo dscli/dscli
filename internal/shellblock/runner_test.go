@@ -171,6 +171,7 @@ func TestDetectScriptMode(t *testing.T) {
 		{name: "python2 shebang", script: "#!/usr/bin/python2.7\nprint(1)", want: modePython},
 		{name: "micro python is not a marker", script: "#!/usr/bin/env micropython\nprint(1)", want: modeBash},
 		{name: "custom python path is not a marker", script: "#!/opt/custompython\nprint(1)", want: modeBash},
+		{name: "degenerate python name stays bash", script: "#!/usr/bin/python3..11\nprint(1)", want: modeBash},
 		{name: "attach marker", script: "#!attach\nf.txt", want: modeAttach},
 		{name: "attach marker with trailing space", script: "#!attach \nf.txt", want: modeAttach},
 		{name: "attach marker alone", script: "#!attach", want: modeAttach},
@@ -186,14 +187,44 @@ func TestDetectScriptMode(t *testing.T) {
 	}
 }
 
+// TestPythonCandidates pins the interpreter lookup chains: a python2 name is
+// never substituted with python3, a versioned python3 name is honored first,
+// and the generic chain prefers python3.
+func TestPythonCandidates(t *testing.T) {
+	tests := []struct {
+		token string
+		want  []string
+	}{
+		{token: "python", want: []string{"python3", "python"}},
+		{token: "python3", want: []string{"python3", "python"}},
+		{token: "python3.11", want: []string{"python3.11", "python3", "python"}},
+		{token: "python2", want: []string{"python2"}},
+		{token: "python2.7", want: []string{"python2.7", "python2"}},
+	}
+	for _, tt := range tests {
+		got := pythonCandidates(tt.token)
+		if len(got) != len(tt.want) {
+			t.Errorf("pythonCandidates(%q) = %v, want %v", tt.token, got, tt.want)
+			continue
+		}
+		for i := range tt.want {
+			if got[i] != tt.want[i] {
+				t.Errorf("pythonCandidates(%q) = %v, want %v", tt.token, got, tt.want)
+				break
+			}
+		}
+	}
+}
+
 // TestRunPythonScript runs a real python script end to end; it skips when no
 // interpreter exists.
 func TestRunPythonScript(t *testing.T) {
-	if _, err := pythonInterpreter(); err != nil {
+	script := "#!/usr/bin/env python3\nimport sys\nprint(\"hello from python\")\nsys.exit(2)"
+	if _, err := pythonInterpreter(script); err != nil {
 		t.Skipf("no python interpreter: %v", err)
 	}
 	dir := t.TempDir()
-	res, err := Run(t.Context(), dir, "#!/usr/bin/env python3\nimport sys\nprint(\"hello from python\")\nsys.exit(2)", 30*time.Second)
+	res, err := Run(t.Context(), dir, script, 30*time.Second)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -313,29 +344,47 @@ func TestRunAttachMarkerLinePath(t *testing.T) {
 	}
 }
 
-// TestRunAttachLimit: a list past maxAttachFiles reports the over-cap files
-// instead of letting the upload batch fail fatally.
+// TestRunAttachLimit: a list past MaxAttachFiles reports the over-cap files
+// instead of letting the upload batch fail fatally. Only files that would be
+// ATTACHED count toward the cap: a missing path and a directory past the cap
+// still report their own status.
 func TestRunAttachLimit(t *testing.T) {
 	dir := t.TempDir()
 	var script strings.Builder
 	script.WriteString("#!attach\n")
-	for i := 0; i <= maxAttachFiles; i++ {
+	for i := 0; i < MaxAttachFiles; i++ {
 		name := fmt.Sprintf("f%02d.txt", i)
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		fmt.Fprintf(&script, "%s\n", name)
 	}
+	script.WriteString("missing.txt\n")
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	script.WriteString("sub\n")
+	over := fmt.Sprintf("f%02d.txt", MaxAttachFiles)
+	if err := os.WriteFile(filepath.Join(dir, over), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprintf(&script, "%s\n", over)
+
 	res, err := Run(t.Context(), dir, script.String(), 30*time.Second)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if len(res.Attachments) != maxAttachFiles {
-		t.Errorf("attachments = %d, want the %d-file cap", len(res.Attachments), maxAttachFiles)
+	if len(res.Attachments) != MaxAttachFiles {
+		t.Errorf("attachments = %d, want the %d-file cap", len(res.Attachments), MaxAttachFiles)
 	}
-	want := fmt.Sprintf("f%02d.txt not attached (attachment limit %d reached)\n", maxAttachFiles, maxAttachFiles)
-	if !strings.Contains(res.Output, want) {
-		t.Errorf("output misses the limit line %q:\n%s", want, res.Output)
+	for _, want := range []string{
+		"missing.txt not exist\n",
+		"sub not a regular file\n",
+		fmt.Sprintf("%s not attached (attachment limit %d reached)\n", over, MaxAttachFiles),
+	} {
+		if !strings.Contains(res.Output, want) {
+			t.Errorf("output misses %q:\n%s", want, res.Output)
+		}
 	}
 }
 

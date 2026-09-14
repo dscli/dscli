@@ -24,11 +24,12 @@ import (
 // design's ~256KB); the file still records that a truncation happened.
 const maxOutputBytes = 256 * 1024
 
-// maxAttachFiles caps one `#!attach` block's file list: the WebChat upload
+// MaxAttachFiles caps one `#!attach` block's file list: the WebChat upload
 // batch holds 50 files (WebUploadMaxFiles in internal/lp) and the round's
 // scriptN.txt rides in the same batch, so 49 fit. The cap turns a would-be
-// fatal batch rejection into a per-path status line.
-const maxAttachFiles = 49
+// fatal batch rejection into a per-path status line. Exported so the lp
+// layer can pin the batch invariant with a cross-package test.
+const MaxAttachFiles = 49
 
 // drainGrace bounds the post-kill drain: after the process group is killed
 // the pipe closes at once, but a writer that escaped the group (setsid and
@@ -77,7 +78,7 @@ const (
 	// the fallback for every script without a recognized marker.
 	modeBash scriptMode = iota
 	// modePython runs the script with the python interpreter (a `#!` line
-	// ending in python / python3).
+	// naming python; see detectScriptMode).
 	modePython
 	// modeAttach attaches files instead of executing: every line after the
 	// marker names one (attachResult).
@@ -100,7 +101,29 @@ func (m scriptMode) String() string {
 // suffix: python, python3, python3.11, python2.7. A custom name that merely
 // contains "python" (micropython, custompython) does not match - only the
 // name itself may carry the version.
-var pythonNameRE = regexp.MustCompile(`^python[0-9.]*$`)
+var pythonNameRE = regexp.MustCompile(`^python([0-9]+(\.[0-9]+)*)?$`)
+
+// firstLine returns the first line of s, or s itself when it has none.
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
+}
+
+// attachMarker reports whether line is the `#!attach` marker and returns
+// the optional first path it carries (`#!attach f.png` -> "f.png"). The
+// path is accepted on the marker line so a model slip cannot fall back to
+// bash and execute the rest of the list as commands. detectScriptMode and
+// attachResult share this parse so the mode decision and the body
+// extraction cannot drift.
+func attachMarker(line string) (string, bool) {
+	rest, ok := strings.CutPrefix(strings.TrimSpace(line), "#!attach")
+	if !ok || (rest != "" && rest[0] != ' ' && rest[0] != '\t') {
+		return "", false
+	}
+	return strings.TrimSpace(rest), true
+}
 
 // detectScriptMode reads the mode marker from the first line of the script.
 // Leading and trailing whitespace is tolerated - the model is asked to emit
@@ -108,14 +131,8 @@ var pythonNameRE = regexp.MustCompile(`^python[0-9.]*$`)
 // script into a bash one (bash would garble it). The marker must be a `#!`
 // line, so a plain first line that merely ends in "python" stays bash.
 func detectScriptMode(script string) scriptMode {
-	first := script
-	if i := strings.IndexByte(first, '\n'); i >= 0 {
-		first = first[:i]
-	}
-	first = strings.TrimSpace(first)
-	if rest, ok := strings.CutPrefix(first, "#!attach"); ok && (rest == "" || rest[0] == ' ' || rest[0] == '\t') {
-		// The marker line may carry the first path (`#!attach f.png`): accept
-		// it here so the block cannot fall back to bash and execute the list.
+	first := firstLine(script)
+	if _, ok := attachMarker(first); ok {
 		return modeAttach
 	}
 	if pythonNameRE.MatchString(shebangInterpreter(first)) {
@@ -129,6 +146,7 @@ func detectScriptMode(script string) scriptMode {
 // (`/usr/bin/env python3` -> python3, `/usr/bin/python3.11` -> python3.11).
 // It returns "" for a line that is not a shebang or names nothing.
 func shebangInterpreter(line string) string {
+	line = strings.TrimSpace(line)
 	rest, ok := strings.CutPrefix(line, "#!")
 	if !ok {
 		return ""
@@ -157,25 +175,47 @@ func defaultDir() string {
 // (fall back to bash); every other Run error stays fatal.
 var ErrNoPythonInterpreter = errors.New("shellblock: python interpreter not found")
 
-// pythonInterpreter locates the python binary for modePython: python3 first
-// (the name current systems ship), python as the fallback. The interpreter
-// is resolved before the script file is written, so a missing python fails
-// the round without leaving artifacts behind.
-func pythonInterpreter() (string, error) {
-	for _, name := range []string{"python3", "python"} {
+// pythonInterpreter locates the python binary for a python-mode script: the
+// shebang token is honored first (python3.11 runs python3.11 when present),
+// then the generic chain python3 -> python. A python2 name is never
+// substituted with python3 - when no python2 binary exists the sentinel
+// sends the model back to bash instead of running the script under the
+// wrong interpreter. The interpreter is resolved before the script file is
+// written, so a missing python fails the round without leaving artifacts
+// behind.
+func pythonInterpreter(script string) (string, error) {
+	candidates := pythonCandidates(shebangInterpreter(firstLine(script)))
+	for _, name := range candidates {
 		if path, err := exec.LookPath(name); err == nil {
 			return path, nil
 		}
 	}
-	return "", fmt.Errorf("%w (tried python3 and python)", ErrNoPythonInterpreter)
+	return "", fmt.Errorf("%w (tried %s)", ErrNoPythonInterpreter, strings.Join(candidates, ", "))
+}
+
+// pythonCandidates lists the interpreter names to try for a shebang token,
+// in order. The python2 family is isolated on purpose: py2 code must not be
+// silently handed to a python3 interpreter.
+func pythonCandidates(token string) []string {
+	switch {
+	case token == "python2":
+		return []string{"python2"}
+	case strings.HasPrefix(token, "python2."):
+		return []string{token, "python2"}
+	case token == "python" || token == "python3":
+		return []string{"python3", "python"}
+	default:
+		return []string{token, "python3", "python"}
+	}
 }
 
 // Run executes one extracted block: the script is written verbatim to the
 // next scriptN.sh under dir (mode 0600).
 //
 // The first script line selects the mode (detectScriptMode): bash (the
-// default, also `#!/bin/bash`), python (a `#!` line ending in python /
-// python3), or an `#!attach` file list. bash and python scripts run with
+// default, also `#!/bin/bash`), python (a `#!` line naming python - the
+// interpreter token, with an optional version suffix), or an `#!attach`
+// file list. bash and python scripts run with
 // their interpreter (working directory dir) in their own process group, and
 // the merged stdout+stderr is written to scriptN.txt (mode 0600) with the
 // backfill wrapper; a timeout kills the whole process group, so
@@ -212,7 +252,7 @@ func Run(ctx context.Context, dir, script string, timeout time.Duration) (*RunRe
 	interp := "bash"
 	if mode == modePython {
 		var err error
-		interp, err = pythonInterpreter()
+		interp, err = pythonInterpreter(script)
 		if err != nil {
 			return nil, err
 		}
@@ -384,23 +424,24 @@ func runScript(ctx context.Context, dir, scriptPath, interp string, timeout time
 //	<path> attached           - existing regular file, appended to Attachments
 //	<path> not exist          - nothing at the path
 //	<path> not a regular file - a directory or special file, skipped
-//	<path> not attached (attachment limit N reached) - past maxAttachFiles
+//	<path> not attached (attachment limit N reached) - past MaxAttachFiles
 //
 // The guards are not protocol: a directory in the upload batch would fail
 // the whole attachment send and so would a batch over the site's limit, so
-// one bad path (or an over-long list) must not poison the round. os.Stat
-// follows symlinks, so a symlink to a regular file is attached at its
-// target. The output echoes the path as listed (not the resolved one) so
-// the model can correct its own line; a list with no usable lines produces
-// an empty output.
+// one bad path (or an over-long list) must not poison the round. The status
+// output itself is bounded by maxOutputBytes like merged script output.
+// os.Stat follows symlinks, so a symlink to a regular file is attached at
+// its target. The output echoes the path as listed (not the resolved one)
+// so the model can correct its own line; a list with no usable lines
+// produces an empty output.
 func attachResult(dir, scriptText string) *scriptResult {
 	start := time.Now()
 	first, body, _ := strings.Cut(scriptText, "\n")
-	if rest, ok := strings.CutPrefix(strings.TrimSpace(first), "#!attach"); ok {
-		// A path on the marker line itself counts as the first entry: the
-		// model sometimes slips one there, and a bash fallback would execute
-		// the remaining list as commands.
-		body = strings.TrimSpace(rest) + "\n" + body
+	if path, ok := attachMarker(first); ok {
+		// A path on the marker line itself counts as the first entry (see
+		// attachMarker); the mode decision and the body extraction share
+		// the parse, so they cannot drift.
+		body = path + "\n" + body
 	}
 	res := &scriptResult{}
 	var b strings.Builder
@@ -419,14 +460,21 @@ func attachResult(dir, scriptText string) *scriptResult {
 			fmt.Fprintf(&b, "%s not exist\n", path)
 		case !info.Mode().IsRegular():
 			fmt.Fprintf(&b, "%s not a regular file\n", path)
-		case len(res.attachments) >= maxAttachFiles:
-			fmt.Fprintf(&b, "%s not attached (attachment limit %d reached)\n", path, maxAttachFiles)
+		case len(res.attachments) >= MaxAttachFiles:
+			fmt.Fprintf(&b, "%s not attached (attachment limit %d reached)\n", path, MaxAttachFiles)
 		default:
 			res.attachments = append(res.attachments, target)
 			fmt.Fprintf(&b, "%s attached\n", path)
 		}
 	}
 	res.output = b.String()
+	if len(res.output) > maxOutputBytes {
+		// The status list is output like any script's: bound it so a
+		// pathological list cannot balloon scriptN.txt (and the upload
+		// batch) past the merged-output cap; FormatBackfill adds the note.
+		res.output = trimPartialRune(res.output[:maxOutputBytes])
+		res.truncated = true
+	}
 	res.duration = time.Since(start)
 	return res
 }

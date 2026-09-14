@@ -863,6 +863,25 @@ func handleWebChatToolLoop(ctx context.Context, first WebChatResult, opts WebCha
 	return cleanExitStripped()
 }
 
+// formatAttachNote renders the stderr audit suffix naming the files a round
+// attached (bounded): the operator must see WHAT left the machine, not just
+// how many files did. Empty when nothing was attached.
+func formatAttachNote(attachments []string) string {
+	n := len(attachments)
+	if n == 0 {
+		return ""
+	}
+	names := make([]string, 0, n)
+	for _, p := range attachments {
+		names = append(names, filepath.Base(p))
+	}
+	const maxShown = 5
+	if len(names) > maxShown {
+		names = append(names[:maxShown], fmt.Sprintf("…+%d", n-maxShown))
+	}
+	return fmt.Sprintf("；附件 %d 个（%s）", n, strings.Join(names, ", "))
+}
+
 // handleWebChatShellLoop continues a WebChat conversation whose replies use
 // the <shell> block channel (opts.ShellTool): every round is judged
 // (shellblock.Judge) as an executable block, a format warning, or the final
@@ -928,6 +947,84 @@ func handleWebChatShellLoop(ctx context.Context, first WebChatResult, opts WebCh
 		}
 		return nil
 	}
+
+	// sendWarnRound delivers one model-facing warning (format contract,
+	// blocked-command refusal, or python-unavailable note): it counts the
+	// warn-class round, prints the stderr audit line, sends the warning, and
+	// advances to the reply. A nil return means "keep looping"; the
+	// consecutive-warning abort and the send error come back as err. Shared
+	// by every warn path so the policy cannot drift.
+	sendWarnRound := func(round int, label, stderrMsg, modelMsg string) error {
+		if err := countWarn(round); err != nil {
+			return err
+		}
+		fmt.Fprint(os.Stderr, stderrMsg)
+		res, callErr := handleWebChatFollowUpSend(ctx, modelMsg, WebChatOptions{Keep: convURL, ShellTool: true})
+		if callErr != nil {
+			return fmt.Errorf("webchat shell loop: %s during round %d: %w", label, round, callErr)
+		}
+		lastReasoning = res.Reasoning
+		advance(res)
+		return nil
+	}
+
+	// execRound runs one executable block or turns it into a warn-class
+	// round: a blocked script and a missing python interpreter are refused
+	// model-facing (nothing is written or run), everything else executes and
+	// the round's artifacts - scriptN.txt plus any `#!attach` files - ride
+	// back in the follow-up message. A nil return means "keep looping".
+	execRound := func(round int, verdict shellblock.Verdict) error {
+		block := verdict.Block
+		if detail, blocked := shellblock.Blocked(block.Script); blocked {
+			// Fail-closed: the script is neither written nor run.
+			return sendWarnRound(round, "blocked-command refusal",
+				fmt.Sprintf("⛔ `<shell>` 脚本命中破坏性命令拦截（%s），已拒绝并请求改写（第 %d/%d 轮）…\n", detail, round, handleWebChatMaxShellRounds),
+				shellblock.BlockedWarning(detail))
+		}
+		runRes, runErr := handleWebChatExecShell(ctx, dsctx.ProjectRoot, block.Script, block.Timeout)
+		if runErr != nil {
+			if errors.Is(runErr, shellblock.ErrNoPythonInterpreter) {
+				// A host without python must not kill the session: warn
+				// the model and let it fall back to bash, like the
+				// blocked-command refusal.
+				return sendWarnRound(round, "python-unavailable warning",
+					fmt.Sprintf("⚠️ python 解释器不可用，已请求模型改用 bash（第 %d/%d 轮）…\n", round, handleWebChatMaxShellRounds),
+					shellblock.NoPythonWarning())
+			}
+			return fmt.Errorf("webchat shell loop: run script during round %d: %w", round, runErr)
+		}
+		status := fmt.Sprintf("exit=%d", runRes.ExitCode)
+		if runRes.TimedOut {
+			status = fmt.Sprintf("timeout after %s", runRes.Timeout)
+		}
+		attachNote := formatAttachNote(runRes.Attachments)
+		fmt.Fprintf(os.Stderr, "▶ script%d.sh: %s（%s, %s；输出 script%d.txt%s）\n",
+			runRes.Number, block.Summary, status, runRes.Duration.Round(time.Millisecond), runRes.Number, attachNote)
+		feedback := fmt.Sprintf("output of script%d.sh (attached as script%d.txt):", runRes.Number, runRes.Number)
+		if verdict.ResidualMarkers {
+			// The block ran fine, but the reply carried DSML marker residue
+			// outside it (the site badges/mangles such markup). Ride the reminder
+			// along with this round's feedback instead of spending an extra round.
+			feedback += "\n\n" + shellblock.ResidueNote()
+			fmt.Fprintf(os.Stderr, "⚠️ 回复携带 DSML 标记残留（块已执行；提醒已随反馈发出）\n")
+		}
+		// The round's artifacts ride back as attachments: scriptN.txt
+		// (the output backfill) first, then every file an `#!attach`
+		// block requested, in the listed order.
+		attachments := append([]string{runRes.OutputPath}, runRes.Attachments...)
+		res, callErr := handleWebChatFollowUpSend(ctx, feedback, WebChatOptions{
+			Keep:        convURL,
+			ShellTool:   true,
+			Attachments: attachments,
+		})
+		if callErr != nil {
+			return fmt.Errorf("webchat shell loop: feedback send during round %d: %w", round, callErr)
+		}
+		consecutiveWarns = 0
+		lastReasoning = res.Reasoning
+		advance(res)
+		return nil
+	}
 	for round := 1; round <= handleWebChatMaxShellRounds; round++ {
 		verdict := shellblock.Judge(lastReasoning, message)
 		switch verdict.Action {
@@ -941,99 +1038,15 @@ func handleWebChatShellLoop(ctx context.Context, first WebChatResult, opts WebCh
 			}
 			return cleanExit()
 		case shellblock.ActionWarn:
-			if err := countWarn(round); err != nil {
+			stderrMsg := fmt.Sprintf("⚠️ %s 的回复未通过 `<shell>` 格式判定（%s），已请求重发（第 %d/%d 轮）…\n",
+				roleName, verdict.Issue, round, handleWebChatMaxShellRounds)
+			if err := sendWarnRound(round, "warning send", stderrMsg, verdict.Warning); err != nil {
 				return WebChatResult{}, err
 			}
-			fmt.Fprintf(os.Stderr, "⚠️ %s 的回复未通过 `<shell>` 格式判定（%s），已请求重发（第 %d/%d 轮）…\n",
-				roleName, verdict.Issue, round, handleWebChatMaxShellRounds)
-			res, callErr := handleWebChatFollowUpSend(ctx, verdict.Warning, WebChatOptions{Keep: convURL, ShellTool: true})
-			if callErr != nil {
-				return WebChatResult{}, fmt.Errorf("webchat shell loop: warning send during round %d: %w", round, callErr)
-			}
-			lastReasoning = res.Reasoning
-			advance(res)
-			continue
 		case shellblock.ActionExecute:
-			block := verdict.Block
-			if detail, blocked := shellblock.Blocked(block.Script); blocked {
-				// Fail-closed: the script is neither written nor run.
-				if err := countWarn(round); err != nil {
-					return WebChatResult{}, err
-				}
-				fmt.Fprintf(os.Stderr, "⛔ `<shell>` 脚本命中破坏性命令拦截（%s），已拒绝并请求改写（第 %d/%d 轮）…\n",
-					detail, round, handleWebChatMaxShellRounds)
-				res, callErr := handleWebChatFollowUpSend(ctx, shellblock.BlockedWarning(detail), WebChatOptions{Keep: convURL, ShellTool: true})
-				if callErr != nil {
-					return WebChatResult{}, fmt.Errorf("webchat shell loop: blocked-command refusal during round %d: %w", round, callErr)
-				}
-				lastReasoning = res.Reasoning
-				advance(res)
-				continue
+			if err := execRound(round, verdict); err != nil {
+				return WebChatResult{}, err
 			}
-			runRes, runErr := handleWebChatExecShell(ctx, dsctx.ProjectRoot, block.Script, block.Timeout)
-			if runErr != nil {
-				if errors.Is(runErr, shellblock.ErrNoPythonInterpreter) {
-					// A host without python must not kill the session: warn
-					// the model and let it fall back to bash, like the
-					// blocked-command refusal.
-					if err := countWarn(round); err != nil {
-						return WebChatResult{}, err
-					}
-					fmt.Fprintf(os.Stderr, "⚠️ python 解释器不可用，已请求模型改用 bash（第 %d/%d 轮）…\n", round, handleWebChatMaxShellRounds)
-					res, callErr := handleWebChatFollowUpSend(ctx, shellblock.NoPythonWarning(), WebChatOptions{Keep: convURL, ShellTool: true})
-					if callErr != nil {
-						return WebChatResult{}, fmt.Errorf("webchat shell loop: python-unavailable warning during round %d: %w", round, callErr)
-					}
-					lastReasoning = res.Reasoning
-					advance(res)
-					continue
-				}
-				return WebChatResult{}, fmt.Errorf("webchat shell loop: run script during round %d: %w", round, runErr)
-			}
-			status := fmt.Sprintf("exit=%d", runRes.ExitCode)
-			if runRes.TimedOut {
-				status = fmt.Sprintf("timeout after %s", runRes.Timeout)
-			}
-			attachNote := ""
-			if n := len(runRes.Attachments); n > 0 {
-				// Name the files (bounded): the operator must see WHAT left
-				// the machine, not just how many files did.
-				names := make([]string, 0, n)
-				for _, p := range runRes.Attachments {
-					names = append(names, filepath.Base(p))
-				}
-				const maxShown = 5
-				if len(names) > maxShown {
-					names = append(names[:maxShown], fmt.Sprintf("…+%d", n-maxShown))
-				}
-				attachNote = fmt.Sprintf("；附件 %d 个（%s）", n, strings.Join(names, ", "))
-			}
-			fmt.Fprintf(os.Stderr, "▶ script%d.sh: %s（%s, %s；输出 script%d.txt%s）\n",
-				runRes.Number, block.Summary, status, runRes.Duration.Round(time.Millisecond), runRes.Number, attachNote)
-			feedback := fmt.Sprintf("output of script%d.sh (attached as script%d.txt):", runRes.Number, runRes.Number)
-			if verdict.ResidualMarkers {
-				// The block ran fine, but the reply carried DSML marker residue
-				// outside it (the site badges/mangles such markup). Ride the reminder
-				// along with this round's feedback instead of spending an extra round.
-				feedback += "\n\n" + shellblock.ResidueNote()
-				fmt.Fprintf(os.Stderr, "⚠️ 回复携带 DSML 标记残留（块已执行；提醒已随反馈发出）\n")
-			}
-			// The round's artifacts ride back as attachments: scriptN.txt
-			// (the output backfill) first, then every file an `#!attach`
-			// block requested, in the listed order.
-			attachments := append([]string{runRes.OutputPath}, runRes.Attachments...)
-			res, callErr := handleWebChatFollowUpSend(ctx, feedback, WebChatOptions{
-				Keep:        convURL,
-				ShellTool:   true,
-				Attachments: attachments,
-			})
-			if callErr != nil {
-				return WebChatResult{}, fmt.Errorf("webchat shell loop: feedback send during round %d: %w", round, callErr)
-			}
-			consecutiveWarns = 0
-			lastReasoning = res.Reasoning
-			advance(res)
-			continue
 		default:
 			return WebChatResult{}, fmt.Errorf("webchat shell loop: unexpected judge action %v during round %d", verdict.Action, round)
 		}
