@@ -51,7 +51,12 @@ func BlocksFromJSON(data string) ([]ContentBlock, error) {
 }
 
 // IsVisionModel 判断模型是否支持图片输入。
-// DeepSeek 视觉模型名包含 "vision"（如 deepseek-v4-flash-vision-exp）。
+//
+// 2026-09 三模型合并后，图像理解由 flash 家族承载（deepseek-flash，即
+// V4.1-Flash）；deepseek-v4-pro 官方不支持图像理解。旧名 deepseek-v4-flash、
+// deepseek-v4-flash-vision-exp 仍可调用（由 V4.1-Flash 提供服务），所以按
+// flash / vision 家族名放行。大小写不敏感，与价格家族匹配策略一致。
 func IsVisionModel(model string) bool {
-	return strings.Contains(model, "vision")
+	m := strings.ToLower(model)
+	return strings.Contains(m, "flash") || strings.Contains(m, "vision")
 }

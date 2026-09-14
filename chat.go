@@ -41,7 +41,7 @@ const (
 func ChatPreRunE(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
 
-	// --model 覆盖配置的默认模型（如切换到视觉模型 deepseek-v4-flash-vision-exp）
+	// --model 覆盖配置的默认模型（如切换到视觉模型 deepseek-flash）
 	modelName := context.ModelDeepseekChat
 	if m, flagErr := cmd.Flags().GetString("model"); flagErr == nil && m != "" {
 		modelName = m
@@ -349,7 +349,7 @@ func uploadAttachments(ctx context.Context, cmd *cobra.Command) ([]prompt.Conten
 	}
 	model := context.ContextValue(ctx, context.CurrentModelNameKey, "")
 	if !prompt.IsVisionModel(model) {
-		return nil, fmt.Errorf("模型 %q 不支持图片输入；--attach 仅支持视觉模型（如 deepseek-v4-flash-vision-exp）", model)
+		return nil, fmt.Errorf("模型 %q 不支持图片输入；--attach 仅支持视觉模型（如 deepseek-flash）", model)
 	}
 	key := config.Get("deepseek-api-key", "")
 	url := config.Get("deepseek-base-url", "https://api.deepseek.com")
@@ -682,8 +682,8 @@ func init() {
 Input is read from stdin. Conversation history is isolated per project directory.
 Supports tool calling: file I/O, search, Git operations.
 
-Image input (vision models, e.g. deepseek-v4-flash-vision-exp):
-  dscli chat --model deepseek-v4-flash-vision-exp --attach screenshot.png "图中有什么？"
+Image input (vision models, e.g. deepseek-flash):
+  dscli chat --model deepseek-flash --attach screenshot.png "图中有什么？"
   Files are uploaded to the DeepSeek Files API and referenced by file_id
   (no base64 blobs in history). Vision file tools are also available to the
   model: vision_file_read / vision_file_list / vision_file_info / vision_file_delete.
@@ -699,6 +699,6 @@ Examples:
 	chatCmd.Flags().Int("histsize", 8, "history size loaded")
 	chatCmd.Flags().String("input", "", "read content from input file or read content from stdin if input file empty")
 	chatCmd.Flags().Bool("stream", false, "Enable streaming output (SSE)")
-	chatCmd.Flags().String("model", "", "Override model (e.g. deepseek-v4-flash-vision-exp); default from config model-deepseek-chat")
+	chatCmd.Flags().String("model", "", "Override model (e.g. deepseek-flash); default from config model-deepseek-chat")
 	chatCmd.Flags().StringSlice("attach", nil, "Image file paths to upload and attach (vision models only)")
 }

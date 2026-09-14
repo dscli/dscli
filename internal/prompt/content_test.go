@@ -99,9 +99,12 @@ func TestBlocksRoundTrip(t *testing.T) {
 
 func TestIsVisionModel(t *testing.T) {
 	cases := map[string]bool{
-		"deepseek-v4-flash-vision-exp": true,
-		"deepseek-v4-flash":            false,
-		"deepseek-v4-vision":           true,
+		"deepseek-flash":               true,  // 合并后图像理解由 flash 家族承载
+		"deepseek-v4-flash":            true,  // 旧名仍由 V4.1-Flash 服务
+		"deepseek-v4-flash-vision-exp": true,  // 旧视觉名
+		"deepseek-v4-vision":           true,  // vision 家族名
+		"DeepSeek-Flash":               true,  // 大小写不敏感
+		"deepseek-v4-pro":              false, // pro 不支持图像理解
 		"":                             false,
 	}
 	for model, want := range cases {

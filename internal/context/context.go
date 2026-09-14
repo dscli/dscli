@@ -48,7 +48,7 @@ var (
 
 var (
 	ProjectRoot       = GetProjectRoot()
-	ModelDeepseekChat = config.Get("model-deepseek-chat", "deepseek-v4-flash")
+	ModelDeepseekChat = config.Get("model-deepseek-chat", "deepseek-flash")
 )
 
 const (

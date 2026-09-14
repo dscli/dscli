@@ -89,7 +89,7 @@ func TestHandleReadDualMessage(t *testing.T) {
 	}
 
 	// 视觉模型：返回 DualMessage（tool 元数据 + user 消息 file 块）
-	ctx := context.WithValue(t.Context(), dcontext.CurrentModelNameKey, "deepseek-v4-flash-vision-exp")
+	ctx := context.WithValue(t.Context(), dcontext.CurrentModelNameKey, "deepseek-flash")
 	result, _, err := handleRead(ctx, toolcall.ToolArgs{"file": img})
 	if err != nil {
 		t.Fatalf("read failed: %v", err)

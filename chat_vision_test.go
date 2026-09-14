@@ -46,21 +46,32 @@ func TestUserMessageWithAttach(t *testing.T) {
 }
 
 func TestCleanMessagesForModel(t *testing.T) {
-	msgs := []prompt.Message{
-		{Role: "system", Content: "sys"},
-		{Role: "user", Content: "看图", ContentBlocks: []prompt.ContentBlock{
-			prompt.TextBlock("看图"), prompt.FileBlock("file-api-2"),
-		}},
+	cases := []struct {
+		name       string
+		model      string
+		wantBlocks int
+	}{
+		{"flash keeps blocks", "deepseek-flash", 2},
+		{"legacy vision name keeps blocks", "deepseek-v4-flash-vision-exp", 2},
+		{"pro strips blocks", "deepseek-v4-pro", 0},
 	}
-	// 视觉模型：保留块
-	cleanMessagesForModel(msgs, "deepseek-v4-flash-vision-exp")
-	if len(msgs[1].ContentBlocks) != 2 {
-		t.Fatalf("vision model should keep blocks: %+v", msgs[1])
-	}
-	// 非视觉模型：剥离块，保留文本
-	cleanMessagesForModel(msgs, "deepseek-v4-flash")
-	if len(msgs[1].ContentBlocks) != 0 || msgs[1].Content != "看图" {
-		t.Fatalf("non-vision model should strip blocks: %+v", msgs[1])
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			msgs := []prompt.Message{
+				{Role: "system", Content: "sys"},
+				{Role: "user", Content: "看图", ContentBlocks: []prompt.ContentBlock{
+					prompt.TextBlock("看图"), prompt.FileBlock("file-api-2"),
+				}},
+			}
+			cleanMessagesForModel(msgs, tt.model)
+			if got := len(msgs[1].ContentBlocks); got != tt.wantBlocks {
+				t.Errorf("cleanMessagesForModel(%q) left %d blocks, want %d", tt.model, got, tt.wantBlocks)
+			}
+			// 纯文本字段始终保留（显示 / FTS 依赖）
+			if msgs[1].Content != "看图" {
+				t.Errorf("cleanMessagesForModel(%q) content = %q, want 看图", tt.model, msgs[1].Content)
+			}
+		})
 	}
 }
 
@@ -70,9 +81,13 @@ func TestUploadAttachmentsNonVision(t *testing.T) {
 	if err := cmd.Flags().Set("attach", "a.png"); err != nil {
 		t.Fatal(err)
 	}
-	_, err := uploadAttachments(t.Context(), cmd)
-	if err == nil || !strings.Contains(err.Error(), "不支持图片输入") {
-		t.Fatalf("expected non-vision error, got: %v", err)
+	// 未指定模型（空值）与明确无图像能力的 pro，都必须在发起网络请求前报错
+	for _, model := range []string{"", "deepseek-v4-pro"} {
+		ctx := dcontext.WithValue(t.Context(), dcontext.CurrentModelNameKey, model)
+		_, err := uploadAttachments(ctx, cmd)
+		if err == nil || !strings.Contains(err.Error(), "不支持图片输入") {
+			t.Fatalf("model %q: expected non-vision error, got: %v", model, err)
+		}
 	}
 }
 
@@ -109,7 +124,7 @@ func TestUploadAttachmentsSuccess(t *testing.T) {
 	if err := cmd.Flags().Set("attach", img); err != nil {
 		t.Fatal(err)
 	}
-	ctx := dcontext.WithValue(t.Context(), dcontext.CurrentModelNameKey, "deepseek-v4-flash-vision-exp")
+	ctx := dcontext.WithValue(t.Context(), dcontext.CurrentModelNameKey, "deepseek-flash")
 	blocks, err := uploadAttachments(ctx, cmd)
 	if err != nil {
 		t.Fatalf("upload failed: %v", err)
