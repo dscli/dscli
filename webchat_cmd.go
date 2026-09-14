@@ -140,7 +140,7 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 	span, ctx := clog.StartSpanFromContext(cmd.Context(), "webchatRunE")
 	defer span.Finish()
 	keep, _ := cmd.Flags().GetString("keep")
-	if keep == "list" {
+	if strings.EqualFold(keep, "list") {
 		return webchatListConversations()
 	}
 

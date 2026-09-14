@@ -862,8 +862,8 @@ func TestJsFetchTailFmt(t *testing.T) {
 		"authorization: auth",
 		"best.message_id",
 		"msgs[msgs.length - 1]",
-		"delta(baseV - 1)",
-		"delta(0)",
+		"delta(baseV - 1, true)",
+		"delta(0, false)",
 	} {
 		if !strings.Contains(jsFetchTailFmt, want) {
 			t.Errorf("jsFetchTailFmt must contain %q (regression)", want)
@@ -873,6 +873,41 @@ func TestJsFetchTailFmt(t *testing.T) {
 	// stray %-sign would corrupt the Sprintf and silently break the read.
 	if got := strings.Count(jsFetchTailFmt, "%"); got != 3 {
 		t.Errorf("format verbs = %d, want 3 (id, cache_version, cache_reset_at)", got)
+	}
+}
+
+func TestParseTailResult(t *testing.T) {
+	// The server-tail result parser must never turn a malformed site
+	// response into a success with empty fields, and must surface the
+	// refusal reason verbatim.
+	tests := []struct {
+		name     string
+		result   map[string]any
+		wantRole string
+		wantOK   bool
+		wantWhy  string
+	}{
+		{
+			name:     "complete tail",
+			result:   map[string]any{"found": true, "tail": map[string]any{"content": "hi", "status": "FINISHED", "role": "ASSISTANT"}},
+			wantRole: "ASSISTANT",
+			wantOK:   true,
+		},
+		{name: "missing tail object", result: map[string]any{"found": true}, wantOK: false, wantWhy: "no tail object"},
+		{name: "tail without role", result: map[string]any{"found": true, "tail": map[string]any{"content": "hi"}}, wantOK: false, wantWhy: "without a role"},
+		{name: "not found carries the reason", result: map[string]any{"found": false, "reason": "chat code 40003: INVALID_TOKEN"}, wantOK: false, wantWhy: "INVALID_TOKEN"},
+		{name: "not found without a reason", result: map[string]any{"found": false}, wantOK: false, wantWhy: "returned nothing"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, role, why, ok := parseTailResult(tt.result)
+			if ok != tt.wantOK || role != tt.wantRole {
+				t.Errorf("parseTailResult(%v) = ok=%v role=%q, want ok=%v role=%q", tt.result, ok, role, tt.wantOK, tt.wantRole)
+			}
+			if tt.wantWhy != "" && !strings.Contains(why, tt.wantWhy) {
+				t.Errorf("reason = %q, want it to contain %q", why, tt.wantWhy)
+			}
+		})
 	}
 }
 

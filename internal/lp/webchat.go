@@ -439,7 +439,9 @@ const (
 	// page's user token. The local record is only the delta base: %d
 	// (cache_version) and %d (cache_reset_at). An empty delta(N) response
 	// means "nothing newer than the record", so the tail is re-fetched
-	// from N-1 (that response carries the newest message itself).
+	// from N-1 (that response carries the newest message itself). A
+	// rejected/stale cursor retries from scratch: delta(0) without
+	// cache_reset_at.
 	//
 	// The response lists messages oldest-first; the newest message is
 	// picked by the largest numeric message_id (the element that would win
@@ -457,22 +459,22 @@ const (
 		try { const j = JSON.parse(ut); if (j && typeof j.value === 'string') tok = j.value; } catch (e) {}
 		if (!tok) return {found: false, reason: 'no user token in localStorage (login required?)'};
 		const auth = tok.indexOf('Bearer') === 0 ? tok : 'Bearer ' + tok;
-		async function delta(cv) {
+		async function delta(cv, useReset) {
 			let qs = 'chat_session_id=' + id + '&cache_version=' + cv;
-			if (baseR > 0) qs += '&cache_reset_at=' + baseR;
+			if (useReset && baseR > 0) qs += '&cache_reset_at=' + baseR;
 			const r = await fetch('/api/v0/chat/history_messages?' + qs, {credentials: 'include', headers: {authorization: auth}});
 			if (r.status !== 200) return {error: 'http ' + r.status};
 			const j = await r.json();
 			if (j.code !== 0) return {error: 'chat code ' + j.code + ': ' + (j.msg || '')};
 			return {msgs: ((j.data || {}).biz_data || {}).chat_messages || []};
 		}
-		let res = await delta(baseV);
-		if (res.error && baseV > 0) res = await delta(0);
+		let res = await delta(baseV, true);
+		if (res.error && baseV > 0) res = await delta(0, false);
 		if (res.error) return {found: false, reason: res.error};
 		let msgs = res.msgs;
 		if (msgs.length === 0 && baseV > 0) {
-			res = await delta(baseV - 1);
-			if (res.error) res = await delta(0);
+			res = await delta(baseV - 1, true);
+			if (res.error) res = await delta(0, false);
 			if (res.error) return {found: false, reason: res.error};
 			msgs = res.msgs;
 		}
@@ -2757,6 +2759,14 @@ func fetchServerTail(ctx context.Context, conversationID string, version, cacheR
 	if err := evaluateAwait(ctx, js, &result); err != nil {
 		return "", "", "", "tail fetch failed: " + err.Error(), false
 	}
+	return parseTailResult(result)
+}
+
+// parseTailResult maps the jsFetchTailFmt result object to the read's
+// returns and validates it: a malformed result (missing tail object, or a
+// message without a role) is a loud failure, never a success with empty
+// fields; a not-found result surfaces the site's refusal reason verbatim.
+func parseTailResult(result map[string]any) (content, status, tailRole, reason string, ok bool) {
 	found, _ := result["found"].(bool)
 	if !found {
 		reason, _ = result["reason"].(string)

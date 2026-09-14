@@ -32,7 +32,7 @@
 
 1. 打开会话页（登录态 + 页面上下文），等待输入框（登录失效快速失败）；
 2. 取游标：`version` / `cacheResetAt`（IndexedDB 记录，轮询至出现；超时后退化为
-   从头拉取，`cache_version=0`）；
+   从头拉取：`cache_version=0`，不带 `cache_reset_at`）；
 3. 页面内调用
    `GET /api/v0/chat/history_messages?chat_session_id=..&cache_version=N[&cache_reset_at=R]`，
    `Authorization: Bearer <userToken.value>`（取自页面 `localStorage.userToken`）；
