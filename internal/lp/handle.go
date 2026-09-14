@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -971,6 +972,22 @@ func handleWebChatShellLoop(ctx context.Context, first WebChatResult, opts WebCh
 			}
 			runRes, runErr := handleWebChatExecShell(ctx, dsctx.ProjectRoot, block.Script, block.Timeout)
 			if runErr != nil {
+				if errors.Is(runErr, shellblock.ErrNoPythonInterpreter) {
+					// A host without python must not kill the session: warn
+					// the model and let it fall back to bash, like the
+					// blocked-command refusal.
+					if err := countWarn(round); err != nil {
+						return WebChatResult{}, err
+					}
+					fmt.Fprintf(os.Stderr, "⚠️ python 解释器不可用，已请求模型改用 bash（第 %d/%d 轮）…\n", round, handleWebChatMaxShellRounds)
+					res, callErr := handleWebChatFollowUpSend(ctx, shellblock.NoPythonWarning(), WebChatOptions{Keep: convURL, ShellTool: true})
+					if callErr != nil {
+						return WebChatResult{}, fmt.Errorf("webchat shell loop: python-unavailable warning during round %d: %w", round, callErr)
+					}
+					lastReasoning = res.Reasoning
+					advance(res)
+					continue
+				}
 				return WebChatResult{}, fmt.Errorf("webchat shell loop: run script during round %d: %w", round, runErr)
 			}
 			status := fmt.Sprintf("exit=%d", runRes.ExitCode)
@@ -978,8 +995,18 @@ func handleWebChatShellLoop(ctx context.Context, first WebChatResult, opts WebCh
 				status = fmt.Sprintf("timeout after %s", runRes.Timeout)
 			}
 			attachNote := ""
-			if len(runRes.Attachments) > 0 {
-				attachNote = fmt.Sprintf("；附件 %d 个", len(runRes.Attachments))
+			if n := len(runRes.Attachments); n > 0 {
+				// Name the files (bounded): the operator must see WHAT left
+				// the machine, not just how many files did.
+				names := make([]string, 0, n)
+				for _, p := range runRes.Attachments {
+					names = append(names, filepath.Base(p))
+				}
+				const maxShown = 5
+				if len(names) > maxShown {
+					names = append(names[:maxShown], fmt.Sprintf("…+%d", n-maxShown))
+				}
+				attachNote = fmt.Sprintf("；附件 %d 个（%s）", n, strings.Join(names, ", "))
 			}
 			fmt.Fprintf(os.Stderr, "▶ script%d.sh: %s（%s, %s；输出 script%d.txt%s）\n",
 				runRes.Number, block.Summary, status, runRes.Duration.Round(time.Millisecond), runRes.Number, attachNote)

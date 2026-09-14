@@ -24,6 +24,12 @@ import (
 // design's ~256KB); the file still records that a truncation happened.
 const maxOutputBytes = 256 * 1024
 
+// maxAttachFiles caps one `#!attach` block's file list: the WebChat upload
+// batch holds 50 files (WebUploadMaxFiles in internal/lp) and the round's
+// scriptN.txt rides in the same batch, so 49 fit. The cap turns a would-be
+// fatal batch rejection into a per-path status line.
+const maxAttachFiles = 49
+
 // drainGrace bounds the post-kill drain: after the process group is killed
 // the pipe closes at once, but a writer that escaped the group (setsid and
 // friends) could hold it - the round must still return.
@@ -55,7 +61,8 @@ type RunResult struct {
 	TimedOut bool
 	// Truncated marks output cut at maxOutputBytes.
 	Truncated bool
-	// Timeout is the effective timeout used for the run.
+	// Timeout is the effective timeout used for the run; zero for `#!attach`
+	// rounds (nothing runs).
 	Timeout time.Duration
 	// Duration is the wall-clock run time.
 	Duration time.Duration
@@ -89,6 +96,12 @@ func (m scriptMode) String() string {
 	}
 }
 
+// pythonNameRE matches a python interpreter name with an optional version
+// suffix: python, python3, python3.11, python2.7. A custom name that merely
+// contains "python" (micropython, custompython) does not match - only the
+// name itself may carry the version.
+var pythonNameRE = regexp.MustCompile(`^python[0-9.]*$`)
+
 // detectScriptMode reads the mode marker from the first line of the script.
 // Leading and trailing whitespace is tolerated - the model is asked to emit
 // the marker exactly, but a stray space must not silently turn a python
@@ -100,15 +113,35 @@ func detectScriptMode(script string) scriptMode {
 		first = first[:i]
 	}
 	first = strings.TrimSpace(first)
-	switch {
-	case first == "#!attach":
+	if rest, ok := strings.CutPrefix(first, "#!attach"); ok && (rest == "" || rest[0] == ' ' || rest[0] == '\t') {
+		// The marker line may carry the first path (`#!attach f.png`): accept
+		// it here so the block cannot fall back to bash and execute the list.
 		return modeAttach
-	case strings.HasPrefix(first, "#!") &&
-		(strings.HasSuffix(first, "python") || strings.HasSuffix(first, "python3")):
-		return modePython
-	default:
-		return modeBash
 	}
+	if pythonNameRE.MatchString(shebangInterpreter(first)) {
+		return modePython
+	}
+	return modeBash
+}
+
+// shebangInterpreter returns the base name of the interpreter named on a
+// `#!` line: the first token, or the second when the first is `env`
+// (`/usr/bin/env python3` -> python3, `/usr/bin/python3.11` -> python3.11).
+// It returns "" for a line that is not a shebang or names nothing.
+func shebangInterpreter(line string) string {
+	rest, ok := strings.CutPrefix(line, "#!")
+	if !ok {
+		return ""
+	}
+	fields := strings.Fields(rest)
+	if len(fields) == 0 {
+		return ""
+	}
+	name := filepath.Base(fields[0])
+	if name == "env" && len(fields) > 1 {
+		return filepath.Base(fields[1])
+	}
+	return name
 }
 
 // defaultDir is where a block with no explicit dir lands: the project's
@@ -118,6 +151,11 @@ func detectScriptMode(script string) scriptMode {
 func defaultDir() string {
 	return filepath.Join(dsctx.ProjectRoot, ".dscli", "tmp")
 }
+
+// ErrNoPythonInterpreter reports a python-mode block on a host without a
+// python binary. The shell loop turns it into a model-facing warning round
+// (fall back to bash); every other Run error stays fatal.
+var ErrNoPythonInterpreter = errors.New("shellblock: python interpreter not found")
 
 // pythonInterpreter locates the python binary for modePython: python3 first
 // (the name current systems ship), python as the fallback. The interpreter
@@ -129,7 +167,7 @@ func pythonInterpreter() (string, error) {
 			return path, nil
 		}
 	}
-	return "", fmt.Errorf("shellblock: python interpreter not found (tried python3 and python)")
+	return "", fmt.Errorf("%w (tried python3 and python)", ErrNoPythonInterpreter)
 }
 
 // Run executes one extracted block: the script is written verbatim to the
@@ -339,26 +377,30 @@ func runScript(ctx context.Context, dir, scriptPath, interp string, timeout time
 }
 
 // attachResult builds the result of an `#!attach` block without running
-// anything. Every non-empty line after the marker names a file; the path is
-// resolved against dir (absolute paths stay as they are) and gets exactly
-// one output line:
+// anything. The marker line may carry the first path; every following
+// non-empty line names another. The path is resolved against dir (absolute
+// paths stay as they are) and gets exactly one output line:
 //
 //	<path> attached           - existing regular file, appended to Attachments
 //	<path> not exist          - nothing at the path
 //	<path> not a regular file - a directory or special file, skipped
+//	<path> not attached (attachment limit N reached) - past maxAttachFiles
 //
-// The last case is a guard, not protocol: a directory in the upload batch
-// would fail the whole attachment send, so one bad path must not poison it.
-// The output echoes the path as listed (not the resolved one) so the model
-// can correct its own line; a list with no usable lines produces an empty
-// output.
+// The guards are not protocol: a directory in the upload batch would fail
+// the whole attachment send and so would a batch over the site's limit, so
+// one bad path (or an over-long list) must not poison the round. os.Stat
+// follows symlinks, so a symlink to a regular file is attached at its
+// target. The output echoes the path as listed (not the resolved one) so
+// the model can correct its own line; a list with no usable lines produces
+// an empty output.
 func attachResult(dir, scriptText string) *scriptResult {
 	start := time.Now()
-	body := scriptText
-	if i := strings.IndexByte(body, '\n'); i >= 0 {
-		body = body[i+1:]
-	} else {
-		body = ""
+	first, body, _ := strings.Cut(scriptText, "\n")
+	if rest, ok := strings.CutPrefix(strings.TrimSpace(first), "#!attach"); ok {
+		// A path on the marker line itself counts as the first entry: the
+		// model sometimes slips one there, and a bash fallback would execute
+		// the remaining list as commands.
+		body = strings.TrimSpace(rest) + "\n" + body
 	}
 	res := &scriptResult{}
 	var b strings.Builder
@@ -377,6 +419,8 @@ func attachResult(dir, scriptText string) *scriptResult {
 			fmt.Fprintf(&b, "%s not exist\n", path)
 		case !info.Mode().IsRegular():
 			fmt.Fprintf(&b, "%s not a regular file\n", path)
+		case len(res.attachments) >= maxAttachFiles:
+			fmt.Fprintf(&b, "%s not attached (attachment limit %d reached)\n", path, maxAttachFiles)
 		default:
 			res.attachments = append(res.attachments, target)
 			fmt.Fprintf(&b, "%s attached\n", path)

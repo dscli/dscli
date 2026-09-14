@@ -79,6 +79,34 @@ func TestBlockedWarning(t *testing.T) {
 	}
 }
 
+// TestBlockedSkipsAttachBlocks locks the mode exemption: an `#!attach` path
+// list executes nothing, so shell-text patterns must not false-refuse it
+// (and must not burn the loop's consecutive-warning slots).
+func TestBlockedSkipsAttachBlocks(t *testing.T) {
+	for _, script := range []string{
+		"#!attach\nreboot-notes.md\n",
+		"#!attach\nwget-report.txt\nnc.md\n",
+		"#!attach\nsudo rm.sh\n",
+	} {
+		if detail, blocked := Blocked(script); blocked {
+			t.Errorf("Blocked(%q) = %q, want the attach exemption", script, detail)
+		}
+	}
+	if _, blocked := Blocked("sudo rm -rf /"); !blocked {
+		t.Error("Blocked must still refuse a destructive bash script")
+	}
+}
+
+// TestNoPythonWarning pins the fallback contract for a host without python.
+func TestNoPythonWarning(t *testing.T) {
+	got := NoPythonWarning()
+	for _, want := range []string{"NOT executed", "no python interpreter", "bash"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("NoPythonWarning misses %q:\n%s", want, got)
+		}
+	}
+}
+
 func TestBuildToolDoc(t *testing.T) {
 	doc := BuildToolDoc()
 	for _, want := range []string{

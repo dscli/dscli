@@ -168,17 +168,20 @@ exit code: N
 网页模型除 bash 外需要跑 python、并主动索取本地文件（附件回传）。改动（本仓库直接开发，同 §11 先例）：
 
 - **模式判定**（`shellblock.Run`；取脚本首行，`TrimSpace` 后判定）：
-  - `#!attach` → attach 模式；
-  - `#!` 开头且以 `python` 或 `python3` 结尾 → python 模式（解释器：`python3` 优先、缺失回退 `python`；在写文件前解析，缺解释器时不落任何产物）；
+  - `#!attach [path]` → attach 模式（标记行可带第一条路径）；
+  - `#!` 行命名 python（名字须为 `python` + 可选版本后缀：`python3`、`python3.11`、`python2.7`；`env` 形式取第二个 token；`micropython` / `custompython` 这类仅含 python 字样的名字不算）→ python 模式（解释器：`python3` 优先、缺失回退 `python`；在写文件前解析，缺解释器时不落任何产物）；
   - 其余（无 shebang、`#!/bin/bash`、未知 shebang）→ bash 模式，原行为不变。
-  - 宽容规则：判定行允许尾随空白（模型本不该发，但一个空格不能把 python 脚本翻成 bash 误执行）；非 `#!` 首行（如 `echo python`）不触发 python。
-- **attach 模式**：不执行任何进程。首行之后每个非空行 = 一个文件路径；相对路径按 `dir` 解析（webchat 通道 = 项目根），绝对路径原样。每个路径恰好一行 output：
+  - 宽容规则：判定行允许首尾空白（模型本不该发，但一个空格不能把 python 脚本翻成 bash 误执行）；非 `#!` 首行（如 `echo python`）不触发 python。
+- **attach 模式**：不执行任何进程。标记行可带第一条路径，其后每个非空行 = 一个文件路径；相对路径按 `dir` 解析（webchat 通道 = 项目根），绝对路径原样（`os.Stat` 跟随符号链接）。每个路径恰好一行 output：
   - 存在且为普通文件 → 记入 `RunResult.Attachments`（解析后路径）并输出 `<path> attached`；
   - 不存在 → `<path> not exist`；
-  - 目录 / 特殊文件 → `<path> not a regular file`（防护而非协议：目录混入附件批会让整批上传失败，单个坏路径不得毒化其他文件）。
+  - 目录 / 特殊文件 → `<path> not a regular file`（防护而非协议：目录混入附件批会让整批上传失败，单个坏路径不得毒化其他文件）；
+  - 超出 `maxAttachFiles`（49：站点单批 50 个、scriptN.txt 占 1 席）→ `<path> not attached (attachment limit N reached)`（同属防护）。
   - `scriptN.sh` / `scriptN.txt` 照常落盘（审计一致性）；exit code 0；`<timeout>` 不参与（无进程）。
+  - 破坏性命令拦截对 attach 豁免（`Blocked` 按模式放行）：路径不执行任何东西，shell 文本模式只会误拒（如 `reboot-notes.md`），每次误拒还烧掉一个连续告警额度。
 - **回填头**：`bash scriptN.sh:` → `<mode> scriptN.sh:`（bash / python / attach）。
-- **回传顺序**（`handleWebChatShellLoop`）：附件列表 = `scriptN.txt` 在前，`#!attach` 文件按列出顺序随后；stderr 审计行在附件非空时追加 `；附件 N 个`。
+- **回传顺序**（`handleWebChatShellLoop`）：附件列表 = `scriptN.txt` 在前，`#!attach` 文件按列出顺序随后；stderr 审计行在附件非空时追加 `；附件 N 个（文件名，最多列 5 个）`——人可见"什么文件离开了本机"。
+- **缺 python 不杀会话**：`ErrNoPythonInterpreter` 哨兵；循环把缺失解释器转成警告轮（`NoPythonWarning`，提示改写为 bash），其余 runner 错误仍致命。
 - **dir 默认值**：`Run` 的 `dir == ""` 不再默认 `.`，改为 `PROJECT_ROOT/.dscli/tmp/`（按需 `MkdirAll`）；webchat 循环仍显式传项目根，脚本 cwd 语义不变。
 - **工具文档**（`BuildToolDoc`）：usage 行改为 bash / python / attach 三形态，新增 "Script forms" 段与 python、attach 两个示例。
-- 测试：runner（模式判定表 / python 实跑 / attach 存在、缺失、目录、绝对路径 / 默认目录 / 回填头）；lp（附件顺序 + stderr 计数）。`go test ./...` + `make fmt-check` 全绿。
+- 测试：runner（模式判定表含版本后缀 / `micropython` / 标记行路径 / python 实跑 / attach 存在、缺失、目录、绝对路径、数量上限 / 默认目录 / 回填头）；lp（附件顺序 + stderr 名单 + 缺 python 警告轮）。`go test ./...` + `make fmt-check` 全绿。

@@ -95,6 +95,14 @@ func BlockedWarning(detail string) string {
 	return fmt.Sprintf("Your `<shell>` block was NOT executed: it contains a blocked destructive command pattern (`%s`). Destructive commands (`rm -rf /` or `~`, `mkfs`, `dd of=/dev/`, `sudo`, `shutdown`/`reboot`), outbound-network tools (`curl`, `wget`, `nc`, `ncat`, `telnet`, `socat`), and git history-rewriting operations (`git reset --hard`, `git clean -fd`, `git stash`, `git checkout --`, forced push) are rejected outright. Rewrite the script without them and re-send the block.\n", truncateDetail(detail))
 }
 
+// NoPythonWarning is sent when a python script cannot run because the host
+// has no python interpreter: nothing was executed, and the model is told to
+// fall back to bash (the conversation stays alive, unlike other runner
+// failures).
+func NoPythonWarning() string {
+	return "Your `<shell>` block was NOT executed: no python interpreter (`python3` or `python`) is available on this host. Rewrite the step as a bash script and re-send it in the same format.\n"
+}
+
 // ResidueNote is appended to the execution feedback when the reply carried
 // DSML marker residue OUTSIDE the executed block. The block still ran, so
 // this is a reminder, not a refusal: the site badges and mangles that markup,
@@ -130,8 +138,14 @@ func truncateDetail(detail string) string {
 // interception and returns the matched pattern for the refusal message. The
 // pattern list lives in internal/dsml (dsml.BlockedCmdRe) so the two web
 // channels cannot drift; the shell channel applies it to the whole script
-// before anything is written or executed (fail-closed).
+// before anything is written or executed (fail-closed). An `#!attach` block
+// is exempt: it executes nothing, and the shell-text patterns would only
+// false-refuse file paths (a path like "reboot-notes.md" matches), burning
+// one of the loop's consecutive-warning slots per refusal.
 func Blocked(script string) (string, bool) {
+	if detectScriptMode(script) == modeAttach {
+		return "", false
+	}
 	match := dsml.BlockedCmdRe.FindString(script)
 	if match == "" {
 		return "", false
@@ -153,13 +167,16 @@ func BuildToolDoc() string {
 	b.WriteString(formatRules)
 	b.WriteString("\n\n**Script forms** - the first line of the script body picks the form:\n\n")
 	b.WriteString("- `#!/bin/bash` (or no shebang): run with bash.\n")
-	b.WriteString("- A `#!` line ending in `python` or `python3` (e.g. `#!/usr/bin/python`):\n")
-	b.WriteString("  run with the python interpreter.\n")
-	b.WriteString("- `#!attach`: run nothing; every following non-empty line is a file path\n")
-	b.WriteString("  (relative paths resolve against the project root, absolute paths are\n")
-	b.WriteString("  used as-is). Each existing file is uploaded as an attachment to your\n")
-	b.WriteString("  next round, and every listed path gets one output line (`attached` /\n")
-	b.WriteString("  `not exist` / `not a regular file`).\n")
+	b.WriteString("- A `#!` line naming python (`python`, `python3`, `python3.11`, ...;\n")
+	b.WriteString("  e.g. `#!/usr/bin/python` or `#!/usr/bin/env python3`): run with the\n")
+	b.WriteString("  python interpreter (`python3`, falling back to `python`; the shebang\n")
+	b.WriteString("  path itself is not used).\n")
+	b.WriteString("- `#!attach [path]`: run nothing; the marker line may carry the first\n")
+	b.WriteString("  path, every following non-empty line is another (relative paths\n")
+	b.WriteString("  resolve against the project root, absolute paths are used as-is).\n")
+	b.WriteString("  Each existing file is uploaded as an attachment to your next round\n")
+	b.WriteString("  (at most 49 files per block), and every listed path gets one output\n")
+	b.WriteString("  line (`attached` / `not exist` / `not a regular file`).\n")
 	b.WriteString("\nPython example:\n\n")
 	b.WriteString(pythonExample)
 	b.WriteString("\n\nAttach example:\n\n")

@@ -2,6 +2,7 @@ package lp
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -101,8 +102,10 @@ func TestHandleWebChatShellLoopAttachesBlockFiles(t *testing.T) {
 	t.Cleanup(func() { handleWebChatSend, handleWebChatExecShell = origSend, origExec })
 
 	const convURL = "https://chat.deepseek.com/a/chat/s/convSHELL"
+	var messages []string
 	var sentOpts []WebChatOptions
-	handleWebChatSend = func(_ context.Context, _ string, opts WebChatOptions) (WebChatResult, error) {
+	handleWebChatSend = func(_ context.Context, msg string, opts WebChatOptions) (WebChatResult, error) {
+		messages = append(messages, msg)
 		sentOpts = append(sentOpts, opts)
 		return WebChatResult{Content: shellFinalTest, URL: convURL}, nil
 	}
@@ -137,8 +140,48 @@ func TestHandleWebChatShellLoopAttachesBlockFiles(t *testing.T) {
 			t.Errorf("attachment[%d] = %q, want %q", i, got[i], want[i])
 		}
 	}
-	if !strings.Contains(stderr, "附件 2 个") {
-		t.Errorf("stderr misses the attachment count:\n%s", stderr)
+	if !strings.Contains(stderr, "附件 2 个（a.png, b.pdf）") {
+		t.Errorf("stderr misses the attachment names:\n%s", stderr)
+	}
+	if !strings.HasPrefix(messages[0], "output of script5.sh (attached as script5.txt):") {
+		t.Errorf("feedback = %q, want the script prefix preserved", messages[0])
+	}
+}
+
+// TestHandleWebChatShellLoopNoPythonWarning pins the graceful degradation on
+// a host without python: the failed round becomes a model-facing warning
+// ("rewrite as bash"), not a session abort, mirroring the blocked-command
+// refusal.
+func TestHandleWebChatShellLoopNoPythonWarning(t *testing.T) {
+	origSend, origExec := handleWebChatSend, handleWebChatExecShell
+	t.Cleanup(func() { handleWebChatSend, handleWebChatExecShell = origSend, origExec })
+
+	const convURL = "https://chat.deepseek.com/a/chat/s/convSHELL"
+	var messages []string
+	calls := 0
+	handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
+		calls++
+		messages = append(messages, msg)
+		return WebChatResult{Content: shellFinalTest, URL: convURL}, nil
+	}
+	handleWebChatExecShell = func(_ context.Context, _ string, _ string, _ time.Duration) (*shellblock.RunResult, error) {
+		return nil, fmt.Errorf("shellblock: %w (tried python3 and python)", shellblock.ErrNoPythonInterpreter)
+	}
+
+	res, err := handleWebChatShellLoop(context.Background(),
+		WebChatResult{Content: shellBlockTest, URL: convURL},
+		WebChatOptions{Role: "dev", ShellTool: true})
+	if err != nil {
+		t.Fatalf("shell loop: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("sends = %d, want 1 (the python-unavailable warning)", calls)
+	}
+	if !strings.Contains(messages[0], "no python interpreter") {
+		t.Errorf("warning message = %q, want the python-unavailable warning", messages[0])
+	}
+	if res.Content != shellFinalTest {
+		t.Errorf("content = %q, want the final report", res.Content)
 	}
 }
 

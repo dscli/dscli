@@ -3,6 +3,7 @@ package shellblock
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -166,10 +167,15 @@ func TestDetectScriptMode(t *testing.T) {
 		{name: "python3 shebang", script: "#!/usr/bin/env python3\nprint(1)", want: modePython},
 		{name: "indented python shebang", script: "  #!/usr/bin/python\nprint(1)", want: modePython},
 		{name: "python shebang with trailing space", script: "#!/usr/bin/python \nprint(1)", want: modePython},
-		{name: "python2 is not a marker", script: "#!/usr/bin/python2\nprint(1)", want: modeBash},
+		{name: "versioned python shebang", script: "#!/usr/bin/env python3.11\nprint(1)", want: modePython},
+		{name: "python2 shebang", script: "#!/usr/bin/python2.7\nprint(1)", want: modePython},
+		{name: "micro python is not a marker", script: "#!/usr/bin/env micropython\nprint(1)", want: modeBash},
+		{name: "custom python path is not a marker", script: "#!/opt/custompython\nprint(1)", want: modeBash},
 		{name: "attach marker", script: "#!attach\nf.txt", want: modeAttach},
 		{name: "attach marker with trailing space", script: "#!attach \nf.txt", want: modeAttach},
 		{name: "attach marker alone", script: "#!attach", want: modeAttach},
+		{name: "attach marker with first path", script: "#!attach a.png\nb.png", want: modeAttach},
+		{name: "attach prefix word is not the marker", script: "#!attachments\nf.txt", want: modeBash},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -281,6 +287,55 @@ func TestRunAttachAbsolutePath(t *testing.T) {
 	}
 	if res.Output != abs+" attached\n" {
 		t.Errorf("output = %q, want %q", res.Output, abs+" attached\n")
+	}
+}
+
+// TestRunAttachMarkerLinePath: a path on the marker line itself
+// (`#!attach a.txt`) counts as the first entry; it must not fall back to
+// bash and execute the list.
+func TestRunAttachMarkerLinePath(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"a.txt", "b.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	res, err := Run(t.Context(), dir, "#!attach a.txt\nb.txt\n", 30*time.Second)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	wantOutput := "a.txt attached\nb.txt attached\n"
+	if res.Output != wantOutput {
+		t.Errorf("output = %q, want %q", res.Output, wantOutput)
+	}
+	if len(res.Attachments) != 2 {
+		t.Errorf("attachments = %v, want 2 entries", res.Attachments)
+	}
+}
+
+// TestRunAttachLimit: a list past maxAttachFiles reports the over-cap files
+// instead of letting the upload batch fail fatally.
+func TestRunAttachLimit(t *testing.T) {
+	dir := t.TempDir()
+	var script strings.Builder
+	script.WriteString("#!attach\n")
+	for i := 0; i <= maxAttachFiles; i++ {
+		name := fmt.Sprintf("f%02d.txt", i)
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprintf(&script, "%s\n", name)
+	}
+	res, err := Run(t.Context(), dir, script.String(), 30*time.Second)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(res.Attachments) != maxAttachFiles {
+		t.Errorf("attachments = %d, want the %d-file cap", len(res.Attachments), maxAttachFiles)
+	}
+	want := fmt.Sprintf("f%02d.txt not attached (attachment limit %d reached)\n", maxAttachFiles, maxAttachFiles)
+	if !strings.Contains(res.Output, want) {
+		t.Errorf("output misses the limit line %q:\n%s", want, res.Output)
 	}
 }
 
