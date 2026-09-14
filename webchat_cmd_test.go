@@ -71,6 +71,8 @@ func TestGatherWebchatInputStdin(t *testing.T) {
 }
 
 func TestGatherWebchatInputStdinEmpty(t *testing.T) {
+	// An empty stdin is NOT rejected here: webchatRunE decides what it means
+	// - with --keep it requests a resume, without it is a usage error.
 	oldStdin := os.Stdin
 	t.Cleanup(func() { os.Stdin = oldStdin })
 	r, w, err := os.Pipe()
@@ -81,8 +83,57 @@ func TestGatherWebchatInputStdinEmpty(t *testing.T) {
 	w.Close()
 
 	cmd := newWebchatCmd()
-	if _, err := gatherWebchatInput(cmd, nil); err == nil {
-		t.Error("gatherWebchatInput(empty stdin) must fail")
+	got, err := gatherWebchatInput(cmd, nil)
+	if err != nil {
+		t.Fatalf("gatherWebchatInput(empty stdin) must not fail here: %v", err)
+	}
+	if got != "" {
+		t.Errorf("gatherWebchatInput(empty stdin) = %q, want empty", got)
+	}
+}
+
+func TestGatherWebchatInputFileEmpty(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "empty.txt")
+	if err := os.WriteFile(f, []byte("  \n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := newWebchatCmd()
+	if err := cmd.Flags().Set("input", f); err != nil {
+		t.Fatal(err)
+	}
+	got, err := gatherWebchatInput(cmd, nil)
+	if err != nil {
+		t.Fatalf("gatherWebchatInput(empty file) must not fail here: %v", err)
+	}
+	if got != "" {
+		t.Errorf("gatherWebchatInput(empty file) = %q, want empty", got)
+	}
+}
+
+func TestValidateWebchatInvocation(t *testing.T) {
+	// Empty message + --keep = resume; empty without --keep is a usage
+	// error; attachments never ride along with a resume.
+	tests := []struct {
+		name        string
+		keep        string
+		message     string
+		attachments []string
+		wantErr     bool
+	}{
+		{"message with keep", "abc", "继续", nil, false},
+		{"message without keep", "", "新会话", nil, false},
+		{"empty message with keep = resume", "abc", "", nil, false},
+		{"empty message without keep", "", "", nil, true},
+		{"attachments need a message", "abc", "", []string{"shot.png"}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateWebchatInvocation(tt.keep, tt.message, tt.attachments)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateWebchatInvocation(%q, %q, %v) err = %v, wantErr %v",
+					tt.keep, tt.message, tt.attachments, err, tt.wantErr)
+			}
+		})
 	}
 }
 

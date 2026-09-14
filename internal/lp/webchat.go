@@ -130,6 +130,15 @@ const (
 	webChatIDBPollWindow   = 15 * time.Second // read window per reload attempt
 	webChatIDBReadAttempts = 3                // reload+read attempts before DOM fallback
 
+	// webChatResumeRecordSkew is the tolerance of the resume read's
+	// freshness anchor (rec.timestamp >= navigation start - skew). The
+	// skew must stay SMALLER than the gap between the two reads of one
+	// resume (the initial read and the pre-execution confirmation): a
+	// bigger skew could let the confirmation accept the record written by
+	// the initial read's own page load, silently voiding the "has the
+	// conversation moved?" check.
+	webChatResumeRecordSkew = 2 * time.Second
+
 	// JS snippet to set a textarea's value via the native setter (triggers
 	// message string.
 	jsSetTextareaFmt = `(() => {
@@ -407,14 +416,28 @@ const (
 	// CURRENT conversation from the site's IndexedDB conversation cache —
 	// the continuation point of a resumed conversation (HandleWebChatResume).
 	//
-	// Unlike jsIDBGetAnswerFmt it does NOT need a sent-message anchor or a
-	// freshness window: there is no "this round" — the caller wants whatever
-	// the expert last said, whether it is a final answer (multi-turn resume)
-	// or a pending tool-call block (interrupted round, chat_messages is
-	// newest-first so the last assistant message is the FIRST role=ASSISTANT
-	// entry scanning from index 0).
+	// Unlike jsIDBGetAnswerFmt it does NOT need a sent-message anchor:
+	// there is no "this round" - the caller wants whatever the expert last
+	// said, whether it is a final answer (multi-turn resume) or a pending
+	// tool-call block (interrupted round, chat_messages is newest-first so
+	// the last assistant message is the FIRST role=ASSISTANT entry scanning
+	// from index 0).
+	//
+	// It DOES need a freshness anchor, for the opposite reason: a
+	// conversation is shared state and may be continued anywhere (the
+	// user's own browser, another dscli process). The site refreshes
+	// rec.timestamp on every page load, so %d (the navigation start minus a
+	// small skew) refuses records that this page load did not (re)write;
+	// the caller keeps polling until the fresh write lands and fails
+	// loudly on timeout instead of trusting a leftover record.
+	//
+	// newestRole reports the role of the newest message: "ASSISTANT" means
+	// the picked message IS the conversation tail; anything else (typically
+	// "USER": a browser-side message with no reply yet) means an older
+	// assistant message is NOT the continuation point.
 	jsIDBGetLastAssistantFmt = `(async () => {
 	try {
+		const minTimestamp = %d;
 		const m = location.pathname.match(/\/a\/chat\/s\/([A-Za-z0-9_-]+)/);
 		if (!m) return {found: false, reason: 'no conversation id in url'};
 		const db = await new Promise(function(res, rej) {
@@ -430,7 +453,11 @@ const (
 		});
 		db.close();
 		if (!rec) return {found: false, reason: 'no idb record'};
+		if (typeof rec.timestamp !== 'number' || rec.timestamp < minTimestamp) {
+			return {found: false, reason: 'idb record stale for this page load (recordAt=' + rec.timestamp + ', min=' + minTimestamp + ')'};
+		}
 		const msgs = (rec.data && rec.data.chat_messages) || [];
+		const newestRole = (msgs[0] && msgs[0].role) || '';
 		let last = null;
 		for (let i = 0; i < msgs.length; i++) {
 			if (msgs[i].role === 'ASSISTANT') { last = msgs[i]; break; }
@@ -442,7 +469,7 @@ const (
 			if (f && typeof f.content === 'string' && f.content.trim() === '') continue;
 			if (f && f.type === 'RESPONSE') parts.push(f.content);
 		}
-		return {found: true, status: last.status || '', text: parts.join('\n\n')};
+		return {found: true, status: last.status || '', text: parts.join('\n\n'), newestRole: newestRole};
 	} catch (e) {
 		return {found: false, reason: String((e && e.message) || e)};
 	}
@@ -2672,22 +2699,37 @@ func idbGetAssistant(ctx context.Context, sentMessage string, notBeforeMS int64)
 // idbGetLastAssistant reads the LAST assistant message of the CURRENT
 // conversation from the site's IndexedDB conversation cache — the
 // continuation point of a resumed conversation (HandleWebChatResume). No
-// sent-message anchor and no freshness window: there is no "this round", the
-// caller wants whatever the expert last said. Returns the original markdown
-// (RESPONSE fragments) plus the message status; ok=false when the record is
-// unreadable yet or no assistant message exists.
-func idbGetLastAssistant(ctx context.Context) (text, status string, ok bool) {
+// sent-message anchor: there is no "this round", the caller wants whatever
+// the expert last said.
+//
+// The record must have been (re)written at or after minTimestampMS (Unix ms,
+// captured from the navigation start minus a skew): a conversation can be
+// continued elsewhere, and a record left behind by an earlier page load may
+// be stale - it is refused so the caller's poll keeps waiting for this
+// load's write. Returns the original markdown (RESPONSE fragments), the
+// message status, the role of the newest message (newestRole - "ASSISTANT"
+// means the picked message is the conversation tail) and the last refusal
+// reason (diagnostics for the caller's timeout; "" when ok). ok=false also
+// covers unreadable records and conversations without an assistant message
+// yet.
+func idbGetLastAssistant(ctx context.Context, minTimestampMS int64) (text, status, newestRole, reason string, ok bool) {
+	js := fmt.Sprintf(jsIDBGetLastAssistantFmt, minTimestampMS)
 	var result map[string]any
-	if err := evaluateAwait(ctx, jsIDBGetLastAssistantFmt, &result); err != nil {
-		return "", "", false
+	if err := evaluateAwait(ctx, js, &result); err != nil {
+		return "", "", "", "idb read failed: " + err.Error(), false
 	}
 	found, _ := result["found"].(bool)
 	if !found {
-		return "", "", false
+		reason, _ = result["reason"].(string)
+		if reason == "" {
+			reason = "idb record unreadable"
+		}
+		return "", "", "", reason, false
 	}
 	status, _ = result["status"].(string)
+	newestRole, _ = result["newestRole"].(string)
 	text, _ = result["text"].(string)
-	return text, status, true
+	return text, status, newestRole, "", true
 }
 
 // webchatExtractReloadedIDB reloads the conversation page and reads THIS
@@ -2754,27 +2796,38 @@ func webchatExtractReloadedIDB(ctx context.Context, conversationURL, sentMessage
 // reads the LAST assistant message's original markdown from the site's
 // IndexedDB cache — the continuation point of a resumed conversation. Unlike
 // Send it sends nothing: this is a read-only probe (HandleWebChatResume).
+// The read is anchored to its own page load: a record left behind by an
+// earlier load is refused, because the conversation may have been continued
+// elsewhere since (the user's own browser, another dscli process).
+//
 // ok=false means the record is unreadable (URL missing, login lost, no
-// assistant message yet, or the record write never landed within the poll
-// window).
-func (s *webChatSession) ReadLastAssistant(ctx context.Context, conversationURL string) (content, status string, ok bool) {
+// assistant message yet, or this load's fresh record never landed within
+// the poll window); reason carries the last refusal for diagnostics.
+func (s *webChatSession) ReadLastAssistant(ctx context.Context, conversationURL string) (content, status, newestRole, reason string, ok bool) {
 	span, ctx := clog.StartSpanFromContext(ctx, "webChatSessionReadLast")
 	defer span.Finish()
 	tabCtx, err := s.ensureTab(ctx)
 	if err != nil {
-		return "", "", false
+		return "", "", "", "browser tab unavailable: " + err.Error(), false
 	}
 	return webchatReadLastAssistant(tabCtx, conversationURL)
 }
 
 // webchatReadLastAssistant is the transport-level read of the last assistant
 // message: navigate to the conversation, wait for the composer, then poll the
-// IDB record for a FINISHED assistant message (the record write trails the
-// navigation, so a single immediate read can miss it — same window as
-// webchatExtractReloadedIDB). No sent-message anchoring: a resumed
+// IDB record for an assistant message written by THIS page load (the record
+// write trails the navigation, so a single immediate read can miss it - same
+// window as webchatExtractReloadedIDB). No sent-message anchoring: a resumed
 // conversation has no "this round" yet, so the newest-first FIRST
 // role=ASSISTANT entry IS the continuation point (see
 // jsIDBGetLastAssistantFmt).
+//
+// The freshness anchor is the point of this read: a record left behind by
+// an earlier page load is refused, because the conversation may have been
+// continued elsewhere since (the user's own browser, another dscli
+// process). The poll keeps waiting for this load's write; on timeout it
+// returns the last refusal reason so the caller fails loudly instead of
+// acting on a stale record.
 //
 // The IDB poll MUST run inside a chromedp action: cdp.Execute resolves the
 // message executor from the action context that chromedp.Run injects (via
@@ -2790,10 +2843,15 @@ func (s *webChatSession) ReadLastAssistant(ctx context.Context, conversationURL 
 // Send in the tool loop) then fails with "context canceled" even though
 // the tab context is still alive. Per-step timeouts live inside the actions
 // (waitForChatTextarea's 60s bound), mirroring webchatSend.
-func webchatReadLastAssistant(ctx context.Context, conversationURL string) (content, status string, ok bool) {
+func webchatReadLastAssistant(ctx context.Context, conversationURL string) (content, status, newestRole, reason string, ok bool) {
 	if conversationURL == "" {
-		return "", "", false
+		return "", "", "", "empty conversation URL", false
 	}
+	// Freshness anchor: the site refreshes rec.timestamp on every page
+	// load; a record older than this navigation (minus a small skew for
+	// clock jitter) was left by an earlier load and may be stale for a
+	// conversation that moved on elsewhere.
+	minTimestampMS := time.Now().Add(-webChatResumeRecordSkew).UnixMilli()
 	actions := []chromedp.Action{
 		chromedp.Navigate(conversationURL),
 		chromedp.WaitReady("body"),
@@ -2805,7 +2863,7 @@ func webchatReadLastAssistant(ctx context.Context, conversationURL string) (cont
 		chromedp.Sleep(3 * time.Second),
 	}
 	if err := chromedp.Run(ctx, actions...); err != nil {
-		return "", "", false
+		return "", "", "", "navigation failed: " + err.Error(), false
 	}
 	// Second Run: the poll window gets its own budget so a slow composer can
 	// never eat into it, and this is where the action context supplies the
@@ -2814,15 +2872,16 @@ func webchatReadLastAssistant(ctx context.Context, conversationURL string) (cont
 	// long-lived context.
 	pctx, pcancel := context.WithTimeout(ctx, webChatIDBPollWindow+5*time.Second)
 	defer pcancel()
-	var text, st string
-	var found bool
+	var lastReason string
 	if err := chromedp.Run(pctx, chromedp.ActionFunc(func(actCtx context.Context) error {
 		deadline := time.Now().Add(webChatIDBPollWindow)
 		for {
-			if t, s, f := idbGetLastAssistant(actCtx); f {
-				text, st, found = t, s, true
+			t, s, nr, r, f := idbGetLastAssistant(actCtx, minTimestampMS)
+			if f {
+				content, status, newestRole, ok = t, s, nr, true
 				return nil
 			}
+			lastReason = r
 			if time.Now().After(deadline) {
 				return nil
 			}
@@ -2833,9 +2892,18 @@ func webchatReadLastAssistant(ctx context.Context, conversationURL string) (cont
 			}
 		}
 	})); err != nil {
-		return "", "", false
+		if lastReason != "" {
+			return "", "", "", fmt.Sprintf("idb poll failed: %v (last: %s)", err, lastReason), false
+		}
+		return "", "", "", "idb poll failed: " + err.Error(), false
 	}
-	return text, st, found
+	if !ok {
+		if lastReason == "" {
+			lastReason = "no readable IndexedDB record within the poll window"
+		}
+		return "", "", "", lastReason, false
+	}
+	return content, status, newestRole, "", true
 }
 
 // evaluateAwait evaluates a JS expression and awaits the resulting promise.
@@ -3223,6 +3291,12 @@ func quoteJS(s string) string {
 // conversation can be continued by ID ("keep=<id>"), by recency ("last"),
 // or by URL (browser-copied). Every successful WebChat exchange registers
 // the conversation automatically.
+//
+// The registry is a convenience cache, NOT an authority: it only holds
+// conversations THIS machine has seen, while the site serves many more
+// (e.g. ones created in the user's own browser). A keep value that looks
+// like a conversation ID therefore resolves even when the registry never
+// saw it - see resolveWithFallback and resolveConversation.
 
 // maxSavedConversations caps the registry; the oldest entries are dropped
 // when the cap is exceeded.
@@ -3383,7 +3457,9 @@ func (r *conversationRegistry) latest() (string, error) {
 // conversation) stays "". "last" selects the most recently updated entry. A
 // full http(s) URL is used as-is (pre-specified, e.g. copied from a browser;
 // the caller registers it). Any other value is looked up as a conversation
-// ID: exact key first, then URL match, then URL suffix match.
+// ID: exact key first, then URL match, then URL suffix match. A miss is
+// reported as conversationNotFoundError so the caller can fall back to the
+// site's canonical URL.
 func (r *conversationRegistry) resolve(keep string) (string, error) {
 	if keep == "" {
 		return "", nil
@@ -3407,7 +3483,7 @@ func (r *conversationRegistry) resolve(keep string) (string, error) {
 	}
 	switch len(matches) {
 	case 0:
-		return "", fmt.Errorf("conversation %q not found (use keep=\"list\" to see saved conversations)", keep)
+		return "", conversationNotFoundError{keep: keep}
 	case 1:
 		return matches[0], nil
 	default:
@@ -3415,9 +3491,63 @@ func (r *conversationRegistry) resolve(keep string) (string, error) {
 	}
 }
 
+// conversationNotFoundError marks a registry miss for a keep value that is
+// not (yet) known. It is a distinct type so resolveConversation can fall
+// back to the site's canonical URL for a conversation-ID-shaped value: the
+// registry is only a local cache, and conversations created in the user's
+// own browser never enter it - they must still be continuable by ID.
+type conversationNotFoundError struct{ keep string }
+
+func (e conversationNotFoundError) Error() string {
+	return fmt.Sprintf("conversation %q not found (use keep=\"list\" to see saved conversations)", e.keep)
+}
+
+// conversationURLPrefix is the canonical site URL prefix for a conversation
+// ID (https://chat.deepseek.com/a/chat/s/<id>).
+const conversationURLPrefix = "https://chat.deepseek.com/a/chat/s/"
+
+// conversationIDShapeRE matches a plausible conversation-ID segment: the
+// same character class conversationIDRE accepts inside a URL. It decides
+// only whether an unknown keep value is still worth a URL construction.
+var conversationIDShapeRE = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// canBeConversationID reports whether keep may be a conversation ID the
+// site could serve. "list" (the CLI listing action) is excluded so it can
+// never turn into a URL.
+func canBeConversationID(keep string) bool {
+	return keep != "list" && conversationIDShapeRE.MatchString(keep)
+}
+
+// constructConversationURL returns the canonical site URL for a
+// conversation ID.
+func constructConversationURL(id string) string {
+	return conversationURLPrefix + id
+}
+
+// resolveWithFallback is resolve plus the browser-created-conversation
+// fallback: a conversation-ID-shaped keep that the registry does not know
+// resolves to the site's canonical URL. The registry is a local cache, not
+// an authority - a conversation created in the user's own browser never
+// enters it, but the site still serves it. The site validates the ID on
+// access; a bogus ID fails there instead of being refused here.
+// constructed=true tells the caller to persist the new entry.
+func resolveWithFallback(reg *conversationRegistry, keep string) (url string, constructed bool, err error) {
+	url, err = reg.resolve(keep)
+	if err == nil {
+		return url, false, nil
+	}
+	var nf conversationNotFoundError
+	if errors.As(err, &nf) && canBeConversationID(keep) {
+		return constructConversationURL(keep), true, nil
+	}
+	return "", false, err
+}
+
 // resolveConversation is the file-backed entry point: it resolves the Keep
-// option and registers pre-specified URLs so they can be referenced by ID
-// later. Returns "" for a new conversation.
+// option and registers pre-specified URLs and browser-created conversation
+// IDs so they can be referenced later. Returns "" for a new conversation.
+// The registry never gates access: an unknown conversation-ID-shaped value
+// resolves to the site's canonical URL (see resolveWithFallback).
 func resolveConversation(keep string) (string, error) {
 	if keep == "" {
 		return "", nil
@@ -3431,7 +3561,16 @@ func resolveConversation(keep string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return reg.resolve(keep)
+	url, constructed, err := resolveWithFallback(reg, keep)
+	if err != nil {
+		return "", err
+	}
+	if constructed {
+		// Learn the browser-created conversation so --keep=list and
+		// --keep=last can reference it later.
+		_ = registerConversation(url)
+	}
+	return url, nil
 }
 
 // registerConversation is the file-backed wrapper of registry.register. The

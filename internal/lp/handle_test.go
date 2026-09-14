@@ -13,6 +13,7 @@ import (
 
 	"github.com/dscli/dscli/internal/dsml"
 	"github.com/dscli/dscli/internal/outfmt"
+	"github.com/dscli/dscli/internal/shellblock"
 )
 
 // interruptedRound is the exact last-message content of a real QA round that
@@ -31,12 +32,21 @@ const interruptedRound = `<tool_calls>
 
 // resumeReadReply returns a mock read for handleWebChatResumeRead and a
 // cleanup that restores it. The content is the "last assistant message" the
-// resumed conversation was interrupted on.
+// resumed conversation was interrupted on; newestRole defaults to
+// "ASSISTANT" (the picked message is the conversation tail) and the refusal
+// reason is empty - mockResumeReadFull covers the other shapes.
 func mockResumeRead(t *testing.T, content, status string, ok bool) {
 	t.Helper()
+	mockResumeReadFull(t, content, status, "ASSISTANT", "", ok)
+}
+
+// mockResumeReadFull is mockResumeRead with explicit newestRole and refusal
+// reason values (the tail-guard and diagnostics cases).
+func mockResumeReadFull(t *testing.T, content, status, newestRole, reason string, ok bool) {
+	t.Helper()
 	orig := handleWebChatResumeRead
-	handleWebChatResumeRead = func(_ context.Context, _ string) (string, string, bool) {
-		return content, status, ok
+	handleWebChatResumeRead = func(_ context.Context, _ string) (string, string, string, string, bool) {
+		return content, status, newestRole, reason, ok
 	}
 	t.Cleanup(func() { handleWebChatResumeRead = orig })
 }
@@ -68,6 +78,83 @@ func TestHandleWebChatResumeReadFailure(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "cannot read last assistant message") {
 		t.Fatalf("err = %v, want read-failure error", err)
 	}
+}
+
+func TestHandleWebChatResumeTrailingUserMessageRejected(t *testing.T) {
+	// The newest message is a USER message (e.g. typed in the user's own
+	// browser, reply not landed yet): the last assistant message is NOT the
+	// conversation tail, so resuming must refuse instead of executing an
+	// older, possibly stale block.
+	origExec := handleWebChatExecShell
+	handleWebChatExecShell = func(_ context.Context, _ string, _ string, _ time.Duration) (*shellblock.RunResult, error) {
+		t.Fatal("no block may execute when the newest message is a user message")
+		return nil, nil
+	}
+	t.Cleanup(func() { handleWebChatExecShell = origExec })
+
+	mockResumeResolve(t, "https://chat.deepseek.com/a/chat/s/convTAIL")
+	mockResumeReadFull(t, shellBlockTest, "FINISHED", "USER", "", true)
+	_, err := HandleWebChatResume(context.Background(), WebChatOptions{Keep: "convTAIL", Role: "dev", ShellTool: true})
+	if err == nil || !strings.Contains(err.Error(), "newest message") {
+		t.Fatalf("err = %v, want newest-message refusal", err)
+	}
+}
+
+func TestHandleWebChatResumeConfirmReadGate(t *testing.T) {
+	// The conversation can be continued elsewhere between the initial read
+	// and the pre-execution confirmation read. When that happens NOTHING
+	// may execute and the caller retries against the new state.
+	origRead := handleWebChatResumeRead
+	origExec := handleWebChatExecShell
+	t.Cleanup(func() {
+		handleWebChatResumeRead = origRead
+		handleWebChatExecShell = origExec
+	})
+	mockResumeResolve(t, "https://chat.deepseek.com/a/chat/s/convRACE")
+
+	t.Run("content changed", func(t *testing.T) {
+		calls := 0
+		handleWebChatResumeRead = func(_ context.Context, _ string) (string, string, string, string, bool) {
+			calls++
+			if calls == 1 {
+				return shellBlockTest, "FINISHED", "ASSISTANT", "", true
+			}
+			return "the conversation moved on\n\nnew content", "FINISHED", "ASSISTANT", "", true
+		}
+		handleWebChatExecShell = func(_ context.Context, _ string, _ string, _ time.Duration) (*shellblock.RunResult, error) {
+			t.Fatal("a changed conversation must not execute the stale block")
+			return nil, nil
+		}
+		_, err := HandleWebChatResume(context.Background(), WebChatOptions{Keep: "convRACE", Role: "dev", ShellTool: true})
+		if err == nil || !strings.Contains(err.Error(), "changed between the two reads") {
+			t.Fatalf("err = %v, want changed-between-reads refusal", err)
+		}
+		if calls != 2 {
+			t.Errorf("reads = %d, want 2 (initial + confirmation)", calls)
+		}
+	})
+
+	t.Run("confirmation read failed", func(t *testing.T) {
+		calls := 0
+		handleWebChatResumeRead = func(_ context.Context, _ string) (string, string, string, string, bool) {
+			calls++
+			if calls == 1 {
+				return shellBlockTest, "FINISHED", "ASSISTANT", "", true
+			}
+			return "", "", "", "no idb record", false
+		}
+		handleWebChatExecShell = func(_ context.Context, _ string, _ string, _ time.Duration) (*shellblock.RunResult, error) {
+			t.Fatal("an unconfirmable conversation must not execute the block")
+			return nil, nil
+		}
+		_, err := HandleWebChatResume(context.Background(), WebChatOptions{Keep: "convRACE", Role: "dev", ShellTool: true})
+		if err == nil || !strings.Contains(err.Error(), "confirmation read failed") {
+			t.Fatalf("err = %v, want confirmation-failure refusal", err)
+		}
+		if calls != 2 {
+			t.Errorf("reads = %d, want 2 (initial + confirmation)", calls)
+		}
+	})
 }
 
 func TestHandleWebChatResumePendingToolCalls(t *testing.T) {

@@ -3,6 +3,7 @@ package lp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -393,6 +394,53 @@ func TestRegistryResolve(t *testing.T) {
 
 	if _, err := reg.resolve("nope"); err == nil {
 		t.Error("unknown id must fail")
+	}
+}
+
+func TestResolveWithFallback(t *testing.T) {
+	reg := testRegistry(map[string]string{"aaa": "https://chat.deepseek.com/a/chat/s/aaa"})
+
+	// A conversation ID the local registry has never seen still resolves to
+	// the site's canonical URL: conversations created in the user's own
+	// browser never enter the registry, and the site is the authority - the
+	// registry must not gate access.
+	got, constructed, err := resolveWithFallback(reg, "3f0c88a1-1717-4091-8702-40a9bf10ad8e")
+	if err != nil || !constructed {
+		t.Fatalf("unregistered id: got %q constructed=%v err=%v", got, constructed, err)
+	}
+	if want := "https://chat.deepseek.com/a/chat/s/3f0c88a1-1717-4091-8702-40a9bf10ad8e"; got != want {
+		t.Errorf("unregistered id URL = %q, want %q", got, want)
+	}
+
+	// Registered values keep the stored URL: nothing is reconstructed.
+	if got, constructed, err = resolveWithFallback(reg, "aaa"); err != nil || constructed || got != "https://chat.deepseek.com/a/chat/s/aaa" {
+		t.Errorf("registered id = %q constructed=%v err=%v; want the stored URL", got, constructed, err)
+	}
+
+	// "list" is the CLI listing action, never a conversation URL.
+	if _, _, err = resolveWithFallback(reg, "list"); err == nil {
+		t.Error("list must not resolve to a URL")
+	}
+
+	// Values outside the ID character class keep failing.
+	if _, _, err = resolveWithFallback(reg, "no/pe"); err == nil {
+		t.Error("a non-ID-shaped value must keep failing")
+	}
+
+	// An ambiguous suffix still fails loudly; it must not be constructed
+	// into a bogus URL.
+	amb := testRegistry(map[string]string{
+		"one": "https://chat.deepseek.com/a/chat/s/dup",
+		"two": "https://chat.deepseek.com/a/chat/s/other/dup",
+	})
+	if _, constructed, err = resolveWithFallback(amb, "dup"); err == nil || constructed {
+		t.Errorf("ambiguous suffix: constructed=%v err=%v; want a loud failure", constructed, err)
+	}
+
+	// A constructible miss keeps the typed error so callers can detect it.
+	var nf conversationNotFoundError
+	if _, _, err = resolveWithFallback(reg, "no/pe"); !errors.As(err, &nf) {
+		t.Errorf("missing-id error = %v, want conversationNotFoundError", err)
 	}
 }
 
@@ -799,6 +847,28 @@ func TestJsChatReadyState(t *testing.T) {
 		if !strings.Contains(jsChatReadyState, want) {
 			t.Errorf("jsChatReadyState must contain %q (regression)", want)
 		}
+	}
+}
+
+func TestJsIDBGetLastAssistantFmtFreshness(t *testing.T) {
+	// The resume read must be anchored to ITS OWN page load: the record
+	// timestamp check refuses records written by an earlier load, and
+	// newestRole distinguishes "the assistant message is the tail" from
+	// "something newer (typically a user message) sits on top".
+	for _, want := range []string{
+		"const minTimestamp = %d;",
+		"rec.timestamp < minTimestamp",
+		"newestRole: newestRole",
+		"for (let i = 0; i < msgs.length; i++)",
+	} {
+		if !strings.Contains(jsIDBGetLastAssistantFmt, want) {
+			t.Errorf("jsIDBGetLastAssistantFmt must contain %q (regression)", want)
+		}
+	}
+	// Exactly one formatting verb: the min-timestamp placeholder. A stray
+	// %-sign would corrupt the Sprintf and silently break the read.
+	if got := strings.Count(jsIDBGetLastAssistantFmt, "%"); got != 1 {
+		t.Errorf("format verbs = %d, want 1 (the %%d min-timestamp placeholder)", got)
 	}
 }
 

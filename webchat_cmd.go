@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -36,8 +37,17 @@ func init() {
 --keep 需要显式取值（--keep <值> 与 --keep=<值> 等价，与 dscli chat 的取值语法一致）：
 消息写在取值之后的位置参数或经 --input/stdin 传入；直接跟在 --keep 后面的文本会被
 当成会话取值，而不是消息。
+会话 ID 无需事先保存：任何站点上存在的会话（包括在浏览器里创建的）都能直接用 ID
+或 URL 继续；本地保存的会话列表只服务于 --keep=last 和 --keep=list。
 续会话不会再次注入角色提示词（第一轮已注入）。
 每次回复都会把会话 ID 打印到 stderr（格式 keep:<id>），可直接作为 --keep 参数使用。
+
+恢复被中断的会话（--keep + 空消息 = 恢复，不发送新内容）：
+  dscli webchat --keep=last                        # 读取会话尾部并恢复：
+                                                   # 尾部是未执行的 <shell> 块时执行并回填，直至终报；
+                                                   # 无待恢复内容时原样输出最后一条回复
+恢复总是重新从站点读取会话（本地保存的会话列表只解析会话 ID，不提供会话内容）；读取
+按本次页面加载的新鲜度校验，执行 <shell> 块前还会二次读取确认会话未被其他端改变。
 
 角色（--role，与 dscli chat 一致；默认空 = 纯聊天）：
   dscli webchat --role review "review 最近的提交"     # code review 角色
@@ -69,7 +79,7 @@ curl/wget 外传等被拒绝）并把 stdout+stderr 合并后以附件 scriptN.t
 	// --input defaults to "-": piped stdin is the primary non-arg input
 	// channel (echo "msg" | dscli webchat). A terminal stdin is rejected in
 	// gatherWebchatInput with a helpful error instead of hanging on EOF.
-	webchatCmd.Flags().String("input", "-", "从文件读取消息（默认 - 从 stdin 管道读取；终端下请提供位置参数或 --input 文件）")
+	webchatCmd.Flags().String("input", "-", "从文件读取消息（默认 - 从 stdin 管道读取；空输入配合 --keep 表示恢复会话）")
 	// --keep takes an explicit value, like the other flags (and dscli
 	// chat): both "--keep <值>" and "--keep=<值>" set it - a conversation
 	// ID, "last" (the most recent conversation), a conversation URL, or
@@ -77,7 +87,7 @@ curl/wget 外传等被拒绝）并把 stdout+stderr 合并后以附件 scriptN.t
 	// old NoOptDefVal="last" fallback left the value unset when it was
 	// written with a space, silently sending the conversation ID as the
 	// message body.
-	webchatCmd.Flags().String("keep", "", "继续会话：--keep=<会话ID|会话URL|last>（last = 最近一次）| --keep=list（列出已保存会话）；默认开新对话")
+	webchatCmd.Flags().String("keep", "", "继续会话：--keep=<会话ID|会话URL|last>（ID 无需事先保存；空消息 = 恢复）| --keep=list（列出已保存会话）；默认开新对话")
 	// --attach accepts any user-readable path (absolute included): the CLI
 	// is human-driven and the operator can already read those files. The
 	// ask_expert TOOL is LLM-driven and sandboxes paths to the project
@@ -148,6 +158,9 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := validateWebchatInvocation(opts.Keep, message, opts.Attachments); err != nil {
+		return err
+	}
 	var result lp.WebChatResult
 	startTime := time.Now()
 
@@ -160,6 +173,15 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 	// automatically - a session that needs it carries the doc in the message
 	// itself (positional argument or --input file).
 	fmt.Fprintf(os.Stderr, "⚠️ `<shell>` 块通道已启用：远程模型回复中的 bash 脚本将在本地执行（cwd = 项目根；破坏性命令被拦截）。\n")
+
+	// Empty message + --keep = resume: re-read the conversation tail from
+	// the site and continue a round that was interrupted mid tool call.
+	// The local registry only names the conversation - it never supplies
+	// content, and the conversation may have been continued elsewhere since
+	// (runWebchatResume re-reads it live).
+	if message == "" {
+		return runWebchatResume(ctx, opts)
+	}
 
 	outfmt.Printf("📤 发送到 DeepSeek Web ...\n")
 	// HandleWebChat shares the ask_expert entry point: transient server
@@ -188,6 +210,55 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 		outfmt.Println(formatConversationHint(result.URL))
 	}
 
+	return nil
+}
+
+// webchatResumeFunc resumes a saved conversation (lp.HandleWebChatResume by
+// default). A package variable so tests can replace it with a mock.
+var webchatResumeFunc = lp.HandleWebChatResume
+
+// validateWebchatInvocation gates the empty-message case of the webchat
+// command. An empty message is not an error by itself: with --keep it means
+// "resume the conversation" (see runWebchatResume). Without --keep there is
+// nothing to do, and a resume never carries attachments.
+func validateWebchatInvocation(keep, message string, attachments []string) error {
+	if message != "" {
+		return nil
+	}
+	if len(attachments) > 0 {
+		return fmt.Errorf("空消息不能附带附件：附件只在发送新消息时使用")
+	}
+	if keep == "" {
+		return fmt.Errorf("输入为空：发送消息请提供文本（位置参数、--input 文件或管道），恢复会话请提供 --keep，例如: dscli webchat --keep=last")
+	}
+	return nil
+}
+
+// runWebchatResume continues a saved conversation from its live tail: the
+// conversation is re-read from the site (an empty message is not sent) and,
+// when its last message still carries an unexecuted <shell> block, the
+// block is executed locally and its output fed back until the model
+// produces its final report. With nothing pending, the last reply is
+// printed verbatim.
+func runWebchatResume(ctx context.Context, opts lp.WebChatOptions) error {
+	startTime := time.Now()
+	result, err := webchatResumeFunc(ctx, opts)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "webchat 恢复失败: %v\n", err)
+		return nil
+	}
+	elapsed := time.Since(startTime)
+	if result.Printed {
+		// 工具循环逐轮打印过（含最终答复）；这里只报完成。
+		outfmt.Printf("✅ 恢复完成 (%.1fs)\n", elapsed.Seconds())
+	} else {
+		// 无待恢复的工具调用：会话最后一条是已完成回复，原样输出。
+		outfmt.Printf("📥 无待恢复的工具调用，输出会话最后一条回复 (%.1fs)\n\n", elapsed.Seconds())
+		fmt.Println(result.Content)
+	}
+	if result.URL != "" {
+		outfmt.Println(formatConversationHint(result.URL))
+	}
 	return nil
 }
 
@@ -227,8 +298,9 @@ func webchatListConversations() error {
 // Priority: positional args (space-joined) > --input flag (file path or "-"
 // for stdin) - the same input grammar as dscli chat's gatherInput.
 // The flag defaults to "-", so a piped stdin (echo ... | dscli webchat)
-// works without any argument; a terminal stdin is rejected with a helpful
-// error instead of hanging on EOF.
+// works without any argument; a terminal stdin is never read (EOF would
+// hang). An empty result is allowed here: webchatRunE decides what it means
+// - with --keep it requests a resume, without it is a usage error.
 func gatherWebchatInput(cmd *cobra.Command, args []string) (string, error) {
 	if len(args) > 0 {
 		return strings.Join(args, " "), nil
@@ -241,17 +313,13 @@ func gatherWebchatInput(cmd *cobra.Command, args []string) (string, error) {
 
 	if input == "-" {
 		if isTerminal(os.Stdin) {
-			return "", fmt.Errorf("请提供消息（位置参数或 --input 文件），或通过管道输入，例如: echo '消息' | dscli webchat")
+			return "", nil
 		}
 		data, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			return "", fmt.Errorf("读取 stdin 失败: %w", err)
 		}
-		message := strings.TrimSpace(string(data))
-		if message == "" {
-			return "", fmt.Errorf("stdin 为空")
-		}
-		return message, nil
+		return strings.TrimSpace(string(data)), nil
 	}
 
 	data, err := os.ReadFile(input)
