@@ -94,8 +94,8 @@ exit status 是信号而不是装饰、把下一步决策所需的信息一次�
 
 ## 5. 执行与回填
 
-- 落点：项目根 `scriptN.sh` / `scriptN.txt`；N = 现存最大编号 + 1（当前从 65 起）。codedev 的 .gitignore 已覆盖 `script*.sh` / `script*.txt`；其他目标仓库会以未跟踪文件出现——首版与实验一致，不自动改目标仓库配置。**2026-09-15 终修订（§13）：落点移至 `PROJECT_ROOT/.dscli/tmp/`，脚本按模式命名 `scriptN.sh` / `.py` / `.lst`。**
-- 执行：提取脚本原样写 `scriptN.sh`；`bash scriptN.sh`，cwd = 项目根；超时（默认 120s，上限 1800s）到点杀进程组。**（§13：cwd 仍为传入 dir，空 = 项目根；落盘位置与 cwd 分离。）**
+- 落点：`PROJECT_ROOT/.dscli/tmp/`（§13 起；首版曾落项目根 `script*.sh` / `script*.txt`，由项目 .gitignore 覆盖、目标仓库不自动改配置——保留为历史说明）。脚本按模式命名 `scriptN.sh` / `.py` / `.lst`，回填 `scriptN.txt`；N = spool 内现存最大编号 + 1。
+- 执行：提取脚本原样写 `scriptN.sh`（spool 目录内）；`bash scriptN.sh`，cwd = 传入 dir（webchat 通道 = 项目根；§13 起空 dir = 项目根）；超时（默认 120s，上限 1800s）到点杀进程组。
 - 执行前拦截（安全边界，不许降级）：整段脚本先过 `dsml.BlockedCmdRe`（自 `dsmlBlockedCmdRe` 导出，名单一字不动）；命中 → 本轮不写文件、不执行，回填拦截拒收警告（要求改写重发；计入连续告警）。依据 scripts.txt L2965：这一层不能省，且要比 DSML 更严——实现取 fail-closed（`shellblock.Run` 内置同一拦截作兜底）。
 - 回填 `scriptN.txt`（dscli-shell 是验证期 312 字节临时脚本，不构成规范；保留 脚本段 + output 段 + exit code 三段结构。定稿微调：头部写真实命令 `bash scriptN.sh:`、尾部补 `exit code: N`）：
 
@@ -194,6 +194,7 @@ exit code: N
 - **落点（保存目录，与传入 `dir` 无关）**：一律 `PROJECT_ROOT/.dscli/tmp/`（按需 `MkdirAll 0700`）。文件命名按脚本模式取扩展名：
   - bash → `scriptN.sh`；python → `scriptN.py`；attach（路径清单）→ `scriptN.lst`；回填一律 `scriptN.txt`。
   - 编号 N = spool 目录内现存最大 `scriptN`（四种扩展名都计入）+ 1。
+  - spool 为可丢弃的审计目录（无保留策略，可整体删除；清理/上限策略留待后续）。跨轮引用产物须写完整路径（`.dscli/tmp/…`），脚本 cwd 里没有它们。
 - **执行目录**：脚本 cwd = 传入 `dir`（webchat 通道 = 项目根，语义不变）；`dir == ""` = `PROJECT_ROOT`。
 - **消费侧**（`handleWebChatShellLoop`）：stderr 审计行与反馈文本改用**真实文件名**（`▶ scriptN.py: …`、`output of scriptN.py (attached as scriptN.txt):`），从 `RunResult.ScriptPath` / `OutputPath` 取 base name；bash 轮的既有文案不变（同 code_dev 会话）。
 - **回填头**：`<mode> scriptN.<ext>:`（`python scriptN.py:`、`attach scriptN.lst:`；bash 仍 `bash scriptN.sh:`）。

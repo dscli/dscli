@@ -678,3 +678,33 @@ func TestHandleWebChatShellLoopModeFileNames(t *testing.T) {
 		t.Errorf("attachments = %v, want [/tmp/script9.txt]", attachments)
 	}
 }
+
+// TestHandleWebChatShellLoopFeedbackFallback: a result without paths (a bare
+// mock) still gets the historical scriptN labels instead of ".", so the
+// feedback never mangles a round that ran for real.
+func TestHandleWebChatShellLoopFeedbackFallback(t *testing.T) {
+	origSend, origExec := handleWebChatSend, handleWebChatExecShell
+	t.Cleanup(func() { handleWebChatSend, handleWebChatExecShell = origSend, origExec })
+
+	const convURL = "https://chat.deepseek.com/a/chat/s/convSHELL"
+	var messages []string
+	handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
+		messages = append(messages, msg)
+		return WebChatResult{Content: shellFinalTest, URL: convURL}, nil
+	}
+	handleWebChatExecShell = func(_ context.Context, _ string, _ string, timeout time.Duration) (*shellblock.RunResult, error) {
+		return &shellblock.RunResult{Number: 12, ExitCode: 0, Timeout: timeout}, nil
+	}
+
+	if _, err := handleWebChatShellLoop(context.Background(),
+		WebChatResult{Content: shellBlockTest, URL: convURL},
+		WebChatOptions{Role: "dev", ShellTool: true}); err != nil {
+		t.Fatalf("shell loop: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("sends = %d, want 1 (the feedback)", len(messages))
+	}
+	if want := "output of script12.sh (attached as script12.txt):"; messages[0] != want {
+		t.Errorf("feedback = %q, want the fallback %q", messages[0], want)
+	}
+}

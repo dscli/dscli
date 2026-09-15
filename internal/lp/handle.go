@@ -1001,8 +1001,16 @@ func handleWebChatShellLoop(ctx context.Context, first WebChatResult, opts WebCh
 		attachNote := formatAttachNote(runRes.Attachments)
 		// The round's actual files name it in the audit line and the
 		// feedback: scriptN.sh / scriptN.py / scriptN.lst, per the mode.
+		// Run always sets the paths; a bare mock without them keeps the
+		// historical labels instead of ".".
 		scriptName := filepath.Base(runRes.ScriptPath)
+		if scriptName == "" || scriptName == "." {
+			scriptName = fmt.Sprintf("script%d.sh", runRes.Number)
+		}
 		outputName := filepath.Base(runRes.OutputPath)
+		if outputName == "" || outputName == "." {
+			outputName = fmt.Sprintf("script%d.txt", runRes.Number)
+		}
 		fmt.Fprintf(os.Stderr, "▶ %s: %s（%s, %s；输出 %s%s）\n",
 			scriptName, block.Summary, status, runRes.Duration.Round(time.Millisecond), outputName, attachNote)
 		feedback := fmt.Sprintf("output of %s (attached as %s):", scriptName, outputName)
