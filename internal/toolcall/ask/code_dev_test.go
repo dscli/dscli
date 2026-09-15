@@ -29,7 +29,7 @@ func TestCodeDevToolStructure(t *testing.T) {
 			t.Errorf("Tool description missing required keyword: %s", keyword)
 		}
 	}
-	// 60 min: implementation runs many DSML tool-call rounds (implement →
+	// 60 min: implementation runs many <shell> block rounds (implement →
 	// test → iterate → commit), heavier than a review pass (30 min).
 	if codeDevTool.Timeout != 60*time.Minute {
 		t.Errorf("Expected timeout 60 minutes, got %v", codeDevTool.Timeout)
@@ -74,9 +74,6 @@ func TestHandleCodeDevKeepOnly(t *testing.T) {
 	devResumeFunc = func(_ context.Context, opts lp.WebChatOptions) (lp.WebChatResult, error) {
 		if opts.Role != "dev" {
 			t.Errorf("expected role dev, got %q", opts.Role)
-		}
-		if !opts.ShellTool {
-			t.Errorf("expected ShellTool true for the dev resume path")
 		}
 		if opts.Keep != "conv-123" {
 			t.Errorf("expected keep conv-123, got %q", opts.Keep)

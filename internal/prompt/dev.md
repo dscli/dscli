@@ -38,25 +38,6 @@ The script runs on the local project host; its merged output comes back as
 an attached text file. Read it, then continue - do not re-request the same
 information.
 
-{{else if .DSMLToolDoc.Intro}}
-{{.DSMLToolDoc.Intro}}
-
-The tools run on the local project host. Use the file-reading tool (path
-relative to the repo root, e.g. `AGENTS.md`, `internal/foo/bar.go`) to inspect
-code, and the command tool (prefer read-only commands: `git show`, `git log`,
-`grep`, `sed`, `ls`) to verify behavior.
-
-Never modify files via shell commands. If a concrete change is worth landing,
-apply it with the session's file-modification tool instead, as registered
-above; keep changes inside the project root.
-
-Tools run automatically and their output will be returned to you. Read the
-result, then continue — do not re-request the same information. If a call
-fails, diagnose from the error output and retry with a corrected call.
-Destructive commands (`rm -rf /`, `mkfs`, `sudo`, `shutdown`, forced git
-push/reset) and outbound-network tools (`curl`, `wget`, `nc`, `telnet` —
-they can exfiltrate data) are rejected outright — prefer read-only commands.
-
 {{else}}
 ## 🛠️ Capabilities
 

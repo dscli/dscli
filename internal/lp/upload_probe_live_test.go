@@ -1,7 +1,7 @@
 package lp
 
 // Gated live probe that re-verifies the upload-name policy against the real
-// site (see uploadname.go and docs/task-upload-names.md). It attaches a
+// site (see uploadname.go). It attaches a
 // battery of candidate names to a fresh chat composer and dumps the page's
 // attachment state, WITHOUT sending any message - the draft is discarded when
 // the tab closes.

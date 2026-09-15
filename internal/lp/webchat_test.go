@@ -220,14 +220,12 @@ func TestValidateWebChatOptions(t *testing.T) {
 			t.Errorf("validateWebChatOptions(%+v) = %v, want nil", opts, err)
 		}
 	}
-	// Role/System/SkipPromptInjection/ShellTool are HandleWebChat-only: the
-	// transport must reject them explicitly instead of silently ignoring
-	// them.
+	// Role/System/SkipPromptInjection are HandleWebChat-only: the transport
+	// must reject them explicitly instead of silently ignoring them.
 	for _, opts := range []WebChatOptions{
 		{Role: "review"},
 		{System: "persona"},
 		{SkipPromptInjection: true},
-		{ShellTool: true},
 	} {
 		if err := validateWebChatOptions(opts); err == nil {
 			t.Errorf("validateWebChatOptions(%+v) must fail (handle-only field)", opts)
@@ -577,11 +575,6 @@ func TestIsTruncated(t *testing.T) {
 		{name: "inline fence in trailing prose", s: "text\n```\ncode\n```\nthen ``` more", want: false},
 		// An unclosed fence AFTER a closed block still truncates.
 		{name: "unclosed fence after closed block", s: "text\n```\ncode\n```\nthen\n```", want: true},
-		// An unclosed fence inside a DSML parameter value: the reply was cut
-		// off mid-call and must never reach the parser/executor (2026-09-08
-		// report: the call's own close tags were swallowed into the value
-		// and written into the target file).
-		{name: "unclosed fence inside a DSML call", s: "<tool_calls>\n<invoke name=\"write_file\">\n<parameter name=\"content\">\n```bash\ncmd\n</parameter>\n</invoke>\n</tool_calls>", want: true},
 		{name: "unclosed tilde fence", s: "~~~\ncode", want: true},
 		{name: "closed tilde fence", s: "~~~\ncode\n~~~", want: false},
 		{name: "tilde does not close a backtick fence", s: "```\ncode\n~~~", want: true},

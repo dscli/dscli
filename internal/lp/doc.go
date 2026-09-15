@@ -27,22 +27,12 @@
 // WebChatWithOptions performs one send (one browser launch); HandleWebChat
 // is the high-level entry point shared by the ask_expert tool and the
 // webchat CLI command: it renders role/system prompts, retries transient
-// server overload and truncation with backoff, and - for role-driven
-// consultations - executes DSML tool calls the expert embeds in its reply,
-// feeding results back into the same conversation until a final answer
-// arrives. Every send of a HandleWebChat call shares one browser session
-// (booted lazily on the first send, closed when the call returns).
-//
-// # Layering exception
-//
-// HandleWebChat imports internal/toolcall (DSML parsing/execution) and
-// internal/prompt (role rendering), so it transitively pulls in the tool
-// framework. This inverts the usual "transport is below tools" layering, but
-// is accepted deliberately: DSML tool calls are a WebChat-specific wire
-// format produced only by role-driven web consultations, and the executor
-// needs the tool registry (toolcall.ExecuteDSMLToolCalls). There is no
-// import cycle because toolcall never imports lp. If a browser-only binary
-// ever split off, HandleWebChat would move with the DSML layer.
+// server overload and truncation with backoff, and runs every reply through
+// the `<shell>` tool loop - a `<shell>` block the expert emits is executed
+// locally (see internal/shellblock) and its output fed back into the same
+// conversation until a final answer arrives. Every send of a HandleWebChat
+// call shares one browser session (booted lazily on the first send, closed
+// when the call returns).
 //
 // # History
 //

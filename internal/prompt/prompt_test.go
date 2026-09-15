@@ -74,92 +74,48 @@ func TestLoadPrompts(t *testing.T) {
 // 规范化 emoji 后出现静默不匹配。
 const capabilitiesHeading = "## 🛠️ Capabilities"
 
-// TestDSMLToolsSectionScopedToWebChat 验证 DSML 工具注册段只出现在
-// WebChat 渲染路径：chat.deepseek.com 没有原生工具协议，角色提示词是
-// 注册通道（RenderPromptForRoleWithTools + 非空 DSMLToolDoc）；dscli
-// chat 通过 API 的 tools 参数注册工具（GetSystemPrompt），模板中的
-// <invoke> 示例不得泄漏进去，否则模型会误用 DSML 而非原生 tool_calls。
-// RenderPromptForRole（无 doc）也不得渲染该段：工具集合由角色配置
-// 驱动（toolcall.BuildDSMLToolDoc），无配置时 expert/test 无工具；review
-// 模板不含 DSML 段（审查输入随附件上传，见 code_review）。
-func TestDSMLToolsSectionScopedToWebChat(t *testing.T) {
+// TestShellToolSectionScopedToWebChat verifies the `shell` tool section
+// appears only on the WebChat render path: chat.deepseek.com has no native
+// tool protocol, so the role prompt is the only tool registration channel
+// (RenderPromptForRoleWithShellTool). dscli chat registers tools through the
+// API's tools parameter (GetSystemPrompt), and RenderPromptForRole renders
+// without the section (its callers - e.g. code_review's review guide - work
+// from attachments).
+func TestShellToolSectionScopedToWebChat(t *testing.T) {
 	chatPrompt := GetSystemPrompt(t.Context())
-	if strings.Contains(chatPrompt, "<invoke name=") || strings.Contains(chatPrompt, "Available Tools") {
-		t.Errorf("chat system prompt must not contain the DSML tool section:\n%s", chatPrompt)
+	if strings.Contains(chatPrompt, "Available Tools: `shell`") {
+		t.Errorf("chat system prompt must not contain the shell tool section:\n%s", chatPrompt)
 	}
 
-	// This fixture is deliberately truncated before any close tag: the test
-	// only needs a non-empty Intro so the template renders the DSML section.
-	doc := DSMLToolDoc{
-		Intro: "## 🛠️ Available Tools: `read_file`" + "\n\n" + `<invoke name="read_file">` + "\n" + `<parameter name="path" string="true">AGENTS.md`,
-	}
-	for _, role := range []string{"dev", "expert", "test", "architect"} {
+	doc := "## 🛠️ Available Tools: `shell`" + "\n\n" +
+		"**Usage: run a bash or python script, or attach files**"
+	for _, role := range []string{"dev", "expert", "test", "architect", "review"} {
 		t.Run(role, func(t *testing.T) {
-			// Without doc: the section must be absent (role may have no tools).
+			// Without the doc: the section is absent.
 			plain := RenderPromptForRole(t.Context(), role)
-			if strings.Contains(plain, "<invoke name=") || strings.Contains(plain, "Available Tools") {
-				t.Errorf("%s prompt must not contain the DSML tool section without doc:\n%s", role, plain)
+			if strings.Contains(plain, "Available Tools: `shell`") {
+				t.Errorf("%s prompt must not contain the shell tool section without the doc:\n%s", role, plain)
 			}
-			// With doc: the section appears and no placeholder leaks.
-			content := RenderPromptForRoleWithTools(t.Context(), role, doc)
-			if !strings.Contains(content, "<invoke name=\"read_file\">") {
-				t.Errorf("%s webchat prompt missing DSML read_file registration:\n%s", role, content)
+			if !strings.Contains(plain, capabilitiesHeading) {
+				t.Errorf("%s prompt without the doc must state the Capabilities limitation", role)
 			}
-			if !strings.Contains(content, "Available Tools") {
-				t.Errorf("%s webchat prompt missing Available Tools heading", role)
+			// With the doc: the section appears, the Capabilities section is
+			// replaced, and no placeholder leaks.
+			content := RenderPromptForRoleWithShellTool(t.Context(), role, doc)
+			if !strings.Contains(content, "Available Tools: `shell`") {
+				t.Errorf("%s webchat prompt missing the shell tool registration:\n%s", role, content)
+			}
+			if !strings.Contains(content, "**Usage: run a bash or python script, or attach files**") {
+				t.Errorf("%s webchat prompt missing the shell usage line", role)
 			}
 			if strings.Contains(content, "{{") {
 				t.Errorf("%s webchat prompt leaks template placeholders", role)
 			}
-			// All role templates render a Capabilities section ONLY without
-			// tools: with tools the DSML intro IS the capability section
-			// (mutually exclusive, never both — a hand-written tool list
-			// would go stale against the role's actual tool config).
-			if !strings.Contains(plain, capabilitiesHeading) {
-				t.Errorf("%s prompt without tools must state the Capabilities limitation", role)
-			}
 			if strings.Contains(content, capabilitiesHeading) {
-				t.Errorf("%s prompt with tools must not render the Capabilities heading (DSML intro replaces it)", role)
-			}
-			// The no-tools branch wording is role-specific: dev/architect
-			// tools are registered by the session protocol (chat path
-			// registers them via the API tools parameter), while
-			// expert/test have none by default and must say so.
-			// architect keeps the no-tools branch as a defensive fallback
-			// for sessions where a project narrowed its toolset.
-			want := map[string]string{
-				"dev":       "registered by the session protocol",
-				"expert":    "no execution tools",
-				"test":      "no execution tools",
-				"architect": "no execution tools",
-			}[role]
-			if !strings.Contains(plain, want) {
-				t.Errorf("%s no-tools prompt missing role-specific limitation %q", role, want)
+				t.Errorf("%s prompt with the shell doc must not render the Capabilities heading", role)
 			}
 		})
 	}
-
-	// review is attachment-based (code_review uploads its inputs): its
-	// template carries no DSML block, so the section must not render even
-	// when a doc is supplied, and the capabilities statement stays.
-	t.Run("review", func(t *testing.T) {
-		plain := RenderPromptForRole(t.Context(), "review")
-		content := RenderPromptForRoleWithTools(t.Context(), "review", doc)
-		for _, got := range []string{plain, content} {
-			if strings.Contains(got, "<invoke name=") || strings.Contains(got, "Available Tools") {
-				t.Errorf("review prompt must never contain the DSML tool section:\n%s", got)
-			}
-		}
-		if strings.Contains(content, "{{") {
-			t.Errorf("review prompt leaks template placeholders")
-		}
-		if !strings.Contains(content, capabilitiesHeading) {
-			t.Errorf("review prompt must state its capabilities/limitations")
-		}
-		if !strings.Contains(content, "no execution tools") {
-			t.Errorf("review prompt missing the no-tools limitation")
-		}
-	})
 }
 
 // TestMailCheckStepScopedToRolesWithMail verifies the dev template's "check
@@ -205,11 +161,10 @@ func TestMailCheckStepScopedToRolesWithMail(t *testing.T) {
 		t.Errorf("architect WebChat prompt must keep its own mail-check step:\n%s", archPlain)
 	}
 
-	// Same deliberately-truncated fixture: only a non-empty Intro is needed.
-	doc := DSMLToolDoc{
-		Intro: "## 🛠️ Available Tools: `read_file`" + "\n\n" + `<invoke name="read_file">` + "\n" + `<parameter name="path" string="true">AGENTS.md`,
-	}
-	content := RenderPromptForRoleWithTools(t.Context(), "dev", doc)
+	// Shell-doc fixture: only a non-empty section is needed.
+	doc := "## 🛠️ Available Tools: `shell`" + "\n\n" +
+		"**Usage: run a bash or python script, or attach files**"
+	content := RenderPromptForRoleWithShellTool(t.Context(), "dev", doc)
 	assertMailCheckStripped(t, "webchat prompt (with tools)", content)
 	for _, want := range []string{
 		"0b. **Read AGENTS.md**",
@@ -221,13 +176,14 @@ func TestMailCheckStepScopedToRolesWithMail(t *testing.T) {
 			t.Errorf("webchat prompt (with tools) missing %q:\n%s", want, content)
 		}
 	}
-	if !strings.Contains(content, "\u003cinvoke name=\"read_file\"\u003e") {
-		t.Errorf("webchat prompt missing DSML read_file registration:\n%s", content)
+	if !strings.Contains(content, "## 🛠️ Available Tools: `shell`") {
+		t.Errorf("webchat prompt missing the shell registration:\n%s", content)
 	}
 }
 
 // TestRenderPromptForRoleWithShellTool locks the shell-channel branch: the
-// dev template renders the shell tool doc in place of the DSML section, and
+// dev template renders the shell tool doc in place of the capabilities
+// section, and
 // a plain render never carries it.
 func TestRenderPromptForRoleWithShellTool(t *testing.T) {
 	doc := "## 🛠️ Available Tools: `shell`\n\n**Usage: execute bash script**"
@@ -243,8 +199,8 @@ func TestRenderPromptForRoleWithShellTool(t *testing.T) {
 			t.Errorf("shell prompt missing %q:\n%s", want, content)
 		}
 	}
-	if strings.Contains(content, "prefer read-only commands") {
-		t.Errorf("shell prompt must not render the DSML branch:\n%s", content)
+	if strings.Contains(content, capabilitiesHeading) {
+		t.Errorf("shell prompt must not render the Capabilities section:\n%s", content)
 	}
 	plain := RenderPromptForRole(t.Context(), "dev")
 	if strings.Contains(plain, "Available Tools: `shell`") {

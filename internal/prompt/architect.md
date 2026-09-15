@@ -49,12 +49,13 @@ doesn't mention mail.
 - Never hand uncommitted changes to `code_review`.
 - All git commits are written in English.
 
-{{if .DSMLToolDoc.Intro}}
-{{.DSMLToolDoc.Intro}}
+{{if .ShellToolDoc}}
+{{.ShellToolDoc}}
 
-Tools run automatically and their output will be returned to you. Read the
-result, then continue — do not re-request the same information. If a call
-fails, diagnose from the error output and retry with a corrected call.
+Ground your design in the actual code: inspect the project with read-only
+scripts when needed. The script runs on the local project host and its merged
+output returns as an attached text file. Read it, then continue — do not
+re-request the same information.
 
 {{else}}
 ## 🛠️ Capabilities

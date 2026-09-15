@@ -965,11 +965,12 @@ type WebChatOptions struct {
 
 	// Role names a role-specific prompt template (expert/review/dev, see
 	// prompt.RenderPromptForRole) that HandleWebChat prepends to the
-	// message. Non-empty Role also enables the DSML tool loop. Only
-	// HandleWebChat consumes it - WebChatWithOptions ignores it.
-	// HandleWebChat injects it only when Keep == "" (a new conversation)
-	// and SkipPromptInjection is false; a resumed conversation does not
-	// re-inject the prompt (it was already in the first round's history).
+	// message, with WebChat's `<shell>` tool doc registered by the
+	// template's ShellToolDoc section. Only HandleWebChat consumes it -
+	// WebChatWithOptions ignores it. HandleWebChat injects it only when
+	// Keep == "" (a new conversation) and SkipPromptInjection is false; a
+	// resumed conversation does not re-inject the prompt (it was already in
+	// the first round's history). Role also labels the round printer.
 	Role string
 
 	// System is raw persona text that HandleWebChat prepends to the message.
@@ -980,23 +981,11 @@ type WebChatOptions struct {
 	System string
 
 	// SkipPromptInjection suppresses the first-round Role/System prompt
-	// injection while keeping Role's other effects (DSML gating and markup
-	// stripping, role labels): the caller supplies the role instructions by
-	// other means, e.g. as an uploaded attachment (see code_review). Only
-	// HandleWebChat consumes it - WebChatWithOptions rejects it.
+	// injection while keeping Role for display (round labels): the caller
+	// supplies the role instructions by other means, e.g. as an uploaded
+	// attachment (see code_review). Only HandleWebChat consumes it -
+	// WebChatWithOptions rejects it.
 	SkipPromptInjection bool
-
-	// ShellTool switches the consultation to the <shell> block channel
-	// (docs/task-shell-block.md): HandleWebChat / HandleWebChatResume route
-	// replies through the shell loop (judge, execute locally, feed the
-	// merged output back as an attached scriptN.txt). Tool invocation is
-	// decoupled from role injection: the dev role path carries the tool doc
-	// in its role prompt, while a session without a role carries it in the
-	// message itself when needed. Only the handle layer consumes it -
-	// WebChatWithOptions rejects it. The webchat CLI always sets it (no
-	// flag - the command's only tool channel); code_dev sets it for the
-	// dev role.
-	ShellTool bool
 }
 
 // WebChatResult is the outcome of a WebChat call: the assistant's visible
@@ -1024,7 +1013,7 @@ type WebChatResult struct {
 	OutputTokens int
 
 	// Printed reports that the reply (Content and Reasoning) was already
-	// printed by the DSML tool loop via outfmt.PrintContent. Callers that
+	// printed by the tool loop via outfmt.PrintContent. Callers that
 	// display the final answer must skip re-printing Content when set;
 	// false for a one-shot reply with no tool loop.
 	Printed bool
@@ -1083,12 +1072,12 @@ func WebChatWithOptions(ctx context.Context, message string, opts WebChatOptions
 // validateWebChatOptions checks attachment limits before launching a browser,
 // so bad input fails fast without starting Chrome.
 func validateWebChatOptions(opts WebChatOptions) error {
-	// Role/System/SkipPromptInjection/ShellTool are handle-level concerns
-	// (prompt rendering + tool loops). Rejecting them here (instead of
+	// Role/System/SkipPromptInjection are handle-level concerns (prompt
+	// rendering + injection gating). Rejecting them here (instead of
 	// silently ignoring) makes the layering explicit: a caller that passes
 	// them to the transport is using the wrong entry point.
-	if opts.Role != "" || opts.System != "" || opts.SkipPromptInjection || opts.ShellTool {
-		return fmt.Errorf("Role/System/SkipPromptInjection/ShellTool are only honored by HandleWebChat")
+	if opts.Role != "" || opts.System != "" || opts.SkipPromptInjection {
+		return fmt.Errorf("Role/System/SkipPromptInjection are only honored by HandleWebChat")
 	}
 	return validateWebAttachments(opts.Attachments)
 }
@@ -1096,7 +1085,7 @@ func validateWebChatOptions(opts WebChatOptions) error {
 // --- shared browser session -------------------------------------------------
 
 // webChatSession is the browser instance shared by every send of one
-// HandleWebChat call: the initial message, backoff retries and DSML
+// HandleWebChat call: the initial message, backoff retries and shell
 // tool-loop follow-ups all reuse the same tab, and the browser is closed
 // once when the consultation ends. Launching a fresh Chrome per round was
 // the dominant cost of a multi-tool consultation (cold start + profile load;

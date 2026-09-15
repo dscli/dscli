@@ -150,8 +150,8 @@ func newWebchatOptionsCmd() *cobra.Command {
 }
 
 func TestWebchatOptionsFromFlags(t *testing.T) {
-	// Defaults: Role "" = plain chat (no role prompt injection); ShellTool
-	// is not a flag - the shell channel is always on.
+	// Defaults: Role "" = plain chat (no role prompt injection); the
+	// <shell> channel has no flag - the tool loop is always on.
 	cmd := newWebchatOptionsCmd()
 	opts, err := webchatOptionsFromFlags(cmd)
 	if err != nil {
@@ -159,9 +159,6 @@ func TestWebchatOptionsFromFlags(t *testing.T) {
 	}
 	if opts.Role != "" {
 		t.Errorf("default Role = %q, want \"\" (plain chat)", opts.Role)
-	}
-	if !opts.ShellTool {
-		t.Error("ShellTool = false, want true (the shell channel is always on)")
 	}
 	if opts.Keep != "" || len(opts.Attachments) != 0 {
 		t.Errorf("default keep/attachments should be empty, got %+v", opts)
@@ -203,34 +200,9 @@ func TestWebchatOptionsFromFlags(t *testing.T) {
 	}
 }
 
-// TestWebchatOptionsShellAlwaysOn locks the no-flag contract: the shell
-// channel is not switchable on the webchat CLI - ShellTool must be true
-// with defaults and stay true when a role is set.
-func TestWebchatOptionsShellAlwaysOn(t *testing.T) {
-	cmd := newWebchatOptionsCmd()
-	opts, err := webchatOptionsFromFlags(cmd)
-	if err != nil {
-		t.Fatalf("webchatOptionsFromFlags(defaults): %v", err)
-	}
-	if !opts.ShellTool {
-		t.Error("ShellTool = false, want true (always on)")
-	}
-
-	cmd = newWebchatOptionsCmd()
-	if err := cmd.Flags().Set("role", "dev"); err != nil {
-		t.Fatal(err)
-	}
-	if opts, err = webchatOptionsFromFlags(cmd); err != nil {
-		t.Fatalf("webchatOptionsFromFlags(--role dev): %v", err)
-	}
-	if !opts.ShellTool {
-		t.Error("ShellTool = false with --role dev, want true")
-	}
-}
-
 // TestWebchatCmdHasNoShellFlag locks the CLI surface: the real webchat
-// command must not expose --shell - the channel is not optional
-// (docs/task-shell-block.md).
+// command must not expose --shell - the <shell> tool loop is always on and
+// is not switchable.
 func TestWebchatCmdHasNoShellFlag(t *testing.T) {
 	cmd, _, err := rootCmd.Find([]string{"webchat"})
 	if err != nil || cmd == nil || cmd.Name() != "webchat" {

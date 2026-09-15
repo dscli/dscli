@@ -1,7 +1,6 @@
 package shellblock
 
 import (
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -152,18 +151,6 @@ func TestJudge(t *testing.T) {
 			want: ActionFinal, // quoted + long: the transport's truncation check owns the cut case
 		},
 		{
-			name: "dsml invoke shape, long", content: longFinal + "\n<invoke name=\"shell\">",
-			want: ActionWarn, wantIssue: "dsml-shape",
-		},
-		{
-			name: "fullwidth bars badge shape, long", content: longFinal + " \uff5c\uff5c broken badges",
-			want: ActionWarn, wantIssue: "dsml-shape",
-		},
-		{
-			name: "tool_calls prose mention stays final", content: longFinal + " I avoided <tool_calls> markup.",
-			want: ActionFinal,
-		},
-		{
 			name: "short reply without a block", content: "Sure, starting now.",
 			want: ActionWarn, wantIssue: "no-block-short",
 		},
@@ -227,18 +214,6 @@ func TestShouldEnter(t *testing.T) {
 	}
 }
 
-// TestJudgeDSMLNote verifies the "do not use DSML" note rides along when a
-// malformed attempt also carries DSML shapes.
-func TestJudgeDSMLNote(t *testing.T) {
-	verdict := Judge("", "<shell>\n<script>\necho x\n</shell>\n<invoke name=\"shell\">")
-	if verdict.Action != ActionWarn {
-		t.Fatalf("action = %v, want warn (missing </script>)", verdict.Action)
-	}
-	if !strings.Contains(verdict.Warning, "Do not use the DSML shape") {
-		t.Errorf("warning misses the DSML note:\n%s", verdict.Warning)
-	}
-}
-
 func TestBlocked(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -276,111 +251,5 @@ func TestBlocked(t *testing.T) {
 				t.Errorf("detail = %q, want %q", detail, tt.detail)
 			}
 		})
-	}
-}
-
-// DSML marker residue samples are built at runtime: a literal full-width bar
-// sequence in the source would be mangled by the transport channel (the same
-// reason internal/dsml/dsml_strayclose_test.go builds its brackets at runtime).
-var (
-	angleLT = string(rune(60))
-	angleGT = string(rune(62))
-	fwPipe  = string(rune(0xFF5C))
-)
-
-// badgeResidue renders the site's stored (badge-rendered) close tag for name:
-// "</" + full-width bars + "DSML" + full-width bars + name + ">".
-func badgeResidue(name string) string {
-	return angleLT + "/" + fwPipe + fwPipe + "DSML" + fwPipe + fwPipe + name + angleGT
-}
-
-// asciiResidue is the half-width bar variant: "</||DSML||name>".
-func asciiResidue(name string) string {
-	return angleLT + "/||DSML||" + name + angleGT
-}
-
-// TestJudgeResidualMarkers pins the marker-residue flag: a reply that carries
-// DSML marker shapes OUTSIDE its executed block gets ResidualMarkers=true so
-// the shell loop can remind the model, while markers inside the block span or
-// inside quoted code stay unflagged (script bodies legitimately contain them).
-func TestJudgeResidualMarkers(t *testing.T) {
-	tests := []struct {
-		name string
-		text string
-		want bool
-	}{
-		{
-			name: "block then fullwidth residue",
-			text: wellFormed + "\n" + badgeResidue("parameter") + "\n" + badgeResidue("invoke") + "\n" + badgeResidue("calls"),
-			want: true,
-		},
-		{
-			name: "block then ascii residue",
-			text: wellFormed + "\n" + asciiResidue("invoke"),
-			want: true,
-		},
-		{
-			name: "clean block",
-			text: wellFormed,
-			want: false,
-		},
-		{
-			name: "marker inside the script body is content",
-			text: strings.Join([]string{
-				"<shell>", "<script>",
-				"printf '%s' '" + badgeResidue("parameter") + "'",
-				"</script>", "<summary>echo marker</summary>", "</shell>",
-			}, "\n"),
-			want: false,
-		},
-		{
-			name: "marker inside quoted code",
-			text: "Example:\n```\n" + badgeResidue("invoke") + "\n```\n" + longFinal,
-			want: false,
-		},
-		{
-			name: "no block short reply with residue",
-			text: "oops " + badgeResidue("invoke"),
-			want: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			verdict := Judge("", tt.text)
-			if verdict.ResidualMarkers != tt.want {
-				t.Errorf("ResidualMarkers = %v, want %v (action %v issue %q)", verdict.ResidualMarkers, tt.want, verdict.Action, verdict.Issue)
-			}
-		})
-	}
-}
-
-// TestJudgeResidualMarkersRealSample builds an equivalent case from a real
-// captured reply: the block's script body echoes the captured marker bytes, so
-// the residue sits INSIDE the block span and must not be flagged.
-func TestJudgeResidualMarkersRealSample(t *testing.T) {
-	// The byte-exact capture lives in the dsml package's testdata; a
-	// MISSING fixture must fail the test, not skip it (a skip here silently
-	// disabled the whole case in the first review round). The cross-package
-	// read is deliberate: the byte-exact sample beats duplicating it, and a
-	// rename of the fixture fails loudly here.
-	b, err := os.ReadFile("../dsml/testdata/case2_write_file.txt")
-	if err != nil {
-		t.Fatalf("real sample unavailable: %v", err)
-	}
-	// Slice RUNES, not bytes: a byte cut can split a multi-byte marker.
-	runes := []rune(string(b))
-	if len(runes) > 200 {
-		runes = runes[:200]
-	}
-	marker := string(runes)
-	// Marker inside the body: not residue.
-	inside := strings.Join([]string{"<shell>", "<script>", "cat <<'EOF'", marker, "EOF", "</script>", "</shell>"}, "\n")
-	if v := Judge("", inside); v.ResidualMarkers {
-		t.Errorf("marker inside the block body was flagged as residue (action %v)", v.Action)
-	}
-	// The same marker after a clean block: residue.
-	outside := wellFormed + "\n" + marker
-	if v := Judge("", outside); !v.ResidualMarkers {
-		t.Errorf("marker after the block was not flagged as residue (action %v)", v.Action)
 	}
 }

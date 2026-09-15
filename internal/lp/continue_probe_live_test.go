@@ -1,7 +1,7 @@
 package lp
 
 // Gated fixture probe for the auto-continue recovery (see webchat.go's
-// jsContinueGeneration / clickTrustedAt and docs/task-continue-generation.md).
+// jsContinueGeneration / clickTrustedAt).
 //
 // It runs headless Chromium against a LOCAL file:// fixture - no network, no
 // real login profile - and pins the one fact the whole design rests on: the

@@ -21,9 +21,9 @@
 //	               architect=all/all
 //
 //	DefaultFor is the single source of truth for built-in defaults: the CLI
-//	display (role list/show), GetAllTools, LoadPrompts and the WebChat DSML
-//	section all resolve fallback through it, so what role list shows is what
-//	the runtime actually does.
+//	display (role list/show), GetAllTools and LoadPrompts all resolve
+//	fallback through it, so what role list shows is what the runtime
+//	actually does.
 //
 // # "all" vs ""
 //

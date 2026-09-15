@@ -66,10 +66,10 @@ func init() {
 
 // handleCodeDev implements the code_dev tool: it hands an implementation
 // task to the built-in dev role via DeepSeek Web, and the dev works in the
-// local repo through the <shell> block channel (role "dev" on WebChat always
-// runs the shell loop: one bash script per round, executed locally with the
-// merged output attached back; see docs/task-shell-block.md). The channel
-// does not depend on the role's registered tool config.
+// local repo through the <shell> block channel (WebChat always runs the
+// shell loop: one bash script per round, executed locally with the merged
+// output attached back). The channel does not depend on the role's
+// registered tool config.
 func handleCodeDev(ctx context.Context, args toolcall.ToolArgs) (result, warning string, err error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "handleCodeDev")
 	defer span.Finish()
@@ -130,10 +130,9 @@ func handleCodeDev(ctx context.Context, args toolcall.ToolArgs) (result, warning
 		outfmt.Println("⚠️  完成后所有更改都必须提交（code_review 需要干净工作区）。")
 	}
 
-	// The dev role runs the <shell> block channel (see the doc comment
-	// above): the channel executes bash scripts directly and does not
-	// depend on the role's registered tool set, so the former DSML
-	// tool-set warning no longer applies here.
+	// The dev role works through the `<shell>` block channel (see the doc
+	// comment above): the channel executes bash scripts directly and does
+	// not depend on the role's registered tool set - WebChat always runs it.
 
 	// Compose the request: the task plus the delivery contract. AGENTS.md
 	// and file contents are NOT injected - the developer reads them on
@@ -189,7 +188,7 @@ func resumeCodeDev(ctx context.Context, keep string) (result, warning string, er
 	defer span.Finish()
 
 	outfmt.Printf("🔁 恢复开发会话（keep=%s）...\n", keep)
-	res, resumeErr := devResumeFunc(ctx, lp.WebChatOptions{Keep: keep, Role: "dev", ShellTool: true})
+	res, resumeErr := devResumeFunc(ctx, lp.WebChatOptions{Keep: keep, Role: "dev"})
 	if resumeErr != nil {
 		err = fmt.Errorf("开发会话恢复失败: %w", resumeErr)
 		return result, warning, err

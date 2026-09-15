@@ -186,9 +186,9 @@ func KnownToolNames() []string {
 }
 
 // roleToolsSpec returns the role's tools spec ("all", "", or "a,b") from
-// prompt.ToolsSpec — the single source of truth shared by GetAllTools, the
-// DSML executor and the prompt-layer mail gate (RoleCanReadMail), so the
-// web model can only ever call what the role is configured for.
+// prompt.ToolsSpec — the single source of truth shared by GetAllTools and
+// the prompt-layer mail gate (RoleCanReadMail), so a role can only ever use
+// what it is configured for.
 func roleToolsSpec(ctx context.Context, role string) string {
 	return prompt.ToolsSpec(ctx, role)
 }
@@ -253,7 +253,7 @@ func GetAllTools(ctx context.Context) []Tool {
 			continue
 		}
 		// The role's allow-set gates by the registered name, nothing else:
-		// one spec, one meaning for GetAllTools and the DSML executor.
+		// one spec, one meaning shared with the role display.
 		if allowSet != nil && !allowSet[name] {
 			continue
 		}
@@ -272,8 +272,7 @@ func GetAllTools(ctx context.Context) []Tool {
 }
 
 // ToolCallOutcome 是一次工具调用的完整结果：供协议使用的 tool 消息，以及
-// 结构化的 result/warning/error 内容。HandleToolCalls 只返回消息（chat 路径），
-// DSML 执行器需要结构化内容来构造 <tool_result> JSON，二者共用执行内核。
+// 结构化的 result/warning/error 内容（HandleToolCalls 返回消息序列）。
 type ToolCallOutcome struct {
 	Message prompt.Message
 	Content ToolContent
@@ -296,7 +295,7 @@ func HandleToolCalls(ctx context.Context, tcs []prompt.ToolCall) (inputs []promp
 		outfmt.Printf("📋 本轮共 %d 个工具调用\n", len(tcs))
 	}
 
-	outcomes, dualUsers := executeToolCalls(ctx, tcs, true)
+	outcomes, dualUsers := executeToolCalls(ctx, tcs)
 	if len(outcomes) == 0 && len(dualUsers) == 0 {
 		return nil // 保持原契约：空输入返回 nil，而非非 nil 空 slice
 	}
@@ -309,25 +308,13 @@ func HandleToolCalls(ctx context.Context, tcs []prompt.ToolCall) (inputs []promp
 	return inputs
 }
 
-// executeToolCalls 是 HandleToolCalls 的执行内核，DSML 执行器同样复用：
-// 逐条执行工具、记录使用统计、截断结果、拆分双消息，按顺序返回每个调用的
-// 结构化结果（ToolCallOutcome，与 tcs 一一对应）。
-//
-// save 控制是否把 tool 消息写入消息表：
-//   - true（chat 主路径）：落库后中断恢复可判断已完成调用，结果已落库才
-//     推进 toolProgress；
-//   - false（DSML/webchat 路径）：不落库。web 会话发生在浏览器里，把工具
-//     结果写进当前会话的 messages 表会破坏 assistant↔tool 配对——主会话的
-//     CleanupReverse 按 tool_calls 数量与 tool 消息数量配对，多出的 DSML
-//     tool 消息会让整个 ask_expert 轮次（包括其真实结果）从历史中被裁掉。
-//
-// 中断处理不在本函数内安装：DSML 路径运行在 chat 的 HandleToolCalls 内部，
-// 重复注册会收到同一次 Ctrl+C 并各自插入占位消息（同一调用得到两条占位
-// tool 消息，反而破坏配对）；外层 handler 已覆盖整个 ask_expert 调用。
-// 双消息（DualMessage）拆分对 DSML 无意义：DSML 的 <tool_result> 封装
-// 无法携带附加 user 消息（且 webchat 模型看不到图像块），非落库模式下
-// 附加 user 消息由调用方丢弃并告警（见 ExecuteDSMLToolCalls）。
-func executeToolCalls(ctx context.Context, tcs []prompt.ToolCall, save bool) (outcomes []ToolCallOutcome, dualUsers []prompt.Message) {
+// executeToolCalls 是 HandleToolCalls 的执行内核：逐条执行工具、记录使用
+// 统计、截断结果、拆分双消息，按顺序返回每个调用的结构化结果
+// （ToolCallOutcome，与 tcs 一一对应）。结果按条落库，落库成功才推进
+// toolProgress——中断恢复据此判断未执行的调用（插入占位 tool 消息，不裁剪
+// tool_calls）。双消息（DualMessage）拆分出的 user 消息在全部 tool 消息之后
+// 统一落库（顺序：tool × N → user × N）。
+func executeToolCalls(ctx context.Context, tcs []prompt.ToolCall) (outcomes []ToolCallOutcome, dualUsers []prompt.Message) {
 	dualUsers = []prompt.Message{}
 	outcomes = make([]ToolCallOutcome, 0, len(tcs))
 
@@ -356,15 +343,13 @@ func executeToolCalls(ctx context.Context, tcs []prompt.ToolCall, save bool) (ou
 			Content:    content.String(),
 		}
 
-		if save {
-			saveErr := prompt.SaveMessages(ctx, input)
-			if saveErr != nil {
-				outfmt.Debug("failed to save: %v", saveErr)
-			} else {
-				// 结果已落库才算完成：中断标记据此判断未执行的调用，
-				// 插入占位 tool 消息（不裁剪 tool_calls）。
-				toolProgress.Store(int64(i + 1))
-			}
+		saveErr := prompt.SaveMessages(ctx, input)
+		if saveErr != nil {
+			outfmt.Debug("failed to save: %v", saveErr)
+		} else {
+			// 结果已落库才算完成：中断标记据此判断未执行的调用，
+			// 插入占位 tool 消息（不裁剪 tool_calls）。
+			toolProgress.Store(int64(i + 1))
 		}
 
 		if isDual && userMsg != nil {
@@ -374,11 +359,9 @@ func executeToolCalls(ctx context.Context, tcs []prompt.ToolCall, save bool) (ou
 	}
 
 	// 所有 tool 消息之后统一追加双消息 user 消息（顺序：tool × N → user × N）。
-	if save {
-		for _, m := range dualUsers {
-			if userSaveErr := prompt.SaveMessages(ctx, m); userSaveErr != nil {
-				outfmt.Debug("failed to save dual user message: %v", userSaveErr)
-			}
+	for _, m := range dualUsers {
+		if userSaveErr := prompt.SaveMessages(ctx, m); userSaveErr != nil {
+			outfmt.Debug("failed to save dual user message: %v", userSaveErr)
 		}
 	}
 	return outcomes, dualUsers

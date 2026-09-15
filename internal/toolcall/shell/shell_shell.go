@@ -27,10 +27,10 @@ func init() { // 注册shell工具
 	RegisterTool(ToolDef{
 		Name:        "shell",
 		Description: desc,
-		// No aliases: the DSML layer registers this tool under its native
-		// name and schema, so the web model writes what the executor
-		// accepts. A global alias would let non-DSML callers hit this
-		// handler with a foreign parameter protocol.
+		// No aliases: the tool is registered under its native name and
+		// schema, so a caller writes what the handler accepts. A global
+		// alias would let legacy callers hit this handler with a foreign
+		// parameter protocol.
 		Strict: true,
 		Parameters: map[string]any{
 			"type": "object",

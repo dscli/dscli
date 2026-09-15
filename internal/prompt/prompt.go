@@ -44,17 +44,6 @@ type promptTemplate struct {
 	Name string
 }
 
-// DSMLToolDoc 是 DSML 工具注册段，供角色模板注入：
-//
-//   - Intro: 可用工具标题、每工具一段（名称/描述/参数说明/调用示例）、
-//     string= 编码规则与严格格式要求
-//
-// 由 dsml.BuildDSMLToolDoc 按角色配置生成；Intro 为空时模板不渲染整段
-// （该角色没有可用的 DSML 工具）。
-type DSMLToolDoc struct {
-	Intro string
-}
-
 // promptConfig 模板数据
 type promptConfig struct {
 	// 基础信息
@@ -94,19 +83,13 @@ type promptConfig struct {
 	// via GetSystemPrompt, which sets it from RoleCanReadMail(ctx).
 	CheckMail bool
 
-	// DSMLToolDoc 是 DSML 工具注册段的动态内容（<tool_calls>/<invoke>
-	// 示例、string= 编码规则、每工具名称/描述/参数说明/示例）。仅在
-	// WebChat 场景非空：chat.deepseek.com 没有原生工具协议，角色提示词
-	// 是唯一注册通道，lp.HandleWebChat 解析并本地执行；dscli chat 通过
-	// API 的 tools 参数注册工具，此段必须保持为空，否则模型会误用 DSML
-	// 标记而非原生 tool_calls。内容由 dsml.BuildDSMLToolDoc 按角色工具
-	// 配置（roles.DefaultFor + role_configs）生成，见 internal/dsml/doc.go。
-	DSMLToolDoc DSMLToolDoc
-
-	// ShellToolDoc 是 shell 通道的工具注册段（`<shell>` 块协议，见
-	// shellblock.BuildToolDoc）。仅当 WebChat 以 ShellTool 模式运行时由
-	// RenderPromptForRoleWithShellTool 填充：dev 角色在网页端以每轮一个
-	// bash 脚本工作，替代 DSML 工具调用（docs/task-shell-block.md）。
+	// ShellToolDoc is the tool registration section for WebChat's only tool
+	// (`<shell>`, see shellblock.BuildToolDoc). It is filled by
+	// RenderPromptForRoleWithShellTool for every WebChat role session:
+	// chat.deepseek.com has no native tool protocol, so the role prompt is
+	// the only registration channel; the local shell loop executes one block
+	// per round. dscli chat registers tools through the API's tools
+	// parameter instead, so the chat path leaves this empty.
 	ShellToolDoc string
 
 	// 模型特定配置
@@ -488,10 +471,10 @@ func roleCanReadMailSpec(spec string) bool {
 
 // ToolsSpec returns the role's tools spec ("all", "", or "a,b") from
 // role_configs, falling back to roles.DefaultFor. It is the single source
-// of truth for "which tools this role may use": toolcall.GetAllTools, the
-// DSML executor (via toolcall.roleToolsSpec) and the prompt-layer mail gate
-// (RoleCanReadMail) all derive their allow-set from it. A stored row wins
-// over the built-in default, matching the storage convention.
+// of truth for "which tools this role may use": toolcall.GetAllTools and the
+// prompt-layer mail gate (RoleCanReadMail) both derive their allow-set from
+// it. A stored row wins over the built-in default, matching the storage
+// convention.
 func ToolsSpec(ctx context.Context, role string) string {
 	sessionID := session.GetCurrentSessionID(ctx)
 	if cfg, err := roles.GetRoleConfig(ctx, role, sessionID); err == nil && cfg != nil {
@@ -505,8 +488,8 @@ func ToolsSpec(ctx context.Context, role string) string {
 // into the template's mail-check step by setting CheckMail from
 // RoleCanReadMail(ctx) — a role without readmail (dev by default) gets no
 // mail instruction. The WebChat path goes through
-// RenderPromptForRoleWithTools instead, which leaves CheckMail at its false
-// zero value.
+// RenderPromptForRoleWithShellTool instead, which leaves CheckMail at its
+// false zero value.
 func GetSystemPrompt(ctx context.Context) string {
 	span, ctx := clog.StartSpanFromContext(ctx, "GetSystemPrompt")
 	defer span.Finish()
@@ -523,31 +506,19 @@ func GetSystemPrompt(ctx context.Context) string {
 
 // RenderPromptForRole renders the system prompt for a specific role
 // (expert/review/dev) without requiring the role to be set in the context.
-// This is useful for tool call handlers that need a one-shot prompt for
-// a given role, such as ask_expert (role="expert") and code_review
-// (role="review").
+// This is useful for callers that need a one-shot prompt for a given role,
+// such as code_review's rendered review guide (role="review").
 //
-// It renders WITHOUT the DSML tool registration section - the section is
-// role-config-driven and must be injected by the WebChat caller via
-// RenderPromptForRoleWithTools (see dsml.BuildDSMLToolDoc). Plain Chat
-// (GetSystemPrompt) never gets the section either: dscli chat registers
+// It renders WITHOUT the shell tool registration section: the section is
+// filled by the WebChat caller via RenderPromptForRoleWithShellTool. Plain
+// Chat (GetSystemPrompt) never gets the section either: dscli chat registers
 // tools through the API's tools parameter.
 func RenderPromptForRole(ctx context.Context, role string) string {
-	return RenderPromptForRoleWithTools(ctx, role, DSMLToolDoc{})
-}
-
-// RenderPromptForRoleWithTools renders the role prompt with the DSML tool
-// registration section (doc) injected. doc comes from
-// dsml.BuildDSMLToolDoc, which derives the tool set from the role
-// config; an empty doc makes the templates drop the whole section, so a
-// tool-less role (expert/review/test by default) gets no tool registrations.
-func RenderPromptForRoleWithTools(ctx context.Context, role string, doc DSMLToolDoc) string {
-	span, ctx := clog.StartSpanFromContext(ctx, "RenderPromptForRoleWithTools")
+	span, ctx := clog.StartSpanFromContext(ctx, "RenderPromptForRole")
 	defer span.Finish()
 
 	config := newPromptConfig(ctx)
 	config.Role = role
-	config.DSMLToolDoc = doc
 	// WebChat sessions are task-scoped one-shot consultations, so the dev
 	// mail-check step is dropped here. This only affects dev: architect.md
 	// keeps its own ungated mail step by design. See the CheckMail field
@@ -558,10 +529,12 @@ func RenderPromptForRoleWithTools(ctx context.Context, role string, doc DSMLTool
 
 // RenderPromptForRoleWithShellTool renders the role prompt with the shell
 // tool section (the <shell> block protocol; doc comes from
-// shellblock.BuildToolDoc) injected in place of the DSML section. Used by
-// the WebChat shell channel (WebChatOptions.ShellTool): the dev role emits
-// one bash script per round instead of DSML tool calls. Only the dev
-// template renders the section; other templates ignore the field.
+// shellblock.BuildToolDoc) injected. Every WebChat role session uses it:
+// chat.deepseek.com has no native tool protocol, so the role prompt is the
+// only tool registration channel, and the local shell loop executes one
+// block per round. The template renders the section only when its shell
+// branch exists; a template without one keeps its default capabilities
+// prose.
 func RenderPromptForRoleWithShellTool(ctx context.Context, role, doc string) string {
 	span, ctx := clog.StartSpanFromContext(ctx, "RenderPromptForRoleWithShellTool")
 	defer span.Finish()
@@ -570,7 +543,7 @@ func RenderPromptForRoleWithShellTool(ctx context.Context, role, doc string) str
 	config.Role = role
 	config.ShellToolDoc = doc
 	// WebChat sessions are task-scoped one-shot consultations, so the dev
-	// mail-check step is dropped here too (see RenderPromptForRoleWithTools).
+	// mail-check step is dropped here too (see RenderPromptForRole).
 	config.CheckMail = false
 	return config.GeneratePromptWithTemplate(ctx)
 }

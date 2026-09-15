@@ -72,8 +72,8 @@ var askExpertTool = toolcall.ToolDef{
 // injection while keeping the role's other effects (see WebChatOptions).
 // It returns the reply text, the conversation URL (empty when unknown) so
 // callers can continue the conversation later, and printed - the reply was
-// already printed by the DSML tool loop, so callers must not re-print it
-// (it would duplicate the final answer).
+// already printed by the tool loop, so callers must not re-print it (it
+// would duplicate the final answer).
 var askExpertWithRoleFunc = askExpertWebChat
 
 func init() {
@@ -210,9 +210,9 @@ func handleAskExpert(ctx context.Context, args toolcall.ToolArgs) (result, warni
 		}
 	}
 
-	// The DSML tool loop already printed every round (final answer
-	// included) via outfmt.PrintContent; re-printing the reply here would
-	// duplicate it. printed=false (one-shot reply) keeps the old behavior.
+	// The tool loop already printed every round (final answer included)
+	// via outfmt.PrintContent; re-printing the reply here would duplicate
+	// it. printed=false (one-shot reply) keeps the old behavior.
 	if printed {
 		outfmt.Println("✅ Expert consultation completed")
 	} else {
@@ -265,8 +265,8 @@ func truncateForDisplay(s string, maxLen int) string {
 //	reply: the AI model's response text
 //	err: error during execution
 func AskExpertWithRole(ctx context.Context, input, role string) (reply string, err error) {
-	// printed is ignored here: the reply is already printed by the DSML
-	// tool loop when the expert used tools (see askExpertWebChat).
+	// printed is ignored here: the reply is already printed by the tool
+	// loop when the expert used tools (see askExpertWebChat).
 	reply, _, _, err = askExpertWithRoleFunc(ctx, input, role, "", "", nil, false)
 	return reply, err
 }
@@ -284,7 +284,7 @@ func AskExpertWithRoleConv(ctx context.Context, input, role string) (reply, conv
 // files are uploaded to the web chat before the input is sent, and the role
 // prompt is NOT injected into the message - the caller provides the role
 // instructions as one of the attachments (see code_review). Role still
-// gates the DSML tool loop and markup stripping.
+// labels the rounds and gates nothing else.
 func AskExpertWithRoleFiles(ctx context.Context, input, role string, attachments []string) (reply string, err error) {
 	reply, _, _, err = askExpertWithRoleFunc(ctx, input, role, "", "", attachments, true)
 	return reply, err
@@ -293,17 +293,16 @@ func AskExpertWithRoleFiles(ctx context.Context, input, role string, attachments
 // askExpertWebChat is the real implementation: it maps the expert-call
 // parameters onto lp.HandleWebChat, the high-level WebChat entry point that
 // renders the role/system prompt, retries transient server overload and
-// truncation, and executes DSML tool calls embedded in replies (role-driven
-// or plain chat alike - the call source is judged for execution by
-// dsml.ParseDSMLToolCalls).
+// truncation, and runs every reply through the `<shell>` tool loop (the
+// conversation's only tool channel).
 //
 // When both role and system are empty, no persona is injected and the input
 // is sent verbatim (the ask_expert tool relies on the caller's own context;
 // code_review passes a role). skipPromptInjection suppresses the injection
-// while keeping the role's other effects (DSML gating and markup stripping) -
-// the caller ships the role instructions as attachments instead. keep
-// continues a previous conversation; it is passed through to
-// lp.WebChatOptions.Keep ("" = new, "last", ID, or URL).
+// while keeping the role for display (round labels) - the caller ships the
+// role instructions as attachments instead. keep continues a previous
+// conversation; it is passed through to lp.WebChatOptions.Keep ("" = new,
+// "last", ID, or URL).
 func askExpertWebChat(ctx context.Context, input, role, system, keep string, attachments []string, skipPromptInjection bool) (reply, convURL string, printed bool, err error) {
 	res, err := lp.HandleWebChat(ctx, input, lp.WebChatOptions{
 		Attachments:         attachments,
@@ -311,10 +310,9 @@ func askExpertWebChat(ctx context.Context, input, role, system, keep string, att
 		Role:                role,
 		System:              system,
 		SkipPromptInjection: skipPromptInjection,
-		// The dev role speaks the <shell> block protocol on WebChat (see
-		// docs/task-shell-block.md): code_dev sessions run through
-		// handleWebChatShellLoop. Other roles keep the DSML channel.
-		ShellTool: role == "dev",
+		// WebChat always runs the `<shell>` tool loop (its only tool
+		// channel): a reply carrying a block executes locally whatever the
+		// role, and the role prompt registers the protocol.
 	})
 	if err != nil {
 		return "", "", false, err

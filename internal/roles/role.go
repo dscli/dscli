@@ -93,8 +93,8 @@ func IsValid(role string) bool {
 
 // DefaultFor returns the built-in defaults for the given role. It is the
 // single source of truth consumed by the CLI display (role list/show), the
-// tool registry (GetAllTools), prompt loading (LoadPrompts) and the WebChat
-// DSML section — a role without a DB row behaves exactly as role list shows.
+// tool registry (GetAllTools) and prompt loading (LoadPrompts) — a role
+// without a DB row behaves exactly as role list shows.
 //
 //   - dev:       all skills, DevDefaultTools (development tools; the
 //     mail/communication/ai/check categories are the architect's)

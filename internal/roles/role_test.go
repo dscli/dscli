@@ -287,8 +287,7 @@ func TestUpsertUpdatePromptExplicitEmpty(t *testing.T) {
 }
 
 // TestDefaultFor documents the built-in defaults — the single source of truth
-// shared by role list/show, GetAllTools, LoadPrompts and the WebChat DSML
-// section.
+// shared by role list/show, GetAllTools and LoadPrompts.
 func TestDefaultFor(t *testing.T) {
 	cases := []struct {
 		role       string

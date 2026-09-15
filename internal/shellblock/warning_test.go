@@ -7,7 +7,7 @@ import (
 )
 
 func TestMalformedWarning(t *testing.T) {
-	got := MalformedWarning("the `<shell>` line is missing", false)
+	got := MalformedWarning("the `<shell>` line is missing")
 	for _, want := range []string{
 		"malformed `<shell>` block",
 		"the `<shell>` line is missing",
@@ -22,39 +22,12 @@ func TestMalformedWarning(t *testing.T) {
 			t.Errorf("MalformedWarning misses %q:\n%s", want, got)
 		}
 	}
-	if strings.Contains(got, "Do not use the DSML shape") {
-		t.Errorf("MalformedWarning must not carry the DSML note when the reply has no DSML shapes:\n%s", got)
-	}
-	withDSML := MalformedWarning("issue", true)
-	if !strings.Contains(withDSML, "Do not use the DSML shape") {
-		t.Errorf("MalformedWarning with dsmlShape misses the note:\n%s", withDSML)
-	}
 }
 
 func TestNoBlockWarning(t *testing.T) {
-	got := NoBlockWarning(false)
+	got := NoBlockWarning()
 	if !strings.Contains(got, "neither contains a `<shell>` block nor reads as a final report") {
 		t.Errorf("NoBlockWarning = %q", got)
-	}
-	if strings.Contains(got, "Do not use the DSML shape") {
-		t.Errorf("NoBlockWarning must not carry the DSML note:\n%s", got)
-	}
-	if !strings.Contains(NoBlockWarning(true), "Do not use the DSML shape") {
-		t.Error("NoBlockWarning with dsmlShape misses the note")
-	}
-}
-
-func TestDSMLShapeWarning(t *testing.T) {
-	got := DSMLShapeWarning()
-	for _, want := range []string{
-		"DSML tool-call shape",
-		"NOT executed",
-		"Use ONE `<shell>` block instead",
-		"Example:",
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("DSMLShapeWarning misses %q:\n%s", want, got)
-		}
 	}
 }
 

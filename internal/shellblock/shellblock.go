@@ -1,19 +1,18 @@
-// Package shellblock implements the <shell> block tool protocol for WebChat:
-// the web model emits one block per round inside a <shell> block - a bash or
-// python script, or an `#!attach` file list - the judge decides whether to
-// execute the block, warn about its format, or accept the reply as the final
-// answer, and the runner executes the script locally (the round's artifacts
-// - scriptN.sh / scriptN.py / scriptN.lst and scriptN.txt - live under
-// PROJECT_ROOT/.dscli/tmp) and feeds the merged output back into
-// the conversation as an attached text file (an `#!attach` block feeds the
-// named files back as attachments instead).
+// Package shellblock implements WebChat's only tool protocol, the <shell>
+// block: the web model emits one block per round inside a <shell> block - a
+// bash or python script, or an `#!attach` file list - the judge decides
+// whether to execute the block, warn about its format, or accept the reply
+// as the final answer, and the runner executes the script locally (the
+// round's artifacts - scriptN.sh / scriptN.py / scriptN.lst and scriptN.txt
+// - live under PROJECT_ROOT/.dscli/tmp) and feeds the merged output back
+// into the conversation as an attached text file (an `#!attach` block feeds
+// the named files back as attachments instead).
 //
 // The protocol and its judgement rules were validated in a 64-round manual
-// experiment; docs/task-shell-block.md records the contract and the archive
-// evidence. The judge follows the DSML channel's discipline (see
-// internal/dsml): quoted examples never execute, malformed shapes never
-// execute, and the destructive-command interception (dsml.BlockedCmdRe) is
-// shared - a remote web model is not a trusted local agent.
+// experiment. The judge's discipline: quoted examples never execute,
+// malformed shapes never execute, and the destructive-command interception
+// (blockedCmdRe) refuses a whole script before anything is written or run -
+// a remote web model is not a trusted local agent.
 package shellblock
 
 import (
@@ -22,8 +21,6 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
-
-	"github.com/dscli/dscli/internal/dsml"
 )
 
 // Action is the judge's decision for one model reply.
@@ -77,11 +74,6 @@ type Verdict struct {
 	Warning string
 	// Issue names the malformed shape for logs (warn verdicts only).
 	Issue string
-	// ResidualMarkers reports DSML marker shapes in the reply OUTSIDE quoted code
-	// and (for an executable block) outside the block span. The site badges and
-	// mangles such markup, so the shell loop warns about it even though the block
-	// itself executed normally. Computed for EVERY verdict.
-	ResidualMarkers bool
 }
 
 const (
@@ -103,66 +95,34 @@ const (
 // fallback only when content is blank.
 //
 // Quoted content (fenced code blocks and inline code spans, scanned with
-// dsml.CodeRanges) never delimits a block: a model quoting the protocol
+// codeRanges) never delimits a block: a model quoting the protocol
 // example must not trigger an execution. The same scan applies to every
 // tag check below.
 //
 // A well-formed block (all four tags, each exactly once, on their own
 // lines, in order, non-empty body) is executable. A malformed attempt
 // (missing, duplicated, out-of-order or garbled tags, an empty body) gets
-// the format contract back. DSML call shapes are warned about even when no
-// block is present - a silently dropped attempt is worse than a redundant
-// warning. Otherwise a short reply is treated as a stalled round and a long
-// one as the final report.
+// the format contract back. Otherwise a short reply is treated as a stalled
+// round and a long one as the final report.
 func Judge(reasoning, content string) Verdict {
 	text := content
 	if strings.TrimSpace(text) == "" {
 		text = reasoning
 	}
-	quoted := dsml.CodeRanges(text)
-	if block, issue, span := extract(text, quoted); block != nil {
-		// The block span (open line through close line) is script CONTENT: a script
-		// may legitimately write or echo DSML tag shapes (this repository's own test
-		// fixtures do), so only markers OUTSIDE it count as residue.
-		return Verdict{Action: ActionExecute, Block: block, ResidualMarkers: markersOutside(text, quoted, span)}
+	quoted := codeRanges(text)
+	if block, issue := extract(text, quoted); block != nil {
+		return Verdict{Action: ActionExecute, Block: block}
 	} else if issue != "" {
 		return Verdict{
-			Action:          ActionWarn,
-			Issue:           issue,
-			Warning:         MalformedWarning(issue, hasDSMLShape(text)),
-			ResidualMarkers: markersOutside(text, quoted, nil),
+			Action:  ActionWarn,
+			Issue:   issue,
+			Warning: MalformedWarning(issue),
 		}
-	}
-	if hasDSMLCallShape(text) {
-		return Verdict{Action: ActionWarn, Issue: "dsml-shape", Warning: DSMLShapeWarning(), ResidualMarkers: markersOutside(text, quoted, nil)}
 	}
 	if utf8.RuneCountInString(text) <= minFinalRunes {
-		return Verdict{Action: ActionWarn, Issue: "no-block-short", Warning: NoBlockWarning(hasDSMLShape(text)), ResidualMarkers: markersOutside(text, quoted, nil)}
+		return Verdict{Action: ActionWarn, Issue: "no-block-short", Warning: NoBlockWarning()}
 	}
-	return Verdict{Action: ActionFinal, ResidualMarkers: markersOutside(text, quoted, nil)}
-}
-
-// markersOutside reports whether text carries a DSML marker outside every
-// excluded range: the quoted-code ranges plus, for an executable block, the
-// block's own span (script bodies may legitimately contain marker shapes).
-// blockSpan is nil when no block was extracted.
-func markersOutside(text string, quoted [][2]int, blockSpan []int) bool {
-	markers := dsml.MarkerRanges(text)
-	if len(markers) == 0 {
-		return false
-	}
-	for _, m := range markers {
-		if !dsml.InRanges(quoted, m[0]) && !inSpan(blockSpan, m[0]) {
-			return true
-		}
-	}
-	return false
-}
-
-// inSpan reports whether pos falls inside the [start, end) span; a nil span
-// excludes nothing.
-func inSpan(span []int, pos int) bool {
-	return span != nil && pos >= span[0] && pos < span[1]
+	return Verdict{Action: ActionFinal}
 }
 
 // ShouldEnter reports whether a reply routes into the shell loop: any
@@ -186,7 +146,7 @@ func collectTagLines(text string, quoted [][2]int) []tagLine {
 	var hits []tagLine
 	off := 0
 	for _, line := range strings.SplitAfter(text, "\n") {
-		if !dsml.InRanges(quoted, off) {
+		if !inRanges(quoted, off) {
 			switch tag := strings.TrimRight(line, " \t\r\n"); tag {
 			case "<shell>", "<script>", "</script>", "</shell>":
 				hits = append(hits, tagLine{tag: tag, start: off, end: off + len(line)})
@@ -208,10 +168,7 @@ func indexOfTag(hits []tagLine, tag string, from int) int {
 	return -1
 }
 
-// extract scans for exactly one well-formed block on a first-match basis. It
-// returns the block and its byte span (open line through close line,
-// inclusive) on success, so Judge can exclude script CONTENT from marker
-// residue detection:
+// extract scans for exactly one well-formed block on a first-match basis:
 //
 //   - the first <shell> line opens the block; tag-shaped lines before it are
 //     prose and are ignored;
@@ -230,39 +187,39 @@ func indexOfTag(hits []tagLine, tag string, from int) int {
 // It returns the block on success, or a non-empty issue naming the
 // malformed shape. An empty issue means "no block attempt at all": the
 // reply then falls through to the final-report judgement.
-func extract(text string, quoted [][2]int) (*Block, string, []int) {
+func extract(text string, quoted [][2]int) (*Block, string) {
 	hits := collectTagLines(text, quoted)
 	if len(hits) == 0 {
-		return nil, variantIssue(text, quoted), nil
+		return nil, variantIssue(text, quoted)
 	}
 	iShell := indexOfTag(hits, "<shell>", 0)
 	if iShell < 0 {
-		return nil, "the `<shell>` line is missing", nil
+		return nil, "the `<shell>` line is missing"
 	}
 	// A <script> before the <shell> is an ordering error, not a missing line.
 	if i := indexOfTag(hits, "<script>", 0); i >= 0 && i < iShell {
-		return nil, "the tags are out of order", nil
+		return nil, "the tags are out of order"
 	}
 	iScript := indexOfTag(hits, "<script>", iShell+1)
 	if iScript < 0 {
-		return nil, "the `<script>` line is missing", nil
+		return nil, "the `<script>` line is missing"
 	}
 	iCloseScript := indexOfTag(hits, "</script>", iScript+1)
 	if iCloseScript < 0 {
-		return nil, "the `</script>` line is missing", nil
+		return nil, "the `</script>` line is missing"
 	}
 	iCloseShell := indexOfTag(hits, "</shell>", iCloseScript+1)
 	if iCloseShell < 0 {
-		return nil, "the `</shell>` line is missing", nil
+		return nil, "the `</shell>` line is missing"
 	}
 	if indexOfTag(hits, "<shell>", iCloseShell+1) >= 0 {
-		return nil, "the tags appear more than once - send exactly one block", nil
+		return nil, "the tags appear more than once - send exactly one block"
 	}
 	scriptOpen, scriptClose := hits[iScript], hits[iCloseScript]
 	shellClose := hits[iCloseShell]
 	body := text[scriptOpen.end:scriptClose.start]
 	if strings.TrimSpace(body) == "" {
-		return nil, "the script body is empty", nil
+		return nil, "the script body is empty"
 	}
 	// <summary>/<timeout> are parsed loosely in the window between the
 	// </script> line and the </shell> line; a missing or invalid value
@@ -272,7 +229,7 @@ func extract(text string, quoted [][2]int) (*Block, string, []int) {
 		Script:  body,
 		Summary: fieldValue(window, "summary"),
 		Timeout: parseTimeout(window),
-	}, "", []int{hits[iShell].start, shellClose.end}
+	}, ""
 }
 
 // variantIssue names the tag-shaped lines that are not exact tags: an
@@ -282,7 +239,7 @@ func extract(text string, quoted [][2]int) (*Block, string, []int) {
 func variantIssue(text string, quoted [][2]int) string {
 	off := 0
 	for _, line := range strings.SplitAfter(text, "\n") {
-		if dsml.InRanges(quoted, off) {
+		if inRanges(quoted, off) {
 			off += len(line)
 			continue
 		}
@@ -339,21 +296,4 @@ func parseTimeout(window string) time.Duration {
 		return MaxTimeout
 	}
 	return timeout
-}
-
-// hasDSMLShape reports whether text carries DSML tool-call shapes. The site
-// badges and mangles them (rounds 43/53 of the manual experiment), so every
-// warning for such a reply appends the "do not use DSML" note.
-func hasDSMLShape(text string) bool {
-	return strings.Contains(text, "<invoke") ||
-		strings.Contains(text, "<tool_calls") ||
-		strings.Contains(text, "\uff5c") ||
-		len(dsml.MarkerRanges(text)) > 0
-}
-
-// hasDSMLCallShape is the strong subset of hasDSMLShape: an actual call
-// attempt (an <invoke> open or the badge's fullwidth bars). A block-less
-// reply carrying it is warned about even when long.
-func hasDSMLCallShape(text string) bool {
-	return strings.Contains(text, "<invoke") || strings.Contains(text, "\uff5c")
 }

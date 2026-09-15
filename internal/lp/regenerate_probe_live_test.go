@@ -1,8 +1,7 @@
 package lp
 
 // Gated fixture probe for the stopped-state 「重新生成」 recovery (see
-// webchat.go's jsRegenerateStopped / regenerateStoppedButton and
-// docs/task-stop-recovery-and-residue.md).
+// webchat.go's jsRegenerateStopped / regenerateStoppedButton).
 //
 // It runs headless Chromium against a LOCAL file:// fixture - no network, no
 // real login profile - and pins the detector's contract on the site's row

@@ -131,40 +131,10 @@ func writeBlock(b *strings.Builder, n *html.Node) {
 			b.WriteString(strings.Repeat("#", int(n.Data[1]-'0')) + " " + strings.TrimSpace(inline.String()))
 			return
 		}
-		if _, ok := dsmlFlowTags[n.Data]; ok {
-			writeDSMLTag(b, n)
-			return
-		}
 		var inline strings.Builder
 		writeInline(&inline, n)
 		b.WriteString(strings.TrimSpace(inline.String()))
 	}
-}
-
-// dsmlFlowTags are DSML structure tags that must survive the HTML→markdown
-// conversion verbatim. DeepSeek's renderer injects model-emitted DSML
-// (<invoke name="...">, <parameter>, <tool_calls>) as REAL DOM elements, so
-// the generic unknown-element degrade (text only) would silently drop the
-// whole tool call - and with it the handleWebChatToolLoop trigger. Keeping
-// the tags matches what the IndexedDB path carries (original markdown), so
-// DOM-extracted content and IDB content agree on tool call presence.
-var dsmlFlowTags = map[string]struct{}{"invoke": {}, "parameter": {}, "tool_calls": {}}
-
-// writeDSMLTag re-serializes a DSML element as its raw markup, preserving
-// attributes (name, string, ...). Attribute values are HTML-escaped so the
-// markup stays well-formed (the DSML parser decodes entities on the way
-// back in); text content is written verbatim by inlineChildren because the
-// HTML tokenizer already decoded entities in text nodes. Quoting is
-// canonicalized to double quotes - single-quoted inputs parse fine
-// (dsmlNameAttrRe accepts both) but are normalized here.
-func writeDSMLTag(b *strings.Builder, n *html.Node) {
-	b.WriteString("<" + n.Data)
-	for _, a := range n.Attr {
-		b.WriteString(" " + a.Key + `="` + html.EscapeString(a.Val) + `"`)
-	}
-	b.WriteString(">")
-	inlineChildren(b, n)
-	b.WriteString("</" + n.Data + ">")
 }
 
 // writeInline serializes inline content: text, spans, emphasis, inline code,
@@ -224,10 +194,6 @@ func writeInline(b *strings.Builder, n *html.Node) {
 	case "svg":
 		// decorative fill/square icons around code blocks: drop
 	default:
-		if _, ok := dsmlFlowTags[n.Data]; ok {
-			writeDSMLTag(b, n)
-			return
-		}
 		inlineChildren(b, n)
 	}
 }

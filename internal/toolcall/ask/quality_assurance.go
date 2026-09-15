@@ -4,11 +4,9 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
-	"github.com/dscli/dscli/internal/dsml"
 	"github.com/dscli/dscli/internal/lp"
 	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/shell"
@@ -150,14 +148,8 @@ func handleQualityAssurance(ctx context.Context, args toolcall.ToolArgs) (result
 
 	// The first message carries only the summary, commit message, and diff.
 	// The QA engineer (role "test") reads AGENTS.md and file contents on
-	// demand via the DSML tool loop, and runs the project's test commands —
-	// provided the test role has tools configured (role_configs /
-	// roles.DefaultFor: none by default). Without them the report is
-	// limited to the diff itself; warn explicitly instead of degrading
-	// silently (mirrors code_review).
-	if doc := dsml.BuildDSMLToolDoc(ctx, "test"); doc.Intro == "" {
-		fmt.Fprintf(os.Stderr, "⚠️ test 角色未配置 DSML 工具（默认无工具）：QA 工程师将无法读取文件/运行项目的测试命令，报告限于提交内容。可运行 `dscli role update test --tools shell,read_file,write_file` 启用。\n")
-	}
+	// demand and runs the project's test commands through the `<shell>` tool
+	// loop, WebChat's only tool channel (always available).
 	structuredRequest, warning := truncateReviewRequest(summary, fullLog, patch)
 	outfmt.Printf("📤 发送质量保障请求到 DeepSeek Web（免费）...\n%s\n", structuredRequest)
 	var convURL string

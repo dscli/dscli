@@ -885,7 +885,7 @@ func splitPatchByFile(patch string) []namedSection {
 // 2026-08-29: ASCII 162k pass, ~165k reject; byte count is NOT the metric —
 // see lp.webChatMaxInputRunes). The role prompt (~7KB ≈ 2-7k runes) is
 // prepended by HandleWebChat, so the user portion keeps a margin below the
-// site cap: 140k runes ≈ 158k cap minus role/system prompt and the DSML
+// site cap: 140k runes ≈ 158k cap minus role/system prompt and the tool-loop
 // feedback that follow-up rounds append. (26000 was the old "~30k chars"
 // era value; the site grew, and a too-small cap silently dropped diff
 // sections the expert could not see.)

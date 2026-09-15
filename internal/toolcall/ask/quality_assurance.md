@@ -27,9 +27,7 @@ Use before releasing code or when a quality gate is required.
 
 **Context**: the first message carries only the release background, commit
 message, and diff. The QA engineer reads AGENTS.md plus full file contents on
-demand and runs the project's test commands via the DSML tool loop, provided
-the test role has tools configured (role_configs / roles.DefaultFor: none by
-default; enable with `dscli role update test --tools shell,read_file,write_file`).
-Without them the report is limited to the diff itself. If a diff still
-exceeds the limit, per-file sections are dropped smallest-first and listed
-in the tool warning.
+demand and runs the project's test commands through the `<shell>` tool loop
+(WebChat's only tool channel, always available). If a diff still exceeds the
+limit, per-file sections are dropped smallest-first and listed in the tool
+warning.
