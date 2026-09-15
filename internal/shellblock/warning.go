@@ -96,8 +96,9 @@ func truncateDetail(detail string) string {
 }
 
 // blockedCmdRe rejects destructive shell commands the web model could emit.
-// The role prompts ask for read-only commands, but a remote model is not a
-// trusted local agent, so clearly destructive patterns are refused outright
+// Writes are expected (the doc encourages sed -i and applying fixes), but a
+// remote model is not a trusted local agent, so destructive and
+// exfiltrating patterns are refused outright
 // and the model is told why (it can adapt its approach).
 //
 // The outbound-network arm is broad on purpose: a plain `curl` (no `| sh`)
@@ -179,13 +180,14 @@ func BuildToolDoc() string {
 	b.WriteString("**Keep each block small.** Long, repetitive scripts (dozens of near-\n")
 	b.WriteString("identical edit calls, hundreds of lines) are the shape the channel is\n")
 	b.WriteString("least reliable for, and a single failed parse wastes the whole round.\n")
-	b.WriteString("Prefer short, idempotent edits - one sed -i or one file per block -\n")
-	b.WriteString("and split a large change into several blocks. Keep one test/fix/re-run\n")
-	b.WriteString("cycle inside a single block - split the edits, not the cycle.\n")
+	b.WriteString("Prefer one block per unit of work. Split only when the script is too\n")
+	b.WriteString("large or too repetitive to transmit reliably; never split a single\n")
+	b.WriteString("test/fix/re-run cycle across blocks. Prefer small, self-contained\n")
+	b.WriteString("edits - one file per block.\n")
 	b.WriteString("\n")
 	b.WriteString("**Never resend a failed block unchanged.** If a round-trip is lost or a\n")
 	b.WriteString("block is rejected, a byte-identical retry tends to fail the same way.\n")
-	b.WriteString("Send a strictly smaller block that still makes progress.\n")
+	b.WriteString("Send a smaller or corrected block that still makes progress.\n")
 	b.WriteString("\n")
 	b.WriteString("The script is the control-flow language - use loops, conditionals, retries.\n")
 	b.WriteString("Start with `set -euo pipefail`. Exit non-zero on failure: the exit status is\n")

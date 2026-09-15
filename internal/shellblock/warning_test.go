@@ -91,6 +91,8 @@ func TestBuildToolDoc(t *testing.T) {
 		pythonExample,
 		attachExample,
 		"**Iterate inside the script, not across rounds**",
+		"**Keep each block small.**",
+		"**Never resend a failed block unchanged.**",
 		"set -euo pipefail",
 		"exit status is",
 		"rejected outright",
