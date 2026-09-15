@@ -958,3 +958,72 @@ func TestJsSendEnterAsyncFallback(t *testing.T) {
 		t.Error("jsSendEnter must schedule the send-button fallback via setTimeout")
 	}
 }
+
+// TestJsAssistantTextAfterFmt is the regression guard on the scoped DOM
+// extraction. After a recovery (auto-continue / regenerate) the previous,
+// unanchored extraction started at the PREVIOUS round - whose already
+// executed block made the shell judge report "the tags appear more than
+// once". The snippet must therefore scope on the .ds-message bubble holding
+// the sent message, return innerHTML (markdown fidelity, not innerText),
+// and stay click-free.
+func TestJsAssistantTextAfterFmt(t *testing.T) {
+	for _, want := range []string{
+		"ds-message",
+		"ds-assistant-message-main-content",
+		"closest",
+		"innerHTML",
+		"ord",
+		// The empty-want guard: an empty anchor must return no parts so the
+		// caller falls through to the legacy paths instead of matching the
+		// first bubble on the page.
+		"if (!want || !want.trim()) return []",
+		// The anchor walk, back to front: the LAST matching bubble is the
+		// chat copy of this round.
+		"bubbles.length - 1; i >= 0; i--",
+		"indexOf(want) === 0",
+		// Only blocks strictly AFTER the anchor bubble.
+		"(ord.get(b) || 0) <= anchor",
+		// The .ds-markdown fallback must drop the deep-think block.
+		"已思考",
+	} {
+		if !strings.Contains(jsAssistantTextAfterFmt, want) {
+			t.Errorf("jsAssistantTextAfterFmt must contain %q (regression)", want)
+		}
+	}
+	// Exactly one format verb: the quoted sent message.
+	if got := strings.Count(jsAssistantTextAfterFmt, "%"); got != 1 {
+		t.Errorf("format verbs = %d, want 1 (sentMessage)", got)
+	}
+	// Detection-only discipline: the real clicks go through clickTrustedAt,
+	// and a synthetic click would be silently dropped by the site's
+	// isTrusted guard anyway.
+	for _, bad := range []string{".click(", "dispatchEvent("} {
+		if strings.Contains(jsAssistantTextAfterFmt, bad) {
+			t.Errorf("jsAssistantTextAfterFmt must not contain %q (detection only)", bad)
+		}
+	}
+}
+
+// TestJsIDBGetAnswerFmtRegeneratedRound pins the candidate selection for a
+// regenerated round: the record keeps every attempt as a separate ASSISTANT
+// message right after the round's USER, and the stopped first attempt
+// carries no RESPONSE fragments (live record, 2026-09-15). The reader must
+// walk that group and take the LAST attempt with a non-empty RESPONSE -
+// the old "first assistant from index 0" rule returned the empty stopped
+// shell, so every post-recovery read failed and degraded to the DOM
+// fallback.
+func TestJsIDBGetAnswerFmtRegeneratedRound(t *testing.T) {
+	for _, want := range []string{
+		"lastUserIdx",
+		"for (let i = lastUserIdx + 1; i < msgs.length; i++)",
+		"if (msgs[i].role === 'USER') break",
+		"f.content.trim() !== ''",
+		"const chosen = lastWithText || last",
+		"chosen.accumulated_token_usage",
+		"status: chosen.status",
+	} {
+		if !strings.Contains(jsIDBGetAnswerFmt, want) {
+			t.Errorf("jsIDBGetAnswerFmt must contain %q (regenerated-round candidate walk)", want)
+		}
+	}
+}
