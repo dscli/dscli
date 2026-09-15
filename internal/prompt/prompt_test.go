@@ -131,7 +131,7 @@ func TestMailCheckStepScopedToRolesWithMail(t *testing.T) {
 	if strings.Contains(devChat, "Check for unread mail") {
 		t.Errorf("dev chat prompt must not contain the mail-check step (no readmail):\n%s", devChat)
 	}
-	if !strings.Contains(devChat, "0b. **Read AGENTS.md**") {
+	if !strings.Contains(devChat, "0b. **Read AGENTS.md (only when it exists)**") {
 		t.Errorf("dev chat prompt must retain the AGENTS.md step:\n%s", devChat)
 	}
 
@@ -145,7 +145,7 @@ func TestMailCheckStepScopedToRolesWithMail(t *testing.T) {
 	assertMailCheckStripped(t, "webchat prompt (no tools)", plain)
 	// Stripping step 0 must not disturb the remaining workflow steps.
 	for _, want := range []string{
-		"0b. **Read AGENTS.md**",
+		"0b. **Read AGENTS.md (only when it exists)**",
 		"1. **Fully understand the problem**",
 		"2. **Think and analyze deeply**",
 		"3. **Provide deep insights**",
@@ -167,7 +167,7 @@ func TestMailCheckStepScopedToRolesWithMail(t *testing.T) {
 	content := RenderPromptForRoleWithShellTool(t.Context(), "dev", doc)
 	assertMailCheckStripped(t, "webchat prompt (with tools)", content)
 	for _, want := range []string{
-		"0b. **Read AGENTS.md**",
+		"0b. **Read AGENTS.md (only when it exists)**",
 		"1. **Fully understand the problem**",
 		"2. **Think and analyze deeply**",
 		"3. **Provide deep insights**",
@@ -190,7 +190,7 @@ func TestRenderPromptForRoleWithShellTool(t *testing.T) {
 	content := RenderPromptForRoleWithShellTool(t.Context(), "dev", doc)
 	assertMailCheckStripped(t, "webchat shell prompt", content)
 	for _, want := range []string{
-		"0b. **Read AGENTS.md**",
+		"0b. **Read AGENTS.md (only when it exists)**",
 		"## 🛠️ Available Tools: `shell`",
 		"**Usage: execute bash script**",
 		"attached text file",

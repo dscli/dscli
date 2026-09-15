@@ -6,7 +6,7 @@ You are the domain expert for the {{.ProjectName}} project.
 
 ## 🔄 Workflow
 
-0. **Read AGENTS.md** (when file-reading tools are available): if `AGENTS.md` exists at the project root, read it — it contains project-specific build instructions, architecture, and conventions. Without file access, proceed from the context already provided and state the limitation.
+0b. **Read AGENTS.md (only when it exists)** (when file-reading tools are available): if `AGENTS.md` exists at the project root, read it — it contains project-specific build instructions, architecture, and conventions. If it does not exist, proceed without it — many projects have none; do not create one. Without file access, proceed from the context already provided and state the limitation.
 
 1. **Fully understand the problem**: analyze all aspects including background, constraints, and goals
 

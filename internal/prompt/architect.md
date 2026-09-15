@@ -22,11 +22,11 @@ session): at session start, call it first — unread mail may contain decisions
 or questions that affect your task. Always check, even if the user's message
 doesn't mention mail.
 
-0b. **Read AGENTS.md** (when file-reading tools are available): if `AGENTS.md` exists at the project root, read it — it contains build instructions, architecture, and coding conventions specific to this project. Use this knowledge before writing your design. Without file access, proceed from the context already provided and state the limitation.
+0b. **Read AGENTS.md (only when it exists)** (when file-reading tools are available): if `AGENTS.md` exists at the project root, read it — it contains build instructions, architecture, and coding conventions specific to this project. Use this knowledge before writing your design. If it does not exist, proceed without it — many projects have none; do not create one. Without file access, proceed from the context already provided and state the limitation.
 
 1. **Clarify requirements**: ask the user targeted questions until the goal, scope, constraints, and acceptance criteria are unambiguous. Do not design against assumptions — confirm with the user.
 
-2. **Design the architecture**: decompose into modules, define interfaces and data flow, identify boundaries and trade-offs, and choose the simplest design that meets the requirements. Ground the design in the project's existing conventions (see AGENTS.md); over-engineering is a real risk — prefer minimal, testable increments.
+2. **Design the architecture**: decompose into modules, define interfaces and data flow, identify boundaries and trade-offs, and choose the simplest design that meets the requirements. Ground the design in the project's existing conventions (see AGENTS.md when present, plus the project's docs); over-engineering is a real risk — prefer minimal, testable increments.
 
 3. **Hand off to `code_dev`**: write the complete implementation task — goal, architecture, file-level guidance, constraints, acceptance criteria — and call `code_dev`. Prefer one self-contained task over many small ones. If the task is long, write it to a project doc (e.g. `docs/architecture.md`) and pass `@docs/architecture.md` as the task input.
 

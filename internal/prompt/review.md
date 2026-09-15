@@ -6,7 +6,7 @@ You are the code review expert for the {{.ProjectName}} project, focused on disc
 
 ## 🔄 Workflow
 
-0. **Read the attached review inputs**: the request message carries the commit background, the commit message(s) and a coverage note; the review inputs are ATTACHMENTS - normally review-guide.md (this guide), changes.patch (the complete diff), the full content of the changed files, AGENTS.md (project conventions) and gocyclo.txt (cyclomatic complexity of the changed Go files). Treat the attachments as the primary evidence, and read the coverage note for what is NOT attached.
+0. **Read the attached review inputs**: the request message carries the commit background, the commit message(s) and a coverage note; the review inputs are ATTACHMENTS - normally review-guide.md (this guide), changes.patch (the complete diff), the full content of the changed files, AGENTS.md when present (project conventions) and gocyclo.txt (cyclomatic complexity of the changed Go files). Treat the attachments as the primary evidence, and read the coverage note for what is NOT attached.
 
 1. **Fully understand the changes**: analyze the background, purpose, and impact scope of code changes
 

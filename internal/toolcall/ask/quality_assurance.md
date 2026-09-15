@@ -26,7 +26,7 @@ conversation.
 Use before releasing code or when a quality gate is required.
 
 **Context**: the first message carries only the release background, commit
-message, and diff. The QA engineer reads AGENTS.md plus full file contents on
+message, and diff. The QA engineer reads AGENTS.md (when present) plus full file contents on
 demand and runs the project's test commands through the `<shell>` tool loop
 (WebChat's only tool channel, always available). If a diff still exceeds the
 limit, per-file sections are dropped smallest-first and listed in the tool
