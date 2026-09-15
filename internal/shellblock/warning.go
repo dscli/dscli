@@ -96,10 +96,10 @@ func truncateDetail(detail string) string {
 }
 
 // blockedCmdRe rejects destructive shell commands the web model could emit.
-// Writes are expected (the doc encourages sed -i and applying fixes), but a
-// remote model is not a trusted local agent, so destructive and
-// exfiltrating patterns are refused outright
-// and the model is told why (it can adapt its approach).
+// Writes are expected (the doc tells the model to apply fixes and prefer
+// self-contained edits), but a remote model is not a trusted local agent,
+// so destructive and exfiltrating patterns are refused outright and the
+// model is told why (it can adapt its approach).
 //
 // The outbound-network arm is broad on purpose: a plain `curl` (no `| sh`)
 // can still exfiltrate local data via command substitution or query strings
@@ -177,13 +177,12 @@ func BuildToolDoc() string {
 	b.WriteString("  run the test again in round 3. Three fragile round-trips for one task.\n")
 	b.WriteString("- Prefer: one script that loops locally. Run the test, on failure apply the\n")
 	b.WriteString("  fix, re-run, print the full transcript. One round-trip.\n\n")
-	b.WriteString("**Keep each block small.** Long, repetitive scripts (dozens of near-\n")
-	b.WriteString("identical edit calls, hundreds of lines) are the shape the channel is\n")
-	b.WriteString("least reliable for, and a single failed parse wastes the whole round.\n")
-	b.WriteString("Prefer one block per unit of work. Split only when the script is too\n")
-	b.WriteString("large or too repetitive to transmit reliably; never split a single\n")
-	b.WriteString("test/fix/re-run cycle across blocks. Prefer small, self-contained\n")
-	b.WriteString("edits - one file per block.\n")
+	b.WriteString("**One block per unit of work.** Long, repetitive scripts (dozens of\n")
+	b.WriteString("near-identical edit calls, hundreds of lines) are the shape the channel\n")
+	b.WriteString("is least reliable for, and a single failed parse wastes the whole round:\n")
+	b.WriteString("split only when the script is too large or too repetitive to transmit\n")
+	b.WriteString("reliably; never split a single test/fix/re-run cycle across blocks.\n")
+	b.WriteString("Prefer small, self-contained edits - one file per block.\n")
 	b.WriteString("\n")
 	b.WriteString("**Never resend a failed block unchanged.** If a round-trip is lost or a\n")
 	b.WriteString("block is rejected, a byte-identical retry tends to fail the same way.\n")
@@ -210,6 +209,6 @@ func BuildToolDoc() string {
 	b.WriteString("**Finishing**: when the task is complete, write the final report as plain\n")
 	b.WriteString("prose - a reply without a `<shell>` block ends the session. If a reply\n")
 	b.WriteString("carries neither a block nor a final report, treat it as a lost round:\n")
-	b.WriteString("resend a smaller block, do not repeat the previous one.\n")
+	b.WriteString("resend a smaller or corrected block, do not repeat the previous one.\n")
 	return b.String()
 }
