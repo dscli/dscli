@@ -202,7 +202,15 @@ func writeInline(b *strings.Builder, n *html.Node) {
 		var t strings.Builder
 		inlineChildren(&t, n)
 		text := strings.TrimSpace(t.String())
-		if href != "" && text != "" {
+		if isAutoLink(href, text) {
+			// The site wraps URL-shaped text in an <a> automatically -
+			// including paths inside shell blocks and inline code. Writing
+			// that as [text](href) injects the scheme and a `[]( )` pair
+			// into code/path text, which corrupts the script the caller
+			// executes (an auto-linked path was run as a URL and failed).
+			// The link was never authored, so keep the text literal.
+			b.WriteString(text)
+		} else if href != "" && text != "" {
 			b.WriteString("[" + text + "](" + href + ")")
 		} else {
 			b.WriteString(text)
@@ -222,6 +230,25 @@ func writeInline(b *strings.Builder, n *html.Node) {
 		}
 		inlineChildren(b, n)
 	}
+}
+
+// isAutoLink reports whether an <a> is the site's automatic linkification
+// of URL-shaped text rather than a link the model authored. The renderer
+// wraps a bare URL in an anchor whose visible text IS the URL (the href may
+// carry an explicit http(s) scheme the text omits), so href == text or
+// href == scheme+text is the signature. A model-authored link has a
+// description different from its target and is left as markdown.
+//
+// Known trade-off: a deliberately written "[https://x](https://x)" degrades
+// to plain text. Content is preserved - only the link form is dropped.
+func isAutoLink(href, text string) bool {
+	if href == "" || text == "" {
+		return false
+	}
+	if href == text {
+		return true
+	}
+	return href == "https://"+text || href == "http://"+text
 }
 
 // inlineChildren serializes every child of n as inline content.

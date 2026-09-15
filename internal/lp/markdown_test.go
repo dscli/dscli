@@ -223,3 +223,82 @@ func TestMarkdownFragmentPreservesDSML(t *testing.T) {
 		t.Errorf("cmd = %q, want pwd && git status", cmd)
 	}
 }
+
+// TestMarkdownFragmentAutoLinkLiteral pins the fix for the site's automatic
+// linkification: DeepSeek wraps URL-shaped text in an <a> even inside shell
+// blocks and inline code, so writing [text](href) would inject the scheme
+// and a `[]( )` pair into code/path text. An auto link (text == href, or
+// href == scheme+text) must stay literal; a model-authored link (text is a
+// description) must survive as markdown.
+func TestMarkdownFragmentAutoLinkLiteral(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			"same text and href",
+			`<p>see <a href="/home/u/out.png">/home/u/out.png</a></p>`,
+			"see /home/u/out.png",
+		},
+		{
+			"https prefix added by the renderer",
+			`<p>open <a href="https://example.com/page">example.com/page</a></p>`,
+			"open example.com/page",
+		},
+		{
+			"http prefix added by the renderer",
+			`<p>open <a href="http://example.com/x">example.com/x</a></p>`,
+			"open example.com/x",
+		},
+		{
+			"exact url text",
+			`<p>see <a href="https://example.com/a">https://example.com/a</a></p>`,
+			"see https://example.com/a",
+		},
+		{
+			"authored link with a description stays markdown",
+			`<p>see <a href="https://example.com/a">the docs</a></p>`,
+			"see [the docs](https://example.com/a)",
+		},
+		{
+			"auto link inside inline code",
+			`<p><code><a href="https://example.com/a">https://example.com/a</a></code></p>`,
+			"`https://example.com/a`",
+		},
+		{
+			"auto link inside a shell block",
+			`<pre><code>python3 <a href="/home/u/a.png">/home/u/a.png</a></code></pre>`,
+			"```\npython3 /home/u/a.png\n```",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := joinMarkdown([]string{c.in}); got != c.want {
+				t.Errorf("joinMarkdown = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// TestIsAutoLink covers the predicate directly, including the empty inputs
+// the markdown writer can reach.
+func TestIsAutoLink(t *testing.T) {
+	cases := []struct {
+		href, text string
+		want       bool
+	}{
+		{"https://a/b", "https://a/b", true},
+		{"https://a/b", "a/b", true},
+		{"http://a/b", "a/b", true},
+		{"https://a/b", "the docs", false},
+		{"", "x", false},
+		{"x", "", false},
+		{"ftp://a", "a", false},
+	}
+	for _, c := range cases {
+		if got := isAutoLink(c.href, c.text); got != c.want {
+			t.Errorf("isAutoLink(%q, %q) = %v, want %v", c.href, c.text, got, c.want)
+		}
+	}
+}
