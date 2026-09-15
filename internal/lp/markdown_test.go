@@ -225,11 +225,13 @@ func TestMarkdownFragmentPreservesDSML(t *testing.T) {
 }
 
 // TestMarkdownFragmentAutoLinkLiteral pins the fix for the site's automatic
-// linkification: DeepSeek wraps URL-shaped text in an <a> even inside shell
-// blocks and inline code, so writing [text](href) would inject the scheme
-// and a `[]( )` pair into code/path text. An auto link (text == href, or
-// href == scheme+text) must stay literal; a model-authored link (text is a
-// description) must survive as markdown.
+// linkification: DeepSeek wraps URL-shaped text in an <a> (the shell-block
+// body renders as prose with links, and inline code keeps them too), so
+// writing [text](href) would inject the scheme and a `[]( )` pair into
+// code/path text. An auto link (text == href, or href == scheme+text) must
+// stay literal; a model-authored link (text is a description) must survive
+// as markdown. An anchor inside a rendered <pre> already degrades to text
+// via nodeText - the case below is a regression pin for that path.
 func TestMarkdownFragmentAutoLinkLiteral(t *testing.T) {
 	cases := []struct {
 		name string
@@ -267,7 +269,12 @@ func TestMarkdownFragmentAutoLinkLiteral(t *testing.T) {
 			"`https://example.com/a`",
 		},
 		{
-			"auto link inside a shell block",
+			"auto link inside a path in prose (the script62 shape)",
+			`<p>dst_dir = "/home/u/src/<a href="https://gitcode.com/x/y">gitcode.com/x/y</a>"</p>`,
+			`dst_dir = "/home/u/src/gitcode.com/x/y"`,
+		},
+		{
+			"pre content stays literal via nodeText",
 			`<pre><code>python3 <a href="/home/u/a.png">/home/u/a.png</a></code></pre>`,
 			"```\npython3 /home/u/a.png\n```",
 		},

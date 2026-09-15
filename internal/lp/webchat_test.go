@@ -1027,3 +1027,44 @@ func TestJsIDBGetAnswerFmtRegeneratedRound(t *testing.T) {
 		}
 	}
 }
+
+// TestClassifyReply pins the shared classification the wait's main path and
+// fallback chain use: busy text is always a server-busy error (independent
+// of canExtract), the truncation/completeness judgement is gated by
+// canExtract, and a fragment that is not classifiable keeps the caller
+// polling.
+func TestClassifyReply(t *testing.T) {
+	long := strings.Repeat("字", minCompleteResponseLen+10)
+	cases := []struct {
+		name       string
+		resp       string
+		canExtract bool
+		wantDone   bool
+		wantText   string
+		wantErr    error
+	}{
+		{"busy text is always an error", "服务器繁忙，请稍后再试", false, true, "", ErrServerBusy},
+		{"truncated gated off keeps polling", "```go\nfunc broken() {", false, false, "", nil},
+		{"truncated is retryable when gated on", "```go\nfunc broken() {", true, true, "", ErrTruncated},
+		{"tool call opening is not an answer", `<read_file path="internal/lp/webchat.go">`, true, false, "", nil},
+		{"long complete text is done", long, true, true, long, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			done, out, err := classifyReply(c.resp, c.canExtract)
+			if done != c.wantDone {
+				t.Fatalf("done = %v, want %v (err %v)", done, c.wantDone, err)
+			}
+			if c.wantErr == nil {
+				if err != nil {
+					t.Fatalf("err = %v, want nil", err)
+				}
+			} else if !errors.Is(err, c.wantErr) {
+				t.Fatalf("err = %v, want %v", err, c.wantErr)
+			}
+			if out != c.wantText {
+				t.Errorf("out = %q, want %q", out, c.wantText)
+			}
+		})
+	}
+}

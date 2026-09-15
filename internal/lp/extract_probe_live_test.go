@@ -18,6 +18,10 @@ package lp
 //
 //	DSCLI_LIVE_EXTRACT_PROBE=1 go test -v -run TestLiveScopedExtractProbe ./internal/lp/
 //
+// Run it - together with TestLiveIDBSelectProbe - before merging changes to
+// assistantTextAfterMessage / jsIDBGetAnswerFmt: CI cannot execute the
+// gated probes.
+//
 // Without DSCLI_LIVE_EXTRACT_PROBE=1 it skips (the default in CI and in a
 // normal test pass).
 
@@ -181,6 +185,22 @@ func TestLiveScopedExtractProbe(t *testing.T) {
 		}
 		if got := env.extract(t, ""); got != "" {
 			t.Errorf("extraction with an empty sent message = %q, want \"\"", got)
+		}
+	})
+
+	t.Run("an echoing reply does not steal the anchor", func(t *testing.T) {
+		// The reply restates the sent message at its start; the anchor scan
+		// must skip the answered assistant bubble and keep the user bubble,
+		// otherwise the extraction would start after the reply itself.
+		echoing := writeContinueProbeFile(t, dir, "echo.html", extractProbePage(
+			extractProbeRow("USER", extractProbeSent)+
+				extractProbeRow("AI", `<div class="ds-assistant-message-main-content">`+
+					extractProbeSent+`<p>收到，开始处理。</p></div>`),
+		))
+		env.open(t, echoing)
+		got := env.extract(t, extractProbeSent)
+		if !strings.Contains(got, "收到，开始处理。") {
+			t.Errorf("the echoing reply must still be returned:\n%s", got)
 		}
 	})
 }

@@ -311,8 +311,11 @@ const (
 	// jsGetAssistantText: innerText loses code fences, inline-code backticks
 	// and list markers. When the main-content class misses (site redesign) the
 	// .ds-markdown fallback drops blocks carrying the deep-think status span,
-	// exactly like jsGetAssistantText. A missing anchor or an empty sent
-	// message returns no parts, and the caller falls back to the legacy paths.
+	// exactly like jsGetAssistantText. An answered assistant bubble (one
+	// carrying a main-content block) is skipped during the scan - a reply
+	// that echoes the message text must not steal the anchor. A missing
+	// anchor or an empty sent message returns no parts, and the caller
+	// falls back to the legacy paths.
 	jsAssistantTextAfterFmt = `(() => {
 	const want = %s;
 	if (!want || !want.trim()) return [];
@@ -321,7 +324,12 @@ const (
 	bubbles.forEach(function(b, i) { ord.set(b, i); });
 	let anchor = -1;
 	for (let i = bubbles.length - 1; i >= 0; i--) {
-		const t = (bubbles[i].innerText || '');
+		const b = bubbles[i];
+		// An answered assistant bubble is never the sent message: a reply
+		// that echoes the message text must not steal the anchor, or the
+		// extraction would start after the reply itself.
+		if (b.querySelector('.ds-assistant-message-main-content')) continue;
+		const t = (b.innerText || '');
 		const firstLine = t.split('\n')[0].trim();
 		if (firstLine === want || t.trim().indexOf(want) === 0) { anchor = i; break; }
 	}
@@ -388,15 +396,16 @@ const (
 	// scanning from the tail would pick the FIRST round of a continued
 	// conversation and fail the user-message guard.
 	//
-	// A round can carry SEVERAL assistant attempts: a regenerated round
-	// keeps every version in creation order right after its USER (verified
-	// against a live record on 2026-09-15: the stopped first attempt had
-	// THINK fragments only - no RESPONSE - while the regenerated answer sat
-	// one index later). The round's answer is therefore the LAST assistant
-	// in that group with a non-empty RESPONSE; the old "first assistant
-	// from index 0" rule picked the empty stopped attempt, so every
-	// post-recovery read failed answerUsable and degraded the round to the
-	// DOM fallback after three 15s reload attempts.
+	// A round can carry SEVERAL assistant attempts: rounds are newest-first,
+	// but attempts WITHIN a round sit in creation order right after their
+	// USER (verified against a live record on 2026-09-15: the stopped first
+	// attempt had THINK fragments only - no RESPONSE - while the regenerated
+	// answer sat one index later). The round's answer is therefore the LAST
+	// assistant in that group with a non-empty RESPONSE - the newest
+	// completed attempt; the old "first assistant from index 0" rule picked
+	// the empty stopped attempt, so every post-recovery read failed
+	// answerUsable and degraded the round to the DOM fallback after three
+	// 15s reload attempts.
 	jsIDBGetAnswerFmt = `(async () => {
 	try {
 		const wantMsg = %s;
@@ -2582,7 +2591,9 @@ func stabilityStep(ctx context.Context, in stabilityInput) (done bool, resp stri
 
 			// Stable page with no answer content: the request stalled
 			// server-side. Count consecutive empty polls and fail fast
-			// instead of waiting out the full poll budget.
+			// instead of waiting out the full poll budget. A non-empty
+			// fallback fragment the classifier could not accept also lands
+			// here - only classifiable answers return early.
 			*in.emptyStableCount += 1
 			if *in.emptyStableCount >= webChatEmptyStablePolls {
 				return true, "", ErrServerBusy

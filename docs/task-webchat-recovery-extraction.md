@@ -143,6 +143,7 @@ F. **交付回报**：上述证据 + commit 列表（英文）+ 工作区干净 
 - 锚点误配（sentMessage 在页面别处重复出现）→ 取**最后**一个匹配气泡，仍在本轮下方。
 - 设计 B 取舍：自题链接退化为纯文本。
 - 非激活版本若未来在 DOM 中仍挂载正文（当前不可能，因重新生成仅发生在无输出状态）→ 需补"可见性过滤"，届时再加。
+- 锚点回显防线（跳过带 main-content 的回复气泡）依赖该 class 存在；其被移除的降级布局下回显风险回归为"返回空→落兜底"，不会取错文本。
 
 ## 10. 实现记录（回填，2026-09-15）
 
@@ -151,4 +152,5 @@ F. **交付回报**：上述证据 + commit 列表（英文）+ 工作区干净 
 - **修复 3（IDB 读取）**：只读 live 探针 `TestLiveIDBRecordProbe`（`DSCLI_IDB_PROBE_MATCH` 窗口模式）在真实记录中定位事件轮（会话 `ff6ac088-…`，索引 59-61）：`[USER(script91 反馈), ASSISTANT(被停止：仅 THINK、无 RESPONSE), ASSISTANT(2/2：THINK + RESPONSE「裁到页脚了…」)]`，两者 `status` 均为 `FINISHED`——旧规则取"第一个 ASSISTANT"即空文本的被停止版本 → `answerUsable` 恒拒绝 → 6/6 失败。读取改为在"命中 USER 之后、下一 USER 之前"的助手组内取**最后一个非空 RESPONSE** 版本；`TestJsIDBGetAnswerFmtRegeneratedRound` + `TestLiveIDBSelectProbe`（5 用例）钉住。版本顺序以实测（创建顺序、被停止版本在前）为准；"取最后一个非空"对两种顺序均安全（探针第 5 用例）。
 - **验证**：`go test ./...`、`make fmt-check`、`make gofmt` 全绿；`DSCLI_LIVE_EXTRACT_PROBE=1 go test -v -run 'TestLiveScopedExtractProbe|TestLiveIDBSelectProbe' ./internal/lp/` 全过。
 - **提交**：`43211ac`（修复 1 + 3）、`b641de1`（修复 2）、`05ea1dc`（测试与探针）、本文件 docs 一笔。
+- **review 跟进（2026-09-15）**：锚点回显守卫（跳过带 main-content 的回复气泡）；探针补"回显不夺锚"、"两个都有正文的尝试取最新"、"尝试在 USER 之前"三个用例；新增 `TestClassifyReply`；`jsIDBGetAnswerFmt` 注释统一为"轮间 newest-first、轮内创建顺序"；AGENTS 行精简。
 - **开放项（真机验收）**：下一次真实恢复轮（服务器繁忙/停止 → 自动重试）确认判定器看到 2/2 完整回复，且不再在 `IndexedDB 提取失败` 之后出现伪 `tags appear more than once`。

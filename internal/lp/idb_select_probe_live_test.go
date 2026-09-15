@@ -18,6 +18,10 @@ package lp
 //
 //	DSCLI_LIVE_EXTRACT_PROBE=1 go test -v -run TestLiveIDBSelectProbe ./internal/lp/
 //
+// Run it - together with TestLiveScopedExtractProbe - before merging changes
+// to jsIDBGetAnswerFmt / assistantTextAfterMessage: CI cannot execute the
+// gated probes.
+//
 // Without DSCLI_LIVE_EXTRACT_PROBE=1 it skips (the default in CI and in a
 // normal test pass).
 
@@ -249,6 +253,33 @@ func TestLiveIDBSelectProbe(t *testing.T) {
 		), sent)
 		if text, _ := out["text"].(string); text != "answer v2" {
 			t.Errorf("text = %q, want %q", text, "answer v2")
+		}
+	})
+
+	t.Run("two text-bearing attempts pick the newest", func(t *testing.T) {
+		// Attempts sit in creation order inside the group (verified against
+		// the live record), so the last non-empty RESPONSE is the newest
+		// completed attempt.
+		out := run(t, idbSelectRecord(
+			idbSelectUser(sent),
+			idbSelectAssistant("FINISHED", idbSelectFrag("RESPONSE", "answer v1")),
+			idbSelectAssistant("FINISHED", idbSelectFrag("RESPONSE", "answer v2")),
+		), sent)
+		if text, _ := out["text"].(string); text != "answer v2" {
+			t.Errorf("text = %q, want the newest text attempt %q", text, "answer v2")
+		}
+	})
+
+	t.Run("an attempt before the USER is not this round's", func(t *testing.T) {
+		out := run(t, idbSelectRecord(
+			idbSelectAssistant("FINISHED", idbSelectFrag("RESPONSE", "orphan before user")),
+			idbSelectUser(sent),
+		), sent)
+		if ok, _ := out["found"].(bool); ok {
+			t.Fatalf("found = true, want the round's group to hold no attempt")
+		}
+		if reason, _ := out["reason"].(string); !strings.Contains(reason, "no assistant message yet") {
+			t.Errorf("reason = %q, want the no-assistant refusal", reason)
 		}
 	})
 }
