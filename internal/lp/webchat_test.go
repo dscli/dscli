@@ -980,6 +980,9 @@ func TestJsAssistantTextAfterFmt(t *testing.T) {
 		// The anchor walk, back to front: the LAST matching bubble is the
 		// chat copy of this round.
 		"bubbles.length - 1; i >= 0; i--",
+		// The echo guard: an answered assistant bubble is never the sent
+		// message, so a reply that restates it cannot steal the anchor.
+		"querySelector('.ds-assistant-message-main-content')) continue",
 		"indexOf(want) === 0",
 		// Only blocks strictly AFTER the anchor bubble.
 		"(ord.get(b) || 0) <= anchor",
@@ -1035,6 +1038,9 @@ func TestJsIDBGetAnswerFmtRegeneratedRound(t *testing.T) {
 // polling.
 func TestClassifyReply(t *testing.T) {
 	long := strings.Repeat("字", minCompleteResponseLen+10)
+	toolAt := func(n int) string {
+		return "<read_file " + strings.Repeat("x", n-len("<read_file "))
+	}
 	cases := []struct {
 		name       string
 		resp       string
@@ -1047,6 +1053,8 @@ func TestClassifyReply(t *testing.T) {
 		{"truncated gated off keeps polling", "```go\nfunc broken() {", false, false, "", nil},
 		{"truncated is retryable when gated on", "```go\nfunc broken() {", true, true, "", ErrTruncated},
 		{"tool call opening is not an answer", `<read_file path="internal/lp/webchat.go">`, true, false, "", nil},
+		{"tool call opening at the boundary still polls", toolAt(minCompleteResponseLen), true, false, "", nil},
+		{"tool call opening past the boundary counts as a body", toolAt(minCompleteResponseLen + 1), true, true, toolAt(minCompleteResponseLen + 1), nil},
 		{"long complete text is done", long, true, true, long, nil},
 	}
 	for _, c := range cases {

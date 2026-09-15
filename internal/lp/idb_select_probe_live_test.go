@@ -270,7 +270,10 @@ func TestLiveIDBSelectProbe(t *testing.T) {
 		}
 	})
 
-	t.Run("an attempt before the USER is not this round's", func(t *testing.T) {
+	t.Run("an attempt outside the round's group is not used", func(t *testing.T) {
+		// Newest-first array: the ASSISTANT sits at a lower index than the
+		// USER, i.e. outside the group the reader walks (the indices after
+		// the matched USER), so it must not satisfy the read.
 		out := run(t, idbSelectRecord(
 			idbSelectAssistant("FINISHED", idbSelectFrag("RESPONSE", "orphan before user")),
 			idbSelectUser(sent),

@@ -281,7 +281,11 @@ const (
 	bubbles.forEach(function(b, i) { ord.set(b, i); });
 	let anchor = -1;
 	for (let i = bubbles.length - 1; i >= 0; i--) {
-		const t = (bubbles[i].innerText || '');
+		const b = bubbles[i];
+		// Same echo guard as jsAssistantTextAfterFmt: an answered assistant
+		// bubble is never the sent message.
+		if (b.querySelector('.ds-assistant-message-main-content')) continue;
+		const t = (b.innerText || '');
 		const firstLine = t.split('\n')[0].trim();
 		if (firstLine === want || t.trim().indexOf(want) === 0) { anchor = i; break; }
 	}
