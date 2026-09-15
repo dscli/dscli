@@ -18,16 +18,19 @@ package keeprunning
 
 import (
 	"context"
-	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/godbus/dbus/v5"
+	"github.com/nanjj/clog"
 )
 
 const (
 	// dbusCallTimeout bounds every inhibit/uninhibit D-Bus call so a hung
-	// desktop daemon cannot block chat/webchat startup or shutdown.
+	// desktop daemon cannot block chat/webchat startup or shutdown. The call
+	// base is a fresh Background, not the session context: release runs
+	// during shutdown, where a canceled session context must not fail the
+	// call. The ctx parameters below exist for clog logging.
 	dbusCallTimeout = 2 * time.Second
 
 	screenSaverDest   = "org.freedesktop.ScreenSaver"
@@ -43,30 +46,31 @@ var sessionBus = dbus.SessionBus
 
 // keepRunning tries, in order, the desktop-independent ScreenSaver inhibit
 // protocol (KDE, XFCE, Cinnamon, MATE) and then the GNOME SessionManager
-// inhibit. The first successful mechanism wins; if none succeeds, it returns
-// a no-op DoneFunc.
+// inhibit. The first successful mechanism wins; the acquired mechanism and
+// its release are reported through clog using ctx. If none succeeds, it
+// returns a no-op DoneFunc.
 //
 // ScreenSaver is tried first because KDE Plasma (Wayland) implements the
 // xdg-screensaver interface but not org.gnome.SessionManager; upstream nosleep
 // is GNOME-first - do not "fix" the order.
-func keepRunning() DoneFunc {
+func keepRunning(ctx context.Context) DoneFunc {
 	conn, err := sessionBus()
 	if err != nil {
-		slog.Info("keeprunning: no session bus, screen may idle-lock during long run", "err", err)
+		clog.Info(ctx, "keeprunning: no session bus, screen may idle-lock during long run", "err", err)
 		return func() {}
 	}
 
 	// conn.Close ownership stays in keepRunning: the wrapper returned below
 	// closes it exactly once after the release call.
-	if done, ok := inhibitScreenSaver(conn); ok {
+	if done, ok := inhibitScreenSaver(ctx, conn); ok {
 		return withConnClose(conn, done)
 	}
-	if done, ok := inhibitGnomeSession(conn); ok {
+	if done, ok := inhibitGnomeSession(ctx, conn); ok {
 		return withConnClose(conn, done)
 	}
 
 	conn.Close()
-	slog.Info("keeprunning: no supported inhibit interface, screen may idle-lock during long run")
+	clog.Info(ctx, "keeprunning: no supported inhibit interface, screen may idle-lock during long run")
 	return func() {}
 }
 
@@ -85,17 +89,17 @@ func withConnClose(conn *dbus.Conn, done DoneFunc) DoneFunc {
 
 // inhibitScreenSaver uses org.freedesktop.ScreenSaver.Inhibit, the
 // xdg-screensaver protocol supported by KDE, XFCE, Cinnamon and MATE.
-func inhibitScreenSaver(conn *dbus.Conn) (DoneFunc, bool) {
+func inhibitScreenSaver(ctx context.Context, conn *dbus.Conn) (DoneFunc, bool) {
 	obj := conn.Object(screenSaverDest, screenSaverPath)
 	var cookie uint32
-	ctx, cancel := context.WithTimeout(context.Background(), dbusCallTimeout)
+	callCtx, cancel := context.WithTimeout(context.Background(), dbusCallTimeout)
 	defer cancel()
-	err := obj.CallWithContext(ctx, screenSaverIface+".Inhibit", 0,
+	err := obj.CallWithContext(callCtx, screenSaverIface+".Inhibit", 0,
 		"dscli", "dscli is running").Store(&cookie)
 	if err != nil {
 		return nil, false
 	}
-	slog.Info("keeprunning: inhibited screen saver", "mechanism", screenSaverIface, "cookie", cookie)
+	clog.Info(ctx, "keeprunning: inhibited screen saver", "mechanism", screenSaverIface, "cookie", cookie)
 
 	// Defensive double-guard: the outer withConnClose sync.Once already
 	// ensures the D-Bus connection closes exactly once; this bool only
@@ -107,13 +111,13 @@ func inhibitScreenSaver(conn *dbus.Conn) (DoneFunc, bool) {
 			return
 		}
 		released = true
-		ctx, cancel := context.WithTimeout(context.Background(), dbusCallTimeout)
+		relCtx, cancel := context.WithTimeout(context.Background(), dbusCallTimeout)
 		defer cancel()
-		releaseErr := obj.CallWithContext(ctx, screenSaverIface+".UnInhibit", 0, cookie).Err
+		releaseErr := obj.CallWithContext(relCtx, screenSaverIface+".UnInhibit", 0, cookie).Err
 		if releaseErr != nil {
-			slog.Info("keeprunning: failed to un-inhibit screen saver", "cookie", cookie, "err", releaseErr)
+			clog.Info(ctx, "keeprunning: failed to un-inhibit screen saver", "cookie", cookie, "err", releaseErr)
 		} else {
-			slog.Info("keeprunning: un-inhibited screen saver", "cookie", cookie)
+			clog.Info(ctx, "keeprunning: un-inhibited screen saver", "cookie", cookie)
 		}
 	}, true
 }
@@ -121,7 +125,7 @@ func inhibitScreenSaver(conn *dbus.Conn) (DoneFunc, bool) {
 // inhibitGnomeSession uses org.gnome.SessionManager.Inhibit with only the
 // official gsm-inhibit-flags idle bit (8), which covers the idle -> blank ->
 // lock chain on conforming implementations.
-func inhibitGnomeSession(conn *dbus.Conn) (DoneFunc, bool) {
+func inhibitGnomeSession(ctx context.Context, conn *dbus.Conn) (DoneFunc, bool) {
 	obj := conn.Object(gnomeSessionDest, gnomeSessionPath)
 	const (
 		appName = "dscli"
@@ -137,14 +141,14 @@ func inhibitGnomeSession(conn *dbus.Conn) (DoneFunc, bool) {
 		flags = uint32(8)
 	)
 	var cookie uint32
-	ctx, cancel := context.WithTimeout(context.Background(), dbusCallTimeout)
+	callCtx, cancel := context.WithTimeout(context.Background(), dbusCallTimeout)
 	defer cancel()
-	err := obj.CallWithContext(ctx, gnomeSessionIface+".Inhibit", 0,
+	err := obj.CallWithContext(callCtx, gnomeSessionIface+".Inhibit", 0,
 		appName, xid, reason, flags).Store(&cookie)
 	if err != nil {
 		return nil, false
 	}
-	slog.Info("keeprunning: inhibited GNOME session", "mechanism", gnomeSessionIface, "cookie", cookie)
+	clog.Info(ctx, "keeprunning: inhibited GNOME session", "mechanism", gnomeSessionIface, "cookie", cookie)
 
 	// Defensive double-guard: the outer withConnClose sync.Once already
 	// ensures the D-Bus connection closes exactly once; this bool only
@@ -156,13 +160,13 @@ func inhibitGnomeSession(conn *dbus.Conn) (DoneFunc, bool) {
 			return
 		}
 		released = true
-		ctx, cancel := context.WithTimeout(context.Background(), dbusCallTimeout)
+		relCtx, cancel := context.WithTimeout(context.Background(), dbusCallTimeout)
 		defer cancel()
-		releaseErr := obj.CallWithContext(ctx, gnomeSessionIface+".Uninhibit", 0, cookie).Err
+		releaseErr := obj.CallWithContext(relCtx, gnomeSessionIface+".Uninhibit", 0, cookie).Err
 		if releaseErr != nil {
-			slog.Info("keeprunning: failed to un-inhibit GNOME session", "cookie", cookie, "err", releaseErr)
+			clog.Info(ctx, "keeprunning: failed to un-inhibit GNOME session", "cookie", cookie, "err", releaseErr)
 		} else {
-			slog.Info("keeprunning: un-inhibited GNOME session", "cookie", cookie)
+			clog.Info(ctx, "keeprunning: un-inhibited GNOME session", "cookie", cookie)
 		}
 	}, true
 }

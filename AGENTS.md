@@ -320,6 +320,10 @@ Tests live alongside their code:
 - **Modern Go** - use features from Go 1.22+ (see `use-modern-go` skill; go.mod requires 1.27.1)
 - **No em dashes** - use regular dashes in code and comments
 - **Comment the *why***, not the *what* - don't restate obvious code
+- **Logging vs output** - user-facing messages go through `internal/outfmt`;
+  developer logs go through `github.com/nanjj/clog` (jaeger-span context - add
+  a `context.Context` parameter where a function needs to log). dscli code
+  never imports `log/slog` directly (clog uses it internally).
 
 ## Commit Convention
 

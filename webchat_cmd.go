@@ -147,7 +147,7 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 
 	// Keep the system awake while the web session runs: a locked screen
 	// suspends chat.deepseek.com and can kill long DSML tool loops.
-	wakeLock := keeprunning.KeepRunning()
+	wakeLock := keeprunning.KeepRunning(ctx)
 	defer wakeLock()
 
 	message, err := gatherWebchatInput(cmd, args)

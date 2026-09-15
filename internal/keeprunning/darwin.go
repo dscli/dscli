@@ -17,22 +17,25 @@
 package keeprunning
 
 import (
-	"log/slog"
+	"context"
 	"os"
 	"os/exec"
 	"strconv"
+
+	"github.com/nanjj/clog"
 )
 
 // keepRunning spawns `caffeinate -i -w <pid>` to keep the system awake while
 // this process runs. `-i` prevents idle sleep, `-w <pid>` makes caffeinate
-// exit automatically when the given process terminates.
-func keepRunning() DoneFunc {
+// exit automatically when the given process terminates. The acquired lock
+// and its release are reported through clog using ctx.
+func keepRunning(ctx context.Context) DoneFunc {
 	cmd := exec.Command("caffeinate", "-i", "-w", strconv.Itoa(os.Getpid()))
 	if err := cmd.Start(); err != nil {
-		slog.Info("keeprunning: caffeinate unavailable, screen may idle-lock during long run", "err", err)
+		clog.Info(ctx, "keeprunning: caffeinate unavailable, screen may idle-lock during long run", "err", err)
 		return func() {}
 	}
-	slog.Info("keeprunning: caffeinate keeping system awake")
+	clog.Info(ctx, "keeprunning: caffeinate keeping system awake")
 
 	var released bool
 	return func() {
@@ -41,9 +44,9 @@ func keepRunning() DoneFunc {
 		}
 		released = true
 		if err := cmd.Process.Kill(); err != nil {
-			slog.Info("keeprunning: failed to stop caffeinate", "err", err)
+			clog.Info(ctx, "keeprunning: failed to stop caffeinate", "err", err)
 		} else {
-			slog.Info("keeprunning: stopped caffeinate")
+			clog.Info(ctx, "keeprunning: stopped caffeinate")
 		}
 		_ = cmd.Wait()
 	}

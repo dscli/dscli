@@ -178,7 +178,7 @@ func ChatRunE(cmd *cobra.Command, args []string) (err error) {
 	}
 	// Keep the system awake while the interactive loop runs: a locked screen
 	// suspends the DeepSeek web session and can kill long tool loops.
-	wakeLock := keeprunning.KeepRunning()
+	wakeLock := keeprunning.KeepRunning(ctx)
 	defer wakeLock()
 
 	// Set AI name in context for output formatting

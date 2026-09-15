@@ -21,7 +21,7 @@ func TestKeepRunningNoBus(t *testing.T) {
 	sessionBus = func() (*dbus.Conn, error) { return nil, errors.New("no bus") }
 	t.Cleanup(func() { sessionBus = old })
 
-	done := KeepRunning()
+	done := KeepRunning(t.Context())
 	if done == nil {
 		t.Fatal("KeepRunning returned nil DoneFunc; want non-nil no-op")
 	}
@@ -36,7 +36,7 @@ func TestKeepRunningRealBus(t *testing.T) {
 		t.Skip("no session bus")
 	}
 
-	done := KeepRunning()
+	done := KeepRunning(t.Context())
 	done()
 	done() // second call must be a safe no-op, not a panic
 }
