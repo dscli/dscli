@@ -293,6 +293,63 @@ const (
 	}
 	return '';
 })()`
+
+	// jsAssistantTextAfterFmt returns the innerHTML parts of every assistant
+	// answer block that follows the bubble holding the sent message. That is
+	// THIS round's reply only.
+	//
+	// WHY an anchor and not a baseline diff: the conversation list is windowed
+	// (the DOM holds only the messages around the viewport) and a send
+	// navigates and rebuilds the page, so a pre-send markdown baseline can
+	// neither cover the history nor be reliably stripped. After a recovery
+	// (auto-continue / regenerate) the extracted text used to start at the
+	// PREVIOUS round, whose already-executed block made the judge report "the
+	// tags appear more than once" and poisoned the model's next reply. The
+	// sent message is a stable anchor that needs no baseline snapshot.
+	//
+	// innerHTML (not innerText) keeps the markdown reconstruction ability of
+	// jsGetAssistantText: innerText loses code fences, inline-code backticks
+	// and list markers. When the main-content class misses (site redesign) the
+	// .ds-markdown fallback drops blocks carrying the deep-think status span,
+	// exactly like jsGetAssistantText. A missing anchor or an empty sent
+	// message returns no parts, and the caller falls back to the legacy paths.
+	jsAssistantTextAfterFmt = `(() => {
+	const want = %s;
+	if (!want || !want.trim()) return [];
+	const bubbles = Array.from(document.querySelectorAll('.ds-message'));
+	const ord = new Map();
+	bubbles.forEach(function(b, i) { ord.set(b, i); });
+	let anchor = -1;
+	for (let i = bubbles.length - 1; i >= 0; i--) {
+		const t = (bubbles[i].innerText || '');
+		const firstLine = t.split('\n')[0].trim();
+		if (firstLine === want || t.trim().indexOf(want) === 0) { anchor = i; break; }
+	}
+	if (anchor < 0) return [];
+	const parts = [];
+	const mains = Array.from(document.querySelectorAll('.ds-message .ds-assistant-message-main-content'));
+	for (let i = 0; i < mains.length; i++) {
+		const b = mains[i].closest('.ds-message');
+		if (!b || (ord.get(b) || 0) <= anchor) continue;
+		const h = mains[i].innerHTML;
+		if (h && h.trim()) parts.push(h);
+	}
+	if (parts.length) return parts;
+	const mds = Array.from(document.querySelectorAll('.ds-message .ds-markdown'));
+	for (let i = 0; i < mds.length; i++) {
+		const el = mds[i];
+		const b = el.closest('.ds-message');
+		if (!b || (ord.get(b) || 0) <= anchor) continue;
+		let think = false;
+		const spans = el.querySelectorAll('span');
+		for (let j = 0; j < spans.length; j++) {
+			const t = (spans[j].textContent || '').trim();
+			if (/^已思考[（(]?/.test(t) && /[（(]?用时\s*\d+|\d+\s*秒/.test(t)) { think = true; break; }
+		}
+		if (!think) parts.push(el.innerHTML);
+	}
+	return parts;
+})()`
 	// jsIDBGetAnswerFmt reads the assistant's answer from the site's own
 	// IndexedDB conversation cache (database "deepseek-chat", object store
 	// "history-message", keyed by conversation ID). This is the structured
@@ -327,9 +384,19 @@ const (
 	// 0/1 while the first round ever sits at the tail), and the record's
 	// timestamp is refreshed on every page load, so the freshness window
 	// never rejects a reloaded page. Because of the newest-first order the
-	// "last" USER/ASSISTANT messages are the FIRST matches scanning from
-	// index 0 - scanning from the tail would pick the FIRST round of a
-	// continued conversation and fail the user-message guard.
+	// "last" USER message is the FIRST match scanning from index 0 -
+	// scanning from the tail would pick the FIRST round of a continued
+	// conversation and fail the user-message guard.
+	//
+	// A round can carry SEVERAL assistant attempts: a regenerated round
+	// keeps every version in creation order right after its USER (verified
+	// against a live record on 2026-09-15: the stopped first attempt had
+	// THINK fragments only - no RESPONSE - while the regenerated answer sat
+	// one index later). The round's answer is therefore the LAST assistant
+	// in that group with a non-empty RESPONSE; the old "first assistant
+	// from index 0" rule picked the empty stopped attempt, so every
+	// post-recovery read failed answerUsable and degraded the round to the
+	// DOM fallback after three 15s reload attempts.
 	jsIDBGetAnswerFmt = `(async () => {
 	try {
 		const wantMsg = %s;
@@ -355,10 +422,9 @@ const (
 		const msgs = (rec.data && rec.data.chat_messages) || [];
 		// Newest-first: this round's messages are at the front.
 		let lastUser = null;
-		let last = null;
+		let lastUserIdx = -1;
 		for (let i = 0; i < msgs.length; i++) {
-			if (msgs[i].role === 'USER' && !lastUser) lastUser = msgs[i];
-			if (msgs[i].role === 'ASSISTANT' && !last) last = msgs[i];
+			if (msgs[i].role === 'USER' && !lastUser) { lastUser = msgs[i]; lastUserIdx = i; }
 		}
 		// The record must already contain THIS round's user message —
 		// otherwise it is the pre-send snapshot of a continued
@@ -372,8 +438,28 @@ const (
 		if (userParts.join('\n\n').trim() !== wantMsg.trim()) {
 			return {found: false, reason: 'idb record predates this round'};
 		}
-		if (!last) return {found: false, reason: 'no assistant message yet'};
-		const frags = last.fragments || [];
+		// Walk THIS round's assistant group (between the matched USER and
+		// the next USER). A regenerated round keeps every attempt in the
+		// group in creation order, and the stopped first attempt carries no
+		// RESPONSE fragments, so the LAST attempt with a non-empty RESPONSE
+		// is the newest completed version; without one (reply still being
+		// written) the caller sees the empty text and keeps polling.
+		let last = null;
+		let lastWithText = null;
+		for (let i = lastUserIdx + 1; i < msgs.length; i++) {
+			if (msgs[i].role === 'USER') break;
+			if (msgs[i].role !== 'ASSISTANT') continue;
+			last = msgs[i];
+			for (const f of (msgs[i].fragments || [])) {
+				if (f && f.type === 'RESPONSE' && typeof f.content === 'string' && f.content.trim() !== '') {
+					lastWithText = msgs[i];
+					break;
+				}
+			}
+		}
+		if (!last && !lastWithText) return {found: false, reason: 'no assistant message yet'};
+		const chosen = lastWithText || last;
+		const frags = chosen.fragments || [];
 		const parts = [];
 		const thinkParts = [];
 		for (const f of frags) {
@@ -386,13 +472,13 @@ const (
 		// 或差值为负时按 0 处理，绝不伪造计数）。
 		let tokens = 0;
 		const uAtu = lastUser && lastUser.accumulated_token_usage;
-		const aAtu = last && last.accumulated_token_usage;
+		const aAtu = chosen && chosen.accumulated_token_usage;
 		if (typeof uAtu === 'number' && typeof aAtu === 'number' && aAtu >= uAtu) {
 			tokens = aAtu - uAtu;
 		}
 		return {
 			found: true,
-			status: last.status || '',
+			status: chosen.status || '',
 			text: parts.join('\n\n'),
 			reason: thinkParts.join('\n\n'),
 			respCount: parts.length,
@@ -1540,19 +1626,26 @@ func webchatSetUploadFiles(ctx context.Context, files []string) error {
 }
 
 // webchatWait polls until the assistant response stabilizes, then extracts
-// it from the rendered DOM: the .ds-assistant-message-main-content elements
-// (primary, converted back to markdown), then the bubble-scoped answer
-// block, then body-text after the sent message (last resort).
+// it from the rendered DOM: the answer blocks AFTER the bubble holding the
+// sent message (primary, converted back to markdown), then the bubble-scoped
+// answer block as plain text, then body-text after the sent message, and
+// only as the last resort the legacy all-main-content text minus the
+// mdBaseline prefix.
+//
+// WHY the sent message anchors the primary extraction: the conversation
+// list is windowed (the DOM holds only the messages around the viewport)
+// and a send navigates and rebuilds the page, so a pre-send baseline can be
+// neither complete nor reliably stripped. After a recovery (auto-continue /
+// regenerate) the unanchored path used to return the PREVIOUS round, whose
+// already-executed block made the shell judge report "the tags appear more
+// than once" - so the anchor, which needs no snapshot at all, is the primary
+// path and mdBaseline is only kept for the legacy fallback (see
+// jsAssistantTextAfterFmt / stripBaselinePrefix).
 //
 // The original markdown + deep-think reasoning come from the site's
 // IndexedDB cache AFTER a reload (see webchatExtractReloadedIDB, called by
 // webchatSend once this wait returns): IndexedDB is written once per page
 // load, so polling it during a live send can only see the pre-send snapshot.
-//
-// mdBaseline is the concatenated .ds-markdown text captured before sending;
-// it is stripped from DOM-extracted text so continued conversations return
-// only the new response. sentMessage is the user's message used to anchor
-// the body-text fallback (see extractAfterMessage).
 //
 // To avoid premature extraction during streaming pauses (>6s), it uses a
 // generation-active check: when stability is first detected, it checks
@@ -2390,6 +2483,30 @@ type stabilityInput struct {
 	sentMessage      string
 }
 
+// classifyReply turns a non-empty extracted reply text into the wait
+// outcome. canExtract gates the truncation/completeness judgement: while the
+// site still reports an active generation a fragment is expected, so the
+// text is held back (done=false, caller keeps polling) instead of being
+// judged. An overload notice is always an error - it must never be returned
+// as the answer.
+func classifyReply(resp string, canExtract bool) (done bool, out string, err error) {
+	if isBusyErrorText(resp) {
+		return true, "", fmt.Errorf("%w: %s", ErrServerBusy, resp)
+	}
+	if canExtract {
+		// A response cut off mid-generation (unclosed code fence,
+		// unterminated JSON) is a distinct, retryable failure: the answer
+		// exists but is unusable, and polling further will not complete it.
+		if isTruncated(resp) {
+			return true, "", fmt.Errorf("%w (%d chars)", ErrTruncated, utf8.RuneCountInString(resp))
+		}
+		if isCompleteResponse(resp) {
+			return true, resp, nil
+		}
+	}
+	return false, "", nil
+}
+
 // stabilityStep runs one poll of the stability/extraction stage, the block
 // that decides whether the round is finished. It returns done=true with the
 // extracted answer (or the terminal error) when the round ends, and
@@ -2409,35 +2526,21 @@ func stabilityStep(ctx context.Context, in stabilityInput) (done bool, resp stri
 			canExtract := !isGenerationActive(ctx) ||
 				*in.stableCount >= webChatStablePolls+webChatExtendedPolls
 
-			// Fallback: extract from .ds-markdown elements. This naturally
-			// excludes UI chrome (search info, toggle labels, footer text).
-			// The rendered DOM is converted back to markdown (code fences,
-			// inline-code backticks, list markers) - innerText alone would
-			// lose all of that structure. NOTE: the current DeepSeek UI
-			// dropped .ds-markdown entirely (hashed classes), so this path
-			// is a compatibility net for other layouts.
-			if resp := getAssistantText(ctx); resp != "" {
-				resp = stripBaselinePrefix(resp, in.mdBaseline)
+			// Main path: anchor the reply on the bubble holding the sent
+			// message. Only blocks AFTER that bubble are returned, so the
+			// windowed history - including the previous round's already
+			// executed block - can never leak into this round's reply, and
+			// the deep-think reasoning (a sibling of the answer block) stays
+			// out. Unlike the baseline-prefix strip this needs no pre-send
+			// snapshot, so a page rebuild between send and answer cannot
+			// defeat it.
+			if resp := assistantTextAfterMessage(ctx, in.sentMessage); resp != "" {
 				// Belt-and-braces: strip body-text fallback artifacts
 				// (code-block toolbar labels) in case the markdown converter
 				// was bypassed. No-op for clean output.
 				resp = stripUIChromePrefix(resp)
-				// A short overload notice must never be returned as an
-				// answer - it would poison the caller's decision-making.
-				if isBusyErrorText(resp) {
-					return true, "", fmt.Errorf("%w: %s", ErrServerBusy, resp)
-				}
-				if canExtract {
-					// A response cut off mid-generation (unclosed code
-					// fence, unterminated JSON) is a distinct, retryable
-					// failure: the answer exists but is unusable, and
-					// polling further will not complete it.
-					if isTruncated(resp) {
-						return true, "", fmt.Errorf("%w (%d chars)", ErrTruncated, utf8.RuneCountInString(resp))
-					}
-					if isCompleteResponse(resp) {
-						return true, resp, nil
-					}
+				if done, out, err := classifyReply(resp, canExtract); done {
+					return true, out, err
 				}
 				// Fragment or generation still active: keep polling. The
 				// model often pauses after emitting a simulated tool call
@@ -2446,9 +2549,10 @@ func stabilityStep(ctx context.Context, in stabilityInput) (done bool, resp stri
 				return false, "", nil
 			}
 
-			// Fallback 1: the answer block of this round, scoped by message
-			// bubble (after the sent message) - no history, no deep-think
-			// reasoning, no UI chrome.
+			// Fallback 1: the answer block of this round scoped by message
+			// bubble, as plain innerText - no history, no deep-think
+			// reasoning, no UI chrome. It cannot restore markdown, so it
+			// only runs when the main path's reconstruction failed.
 			fallback := cleanBodyResponse(lastAnswerText(ctx, in.sentMessage))
 			if fallback == "" {
 				// Fallback 2: body text after the sent message (anchored on
@@ -2458,18 +2562,21 @@ func stabilityStep(ctx context.Context, in stabilityInput) (done bool, resp stri
 				// mid-response pause.
 				fallback = cleanBodyResponse(extractAfterMessage(in.current, in.sentMessage))
 			}
+			if fallback == "" {
+				// Fallback 3 (last resort): the legacy extraction over ALL
+				// main-content blocks minus the pre-send baseline. The send
+				// navigates and rebuilds the page, so the baseline prefix is
+				// unreliable and this path can carry pre-send history - it
+				// survives only for layouts where the message-bubble anchor
+				// is missing.
+				fallback = stripBaselinePrefix(getAssistantText(ctx), in.mdBaseline)
+			}
 			// The body path also picks up code-block toolbar labels; strip
 			// them like the .ds-markdown path does.
 			fallback = stripUIChromePrefix(fallback)
-			if isBusyErrorText(fallback) {
-				return true, "", fmt.Errorf("%w: %s", ErrServerBusy, fallback)
-			}
-			if canExtract {
-				if isTruncated(fallback) {
-					return true, "", fmt.Errorf("%w (%d chars)", ErrTruncated, utf8.RuneCountInString(fallback))
-				}
-				if isCompleteResponse(fallback) {
-					return true, fallback, nil
+			if fallback != "" {
+				if done, out, err := classifyReply(fallback, canExtract); done {
+					return true, out, err
 				}
 			}
 
@@ -2683,6 +2790,26 @@ func lastAnswerText(ctx context.Context, sentMessage string) string {
 		return ""
 	}
 	return strings.TrimSpace(text)
+}
+
+// assistantTextAfterMessage returns the markdown of THIS round's reply,
+// anchored on the bubble holding the sent message: every assistant answer
+// block after that bubble, joined and converted back from the rendered DOM.
+// "" means "not available" - an empty sent message, no anchor bubble in the
+// window, or an evaluation error - and the caller falls through to the
+// legacy extractions.
+func assistantTextAfterMessage(ctx context.Context, sentMessage string) string {
+	span, ctx := clog.StartSpanFromContext(ctx, "assistantTextAfterMessage")
+	defer span.Finish()
+
+	if strings.TrimSpace(sentMessage) == "" {
+		return ""
+	}
+	var parts []string
+	if err := chromedp.Evaluate(fmt.Sprintf(jsAssistantTextAfterFmt, quoteJS(sentMessage)), &parts).Do(ctx); err != nil {
+		return ""
+	}
+	return joinMarkdown(parts)
 }
 
 // idbGetAssistant reads the assistant's answer for the CURRENT
