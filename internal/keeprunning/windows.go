@@ -17,9 +17,6 @@
 package keeprunning
 
 import (
-	"context"
-
-	"github.com/nanjj/clog"
 	"golang.org/x/sys/windows"
 )
 
@@ -30,19 +27,16 @@ const (
 
 // keepRunning tells Windows not to put the system to sleep while this process
 // runs. ES_CONTINUOUS resets the idle timer continuously; ES_SYSTEM_REQUIRED
-// forces the display system to stay on. The acquired state and its release
-// are reported through clog using ctx.
-func keepRunning(ctx context.Context) DoneFunc {
+// forces the display system to stay on.
+func keepRunning() DoneFunc {
 	kernel32 := windows.NewLazySystemDLL("kernel32.dll")
 	setThreadExecutionState := kernel32.NewProc("SetThreadExecutionState")
 
 	if r, _, _ := setThreadExecutionState.Call(
 		uintptr(esContinuous | esSystemRequired),
 	); r == 0 {
-		clog.Info(ctx, "keeprunning: SetThreadExecutionState failed, screen may idle-lock or system may sleep during long run")
 		return func() {}
 	}
-	clog.Info(ctx, "keeprunning: SetThreadExecutionState keeping system awake")
 
 	var released bool
 	return func() {
@@ -51,6 +45,5 @@ func keepRunning(ctx context.Context) DoneFunc {
 		}
 		released = true
 		setThreadExecutionState.Call(uintptr(esContinuous))
-		clog.Info(ctx, "keeprunning: reset thread execution state")
 	}
 }
