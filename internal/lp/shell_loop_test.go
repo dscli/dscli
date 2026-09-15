@@ -1,6 +1,7 @@
 package lp
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/dscli/dscli/internal/shellblock"
 )
 
@@ -183,6 +185,107 @@ func TestHandleWebChatShellLoopNoPythonWarning(t *testing.T) {
 	}
 	if res.Content != shellFinalTest {
 		t.Errorf("content = %q, want the final report", res.Content)
+	}
+}
+
+// shellBlockAttachTest is a well-formed attach block: the marker picks the
+// attach mode, so the round is announced with the attach icon.
+var shellBlockAttachTest = strings.Join([]string{
+	"<shell>",
+	"<script>",
+	"#!attach",
+	"a.png",
+	"</script>",
+	"<summary>send the shots</summary>",
+	"<timeout>100</timeout>",
+	"</shell>",
+}, "\n")
+
+// shellBlockNoSummaryTest is a well-formed bash block without a <summary>:
+// the announcement degrades to icon + mode.
+var shellBlockNoSummaryTest = strings.Join([]string{
+	"<shell>",
+	"<script>",
+	"echo hi",
+	"</script>",
+	"</shell>",
+}, "\n")
+
+// TestHandleWebChatShellLoopAnnouncesExecution pins the user-facing execution
+// announcement: one line per round, icon by mode plus the summary, printed
+// via outfmt BEFORE the script runs (a block can run for a long time, so the
+// user must see what is about to run). The exec seam is mocked - the mocked
+// call only records that it was reached, so no real script runs.
+func TestHandleWebChatShellLoopAnnouncesExecution(t *testing.T) {
+	origSend, origExec := handleWebChatSend, handleWebChatExecShell
+	t.Cleanup(func() { handleWebChatSend, handleWebChatExecShell = origSend, origExec })
+
+	tests := []struct {
+		name  string
+		block string
+		want  string
+	}{
+		{name: "bash with summary", block: shellBlockTest, want: "\U0001F41A bash: say hi"},
+		{name: "python with summary", block: shellBlockPythonTest, want: "\U0001F40D python: say hi in python"},
+		{name: "attach with summary", block: shellBlockAttachTest, want: "\U0001F4CE attach: send the shots"},
+		{name: "bash without summary", block: shellBlockNoSummaryTest, want: "\U0001F41A bash"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handleWebChatSend = func(_ context.Context, _ string, _ WebChatOptions) (WebChatResult, error) {
+				return WebChatResult{Content: shellFinalTest, URL: "https://chat.deepseek.com/a/chat/s/convSHELL"}, nil
+			}
+			executed := false
+			handleWebChatExecShell = func(_ context.Context, _ string, _ string, timeout time.Duration) (*shellblock.RunResult, error) {
+				executed = true
+				return &shellblock.RunResult{Number: 1, ScriptPath: "/tmp/script1.sh", OutputPath: "/tmp/script1.txt", ExitCode: 0, Timeout: timeout}, nil
+			}
+
+			var buf bytes.Buffer
+			outfmt.SetOutputWriter(&buf)
+			t.Cleanup(func() { outfmt.SetOutputWriter(os.Stdout) })
+
+			if _, err := handleWebChatShellLoop(context.Background(),
+				WebChatResult{Content: tt.block, URL: "https://chat.deepseek.com/a/chat/s/convSHELL"},
+				WebChatOptions{Role: "dev", ShellTool: true}); err != nil {
+				t.Fatalf("shell loop: %v", err)
+			}
+			if !executed {
+				t.Error("the announcement must not replace the execution")
+			}
+			if got := buf.String(); !strings.Contains(got, tt.want) {
+				t.Errorf("outfmt output misses %q:\n%s", tt.want, got)
+			}
+		})
+	}
+}
+
+// TestHandleWebChatShellLoopBlockedNoAnnouncement pins the refusal path: a
+// blocked script is never executed, so nothing is announced - the user must
+// not see a tool line for a round that does not run.
+func TestHandleWebChatShellLoopBlockedNoAnnouncement(t *testing.T) {
+	origSend, origExec := handleWebChatSend, handleWebChatExecShell
+	t.Cleanup(func() { handleWebChatSend, handleWebChatExecShell = origSend, origExec })
+
+	handleWebChatSend = func(_ context.Context, _ string, _ WebChatOptions) (WebChatResult, error) {
+		return WebChatResult{Content: shellFinalTest, URL: "https://chat.deepseek.com/a/chat/s/convSHELL"}, nil
+	}
+	handleWebChatExecShell = func(_ context.Context, _ string, _ string, _ time.Duration) (*shellblock.RunResult, error) {
+		t.Error("a blocked script must never be executed")
+		return &shellblock.RunResult{}, nil
+	}
+
+	var buf bytes.Buffer
+	outfmt.SetOutputWriter(&buf)
+	t.Cleanup(func() { outfmt.SetOutputWriter(os.Stdout) })
+
+	if _, err := handleWebChatShellLoop(context.Background(),
+		WebChatResult{Content: shellBlockedTest, URL: "https://chat.deepseek.com/a/chat/s/convSHELL"},
+		WebChatOptions{Role: "dev", ShellTool: true}); err != nil {
+		t.Fatalf("shell loop: %v", err)
+	}
+	if got := buf.String(); strings.Contains(got, "\U0001F41A") {
+		t.Errorf("a blocked round must print no announcement:\n%s", got)
 	}
 }
 

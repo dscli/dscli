@@ -143,6 +143,13 @@ func detectScriptMode(script string) scriptMode {
 	return modeBash
 }
 
+// Mode returns the script's execution mode label: "bash", "python", or
+// "attach" (see detectScriptMode). Callers that show a round's tool to a
+// human use it to pick the mode's icon.
+func Mode(script string) string {
+	return detectScriptMode(script).String()
+}
+
 // shebangInterpreter returns the base name of the interpreter named on a
 // `#!` line: the first token, or the second when the first is `env`
 // (`/usr/bin/env python3` -> python3, `/usr/bin/python3.11` -> python3.11).

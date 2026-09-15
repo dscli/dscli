@@ -230,6 +230,28 @@ func TestDetectScriptMode(t *testing.T) {
 	}
 }
 
+// TestMode pins the exported mode labels: the single source every caller
+// uses to name a round's tool and pick its icon.
+func TestMode(t *testing.T) {
+	tests := []struct {
+		name   string
+		script string
+		want   string
+	}{
+		{name: "no marker defaults to bash", script: "echo x\ntrue", want: "bash"},
+		{name: "bash shebang stays bash", script: "#!/bin/bash\necho x", want: "bash"},
+		{name: "env python3 shebang", script: "#!/usr/bin/env python3\nprint(1)", want: "python"},
+		{name: "attach marker", script: "#!attach\nf.txt", want: "attach"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Mode(tt.script); got != tt.want {
+				t.Errorf("Mode(%q) = %q, want %q", tt.script, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestPythonCandidates pins the interpreter lookup chains: a python2 name is
 // never substituted with python3, a versioned python3 name is honored first,
 // and the generic chain prefers python3.

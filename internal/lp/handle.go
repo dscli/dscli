@@ -302,6 +302,21 @@ var handleWebChatMaxShellWarns = 3
 // PROJECT_ROOT/.dscli/tmp and needs no browser).
 var handleWebChatExecShell = shellblock.Run
 
+// scriptIcon returns the icon that names one <shell> block's execution mode
+// on the user-facing channel. It mirrors scriptMode.String()'s default: an
+// unknown label falls back to the bash icon, exactly as the mode label
+// itself falls back to "bash".
+func scriptIcon(kind string) string {
+	switch kind {
+	case "python":
+		return "🐍"
+	case "attach":
+		return "📎"
+	default:
+		return "🐚"
+	}
+}
+
 // webChatTransportOptions returns the options reduced to what the transport
 // accepts: Role/System/SkipPromptInjection/ShellTool are HandleWebChat
 // concerns (prompt rendering, DSML gating, injection gating, the shell
@@ -981,6 +996,18 @@ func handleWebChatShellLoop(ctx context.Context, first WebChatResult, opts WebCh
 			return sendWarnRound(round, "blocked-command refusal",
 				fmt.Sprintf("⛔ `<shell>` 脚本命中破坏性命令拦截（%s），已拒绝并请求改写（第 %d/%d 轮）…\n", detail, round, handleWebChatMaxShellRounds),
 				shellblock.BlockedWarning(detail))
+		}
+		// A block can run for a long time (up to 30 minutes), so the user
+		// should see what is about to run: the icon names the tool (bash /
+		// python / attach), the summary its intent. The mode label comes
+		// from shellblock.Mode, the single source shared with
+		// detectScriptMode, so the icon and the label cannot drift. A
+		// blocked round never reaches this point and announces nothing.
+		kind := shellblock.Mode(block.Script)
+		if block.Summary != "" {
+			outfmt.Printf("%s %s: %s\n", scriptIcon(kind), kind, block.Summary)
+		} else {
+			outfmt.Println(scriptIcon(kind), kind)
 		}
 		runRes, runErr := handleWebChatExecShell(ctx, dsctx.ProjectRoot, block.Script, block.Timeout)
 		if runErr != nil {

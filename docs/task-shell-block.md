@@ -200,3 +200,12 @@ exit code: N
 - **回填头**：`<mode> scriptN.<ext>:`（`python scriptN.py:`、`attach scriptN.lst:`；bash 仍 `bash scriptN.sh:`）。
 - **.gitignore**：`.dscli/.gitignore` 生成内容新增 `tmp`；本仓库以跟踪文件同步。目标仓库若已有旧版 `.dscli/.gitignore`，spool 会以未跟踪目录出现——按需手工补 `tmp`。
 - 测试：runner（spool/执行目录分离断言、四扩展名混排编号、py/lst 回填头与路径、空 dir 下 cwd = 项目根）；lp（python 轮的反馈与审计命名；mock 结果补 `ScriptPath`）。`go test ./...` + `make fmt-check` 全绿。
+
+## 14. 执行公告：模式图标 + summary（outfmt，2026-09-15）
+
+`execRound` 在执行每个未拦截的 `<shell>` 块之前，用 outfmt 打一行执行公告：
+`{图标} {模式}: {summary}`（summary 缺失时只打 `{图标} {模式}`）；图标按模式：
+bash → 🐚、python → 🐍、attach → 📎（模式标签来自 `shellblock.Mode`，单一来源）。
+公告补上了此前只在执行后 stderr 审计行出现的 summary：长脚本执行期间用户也能
+看到正在跑什么。被拦截（Blocked）的轮不公告（脚本未执行）；stderr 审计行与
+反馈文本不变。
