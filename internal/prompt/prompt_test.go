@@ -283,9 +283,36 @@ func TestRoleCanReadMailRowOverride(t *testing.T) {
 	})
 }
 
+// TestDevPromptMailCheckBranch locks the other half of dev.md's conditional
+// workflow numbering: when CheckMail is true (dev's readmail capability comes
+// from a role_configs row) the prompt must render the mail step 0. followed by
+// the AGENTS step labelled 0b. A 0b/0 swap in the template would pass the
+// mail-less assertions alone, so this branch needs its own coverage.
+func TestDevPromptMailCheckBranch(t *testing.T) {
+	ctx := withIsolatedSession(t)
+	sessionID := session.GetCurrentSessionID(ctx)
+	all := "all"
+	if err := roles.UpsertRoleConfig(t.Context(), "dev", sessionID, nil, &all, nil); err != nil {
+		t.Fatalf("UpsertRoleConfig: %v", err)
+	}
+
+	devCtx := context.WithValue(t.Context(), context.CurrentRoleKey, "dev")
+	rendered := GetSystemPrompt(devCtx)
+	for _, want := range []string{
+		"0. **Check for unread mail**",
+		"0b. **Read AGENTS.md (only when it exists)**",
+		"1. **Fully understand the problem**",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Errorf("dev prompt with mail enabled missing %q:\n%s", want, rendered)
+		}
+	}
+}
+
 // assertMailCheckStripped checks the shared invariants for a WebChat-rendered
 // dev prompt (CheckMail=false): the mail-check step is absent and the
-// Workflow heading flows directly into 0b with exactly one blank line.
+// Workflow heading flows directly into the mail-less step 0. with exactly
+// one blank line.
 func assertMailCheckStripped(t *testing.T, label, content string) {
 	t.Helper()
 	if strings.Contains(content, "Check for unread mail") {
