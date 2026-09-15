@@ -3,7 +3,7 @@
 > 状态: 已实现（本仓库直接开发，见 §11）；真机冒烟通过（§7），待 code_dev 真任务验收
 > 依据: `scripts.txt`（64 轮手工实验完整对话，12127 行）+ `codereview.md`（现行工具文档）
 > 日期: 2026-09-13
-> 修订: 开工前核对完成；用户确认 attach 回填、dscli-shell 不构成规范；档案补证（围栏引用 / 拦截 / 分级）落库为 §10；2026-09-14 决策：移除 `--shell` 开关，`dscli webchat` 恒定启用 `<shell>` 块通道（webchat 的工具只保证 shell 一个）；同日续：工具文档注入与角色注入解耦——dev 会话由角色提示词携带，无角色/自定义会话不自动注入，由使用者在消息里自行注入（`--input`）；2026-09-15 续：扩展 python / `#!attach` 两种脚本形态，`Run` 空 dir 默认落 `PROJECT_ROOT/.dscli/tmp`（§12）
+> 修订: 开工前核对完成；用户确认 attach 回填、dscli-shell 不构成规范；档案补证（围栏引用 / 拦截 / 分级）落库为 §10；2026-09-14 决策：移除 `--shell` 开关，`dscli webchat` 恒定启用 `<shell>` 块通道（webchat 的工具只保证 shell 一个）；同日续：工具文档注入与角色注入解耦——dev 会话由角色提示词携带，无角色/自定义会话不自动注入，由使用者在消息里自行注入（`--input`）；2026-09-15 续：扩展 python / `#!attach` 两种脚本形态，`Run` 空 dir 默认落 `PROJECT_ROOT/.dscli/tmp`（§12）；同日终：产物落点与执行目录分离——脚本/回填统一落 `PROJECT_ROOT/.dscli/tmp`（模式扩展名 `scriptN.sh`/`scriptN.py`/`scriptN.lst`），脚本 cwd = 传入 dir（§13）
 
 ## 1. 目标与背景
 
@@ -94,8 +94,8 @@ exit status 是信号而不是装饰、把下一步决策所需的信息一次�
 
 ## 5. 执行与回填
 
-- 落点：项目根 `scriptN.sh` / `scriptN.txt`；N = 现存最大编号 + 1（当前从 65 起）。codedev 的 .gitignore 已覆盖 `script*.sh` / `script*.txt`；其他目标仓库会以未跟踪文件出现——首版与实验一致，不自动改目标仓库配置。
-- 执行：提取脚本原样写 `scriptN.sh`；`bash scriptN.sh`，cwd = 项目根；超时（默认 120s，上限 1800s）到点杀进程组。
+- 落点：项目根 `scriptN.sh` / `scriptN.txt`；N = 现存最大编号 + 1（当前从 65 起）。codedev 的 .gitignore 已覆盖 `script*.sh` / `script*.txt`；其他目标仓库会以未跟踪文件出现——首版与实验一致，不自动改目标仓库配置。**2026-09-15 终修订（§13）：落点移至 `PROJECT_ROOT/.dscli/tmp/`，脚本按模式命名 `scriptN.sh` / `.py` / `.lst`。**
+- 执行：提取脚本原样写 `scriptN.sh`；`bash scriptN.sh`，cwd = 项目根；超时（默认 120s，上限 1800s）到点杀进程组。**（§13：cwd 仍为传入 dir，空 = 项目根；落盘位置与 cwd 分离。）**
 - 执行前拦截（安全边界，不许降级）：整段脚本先过 `dsml.BlockedCmdRe`（自 `dsmlBlockedCmdRe` 导出，名单一字不动）；命中 → 本轮不写文件、不执行，回填拦截拒收警告（要求改写重发；计入连续告警）。依据 scripts.txt L2965：这一层不能省，且要比 DSML 更严——实现取 fail-closed（`shellblock.Run` 内置同一拦截作兜底）。
 - 回填 `scriptN.txt`（dscli-shell 是验证期 312 字节临时脚本，不构成规范；保留 脚本段 + output 段 + exit code 三段结构。定稿微调：头部写真实命令 `bash scriptN.sh:`、尾部补 `exit code: N`）：
 
@@ -178,11 +178,24 @@ exit code: N
   - 目录 / 特殊文件 → `<path> not a regular file`（防护而非协议：目录混入附件批会让整批上传失败，单个坏路径不得毒化其他文件）；
   - 超出 `maxAttachFiles`（49：站点单批 50 个、scriptN.txt 占 1 席）→ `<path> not attached (attachment limit N reached)`（同属防护）。
   - 状态输出与 merged output 一样受 `maxOutputBytes` 截断（`Truncated` 标记、回填带截断注记），病态长列表不会撑爆 scriptN.txt / 上传批。
-  - `scriptN.sh` / `scriptN.txt` 照常落盘（审计一致性）；exit code 0；`<timeout>` 不参与（无进程）。
+  - `scriptN.lst` / `scriptN.txt` 照常落盘（§13 后落 spool 目录；审计一致性）；exit code 0；`<timeout>` 不参与（无进程）。
   - 破坏性命令拦截对 attach 豁免（`Blocked` 按模式放行）：路径不执行任何东西，shell 文本模式只会误拒（如 `reboot-notes.md`），每次误拒还烧掉一个连续告警额度。
-- **回填头**：`bash scriptN.sh:` → `<mode> scriptN.sh:`（bash / python / attach）。
+- **回填头**：`bash scriptN.sh:` → `<mode> scriptN.<ext>:`（bash → `.sh` / python → `.py` / attach → `.lst`；§13 修订）。
 - **回传顺序**（`handleWebChatShellLoop`）：附件列表 = `scriptN.txt` 在前，`#!attach` 文件按列出顺序随后；stderr 审计行在附件非空时追加 `；附件 N 个（文件名，最多列 5 个）`——人可见"什么文件离开了本机"。
 - **缺 python 不杀会话**：`ErrNoPythonInterpreter` 哨兵；循环把缺失解释器转成警告轮（`NoPythonWarning`，提示改写为 bash），其余 runner 错误仍致命；`MaxAttachFiles` 导出，lp 侧有跨包不变量测试（`MaxAttachFiles+1 <= WebUploadMaxFiles`）。
-- **dir 默认值**：`Run` 的 `dir == ""` 不再默认 `.`，改为 `PROJECT_ROOT/.dscli/tmp/`（按需 `MkdirAll`）；webchat 循环仍显式传项目根，脚本 cwd 语义不变。
+- **dir 默认值（§13 已修订）**：`Run` 的 `dir == ""` 曾默认 `PROJECT_ROOT/.dscli/tmp/`（兼作落点与 cwd）；§13 起空 dir = `PROJECT_ROOT`（仅 cwd），落点固定 spool 目录；webchat 循环仍显式传项目根。
 - **工具文档**（`BuildToolDoc`）：usage 行改为 bash / python / attach 三形态，新增 "Script forms" 段与 python、attach 两个示例。
 - 测试：runner（模式判定表含版本后缀 / `micropython` / 退化版本名 / 标记行路径 / 解释器候选链 / python 实跑 / attach 存在、缺失、目录、绝对路径、数量上限与混排状态 / 默认目录 / 回填头）；lp（附件顺序 + stderr 名单 + 缺 python 警告轮 + 批上限不变量）。`go test ./...` + `make fmt-check` 全绿。
+
+## 13. 产物落点与执行目录分离、按模式扩展名（2026-09-15 终）
+
+用户澄清：**脚本与回填的保存目录** 与 **脚本执行的 working directory** 是两个概念。§12 把两者都绑在 `dir` 上（webchat 通道 = 项目根），会让 `scriptN.sh` / `scriptN.txt` 落在项目根、污染目标仓库工作区。
+
+- **落点（保存目录，与传入 `dir` 无关）**：一律 `PROJECT_ROOT/.dscli/tmp/`（按需 `MkdirAll 0700`）。文件命名按脚本模式取扩展名：
+  - bash → `scriptN.sh`；python → `scriptN.py`；attach（路径清单）→ `scriptN.lst`；回填一律 `scriptN.txt`。
+  - 编号 N = spool 目录内现存最大 `scriptN`（四种扩展名都计入）+ 1。
+- **执行目录**：脚本 cwd = 传入 `dir`（webchat 通道 = 项目根，语义不变）；`dir == ""` = `PROJECT_ROOT`。
+- **消费侧**（`handleWebChatShellLoop`）：stderr 审计行与反馈文本改用**真实文件名**（`▶ scriptN.py: …`、`output of scriptN.py (attached as scriptN.txt):`），从 `RunResult.ScriptPath` / `OutputPath` 取 base name；bash 轮的既有文案不变（同 code_dev 会话）。
+- **回填头**：`<mode> scriptN.<ext>:`（`python scriptN.py:`、`attach scriptN.lst:`；bash 仍 `bash scriptN.sh:`）。
+- **.gitignore**：`.dscli/.gitignore` 生成内容新增 `tmp`；本仓库以跟踪文件同步。目标仓库若已有旧版 `.dscli/.gitignore`，spool 会以未跟踪目录出现——按需手工补 `tmp`。
+- 测试：runner（spool/执行目录分离断言、四扩展名混排编号、py/lst 回填头与路径、空 dir 下 cwd = 项目根）；lp（python 轮的反馈与审计命名；mock 结果补 `ScriptPath`）。`go test ./...` + `make fmt-check` 全绿。

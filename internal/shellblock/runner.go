@@ -36,16 +36,18 @@ const MaxAttachFiles = 49
 // friends) could hold it - the round must still return.
 const drainGrace = 2 * time.Second
 
-// scriptNameRE matches the generated script files; the next number is the
-// highest existing one plus one (the manual experiment left script1..64).
-var scriptNameRE = regexp.MustCompile(`^script([0-9]+)[.]sh$`)
+// scriptNameRE matches the generated artifacts: the scripts (scriptN.sh /
+// scriptN.py / scriptN.lst, by mode) and their scriptN.txt backfill. The
+// next number is the highest existing one plus one (the manual experiment
+// left script1..64 under the old project-root landing spot).
+var scriptNameRE = regexp.MustCompile(`^script([0-9]+)[.](sh|py|lst|txt)$`)
 
 // RunResult describes one executed block and the files it produced.
 type RunResult struct {
-	// Number is the N of scriptN.sh / scriptN.txt.
+	// Number is the N of scriptN.* (the script, by mode) / scriptN.txt.
 	Number int
-	// ScriptPath and OutputPath are the files written under the project
-	// root.
+	// ScriptPath and OutputPath are the files written under the project's
+	// spool directory (PROJECT_ROOT/.dscli/tmp).
 	ScriptPath string
 	OutputPath string
 
@@ -162,12 +164,35 @@ func shebangInterpreter(line string) string {
 	return name
 }
 
-// defaultDir is where a block with no explicit dir lands: the project's
-// scratch directory under .dscli/tmp (created on demand). The old default
-// was ".", which made the landing spot depend on wherever dscli happened to
-// run.
-func defaultDir() string {
+// spoolDir is where every round's artifacts land: PROJECT_ROOT/.dscli/tmp,
+// created on demand. It is deliberately separate from the script's working
+// directory (Run's dir): the script file and the backfill are dscli's audit
+// trail, not project content, so they must not litter the project root (or
+// wherever dscli happened to run).
+func spoolDir() string {
 	return filepath.Join(dsctx.ProjectRoot, ".dscli", "tmp")
+}
+
+// scriptExt returns the extension that names the script file's form, so the
+// file on disk reads like what it is: `.sh` for bash, `.py` for python, and
+// `.lst` for an `#!attach` path list.
+func scriptExt(mode scriptMode) string {
+	switch mode {
+	case modePython:
+		return ".py"
+	case modeAttach:
+		return ".lst"
+	default:
+		return ".sh"
+	}
+}
+
+// scriptFileName returns the round's script file name: scriptN.sh (bash),
+// scriptN.py (python), or scriptN.lst (attach). Run names the file with it
+// and FormatBackfill heads the backfill with it, so the label and the file
+// on disk cannot drift.
+func scriptFileName(n int, mode scriptMode) string {
+	return fmt.Sprintf("script%d%s", n, scriptExt(mode))
 }
 
 // ErrNoPythonInterpreter reports a python-mode block on a host without a
@@ -210,26 +235,30 @@ func pythonCandidates(token string) []string {
 }
 
 // Run executes one extracted block: the script is written verbatim to the
-// next scriptN.sh under dir (mode 0600).
+// next scriptN file under the project's spool directory, PROJECT_ROOT/
+// .dscli/tmp (created on demand, mode 0600), with the extension its mode
+// selects (scriptN.sh for bash, scriptN.py for python, scriptN.lst for an
+// `#!attach` path list).
 //
 // The first script line selects the mode (detectScriptMode): bash (the
 // default, also `#!/bin/bash`), python (a `#!` line naming python - the
 // interpreter token, with an optional version suffix), or an `#!attach`
 // file list. bash and python scripts run with
 // their interpreter (working directory dir) in their own process group, and
-// the merged stdout+stderr is written to scriptN.txt (mode 0600) with the
-// backfill wrapper; a timeout kills the whole process group, so
-// grandchildren (compilers, make's children) cannot outlive the round. An
-// `#!attach` block runs nothing: every listed path that exists as a regular
-// file is resolved against dir and appended to RunResult.Attachments, and
-// one status line per path lands in the output.
+// the merged stdout+stderr is written to scriptN.txt (mode 0600, same spool
+// directory) with the backfill wrapper; a timeout kills the whole process
+// group, so grandchildren (compilers, make's children) cannot outlive the
+// round. An `#!attach` block runs nothing: every listed path that exists as
+// a regular file is resolved against dir and appended to
+// RunResult.Attachments, and one status line per path lands in the output.
 //
 // Run refuses a script that matches the shared destructive-command
 // interception (Blocked) - a fail-closed backstop behind the loop's
 // model-facing refusal.
 //
-// dir is the working directory (the project root in the WebChat channel);
-// "" means PROJECT_ROOT/.dscli/tmp, created on demand.
+// dir is the script's working directory (the project root in the WebChat
+// channel); "" means PROJECT_ROOT. The artifacts never land there - they
+// always go to the spool directory.
 func Run(ctx context.Context, dir, script string, timeout time.Duration) (*RunResult, error) {
 	span, ctx := clog.StartSpanFromContext(ctx, "shellblock.Run")
 	defer span.Finish()
@@ -242,11 +271,10 @@ func Run(ctx context.Context, dir, script string, timeout time.Duration) (*RunRe
 	if detail, blocked := Blocked(script); blocked {
 		return nil, fmt.Errorf("shellblock: script blocked (destructive command %q)", detail)
 	}
+	// dir is the script's working directory, never the artifact landing
+	// spot: the files go to the spool directory below.
 	if dir == "" {
-		dir = defaultDir()
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			return nil, fmt.Errorf("shellblock: create default dir: %w", err)
-		}
+		dir = dsctx.ProjectRoot
 	}
 	mode := detectScriptMode(script)
 	interp := "bash"
@@ -257,7 +285,11 @@ func Run(ctx context.Context, dir, script string, timeout time.Duration) (*RunRe
 			return nil, err
 		}
 	}
-	n, err := nextScriptNumber(dir)
+	spool := spoolDir()
+	if err := os.MkdirAll(spool, 0o700); err != nil {
+		return nil, fmt.Errorf("shellblock: create spool dir %s: %w", spool, err)
+	}
+	n, err := nextScriptNumber(spool)
 	if err != nil {
 		return nil, err
 	}
@@ -265,7 +297,7 @@ func Run(ctx context.Context, dir, script string, timeout time.Duration) (*RunRe
 	if !strings.HasSuffix(scriptText, "\n") {
 		scriptText += "\n"
 	}
-	scriptPath := filepath.Join(dir, fmt.Sprintf("script%d.sh", n))
+	scriptPath := filepath.Join(spool, scriptFileName(n, mode))
 	if err := os.WriteFile(scriptPath, []byte(scriptText), 0o600); err != nil {
 		return nil, fmt.Errorf("shellblock: write script: %w", err)
 	}
@@ -281,7 +313,7 @@ func Run(ctx context.Context, dir, script string, timeout time.Duration) (*RunRe
 	res := &RunResult{
 		Number:      n,
 		ScriptPath:  scriptPath,
-		OutputPath:  filepath.Join(dir, fmt.Sprintf("script%d.txt", n)),
+		OutputPath:  filepath.Join(spool, fmt.Sprintf("script%d.txt", n)),
 		Attachments: execRes.attachments,
 		Output:      execRes.output,
 		ExitCode:    execRes.exitCode,
@@ -538,10 +570,12 @@ func clampTimeout(d time.Duration) time.Duration {
 	return d
 }
 
-// nextScriptNumber returns the highest existing scriptN.sh number plus one
-// (1 when none exist). The shell loop runs one block per round, so a single
-// writer is the working assumption; concurrent Run calls in one directory
-// could pick the same N.
+// nextScriptNumber returns the highest existing scriptN artifact number
+// plus one (1 when none exist); the scripts (.sh / .py / .lst) and the
+// scriptN.txt backfills all count, so a number is never reused. The shell
+// loop runs one block per round, so a single writer is the working
+// assumption; concurrent Run calls in one spool directory could pick the
+// same N.
 func nextScriptNumber(dir string) (int, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -564,13 +598,16 @@ func nextScriptNumber(dir string) (int, error) {
 }
 
 // FormatBackfill renders the scriptN.txt wrapper sent back to the model: the
-// mode-prefixed command line, the script verbatim in a fenced block, the
-// merged output, and the exit status. The shape follows the manual-
+// mode-prefixed command line (`bash scriptN.sh:` / `python scriptN.py:` /
+// `attach scriptN.lst:`), the script verbatim in a fenced block, the merged
+// output, and the exit status. The shape follows the manual-
 // verification backfill (the dscli-shell harness), with the mode and an
-// explicit exit code added.
+// explicit exit code added; the file name carries the mode's extension so
+// it matches the file Run wrote.
 func FormatBackfill(n int, scriptText string, res *RunResult) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s script%d.sh:\n```xml\n", detectScriptMode(scriptText), n)
+	mode := detectScriptMode(scriptText)
+	fmt.Fprintf(&b, "%s %s:\n```xml\n", mode, scriptFileName(n, mode))
 	b.WriteString(scriptText)
 	b.WriteString("```\noutput:\n")
 	out := res.Output

@@ -14,7 +14,25 @@ import (
 	dsctx "github.com/dscli/dscli/internal/context"
 )
 
+// isolateProjectRoot pins dsctx.ProjectRoot to a fresh test-owned directory
+// (restored on cleanup) and returns it: the round artifacts then land under
+// <root>/.dscli/tmp instead of this repository's spool directory.
+func isolateProjectRoot(t *testing.T) string {
+	t.Helper()
+	orig := dsctx.ProjectRoot
+	root := t.TempDir()
+	dsctx.ProjectRoot = root
+	t.Cleanup(func() { dsctx.ProjectRoot = orig })
+	return root
+}
+
+// spoolDirIn returns the artifact directory Run uses under a test root.
+func spoolDirIn(root string) string {
+	return filepath.Join(root, ".dscli", "tmp")
+}
+
 func TestRunWritesAndExecutes(t *testing.T) {
+	root := isolateProjectRoot(t)
 	dir := t.TempDir()
 	res, err := Run(t.Context(), dir, "#!/bin/bash\necho hello\nexit 3", 30*time.Second)
 	if err != nil {
@@ -28,6 +46,17 @@ func TestRunWritesAndExecutes(t *testing.T) {
 	}
 	if !strings.Contains(res.Output, "hello") {
 		t.Errorf("output = %q, want hello", res.Output)
+	}
+	// The artifacts land in the project's spool directory, never in the
+	// script's working directory.
+	if want := filepath.Join(spoolDirIn(root), "script1.sh"); res.ScriptPath != want {
+		t.Errorf("script path = %q, want %q", res.ScriptPath, want)
+	}
+	if want := filepath.Join(spoolDirIn(root), "script1.txt"); res.OutputPath != want {
+		t.Errorf("output path = %q, want %q", res.OutputPath, want)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "script1.sh")); !os.IsNotExist(err) {
+		t.Errorf("script file must not land in the working dir: %v", err)
 	}
 	script, err := os.ReadFile(res.ScriptPath)
 	if err != nil {
@@ -55,22 +84,32 @@ func TestRunWritesAndExecutes(t *testing.T) {
 }
 
 func TestRunNumbering(t *testing.T) {
-	dir := t.TempDir()
-	for _, name := range []string{"script3.sh", "script3.txt", "script7.sh", "notes.txt"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
+	root := isolateProjectRoot(t)
+	spool := spoolDirIn(root)
+	if err := os.MkdirAll(spool, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// The scripts' mode extensions all count, as do the .txt backfills; a
+	// lookalike name (.bak, notes) does not.
+	for _, name := range []string{
+		"script3.sh", "script3.txt", "script7.sh", "script4.py", "script9.lst",
+		"script11.sh.bak", "notes.txt",
+	} {
+		if err := os.WriteFile(filepath.Join(spool, name), []byte("x"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	res, err := Run(t.Context(), dir, "echo x", 30*time.Second)
+	res, err := Run(t.Context(), t.TempDir(), "echo x", 30*time.Second)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if res.Number != 8 {
-		t.Errorf("number = %d, want 8 (max existing 7 + 1)", res.Number)
+	if res.Number != 10 {
+		t.Errorf("number = %d, want 10 (max existing 9 + 1)", res.Number)
 	}
 }
 
 func TestRunMergedOutput(t *testing.T) {
+	isolateProjectRoot(t)
 	dir := t.TempDir()
 	res, err := Run(t.Context(), dir, "echo out; echo err 1>&2; exit 0", 30*time.Second)
 	if err != nil {
@@ -82,6 +121,7 @@ func TestRunMergedOutput(t *testing.T) {
 }
 
 func TestRunTimeout(t *testing.T) {
+	isolateProjectRoot(t)
 	dir := t.TempDir()
 	start := time.Now()
 	res, err := Run(t.Context(), dir, "sleep 10", 250*time.Millisecond)
@@ -109,6 +149,7 @@ func TestRunTimeout(t *testing.T) {
 // TestRunKillsProcessGroup: a script that parks background children must be
 // killed as a group, not waited on - the round returns promptly.
 func TestRunKillsProcessGroup(t *testing.T) {
+	isolateProjectRoot(t)
 	dir := t.TempDir()
 	start := time.Now()
 	res, err := Run(t.Context(), dir, "sleep 30 & sleep 30 & wait", 300*time.Millisecond)
@@ -124,6 +165,7 @@ func TestRunKillsProcessGroup(t *testing.T) {
 }
 
 func TestRunOutputTruncation(t *testing.T) {
+	isolateProjectRoot(t)
 	dir := t.TempDir()
 	res, err := Run(t.Context(), dir, "head -c 300000 /dev/zero | tr '\\0' 'a'", 30*time.Second)
 	if err != nil {
@@ -145,6 +187,7 @@ func TestRunOutputTruncation(t *testing.T) {
 }
 
 func TestRunEmptyScript(t *testing.T) {
+	isolateProjectRoot(t)
 	if _, err := Run(t.Context(), t.TempDir(), "   \n", 30*time.Second); err == nil {
 		t.Error("Run with an empty script must fail")
 	}
@@ -223,10 +266,14 @@ func TestRunPythonScript(t *testing.T) {
 	if _, err := pythonInterpreter(script); err != nil {
 		t.Skipf("no python interpreter: %v", err)
 	}
+	root := isolateProjectRoot(t)
 	dir := t.TempDir()
 	res, err := Run(t.Context(), dir, script, 30*time.Second)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
+	}
+	if want := filepath.Join(spoolDirIn(root), "script1.py"); res.ScriptPath != want {
+		t.Errorf("script path = %q, want %q", res.ScriptPath, want)
 	}
 	if res.ExitCode != 2 {
 		t.Errorf("exit code = %d, want 2", res.ExitCode)
@@ -241,7 +288,7 @@ func TestRunPythonScript(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read backfill: %v", err)
 	}
-	for _, want := range []string{"python script1.sh:", "#!/usr/bin/env python3", "exit code: 2"} {
+	for _, want := range []string{"python script1.py:", "#!/usr/bin/env python3", "exit code: 2"} {
 		if !strings.Contains(string(backfill), want) {
 			t.Errorf("backfill misses %q:\n%s", want, backfill)
 		}
@@ -250,8 +297,9 @@ func TestRunPythonScript(t *testing.T) {
 
 // TestRunAttachBlock pins the attach semantics: one status line per path,
 // attachments resolved against dir in listed order, exit code 0, and the
-// usual scriptN.sh / scriptN.txt pair for audit consistency.
+// usual scriptN.lst / scriptN.txt pair for audit consistency.
 func TestRunAttachBlock(t *testing.T) {
+	root := isolateProjectRoot(t)
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
@@ -283,6 +331,9 @@ func TestRunAttachBlock(t *testing.T) {
 			t.Errorf("attachment[%d] = %q, want %q", i, res.Attachments[i], want)
 		}
 	}
+	if want := filepath.Join(spoolDirIn(root), "script1.lst"); res.ScriptPath != want {
+		t.Errorf("script path = %q, want %q (an attach list is a .lst)", res.ScriptPath, want)
+	}
 	scriptFile, err := os.ReadFile(res.ScriptPath)
 	if err != nil {
 		t.Fatalf("read script file: %v", err)
@@ -294,7 +345,7 @@ func TestRunAttachBlock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read backfill: %v", err)
 	}
-	for _, want := range []string{"attach script1.sh:", "#!attach", "missing.txt not exist"} {
+	for _, want := range []string{"attach script1.lst:", "#!attach", "missing.txt not exist"} {
 		if !strings.Contains(string(backfill), want) {
 			t.Errorf("backfill misses %q:\n%s", want, backfill)
 		}
@@ -304,6 +355,7 @@ func TestRunAttachBlock(t *testing.T) {
 // TestRunAttachAbsolutePath: an absolute path bypasses dir resolution and is
 // attached as-is.
 func TestRunAttachAbsolutePath(t *testing.T) {
+	isolateProjectRoot(t)
 	abs := filepath.Join(t.TempDir(), "x.png")
 	if err := os.WriteFile(abs, []byte("png"), 0o600); err != nil {
 		t.Fatal(err)
@@ -325,6 +377,7 @@ func TestRunAttachAbsolutePath(t *testing.T) {
 // (`#!attach a.txt`) counts as the first entry; it must not fall back to
 // bash and execute the list.
 func TestRunAttachMarkerLinePath(t *testing.T) {
+	isolateProjectRoot(t)
 	dir := t.TempDir()
 	for _, name := range []string{"a.txt", "b.txt"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
@@ -349,6 +402,7 @@ func TestRunAttachMarkerLinePath(t *testing.T) {
 // ATTACHED count toward the cap: a missing path and a directory past the cap
 // still report their own status.
 func TestRunAttachLimit(t *testing.T) {
+	isolateProjectRoot(t)
 	dir := t.TempDir()
 	var script strings.Builder
 	script.WriteString("#!attach\n")
@@ -388,36 +442,48 @@ func TestRunAttachLimit(t *testing.T) {
 	}
 }
 
-// TestRunDefaultDir: an empty dir lands under PROJECT_ROOT/.dscli/tmp
-// (created on demand) instead of ".".
-func TestRunDefaultDir(t *testing.T) {
-	orig := dsctx.ProjectRoot
-	dsctx.ProjectRoot = t.TempDir()
-	t.Cleanup(func() { dsctx.ProjectRoot = orig })
+// TestRunDefaultDirs: an empty dir runs the script with the project root as
+// its working directory, while the artifacts land under
+// PROJECT_ROOT/.dscli/tmp (created on demand) - never in the working
+// directory.
+func TestRunDefaultDirs(t *testing.T) {
+	root := isolateProjectRoot(t)
 
-	res, err := Run(t.Context(), "", "#!/bin/bash\necho hi", 30*time.Second)
+	res, err := Run(t.Context(), "", "#!/bin/bash\ntouch exec_probe.txt\necho hi", 30*time.Second)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	wantScript := filepath.Join(dsctx.ProjectRoot, ".dscli", "tmp", "script1.sh")
+	wantScript := filepath.Join(spoolDirIn(root), "script1.sh")
 	if res.ScriptPath != wantScript {
 		t.Errorf("script path = %q, want %q", res.ScriptPath, wantScript)
 	}
 	if _, err := os.Stat(wantScript); err != nil {
 		t.Errorf("script file not created: %v", err)
 	}
+	// The script watched the project root: its relative write landed there,
+	// not in the artifact directory.
+	if _, err := os.Stat(filepath.Join(root, "exec_probe.txt")); err != nil {
+		t.Errorf("script cwd must be the project root: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(spoolDirIn(root), "exec_probe.txt")); !os.IsNotExist(err) {
+		t.Errorf("the working-dir probe must not land in the spool: %v", err)
+	}
 	if !strings.Contains(res.Output, "hi") {
 		t.Errorf("output = %q, want the echo", res.Output)
 	}
 }
 
-// TestFormatBackfillModeLabels: the header carries the detected mode.
+// TestFormatBackfillModeLabels: the header carries the detected mode and the
+// mode's file extension (.sh / .py / .lst).
 func TestFormatBackfillModeLabels(t *testing.T) {
-	if got := FormatBackfill(2, "#!/usr/bin/python\nprint(1)\n", &RunResult{ExitCode: 0}); !strings.Contains(got, "python script2.sh:") {
+	if got := FormatBackfill(2, "#!/usr/bin/python\nprint(1)\n", &RunResult{ExitCode: 0}); !strings.Contains(got, "python script2.py:") {
 		t.Errorf("python backfill misses the mode header:\n%s", got)
 	}
-	if got := FormatBackfill(3, "#!attach\nfoo.txt\n", &RunResult{ExitCode: 0}); !strings.Contains(got, "attach script3.sh:") {
+	if got := FormatBackfill(3, "#!attach\nfoo.txt\n", &RunResult{ExitCode: 0}); !strings.Contains(got, "attach script3.lst:") {
 		t.Errorf("attach backfill misses the mode header:\n%s", got)
+	}
+	if got := FormatBackfill(4, "echo x\n", &RunResult{ExitCode: 0}); !strings.Contains(got, "bash script4.sh:") {
+		t.Errorf("bash backfill misses the mode header:\n%s", got)
 	}
 }
 
@@ -449,6 +515,7 @@ func TestClampTimeout(t *testing.T) {
 // that leaves a background child holding the stdout/stderr pipe must still
 // return at the timeout, not at the child's exit.
 func TestRunBackgroundChildDoesNotOutliveTimeout(t *testing.T) {
+	isolateProjectRoot(t)
 	dir := t.TempDir()
 	start := time.Now()
 	res, err := Run(t.Context(), dir, "sleep 30 &", 300*time.Millisecond)
@@ -466,6 +533,7 @@ func TestRunBackgroundChildDoesNotOutliveTimeout(t *testing.T) {
 // TestRunRefusesBlockedScript locks the fail-closed backstop: the runner
 // itself never executes a destructive match.
 func TestRunRefusesBlockedScript(t *testing.T) {
+	isolateProjectRoot(t)
 	dir := t.TempDir()
 	_, err := Run(t.Context(), dir, "sudo rm -rf /", 30*time.Second)
 	if err == nil || !strings.Contains(err.Error(), "blocked") {
@@ -476,6 +544,7 @@ func TestRunRefusesBlockedScript(t *testing.T) {
 // TestRunContextCancellation: a cancelled context kills the group and
 // returns promptly with context.Canceled.
 func TestRunContextCancellation(t *testing.T) {
+	isolateProjectRoot(t)
 	dir := t.TempDir()
 	ctx, cancel := context.WithCancel(t.Context())
 	go func() {
@@ -496,6 +565,7 @@ func TestRunContextCancellation(t *testing.T) {
 // (setsid) holds the pipe, but the bounded post-kill drain still returns
 // (and closes the read end so nothing leaks across rounds).
 func TestRunEscapedWriterDoesNotStall(t *testing.T) {
+	isolateProjectRoot(t)
 	if _, err := exec.LookPath("setsid"); err != nil {
 		t.Skip("setsid not available")
 	}

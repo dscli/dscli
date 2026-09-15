@@ -298,8 +298,8 @@ var handleWebChatMaxShellRounds = 1024
 var handleWebChatMaxShellWarns = 3
 
 // handleWebChatExecShell is the shell executor hook; tests replace it with
-// a mock (the real runner writes scriptN.sh/scriptN.txt and needs no
-// browser).
+// a mock (the real runner writes the round's scriptN.* / scriptN.txt under
+// PROJECT_ROOT/.dscli/tmp and needs no browser).
 var handleWebChatExecShell = shellblock.Run
 
 // webChatTransportOptions returns the options reduced to what the transport
@@ -885,12 +885,13 @@ func formatAttachNote(attachments []string) string {
 // handleWebChatShellLoop continues a WebChat conversation whose replies use
 // the <shell> block channel (opts.ShellTool): every round is judged
 // (shellblock.Judge) as an executable block, a format warning, or the final
-// report. An executable block is run locally - shellblock.Run writes
-// scriptN.sh / scriptN.txt under the project root and executes the bash or
-// python script (or scans the file list of an `#!attach` block) - and the
-// round's artifacts are fed back into the SAME conversation as attachments:
-// scriptN.txt first, then every `#!attach` file in the listed order (see
-// docs/task-shell-block.md §5 and §12).
+// report. An executable block is run locally - shellblock.Run writes the
+// round's script (scriptN.sh / scriptN.py / scriptN.lst, by mode) and
+// scriptN.txt under the project's .dscli/tmp, executes it with the project
+// root as its working directory (or scans the file list of an `#!attach`
+// block) - and the round's artifacts are fed back into the SAME conversation
+// as attachments: scriptN.txt first, then every `#!attach` file in the
+// listed order (see docs/task-shell-block.md §5, §12 and §13).
 //
 // The skeleton mirrors handleWebChatToolLoop: every round (reasoning +
 // content) is printed, the local-execution warning is printed here (this is
@@ -998,9 +999,13 @@ func handleWebChatShellLoop(ctx context.Context, first WebChatResult, opts WebCh
 			status = fmt.Sprintf("timeout after %s", runRes.Timeout)
 		}
 		attachNote := formatAttachNote(runRes.Attachments)
-		fmt.Fprintf(os.Stderr, "▶ script%d.sh: %s（%s, %s；输出 script%d.txt%s）\n",
-			runRes.Number, block.Summary, status, runRes.Duration.Round(time.Millisecond), runRes.Number, attachNote)
-		feedback := fmt.Sprintf("output of script%d.sh (attached as script%d.txt):", runRes.Number, runRes.Number)
+		// The round's actual files name it in the audit line and the
+		// feedback: scriptN.sh / scriptN.py / scriptN.lst, per the mode.
+		scriptName := filepath.Base(runRes.ScriptPath)
+		outputName := filepath.Base(runRes.OutputPath)
+		fmt.Fprintf(os.Stderr, "▶ %s: %s（%s, %s；输出 %s%s）\n",
+			scriptName, block.Summary, status, runRes.Duration.Round(time.Millisecond), outputName, attachNote)
+		feedback := fmt.Sprintf("output of %s (attached as %s):", scriptName, outputName)
 		if verdict.ResidualMarkers {
 			// The block ran fine, but the reply carried DSML marker residue
 			// outside it (the site badges/mangles such markup). Ride the reminder

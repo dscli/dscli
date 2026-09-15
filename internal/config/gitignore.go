@@ -9,10 +9,11 @@ import (
 )
 
 // gitignoreContent 是 .dscli/.gitignore 的默认内容。
-// 仅忽略生成产物（运行时锁文件、技能缓存索引），
+// 仅忽略生成产物（运行时锁文件、临时产物、技能缓存索引），
 // 保留用户创建的内容（SKILL.md、prompt、dscli.md 等）。
 const gitignoreContent = `# dscli 运行时与缓存文件（自动生成，勿手动编辑）
 locks
+tmp
 skills/skills.yaml
 `
 

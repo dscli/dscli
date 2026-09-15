@@ -1,4 +1,5 @@
 # dscli 运行时与缓存文件（自动生成，勿手动编辑）
 locks
+tmp
 skills/skills.yaml
 skills/issue-pr-response/

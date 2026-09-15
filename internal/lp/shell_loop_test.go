@@ -55,7 +55,7 @@ func TestHandleWebChatShellLoopExecutesAndFeedsBack(t *testing.T) {
 	var gotTimeout time.Duration
 	handleWebChatExecShell = func(_ context.Context, _ string, script string, timeout time.Duration) (*shellblock.RunResult, error) {
 		gotScript, gotTimeout = script, timeout
-		return &shellblock.RunResult{Number: 65, OutputPath: "/tmp/script65.txt", ExitCode: 0, Timeout: timeout}, nil
+		return &shellblock.RunResult{Number: 65, ScriptPath: "/tmp/script65.sh", OutputPath: "/tmp/script65.txt", ExitCode: 0, Timeout: timeout}, nil
 	}
 
 	res, err := handleWebChatShellLoop(context.Background(),
@@ -112,6 +112,7 @@ func TestHandleWebChatShellLoopAttachesBlockFiles(t *testing.T) {
 	handleWebChatExecShell = func(_ context.Context, _ string, _ string, timeout time.Duration) (*shellblock.RunResult, error) {
 		return &shellblock.RunResult{
 			Number:      5,
+			ScriptPath:  "/tmp/script5.lst",
 			OutputPath:  "/tmp/script5.txt",
 			Attachments: []string{"/tmp/a.png", "/tmp/b.pdf"},
 			ExitCode:    0,
@@ -143,7 +144,7 @@ func TestHandleWebChatShellLoopAttachesBlockFiles(t *testing.T) {
 	if !strings.Contains(stderr, "附件 2 个（a.png, b.pdf）") {
 		t.Errorf("stderr misses the attachment names:\n%s", stderr)
 	}
-	if !strings.HasPrefix(messages[0], "output of script5.sh (attached as script5.txt):") {
+	if !strings.HasPrefix(messages[0], "output of script5.lst (attached as script5.txt):") {
 		t.Errorf("feedback = %q, want the script prefix preserved", messages[0])
 	}
 }
@@ -217,7 +218,7 @@ func TestHandleWebChatShellLoopWarnsThenExecutes(t *testing.T) {
 	executed := false
 	handleWebChatExecShell = func(_ context.Context, _ string, _ string, _ time.Duration) (*shellblock.RunResult, error) {
 		executed = true
-		return &shellblock.RunResult{Number: 1, OutputPath: "/tmp/script1.txt", ExitCode: 0}, nil
+		return &shellblock.RunResult{Number: 1, ScriptPath: "/tmp/script1.sh", OutputPath: "/tmp/script1.txt", ExitCode: 0}, nil
 	}
 
 	res, err := handleWebChatShellLoop(context.Background(),
@@ -346,7 +347,7 @@ func TestHandleWebChatShellToolRoutesBlockIntoLoop(t *testing.T) {
 	executed := false
 	handleWebChatExecShell = func(_ context.Context, _ string, _ string, _ time.Duration) (*shellblock.RunResult, error) {
 		executed = true
-		return &shellblock.RunResult{Number: 1, OutputPath: "/tmp/script1.txt", ExitCode: 0}, nil
+		return &shellblock.RunResult{Number: 1, ScriptPath: "/tmp/script1.sh", OutputPath: "/tmp/script1.txt", ExitCode: 0}, nil
 	}
 
 	res, err := HandleWebChat(context.Background(), "do it", WebChatOptions{Role: "dev", ShellTool: true, SkipPromptInjection: true})
@@ -391,7 +392,7 @@ func TestHandleWebChatShellLoopContinueWarningVariant(t *testing.T) {
 		}
 	}
 	handleWebChatExecShell = func(_ context.Context, _ string, _ string, _ time.Duration) (*shellblock.RunResult, error) {
-		return &shellblock.RunResult{Number: 1, OutputPath: "/tmp/script1.txt", ExitCode: 0}, nil
+		return &shellblock.RunResult{Number: 1, ScriptPath: "/tmp/script1.sh", OutputPath: "/tmp/script1.txt", ExitCode: 0}, nil
 	}
 
 	res, err := handleWebChatShellLoop(context.Background(),
@@ -424,7 +425,7 @@ func TestHandleWebChatResumeShellPendingBlock(t *testing.T) {
 	executed := false
 	handleWebChatExecShell = func(_ context.Context, _ string, _ string, _ time.Duration) (*shellblock.RunResult, error) {
 		executed = true
-		return &shellblock.RunResult{Number: 1, OutputPath: "/tmp/script1.txt", ExitCode: 0}, nil
+		return &shellblock.RunResult{Number: 1, ScriptPath: "/tmp/script1.sh", OutputPath: "/tmp/script1.txt", ExitCode: 0}, nil
 	}
 	mockResumeResolve(t, convURL)
 	mockResumeRead(t, shellBlockTest, "FINISHED", true)
@@ -501,7 +502,7 @@ func TestHandleWebChatShellLoopResidueReminder(t *testing.T) {
 				return WebChatResult{Content: shellFinalTest, URL: convURL}, nil
 			}
 			handleWebChatExecShell = func(_ context.Context, _ string, _ string, timeout time.Duration) (*shellblock.RunResult, error) {
-				return &shellblock.RunResult{Number: 7, OutputPath: "/tmp/script7.txt", ExitCode: 0, Timeout: timeout}, nil
+				return &shellblock.RunResult{Number: 7, ScriptPath: "/tmp/script7.sh", OutputPath: "/tmp/script7.txt", ExitCode: 0, Timeout: timeout}, nil
 			}
 
 			if _, err := handleWebChatShellLoop(context.Background(),
@@ -614,5 +615,66 @@ func TestHandleWebChatShellLoopFinalResidueNote(t *testing.T) {
 				t.Errorf("stderr carries the final-residue note = %v, want %v:\n%s", hasNote, tt.wantResidue, stderr)
 			}
 		})
+	}
+}
+
+// shellBlockPythonTest is a well-formed python block: the shebang picks the
+// python interpreter, so the round is labelled with a .py file.
+var shellBlockPythonTest = strings.Join([]string{
+	"<shell>",
+	"<script>",
+	"#!/usr/bin/env python3",
+	`print("hi")`,
+	"</script>",
+	"<summary>say hi in python</summary>",
+	"<timeout>100</timeout>",
+	"</shell>",
+}, "\n")
+
+// TestHandleWebChatShellLoopModeFileNames pins the mode-derived file names in
+// the round's feedback and stderr audit line: a python round is labelled
+// scriptN.py (never the old fixed .sh), while the attachment keeps
+// scriptN.txt.
+func TestHandleWebChatShellLoopModeFileNames(t *testing.T) {
+	origSend, origExec := handleWebChatSend, handleWebChatExecShell
+	t.Cleanup(func() { handleWebChatSend, handleWebChatExecShell = origSend, origExec })
+
+	const convURL = "https://chat.deepseek.com/a/chat/s/convSHELL"
+	var messages []string
+	var sentOpts []WebChatOptions
+	handleWebChatSend = func(_ context.Context, msg string, opts WebChatOptions) (WebChatResult, error) {
+		messages = append(messages, msg)
+		sentOpts = append(sentOpts, opts)
+		return WebChatResult{Content: shellFinalTest, URL: convURL}, nil
+	}
+	handleWebChatExecShell = func(_ context.Context, _ string, _ string, timeout time.Duration) (*shellblock.RunResult, error) {
+		return &shellblock.RunResult{
+			Number:     9,
+			ScriptPath: "/tmp/script9.py",
+			OutputPath: "/tmp/script9.txt",
+			ExitCode:   0,
+			Timeout:    timeout,
+		}, nil
+	}
+
+	drain := captureStderr(t)
+	if _, err := handleWebChatShellLoop(context.Background(),
+		WebChatResult{Content: shellBlockPythonTest, URL: convURL},
+		WebChatOptions{Role: "dev", ShellTool: true}); err != nil {
+		t.Fatalf("shell loop: %v", err)
+	}
+	stderr := drain()
+
+	if len(messages) != 1 || len(sentOpts) != 1 {
+		t.Fatalf("sends = %d, want 1 (the feedback)", len(messages))
+	}
+	if want := "output of script9.py (attached as script9.txt):"; messages[0] != want {
+		t.Errorf("feedback = %q, want %q", messages[0], want)
+	}
+	if !strings.Contains(stderr, "▶ script9.py:") {
+		t.Errorf("stderr misses the mode-derived audit name:\n%s", stderr)
+	}
+	if attachments := sentOpts[0].Attachments; len(attachments) != 1 || attachments[0] != "/tmp/script9.txt" {
+		t.Errorf("attachments = %v, want [/tmp/script9.txt]", attachments)
 	}
 }

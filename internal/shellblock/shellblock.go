@@ -2,8 +2,9 @@
 // the web model emits one block per round inside a <shell> block - a bash or
 // python script, or an `#!attach` file list - the judge decides whether to
 // execute the block, warn about its format, or accept the reply as the final
-// answer, and the runner executes the script locally (scriptN.sh /
-// scriptN.txt under the project root) and feeds the merged output back into
+// answer, and the runner executes the script locally (the round's artifacts
+// - scriptN.sh / scriptN.py / scriptN.lst and scriptN.txt - live under
+// PROJECT_ROOT/.dscli/tmp) and feeds the merged output back into
 // the conversation as an attached text file (an `#!attach` block feeds the
 // named files back as attachments instead).
 //

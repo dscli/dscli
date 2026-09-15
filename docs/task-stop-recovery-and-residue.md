@@ -181,7 +181,7 @@ func MarkerRanges(text string) [][2]int
 - `ActionExecute` + `verdict.ResidualMarkers`：块照常执行；**在执行后的反馈消息尾追加提示**（用户要求的"及时"落点=本轮反馈随行，不额外花一轮）：
 
 ```
-  feedback := fmt.Sprintf("output of script%d.sh (attached as script%d.txt):", ...)
+  feedback := fmt.Sprintf("output of %s (attached as %s):", scriptName, outputName)  // 2026-09-15：真实文件名（scriptN.sh/.py/.lst），见 task-shell-block.md §13
   if verdict.ResidualMarkers {
   feedback += "\n\n" + shellblock.ResidueNote()
   }
