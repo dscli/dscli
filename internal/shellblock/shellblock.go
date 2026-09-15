@@ -125,12 +125,26 @@ func Judge(reasoning, content string) Verdict {
 	return Verdict{Action: ActionFinal}
 }
 
-// ShouldEnter reports whether a reply routes into the shell loop: any
-// verdict other than ActionFinal (a block to run, or a shape that needs a
-// format warning). Shared by the first-round routing in HandleWebChat and
-// the resume branch so the two gates cannot drift.
+// ShouldEnter reports whether a reply routes into the shell loop in a
+// session that carries the tool doc (a role session whose prompt registered
+// it): any verdict other than ActionFinal - a block to run, or a shape that
+// needs a format warning (including the stalled-round warning for a short
+// block-less reply). Sessions WITHOUT the doc use HasBlockAttempt instead:
+// there a short block-less reply is just the answer, not a stalled round.
 func ShouldEnter(reasoning, content string) bool {
 	return Judge(reasoning, content).Action != ActionFinal
+}
+
+// HasBlockAttempt reports whether a reply carries a block attempt - a
+// well-formed block to run, or a malformed one that gets the format contract
+// back. It is the gate for sessions that never registered the tool doc
+// (plain chat, skip-injection consultations) and for the resume path:
+// a saved conversation may simply end with a short prose reply, which Judge
+// classifies as a stalled-round warning, but there is no pending work to
+// execute on resume.
+func HasBlockAttempt(reasoning, content string) bool {
+	v := Judge(reasoning, content)
+	return v.Action == ActionExecute || (v.Action == ActionWarn && v.Issue != "no-block-short")
 }
 
 // tagLine is one exact tag line: the tag it matched, its start offset, and

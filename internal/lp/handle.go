@@ -287,14 +287,21 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 	fullMessage := message
 	firstRound := opts.Keep == ""
 	injectPrompt := firstRound && !opts.SkipPromptInjection
+	// docRegistered tracks whether the tool doc was actually shipped with
+	// this round's prompt: role sessions register WebChat's single tool
+	// (`shell`) through the role prompt (chat.deepseek.com has no native
+	// tool protocol, so the tool doc is the only registration channel; the
+	// role template's ShellToolDoc section renders it). It selects the entry
+	// gate below: a session that was told the protocol expects a block or a
+	// final report, so a short block-less reply is a stalled round there;
+	// a session without the doc (plain chat, skip-injection consultations)
+	// treats such a reply as the answer.
+	docRegistered := false
 	if injectPrompt && opts.System != "" {
 		fullMessage = opts.System + "\n\n---\n\n## User Request\n\n" + message
 	} else if injectPrompt && opts.Role != "" {
-		// Role sessions register WebChat's single tool (`shell`) through the
-		// role prompt: chat.deepseek.com has no native tool protocol, so the
-		// tool doc is the only registration channel. The role template's
-		// ShellToolDoc section renders it (see shellblock.BuildToolDoc).
 		fullMessage = prompt.RenderPromptForRoleWithShellTool(ctx, opts.Role, shellblock.BuildToolDoc()) + "\n\n---\n\n## User Request\n\n" + message
+		docRegistered = true
 	}
 	// The site rejects inputs past its 字数 limit (composer shows "超出字数
 	// 限制"), dropping the send; truncate BEFORE sending so the wait loop never
@@ -322,13 +329,18 @@ func HandleWebChat(ctx context.Context, message string, opts WebChatOptions) (We
 		// before the send.
 		res, callErr := handleWebChatSend(ctx, fullMessage, webChatTransportOptions(opts))
 		if callErr == nil {
-			// Entry gate: the reply routes into the shell loop when
-			// shellblock.ShouldEnter judges anything other than a final
-			// report - a block to run, or a shape that needs a format
-			// warning. A reply that reads as a final report (no block, long
-			// enough) returns as-is; quoted examples (fenced code, inline
-			// spans) never delimit a block.
-			if shellblock.ShouldEnter(res.Reasoning, res.Content) {
+			// Entry gate: a session that carries the tool doc routes in on
+			// any non-final verdict (block to run, or a format warning -
+			// including the stalled-round warning for a short reply); a
+			// doc-less session (plain chat, skip-injection consultations)
+			// only routes in on a block attempt, so its short replies return
+			// as the answer. Quoted examples (fenced code, inline spans)
+			// never delimit a block either way.
+			enter := shellblock.HasBlockAttempt(res.Reasoning, res.Content)
+			if docRegistered {
+				enter = shellblock.ShouldEnter(res.Reasoning, res.Content)
+			}
+			if enter {
 				return handleWebChatShellLoop(ctx, res, opts)
 			}
 			return res, nil
@@ -375,13 +387,16 @@ var handleWebChatResumeRead = func(ctx context.Context, conversationURL string) 
 //     message): when the newest message is a USER message (typed in the
 //     user's browser, no reply landed yet), an older assistant block is
 //     not the continuation point and the round refuses with a clear error.
-//   - When the content is judged pending (shellblock.ShouldEnter), the
-//     block is executed locally and its output fed back into the SAME
-//     conversation (Keep = the conversation URL) until the expert produces
-//     a final answer — exactly handleWebChatShellLoop, with the interrupted
-//     round as its first message. This is how a round that died mid-block
-//     (a killed process, a closed browser) resumes without re-asking the
-//     whole task.
+//   - When the content carries a block attempt (shellblock.HasBlockAttempt -
+//     a well-formed block, or a malformed one that gets the format contract
+//     back), the block is executed locally and its output fed back into the
+//     SAME conversation (Keep = the conversation URL) until the expert
+//     produces a final answer — exactly handleWebChatShellLoop, with the
+//     interrupted round as its first message. This is how a round that died
+//     mid-block (a killed process, a closed browser) resumes without
+//     re-asking the whole task. A conversation that merely ends with a short
+//     prose reply is NOT pending: it is a completed multi-turn conversation
+//     and the last reply is returned verbatim.
 //   - Execution is gated on a second, independently anchored read: when the
 //     conversation changed between the two reads, NOTHING is executed and
 //     the caller retries against the new state.
@@ -436,7 +451,7 @@ func HandleWebChatResume(ctx context.Context, opts WebChatOptions) (WebChatResul
 		return WebChatResult{}, fmt.Errorf("webchat resume: the newest message is not an assistant reply (role %q); nothing safe to resume (retry after the reply lands)", tailRole)
 	}
 
-	pending := shellblock.ShouldEnter("", content)
+	pending := shellblock.HasBlockAttempt("", content)
 	if !pending {
 		// Multi-turn conversation: the expert already gave a normal reply —
 		// nothing pending, hand the last content to the caller verbatim.

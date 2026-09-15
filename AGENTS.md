@@ -126,7 +126,11 @@ timeout, and feeds the merged output back into the SAME conversation as
 attachments - `scriptN.txt` plus any `#!attach` files. The loop is always
 active - there is no per-role switch and no `--shell` flag: `HandleWebChat` /
 `HandleWebChatResume` judge every reply, and a reply that reads as a final
-report ends the session.
+report ends the session. The entry gate is doc-aware: a short block-less
+reply is nudged as a stalled round only in sessions that carry the tool doc;
+without it (plain chat, skip-injection consultations) such a reply is the
+answer. The resume gate is stricter - only a block attempt (well-formed or
+malformed) counts as pending work there.
 
 Role sessions register the protocol through their role prompt: the templates'
 `{{if .ShellToolDoc}}` section renders `shellblock.BuildToolDoc`, injected by

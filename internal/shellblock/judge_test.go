@@ -214,6 +214,31 @@ func TestShouldEnter(t *testing.T) {
 	}
 }
 
+// TestHasBlockAttempt pins the doc-less/resume gate: only a block attempt
+// (well-formed or malformed) counts as pending; a short block-less reply is
+// an answer there, not a stalled round.
+func TestHasBlockAttempt(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{name: "well-formed block", text: wellFormed, want: true},
+		{name: "malformed attempt", text: "<shell>\n<script>\necho x\n</shell>", want: true},
+		{name: "badge-rendered attempt", text: "\uff5c<shell>\uff5c\n\uff5c<script>\uff5c\necho x\n\uff5c</script>\uff5c\n\uff5c</shell>\uff5c", want: true},
+		{name: "short reply", text: "Done. All tests pass.", want: false},
+		{name: "long final report", text: longFinal, want: false},
+		{name: "quoted example only", text: "The format is:\n```\n" + wellFormed + "\n```\n" + longFinal, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := HasBlockAttempt("", tt.text); got != tt.want {
+				t.Errorf("HasBlockAttempt(%q) = %v, want %v", tt.text, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBlocked(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -169,7 +169,7 @@ func TestHandleWebChatResumeMultiTurnReply(t *testing.T) {
 	origFunc := handleWebChatSend
 	t.Cleanup(func() { handleWebChatSend = origFunc })
 
-	reply := "This conversation already reached its conclusion. " + strings.Repeat("Nothing is pending anymore. ", 6)
+	reply := "This conversation already reached its conclusion."
 	handleWebChatSend = func(_ context.Context, _ string, _ WebChatOptions) (WebChatResult, error) {
 		t.Fatal("handleWebChatSend must not be called for a multi-turn resume")
 		return WebChatResult{}, nil
@@ -351,7 +351,7 @@ func TestHandleWebChatRetriesThenSuccess(t *testing.T) {
 		if calls <= 2 {
 			return WebChatResult{}, ErrServerBusy
 		}
-		return WebChatResult{Content: strings.Repeat("expert answer. ", 10)}, nil
+		return WebChatResult{Content: "expert answer"}, nil
 	}
 	handleWebChatRetryDelays = []time.Duration{0, 0, 0}
 
@@ -359,7 +359,7 @@ func TestHandleWebChatRetriesThenSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HandleWebChat: %v", err)
 	}
-	if res.Content != strings.Repeat("expert answer. ", 10) {
+	if res.Content != "expert answer" {
 		t.Errorf("content = %q, want expert answer", res.Content)
 	}
 	if calls != 3 {
@@ -421,7 +421,7 @@ func TestHandleWebChatTruncatedThenSuccess(t *testing.T) {
 		if calls <= 2 {
 			return WebChatResult{}, ErrTruncated
 		}
-		return WebChatResult{Content: strings.Repeat("expert answer. ", 10)}, nil
+		return WebChatResult{Content: "expert answer"}, nil
 	}
 	handleWebChatRetryDelays = []time.Duration{0, 0, 0}
 
@@ -429,7 +429,7 @@ func TestHandleWebChatTruncatedThenSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HandleWebChat: %v", err)
 	}
-	if res.Content != strings.Repeat("expert answer. ", 10) {
+	if res.Content != "expert answer" {
 		t.Errorf("content = %q, want expert answer", res.Content)
 	}
 	if calls != 3 {
@@ -467,7 +467,7 @@ func TestHandleWebChatOneShotNotPrinted(t *testing.T) {
 	origFunc := handleWebChatSend
 	t.Cleanup(func() { handleWebChatSend = origFunc })
 	handleWebChatSend = func(_ context.Context, _ string, _ WebChatOptions) (WebChatResult, error) {
-		return WebChatResult{Content: strings.Repeat("plain prose answer. ", 10), URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
+		return WebChatResult{Content: "plain prose answer", URL: "https://chat.deepseek.com/a/chat/s/convX"}, nil
 	}
 
 	res, err := HandleWebChat(context.Background(), "input", WebChatOptions{})
@@ -477,7 +477,7 @@ func TestHandleWebChatOneShotNotPrinted(t *testing.T) {
 	if res.Printed {
 		t.Error("one-shot reply must not be marked Printed")
 	}
-	if res.Content != strings.Repeat("plain prose answer. ", 10) {
+	if res.Content != "plain prose answer" {
 		t.Errorf("content = %q, want plain prose answer", res.Content)
 	}
 }
@@ -649,7 +649,7 @@ func TestHandleWebChatResumeStreamingReplyRejected(t *testing.T) {
 	// as the resume result would hand the caller a half-written conclusion.
 	// Refuse with a clear error instead of pretending it is final.
 	mockResumeResolve(t, "https://chat.deepseek.com/a/chat/s/convS")
-	mockResumeRead(t, "Partial report, still writing. "+strings.Repeat("More will come. ", 8), "STREAMING", true)
+	mockResumeRead(t, "Partial report...", "STREAMING", true)
 	_, err := HandleWebChatResume(context.Background(), WebChatOptions{Keep: "convS", Role: "test"})
 	if err == nil || !strings.Contains(err.Error(), "not finished") {
 		t.Fatalf("err = %v, want not-finished error", err)
@@ -660,13 +660,77 @@ func TestHandleWebChatResumeUnknownStatusAccepted(t *testing.T) {
 	// status == "" (IDB does not always record a status): a plain reply is
 	// still returned verbatim — blank status is not treated as streaming.
 	mockResumeResolve(t, "https://chat.deepseek.com/a/chat/s/convU")
-	reply := "Final conclusion. " + strings.Repeat("Everything verified. ", 8)
-	mockResumeRead(t, reply, "", true)
+	mockResumeRead(t, "Final conclusion", "", true)
 	res, err := HandleWebChatResume(context.Background(), WebChatOptions{Keep: "convU", Role: "test"})
 	if err != nil {
 		t.Fatalf("HandleWebChatResume: %v", err)
 	}
-	if res.Content != reply {
+	if res.Content != "Final conclusion" {
 		t.Errorf("content = %q, want verbatim last reply", res.Content)
 	}
+}
+
+// TestHandleWebChatShortReplyGate pins the doc-aware entry gate: a short
+// block-less reply is the answer in a session without the tool doc (plain
+// chat, skip-injection consultations), while a session that carries the doc
+// treats it as a stalled round and gets the format warning.
+func TestHandleWebChatShortReplyGate(t *testing.T) {
+	const convURL = "https://chat.deepseek.com/a/chat/s/convGATE"
+	const shortReply = "Done. All checks pass."
+
+	t.Run("doc-less session returns the short reply as the answer", func(t *testing.T) {
+		origSend := handleWebChatSend
+		t.Cleanup(func() { handleWebChatSend = origSend })
+
+		for _, opts := range []WebChatOptions{
+			{}, // plain chat
+			{Role: "review", SkipPromptInjection: true}, // guide-as-attachment consultation
+		} {
+			calls := 0
+			handleWebChatSend = func(_ context.Context, _ string, _ WebChatOptions) (WebChatResult, error) {
+				calls++
+				return WebChatResult{Content: shortReply, URL: convURL}, nil
+			}
+
+			res, err := HandleWebChat(context.Background(), "input", opts)
+			if err != nil {
+				t.Fatalf("HandleWebChat(%+v): %v", opts, err)
+			}
+			if res.Content != shortReply || res.Printed {
+				t.Errorf("opts %+v: res = %+v, want the short reply verbatim, not Printed", opts, res)
+			}
+			if calls != 1 {
+				t.Errorf("opts %+v: sends = %d, want 1 (no warning round)", opts, calls)
+			}
+		}
+	})
+
+	t.Run("doc session warns on the short reply", func(t *testing.T) {
+		origSend, origDelays := handleWebChatSend, handleWebChatRetryDelays
+		t.Cleanup(func() { handleWebChatSend, handleWebChatRetryDelays = origSend, origDelays })
+		handleWebChatRetryDelays = []time.Duration{0}
+
+		var messages []string
+		handleWebChatSend = func(_ context.Context, msg string, _ WebChatOptions) (WebChatResult, error) {
+			messages = append(messages, msg)
+			if len(messages) == 1 {
+				return WebChatResult{Content: shortReply, URL: convURL}, nil
+			}
+			return WebChatResult{Content: shellFinalTest, URL: convURL}, nil
+		}
+
+		res, err := HandleWebChat(context.Background(), "input", WebChatOptions{Role: "dev"})
+		if err != nil {
+			t.Fatalf("HandleWebChat: %v", err)
+		}
+		if len(messages) != 2 {
+			t.Fatalf("sends = %d, want 2 (initial + stalled-round warning)", len(messages))
+		}
+		if !strings.Contains(messages[1], "neither contains a `<shell>` block") {
+			t.Errorf("warning = %q, want the stalled-round contract", messages[1])
+		}
+		if res.Content != shellFinalTest || !res.Printed {
+			t.Errorf("res = %+v, want the printed final report", res)
+		}
+	})
 }

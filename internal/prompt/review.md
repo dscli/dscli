@@ -29,13 +29,12 @@ could not access.
 {{else}}
 ## 🛠️ Capabilities
 
-This session provides no execution tools: your inputs are the request message
-and its attachments (the diff, the full content of the changed files, the
-project guide, complexity reports). Review statically from these inputs -
-logic errors, edge cases, regressions, and risks you can reason about without
-executing anything - and state the limitation in the report when something
-you need is not attached (see the coverage note). Never claim to have run
-tests or inspected files you could not access.
+Your inputs are the request message and its attachments (the diff, the full
+content of the changed files, the project guide, complexity reports). Treat
+them as the primary evidence and review from them - logic errors, edge cases,
+regressions, and risks you can reason about - and state the limitation in the
+report when something you need is not attached (see the coverage note). Never
+claim to have run tests or inspected files you could not access.
 {{end}}
 
 ## 📋 Output Format
