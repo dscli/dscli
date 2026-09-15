@@ -307,6 +307,20 @@ func TestDevPromptMailCheckBranch(t *testing.T) {
 			t.Errorf("dev prompt with mail enabled missing %q:\n%s", want, rendered)
 		}
 	}
+	if strings.Contains(rendered, "0. **Read AGENTS.md") {
+		t.Errorf("dev prompt with mail enabled must not render the mail-less AGENTS label 0.:\n%s", rendered)
+	}
+	for _, tc := range []struct {
+		label string
+		text  string
+	}{
+		{"mail-check step", "**Check for unread mail**"},
+		{"AGENTS step", "**Read AGENTS.md (only when it exists)**"},
+	} {
+		if n := strings.Count(rendered, tc.text); n != 1 {
+			t.Errorf("dev prompt with mail enabled must carry exactly one %s, found %d:\n%s", tc.label, n, rendered)
+		}
+	}
 }
 
 // assertMailCheckStripped checks the shared invariants for a WebChat-rendered
