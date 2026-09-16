@@ -621,16 +621,29 @@ const (
 	})()`
 
 	// jsStopGeneration locates the generation-stop control, mirroring
-	// jsContinueGeneration's matching discipline. The candidate labels are
-	// matched EXACTLY (text / aria-label / title, case-folded): clicking the
-	// wrong control during a repetition would be worse than not clicking at
-	// all. Signal 1 of jsIsGenerationActive matches loosely and is used only
-	// to decide "is a generation running"; the click path must be tighter.
+	// jsContinueGeneration's matching discipline.
+	//
+	// Why the label set differs from jsIsGenerationActive: that probe is a
+	// STATE test ("is anything generating?"), so it matches loosely and also
+	// accepts cancel/取消. This one drives a CLICK, where a wrong hit is
+	// worse than a miss: the set is narrowed to stop-specific labels and
+	// cancel/取消 are deliberately absent. A miss degrades to sending the
+	// CALM DOWN nudge without stopping (the state machine handles it), so
+	// precision is worth more than recall here.
+	//
+	// Why there is NO .ds-message ownership check (unlike
+	// jsContinueGeneration): the real DOM position of the stop control has
+	// not been verified against the live bundle. The continue button is known
+	// to be a sibling of the message bubble, but the stop control may live in
+	// the composer area instead, and an ownership walk would then reject the
+	// very element we need. The guardrails are exact labels, last-match-wins
+	// (document order ends at the newest row) and the occlusion check; a
+	// live fixture probe can tighten this once the DOM is confirmed.
 	//
 	// Disabled and aria-disabled elements are skipped, position:fixed
 	// popovers (offsetParent === null) are judged by their rect, the LAST
-	// match wins (document order ends at the newest row), and the result
-	// carries an occlusion check because the caller clicks by coordinate.
+	// match wins, and the result carries an occlusion check because the
+	// caller clicks by coordinate.
 	jsStopGeneration = `(() => {
 		const wants = ['停止', 'stop', '停止生成', 'stop generating', '停止输出'];
 		const cands = document.querySelectorAll('button, [role="button"]');
@@ -1326,8 +1339,15 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, opts W
 
 	actions = append(
 		actions,
-		// Record baseline text before sending.
-		chromedp.Evaluate("document.body ? document.body.innerText : ''", &baseline),
+		// Record baseline text before sending. The read is best effort: a
+		// transient evaluation failure leaves the baseline empty, which only
+		// weakens the prefix-strip fallback.
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			if text, err := readBodyText(ctx); err == nil {
+				baseline = text
+			}
+			return nil
+		}),
 
 		// Record the .ds-markdown baseline (all assistant HTML visible
 		// before sending). webchatWait strips this prefix from the
@@ -1785,10 +1805,8 @@ func webchatWait(ctx context.Context, baseline, mdBaseline, sentMessage string) 
 		case <-time.After(webChatPollInterval):
 		}
 
-		var current string
-		if err := chromedp.Evaluate(
-			"document.body ? document.body.innerText : ''", &current,
-		).Do(ctx); err != nil {
+		current, err := readBodyText(ctx)
+		if err != nil {
 			continue // tolerate transient errors
 		}
 
@@ -1855,12 +1873,24 @@ func webchatWait(ctx context.Context, baseline, mdBaseline, sentMessage string) 
 			continue
 		case repeatNudged:
 			// The nudge's reply IS this round's reply: re-anchor every
-			// downstream stage on it. sendAck is reset because the nudge was
-			// just submitted and must pass through the normal confirmation
-			// window like any other send.
+			// downstream stage on it. sendAck is deliberately NOT reset: the
+			// nudge has its own confirmation inside repeatRecovery (the
+			// generic send-ack would be trivially satisfied here - see
+			// stepAwaiting), and repeatAwaiting drives the loop until it
+			// lands.
+			//
+			// The continue state is discarded as it is on a resend: the
+			// nudge is a fresh send, and a stale pending resume must not
+			// hold or click against the new round.
 			sentMessage = repAct.message
-			baseline, mdBaseline = repAct.baseline, repAct.mdBaseline
-			sendAck, ackPolls = false, 0
+			mdBaseline = repAct.mdBaseline
+			cont = continueRecovery{}
+			stableCount, emptyStableCount, lastText = 0, 0, ""
+			continue
+		case repeatAwaiting:
+			// The nudge is submitted but unconfirmed; run NOTHING else - the
+			// generic ack and the content stages would both misread a
+			// still-running repetition. repeatRecovery owns the next poll.
 			stableCount, emptyStableCount, lastText = 0, 0, ""
 			continue
 		}
@@ -2876,6 +2906,18 @@ func isGenerationActive(ctx context.Context) bool {
 		return false // evaluation failure → be conservative, assume not active
 	}
 	return active
+}
+
+// readBodyText reads the whole-page body innerText - the sample the wait loop
+// anchors every text comparison on. It returns the evaluation error so the
+// caller can tolerate a transient CDP hiccup the way each call site wants
+// (the poll loop skips the poll; the pre-send baseline reads are best effort).
+func readBodyText(ctx context.Context) (string, error) {
+	var s string
+	if err := chromedp.Evaluate("document.body ? document.body.innerText : ''", &s).Do(ctx); err != nil {
+		return "", err
+	}
+	return s, nil
 }
 
 // getAssistantText returns the concatenated markdown of all

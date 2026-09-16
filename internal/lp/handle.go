@@ -508,16 +508,6 @@ func formatAttachNote(attachments []string) string {
 	return fmt.Sprintf("；附件 %d 个（%s）", n, strings.Join(names, ", "))
 }
 
-// handleWebChatShellLoop continues a WebChat conversation: every round is
-// judged (shellblock.Judge) as an executable block, a format warning, or the
-// final report. An executable block is run locally - shellblock.Run writes
-// the round's script (scriptN.sh / scriptN.py / scriptN.lst, by mode) and
-// scriptN.txt under the project's .dscli/tmp, executes it with the project
-// root as its working directory (or scans the file list of an `#!attach`
-// block) - and the round's artifacts are fed back into the SAME conversation
-// as attachments: scriptN.txt first, then every `#!attach` file in the
-// listed order.
-//
 // fenceShellBlocks wraps `<shell>` / `</shell>` delimiter lines in xml code
 // fences so the printed round renders as a copyable code block. It is a
 // print-only transform: the protocol and stored text never see the fences.
@@ -564,6 +554,16 @@ func fenceShellBlocks(s string) string {
 	return b.String()
 }
 
+// handleWebChatShellLoop continues a WebChat conversation: every round is
+// judged (shellblock.Judge) as an executable block, a format warning, or the
+// final report. An executable block is run locally - shellblock.Run writes
+// the round's script (scriptN.sh / scriptN.py / scriptN.lst, by mode) and
+// scriptN.txt under the project's .dscli/tmp, executes it with the project
+// root as its working directory (or scans the file list of an `#!attach`
+// block) - and the round's artifacts are fed back into the SAME conversation
+// as attachments: scriptN.txt first, then every `#!attach` file in the
+// listed order.
+//
 // Every round (reasoning + content) is printed, the local-execution warning
 // is printed here (this is the moment a remote model's script runs
 // locally), and the returned result is marked Printed so callers do not

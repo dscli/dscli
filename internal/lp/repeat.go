@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"unicode"
 
 	"github.com/chromedp/chromedp"
@@ -60,6 +61,10 @@ const (
 // A var rather than a const so tests can widen it. Exhausting the budget with
 // the repetition still running ends the round as ErrTruncated (the retryable
 // continue-from-here path) instead of polling out.
+//
+// A repeatRecovery may override it through its maxInterrupts field, which is
+// how tests inject a budget without mutating this global (same convention as
+// continueRecovery's seams).
 var webChatMaxRepeatInterrupts = 1
 
 // detectRepeatTail reports whether the text ends in an exact repetition of a
@@ -147,25 +152,34 @@ const (
 	// repeatNudged: the CALM DOWN nudge was sent; the round's reply is now
 	// the nudge's answer and the caller must re-anchor on it.
 	repeatNudged
+	// repeatAwaiting: the nudge is submitted but has not shown up in the page
+	// yet; keep polling and run NOTHING else - neither the generic send-ack
+	// (it would be satisfied trivially while a generation is active) nor the
+	// content stages.
+	repeatAwaiting
 )
 
 // repeatAction is the outcome of one repeatRecovery step.
 type repeatAction struct {
 	kind    repeatActionKind
 	message string // repeatNudged: the nudge text, i.e. the new round anchor
-	// baseline/mdBaseline are fresh baselines captured just before the nudge
-	// was sent, so the ack and extraction stages anchor on the nudge round.
-	baseline, mdBaseline string
+	// mdBaseline is a fresh .ds-markdown baseline captured just before the
+	// nudge was sent, so the extraction fallback anchors on the nudge round.
+	// The body innerText baseline is deliberately NOT carried: the nudge gets
+	// its own confirmation (see stepAwaiting), so nothing else compares
+	// against it.
+	mdBaseline string
 }
 
 // repeatPhase is the state machine's position.
 type repeatPhase int
 
 const (
-	repeatIdle repeatPhase = iota
-	repeatStopping
-	repeatSending
-	repeatSpent
+	repeatPhaseIdle repeatPhase = iota
+	repeatPhaseStopping
+	repeatPhaseSending
+	repeatPhaseAwaiting
+	repeatPhaseSpent
 )
 
 // repeatRecovery tracks the endless-repetition interrupt across polls of a
@@ -180,33 +194,47 @@ const (
 // substitute deterministic stand-ins to exercise the state machine without a
 // browser.
 type repeatRecovery struct {
-	phase     repeatPhase
-	used      int // nudges sent (budget: webChatMaxRepeatInterrupts)
-	stopPolls int // polls spent waiting for the stop click to take effect
+	phase      repeatPhase
+	used       int // nudges sent (budget: maxInterrupts / webChatMaxRepeatInterrupts)
+	stopPolls  int // polls spent waiting for the stop click to take effect
+	nudgePolls int // polls spent waiting for the nudge to appear in the page
+
+	// maxInterrupts overrides webChatMaxRepeatInterrupts when non-zero. Tests
+	// inject a budget here instead of mutating the package var.
+	maxInterrupts int
 
 	active    func(context.Context) bool
 	stop      func(context.Context) (stopDetect, error)
 	clickAt   func(context.Context, float64, float64) error
-	bodyText  func(context.Context) string
 	mdText    func(context.Context) string
 	setValue  func(context.Context, string) error
 	sendEnter func(context.Context) error
 	detect    func(string) (int, int, bool)
 }
 
+// budget is the effective CALM DOWN nudge budget for this wait.
+func (r *repeatRecovery) budget() int {
+	if r.maxInterrupts > 0 {
+		return r.maxInterrupts
+	}
+	return webChatMaxRepeatInterrupts
+}
+
 // step runs one poll's worth of endless-repetition recovery. See the phase
 // methods for the transition table.
 func (r *repeatRecovery) step(ctx context.Context, in repeatInput) (repeatAction, error) {
 	switch r.phase {
-	case repeatStopping:
+	case repeatPhaseStopping:
 		return r.stepStopping(ctx, in)
-	case repeatSpent:
+	case repeatPhaseAwaiting:
+		return r.stepAwaiting(in)
+	case repeatPhaseSpent:
 		return r.stepSpent(ctx, in)
-	case repeatSending:
+	case repeatPhaseSending:
 		// stepSending resolves within one call: a persisted sending phase
 		// means the previous call returned an error, and the caller returns
 		// on that error. Fail safe by starting over.
-		r.phase = repeatIdle
+		r.phase = repeatPhaseIdle
 	}
 	return r.stepIdle(ctx, in)
 }
@@ -217,36 +245,36 @@ func (r *repeatRecovery) stepIdle(ctx context.Context, in repeatInput) (repeatAc
 	if _, _, ok := r.detectFn()(r.tailText(in)); !ok {
 		return repeatAction{kind: repeatNone}, nil
 	}
-	if r.used >= webChatMaxRepeatInterrupts {
+	if r.used >= r.budget() {
 		// The budget is already spent and the repetition is back: there is
 		// nothing left to try.
-		r.phase = repeatSpent
+		r.phase = repeatPhaseSpent
 		return r.giveUp(ctx)
 	}
 	fmt.Fprintln(os.Stderr, "🛑 检测到输出无限重复（endless repetition），正在停止生成…")
 	d, err := r.stopFn()(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "⚠️ 检测「停止生成」按钮失败（改为直接发送 CALM DOWN 提示）: %v\n", err)
-		r.phase = repeatSending
+		r.phase = repeatPhaseSending
 		return r.stepSending(ctx)
 	}
 	if !r.activeFn()(ctx) {
 		// The generation ended on its own between the sample and the probe:
 		// there is nothing to stop.
-		r.phase = repeatSending
+		r.phase = repeatPhaseSending
 		return r.stepSending(ctx)
 	}
 	if !d.present || !d.clickable {
 		fmt.Fprintf(os.Stderr, "⚠️ 「停止生成」按钮不可用（present=%v clickable=%v），直接发送 CALM DOWN 提示\n", d.present, d.clickable)
-		r.phase = repeatSending
+		r.phase = repeatPhaseSending
 		return r.stepSending(ctx)
 	}
 	if err := r.clickFn()(ctx, d.x, d.y); err != nil {
 		fmt.Fprintf(os.Stderr, "⚠️ 点击「停止生成」失败（改为直接发送 CALM DOWN 提示）: %v\n", err)
-		r.phase = repeatSending
+		r.phase = repeatPhaseSending
 		return r.stepSending(ctx)
 	}
-	r.phase = repeatStopping
+	r.phase = repeatPhaseStopping
 	r.stopPolls = 0
 	return repeatAction{kind: repeatBusy}, nil
 }
@@ -259,7 +287,7 @@ func (r *repeatRecovery) stepStopping(ctx context.Context, _ repeatInput) (repea
 	if r.activeFn()(ctx) && r.stopPolls < webChatRepeatStopGracePolls {
 		return repeatAction{kind: repeatBusy}, nil
 	}
-	r.phase = repeatSending
+	r.phase = repeatPhaseSending
 	return r.stepSending(ctx)
 }
 
@@ -268,7 +296,6 @@ func (r *repeatRecovery) stepStopping(ctx context.Context, _ repeatInput) (repea
 // sendAck/ackPolls, and sendAckStep/ackLoopEffectFor confirm the send exactly
 // as they do for an initial message.
 func (r *repeatRecovery) stepSending(ctx context.Context) (repeatAction, error) {
-	baseline := r.bodyFn()(ctx)
 	mdBaseline := r.mdFn()(ctx)
 	if err := r.setValueFn()(ctx, webChatCalmDownNudge); err != nil {
 		return repeatAction{}, fmt.Errorf("%w: 发送 CALM DOWN 提示失败: %w", ErrTruncated, err)
@@ -277,22 +304,56 @@ func (r *repeatRecovery) stepSending(ctx context.Context) (repeatAction, error) 
 		return repeatAction{}, fmt.Errorf("%w: 发送 CALM DOWN 提示失败: %w", ErrTruncated, err)
 	}
 	r.used++
-	r.phase = repeatSpent
-	fmt.Fprintf(os.Stderr, "📨 已回复 `CALM DOWN! NO PANIC!`，等待模型继续（第 %d/%d 次）…\n", r.used, webChatMaxRepeatInterrupts)
+	r.phase = repeatPhaseAwaiting
+	r.nudgePolls = 0
+	fmt.Fprintf(os.Stderr, "📨 已回复 `CALM DOWN! NO PANIC!`，等待模型继续（第 %d/%d 次）…\n", r.used, r.budget())
 	return repeatAction{
 		kind:       repeatNudged,
 		message:    webChatCalmDownNudge,
-		baseline:   baseline,
 		mdBaseline: mdBaseline,
 	}, nil
 }
 
-// stepSpent only re-detects. A repetition that survived the nudge ends the
-// round as ErrTruncated (the retryable continue-from-here path); a repetition
-// that stopped lets the normal stages resume.
+// stepAwaiting confirms the nudge submission itself. The generic send-ack
+// stage CANNOT do this: while a repetition runs, a generation is active and
+// the body text keeps growing, so both of its evidence signals (an active
+// generation, a body that differs from the baseline) hold trivially - a nudge
+// that was silently dropped would be "acknowledged" forever and the round
+// would fall back to the 600s poll timeout this whole design exists to
+// avoid.
+//
+// The nudge's own marker is therefore the evidence: the site renders the
+// submitted message as a user bubble, so the body text containing
+// webChatCalmDownNudge proves the submit landed. The window reuses
+// webChatConfirmPolls (the send-ack window); missing it is ErrTruncated, the
+// retryable continue-from-here path.
+func (r *repeatRecovery) stepAwaiting(in repeatInput) (repeatAction, error) {
+	r.nudgePolls++
+	if strings.Contains(in.current, webChatCalmDownNudge) {
+		r.phase = repeatPhaseSpent
+		return repeatAction{kind: repeatNone}, nil
+	}
+	if r.nudgePolls >= webChatConfirmPolls {
+		return repeatAction{}, fmt.Errorf(
+			"%w: CALM DOWN nudge was not acknowledged within %d polls",
+			ErrTruncated, webChatConfirmPolls,
+		)
+	}
+	return repeatAction{kind: repeatAwaiting}, nil
+}
+
+// stepSpent re-detects after a nudge was confirmed. A repetition that stopped
+// lets the normal stages resume; one that came back is retried while the
+// budget allows (that is what raising webChatMaxRepeatInterrupts buys) and
+// otherwise ends the round as ErrTruncated, the retryable continue-from-here
+// path.
 func (r *repeatRecovery) stepSpent(ctx context.Context, in repeatInput) (repeatAction, error) {
 	if _, _, ok := r.detectFn()(r.tailText(in)); !ok {
 		return repeatAction{kind: repeatNone}, nil
+	}
+	if r.used < r.budget() {
+		r.phase = repeatPhaseIdle
+		return r.stepIdle(ctx, in)
 	}
 	return r.giveUp(ctx)
 }
@@ -340,13 +401,6 @@ func (r *repeatRecovery) clickFn() func(context.Context, float64, float64) error
 	return clickTrustedAt
 }
 
-func (r *repeatRecovery) bodyFn() func(context.Context) string {
-	if r.bodyText != nil {
-		return r.bodyText
-	}
-	return bodyInnerText
-}
-
 func (r *repeatRecovery) mdFn() func(context.Context) string {
 	if r.mdText != nil {
 		return r.mdText
@@ -373,16 +427,6 @@ func (r *repeatRecovery) detectFn() func(string) (int, int, bool) {
 		return r.detect
 	}
 	return detectRepeatTail
-}
-
-// bodyInnerText reads the whole-page body text - the same expression the poll
-// loop uses for its `current` sample.
-func bodyInnerText(ctx context.Context) string {
-	var s string
-	if err := chromedp.Evaluate("document.body ? document.body.innerText : ''", &s).Do(ctx); err != nil {
-		return ""
-	}
-	return s
 }
 
 // sendEnterJS dispatches the Enter sequence on the composer, exactly as the
