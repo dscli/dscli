@@ -400,15 +400,6 @@ func noMarkerPages(n int) []string {
 	return pages
 }
 
-// repeatKinds returns n copies of kind.
-func repeatKinds(kind repeatActionKind, n int) []repeatActionKind {
-	kinds := make([]repeatActionKind, n)
-	for i := range kinds {
-		kinds[i] = kind
-	}
-	return kinds
-}
-
 // TestRepeatRecoveryAwaiting pins the nudge-specific confirmation: the
 // generic send-ack cannot be used here (an active generation and a growing
 // body satisfy it trivially), so the nudge's own marker in the page text is
@@ -438,9 +429,8 @@ func TestRepeatRecoveryAwaiting(t *testing.T) {
 			name: "no marker within the window is ErrTruncated",
 			// One page per poll of the confirmation window; the last poll
 			// trips it and carries the error (its kind is the zero value).
-			pages:     noMarkerPages(webChatConfirmPolls),
-			wantErr:   true,
-			wantKinds: repeatKinds(repeatAwaiting, webChatConfirmPolls-1),
+			pages:   noMarkerPages(webChatConfirmPolls),
+			wantErr: true,
 		},
 		{
 			name: "marker on the very last poll of the window still counts",
@@ -470,35 +460,53 @@ func TestRepeatRecoveryAwaiting(t *testing.T) {
 				t.Errorf("mdBaseline = %q, want the snapshot", act.mdBaseline)
 			}
 
-			var gotErr error
+			// Record every poll's outcome instead of breaking on the first
+			// error, so the whole sequence (and exactly where the window
+			// closes) is asserted.
+			var (
+				kinds  []repeatActionKind
+				errAt  int // 1-based poll index the error surfaced at
+				gotErr error
+			)
 			for i, page := range tc.pages {
-				var got repeatAction
-				got, gotErr = r.step(context.Background(), repeatInput{current: page})
-				if gotErr != nil {
-					// The window is closed: the error is the outcome and the
-					// action kind is the zero value.
-					break
+				got, e := r.step(context.Background(), repeatInput{current: page})
+				if e != nil {
+					if errAt != 0 {
+						t.Fatalf("second error at poll %d (first at %d)", i+1, errAt)
+					}
+					errAt, gotErr = i+1, e
+					continue
 				}
-				if i >= len(tc.wantKinds) {
-					t.Fatalf("unexpected extra step %d (kind=%v)", i, got.kind)
-				}
-				if want := tc.wantKinds[i]; got.kind != want {
-					t.Errorf("step %d kind = %v, want %v", i+1, got.kind, want)
-				}
+				kinds = append(kinds, got.kind)
 			}
-			// Every expected poll before the error must have been checked.
-			if !tc.wantErr && len(tc.wantKinds) != len(tc.pages) {
-				t.Fatalf("test fixture mismatch: %d kinds for %d pages", len(tc.wantKinds), len(tc.pages))
-			}
+
 			if tc.wantErr {
-				if gotErr == nil {
-					t.Fatalf("no error after the window, want ErrTruncated")
+				if errAt != webChatConfirmPolls {
+					t.Fatalf("error at poll %d, want the window's last poll %d", errAt, webChatConfirmPolls)
 				}
 				if !errors.Is(gotErr, ErrTruncated) {
 					t.Errorf("error = %v, want ErrTruncated", gotErr)
 				}
-			} else if gotErr != nil {
-				t.Fatalf("unexpected error: %v", gotErr)
+				if want := webChatConfirmPolls - 1; len(kinds) != want {
+					t.Fatalf("awaiting steps = %d, want %d", len(kinds), want)
+				}
+				for i, k := range kinds {
+					if k != repeatAwaiting {
+						t.Errorf("step %d kind = %v, want repeatAwaiting", i+1, k)
+					}
+				}
+			} else {
+				if gotErr != nil {
+					t.Fatalf("unexpected error at poll %d: %v", errAt, gotErr)
+				}
+				if len(kinds) != len(tc.wantKinds) {
+					t.Fatalf("kinds = %v, want %v", kinds, tc.wantKinds)
+				}
+				for i, want := range tc.wantKinds {
+					if kinds[i] != want {
+						t.Errorf("step %d kind = %v, want %v", i+1, kinds[i], want)
+					}
+				}
 			}
 			// Whatever the outcome, exactly one nudge was ever dispatched.
 			if h.sets != 1 || h.enters != 1 {

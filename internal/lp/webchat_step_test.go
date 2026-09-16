@@ -43,6 +43,16 @@ func TestSendAckStep(t *testing.T) {
 			wantAckPolls: 0,
 		},
 		{
+			name: "empty baseline cannot fake a body change",
+			// The pre-send read failed: baseline is "", so current != "" must
+			// NOT count as evidence that the page changed. With no active
+			// generation and a non-empty textarea the poll stays ack-pending.
+			current:      "页面有内容",
+			baseline:     "",
+			wantAction:   webChatAckPending,
+			wantAckPolls: 1,
+		},
+		{
 			name:         "ack via active generation",
 			current:      "同一内容",
 			baseline:     "同一内容",

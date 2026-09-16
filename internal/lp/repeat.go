@@ -153,9 +153,10 @@ const (
 	// the nudge's answer and the caller must re-anchor on it.
 	repeatNudged
 	// repeatAwaiting: the nudge is submitted but has not shown up in the page
-	// yet; keep polling and run NOTHING else - neither the generic send-ack
-	// (it would be satisfied trivially while a generation is active) nor the
-	// content stages.
+	// yet; skip the content and generic send-ack stages (the ack would be
+	// satisfied trivially while a generation is active) and let repeatRecovery
+	// confirm. resendStep still runs earlier in each poll - see the
+	// webchatWait branch for why that is benign.
 	repeatAwaiting
 )
 
@@ -302,10 +303,6 @@ func (r *repeatRecovery) stepStopping(ctx context.Context, in repeatInput) (repe
 	return r.stepSending(ctx, in)
 }
 
-// stepSending sends the CALM DOWN nudge and re-anchors the round on it. The
-// confirmation is left to the existing send-ack machinery: the caller resets
-// sendAck/ackPolls, and sendAckStep/ackLoopEffectFor confirm the send exactly
-// as they do for an initial message.
 // stepSending SUBMITS the nudge and nothing more: it snapshots the markdown
 // baseline and dispatches the textarea write plus Enter. Confirmation is
 // stepAwaiting's job - the generic send-ack stage is deliberately NOT used
@@ -347,6 +344,15 @@ func (r *repeatRecovery) stepSending(ctx context.Context, in repeatInput) (repea
 // webChatCalmDownNudge proves the submit landed. The marker is COUNTED, not
 // probed with Contains: an earlier nudge's bubble is still on the page, so a
 // presence test would confirm a second nudge the moment it was submitted.
+//
+// The count comparison assumes the message DOM is not windowed. The site does
+// virtualise long conversations, so with more than one nudge budget an older
+// nudge bubble could scroll out of the rendered window and keep the count from
+// growing even though the new nudge landed. That case ends as the same
+// retryable ErrTruncated as an unacknowledged nudge - never as a hang - which
+// is part of why the default budget is 1. A windowed-conversation guard is a
+// documented follow-up (see the task doc's 后续项).
+//
 // The window reuses webChatConfirmPolls (the send-ack window); missing it is
 // ErrTruncated, the retryable continue-from-here path.
 func (r *repeatRecovery) stepAwaiting(in repeatInput) (repeatAction, error) {

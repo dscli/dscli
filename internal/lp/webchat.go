@@ -1339,12 +1339,13 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, opts W
 
 	actions = append(
 		actions,
-		// Record the body-text baseline before sending. It feeds the send-ack
-		// stage's "the page changed" evidence (current != baseline) and the
-		// empty-page guard, NOT the extraction prefix-strip (that uses the
-		// markdown baseline below). The read is best effort: on failure the
-		// baseline stays empty, and sendAckStep deliberately refuses the
-		// body-change branch for an empty baseline - see there for why.
+		// Record the body-text baseline before sending. Its only consumer is
+		// the send-ack stage's "the page changed" evidence (current !=
+		// baseline); the extraction prefix-strip uses the markdown baseline
+		// below instead. The read is best effort: on failure the baseline
+		// stays empty, and sendAckStep's baseline != "" guard then refuses the
+		// body-change branch - an empty baseline would otherwise make
+		// current != baseline true on every poll and fake a body change.
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			if text, err := readBodyText(ctx); err == nil {
 				baseline = text
@@ -2467,6 +2468,10 @@ func sendAckStep(
 	// rely on the generation-active and textarea-cleared signals; if neither
 	// shows up either, the round fails fast into the resend path
 	// (ErrSendRejected) instead of misreading a stale page as success.
+	//
+	// The redispatch below is harmless on this path too: it is Enter-only
+	// (jsSendEnterOnly, with no send-button fallback), so it cannot race a
+	// second submission into the conversation.
 	bodyChanged := baseline != "" && current != baseline
 	if bodyChanged || seams.isActive(ctx) || seams.isCleared(ctx) {
 		return webChatProceed, nil
