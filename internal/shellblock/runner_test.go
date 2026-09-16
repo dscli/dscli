@@ -526,6 +526,14 @@ func TestFormatBackfillOmitsScript(t *testing.T) {
 			}
 		}
 	}
+
+	// Exact-shape pin: the whole rendering, so a stray header or an added
+	// newline cannot slip past the substring checks above.
+	res := &RunResult{Output: "hello\n", ExitCode: 3}
+	const want = "output:\nhello\nexit code: 3\n"
+	if got := FormatBackfill(res); got != want {
+		t.Errorf("FormatBackfill = %q, want %q", got, want)
+	}
 }
 
 func TestFormatBackfillNoOutput(t *testing.T) {

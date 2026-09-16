@@ -187,3 +187,36 @@ func TestDistinctNonSpaceRunes(t *testing.T) {
 		}
 	}
 }
+
+// TestDetectRepeatTailWindow pins the scan window boundaries: at the window
+// size the repetition is still seen, and an oversized prefix does not hide a
+// qualifying tail (the window is anchored at the end, where repetition
+// lives).
+func TestDetectRepeatTailWindow(t *testing.T) {
+	unit := "</parameter> </invoke>\n"
+	reps := (repeatWindowBytes / len(unit)) + 64 // comfortably over the window
+	tail := strings.Repeat(unit, reps)
+	if len(tail) <= repeatWindowBytes {
+		t.Fatalf("test fixture is too short: %d bytes", len(tail))
+	}
+	if _, _, ok := detectRepeatTail(tail); !ok {
+		t.Errorf("a repetition longer than the window must still trigger")
+	}
+
+	// Exactly the window: no truncation happens, the repetition is intact.
+	exact := strings.Repeat(unit, repeatWindowBytes/len(unit))
+	if len(exact) > repeatWindowBytes {
+		exact = exact[:repeatWindowBytes]
+	}
+	// Pad the front so the total is exactly the window and the tail repeats.
+	pad := strings.Repeat("x", repeatWindowBytes-len(strings.Repeat(unit, 200)))
+	fixture := pad + strings.Repeat(unit, 200)
+	if len(fixture) != repeatWindowBytes {
+		// Rebuild deterministically if the arithmetic above drifted.
+		fixture = strings.Repeat("x", repeatWindowBytes) + strings.Repeat(unit, 200)
+		fixture = fixture[len(fixture)-repeatWindowBytes:]
+	}
+	if _, _, ok := detectRepeatTail(fixture); !ok {
+		t.Errorf("a qualifying tail inside an exactly-window-sized input must trigger")
+	}
+}

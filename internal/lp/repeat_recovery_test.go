@@ -14,7 +14,7 @@ type repeatHarness struct {
 	stopErr  error
 	clickErr error
 
-	body, md string
+	md       string
 	setErr   error
 	enterErr error
 
@@ -30,7 +30,7 @@ type repeatHarness struct {
 }
 
 func newRepeatHarness() *repeatHarness {
-	return &repeatHarness{body: "BODY-TEXT", md: "MD-BASELINE", detectOK: true}
+	return &repeatHarness{md: "MD-BASELINE", detectOK: true}
 }
 
 // newRecovery wires a repeatRecovery to the harness.
@@ -39,7 +39,6 @@ func (h *repeatHarness) newRecovery() *repeatRecovery {
 		active:   func(context.Context) bool { return h.active },
 		stop:     func(context.Context) (stopDetect, error) { h.stops++; return h.stop, h.stopErr },
 		clickAt:  func(context.Context, float64, float64) error { h.clicks++; return h.clickErr },
-		bodyText: func(context.Context) string { return h.body },
 		mdText:   func(context.Context) string { return h.md },
 		setValue: func(context.Context, string) error { h.sets++; return h.setErr },
 		sendEnter: func(context.Context) error {
@@ -109,8 +108,8 @@ func TestRepeatRecoveryStopThenNudge(t *testing.T) {
 	if act.message != webChatCalmDownNudge {
 		t.Errorf("message = %q, want %q", act.message, webChatCalmDownNudge)
 	}
-	if act.baseline != "BODY-TEXT" || act.mdBaseline != "MD-BASELINE" {
-		t.Errorf("baselines = (%q, %q), want the snapshot values", act.baseline, act.mdBaseline)
+	if act.mdBaseline != "MD-BASELINE" {
+		t.Errorf("mdBaseline = %q, want the snapshot value", act.mdBaseline)
 	}
 	if h.clicks != 1 {
 		t.Errorf("clicks = %d, want exactly 1", h.clicks)
@@ -270,9 +269,17 @@ func TestRepeatRecoverySpentGivesUp(t *testing.T) {
 	if _, err := r.step(context.Background(), repeatTestInput()); err != nil {
 		t.Fatalf("step 1: %v", err)
 	}
+	// The nudge is visible in the page: acknowledged, machine is spent.
+	confirmed := repeatInput{current: "page shows " + webChatCalmDownNudge}
+	if act, err := r.step(context.Background(), confirmed); err != nil {
+		t.Fatalf("confirm: %v", err)
+	} else if act.kind != repeatNone {
+		t.Fatalf("confirm kind = %v, want repeatNone", act.kind)
+	}
+	// The repetition came back with the budget exhausted: give up.
 	act, err := r.step(context.Background(), repeatTestInput())
 	if err == nil {
-		t.Fatalf("step 2 returned no error (kind=%v), want ErrTruncated", act.kind)
+		t.Fatalf("step 3 returned no error (kind=%v), want ErrTruncated", act.kind)
 	}
 	if !errors.Is(err, ErrTruncated) {
 		t.Errorf("error = %v, want ErrTruncated", err)
@@ -291,10 +298,14 @@ func TestRepeatRecoverySpentRecovers(t *testing.T) {
 	if _, err := r.step(context.Background(), repeatTestInput()); err != nil {
 		t.Fatalf("step 1: %v", err)
 	}
+	confirmed := repeatInput{current: "page shows " + webChatCalmDownNudge}
+	if _, err := r.step(context.Background(), confirmed); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
 	h.detectOK = false
 	act, err := r.step(context.Background(), repeatTestInput())
 	if err != nil {
-		t.Fatalf("step 2: %v", err)
+		t.Fatalf("step 3: %v", err)
 	}
 	if act.kind != repeatNone {
 		t.Errorf("kind = %v, want repeatNone", act.kind)
@@ -317,23 +328,47 @@ func TestRepeatRecoverySendError(t *testing.T) {
 	}
 }
 
-// TestRepeatRecoveryBudgetIsReadFromVar: the interrupt budget is a package
-// var so tests (and a future policy change) can retune it; with the budget at
-// zero the first trigger gives up without sending anything.
-func TestRepeatRecoveryBudgetIsReadFromVar(t *testing.T) {
-	orig := webChatMaxRepeatInterrupts
-	webChatMaxRepeatInterrupts = 0
-	t.Cleanup(func() { webChatMaxRepeatInterrupts = orig })
-
+// TestRepeatRecoveryBudgetField: the budget is a struct field defaulting to
+// webChatMaxRepeatInterrupts, so a test injects it instead of mutating the
+// package global. A zero budget gives up on the first trigger.
+func TestRepeatRecoveryBudgetField(t *testing.T) {
 	h := newRepeatHarness()
 	h.active = false
 	r := h.newRecovery()
+	// The default budget comes from the package var; simulate it exhausted.
+	r.used = webChatMaxRepeatInterrupts
 	_, err := r.step(context.Background(), repeatTestInput())
 	if !errors.Is(err, ErrTruncated) {
 		t.Fatalf("error = %v, want ErrTruncated", err)
 	}
 	if h.sets != 0 || h.enters != 0 {
-		t.Errorf("a zero budget must not send: sets=%d enters=%d", h.sets, h.enters)
+		t.Errorf("an exhausted budget must not send: sets=%d enters=%d", h.sets, h.enters)
+	}
+}
+
+// TestRepeatRecoveryBudgetOverride: a non-zero maxInterrupts overrides the
+// package default, letting one wait send more nudges than the global allows.
+func TestRepeatRecoveryBudgetOverride(t *testing.T) {
+	h := newRepeatHarness()
+	h.active = false
+	r := h.newRecovery()
+	r.maxInterrupts = 2
+
+	for i := 1; i <= 2; i++ {
+		if _, err := r.step(context.Background(), repeatTestInput()); err != nil {
+			t.Fatalf("nudge %d: %v", i, err)
+		}
+		// Confirm the nudge so the machine returns to spent.
+		confirmed := repeatInput{current: "page shows " + webChatCalmDownNudge}
+		if _, err := r.step(context.Background(), confirmed); err != nil {
+			t.Fatalf("confirm %d: %v", i, err)
+		}
+	}
+	if h.sets != 2 || h.enters != 2 {
+		t.Errorf("sets=%d enters=%d, want 2 and 2", h.sets, h.enters)
+	}
+	if _, err := r.step(context.Background(), repeatTestInput()); !errors.Is(err, ErrTruncated) {
+		t.Errorf("after the budget the machine must give up, got %v", err)
 	}
 }
 
@@ -353,5 +388,104 @@ func TestRepeatRecoveryTailText(t *testing.T) {
 	}
 	if got := h.detects[0]; got != "REPLY-TAIL" {
 		t.Errorf("detector input = %q, want %q", got, "REPLY-TAIL")
+	}
+}
+
+// TestRepeatRecoveryAwaiting pins the nudge-specific confirmation: the
+// generic send-ack cannot be used here (an active generation and a growing
+// body satisfy it trivially), so the nudge's own marker in the page text is
+// the evidence, within the send-ack window.
+func TestRepeatRecoveryAwaiting(t *testing.T) {
+	tests := []struct {
+		name string
+		// pages lists the body texts seen AFTER the nudge was sent, one per
+		// poll.
+		pages     []string
+		wantErr   bool
+		wantKinds []repeatActionKind
+	}{
+		{
+			name:      "marker on the first poll acknowledges immediately",
+			pages:     []string{"重复中…\n" + webChatCalmDownNudge + "\n"},
+			wantKinds: []repeatActionKind{repeatNone},
+		},
+		{
+			name: "marker appearing late still acknowledges",
+			pages: []string{
+				"重复中…", "重复中…", webChatCalmDownNudge,
+			},
+			wantKinds: []repeatActionKind{repeatAwaiting, repeatAwaiting, repeatNone},
+		},
+		{
+			name: "no marker within the window is ErrTruncated",
+			// One page per poll of webChatConfirmPolls; the last poll trips
+			// the window and carries the error (its kind is the zero value).
+			pages:     []string{"重复中…", "重复中…", "重复中…", "重复中…", "重复中…"},
+			wantErr:   true,
+			wantKinds: []repeatActionKind{repeatAwaiting, repeatAwaiting, repeatAwaiting, repeatAwaiting},
+		},
+		{
+			name: "marker on the very last poll of the window still counts",
+			pages: []string{
+				"a", "b", "c", "d", webChatCalmDownNudge,
+			},
+			wantKinds: []repeatActionKind{
+				repeatAwaiting, repeatAwaiting, repeatAwaiting, repeatAwaiting, repeatNone,
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newRepeatHarness()
+			h.active = false // straight to sending
+			r := h.newRecovery()
+
+			// The nudge is sent on the first step.
+			act, err := r.step(context.Background(), repeatTestInput())
+			if err != nil {
+				t.Fatalf("send: %v", err)
+			}
+			if act.kind != repeatNudged {
+				t.Fatalf("send kind = %v, want repeatNudged", act.kind)
+			}
+			if act.mdBaseline != "MD-BASELINE" {
+				t.Errorf("mdBaseline = %q, want the snapshot", act.mdBaseline)
+			}
+
+			var gotErr error
+			for i, page := range tc.pages {
+				var got repeatAction
+				got, gotErr = r.step(context.Background(), repeatInput{current: page})
+				if gotErr != nil {
+					// The window is closed: the error is the outcome and the
+					// action kind is the zero value.
+					break
+				}
+				if i >= len(tc.wantKinds) {
+					t.Fatalf("unexpected extra step %d (kind=%v)", i, got.kind)
+				}
+				if want := tc.wantKinds[i]; got.kind != want {
+					t.Errorf("step %d kind = %v, want %v", i+1, got.kind, want)
+				}
+			}
+			// Every expected poll before the error must have been checked.
+			if !tc.wantErr && len(tc.wantKinds) != len(tc.pages) {
+				t.Fatalf("test fixture mismatch: %d kinds for %d pages", len(tc.wantKinds), len(tc.pages))
+			}
+			if tc.wantErr {
+				if gotErr == nil {
+					t.Fatalf("no error after the window, want ErrTruncated")
+				}
+				if !errors.Is(gotErr, ErrTruncated) {
+					t.Errorf("error = %v, want ErrTruncated", gotErr)
+				}
+			} else if gotErr != nil {
+				t.Fatalf("unexpected error: %v", gotErr)
+			}
+			// Whatever the outcome, exactly one nudge was ever dispatched.
+			if h.sets != 1 || h.enters != 1 {
+				t.Errorf("sets=%d enters=%d, want exactly 1 nudge", h.sets, h.enters)
+			}
+		})
 	}
 }
