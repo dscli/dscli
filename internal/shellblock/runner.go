@@ -195,9 +195,8 @@ func scriptExt(mode scriptMode) string {
 }
 
 // scriptFileName returns the round's script file name: scriptN.sh (bash),
-// scriptN.py (python), or scriptN.lst (attach). Run names the file with it
-// and FormatBackfill heads the backfill with it, so the label and the file
-// on disk cannot drift.
+// scriptN.py (python), or scriptN.lst (attach). Run names the script and the
+// backfill (scriptN.txt) with it.
 func scriptFileName(n int, mode scriptMode) string {
 	return fmt.Sprintf("script%d%s", n, scriptExt(mode))
 }
@@ -329,7 +328,7 @@ func Run(ctx context.Context, dir, script string, timeout time.Duration) (*RunRe
 		Timeout:     execRes.timeout,
 		Duration:    execRes.duration,
 	}
-	if err := os.WriteFile(res.OutputPath, []byte(FormatBackfill(n, scriptText, res)), 0o600); err != nil {
+	if err := os.WriteFile(res.OutputPath, []byte(FormatBackfill(res)), 0o600); err != nil {
 		return nil, fmt.Errorf("shellblock: write output backfill: %w", err)
 	}
 	return res, nil
@@ -605,18 +604,15 @@ func nextScriptNumber(dir string) (int, error) {
 }
 
 // FormatBackfill renders the scriptN.txt wrapper sent back to the model: the
-// mode-prefixed command line (`bash scriptN.sh:` / `python scriptN.py:` /
-// `attach scriptN.lst:`), the script verbatim in a fenced block, the merged
-// output, and the exit status. The shape follows the manual-
-// verification backfill (the dscli-shell harness), with the mode and an
-// explicit exit code added; the file name carries the mode's extension so
-// it matches the file Run wrote.
-func FormatBackfill(n int, scriptText string, res *RunResult) string {
+// merged output and the exit status, nothing else. The script is deliberately
+// not echoed: the model wrote it in this very round, and the follow-up message
+// already ties the file to the script (`output of scriptN.sh (attached as
+// scriptN.txt):`), so repeating the body would only spend tokens. The shape
+// follows the manual-verification backfill (the dscli-shell harness) minus the
+// header and body.
+func FormatBackfill(res *RunResult) string {
 	var b strings.Builder
-	mode := detectScriptMode(scriptText)
-	fmt.Fprintf(&b, "%s %s:\n```xml\n", mode, scriptFileName(n, mode))
-	b.WriteString(scriptText)
-	b.WriteString("```\noutput:\n")
+	b.WriteString("output:\n")
 	out := res.Output
 	switch {
 	case strings.TrimSpace(out) == "":

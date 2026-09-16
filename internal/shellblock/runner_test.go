@@ -69,16 +69,16 @@ func TestRunWritesAndExecutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read backfill file: %v", err)
 	}
-	for _, want := range []string{
-		"bash script1.sh:",
-		"```xml",
-		"#!/bin/bash",
-		"```\noutput:",
-		"hello",
-		"exit code: 3",
-	} {
+	for _, want := range []string{"output:", "hello", "exit code: 3"} {
 		if !strings.Contains(string(backfill), want) {
 			t.Errorf("backfill misses %q:\n%s", want, backfill)
+		}
+	}
+	// The backfill carries the output only: the script body and its mode
+	// header would just spend tokens (the model wrote the script itself).
+	for _, absent := range []string{"#!/bin/bash", "xml", "bash script1.sh:"} {
+		if strings.Contains(string(backfill), absent) {
+			t.Errorf("backfill echoes the script (%q):\n%s", absent, backfill)
 		}
 	}
 }
@@ -310,9 +310,14 @@ func TestRunPythonScript(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read backfill: %v", err)
 	}
-	for _, want := range []string{"python script1.py:", "#!/usr/bin/env python3", "exit code: 2"} {
+	for _, want := range []string{"output:", "hello from python", "exit code: 2"} {
 		if !strings.Contains(string(backfill), want) {
 			t.Errorf("backfill misses %q:\n%s", want, backfill)
+		}
+	}
+	for _, absent := range []string{"python script1.py:", "#!/usr/bin/env python3", "xml"} {
+		if strings.Contains(string(backfill), absent) {
+			t.Errorf("backfill echoes the script (%q):\n%s", absent, backfill)
 		}
 	}
 }
@@ -367,9 +372,14 @@ func TestRunAttachBlock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read backfill: %v", err)
 	}
-	for _, want := range []string{"attach script1.lst:", "#!attach", "missing.txt not exist"} {
+	for _, want := range []string{"output:", "missing.txt not exist"} {
 		if !strings.Contains(string(backfill), want) {
 			t.Errorf("backfill misses %q:\n%s", want, backfill)
+		}
+	}
+	for _, absent := range []string{"attach script1.lst:", "#!attach", "xml"} {
+		if strings.Contains(string(backfill), absent) {
+			t.Errorf("backfill echoes the script (%q):\n%s", absent, backfill)
 		}
 	}
 }
@@ -495,23 +505,32 @@ func TestRunDefaultDirs(t *testing.T) {
 	}
 }
 
-// TestFormatBackfillModeLabels: the header carries the detected mode and the
-// mode's file extension (.sh / .py / .lst).
-func TestFormatBackfillModeLabels(t *testing.T) {
-	if got := FormatBackfill(2, "#!/usr/bin/python\nprint(1)\n", &RunResult{ExitCode: 0}); !strings.Contains(got, "python script2.py:") {
-		t.Errorf("python backfill misses the mode header:\n%s", got)
+// TestFormatBackfillOmitsScript: whatever the script mode, the backfill holds
+// only the output section and the exit status - no mode header, no script
+// body, no fence. The model wrote the script; echoing it back only costs
+// tokens.
+func TestFormatBackfillOmitsScript(t *testing.T) {
+	cases := map[string]*RunResult{
+		"bash":   {Output: "x\n", ExitCode: 0},
+		"python": {Output: "x\n", ExitCode: 0},
+		"attach": {Output: "foo.txt attached\n", ExitCode: 0},
 	}
-	if got := FormatBackfill(3, "#!attach\nfoo.txt\n", &RunResult{ExitCode: 0}); !strings.Contains(got, "attach script3.lst:") {
-		t.Errorf("attach backfill misses the mode header:\n%s", got)
-	}
-	if got := FormatBackfill(4, "echo x\n", &RunResult{ExitCode: 0}); !strings.Contains(got, "bash script4.sh:") {
-		t.Errorf("bash backfill misses the mode header:\n%s", got)
+	for name, res := range cases {
+		got := FormatBackfill(res)
+		if !strings.HasPrefix(got, "output:\n") {
+			t.Errorf("%s backfill must start with the output section:\n%s", name, got)
+		}
+		for _, absent := range []string{"```", "script", "bash ", "python ", "attach "} {
+			if strings.Contains(got, absent) {
+				t.Errorf("%s backfill echoes the script (%q):\n%s", name, absent, got)
+			}
+		}
 	}
 }
 
 func TestFormatBackfillNoOutput(t *testing.T) {
-	got := FormatBackfill(65, "true\n", &RunResult{ExitCode: 0})
-	for _, want := range []string{"bash script65.sh:", "```xml\ntrue\n```", "(no output)", "exit code: 0"} {
+	got := FormatBackfill(&RunResult{ExitCode: 0})
+	for _, want := range []string{"output:", "(no output)", "exit code: 0"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("FormatBackfill misses %q:\n%s", want, got)
 		}
