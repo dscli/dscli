@@ -194,29 +194,30 @@ func TestDistinctNonSpaceRunes(t *testing.T) {
 // lives).
 func TestDetectRepeatTailWindow(t *testing.T) {
 	unit := "</parameter> </invoke>\n"
-	reps := (repeatWindowBytes / len(unit)) + 64 // comfortably over the window
-	tail := strings.Repeat(unit, reps)
-	if len(tail) <= repeatWindowBytes {
-		t.Fatalf("test fixture is too short: %d bytes", len(tail))
+
+	// A repetition longer than the window: the tail-anchored window keeps a
+	// whole number of copies and must still trigger.
+	over := strings.Repeat(unit, repeatWindowBytes/len(unit)+64)
+	if len(over) <= repeatWindowBytes {
+		t.Fatalf("test fixture is too short: %d bytes", len(over))
 	}
-	if _, _, ok := detectRepeatTail(tail); !ok {
+	if _, _, ok := detectRepeatTail(over); !ok {
 		t.Errorf("a repetition longer than the window must still trigger")
 	}
 
-	// Exactly the window: no truncation happens, the repetition is intact.
-	exact := strings.Repeat(unit, repeatWindowBytes/len(unit))
-	if len(exact) > repeatWindowBytes {
-		exact = exact[:repeatWindowBytes]
+	// Exactly the window: build it by prefixing a filler whose length is
+	// computed and asserted non-negative, so no silent wrap-around.
+	const copies = 200
+	repeated := strings.Repeat(unit, copies)
+	fillerLen := repeatWindowBytes - len(repeated)
+	if fillerLen < 0 {
+		t.Fatalf("fixture does not fit the window: %d repeated + %d bytes", len(repeated), repeatWindowBytes)
 	}
-	// Pad the front so the total is exactly the window and the tail repeats.
-	pad := strings.Repeat("x", repeatWindowBytes-len(strings.Repeat(unit, 200)))
-	fixture := pad + strings.Repeat(unit, 200)
-	if len(fixture) != repeatWindowBytes {
-		// Rebuild deterministically if the arithmetic above drifted.
-		fixture = strings.Repeat("x", repeatWindowBytes) + strings.Repeat(unit, 200)
-		fixture = fixture[len(fixture)-repeatWindowBytes:]
+	exact := strings.Repeat("x", fillerLen) + repeated
+	if len(exact) != repeatWindowBytes {
+		t.Fatalf("fixture = %d bytes, want exactly %d", len(exact), repeatWindowBytes)
 	}
-	if _, _, ok := detectRepeatTail(fixture); !ok {
+	if _, _, ok := detectRepeatTail(exact); !ok {
 		t.Errorf("a qualifying tail inside an exactly-window-sized input must trigger")
 	}
 }

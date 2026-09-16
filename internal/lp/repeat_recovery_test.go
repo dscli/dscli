@@ -391,6 +391,24 @@ func TestRepeatRecoveryTailText(t *testing.T) {
 	}
 }
 
+// noMarkerPages returns n pages that never show the nudge marker.
+func noMarkerPages(n int) []string {
+	pages := make([]string, n)
+	for i := range pages {
+		pages[i] = "重复中…"
+	}
+	return pages
+}
+
+// repeatKinds returns n copies of kind.
+func repeatKinds(kind repeatActionKind, n int) []repeatActionKind {
+	kinds := make([]repeatActionKind, n)
+	for i := range kinds {
+		kinds[i] = kind
+	}
+	return kinds
+}
+
 // TestRepeatRecoveryAwaiting pins the nudge-specific confirmation: the
 // generic send-ack cannot be used here (an active generation and a growing
 // body satisfy it trivially), so the nudge's own marker in the page text is
@@ -418,11 +436,11 @@ func TestRepeatRecoveryAwaiting(t *testing.T) {
 		},
 		{
 			name: "no marker within the window is ErrTruncated",
-			// One page per poll of webChatConfirmPolls; the last poll trips
-			// the window and carries the error (its kind is the zero value).
-			pages:     []string{"重复中…", "重复中…", "重复中…", "重复中…", "重复中…"},
+			// One page per poll of the confirmation window; the last poll
+			// trips it and carries the error (its kind is the zero value).
+			pages:     noMarkerPages(webChatConfirmPolls),
 			wantErr:   true,
-			wantKinds: []repeatActionKind{repeatAwaiting, repeatAwaiting, repeatAwaiting, repeatAwaiting},
+			wantKinds: repeatKinds(repeatAwaiting, webChatConfirmPolls-1),
 		},
 		{
 			name: "marker on the very last poll of the window still counts",
@@ -487,5 +505,57 @@ func TestRepeatRecoveryAwaiting(t *testing.T) {
 				t.Errorf("sets=%d enters=%d, want exactly 1 nudge", h.sets, h.enters)
 			}
 		})
+	}
+}
+
+// TestRepeatRecoverySecondNudgeNeedsFreshMarker is the regression for the
+// stale-marker hole: with a budget of two, the first nudge's bubble is still
+// on the page when the second nudge is sent, so a presence test would confirm
+// the second nudge instantly. The confirmation must wait for the marker COUNT
+// to grow.
+func TestRepeatRecoverySecondNudgeNeedsFreshMarker(t *testing.T) {
+	h := newRepeatHarness()
+	h.active = false
+	r := h.newRecovery()
+	r.maxInterrupts = 2
+
+	// Nudge 1 goes out with no marker on the page yet.
+	firstBubble := "history\n" + webChatCalmDownNudge + "\n"
+	if act, err := r.step(context.Background(), repeatInput{current: "重复中…"}); err != nil {
+		t.Fatalf("nudge 1: %v", err)
+	} else if act.kind != repeatNudged {
+		t.Fatalf("nudge 1 kind = %v, want repeatNudged", act.kind)
+	}
+	// Its own bubble is the confirmation (count 0 -> 1).
+	if act, err := r.step(context.Background(), repeatInput{current: firstBubble}); err != nil {
+		t.Fatalf("confirm 1: %v", err)
+	} else if act.kind != repeatNone {
+		t.Fatalf("confirm 1 kind = %v, want repeatNone", act.kind)
+	}
+
+	// The repetition returns; nudge 2 is sent while only the FIRST bubble is
+	// visible. That must NOT count as its confirmation.
+	if act, err := r.step(context.Background(), repeatInput{current: firstBubble}); err != nil {
+		t.Fatalf("nudge 2: %v", err)
+	} else if act.kind != repeatNudged {
+		t.Fatalf("nudge 2 kind = %v, want repeatNudged", act.kind)
+	}
+	act, err := r.step(context.Background(), repeatInput{current: firstBubble})
+	if err != nil {
+		t.Fatalf("await 2: %v", err)
+	}
+	if act.kind != repeatAwaiting {
+		t.Fatalf("stale marker confirmed nudge 2: kind = %v, want repeatAwaiting", act.kind)
+	}
+
+	// The second bubble appearing is the real confirmation.
+	both := firstBubble + webChatCalmDownNudge + "\n"
+	if act, err := r.step(context.Background(), repeatInput{current: both}); err != nil {
+		t.Fatalf("confirm 2: %v", err)
+	} else if act.kind != repeatNone {
+		t.Fatalf("confirm 2 kind = %v, want repeatNone", act.kind)
+	}
+	if h.sets != 2 || h.enters != 2 {
+		t.Errorf("sets=%d enters=%d, want 2 and 2", h.sets, h.enters)
 	}
 }

@@ -1339,9 +1339,12 @@ func webchatSend(tabCtx context.Context, conversationURL, message string, opts W
 
 	actions = append(
 		actions,
-		// Record baseline text before sending. The read is best effort: a
-		// transient evaluation failure leaves the baseline empty, which only
-		// weakens the prefix-strip fallback.
+		// Record the body-text baseline before sending. It feeds the send-ack
+		// stage's "the page changed" evidence (current != baseline) and the
+		// empty-page guard, NOT the extraction prefix-strip (that uses the
+		// markdown baseline below). The read is best effort: on failure the
+		// baseline stays empty, and sendAckStep deliberately refuses the
+		// body-change branch for an empty baseline - see there for why.
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			if text, err := readBodyText(ctx); err == nil {
 				baseline = text
@@ -1883,14 +1886,24 @@ func webchatWait(ctx context.Context, baseline, mdBaseline, sentMessage string) 
 			// nudge is a fresh send, and a stale pending resume must not
 			// hold or click against the new round.
 			sentMessage = repAct.message
+			// Only the markdown baseline is refreshed: the body-text baseline
+			// exists for the send-ack stage's change detection, and that
+			// stage no longer runs for the nudge (repeatAwaiting replaced
+			// it), so refreshing it would be dead state.
 			mdBaseline = repAct.mdBaseline
 			cont = continueRecovery{}
 			stableCount, emptyStableCount, lastText = 0, 0, ""
 			continue
 		case repeatAwaiting:
-			// The nudge is submitted but unconfirmed; run NOTHING else - the
-			// generic ack and the content stages would both misread a
-			// still-running repetition. repeatRecovery owns the next poll.
+			// The nudge is submitted but unconfirmed: skip the CONTENT and
+			// generic ACK stages (both would misread a still-running
+			// repetition), and let repeatRecovery own the confirmation.
+			//
+			// resendStep already ran earlier in this same poll and may click
+			// a 「重发」 button. That is benign and even helpful: if the nudge
+			// submit was rejected the retry is what makes it land, and the
+			// confirmation below still has to see the marker grow before the
+			// round moves on.
 			stableCount, emptyStableCount, lastText = 0, 0, ""
 			continue
 		}
@@ -2448,7 +2461,14 @@ func sendAckStep(
 	ackPolls, resendCount *int,
 	lastResendAt *time.Time,
 ) (action webChatAction, err error) {
-	if current != baseline || seams.isActive(ctx) || seams.isCleared(ctx) {
+	// An empty baseline means the pre-send read failed, not that the page is
+	// empty: current != "" would then be true on every poll and the ack would
+	// latch immediately, hiding a rejected send. Skip only that branch and
+	// rely on the generation-active and textarea-cleared signals; if neither
+	// shows up either, the round fails fast into the resend path
+	// (ErrSendRejected) instead of misreading a stale page as success.
+	bodyChanged := baseline != "" && current != baseline
+	if bodyChanged || seams.isActive(ctx) || seams.isCleared(ctx) {
 		return webChatProceed, nil
 	}
 	*ackPolls += 1
