@@ -620,6 +620,51 @@ const (
 		return false;
 	})()`
 
+	// jsStopGeneration locates the generation-stop control, mirroring
+	// jsContinueGeneration's matching discipline. The candidate labels are
+	// matched EXACTLY (text / aria-label / title, case-folded): clicking the
+	// wrong control during a repetition would be worse than not clicking at
+	// all. Signal 1 of jsIsGenerationActive matches loosely and is used only
+	// to decide "is a generation running"; the click path must be tighter.
+	//
+	// Disabled and aria-disabled elements are skipped, position:fixed
+	// popovers (offsetParent === null) are judged by their rect, the LAST
+	// match wins (document order ends at the newest row), and the result
+	// carries an occlusion check because the caller clicks by coordinate.
+	jsStopGeneration = `(() => {
+		const wants = ['停止', 'stop', '停止生成', 'stop generating', '停止输出'];
+		const cands = document.querySelectorAll('button, [role="button"]');
+		let pick = null;
+		for (let i = 0; i < cands.length; i++) {
+			const b = cands[i];
+			if (b.disabled) continue;
+			if ((b.getAttribute('aria-disabled') || '') === 'true') continue;
+			if (b.offsetParent === null) {
+				const r0 = b.getBoundingClientRect();
+				if (r0.width === 0 || r0.height === 0) continue;
+			}
+			const t = (b.textContent || '').trim().toLowerCase();
+			const aria = (b.getAttribute('aria-label') || '').trim().toLowerCase();
+			const title = (b.getAttribute('title') || '').trim().toLowerCase();
+			let label = '';
+			if (wants.indexOf(t) !== -1) label = t;
+			else if (wants.indexOf(aria) !== -1) label = aria;
+			else if (wants.indexOf(title) !== -1) label = title;
+			if (!label) continue;
+			// Keep the LAST match: document order ends at the newest row.
+			pick = {b: b, label: label};
+		}
+		if (!pick) return {found: false};
+		const b = pick.b;
+		if (b.scrollIntoView) b.scrollIntoView({block: 'center'});
+		const r = b.getBoundingClientRect();
+		const x = r.left + r.width / 2;
+		const y = r.top + r.height / 2;
+		const hit = document.elementFromPoint(x, y);
+		const clickable = !!hit && (hit === b || b.contains(hit));
+		return {found: true, clickable: clickable, label: pick.label, x: x, y: y};
+	})()`
+
 	// jsTextareaCleared reports whether the chat textarea has been emptied.
 	// After a successful send the React-controlled textarea clears
 	// immediately, so a non-empty textarea inside the confirmation window
@@ -1725,6 +1770,13 @@ func webchatWait(ctx context.Context, baseline, mdBaseline, sentMessage string) 
 	// budget/cooldown pair rather than sharing resendCount.
 	var cont continueRecovery
 
+	// Endless-repetition recovery (detectRepeatTail). A model stuck in an
+	// exact repetition grows the body text forever: the stability stage never
+	// latches and the site renders no resume button while the generation is
+	// active, so without this stage the round can only poll out. Per-call,
+	// like cont: a new wait gets a fresh interrupt budget.
+	var rep repeatRecovery
+
 	for i := 0; i < maxPolls; i++ {
 		polls++
 		select {
@@ -1783,6 +1835,34 @@ func webchatWait(ctx context.Context, baseline, mdBaseline, sentMessage string) 
 				}
 				continue
 			}
+		}
+
+		// Endless-repetition recovery. Placed after the send-ack stage (the
+		// round anchor must be confirmed before the reply tail can be
+		// meaningfully read) and BEFORE the continue/stability stages: a
+		// repetition must neither be extracted as the round's answer nor
+		// let a 「继续生成」 click resume the garbage output.
+		repAct, rerr := rep.step(ctx, repeatInput{current: current, sentMessage: sentMessage})
+		if rerr != nil {
+			return "", rerr
+		}
+		switch repAct.kind {
+		case repeatBusy:
+			// The stop click is in flight; hold the round state so the
+			// growing repetition cannot be extracted in the meantime.
+			stableCount, emptyStableCount = 0, 0
+			lastText = current
+			continue
+		case repeatNudged:
+			// The nudge's reply IS this round's reply: re-anchor every
+			// downstream stage on it. sendAck is reset because the nudge was
+			// just submitted and must pass through the normal confirmation
+			// window like any other send.
+			sentMessage = repAct.message
+			baseline, mdBaseline = repAct.baseline, repAct.mdBaseline
+			sendAck, ackPolls = false, 0
+			stableCount, emptyStableCount, lastText = 0, 0, ""
+			continue
 		}
 
 		// Continue-generation recovery. A busy server can stop a generation
@@ -2672,6 +2752,40 @@ func continueGenerationButton(ctx context.Context) (continueDetect, error) {
 	y, okY := result["y"].(float64)
 	if !okX || !okY {
 		return continueDetect{}, fmt.Errorf("continue button: non-numeric coordinates in detector result")
+	}
+	d.x, d.y = x, y
+	return d, nil
+}
+
+// stopDetect is the stop-generation probe's outcome. present and clickable
+// are distinct on purpose: the detector must be able to say "there is a stop
+// button but it cannot be clicked" (the recovery then degrades to sending the
+// nudge without stopping).
+type stopDetect struct {
+	present   bool
+	clickable bool
+	label     string
+	x, y      float64
+}
+
+// stopGenerationButton detects the generation-stop control. It mirrors
+// continueGenerationButton's structure, including the non-numeric coordinate
+// guard: a malformed result must not silently become a click at (0,0).
+func stopGenerationButton(ctx context.Context) (stopDetect, error) {
+	var result map[string]any
+	if err := chromedp.Evaluate(jsStopGeneration, &result).Do(ctx); err != nil {
+		return stopDetect{}, err
+	}
+	if present, _ := result["found"].(bool); !present {
+		return stopDetect{}, nil
+	}
+	d := stopDetect{present: true}
+	d.label, _ = result["label"].(string)
+	d.clickable, _ = result["clickable"].(bool)
+	x, okX := result["x"].(float64)
+	y, okY := result["y"].(float64)
+	if !okX || !okY {
+		return stopDetect{}, fmt.Errorf("stop button: non-numeric coordinates in detector result")
 	}
 	d.x, d.y = x, y
 	return d, nil
