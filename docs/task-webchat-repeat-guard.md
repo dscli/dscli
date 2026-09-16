@@ -249,7 +249,7 @@ case repeatNudged: // CALM DOWN 已发出：把“本轮回复”的锚点切到
 
 ## 9. 后续项（review 判为 follow-up，本轮不做）
 
-1. **gocyclo 拆分**：`webchatWait`（约 21）与 `handleWebChatShellLoop`（约 21）的圈复杂度已
+1. **gocyclo 拆分**：`webchatWait`（22）与 `handleWebChatShellLoop`（21）的圈复杂度已
    逼近/超过阈值。建议把 `webchatWait` 里 `repeatAction` 的三分支映射抽成纯函数
    `repeatLoopEffectFor(act repeatAction, current string, ...) (loopEffect, error)`（对齐
    `ackLoopEffectFor` 的既有风格），把状态重置的规则收进一个可单测的映射，主循环只做应用。
