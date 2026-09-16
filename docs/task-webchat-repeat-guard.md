@@ -126,10 +126,13 @@ case repeatBusy: // 打断流程进行中（已点击停止、等待生效）
     continue // 跳过 cont.step 与 stabilityStep
 case repeatNudged: // CALM DOWN 已发出：把“本轮回复”的锚点切到新消息
     sentMessage = repAct.message
-    baseline, mdBaseline = repAct.baseline, repAct.mdBaseline
-    sendAck, ackPolls = false, 0
+    mdBaseline = repAct.mdBaseline   // 仅刷新 markdown 基线
+    cont = continueRecovery{}        // 新发送丢弃旧 continue 状态（同 resendStep）
     stableCount, emptyStableCount, lastText = 0, 0, ""
     continue
+case repeatAwaiting: // nudge 已提交、待本状态机的 awaiting 阶段确认
+    stableCount, emptyStableCount, lastText = 0, 0, ""
+    continue // 只跳过内容与通用 ack 阶段；resendStep 仍每轮在前运行
 }
 // repeatNone：正常继续（cont.step → stabilityStep）
 ```
@@ -144,12 +147,18 @@ case repeatNudged: // CALM DOWN 已发出：把“本轮回复”的锚点切到
 - **stopping**：每 poll 检查 `isGenerationActive`；不再 active → phase=sending。最多
   `webChatRepeatStopGracePolls=3` 个 poll（约 6s），超时也进入 sending（发送自身还有 ack 窗口兜底）。
   本阶段返回 `repeatBusy`。
-- **sending**（一次调用内完成）：先 snapshot `baseline`（body innerText）与 `mdBaseline`
-  （`jsGetAssistantText` → `joinMarkdown`，同 `webchatSend` 的取法）→ `webchatSetValue(ctx, webChatCalmDownNudge)`
-  → `jsSendEnter` 派发 → 返回 `repeatNudged{message: webChatCalmDownNudge, baseline, mdBaseline}`；
-  phase=spent。**确认交回既有机制**：我们只把 `sendAck` 复位为 false、`ackPolls=0`，由
-  `sendAckStep`/`ackLoopEffectFor` 照常确认这次发送（textarea cleared / body 变化 / active）。
+- **sending**（一次调用内完成）：snapshot `mdBaseline`（`jsGetAssistantText` → `joinMarkdown`）→
+  `webchatSetValue(ctx, webChatCalmDownNudge)` → `jsSendEnter` 派发 → 记录 pre-send marker 计数
+  `nudgeSeenBefore = strings.Count(in.current, webChatCalmDownNudge)` → 返回
+  `repeatNudged{message: webChatCalmDownNudge, mdBaseline}`；phase=awaiting。**确认由本状态机的
+  awaiting 阶段负责**：通用 `sendAckStep`/`ackLoopEffectFor` 在 generation 仍 active 时每个信号都
+  被平凡满足，故意不用于 nudge，`webchatWait` 也不复位 `sendAck`/`ackPolls`。body `baseline` 有意
+  不刷新（其唯一消费者是通用 ack，而该阶段不再运行）。
   公告 `📨 已回复 \`CALM DOWN! NO PANIC!\`，等待模型继续（第 %d/%d 次）…`
+- **awaiting**：计数确认——`strings.Count(current, webChatCalmDownNudge) > nudgeSeenBefore` 即确认、
+  转 spent；窗口 `webChatConfirmPolls` 内计数未增长 → `ErrTruncated`（"CALM DOWN nudge was not
+  acknowledged within N polls"）。期间只跳过内容与通用 ack 阶段（resendStep 仍每轮在前运行，其重发
+  对 nudge 落地是良性的）。
 - **spent**：只做二次检测。再触发 → 记日志（`⚠️ 无限重复未被打断…`）+ best-effort 停止
   （仍 active 且按钮可点才点）→ 返回 `fmt.Errorf("%w: endless repetition persisted after the CALM DOWN nudge", ErrTruncated)`
   ——复用既有「截断重试」策略（follow-up 会补一条 continue 警告；初始轮按既有语义重试），不新增挂死路径。
@@ -254,7 +263,11 @@ case repeatNudged: // CALM DOWN 已发出：把“本轮回复”的锚点切到
    `repeatLoopEffectFor(act repeatAction, current string, ...) (loopEffect, error)`（对齐
    `ackLoopEffectFor` 的既有风格），把状态重置的规则收进一个可单测的映射，主循环只做应用。
    shell loop 同理可按「判定 → 执行 → 回填」拆子步骤。
-2. **jsStopGeneration live fixture 探针**：与 `continue_probe_live_test.go` 同法，用本地
+2. **窗口化对话下的 nudge 确认加固**：`stepAwaiting` 的计数比较假设消息 DOM 不窗口化。站点对长
+   对话确实做虚拟化，预算 >1 时旧 nudge 气泡可能滚出渲染窗口、计数不增，即使新 nudge 已落地。该
+   情形以可重试的 `ErrTruncated` 收尾（不是挂死），也是默认预算保持 1 的原因之一。加固方向：改为
+   锚定「最后一条 user 气泡」或结合 IDB/消息 id 判定；需 live 检查确认虚拟化行为。
+3. **jsStopGeneration live fixture 探针**：与 `continue_probe_live_test.go` 同法，用本地
    `file://` fixture pin 停止控件的匹配行为（精确标签、last-match、遮挡检查），并顺带确认真实
    DOM 位置（当前刻意不做 `.ds-message` ownership 检查，见 `webchat.go` 注释）。门控在
    `DSCLI_LIVE_*` 环境变量下，默认跳过。
