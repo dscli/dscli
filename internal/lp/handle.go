@@ -518,6 +518,52 @@ func formatAttachNote(attachments []string) string {
 // as attachments: scriptN.txt first, then every `#!attach` file in the
 // listed order.
 //
+// fenceShellBlocks wraps `<shell>` / `</shell>` delimiter lines in xml code
+// fences so the printed round renders as a copyable code block. It is a
+// print-only transform: the protocol and stored text never see the fences.
+//
+// The rules are line-level, so a block that opens on the first line or closes
+// on the last one fences just as well as a mid-text block:
+//
+//   - a line whose trimmed content starts with ``` or ~~~ toggles the
+//     already-fenced state and is emitted verbatim (never double-fenced);
+//   - outside a fence, a line whose trimmed content is exactly `<shell>` is
+//     preceded by a ```xml line;
+//   - outside a fence, a line whose trimmed content is exactly `</shell>` is
+//     followed by a closing ``` line.
+//
+// Everything else is passed through unchanged. outfmt.PrintContent adds the
+// blank padding around fence lines itself, so no blank lines are inserted
+// here.
+func fenceShellBlocks(s string) string {
+	if s == "" {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 16)
+	inFence := false
+	for _, line := range strings.SplitAfter(s, "\n") {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(trimmed, "```"), strings.HasPrefix(trimmed, "~~~"):
+			inFence = !inFence
+			b.WriteString(line)
+		case !inFence && trimmed == "<shell>":
+			b.WriteString("```xml\n")
+			b.WriteString(line)
+		case !inFence && trimmed == "</shell>":
+			b.WriteString(line)
+			if !strings.HasSuffix(line, "\n") {
+				b.WriteByte('\n')
+			}
+			b.WriteString("```\n")
+		default:
+			b.WriteString(line)
+		}
+	}
+	return b.String()
+}
+
 // Every round (reasoning + content) is printed, the local-execution warning
 // is printed here (this is the moment a remote model's script runs
 // locally), and the returned result is marked Printed so callers do not
@@ -540,9 +586,11 @@ func handleWebChatShellLoop(ctx context.Context, first WebChatResult, opts WebCh
 
 	message := first.Content
 	convURL := first.URL
+
 	printRound := func(res WebChatResult) {
-		outfmt.PrintContent(ctx, res.Reasoning, res.Content)
+		outfmt.PrintContent(ctx, fenceShellBlocks(res.Reasoning), fenceShellBlocks(res.Content))
 	}
+
 	// Printed: the final answer was already printed inside the loop, so
 	// callers must not re-print it.
 	cleanExit := func() (WebChatResult, error) {
