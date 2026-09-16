@@ -1,6 +1,6 @@
 # task-webchat-repeat-guard: endless repetition 的检测与 CALM DOWN 打断（含两个小项）
 
-> 状态: 待实现（设计稿，2026-09-16）
+> 状态: 已实现（f8eb8b4 / 377edde / 63b1ba2 / fd951d0；后续 review 修复见文末「后续项」）
 > 依据: 用户报告（2026-09-16）——WebChat 通道的模型输出会陷入无限重复（endless repetition）：
 > 如整段 `</parameter> </invoke>` 反复输出、永不结束。目前 dscli 只能等到 poll 预算耗尽
 > （默认 300×2s=600s，或 ctx deadline）后报 `response timeout`，无法自救。
@@ -15,9 +15,9 @@
 
 ## 0. 实现须知
 
-1. 先 `git status` / `git diff`：工作区已有**用户的两处未提交改动**（`internal/lp/handle.go` 的
-   fence 草稿、`internal/shellblock/runner.go` 的去掉 script 草稿）。它们是本任务的种子：在
-   基础上前进，**不要回退、丢弃或覆盖**。
+1. （历史语境）本设计起草时工作区已有**用户的两处未提交改动**（`internal/lp/handle.go` 的
+   fence 草稿、`internal/shellblock/runner.go` 的去掉 script 草稿）。实现以它们为种子前进、
+   未回退：两处草稿分别由 `377edde`（fence 重构）与 `f8eb8b4`（backfill 去 script）收尾。
 2. 实现顺序（先让测试恢复绿色，再做核心）：
    1. 小项 ③ backfill 去 script（当前 `internal/shellblock` 测试是红的：用户草稿删了头部与
       正文，测试还在断言旧形态）；
@@ -205,15 +205,15 @@ case repeatNudged: // CALM DOWN 已发出：把“本轮回复”的锚点切到
 - `printRound` 对 reasoning / content 两处调用；`message`、verdict、feedback 等协议文本保持不变。
 - 注意 `outfmt.PrintContent` 内部对 ``` 语言行有 `\n$0\n` 补白（`codeFenceRe`），围栏行不必自带
   空行。
-- 测试（`handle_test.go`）：中间块 / 首行即块 / 末行即块 / 两个块 / 已围栏（```xml 内的
+- 测试（`handle_fence_test.go`）：中间块 / 首行即块 / 末行即块 / 两个块 / 已围栏（```xml 内的
   `<shell>`）不动 / 无块不动 / 非整行（句子里的 `<shell>`）不动 / 行首尾留白按 trim 匹配。
 
 ## 6. 小项 B：backfill 去 script（`internal/shellblock/runner.go`）
 
 用户草稿已把 `FormatBackfill` 改为只写 `output:` + 输出 + exit 状态。收尾：
 
-1. 签名改为 `FormatBackfill(res *RunResult) string`（`n`/`scriptText` 已无用途；调用点
-   runner.go:332 与全部测试同步更新）。
+1. 签名改为 `FormatBackfill(res *RunResult) string`（`n`/`scriptText` 已无用途；`Run` 的调用点
+   与全部测试同步更新）。
 2. 重写 doc 注释：描述新形态（仅 output + exit/kill 行）；说明为什么不再回显 script——模型自己
    写过该 script，回合的 follow-up 消息已带关联信息（`output of scriptN.sh (attached as
    scriptN.txt):`），回显只花 token。
@@ -246,3 +246,15 @@ case repeatNudged: // CALM DOWN 已发出：把“本轮回复”的锚点切到
   探针未命中时降级为直接发送。
 - 不新增 live fixture 探针（可选加分项：本地 fixture pin `jsStopGeneration` 的匹配行为，非必需）。
 - 不改动 `continueRecovery` / regenerate / IDB 复读等既有行为。
+
+## 9. 后续项（review 判为 follow-up，本轮不做）
+
+1. **gocyclo 拆分**：`webchatWait`（约 21）与 `handleWebChatShellLoop`（约 21）的圈复杂度已
+   逼近/超过阈值。建议把 `webchatWait` 里 `repeatAction` 的三分支映射抽成纯函数
+   `repeatLoopEffectFor(act repeatAction, current string, ...) (loopEffect, error)`（对齐
+   `ackLoopEffectFor` 的既有风格），把状态重置的规则收进一个可单测的映射，主循环只做应用。
+   shell loop 同理可按「判定 → 执行 → 回填」拆子步骤。
+2. **jsStopGeneration live fixture 探针**：与 `continue_probe_live_test.go` 同法，用本地
+   `file://` fixture pin 停止控件的匹配行为（精确标签、last-match、遮挡检查），并顺带确认真实
+   DOM 位置（当前刻意不做 `.ds-message` ownership 检查，见 `webchat.go` 注释）。门控在
+   `DSCLI_LIVE_*` 环境变量下，默认跳过。
