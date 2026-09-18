@@ -204,6 +204,15 @@ The `chat` command (`chat.go`) is the core of dscli. Its flow:
 5. Image handling - user attachments become `ContentBlock`s (text + file blocks, serialized to `content_blocks` column); `cleanMessagesForModel` strips image blocks for non-vision models to avoid API 400
 6. Interrupt safety - on SIGINT/SIGTERM `MarkInterruptedToolCalls` inserts placeholder tool messages for unexecuted calls, so the next start does not replay user-cancelled operations
 
+### The Webchat Command
+
+`webchat` (`webchat_cmd.go`) drives a Chrome session against chat.deepseek.com. Before
+sending, the message is echoed through `outfmt.PrintUserContent` (the same 👤 header block
+as `dscli chat`); in `--org` mode the input arrives as Org source and is converted with
+`outfmt.OrgToMarkdown` first, so the same Markdown text is both echoed and sent. One-shot
+prose replies and the resume re-print go through `outfmt` too (issue #37), so every reply
+path honors the Markdown→Org conversion of `--org`.
+
 ### System Prompt Pipeline
 
 `LoadPrompts()` assembles the final system prompt:

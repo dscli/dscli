@@ -419,3 +419,84 @@ func TestRunWebchatResumeGoesThroughOutfmt(t *testing.T) {
 		})
 	}
 }
+
+// TestWebchatRunEEchoesInput locks the echo contract: the sent message is
+// echoed through outfmt.PrintUserContent (👤 header, same as dscli chat)
+// BEFORE the 📤 send line, and in --org mode the echoed/sent text is the
+// OrgToMarkdown conversion of the Org input - what the model actually got.
+func TestWebchatRunEEchoesInput(t *testing.T) {
+	const orgInput = "HELLO_TOKEN *y*" // Org: *y* is bold
+
+	for _, tt := range []struct{ mode, wantSent string }{
+		{"org", "HELLO_TOKEN **y**"},
+		{"markdown", orgInput},
+	} {
+		t.Run(tt.mode, func(t *testing.T) {
+			f := filepath.Join(t.TempDir(), "msg.txt")
+			if err := os.WriteFile(f, []byte(orgInput+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			var sent string
+			oldSend := webchatSendFunc
+			t.Cleanup(func() { webchatSendFunc = oldSend })
+			webchatSendFunc = func(ctx context.Context, message string, opts lp.WebChatOptions) (lp.WebChatResult, error) {
+				sent = message
+				return lp.WebChatResult{Content: "ok"}, nil
+			}
+
+			buf := captureWebchatOutput(t, tt.mode)
+			if err := webchatRunE(newWebchatRunCmd(f), nil); err != nil {
+				t.Fatalf("webchatRunE: %v", err)
+			}
+
+			if want := outfmt.OrgToMarkdown(orgInput); tt.mode == "org" && sent != want {
+				t.Errorf("sent = %q, want OrgToMarkdown(input) = %q", sent, want)
+			}
+			if tt.mode == "markdown" && sent != orgInput {
+				t.Errorf("sent = %q, want the raw input %q", sent, orgInput)
+			}
+			if tt.mode == "org" && sent == orgInput {
+				t.Errorf("sent must be converted in org mode, got the raw Org input %q", sent)
+			}
+
+			got := buf.String()
+			if !strings.Contains(got, "HELLO_TOKEN") {
+				t.Errorf("%s mode: the input must be echoed, got:\n%s", tt.mode, got)
+			}
+			if tt.mode == "markdown" && !strings.Contains(got, orgInput) {
+				t.Errorf("markdown mode: the echo must carry the raw input %q:\n%s", orgInput, got)
+			}
+			head := strings.Index(got, "👤")
+			send := strings.Index(got, "📤")
+			if head < 0 {
+				t.Fatalf("%s mode: the 👤 user header is missing:\n%s", tt.mode, got)
+			}
+			if send < 0 {
+				t.Fatalf("%s mode: the 📤 send line is missing:\n%s", tt.mode, got)
+			}
+			if head > send {
+				t.Errorf("%s mode: the echo must precede the send line (👤@%d > 📤@%d):\n%s",
+					tt.mode, head, send, got)
+			}
+		})
+	}
+}
+
+// TestRunWebchatResumeDoesNotEcho pins the resume path: no message is sent,
+// so no user echo is produced.
+func TestRunWebchatResumeDoesNotEcho(t *testing.T) {
+	oldResume := webchatResumeFunc
+	t.Cleanup(func() { webchatResumeFunc = oldResume })
+	webchatResumeFunc = func(ctx context.Context, opts lp.WebChatOptions) (lp.WebChatResult, error) {
+		return lp.WebChatResult{Content: "## T"}, nil
+	}
+
+	buf := captureWebchatOutput(t, "org")
+	if err := runWebchatResume(t.Context(), lp.WebChatOptions{}); err != nil {
+		t.Fatalf("runWebchatResume: %v", err)
+	}
+	if got := buf.String(); strings.Contains(got, "👤") {
+		t.Errorf("a resume sends nothing and must not echo a user message:\n%s", got)
+	}
+}

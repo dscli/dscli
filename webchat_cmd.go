@@ -186,6 +186,16 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 		return runWebchatResume(ctx, opts)
 	}
 
+	// --org input arrives as Org source: convert it to Markdown before it
+	// is echoed and sent, mirroring dscli chat (same conversion, same
+	// user-content echo). The transcript then shows what the model got.
+	if outfmt.GetOutputMode() == "org" {
+		message = outfmt.OrgToMarkdown(message)
+	}
+	ctx = context.WithValue(ctx, context.GitUserNameKey, context.GitUserName())
+	ctx = context.WithValue(ctx, context.GitUserEmailKey, context.GitUserEmail())
+	outfmt.PrintUserContent(ctx, message)
+
 	outfmt.Printf("📤 发送到 DeepSeek Web ...\n")
 	// HandleWebChat shares the ask_expert entry point: transient server
 	// overload and truncation are retried with backoff. A non-empty Role
