@@ -10,9 +10,9 @@ import (
 // formatRules is the four-rule format contract; warnings and the tool doc
 // both carry it word for word.
 const formatRules = "1. `<shell>` must be the leading line of the shell block and it fills the whole line,\n" +
-	"2. `</shell>` must be the ending line of the shell block and it fills the whole line,\n" +
-	"3. `<script>` must be the leading line of the script block and it fills the whole line,\n" +
-	"4. `</script>` must be the ending line of the script block and it fills the whole line."
+	"2. `<script>` must be the leading line of the script block and it fills the whole line,\n" +
+	"3. `</script>` must be the ending line of the script block and it fills the whole line,\n" +
+	"4. `</shell>` must be the ending line of the shell block and it fills the whole line, and it MUST be the ending line of the whole content.\n"
 
 // formatExample is a minimal well-formed block; warnings show it so the
 // model can mirror it exactly.
@@ -20,7 +20,7 @@ const formatExample = `<shell>
 <script>
 #!/bin/bash
 set -euo pipefail
-echo hello
+rg Test *.go
 </script>
 <summary>say hello</summary>
 <timeout>120</timeout>
