@@ -15,7 +15,7 @@ func TestMalformedWarning(t *testing.T) {
 		"2. `<script>` must be the leading line of the script block and it fills the whole line,",
 		"3. `</script>` must be the ending line of the script block and it fills the whole line,",
 		"4. `</shell>` must be the ending line of the shell block and it fills the whole line, and it MUST be the ending line of the whole content.",
-		"<summary>say hello</summary>",
+		"<summary>find the Go test functions</summary>",
 		"Re-send the whole block exactly in this shape.",
 	} {
 		if !strings.Contains(got, want) {
@@ -85,8 +85,6 @@ func TestBuildToolDoc(t *testing.T) {
 	for _, want := range []string{
 		"## 🛠️ Available Tools: `shell`",
 		"**Usage: run a bash or python script, or attach files**",
-		"1. `<shell>` must be the leading line of the shell block and it fills the whole line,",
-		"4. `</shell>` must be the ending line of the shell block and it fills the whole line, and it MUST be the ending line of the whole content.",
 		"**Script forms**",
 		pythonExample,
 		attachExample,
@@ -104,5 +102,40 @@ func TestBuildToolDoc(t *testing.T) {
 		if !strings.Contains(doc, want) {
 			t.Errorf("BuildToolDoc misses %q", want)
 		}
+	}
+
+	// All four rules must be present and in the pinned order: <shell> open,
+	// <script> open, </script> close, </shell> close.
+	rules := []string{
+		"1. `<shell>` must be the leading line of the shell block and it fills the whole line,",
+		"2. `<script>` must be the leading line of the script block and it fills the whole line,",
+		"3. `</script>` must be the ending line of the script block and it fills the whole line,",
+		"4. `</shell>` must be the ending line of the shell block and it fills the whole line, and it MUST be the ending line of the whole content.",
+	}
+	prev := -1
+	for _, rule := range rules {
+		i := strings.Index(doc, rule)
+		if i < 0 {
+			t.Fatalf("BuildToolDoc misses %q", rule)
+		}
+		if i < prev {
+			t.Errorf("BuildToolDoc lists %q out of order (index %d < previous %d)", rule, i, prev)
+		}
+		prev = i
+	}
+}
+
+// TestFormatRulesGap locks the blank-line spacing around the rules block: the
+// rules constant carries no trailing newline, so each caller's "\n\n"
+// separator yields exactly one blank line (not two).
+func TestFormatRulesGap(t *testing.T) {
+	if strings.HasSuffix(formatRules, "\n") {
+		t.Error("formatRules must not end with a newline (callers append their own separator)")
+	}
+	if strings.Contains(MalformedWarning("x"), "content.\n\n\n") {
+		t.Error("MalformedWarning leaves a blank line after rule 4")
+	}
+	if strings.Contains(BuildToolDoc(), "content.\n\n\n") {
+		t.Error("BuildToolDoc leaves a blank line after rule 4")
 	}
 }

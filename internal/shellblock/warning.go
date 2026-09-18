@@ -8,11 +8,20 @@ import (
 )
 
 // formatRules is the four-rule format contract; warnings and the tool doc
-// both carry it word for word.
+// both carry it word for word. It carries no trailing newline: both callers
+// append their own "\n\n" separator, and a trailing "\n" here would widen
+// that gap into a blank line.
+//
+// Rule 4 is model-facing, not parser-enforced: extract() accepts the FIRST
+// well-formed block and tolerates text after the `</shell>` line (see the
+// "prose around the block" case in judge_test.go). The requirement is stated
+// for the model - a trailing remark after `</shell>` is nearly always an
+// accident - but enforcing it would fail-close on otherwise valid blocks.
+// Contract vs enforcement is an intentional split: do not tighten extract().
 const formatRules = "1. `<shell>` must be the leading line of the shell block and it fills the whole line,\n" +
 	"2. `<script>` must be the leading line of the script block and it fills the whole line,\n" +
 	"3. `</script>` must be the ending line of the script block and it fills the whole line,\n" +
-	"4. `</shell>` must be the ending line of the shell block and it fills the whole line, and it MUST be the ending line of the whole content.\n"
+	"4. `</shell>` must be the ending line of the shell block and it fills the whole line, and it MUST be the ending line of the whole content."
 
 // formatExample is a minimal well-formed block; warnings show it so the
 // model can mirror it exactly.
@@ -22,7 +31,7 @@ const formatExample = `<shell>
 set -euo pipefail
 rg Test *.go
 </script>
-<summary>say hello</summary>
+<summary>find the Go test functions</summary>
 <timeout>120</timeout>
 </shell>`
 
