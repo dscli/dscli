@@ -422,8 +422,12 @@ func TestRunWebchatResumeGoesThroughOutfmt(t *testing.T) {
 
 // TestWebchatRunEEchoesInput locks the echo contract: the sent message is
 // echoed through outfmt.PrintUserContent (👤 header, same as dscli chat)
-// BEFORE the 📤 send line, and in --org mode the echoed/sent text is the
-// OrgToMarkdown conversion of the Org input - what the model actually got.
+// BEFORE the 📤 send line. In --org mode the two texts differ: what is SENT
+// is the OrgToMarkdown conversion of the Org input (what the model receives),
+// while what is ECHOED is that Markdown rendered back to Org by the output
+// pipeline (the transcript is Org) - hence the echo matches the original Org
+// input again. In markdown mode there is no conversion and both are the raw
+// input.
 func TestWebchatRunEEchoesInput(t *testing.T) {
 	const orgInput = "HELLO_TOKEN *y*" // Org: *y* is bold
 
@@ -462,9 +466,11 @@ func TestWebchatRunEEchoesInput(t *testing.T) {
 			if sent != tt.wantSent {
 				t.Errorf("sent = %q, want %q", sent, tt.wantSent)
 			}
-			// Negative control: whatever mode, the send must not be the raw
-			// Org input when a conversion applies (org), and must be exactly
-			// it when none does (markdown).
+			// Negative control, kept deliberately as the mode contract's
+			// executable documentation: it pins which text each mode sends
+			// (org = converted, markdown = raw) independently of the echo
+			// assertions below, so a future change that converts in both
+			// modes - or in neither - fails here first and names the mode.
 			if tt.mode == "org" && sent == orgInput {
 				t.Errorf("org mode must convert the input before sending; got the raw Org input %q", sent)
 			}
