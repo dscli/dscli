@@ -427,9 +427,18 @@ func TestRunWebchatResumeGoesThroughOutfmt(t *testing.T) {
 func TestWebchatRunEEchoesInput(t *testing.T) {
 	const orgInput = "HELLO_TOKEN *y*" // Org: *y* is bold
 
-	for _, tt := range []struct{ mode, wantSent string }{
-		{"org", "HELLO_TOKEN **y**"},
-		{"markdown", orgInput},
+	for _, tt := range []struct {
+		mode     string
+		wantSent string // what the model receives
+		wantEcho string // what the 👤 block shows
+	}{
+		// --org: the Org input is converted to Markdown for the send, and
+		// the echo shows that Markdown rendered back to Org (the transcript
+		// renders Org). Probe-verified: OrgToMarkdown("HELLO_TOKEN *y*") is
+		// "HELLO_TOKEN **y**" and markdown2org of that is "HELLO_TOKEN *y*".
+		{"org", "HELLO_TOKEN **y**", "HELLO_TOKEN *y*"},
+		// markdown mode: no conversion at all, send and echo are the raw input.
+		{"markdown", orgInput, orgInput},
 	} {
 		t.Run(tt.mode, func(t *testing.T) {
 			f := filepath.Join(t.TempDir(), "msg.txt")
@@ -450,23 +459,20 @@ func TestWebchatRunEEchoesInput(t *testing.T) {
 				t.Fatalf("webchatRunE: %v", err)
 			}
 
-			if want := outfmt.OrgToMarkdown(orgInput); tt.mode == "org" && sent != want {
-				t.Errorf("sent = %q, want OrgToMarkdown(input) = %q", sent, want)
+			if sent != tt.wantSent {
+				t.Errorf("sent = %q, want %q", sent, tt.wantSent)
+			}
+			// Negative control: whatever mode, the send must not be the raw
+			// Org input when a conversion applies (org), and must be exactly
+			// it when none does (markdown).
+			if tt.mode == "org" && sent == orgInput {
+				t.Errorf("org mode must convert the input before sending; got the raw Org input %q", sent)
 			}
 			if tt.mode == "markdown" && sent != orgInput {
-				t.Errorf("sent = %q, want the raw input %q", sent, orgInput)
-			}
-			if tt.mode == "org" && sent == orgInput {
-				t.Errorf("sent must be converted in org mode, got the raw Org input %q", sent)
+				t.Errorf("markdown mode must send the raw input, got %q", sent)
 			}
 
 			got := buf.String()
-			if !strings.Contains(got, "HELLO_TOKEN") {
-				t.Errorf("%s mode: the input must be echoed, got:\n%s", tt.mode, got)
-			}
-			if tt.mode == "markdown" && !strings.Contains(got, orgInput) {
-				t.Errorf("markdown mode: the echo must carry the raw input %q:\n%s", orgInput, got)
-			}
 			head := strings.Index(got, "👤")
 			send := strings.Index(got, "📤")
 			if head < 0 {
@@ -478,6 +484,21 @@ func TestWebchatRunEEchoesInput(t *testing.T) {
 			if head > send {
 				t.Errorf("%s mode: the echo must precede the send line (👤@%d > 📤@%d):\n%s",
 					tt.mode, head, send, got)
+			}
+
+			// Scope the echo assertions to the echo region (before the 📤
+			// line), and check the converted form by EXCLUSION: "*y*" is a
+			// substring of "**y**", so a positive Contains alone cannot tell
+			// the converted echo from the raw one.
+			echo := got[:send]
+			if !strings.Contains(echo, tt.wantEcho) {
+				t.Errorf("%s mode: the echo must show %q, got:\n%s", tt.mode, tt.wantEcho, echo)
+			}
+			if tt.mode == "markdown" && strings.Contains(echo, "**y**") {
+				t.Errorf("markdown mode must not convert the echoed input:\n%s", echo)
+			}
+			if tt.mode == "org" && strings.Contains(echo, "**y**") {
+				t.Errorf("org mode must echo the Org rendering (*y*), not the Markdown form (**y**):\n%s", echo)
 			}
 		})
 	}
