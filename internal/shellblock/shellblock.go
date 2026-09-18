@@ -196,7 +196,9 @@ func indexOfTag(hits []tagLine, tag string, from int) int {
 //     <shell> open after the close means a second attempt and is refused as
 //     "more than once" - the only duplicate check that survives first-match
 //     semantics (stray duplicate lines elsewhere are tolerated, so a valid
-//     block is never false-rejected).
+//     block is never false-rejected). Text after the closing line is
+//     tolerated: the contract's "ending line of the whole content"
+//     requirement is model-facing - see formatRules in warning.go.
 //
 // It returns the block on success, or a non-empty issue naming the
 // malformed shape. An empty issue means "no block attempt at all": the

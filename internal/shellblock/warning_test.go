@@ -86,6 +86,7 @@ func TestBuildToolDoc(t *testing.T) {
 		"## 🛠️ Available Tools: `shell`",
 		"**Usage: run a bash or python script, or attach files**",
 		"**Script forms**",
+		formatExample,
 		pythonExample,
 		attachExample,
 		"**Iterate inside the script, not across rounds**",
@@ -127,15 +128,22 @@ func TestBuildToolDoc(t *testing.T) {
 
 // TestFormatRulesGap locks the blank-line spacing around the rules block: the
 // rules constant carries no trailing newline, so each caller's "\n\n"
-// separator yields exactly one blank line (not two).
+// separator yields exactly one blank line (not two). The needle is derived
+// from formatRules rather than hard-coded, so a change to the rule text cannot
+// silently retire the check.
 func TestFormatRulesGap(t *testing.T) {
 	if strings.HasSuffix(formatRules, "\n") {
 		t.Error("formatRules must not end with a newline (callers append their own separator)")
 	}
-	if strings.Contains(MalformedWarning("x"), "content.\n\n\n") {
-		t.Error("MalformedWarning leaves a blank line after rule 4")
-	}
-	if strings.Contains(BuildToolDoc(), "content.\n\n\n") {
-		t.Error("BuildToolDoc leaves a blank line after rule 4")
+	for name, out := range map[string]string{
+		"MalformedWarning": MalformedWarning("x"),
+		"BuildToolDoc":     BuildToolDoc(),
+	} {
+		if !strings.Contains(out, formatRules+"\n\n") {
+			t.Errorf("%s: the rules block must be followed by a blank line", name)
+		}
+		if strings.Contains(out, formatRules+"\n\n\n") {
+			t.Errorf("%s: the rules block leaves an extra blank line", name)
+		}
 	}
 }
