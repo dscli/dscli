@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/nanjj/clog"
 
+	"github.com/dscli/dscli/internal/context"
 	"github.com/dscli/dscli/internal/keeprunning"
 	"github.com/dscli/dscli/internal/lp"
 	"github.com/dscli/dscli/internal/outfmt"
@@ -135,6 +135,10 @@ func webchatOptionsFromFlags(cmd *cobra.Command) (lp.WebChatOptions, error) {
 	}, nil
 }
 
+// webchatSendFunc sends a new message (lp.HandleWebChat by default).
+// A package variable so tests can replace it with a mock.
+var webchatSendFunc = lp.HandleWebChat
+
 func webchatRunE(cmd *cobra.Command, args []string) error {
 	span, ctx := clog.StartSpanFromContext(cmd.Context(), "webchatRunE")
 	defer span.Finish()
@@ -188,7 +192,7 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 	// prepends the role prompt; replies carrying a `<shell>` block are
 	// executed locally and fed back into the same conversation until the
 	// expert finishes.
-	result, err = lp.HandleWebChat(ctx, message, opts)
+	result, err = webchatSendFunc(ctx, message, opts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "webchat 失败: %v\n", err)
 		return nil
@@ -199,8 +203,11 @@ func webchatRunE(cmd *cobra.Command, args []string) error {
 	// 工具循环场景下，每一轮（含最终答复）已由 HandleWebChat 通过
 	// outfmt.PrintContent 打印（含 reasoning 与 content）；这里只打印收尾
 	// 的纯 content——非循环场景（一次性的散文回复）才需要。
+	// 经 outfmt 而非裸 fmt：--org 模式下回复要转成 Org，与工具循环轮次
+	// （printRound → outfmt.PrintContent）保持一致，否则同一会话里两种
+	// 格式混排。
 	if !result.Printed {
-		fmt.Println(result.Content)
+		outfmt.Println(result.Content)
 	}
 
 	// Surface the conversation ID on stderr (never stdout, which carries the
@@ -252,8 +259,9 @@ func runWebchatResume(ctx context.Context, opts lp.WebChatOptions) error {
 		outfmt.Printf("✅ 恢复完成 (%.1fs)\n", elapsed.Seconds())
 	} else {
 		// 无待恢复的工具调用：会话最后一条是已完成回复，原样输出。
+		// 经 outfmt：--org 模式下同样要转成 Org（与工具循环轮次一致）。
 		outfmt.Printf("📥 无待恢复的工具调用，输出会话最后一条回复 (%.1fs)\n\n", elapsed.Seconds())
-		fmt.Println(result.Content)
+		outfmt.Println(result.Content)
 	}
 	if result.URL != "" {
 		outfmt.Println(formatConversationHint(result.URL))

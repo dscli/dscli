@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/dscli/dscli/internal/lp"
+	"github.com/dscli/dscli/internal/outfmt"
 	"github.com/spf13/cobra"
 )
 
@@ -295,5 +299,123 @@ func TestFormatConversationHint(t *testing.T) {
 	// An empty URL yields no hint at all (defensive; callers guard too).
 	if hint := formatConversationHint(""); hint != "" {
 		t.Errorf("hint for empty URL should be empty, got: %q", hint)
+	}
+}
+
+// newWebchatRunCmd builds a webchat command carrying every flag webchatRunE
+// reads (input/keep/attach/role), with --input pointing at inputFile. The
+// context is set explicitly: webchatRunE opens a clog span on cmd.Context(),
+// and cobra leaves it nil on a hand-built command.
+func newWebchatRunCmd(inputFile string) *cobra.Command {
+	cmd := &cobra.Command{Use: "webchat"}
+	cmd.Flags().String("input", inputFile, "")
+	cmd.Flags().String("keep", "", "")
+	cmd.Flags().StringSlice("attach", nil, "")
+	cmd.Flags().String("role", "", "")
+	cmd.SetContext(context.Background())
+	return cmd
+}
+
+// captureWebchatOutput routes outfmt through a buffer in the given mode and
+// restores the globals on cleanup (same convention as chat_test.go /
+// version_test.go).
+func captureWebchatOutput(t *testing.T, mode string) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	outfmt.SetOutputWriter(&buf)
+	outfmt.SetOutputMode(mode)
+	t.Cleanup(func() {
+		outfmt.SetOutputWriter(os.Stdout)
+		outfmt.SetOutputMode("markdown")
+	})
+	return &buf
+}
+
+// TestWebchatRunEReplyGoesThroughOutfmt locks issue #37 for the send path: a
+// one-shot prose reply (WebChatResult.Printed == false) must be printed
+// through outfmt, so --org converts it like every tool-loop round does.
+func TestWebchatRunEReplyGoesThroughOutfmt(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "msg.txt")
+	if err := os.WriteFile(f, []byte("## R"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	oldSend := webchatSendFunc
+	t.Cleanup(func() { webchatSendFunc = oldSend })
+	webchatSendFunc = func(ctx context.Context, message string, opts lp.WebChatOptions) (lp.WebChatResult, error) {
+		return lp.WebChatResult{Content: "## R"}, nil
+	}
+
+	for _, tt := range []struct{ mode, want, unwanted string }{
+		{"org", "** R", "## R"},
+		{"markdown", "## R", "** R"},
+	} {
+		t.Run(tt.mode, func(t *testing.T) {
+			buf := captureWebchatOutput(t, tt.mode)
+			if err := webchatRunE(newWebchatRunCmd(f), nil); err != nil {
+				t.Fatalf("webchatRunE: %v", err)
+			}
+			got := buf.String()
+			if !strings.Contains(got, tt.want) {
+				t.Errorf("%s mode: output misses %q:\n%s", tt.mode, tt.want, got)
+			}
+			if strings.Contains(got, tt.unwanted) {
+				t.Errorf("%s mode: output must not contain %q:\n%s", tt.mode, tt.unwanted, got)
+			}
+		})
+	}
+}
+
+// TestWebchatRunESkipsAlreadyPrintedReply pins the Printed contract: a reply
+// already rendered by the tool loop (outfmt.PrintContent) must not be
+// re-printed by webchatRunE.
+func TestWebchatRunESkipsAlreadyPrintedReply(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "msg.txt")
+	if err := os.WriteFile(f, []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	oldSend := webchatSendFunc
+	t.Cleanup(func() { webchatSendFunc = oldSend })
+	webchatSendFunc = func(ctx context.Context, message string, opts lp.WebChatOptions) (lp.WebChatResult, error) {
+		return lp.WebChatResult{Content: "## SKIPPED", Printed: true}, nil
+	}
+
+	buf := captureWebchatOutput(t, "org")
+	if err := webchatRunE(newWebchatRunCmd(f), nil); err != nil {
+		t.Fatalf("webchatRunE: %v", err)
+	}
+	if got := buf.String(); strings.Contains(got, "SKIPPED") {
+		t.Errorf("a Printed reply must not be re-printed:\n%s", got)
+	}
+}
+
+// TestRunWebchatResumeGoesThroughOutfmt locks issue #37 for the resume path:
+// the verbatim re-print of the conversation's last reply must go through
+// outfmt too, so --org converts it.
+func TestRunWebchatResumeGoesThroughOutfmt(t *testing.T) {
+	oldResume := webchatResumeFunc
+	t.Cleanup(func() { webchatResumeFunc = oldResume })
+	webchatResumeFunc = func(ctx context.Context, opts lp.WebChatOptions) (lp.WebChatResult, error) {
+		return lp.WebChatResult{Content: "## T\n\n**b**"}, nil
+	}
+
+	for _, tt := range []struct{ mode, want, unwanted string }{
+		{"org", "** T", "## T"},
+		{"markdown", "## T", "** T"},
+	} {
+		t.Run(tt.mode, func(t *testing.T) {
+			buf := captureWebchatOutput(t, tt.mode)
+			if err := runWebchatResume(t.Context(), lp.WebChatOptions{}); err != nil {
+				t.Fatalf("runWebchatResume: %v", err)
+			}
+			got := buf.String()
+			if !strings.Contains(got, tt.want) {
+				t.Errorf("%s mode: output misses %q:\n%s", tt.mode, tt.want, got)
+			}
+			if strings.Contains(got, tt.unwanted) {
+				t.Errorf("%s mode: output must not contain %q:\n%s", tt.mode, tt.unwanted, got)
+			}
+		})
 	}
 }
